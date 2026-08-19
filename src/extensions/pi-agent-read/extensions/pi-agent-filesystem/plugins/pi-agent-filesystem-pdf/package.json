@@ -1,0 +1,20 @@
+{
+    "name": "pi-agent-filesystem-pdf",
+    "version": "0.1.0",
+    "type": "module",
+    "pi": {
+        "extensions": [
+            "./index.ts"
+        ]
+    },
+    "dependencies": {
+        "@earendil-works/pi-coding-agent": "0.84.2",
+        "pi-agent-pdf": "workspace:^",
+        "pi-agent-resource": "workspace:^"
+    },
+    "devDependencies": {
+        "pi-agent-read": "workspace:^",
+        "pi-coding-agent-test": "^0.1.0",
+        "vitest": "^4.1.10"
+    }
+}

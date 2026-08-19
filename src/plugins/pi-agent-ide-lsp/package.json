@@ -1,0 +1,27 @@
+{
+    "name": "pi-agent-ide-lsp",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "pi": {
+        "extensions": [
+            "./index.ts"
+        ]
+    },
+    "dependencies": {
+        "@earendil-works/pi-coding-agent": "0.84.2",
+        "cross-spawn": "^7.0.6",
+        "pi-agent-ide": "workspace:^",
+        "pi-agent-read": "workspace:^",
+        "pi-agent-search": "workspace:^",
+        "pi-agent-resource": "workspace:^",
+        "pi-agent-text": "workspace:^",
+        "vscode-jsonrpc": "^9.0.0",
+        "vscode-uri": "^3.1.0"
+    },
+    "devDependencies": {
+        "@types/cross-spawn": "^6.0.6",
+        "pi-coding-agent-test": "^0.1.0",
+        "vitest": "^4.1.10"
+    }
+}

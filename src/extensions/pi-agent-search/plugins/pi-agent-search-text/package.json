@@ -1,0 +1,32 @@
+{
+    "name": "pi-agent-search-text",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "pi": {
+        "extensions": [
+            "./index.ts"
+        ]
+    },
+    "imports": {
+        "#src/*": "./src/*"
+    },
+    "exports": {
+        ".": {
+            "types": "./index.ts",
+            "default": "./index.ts"
+        },
+        "./search-session": {
+            "types": "./src/search-session.ts",
+            "default": "./src/search-session.ts"
+        }
+    },
+    "dependencies": {
+        "@earendil-works/pi-coding-agent": "0.84.2",
+        "@earendil-works/pi-tui": "0.84.2",
+        "lucene-query-parser": "1.2.0",
+        "pi-agent-search": "workspace:^",
+        "pi-agent-text": "workspace:^",
+        "pi-agent-text-editor": "workspace:^"
+    }
+}

@@ -1,0 +1,19 @@
+{
+    "name": "pi-agent-ide-formatter",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "pi": {
+        "extensions": [
+            "./index.ts"
+        ]
+    },
+    "dependencies": {
+        "@earendil-works/pi-coding-agent": "0.84.2",
+        "pi-agent-ide": "workspace:^"
+    },
+    "devDependencies": {
+        "pi-coding-agent-test": "^0.1.0",
+        "vitest": "^4.1.10"
+    }
+}
