@@ -14,7 +14,7 @@
     "pi-agent-text-editor": "workspace:^"
   },
   "devDependencies": {
-    "pi-coding-agent-test": "^0.1.0",
+    "pi-coding-agent-test": "^0.1.1",
     "vitest": "^4.1.10"
   },
   "pi": {
