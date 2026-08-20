@@ -35,8 +35,9 @@ jobs:
       - name: Setup runtime tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes ripgrep
-          npm install --global @ast-grep/cli@0.45.1
+          sudo apt-get install --yes fd-find ripgrep
+          sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
+          npm install --global @ast-grep/cli@0.45.1 eslint_d@15.0.2
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
