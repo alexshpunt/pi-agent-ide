@@ -156,9 +156,9 @@ describe("interactive text editor demos", () => {
       if (live) {
         expect(terminalOutput).toMatch(/jobs-worker-[^\n]*▌/u);
         expect(terminalOutput).toMatch(/tasks-worker-[^\n]*▌/u);
+        expect(terminalOutput).toContain("workers ready for eu-central");
+        expect(terminalOutput).toContain("workers active for eu-west");
       }
-      expect(terminalOutput).toContain("workers ready for eu-central");
-      expect(terminalOutput).toContain("workers active for eu-west");
     });
   }, 180_000);
 });

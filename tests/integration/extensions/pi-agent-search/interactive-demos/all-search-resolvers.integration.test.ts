@@ -1,7 +1,6 @@
-import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
+
 import {
   assistantMessage,
   getToolExecution,
@@ -19,7 +18,9 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 const extensions = createExtensionSet();
 const demoExtensions = [
   ...extensions.paths,
-  path.resolve("src/extensions/pi-agent-search/plugins/pi-agent-search-semantic/index.ts"),
+  path.resolve(
+    "tests/integration/extensions/pi-agent-search/interactive-demos/fixtures/semantic-search-resolver.ts",
+  ),
   path.resolve(
     "tests/integration/extensions/pi-agent-search/interactive-demos/fixtures/web-search-transport.ts",
   ),
@@ -125,14 +126,10 @@ describe("interactive Search resolver demos", () => {
 
 async function prepareWorkspace(directory: string): Promise<void> {
   const sourceDirectory = path.join(directory, "src");
-  const corpusDirectory = path.join(directory, "corpus");
-  const qmdDirectory = path.join(directory, ".qmd");
   const piDirectory = path.join(directory, ".pi");
   const ideConfigDirectory = path.join(piDirectory, "pi-agent-ide");
   await Promise.all([
     mkdir(sourceDirectory, { recursive: true }),
-    mkdir(corpusDirectory, { recursive: true }),
-    mkdir(qmdDirectory, { recursive: true }),
     mkdir(piDirectory, { recursive: true }),
     mkdir(ideConfigDirectory, { recursive: true }),
   ]);
@@ -179,27 +176,6 @@ async function prepareWorkspace(directory: string): Promise<void> {
       "utf8",
     ),
     writeFile(
-      path.join(corpusDirectory, "search-resolvers.md"),
-      [
-        "# Search Resolver Corpus",
-        "",
-        "The protocol atlas explains how one Search tool routes every resolver.",
-        "",
-      ].join("\n"),
-      "utf8",
-    ),
-    writeFile(
-      path.join(qmdDirectory, "index.yml"),
-      [
-        "collections:",
-        "    demo:",
-        `        path: ${corpusDirectory}`,
-        '        pattern: "**/*.md"',
-        "",
-      ].join("\n"),
-      "utf8",
-    ),
-    writeFile(
       path.join(piDirectory, "websearch.json"),
       JSON.stringify({
         strategy: "priority",
@@ -212,12 +188,4 @@ async function prepareWorkspace(directory: string): Promise<void> {
       "utf8",
     ),
   ]);
-
-  await promisify(execFile)(
-    path.resolve(
-      "src/extensions/pi-agent-search/plugins/pi-agent-search-semantic/node_modules/.bin/qmd",
-    ),
-    ["update"],
-    { cwd: directory },
-  );
 }
