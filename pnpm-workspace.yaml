@@ -2,6 +2,8 @@ packages:
   - "packages/*"
   - "src/extensions/**"
   - "src/plugins/*"
+minimumReleaseAgeExclude:
+  - "pi-coding-agent-test@0.1.1"
 allowBuilds:
   "@google/genai": true
   "@tree-sitter-grammars/tree-sitter-toml": true
