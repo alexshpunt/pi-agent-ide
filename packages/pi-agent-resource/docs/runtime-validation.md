@@ -15,9 +15,7 @@ export function isResource(value: unknown): value is Resource;
 
 export function isResourceResolver(value: unknown): value is ResourceResolver;
 
-export function isResourceResolutionAttempt(
-    value: unknown,
-): value is ResourceResolutionAttempt;
+export function isResourceResolutionAttempt(value: unknown): value is ResourceResolutionAttempt;
 ```
 
 These four functions are the complete public runtime validation API.

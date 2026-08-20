@@ -39,17 +39,15 @@ One source extension creates one stable ResourceResolver object and registers it
 const resolver = createFilesystemResolver();
 
 const readPlugin = {
-    setup(api)
-    {
-        api.addResolver({ resolver });
-    },
+  setup(api) {
+    api.addResolver({ resolver });
+  },
 };
 
 const editorPlugin = {
-    setup(api)
-    {
-        api.addResolver({ resolver });
-    },
+  setup(api) {
+    api.addResolver({ resolver });
+  },
 };
 ```
 

@@ -32,12 +32,11 @@ Malformed sources, unsupported file types, missing files, and unavailable parser
 A scope is a source range with a start line, an end line, and stable markers:
 
 ```ts
-interface TextScope
-{
-    startLine: number;
-    endLine: number;
-    beginAnchor: TextAnchor;
-    endScopeAnchor: TextAnchor;
+interface TextScope {
+  startLine: number;
+  endLine: number;
+  beginAnchor: TextAnchor;
+  endScopeAnchor: TextAnchor;
 }
 ```
 

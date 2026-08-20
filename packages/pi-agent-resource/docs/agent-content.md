@@ -13,19 +13,15 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 
 export type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 
-export interface CustomContent
-{
-    readonly type: "custom";
-    readonly kind: string;
-    readonly data: unknown;
+export interface CustomContent {
+  readonly type: "custom";
+  readonly kind: string;
+  readonly data: unknown;
 }
 
 export type AgentContentBlock = TextContent | ImageContent | CustomContent;
 
-export type AgentContent = readonly [
-    AgentContentBlock,
-    ...AgentContentBlock[],
-];
+export type AgentContent = readonly [AgentContentBlock, ...AgentContentBlock[]];
 ```
 
 `pi-agent-resource` re-exports `TextContent` and `ImageContent`. Consumers import the complete public content contract from `pi-agent-resource`.
@@ -62,9 +58,9 @@ Image data uses the Pi representation: a base64 string and a MIME type.
 
 ```ts
 const image: ImageContent = {
-    type: "image",
-    data: "iVBORw0KGgoAAA...",
-    mimeType: "image/png",
+  type: "image",
+  data: "iVBORw0KGgoAAA...",
+  mimeType: "image/png",
 };
 ```
 
@@ -82,11 +78,11 @@ const image: ImageContent = {
 
 ```ts
 const chart: CustomContent = {
-    type: "custom",
-    kind: "chart",
-    data: {
-        series: [1, 2, 3],
-    },
+  type: "custom",
+  kind: "chart",
+  data: {
+    series: [1, 2, 3],
+  },
 };
 ```
 
@@ -114,15 +110,15 @@ For example:
 
 ```ts
 const source: AgentContent = [
-    { type: "text", text: "Chart:" },
-    { type: "custom", kind: "chart", data: { series: [1, 2, 3] } },
-    { type: "image", data: "iVBORw0KGgoAAA...", mimeType: "image/png" },
+  { type: "text", text: "Chart:" },
+  { type: "custom", kind: "chart", data: { series: [1, 2, 3] } },
+  { type: "image", data: "iVBORw0KGgoAAA...", mimeType: "image/png" },
 ];
 
 const projected = [
-    { type: "text", text: "Chart:" },
-    { type: "text", text: "[unsupported_content_block kind=chart index=1]" },
-    { type: "image", data: "iVBORw0KGgoAAA...", mimeType: "image/png" },
+  { type: "text", text: "Chart:" },
+  { type: "text", text: "[unsupported_content_block kind=chart index=1]" },
+  { type: "image", data: "iVBORw0KGgoAAA...", mimeType: "image/png" },
 ];
 ```
 
@@ -135,18 +131,16 @@ The marker is display text, not a machine-readable serialization of the custom b
 These detail types belong to `pi-agent-read`. They are not exported by `pi-agent-resource`.
 
 ```ts
-export interface UnsupportedContentBlockDetail
-{
-    readonly index: number;
-    readonly kind: string;
+export interface UnsupportedContentBlockDetail {
+  readonly index: number;
+  readonly kind: string;
 }
 
-export interface UnsupportedContentDetails
-{
-    readonly unsupportedContentBlocks?: readonly [
-        UnsupportedContentBlockDetail,
-        ...UnsupportedContentBlockDetail[],
-    ];
+export interface UnsupportedContentDetails {
+  readonly unsupportedContentBlocks?: readonly [
+    UnsupportedContentBlockDetail,
+    ...UnsupportedContentBlockDetail[],
+  ];
 }
 ```
 

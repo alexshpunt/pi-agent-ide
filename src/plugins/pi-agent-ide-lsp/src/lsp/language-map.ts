@@ -5,12 +5,15 @@ import type { ServerConfig } from "./types.js";
  *
  * Built once from the registry config. Pure data structure — no I/O.
  */
-export interface LanguageLookup
-{
-    /** Maps extension (with leading dot) to its languageId. */
-    extToLanguageId: Map<string, string>;
-    /** Maps extension (with leading dot) to its server IDs. */
-    extToServerIds: Map<string, string[]>;
+export interface LanguageLookup {
+  /**
+    Maps extension (with leading dot) to its languageId.
+    */
+  extToLanguageId: Map<string, string>;
+  /**
+    Maps extension (with leading dot) to its server IDs.
+    */
+  extToServerIds: Map<string, string[]>;
 }
 
 /**
@@ -21,37 +24,32 @@ export interface LanguageLookup
  * Extensions must be unique across servers — two servers cannot claim
  * the same extension for different languageIds.
  */
-export function buildLanguageLookup(servers: Record<string, ServerConfig>): LanguageLookup
-{
-    const extToLanguageId = new Map<string, string>();
-    const extToServerIds = new Map<string, string[]>();
+export function buildLanguageLookup(servers: Record<string, ServerConfig>): LanguageLookup {
+  const extensionToLanguageId = new Map<string, string>();
+  const extensionToServerIds = new Map<string, string[]>();
 
-    for (const [serverId, config] of Object.entries(servers))
-    {
-        for (const [languageId, lang] of Object.entries(config.languages))
-        {
-            for (const ext of lang.extensions)
-            {
-                const normalized = ext.toLowerCase();
-                const prevLang = extToLanguageId.get(normalized);
+  for (const [serverId, config] of Object.entries(servers)) {
+    for (const [languageId, lang] of Object.entries(config.languages)) {
+      for (const extension of lang.extensions) {
+        const normalized = extension.toLowerCase();
+        const previousLang = extensionToLanguageId.get(normalized);
 
-                // Same languageId from different servers is fine (e.g. two servers for TS).
-                // Different languageIds for the same extension is a config error.
-                if (prevLang !== undefined && prevLang !== languageId)
-                {
-                    throw new Error(
-                        `[lsp] extension conflict: "${normalized}" claimed by "${prevLang}" and "${languageId}"`,
-                    );
-                }
-
-                extToLanguageId.set(normalized, languageId);
-
-                const serverIds = extToServerIds.get(normalized) ?? [];
-                serverIds.push(serverId);
-                extToServerIds.set(normalized, serverIds);
-            }
+        // Same languageId from different servers is fine (e.g. two servers for TS).
+        // Different languageIds for the same extension is a config error.
+        if (previousLang !== undefined && previousLang !== languageId) {
+          throw new Error(
+            `[lsp] extension conflict: "${normalized}" claimed by "${previousLang}" and "${languageId}"`,
+          );
         }
-    }
 
-    return { extToLanguageId, extToServerIds };
+        extensionToLanguageId.set(normalized, languageId);
+
+        const serverIds = extensionToServerIds.get(normalized) ?? [];
+        serverIds.push(serverId);
+        extensionToServerIds.set(normalized, serverIds);
+      }
+    }
+  }
+
+  return { extToLanguageId: extensionToLanguageId, extToServerIds: extensionToServerIds };
 }

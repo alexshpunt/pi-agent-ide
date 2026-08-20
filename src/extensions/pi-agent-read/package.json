@@ -1,49 +1,49 @@
 {
-    "name": "pi-agent-read",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
+  "name": "pi-agent-read",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*",
+    "#tests/*": "./tests/*"
+  },
+  "exports": {
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./src/api/connect-plugin.ts"
     },
-    "imports": {
-        "#src/*": "./src/*",
-        "#tests/*": "./tests/*"
+    "./api/rendering": {
+      "types": "./src/api/rendering.ts",
+      "default": "./src/api/rendering.ts"
     },
-    "exports": {
-        "./api/connect-plugin": {
-            "types": "./src/api/connect-plugin.ts",
-            "default": "./src/api/connect-plugin.ts"
-        },
-        "./api/rendering": {
-            "types": "./src/api/rendering.ts",
-            "default": "./src/api/rendering.ts"
-        },
-        "./api/plugin-protocol": {
-            "types": "./src/api/plugin-protocol.ts",
-            "default": "./src/api/plugin-protocol.ts"
-        },
-        "./api/tools/read": {
-            "types": "./src/api/tools/read.ts",
-            "default": "./src/api/tools/read.ts"
-        },
-        "./testing": {
-            "types": "./tests/integration/test-stand/generate-read-extensions.ts",
-            "default": "./tests/integration/test-stand/generate-read-extensions.ts"
-        }
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./src/api/plugin-protocol.ts"
     },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "@earendil-works/pi-tui": "0.84.2",
-        "pi-agent-resource": "workspace:^",
-        "pi-agent-text": "workspace:^",
-        "pi-agent-tool-call-interception": "workspace:^",
-        "typebox": "^1.1.38"
+    "./api/tools/read": {
+      "types": "./src/api/tools/read.ts",
+      "default": "./src/api/tools/read.ts"
     },
-    "devDependencies": {
-        "pi-coding-agent-test": "^0.1.0",
-        "vitest": "^4.1.10"
+    "./testing": {
+      "types": "./tests/integration/test-stand/generate-read-extensions.ts",
+      "default": "./tests/integration/test-stand/generate-read-extensions.ts"
     }
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "pi-agent-resource": "workspace:^",
+    "pi-agent-text": "workspace:^",
+    "pi-agent-tool-call-interception": "workspace:^",
+    "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "pi-coding-agent-test": "^0.1.0",
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

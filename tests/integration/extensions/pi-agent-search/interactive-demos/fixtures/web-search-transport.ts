@@ -11,7 +11,7 @@ const demoHtml = `
 
 export default function registerWebSearchDemoTransport(pi: ExtensionAPI): void
 {
-    const originalFetch = globalThis.fetch;
+    const originalFetch = fetch;
     const demoFetch: typeof fetch = (input, init) =>
     {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -42,7 +42,7 @@ export default function registerWebSearchDemoTransport(pi: ExtensionAPI): void
     globalThis.fetch = demoFetch;
     pi.on("session_shutdown", () =>
     {
-        if (globalThis.fetch === demoFetch)
+        if (fetch === demoFetch)
         {
             globalThis.fetch = originalFetch;
         }

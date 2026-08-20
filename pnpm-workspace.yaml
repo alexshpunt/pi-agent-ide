@@ -2,7 +2,6 @@ packages:
   - "packages/*"
   - "src/extensions/**"
   - "src/plugins/*"
-
 allowBuilds:
   "@google/genai": true
   "@tree-sitter-grammars/tree-sitter-toml": true
@@ -20,3 +19,4 @@ allowBuilds:
   tree-sitter-python: true
   tree-sitter-rust: true
   tree-sitter-typescript: true
+  unrs-resolver: true

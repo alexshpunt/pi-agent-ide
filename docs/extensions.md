@@ -6,12 +6,13 @@ When its target core is enabled, an external extension can load before or after 
 
 ## Choose a protocol
 
-| You want to add | Umbrella API |
-| --- | --- |
-| A readable source or read presentation | `pi-agent-ide/api/read`, `pi-agent-ide/api/resource` |
-| A search backend | `pi-agent-ide/api/search` |
-| A writable source, anchor, mutation, guard, or renderer | `pi-agent-ide/api/text-editor`, `pi-agent-ide/api/text` |
-| A formatter, compiler, or linter | `pi-agent-ide/api/connect-plugin`, `pi-agent-ide/api/toolchain` |
+| You want to add                                          | Umbrella API                                                                                         |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| A readable source or read presentation                   | `pi-agent-ide/api/read`, `pi-agent-ide/api/resource`                                                 |
+| A search backend                                         | `pi-agent-ide/api/search`                                                                            |
+| A writable source, anchor, mutation, guard, or renderer  | `pi-agent-ide/api/text-editor`, `pi-agent-ide/api/text`                                              |
+| A formatter, compiler, or linter                         | `pi-agent-ide/api/connect-plugin`, `pi-agent-ide/api/toolchain`                                      |
+| Doctor language knowledge, setup recipe, or health check | `pi-agent-ide/api/connect-doctor-plugin`, `pi-agent-ide/api/doctor`, `pi-agent-ide/api/tool-catalog` |
 
 The internal packages are bundled into Pi Agent IDE and are not published separately. External extensions import their public contracts through the umbrella package.
 
@@ -40,53 +41,48 @@ A search plugin contributes one or more resolvers. A resolver returns `not-handl
 
 ```ts
 import {
-    connectSearchPlugin,
-    SEARCH_API_VERSION,
-    SEARCH_PROTOCOL,
-    type SearchPlugin,
-    type SearchResolver,
+  connectSearchPlugin,
+  SEARCH_API_VERSION,
+  SEARCH_PROTOCOL,
+  type SearchPlugin,
+  type SearchResolver,
 } from "pi-agent-ide/api/search";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const resolver: SearchResolver = {
-    id: "tickets",
+  id: "tickets",
 
-    async tryResolve(request)
-    {
-        if (!request.query.startsWith("ticket:"))
-        {
-            return { kind: "not-handled" };
-        }
+  async tryResolve(request) {
+    if (!request.query.startsWith("ticket:")) {
+      return { kind: "not-handled" };
+    }
 
-        const ticket = request.query.slice("ticket:".length).trim();
-        return { kind: "resolved", payload: { ticket } };
-    },
+    const ticket = request.query.slice("ticket:".length).trim();
+    return { kind: "resolved", payload: { ticket } };
+  },
 
-    format(payload)
-    {
-        const { ticket } = payload as { ticket: string };
-        return {
-            content: [{ type: "text", text: `Ticket ${ticket}` }],
-            details: { ticket },
-        };
-    },
+  format(payload) {
+    const { ticket } = payload as { ticket: string };
+    return {
+      content: [{ type: "text", text: `Ticket ${ticket}` }],
+      details: { ticket },
+    };
+  },
 };
 
 const plugin: SearchPlugin = {
-    protocol: SEARCH_PROTOCOL,
-    apiVersion: SEARCH_API_VERSION,
-    id: "tickets",
-    setup(api)
-    {
-        api.addResolver({ resolver });
-        api.describe("Use `ticket:<id>` to find an issue tracker ticket.");
-    },
+  protocol: SEARCH_PROTOCOL,
+  apiVersion: SEARCH_API_VERSION,
+  id: "tickets",
+  setup(api) {
+    api.addResolver({ resolver });
+    api.describe("Use `ticket:<id>` to find an issue tracker ticket.");
+  },
 };
 
-export default function register(pi: ExtensionAPI): void | Promise<void>
-{
-    return connectSearchPlugin(pi, plugin);
+export default function register(pi: ExtensionAPI): void | Promise<void> {
+  return connectSearchPlugin(pi, plugin);
 }
 ```
 
@@ -98,53 +94,48 @@ A read plugin usually contributes a `ResourceResolver`. The resolver recognizes 
 
 ```ts
 import {
-    connectReadPlugin,
-    READ_API_VERSION,
-    READ_PROTOCOL,
-    type ReadPlugin,
+  connectReadPlugin,
+  READ_API_VERSION,
+  READ_PROTOCOL,
+  type ReadPlugin,
 } from "pi-agent-ide/api/read";
 import type { ResourceResolver } from "pi-agent-ide/api/resource";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const resolver: ResourceResolver = {
-    id: "notes",
+  id: "notes",
 
-    async tryResolve(source)
-    {
-        if (!source.startsWith("note:"))
-        {
-            return { kind: "not-handled" };
-        }
+  async tryResolve(source) {
+    if (!source.startsWith("note:")) {
+      return { kind: "not-handled" };
+    }
 
-        const noteId = source.slice("note:".length);
-        return {
-            kind: "resolved",
-            resource: {
-                source,
-                async read()
-                {
-                    return [{ type: "text", text: `Note ${noteId}` }];
-                },
-            },
-        };
-    },
+    const noteId = source.slice("note:".length);
+    return {
+      kind: "resolved",
+      resource: {
+        source,
+        async read() {
+          return [{ type: "text", text: `Note ${noteId}` }];
+        },
+      },
+    };
+  },
 };
 
 const plugin: ReadPlugin = {
-    protocol: READ_PROTOCOL,
-    apiVersion: READ_API_VERSION,
-    id: "notes",
-    setup(api)
-    {
-        api.addResolver({ resolver });
-        api.describe("Reads `note:<id>` sources.");
-    },
+  protocol: READ_PROTOCOL,
+  apiVersion: READ_API_VERSION,
+  id: "notes",
+  setup(api) {
+    api.addResolver({ resolver });
+    api.describe("Reads `note:<id>` sources.");
+  },
 };
 
-export default function register(pi: ExtensionAPI): void | Promise<void>
-{
-    return connectReadPlugin(pi, plugin);
+export default function register(pi: ExtensionAPI): void | Promise<void> {
+  return connectReadPlugin(pi, plugin);
 }
 ```
 
@@ -159,62 +150,55 @@ Anchor resolvers recognize opaque values against the current text snapshot. This
 ```ts
 import { TextAnchor, type TextAnchorResolver } from "pi-agent-ide/api/text";
 import {
-    connectTextEditorPlugin,
-    TEXT_EDITOR_API_VERSION,
-    TEXT_EDITOR_PROTOCOL,
-    TEXT_POSITION_ANCHOR_KIND,
-    type TextEditorPlugin,
+  connectTextEditorPlugin,
+  TEXT_EDITOR_API_VERSION,
+  TEXT_EDITOR_PROTOCOL,
+  TEXT_POSITION_ANCHOR_KIND,
+  type TextEditorPlugin,
 } from "pi-agent-ide/api/text-editor";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-class MiddleAnchor extends TextAnchor
-{
-    constructor(lineNumber: number)
-    {
-        super("middle", lineNumber);
-    }
+class MiddleAnchor extends TextAnchor {
+  constructor(lineNumber: number) {
+    super("middle", lineNumber);
+  }
 }
 
 const resolver: TextAnchorResolver = {
-    id: "middle",
-    description: "`middle` selects the middle line.",
+  id: "middle",
+  description: "`middle` selects the middle line.",
 
-    async tryResolve(value, context)
-    {
-        if (value !== "middle")
-        {
-            return { kind: "not-handled" };
-        }
-        if (context.lines.length === 0)
-        {
-            return { kind: "failed", error: new Error("middle cannot resolve in an empty file") };
-        }
+  async tryResolve(value, context) {
+    if (value !== "middle") {
+      return { kind: "not-handled" };
+    }
+    if (context.lines.length === 0) {
+      return { kind: "failed", error: new Error("middle cannot resolve in an empty file") };
+    }
 
-        return {
-            kind: "resolved",
-            anchor: new MiddleAnchor(Math.ceil(context.lines.length / 2)),
-        };
-    },
+    return {
+      kind: "resolved",
+      anchor: new MiddleAnchor(Math.ceil(context.lines.length / 2)),
+    };
+  },
 };
 
 const plugin: TextEditorPlugin = {
-    protocol: TEXT_EDITOR_PROTOCOL,
-    apiVersion: TEXT_EDITOR_API_VERSION,
-    id: "middle-anchor",
-    setup(api)
-    {
-        api.addAnchorResolver({
-            resolver,
-            kind: TEXT_POSITION_ANCHOR_KIND,
-            type: "constant",
-        });
-    },
+  protocol: TEXT_EDITOR_PROTOCOL,
+  apiVersion: TEXT_EDITOR_API_VERSION,
+  id: "middle-anchor",
+  setup(api) {
+    api.addAnchorResolver({
+      resolver,
+      kind: TEXT_POSITION_ANCHOR_KIND,
+      type: "constant",
+    });
+  },
 };
 
-export default function register(pi: ExtensionAPI): void | Promise<void>
-{
-    return connectTextEditorPlugin(pi, plugin);
+export default function register(pi: ExtensionAPI): void | Promise<void> {
+  return connectTextEditorPlugin(pi, plugin);
 }
 ```
 
@@ -228,47 +212,45 @@ The IDE protocol accepts formatter, compiler, and linter implementations.
 
 ```ts
 import { connectIdePlugin } from "pi-agent-ide/api/connect-plugin";
-import {
-    IDE_API_VERSION,
-    IDE_PROTOCOL,
-    type IdePlugin,
-} from "pi-agent-ide/api/plugin-protocol";
+import { IDE_API_VERSION, IDE_PROTOCOL, type IdePlugin } from "pi-agent-ide/api/plugin-protocol";
 import type { Formatter } from "pi-agent-ide/api/toolchain";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const formatter: Formatter = {
-    kind: "formatter",
-    name: "my-formatter",
-    priority: 100,
-    extensions: [".ts"],
-    async detect()
-    {
-        return true;
-    },
-    async format()
-    {
-        return { ok: true, edits: 0 };
-    },
+  kind: "formatter",
+  name: "my-formatter",
+  priority: 100,
+  extensions: [".ts"],
+  async detect() {
+    return true;
+  },
+  async format() {
+    return { ok: true, edits: 0 };
+  },
 };
 
 const plugin: IdePlugin = {
-    protocol: IDE_PROTOCOL,
-    apiVersion: IDE_API_VERSION,
-    id: "my-formatter",
-    setup(api)
-    {
-        api.addTool(formatter);
-    },
+  protocol: IDE_PROTOCOL,
+  apiVersion: IDE_API_VERSION,
+  id: "my-formatter",
+  setup(api) {
+    api.addTool(formatter);
+  },
 };
 
-export default function register(pi: ExtensionAPI): void | Promise<void>
-{
-    return connectIdePlugin(pi, plugin);
+export default function register(pi: ExtensionAPI): void | Promise<void> {
+  return connectIdePlugin(pi, plugin);
 }
 ```
 
 A real formatter should run its normal formatter command and report how many edits it applied. Compilers and linters return structured diagnostics with one-based line and column positions.
+
+## Doctor plugin
+
+A plugin should register only the knowledge and checks it owns. Use `connectDoctorPlugin` with a `DoctorPlugin` to add language definitions, setup recipes, or health checks. The doctor core accepts plugins in either load order and adds the owner ID to every report section and recipe.
+
+Do not import another plugin's catalog or maintain a second central catalog. If your extension is disabled, its doctor contributions must disappear with it. Keep credentials out of findings and recipe data.
 
 ## Install and test your extension
 

@@ -1,26 +1,26 @@
 {
-    "name": "pi-agent-text-anchor-line-hash",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "exports": {
-        "./api/anchor": "./src/anchor.ts"
-    },
-    "imports": {
-        "#src/*": "./src/*"
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "pi-agent-read": "workspace:^",
-        "pi-agent-text": "workspace:^",
-        "pi-agent-text-editor": "workspace:^"
-    },
-    "devDependencies": {
-        "vitest": "^4.1.10"
-    }
+  "name": "pi-agent-text-anchor-line-hash",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    "./api/anchor": "./src/anchor.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-text": "workspace:^",
+    "pi-agent-text-editor": "workspace:^"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

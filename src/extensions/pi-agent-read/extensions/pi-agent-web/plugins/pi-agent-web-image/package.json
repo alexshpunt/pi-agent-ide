@@ -1,15 +1,15 @@
 {
-    "name": "pi-agent-web-image",
-    "version": "0.1.0",
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "pi-agent-image": "workspace:^",
-        "pi-agent-resource": "workspace:^"
-    }
+  "name": "pi-agent-web-image",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "pi-agent-image": "workspace:^",
+    "pi-agent-resource": "workspace:^"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

@@ -12,7 +12,7 @@ src/pi-agent-ide.ts
 
 That entrypoint reads the user configuration and registers the enabled built-ins in a stable order. Pi sees one extension, so installation and configuration stay manageable.
 
-The built-ins keep separate entrypoints, package manifests, tests, and public contracts. The composite loader changes how Pi starts them without removing their implementation boundaries.
+The built-ins still have separate entrypoints, package manifests, tests, and public contracts. During development they can be loaded independently with the modular profile. A failure in modular mode is isolated to that Pi extension; a failure while the composite entrypoint is loading prevents the umbrella extension from loading.
 
 The internal packages are bundled inside the umbrella tarball and are not published as separate registry packages. External extensions use public `pi-agent-ide/api/...` exports, which forward to the same bundled protocol implementations used by the built-ins.
 
@@ -45,16 +45,28 @@ Shared Resource contracts live under `packages/pi-agent-resource`.
 
 The umbrella currently exposes four main extension protocols:
 
-| Protocol package | Contributions |
-| --- | --- |
-| `pi-agent-read` | Resource resolvers, read handlers, presenters, result renderers |
-| `pi-agent-search` | Search resolvers and search actions |
+| Protocol package       | Contributions                                                             |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `pi-agent-read`        | Resource resolvers, read handlers, presenters, result renderers           |
+| `pi-agent-search`      | Search resolvers and search actions                                       |
 | `pi-agent-text-editor` | Writable resolvers, anchors, mutations, guards, renderers, edit listeners |
-| `pi-agent-ide` | Formatter, compiler, linter, and other toolchain implementations |
+| `pi-agent-ide`         | Formatter, compiler, linter, and other toolchain implementations          |
 
 Each plugin declares a protocol name, API version, stable ID, and `setup` function. Setup contributions are validated before they become active.
 
 The core and plugin may load in either order. They exchange readiness and registration messages through Pi's shared event bus, then use direct in-memory APIs after registration. This lets an external Pi extension connect even though the built-in package is loaded through one composite entrypoint.
+
+## Doctor contributions
+
+Doctor is an independent protocol, not a central list of tool knowledge. Each extension owns and registers its own checks and recipes:
+
+- the language plugin contributes language detection;
+- AST contributes parser probes;
+- formatter, lint, and LSP contribute their own catalogs and config checks;
+- web search contributes provider and credential checks;
+- external extensions can contribute through `pi-agent-doctor`.
+
+The doctor core only aggregates contributions, runs them, and presents the result. It never imports concrete plugins or assumes their IDs. Disabling a plugin removes its checks and recipes from `/pi-agent-ide-doctor`. Human-facing catalog pages are generated from the same plugin-owned data.
 
 ## Anchors
 

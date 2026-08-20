@@ -1,31 +1,32 @@
 {
-    "name": "pi-agent-ide-changes",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "exports": {
-        "./changes/change-groups": {
-            "types": "./src/changes/change-groups.ts",
-            "default": "./src/changes/change-groups.ts"
-        }
-    },
-    "imports": {
-        "#src/*": "./src/*"
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "diff": "^9.0.0",
-        "pi-agent-read": "workspace:^",
-        "pi-agent-text": "workspace:^",
-        "pi-agent-text-editor": "workspace:^",
-        "typebox": "^1.0.63"
-    },
-    "devDependencies": {
-        "vitest": "^4.1.10"
+  "name": "pi-agent-ide-changes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    "./changes/change-groups": {
+      "types": "./src/changes/change-groups.ts",
+      "default": "./src/changes/change-groups.ts"
     }
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "diff": "^9.0.0",
+    "pi-agent-doctor": "workspace:^",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-text": "workspace:^",
+    "pi-agent-text-editor": "workspace:^",
+    "typebox": "^1.0.63"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

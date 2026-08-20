@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    ".pi/**",
+    ".agents/**",
+    ".tmp/**",
+    "**/.tmp/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "pnpm-lock.yaml",
+    "**/__fixtures__/**",
+    "**/fixtures/**",
+
+    "src/extensions/pi-agent-search/plugins/pi-agent-search-semantic/qmd/**"
+  ]
+}

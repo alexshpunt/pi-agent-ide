@@ -20,23 +20,21 @@ The real ToolDefinition is the only owner of the `read` tool ID. Pipeline stage 
 ## Request
 
 ```ts
-interface ReadRequest
-{
-    readonly path?: string;
-    readonly offset?: number;
-    readonly limit?: number;
+interface ReadRequest {
+  readonly path?: string;
+  readonly offset?: number;
+  readonly limit?: number;
 }
 ```
 
 The same per-invocation context is passed to every pipeline handler:
 
 ```ts
-interface ReadPipelineContext
-{
-    readonly request: ReadRequest;
-    readonly resolverContext: ResourceResolverContext;
-    readonly state?: ReadState;
-    readonly result?: ReadToolResult;
+interface ReadPipelineContext {
+  readonly request: ReadRequest;
+  readonly resolverContext: ResourceResolverContext;
+  readonly state?: ReadState;
+  readonly result?: ReadToolResult;
 }
 ```
 
@@ -61,10 +59,9 @@ A `temp:<id>` source supports `offset` and `limit`. Read returns the stored fina
 Read plugins register the shared resolver contract from `pi-agent-resource`:
 
 ```ts
-interface ResourceResolverRegistration
-{
-    readonly resolver: ResourceResolver;
-    readonly priority?: number;
+interface ResourceResolverRegistration {
+  readonly resolver: ResourceResolver;
+  readonly priority?: number;
 }
 ```
 
@@ -138,10 +135,9 @@ Each remaining custom block is replaced in the same position by:
 Result details include the source-order list:
 
 ```ts
-interface UnsupportedContentBlockDetail
-{
-    readonly index: number;
-    readonly kind: string;
+interface UnsupportedContentBlockDetail {
+  readonly index: number;
+  readonly kind: string;
 }
 ```
 
@@ -179,8 +175,8 @@ Every handler returns:
 
 ```ts
 type ReadStageOutcome =
-    | { readonly kind: "continue"; readonly context: ReadPipelineContext; }
-    | { readonly kind: "return"; readonly result: ReadToolResult; };
+  | { readonly kind: "continue"; readonly context: ReadPipelineContext }
+  | { readonly kind: "return"; readonly result: ReadToolResult };
 ```
 
 Pipeline handlers run sequentially in registration order because each handler may replace the context or return a terminal result. A terminal return stops later work. A thrown handler becomes `PIPELINE_FAILED` with plugin and stage context. Text presenters use the separate parallel behavior described above.
@@ -191,16 +187,16 @@ The implemented ReadFailure codes are:
 
 ```ts
 type ReadFailureCode =
-    | "INVALID_REQUEST"
-    | "INVALID_RESOLVER_RESULT"
-    | "INVALID_RESOURCE_CONTENT"
-    | "NO_RESOLVER"
-    | "PIPELINE_FAILED"
-    | "READ_FAILED"
-    | "RESOLVE_FAILED"
-    | "UNSUPPORTED_CAPABILITY"
-    | "UNSUPPORTED_CONTENT"
-    | "UNSUPPORTED_RANGE";
+  | "INVALID_REQUEST"
+  | "INVALID_RESOLVER_RESULT"
+  | "INVALID_RESOURCE_CONTENT"
+  | "NO_RESOLVER"
+  | "PIPELINE_FAILED"
+  | "READ_FAILED"
+  | "RESOLVE_FAILED"
+  | "UNSUPPORTED_CAPABILITY"
+  | "UNSUPPORTED_CONTENT"
+  | "UNSUPPORTED_RANGE";
 ```
 
 Failures retain source, resolver, plugin, stage, and cause fields when that context exists.

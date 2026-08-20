@@ -8,20 +8,19 @@ The protocol lets independent extensions contribute editable Resource resolvers,
 const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 const TEXT_EDITOR_API_VERSION = 15;
 
-interface TextEditorPluginApi
-{
-    addResolver(registration: ResourceResolverRegistration): void;
-    inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
-    addAnchorResolver(registration: TextAnchorResolverRegistration): void;
-    addTextPresenter(registration: TextPresenterRegistration): void;
-    addMutationTool(registration: TextMutationToolRegistration): void;
-    addMutationGuard(registration: TextMutationGuardRegistration): void;
-    onMutationTool(listener: TextMutationToolListener): () => void;
-    onDidEdit(listener: TextEditCompletionListener): () => void;
-    addToolRenderer(registration: TextEditorToolRendererRegistration): void;
-    previewMutation(request: TextMutationPreviewRequest): Promise<TextMutationPreviewOutcome>;
-    describe(description: PromptDescriptionSource): void;
-    tool(tool: TextEditorToolId): TextEditorToolPluginApi;
+interface TextEditorPluginApi {
+  addResolver(registration: ResourceResolverRegistration): void;
+  inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
+  addAnchorResolver(registration: TextAnchorResolverRegistration): void;
+  addTextPresenter(registration: TextPresenterRegistration): void;
+  addMutationTool(registration: TextMutationToolRegistration): void;
+  addMutationGuard(registration: TextMutationGuardRegistration): void;
+  onMutationTool(listener: TextMutationToolListener): () => void;
+  onDidEdit(listener: TextEditCompletionListener): () => void;
+  addToolRenderer(registration: TextEditorToolRendererRegistration): void;
+  previewMutation(request: TextMutationPreviewRequest): Promise<TextMutationPreviewOutcome>;
+  describe(description: PromptDescriptionSource): void;
+  tool(tool: TextEditorToolId): TextEditorToolPluginApi;
 }
 ```
 
@@ -80,13 +79,12 @@ Anchor resolver contracts come from [`pi-agent-text`](/agent/src/extensions/pi-a
 ```ts
 type TextAnchorType = "major" | "auxiliary" | "constant";
 
-interface TextAnchorResolverRegistration
-{
-    readonly resolver: TextAnchorResolver;
-    readonly resources?: TextAnchorResourceResolver;
-    readonly kind: string;
-    readonly type: TextAnchorType;
-    readonly priority?: number;
+interface TextAnchorResolverRegistration {
+  readonly resolver: TextAnchorResolver;
+  readonly resources?: TextAnchorResourceResolver;
+  readonly kind: string;
+  readonly type: TextAnchorType;
+  readonly priority?: number;
 }
 ```
 

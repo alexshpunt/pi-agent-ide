@@ -1,16 +1,16 @@
 {
-    "name": "pi-agent-search-semantic",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "@tobilu/qmd": "^2.8.3",
-        "pi-agent-search": "workspace:^"
-    }
+  "name": "pi-agent-search-semantic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@tobilu/qmd": "^2.8.3",
+    "pi-agent-search": "workspace:^"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

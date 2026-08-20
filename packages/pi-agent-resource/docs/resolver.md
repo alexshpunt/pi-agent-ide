@@ -15,26 +15,24 @@ Runtime shape validation is defined in [`runtime-validation.md`](./runtime-valid
 ```ts
 import type { Resource } from "pi-agent-resource";
 
-export interface ResourceResolverContext
-{
-    readonly cwd: string;
-    readonly signal?: AbortSignal;
+export interface ResourceResolverContext {
+  readonly cwd: string;
+  readonly signal?: AbortSignal;
 }
 
 export type ResourceResolutionAttempt =
-    | { readonly kind: "not-handled"; }
-    | { readonly kind: "resolved"; readonly resource: Resource; }
-    | { readonly kind: "failed"; readonly error: unknown; };
+  | { readonly kind: "not-handled" }
+  | { readonly kind: "resolved"; readonly resource: Resource }
+  | { readonly kind: "failed"; readonly error: unknown };
 
 export type ResourceTryResolve = (
-    source: string,
-    context: ResourceResolverContext,
+  source: string,
+  context: ResourceResolverContext,
 ) => Promise<ResourceResolutionAttempt>;
 
-export interface ResourceResolver
-{
-    readonly id: string;
-    readonly tryResolve: ResourceTryResolve;
+export interface ResourceResolver {
+  readonly id: string;
+  readonly tryResolve: ResourceTryResolve;
 }
 ```
 
@@ -78,7 +76,7 @@ The common contract does not define a separate `canResolve`, `matches`, or probe
 
 ```ts
 const attempt: ResourceResolutionAttempt = {
-    kind: "not-handled",
+  kind: "not-handled",
 };
 ```
 
@@ -90,8 +88,8 @@ A consuming core may continue to the next resolver after this outcome.
 
 ```ts
 const attempt: ResourceResolutionAttempt = {
-    kind: "resolved",
-    resource,
+  kind: "resolved",
+  resource,
 };
 ```
 
@@ -105,8 +103,8 @@ The returned Resource may be read-only, write-only, or read-write. A missing cap
 
 ```ts
 const attempt: ResourceResolutionAttempt = {
-    kind: "failed",
-    error,
+  kind: "failed",
+  error,
 };
 ```
 

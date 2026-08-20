@@ -16,33 +16,30 @@ const READ_API_VERSION = 6;
 const READ_PLUGIN_REGISTER_EVENT = "pi-agent-read/plugin/register";
 const READ_CORE_READY_EVENT = "pi-agent-read/core/ready";
 
-interface ReadPlugin
-{
-    readonly protocol: typeof READ_PROTOCOL;
-    readonly apiVersion: typeof READ_API_VERSION;
-    readonly id: string;
-    setup(api: ReadPluginApi): void | Promise<void>;
+interface ReadPlugin {
+  readonly protocol: typeof READ_PROTOCOL;
+  readonly apiVersion: typeof READ_API_VERSION;
+  readonly id: string;
+  setup(api: ReadPluginApi): void | Promise<void>;
 }
 
 type PromptDescriptionSource = string | (() => string | undefined);
 type ReadResultRenderer = NonNullable<ToolDefinition["renderResult"]>;
 type ReadPluginApi = ReadToolPluginApi;
 
-interface ReadToolPluginApi
-{
-    read(request: ReadRequest, context: ResourceResolverContext): Promise<ReadToolResult>;
-    addResolver(registration: ResourceResolverRegistration): void;
-    addHandler(registration: ReadHandlerRegistration): void;
-    addTextPresenter(registration: TextPresenterRegistration): void;
-    describe(description: PromptDescriptionSource): void;
+interface ReadToolPluginApi {
+  read(request: ReadRequest, context: ResourceResolverContext): Promise<ReadToolResult>;
+  addResolver(registration: ResourceResolverRegistration): void;
+  addHandler(registration: ReadHandlerRegistration): void;
+  addTextPresenter(registration: TextPresenterRegistration): void;
+  describe(description: PromptDescriptionSource): void;
 }
 
-interface ResourceResolverRegistration
-{
-    readonly resolver: ResourceResolver;
-    readonly priority?: number;
-    readonly renderResult?: ReadResultRenderer;
-    readonly preserveTruncatedOutput?: boolean;
+interface ResourceResolverRegistration {
+  readonly resolver: ResourceResolver;
+  readonly priority?: number;
+  readonly renderResult?: ReadResultRenderer;
+  readonly preserveTruncatedOutput?: boolean;
 }
 ```
 

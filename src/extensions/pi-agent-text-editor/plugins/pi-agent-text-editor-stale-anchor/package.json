@@ -1,16 +1,16 @@
 {
-    "name": "pi-agent-text-editor-stale-anchor",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "pi-agent-read": "workspace:^",
-        "pi-agent-text-editor": "workspace:^"
-    }
+  "name": "pi-agent-text-editor-stale-anchor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-text-editor": "workspace:^"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

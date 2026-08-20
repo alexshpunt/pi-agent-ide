@@ -13,31 +13,27 @@ import { Allow, parse } from "partial-json";
  * // → { edits: [{ path: "a.ts", start: "begin" }] }
  * ```
  */
-export function resolvePartial(json: string, allowPartial = Allow.ALL): Record<string, unknown> | undefined
-{
-    if (!json || json.trim().length === 0)
-    {
-        return undefined;
+export function resolvePartial(
+  json: string,
+  allowPartial = Allow.ALL,
+): Record<string, unknown> | undefined {
+  if (!json || json.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    const result = parse(json, allowPartial) as Record<string, unknown> | null | undefined;
+
+    if (result === null || result === undefined) {
+      return undefined;
     }
 
-    try
-    {
-        const result = parse(json, allowPartial) as Record<string, unknown> | null | undefined;
-
-        if (result === null || result === undefined)
-        {
-            return undefined;
-        }
-
-        if (typeof result !== "object" || Array.isArray(result))
-        {
-            return undefined;
-        }
-
-        return result;
+    if (typeof result !== "object" || Array.isArray(result)) {
+      return undefined;
     }
-    catch
-    {
-        return undefined;
-    }
+
+    return result;
+  } catch {
+    return undefined;
+  }
 }

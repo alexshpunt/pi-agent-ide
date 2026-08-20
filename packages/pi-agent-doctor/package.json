@@ -1,0 +1,27 @@
+{
+  "name": "pi-agent-doctor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./api/catalog": {
+      "types": "./src/catalog.ts",
+      "default": "./src/catalog.ts"
+    },
+    "./api/connect-plugin": {
+      "types": "./src/connect-plugin.ts",
+      "default": "./src/connect-plugin.ts"
+    },
+    "./api/executable": {
+      "types": "./src/executable.ts",
+      "default": "./src/executable.ts"
+    },
+    "./api/plugin-protocol": {
+      "types": "./src/plugin-protocol.ts",
+      "default": "./src/plugin-protocol.ts"
+    }
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2"
+  }
+}

@@ -1,30 +1,52 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { LintCommandConfig, LintersConfig } from "./types.js";
+import {
+  matchesConfiguredFile,
+  parseLintersConfig,
+  projectIdeConfigPath,
+} from "pi-agent-ide/api/tool-config";
 
-export class LintCommandRegistry
-{
-    private constructor(private readonly linters: readonly LintCommandConfig[])
-    {}
+import type { LinterCommandConfig, LintersConfig } from "pi-agent-ide/api/tool-config";
 
-    public static async fromDirectory(directory: string): Promise<LintCommandRegistry>
-    {
-        const raw = await readFile(path.join(directory, "linters.json"), "utf8");
-        return LintCommandRegistry.fromConfig(JSON.parse(raw) as LintersConfig);
+/**
+Validated linter commands for one project.
+*/
+export class LintCommandRegistry {
+  private constructor(private readonly linters: readonly LinterCommandConfig[]) {}
+
+  /**
+    Loads `.pi/pi-agent-ide/linters.json`.
+    */
+  public static async fromDirectory(directory: string): Promise<LintCommandRegistry> {
+    try {
+      const raw = await readFile(projectIdeConfigPath(directory, "linters"), "utf8");
+      return LintCommandRegistry.fromConfig(parseLintersConfig(JSON.parse(raw)));
+    } catch (error) {
+      if (isMissingFile(error)) {
+        return LintCommandRegistry.fromConfig({ version: 1, linters: {} });
+      }
+
+      throw error;
     }
+  }
 
-    public static fromConfig(config: LintersConfig): LintCommandRegistry
-    {
-        return new LintCommandRegistry(Object.values(config.linters));
-    }
+  /**
+    Creates a registry from a validated config.
+    */
+  public static fromConfig(config: LintersConfig): LintCommandRegistry {
+    return new LintCommandRegistry(Object.values(config.linters));
+  }
 
-    public resolve(extension: string): LintCommandConfig | undefined
-    {
-        const normalized = extension.startsWith(".") ? extension.toLowerCase() : `.${extension.toLowerCase()}`;
-        return this.linters.find((linter) =>
-            linter.command.length > 0
-            && linter.extensions.some((candidate) => candidate.toLowerCase() === normalized)
-        );
-    }
+  /**
+    Returns the first command matching this file.
+    */
+  public resolve(filePath: string, projectRoot: string): LinterCommandConfig | undefined {
+    const absolute = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
+    return this.linters.find((linter) => matchesConfiguredFile(linter, absolute, projectRoot));
+  }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }

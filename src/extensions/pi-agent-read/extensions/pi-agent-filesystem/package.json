@@ -1,25 +1,25 @@
 {
-    "name": "pi-agent-filesystem",
-    "version": "0.1.0",
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "imports": {
-        "#src/*": "./src/*"
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "pi-agent-image": "workspace:^",
-        "pi-agent-read": "workspace:^",
-        "pi-agent-resource": "workspace:^",
-        "pi-agent-text": "workspace:^",
-        "pi-agent-text-editor": "workspace:^"
-    },
-    "devDependencies": {
-        "pi-coding-agent-test": "^0.1.0",
-        "vitest": "^4.1.10"
-    }
+  "name": "pi-agent-filesystem",
+  "version": "0.1.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "pi-agent-image": "workspace:^",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-resource": "workspace:^",
+    "pi-agent-text": "workspace:^",
+    "pi-agent-text-editor": "workspace:^"
+  },
+  "devDependencies": {
+    "pi-coding-agent-test": "^0.1.0",
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

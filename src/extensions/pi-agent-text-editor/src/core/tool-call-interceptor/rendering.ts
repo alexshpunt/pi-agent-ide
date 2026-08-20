@@ -1,4 +1,4 @@
 export {
-    ToolCallInterceptionRenderStore,
-    withToolCallInterceptionRendering,
+  ToolCallInterceptionRenderStore,
+  withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";

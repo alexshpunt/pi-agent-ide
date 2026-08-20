@@ -23,17 +23,15 @@ text-pre-edit
 ## State
 
 ```ts
-interface TextPreEditState<Input = unknown>
-{
-    readonly cwd: string;
-    readonly input: Input;
-    readonly signal?: AbortSignal;
-    readonly metadata?: Readonly<Record<string, unknown>>;
+interface TextPreEditState<Input = unknown> {
+  readonly cwd: string;
+  readonly input: Input;
+  readonly signal?: AbortSignal;
+  readonly metadata?: Readonly<Record<string, unknown>>;
 }
 
-interface TextEditState<Input = unknown, Result = unknown> extends TextPreEditState<Input>
-{
-    readonly result: Result;
+interface TextEditState<Input = unknown, Result = unknown> extends TextPreEditState<Input> {
+  readonly result: Result;
 }
 ```
 
@@ -44,19 +42,17 @@ Each handler returns the complete state for the next handler. Core does not merg
 The source-neutral mutation boundary is:
 
 ```ts
-interface TextMutationResult<Result>
-{
-    readonly text: string;
-    readonly result: Result;
+interface TextMutationResult<Result> {
+  readonly text: string;
+  readonly result: Result;
 }
 
-core.editText(source, { cwd, signal }, async (text, resolveAnchor) =>
-{
-    const line = await resolveAnchor(input.anchor);
-    return {
-        text: mutate(text, line),
-        result,
-    };
+core.editText(source, { cwd, signal }, async (text, resolveAnchor) => {
+  const line = await resolveAnchor(input.anchor);
+  return {
+    text: mutate(text, line),
+    result,
+  };
 });
 ```
 

@@ -1,96 +1,96 @@
 {
-    "name": "pi-agent-text-editor",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
+  "name": "pi-agent-text-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*",
+    "#overwrite/*": "./plugins/pi-agent-text-editor-overwrite/*",
+    "#tests/*": "./tests/*"
+  },
+  "exports": {
+    "./api/anchor-inspection": {
+      "types": "./src/api/anchor-inspection.ts",
+      "default": "./src/api/anchor-inspection.ts"
     },
-    "imports": {
-        "#src/*": "./src/*",
-        "#overwrite/*": "./plugins/pi-agent-text-editor-overwrite/*",
-        "#tests/*": "./tests/*"
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./src/api/connect-plugin.ts"
     },
-    "exports": {
-        "./api/anchor-inspection": {
-            "types": "./src/api/anchor-inspection.ts",
-            "default": "./src/api/anchor-inspection.ts"
-        },
-        "./api/connect-plugin": {
-            "types": "./src/api/connect-plugin.ts",
-            "default": "./src/api/connect-plugin.ts"
-        },
-        "./api/edit-completion": {
-            "types": "./src/api/edit-completion.ts",
-            "default": "./src/api/edit-completion.ts"
-        },
-        "./api/edit-pipeline": {
-            "types": "./src/api/edit-pipeline.ts",
-            "default": "./src/api/edit-pipeline.ts"
-        },
-        "./api/plugin-protocol": {
-            "types": "./src/api/plugin-protocol.ts",
-            "default": "./src/api/plugin-protocol.ts"
-        },
-        "./api/stale-anchor-message": {
-            "types": "./src/api/stale-anchor-message.ts",
-            "default": "./src/api/stale-anchor-message.ts"
-        },
-        "./api/text-selection-anchor": {
-            "types": "./src/api/text-selection-anchor.ts",
-            "default": "./src/api/text-selection-anchor.ts"
-        },
-        "./api/post-edit": {
-            "types": "./src/api/post-edit.ts",
-            "default": "./src/api/post-edit.ts"
-        },
-        "./api/mutation-result": {
-            "types": "./src/api/mutation-result.ts",
-            "default": "./src/api/mutation-result.ts"
-        },
-        "./api/mutation-guard": {
-            "types": "./src/api/mutation-guard.ts",
-            "default": "./src/api/mutation-guard.ts"
-        },
-        "./api/mutation-tool": {
-            "types": "./src/api/mutation-tool.ts",
-            "default": "./src/api/mutation-tool.ts"
-        },
-        "./api/mutation-preview": {
-            "types": "./src/api/mutation-preview.ts",
-            "default": "./src/api/mutation-preview.ts"
-        },
-        "./api/last-resolved-resource": {
-            "types": "./src/api/last-resolved-resource.ts",
-            "default": "./src/api/last-resolved-resource.ts"
-        },
-        "./api/tool-call-interceptor": {
-            "types": "./src/api/tool-call-interceptor.ts",
-            "default": "./src/api/tool-call-interceptor.ts"
-        },
-        "./api/tool-renderer": {
-            "types": "./src/api/tool-renderer.ts",
-            "default": "./src/api/tool-renderer.ts"
-        }
+    "./api/edit-completion": {
+      "types": "./src/api/edit-completion.ts",
+      "default": "./src/api/edit-completion.ts"
     },
-    "dependencies": {
-        "@earendil-works/pi-ai": "0.84.2",
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "@earendil-works/pi-tui": "0.84.2",
-        "@codemirror/state": "^6.5.0",
-        "diff": "^9.0.0",
-        "partial-json": "^0.1.7",
-        "pi-agent-read": "workspace:^",
-        "pi-agent-resource": "workspace:^",
-        "pi-agent-text": "workspace:^",
-        "pi-agent-tool-call-interception": "workspace:^",
-        "typebox": "^1.1.38",
-        "typebox-guard": "npm:typebox@^1.1.38"
+    "./api/edit-pipeline": {
+      "types": "./src/api/edit-pipeline.ts",
+      "default": "./src/api/edit-pipeline.ts"
     },
-    "devDependencies": {
-        "pi-coding-agent-test": "^0.1.0",
-        "vitest": "^4.1.10"
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./src/api/plugin-protocol.ts"
+    },
+    "./api/stale-anchor-message": {
+      "types": "./src/api/stale-anchor-message.ts",
+      "default": "./src/api/stale-anchor-message.ts"
+    },
+    "./api/text-selection-anchor": {
+      "types": "./src/api/text-selection-anchor.ts",
+      "default": "./src/api/text-selection-anchor.ts"
+    },
+    "./api/post-edit": {
+      "types": "./src/api/post-edit.ts",
+      "default": "./src/api/post-edit.ts"
+    },
+    "./api/mutation-result": {
+      "types": "./src/api/mutation-result.ts",
+      "default": "./src/api/mutation-result.ts"
+    },
+    "./api/mutation-guard": {
+      "types": "./src/api/mutation-guard.ts",
+      "default": "./src/api/mutation-guard.ts"
+    },
+    "./api/mutation-tool": {
+      "types": "./src/api/mutation-tool.ts",
+      "default": "./src/api/mutation-tool.ts"
+    },
+    "./api/mutation-preview": {
+      "types": "./src/api/mutation-preview.ts",
+      "default": "./src/api/mutation-preview.ts"
+    },
+    "./api/last-resolved-resource": {
+      "types": "./src/api/last-resolved-resource.ts",
+      "default": "./src/api/last-resolved-resource.ts"
+    },
+    "./api/tool-call-interceptor": {
+      "types": "./src/api/tool-call-interceptor.ts",
+      "default": "./src/api/tool-call-interceptor.ts"
+    },
+    "./api/tool-renderer": {
+      "types": "./src/api/tool-renderer.ts",
+      "default": "./src/api/tool-renderer.ts"
     }
+  },
+  "dependencies": {
+    "@codemirror/state": "^6.5.0",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "diff": "^9.0.0",
+    "partial-json": "^0.1.7",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-resource": "workspace:^",
+    "pi-agent-text": "workspace:^",
+    "pi-agent-tool-call-interception": "workspace:^",
+    "typebox": "^1.1.38",
+    "typebox-guard": "npm:typebox@^1.1.38"
+  },
+  "devDependencies": {
+    "pi-coding-agent-test": "^0.1.0",
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

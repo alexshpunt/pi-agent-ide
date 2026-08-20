@@ -3,12 +3,11 @@ import { connectContentConverter, type ContentConverterRegistration } from "pi-a
 import { createTextContentConverter } from "pi-agent-text";
 
 const registration = {
-    target: { provider: "web", capability: "read" },
-    converter: createTextContentConverter(),
-    priority: 300,
+  target: { provider: "web", capability: "read" },
+  converter: createTextContentConverter(),
+  priority: 300,
 } satisfies ContentConverterRegistration;
 
-export default async function registerWebText(pi: ExtensionAPI): Promise<void>
-{
-    await connectContentConverter(pi, registration);
+export default async function registerWebText(pi: ExtensionAPI): Promise<void> {
+  await connectContentConverter(pi, registration);
 }

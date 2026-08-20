@@ -1,19 +1,19 @@
 {
-    "name": "pi-agent-web-html",
-    "version": "0.1.0",
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "defuddle": "^0.19.1",
-        "linkedom": "^0.18.12",
-        "pi-agent-resource": "workspace:^"
-    },
-    "devDependencies": {
-        "vitest": "^4.1.10"
-    }
+  "name": "pi-agent-web-html",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "defuddle": "^0.19.1",
+    "linkedom": "^0.18.12",
+    "pi-agent-resource": "workspace:^"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

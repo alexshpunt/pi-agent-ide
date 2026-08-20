@@ -1,38 +1,38 @@
 {
-    "name": "pi-agent-search",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
+  "name": "pi-agent-search",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./src/api/connect-plugin.ts"
     },
-    "imports": {
-        "#src/*": "./src/*"
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./src/api/plugin-protocol.ts"
     },
-    "exports": {
-        "./api/connect-plugin": {
-            "types": "./src/api/connect-plugin.ts",
-            "default": "./src/api/connect-plugin.ts"
-        },
-        "./api/plugin-protocol": {
-            "types": "./src/api/plugin-protocol.ts",
-            "default": "./src/api/plugin-protocol.ts"
-        },
-        "./api/search": {
-            "types": "./src/api/search.ts",
-            "default": "./src/api/search.ts"
-        }
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "@earendil-works/pi-tui": "0.84.2",
-        "pi-agent-tool-call-interception": "workspace:^",
-        "typebox": "^1.1.38"
-    },
-    "devDependencies": {
-        "pi-coding-agent-test": "^0.1.0",
-        "vitest": "^4.1.10"
+    "./api/search": {
+      "types": "./src/api/search.ts",
+      "default": "./src/api/search.ts"
     }
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "pi-agent-tool-call-interception": "workspace:^",
+    "typebox": "^1.1.38"
+  },
+  "devDependencies": {
+    "pi-coding-agent-test": "^0.1.0",
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

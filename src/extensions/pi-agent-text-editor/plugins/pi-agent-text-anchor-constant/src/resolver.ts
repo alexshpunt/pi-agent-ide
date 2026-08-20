@@ -1,47 +1,40 @@
 import {
-    TextAnchor,
-    type TextAnchorResolutionAttempt,
-    type TextAnchorResolver,
-    type TextAnchorResolverContext,
+  TextAnchor,
+  type TextAnchorResolutionAttempt,
+  type TextAnchorResolver,
+  type TextAnchorResolverContext,
 } from "pi-agent-text";
 
-class ConstantTextAnchor extends TextAnchor
-{
-    public constructor(value: "begin" | "end", lineNumber: number)
-    {
-        super(value, lineNumber);
-    }
+class ConstantTextAnchor extends TextAnchor {
+  public constructor(value: "begin" | "end", lineNumber: number) {
+    super(value, lineNumber);
+  }
 }
 
-export function createConstantTextAnchorResolver(): TextAnchorResolver
-{
-    return {
-        id: "file-position",
-        description: "`begin` and `end` select the first and last existing lines.",
-        tryResolve(value, context)
-        {
-            return Promise.resolve(resolveConstantAnchor(value, context));
-        },
-    };
+export function createConstantTextAnchorResolver(): TextAnchorResolver {
+  return {
+    id: "file-position",
+    description: "`begin` and `end` select the first and last existing lines.",
+    tryResolve(value, context) {
+      return Promise.resolve(resolveConstantAnchor(value, context));
+    },
+  };
 }
 
 function resolveConstantAnchor(
-    value: string,
-    context: TextAnchorResolverContext,
-): TextAnchorResolutionAttempt
-{
-    if (value !== "begin" && value !== "end")
-    {
-        return { kind: "not-handled" };
-    }
+  value: string,
+  context: TextAnchorResolverContext,
+): TextAnchorResolutionAttempt {
+  if (value !== "begin" && value !== "end") {
+    return { kind: "not-handled" };
+  }
 
-    if (context.lines.length === 0)
-    {
-        return { kind: "failed", error: new Error(`${value} cannot resolve in an empty file`) };
-    }
+  if (context.lines.length === 0) {
+    return { kind: "failed", error: new Error(`${value} cannot resolve in an empty file`) };
+  }
 
-    return {
-        kind: "resolved",
-        anchor: new ConstantTextAnchor(value, value === "begin" ? 1 : context.lines.length),
-    };
+  return {
+    kind: "resolved",
+    anchor: new ConstantTextAnchor(value, value === "begin" ? 1 : context.lines.length),
+  };
 }

@@ -6,90 +6,107 @@
 
 // ── LSP protocol primitives ───────────────────────────────────────────
 
-/** LSP DiagnosticSeverity: 1=Error, 2=Warning, 3=Information, 4=Hint. */
+/**
+LSP DiagnosticSeverity: 1=Error, 2=Warning, 3=Information, 4=Hint.
+*/
 export const DiagnosticSeverity = {
-    Error: 1,
-    Warning: 2,
-    Information: 3,
-    Hint: 4,
+  Error: 1,
+  Warning: 2,
+  Information: 3,
+  Hint: 4,
 } as const;
 
 export type DiagnosticSeverity = (typeof DiagnosticSeverity)[keyof typeof DiagnosticSeverity];
 
-export interface LspPosition
-{
-    /** 0-based line. */
-    line: number;
-    /** 0-based character (UTF-16 code units). */
-    character: number;
+export interface LspPosition {
+  /**
+    0-based line.
+    */
+  line: number;
+  /**
+    0-based character (UTF-16 code units).
+    */
+  character: number;
 }
 
-export interface LspRange
-{
-    start: LspPosition;
-    end: LspPosition;
+export interface LspRange {
+  start: LspPosition;
+  end: LspPosition;
 }
 
-export interface LspDiagnostic
-{
-    range: LspRange;
-    severity: DiagnosticSeverity;
-    code?: string | number;
-    source?: string;
-    message: string;
+export interface LspDiagnostic {
+  range: LspRange;
+  severity: DiagnosticSeverity;
+  code?: string | number;
+  source?: string;
+  message: string;
 }
 
-export interface LspTextEdit
-{
-    range: LspRange;
-    newText: string;
+export interface LspTextEdit {
+  range: LspRange;
+  newText: string;
 }
 
 // ── Server configuration (data-driven) ─────────────────────────────────
 
-export interface LanguageEntry
-{
-    extensions: string[];
+export interface LanguageEntry {
+  extensions: string[];
 }
 
 export type ServerCapability = "diagnostics";
 
-export interface ServerConfig
-{
-    command: string[];
-    rootMarkers: string[];
-    languages: Record<string, LanguageEntry>;
-    capabilities: ServerCapability[];
-    /** Passed as initializationOptions in the initialize request. */
-    initOptions?: Record<string, unknown>;
+export interface ServerConfig {
+  command: string[];
+  transport?: "stdio";
+  rootMarkers: string[];
+  languages: Record<string, LanguageEntry>;
+  capabilities: ServerCapability[];
+  env?: Record<string, string>;
+  /**
+    Passed as initializationOptions in the initialize request.
+    */
+  initializationOptions?: Record<string, unknown>;
+  /**
+    Sent through workspace/didChangeConfiguration after initialization.
+    */
+  settings?: Record<string, unknown>;
+  timeoutMs?: number;
 }
 
-export interface LspServersConfig
-{
-    servers: Record<string, ServerConfig>;
+export interface LspServersConfig {
+  version: 1;
+  servers: Record<string, ServerConfig>;
 }
 
 // ── Resolved server info (registry output) ─────────────────────────────
 
-export interface ResolvedServer
-{
-    /** Server key from lsp-servers.json (e.g. "gopls"). */
-    serverId: string;
-    config: ServerConfig;
-    /** LanguageId this extension maps to (e.g. "go"). */
-    languageId: string;
+export interface ResolvedServer {
+  /**
+    Server key from lsp-servers.json (e.g. "gopls").
+    */
+  serverId: string;
+  config: ServerConfig;
+  /**
+    LanguageId this extension maps to (e.g. "go").
+    */
+  languageId: string;
 }
 
 // ── Client state ───────────────────────────────────────────────────────
 
-export interface LspClientState
-{
-    serverId: string;
-    command: string[];
-    /** Process PID. */
-    pid: number;
-    /** True when initialized and ready. */
-    ready: boolean;
-    /** Timestamp of last request (for idle timeout). */
-    lastActivity: number;
+export interface LspClientState {
+  serverId: string;
+  command: string[];
+  /**
+    Process PID.
+    */
+  pid: number;
+  /**
+    True when initialized and ready.
+    */
+  ready: boolean;
+  /**
+    Timestamp of last request (for idle timeout).
+    */
+  lastActivity: number;
 }

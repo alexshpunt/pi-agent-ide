@@ -15,47 +15,37 @@ Runtime shape validation is defined in [`runtime-validation.md`](./runtime-valid
 ```ts
 import type { AgentContent } from "pi-agent-resource";
 
-export interface ResourceOperationContext
-{
-    readonly signal?: AbortSignal;
+export interface ResourceOperationContext {
+  readonly signal?: AbortSignal;
 }
 
-export type ResourceRead = (
-    context: ResourceOperationContext,
-) => Promise<AgentContent>;
+export type ResourceRead = (context: ResourceOperationContext) => Promise<AgentContent>;
 
 export type ResourceWrite = (
-    content: AgentContent,
-    context: ResourceOperationContext,
+  content: AgentContent,
+  context: ResourceOperationContext,
 ) => Promise<void>;
 
-export interface ResourceBase
-{
-    readonly source: string;
+export interface ResourceBase {
+  readonly source: string;
 }
 
-export interface ReadableResource extends ResourceBase
-{
-    readonly read: ResourceRead;
-    readonly write?: never;
+export interface ReadableResource extends ResourceBase {
+  readonly read: ResourceRead;
+  readonly write?: never;
 }
 
-export interface WritableResource extends ResourceBase
-{
-    readonly read?: never;
-    readonly write: ResourceWrite;
+export interface WritableResource extends ResourceBase {
+  readonly read?: never;
+  readonly write: ResourceWrite;
 }
 
-export interface ReadWriteResource extends ResourceBase
-{
-    readonly read: ResourceRead;
-    readonly write: ResourceWrite;
+export interface ReadWriteResource extends ResourceBase {
+  readonly read: ResourceRead;
+  readonly write: ResourceWrite;
 }
 
-export type Resource =
-    | ReadableResource
-    | WritableResource
-    | ReadWriteResource;
+export type Resource = ReadableResource | WritableResource | ReadWriteResource;
 ```
 
 ## Resource identity
@@ -85,9 +75,8 @@ The structural union makes a resource with neither operation invalid at the Type
 Consumers narrow the union by checking operation presence.
 
 ```ts
-if (resource.read !== undefined)
-{
-    const content = await resource.read(context);
+if (resource.read !== undefined) {
+  const content = await resource.read(context);
 }
 ```
 

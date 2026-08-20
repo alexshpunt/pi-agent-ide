@@ -5,15 +5,13 @@ import registerTextEditorCore from "./src/core/extension.js";
 import { registerTextEditBatching } from "./src/core/text-edit-batch-registrar.js";
 import { registerTextEditorTools } from "./src/tools/extension.js";
 
-export default async function registerTextEditor(pi: ExtensionAPI): Promise<void>
-{
-    const core = await registerTextEditorCore(pi);
-    registerBuiltinEditFilter(pi);
+export default async function registerTextEditor(pi: ExtensionAPI): Promise<void> {
+  const core = await registerTextEditorCore(pi);
+  registerBuiltinEditFilter(pi);
 
-    if (!process.argv.includes("--old-tools"))
-    {
-        registerTextEditorTools(pi, core);
-    }
+  if (!process.argv.includes("--old-tools")) {
+    registerTextEditorTools(pi, core);
+  }
 
-    registerTextEditBatching(pi, core);
+  registerTextEditBatching(pi, core);
 }

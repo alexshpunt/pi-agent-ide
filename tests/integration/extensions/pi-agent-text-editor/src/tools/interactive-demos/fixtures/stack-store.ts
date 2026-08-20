@@ -110,15 +110,15 @@ class StackStore
 
         for (const fd of [...entry.fileDiffs].sort((a, b) => a.path.localeCompare(b.path)))
         {
-            h.update("\u0000diff\u0000");
+            h.update("\u{0}diff\u{0}");
             h.update(fd.path);
-            h.update("\u0000");
+            h.update("\u{0}");
             h.update(fd.diff);
         }
 
         for (const cf of [...entry.createdFiles].sort())
         {
-            h.update("\u0000create\u0000");
+            h.update("\u{0}create\u{0}");
             h.update(cf);
         }
 
@@ -169,14 +169,14 @@ class StackStore
 
         const sequences = range.map((entry) => entry.sequence);
         const pending = this.#pendingPreview;
-        const pendingMatches = pending !== null
+        const isPendingMatches = pending !== null
             && pending.steps === steps
             && pending.filepath === filepath
             && pending.sequences.length === sequences.length
             && pending.sequences.every((sequence, index) => sequence === sequences[index]);
 
         if (
-            pendingMatches
+            isPendingMatches
             || (pending === null && sequences.every((sequence) => this.#acknowledgedSequences.has(sequence)))
         )
         {
@@ -216,7 +216,7 @@ class StackStore
                 await deleteFile(filePath);
             }
 
-            lines.push(`\u21A9 ${entry.toolName}: ${entry.summary}  ${entry.filePaths[0]}`);
+            lines.push(`\u{21A9} ${entry.toolName}: ${entry.summary}  ${entry.filePaths[0]}`);
             this.#acknowledgedSequences.delete(entry.sequence);
         }
 
@@ -252,36 +252,32 @@ class StackStore
 
         const textLines: string[] = [];
         const scope = filepath === undefined ? "" : ` for ${filepath}`;
-        textLines.push(`\u23EE undo ${range.length}${scope} — preview`);
+        textLines.push(`\u{23EE} undo ${range.length}${scope} — preview`);
         textLines.push("");
 
         for (const de of displayEntries)
         {
-            const mark = de.acknowledged ? "\u2713" : "\u2717";
+            const mark = de.acknowledged ? "\u{2713}" : "\u{2717}";
             const note = de.acknowledged ? "" : " — new";
-            textLines.push(`  ${de.id}\u2502 ${de.toolName}  ${de.summary}  ${de.filePaths[0]}  ${mark}${note}`);
+            textLines.push(`  ${de.id}\u{2502} ${de.toolName}  ${de.summary}  ${de.filePaths[0]}  ${mark}${note}`);
         }
 
         for (const sequence of unacknowledgedSequences)
         {
             const diffs = fileDiffs[sequence];
 
-            if (!diffs)
-            {
-                continue;
-            }
 
             for (const diff of diffs)
             {
                 textLines.push("");
-                textLines.push(`  \u2500\u2500 ${diff.path} \u2500\u2500`);
+                textLines.push(`  \u{2500}\u{2500} ${diff.path} \u{2500}\u{2500}`);
                 textLines.push(diff.diff);
             }
         }
 
         textLines.push("");
-        const filepathArg = filepath === undefined ? "" : `, filepath: "${filepath}"`;
-        textLines.push(`Call undo(steps: ${range.length}${filepathArg}) to confirm execution.`);
+        const filepathArgument = filepath === undefined ? "" : `, filepath: "${filepath}"`;
+        textLines.push(`Call undo(steps: ${range.length}${filepathArgument}) to confirm execution.`);
 
         return {
             kind: "preview",

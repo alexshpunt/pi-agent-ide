@@ -35,14 +35,13 @@ Non-code files and documents without an available language server continue uncha
 A hint is line-oriented metadata attached to a source line rather than a mutation of the source text:
 
 ```ts
-interface InlineHint
-{
-    line: number;
-    column?: number;
-    severity?: "error" | "warning" | "info" | "hint";
-    code?: string;
-    message: string;
-    source?: string;
+interface InlineHint {
+  line: number;
+  column?: number;
+  severity?: "error" | "warning" | "info" | "hint";
+  code?: string;
+  message: string;
+  source?: string;
 }
 ```
 

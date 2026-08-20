@@ -1,15 +1,15 @@
 {
-    "name": "pi-agent-web-text",
-    "version": "0.1.0",
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "pi-agent-resource": "workspace:^",
-        "pi-agent-text": "workspace:^"
-    }
+  "name": "pi-agent-web-text",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "pi-agent-resource": "workspace:^",
+    "pi-agent-text": "workspace:^"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

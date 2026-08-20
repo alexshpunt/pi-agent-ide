@@ -30,6 +30,17 @@ Use a temporary config without changing your normal Pi setup:
 PI_AGENT_IDE_CONFIG=./pi-agent-ide.json pi --no-extensions -e .
 ```
 
+## Run modular mode
+
+Modular mode loads every built-in through its independent source entrypoint:
+
+```bash
+pnpm dev:modular
+```
+
+Use this mode when working on plugin ordering, package boundaries, or failures that should be isolated to one Pi extension. The modular manifest contains the ordered entrypoint list.
+
+The published package uses the composite entrypoint because loading dozens of Pi extensions separately is noisy for normal use.
 
 ## Test
 
@@ -96,7 +107,8 @@ A new built-in normally needs:
 1. an independent extension entrypoint;
 2. a public protocol contribution instead of a direct core dependency;
 3. an entry in `src/composite/builtin-extensions.ts` with a stable ID and dependencies;
-4. its ID in [configuration](./configuration.md);
-5. behavior coverage at the narrowest useful level.
+4. an entry in the modular manifest in the required load order;
+5. its ID in [configuration](./configuration.md);
+6. behavior coverage at the narrowest useful level.
 
 If a feature can live as an external extension, it does not need to become a bundled built-in.

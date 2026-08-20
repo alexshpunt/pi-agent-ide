@@ -1,19 +1,19 @@
 {
-    "name": "pi-agent-text-anchor-constant",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "pi": {
-        "extensions": [
-            "./index.ts"
-        ]
-    },
-    "dependencies": {
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "pi-agent-text": "workspace:^",
-        "pi-agent-text-editor": "workspace:^"
-    },
-    "devDependencies": {
-        "vitest": "^4.1.10"
-    }
+  "name": "pi-agent-text-anchor-constant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "pi-agent-text": "workspace:^",
+    "pi-agent-text-editor": "workspace:^"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
 }

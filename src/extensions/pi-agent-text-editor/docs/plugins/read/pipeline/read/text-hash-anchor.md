@@ -37,9 +37,9 @@ The extension registers the resolver as:
 
 ```ts
 api.addAnchorResolver({
-    resolver: createLineHashAnchorResolver(),
-    kind: TEXT_POSITION_ANCHOR_KIND,
-    type: "major",
+  resolver: createLineHashAnchorResolver(),
+  kind: TEXT_POSITION_ANCHOR_KIND,
+  type: "major",
 });
 ```
 

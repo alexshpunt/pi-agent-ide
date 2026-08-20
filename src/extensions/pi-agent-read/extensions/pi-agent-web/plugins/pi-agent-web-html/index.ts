@@ -4,12 +4,11 @@ import { connectContentConverter, type ContentConverterRegistration } from "pi-a
 import { createHtmlContentConverter } from "./src/html-converter.js";
 
 const registration = {
-    target: { provider: "web", capability: "read" },
-    converter: createHtmlContentConverter(),
-    priority: 200,
+  target: { provider: "web", capability: "read" },
+  converter: createHtmlContentConverter(),
+  priority: 200,
 } satisfies ContentConverterRegistration;
 
-export default async function registerWebHtml(pi: ExtensionAPI): Promise<void>
-{
-    await connectContentConverter(pi, registration);
+export default async function registerWebHtml(pi: ExtensionAPI): Promise<void> {
+  await connectContentConverter(pi, registration);
 }

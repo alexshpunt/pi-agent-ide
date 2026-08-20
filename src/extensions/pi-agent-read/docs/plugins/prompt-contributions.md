@@ -23,13 +23,12 @@ A plugin declares at most one description through the flat read API. The source 
 type PromptDescriptionSource = string | (() => string | undefined);
 
 const plugin: ReadPlugin = {
-    protocol: READ_PROTOCOL,
-    apiVersion: READ_API_VERSION,
-    id: "example-source",
-    setup(api)
-    {
-        api.describe(() => currentDescription());
-    },
+  protocol: READ_PROTOCOL,
+  apiVersion: READ_API_VERSION,
+  id: "example-source",
+  setup(api) {
+    api.describe(() => currentDescription());
+  },
 };
 ```
 

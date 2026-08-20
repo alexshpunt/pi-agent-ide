@@ -1,129 +1,163 @@
 {
-    "name": "pi-agent-ide",
-    "version": "0.1.0",
-    "description": "Agent-facing tools for reading, searching, and editing code in Pi.",
-    "license": "MIT",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/alexshpunt/pi-agent-ide.git"
+  "name": "pi-agent-ide",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Agent-facing tools for reading, searching, and editing code in Pi.",
+  "keywords": [
+    "agent-tools",
+    "code-editing",
+    "coding-agent",
+    "pi",
+    "pi-package"
+  ],
+  "homepage": "https://github.com/alexshpunt/pi-agent-ide#readme",
+  "bugs": {
+    "url": "https://github.com/alexshpunt/pi-agent-ide/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexshpunt/pi-agent-ide.git"
+  },
+  "files": [
+    "src",
+    "assets",
+    "docs",
+    "LICENSE",
+    "README.md",
+    "!src/.tmp",
+    "!src/**/__tests__",
+    "!src/**/docs",
+    "!src/**/qmd",
+    "!src/**/test",
+    "!src/**/tests",
+    "!src/**/node_modules",
+    "!src/**/*.config.mjs",
+    "!src/**/*.md",
+    "!src/**/*.integration.test.*",
+    "!src/**/*.spec.*",
+    "!src/**/*.test.*"
+  ],
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*",
+    "#integration/*": "./tests/integration/*",
+    "#integration-tests/*": "./tests/integration/*",
+    "#pi-agent-text-anchor-constant/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-constant/*",
+    "#pi-agent-text-anchor-line-hash/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/*",
+    "#pi-agent-text-editor-renderer/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/*",
+    "#pi-agent-text-editor-overwrite/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/*",
+    "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*"
+  },
+  "exports": {
+    "./api/code-view": {
+      "types": "./src/api/code-view.ts",
+      "default": "./src/api/code-view.ts"
     },
-    "homepage": "https://github.com/alexshpunt/pi-agent-ide#readme",
-    "bugs": {
-        "url": "https://github.com/alexshpunt/pi-agent-ide/issues"
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./src/api/connect-plugin.ts"
     },
-    "keywords": [
-        "pi-package",
-        "pi",
-        "coding-agent",
-        "agent-tools",
-        "code-editing"
-    ],
-    "type": "module",
-    "pi": {
-        "extensions": ["./src/pi-agent-ide.ts"]
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./src/api/plugin-protocol.ts"
     },
-    "files": [
-        "src",
-        "assets",
-        "docs",
-        "LICENSE",
-        "README.md",
-        "!src/.tmp",
-        "!src/**/__tests__",
-        "!src/**/docs",
-        "!src/**/qmd",
-        "!src/**/test",
-        "!src/**/tests",
-        "!src/**/node_modules",
-        "!src/**/*.config.mjs",
-        "!src/**/*.md",
-        "!src/**/*.integration.test.*",
-        "!src/**/*.spec.*",
-        "!src/**/*.test.*"
-    ],
-    "imports": {
-        "#src/*": "./src/*",
-        "#integration/*": "./tests/integration/*",
-        "#integration-tests/*": "./tests/integration/*",
-        "#pi-agent-text-anchor-constant/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-constant/*",
-        "#pi-agent-text-anchor-line-hash/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/*",
-        "#pi-agent-text-editor-renderer/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/*",
-        "#pi-agent-text-editor-overwrite/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/*",
-        "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*"
+    "./api/toolchain": {
+      "types": "./src/api/toolchain.ts",
+      "default": "./src/api/toolchain.ts"
     },
-    "exports": {
-        "./api/code-view": {
-            "types": "./src/api/code-view.ts",
-            "default": "./src/api/code-view.ts"
-        },
-        "./api/connect-plugin": {
-            "types": "./src/api/connect-plugin.ts",
-            "default": "./src/api/connect-plugin.ts"
-        },
-        "./api/plugin-protocol": {
-            "types": "./src/api/plugin-protocol.ts",
-            "default": "./src/api/plugin-protocol.ts"
-        },
-        "./api/toolchain": {
-            "types": "./src/api/toolchain.ts",
-            "default": "./src/api/toolchain.ts"
-        },
-        "./api/read": {
-            "types": "./src/api/read.ts",
-            "default": "./src/api/read.ts"
-        },
-        "./api/resource": {
-            "types": "./src/api/resource.ts",
-            "default": "./src/api/resource.ts"
-        },
-        "./api/search": {
-            "types": "./src/api/search.ts",
-            "default": "./src/api/search.ts"
-        },
-        "./api/text": {
-            "types": "./src/api/text.ts",
-            "default": "./src/api/text.ts"
-        },
-        "./api/text-editor": {
-            "types": "./src/api/text-editor.ts",
-            "default": "./src/api/text-editor.ts"
-        }
+    "./api/tool-config": {
+      "types": "./src/api/tool-config.ts",
+      "default": "./src/api/tool-config.ts"
     },
-    "dependencies": {
-        "pi-agent-pdf": "workspace:^",
-        "pi-agent-read": "workspace:^",
-        "pi-agent-resource": "workspace:^",
-        "pi-agent-search": "workspace:^",
-        "pi-agent-text": "workspace:^",
-        "pi-agent-text-editor": "workspace:^"
+    "./api/tool-catalog": {
+      "types": "./src/api/tool-catalog.ts",
+      "default": "./src/api/tool-catalog.ts"
     },
-    "peerDependencies": {
-        "@earendil-works/pi-ai": "*",
-        "@earendil-works/pi-coding-agent": "*",
-        "@earendil-works/pi-tui": "*",
-        "typebox": "*"
+    "./api/doctor": {
+      "types": "./src/api/doctor.ts",
+      "default": "./src/api/doctor.ts"
     },
-    "devDependencies": {
-        "@earendil-works/pi-ai": "0.84.2",
-        "@earendil-works/pi-coding-agent": "0.84.2",
-        "@earendil-works/pi-tui": "0.84.2",
-        "@xterm/headless": "^6.0.0",
-        "diff": "^9.0.0",
-        "pi-agent-ide-ast": "workspace:^",
-        "pi-agent-ide-changes": "workspace:^",
-        "pi-agent-search-text": "workspace:^",
-        "pi-agent-text-anchor-line-hash": "workspace:^",
-        "pi-coding-agent-test": "^0.1.0",
-        "typebox": "^1.1.38",
-        "typescript-7": "npm:typescript@7.0.1-rc",
-        "vitest": "^4.1.10"
+    "./api/connect-doctor-plugin": {
+      "types": "./src/api/connect-doctor-plugin.ts",
+      "default": "./src/api/connect-doctor-plugin.ts"
     },
-    "scripts": {
-        "check": "pnpm check:paths && pnpm check:package",
-        "check:package": "node scripts/build-public-package.mjs",
-        "check:paths": "node scripts/check-no-machine-paths.mjs",
-        "package:public": "node scripts/build-public-package.mjs",
-        "prepublishOnly": "node scripts/refuse-source-publish.mjs",
-        "test:integration": "pi-test run -- vitest run --config vitest.integration.config.mjs"
+    "./api/read": {
+      "types": "./src/api/read.ts",
+      "default": "./src/api/read.ts"
+    },
+    "./api/resource": {
+      "types": "./src/api/resource.ts",
+      "default": "./src/api/resource.ts"
+    },
+    "./api/search": {
+      "types": "./src/api/search.ts",
+      "default": "./src/api/search.ts"
+    },
+    "./api/text": {
+      "types": "./src/api/text.ts",
+      "default": "./src/api/text.ts"
+    },
+    "./api/text-editor": {
+      "types": "./src/api/text-editor.ts",
+      "default": "./src/api/text-editor.ts"
     }
+  },
+  "scripts": {
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:catalog && pnpm check:package",
+    "check:catalog": "oxnode scripts/generate-tool-catalog.ts --check",
+    "check:package": "oxnode scripts/build-public-package.ts",
+    "check:paths": "oxnode scripts/check-no-machine-paths.ts",
+    "dev:modular": "pi --no-extensions -e ./dev/modular",
+    "docs:catalog": "oxnode scripts/generate-tool-catalog.ts",
+    "lint": "oxlint --deny-warnings .",
+    "lint:fix": "oxlint --fix --deny-warnings .",
+    "package:public": "oxnode scripts/build-public-package.ts",
+    "test": "pnpm test:unit",
+    "test:unit": "vitest run",
+    "test:integration": "pi-test run -- vitest run --config vitest.integration.config.mjs",
+    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts dev",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check ."
+  },
+  "dependencies": {
+    "pi-agent-doctor": "workspace:^",
+    "pi-agent-pdf": "workspace:^",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-resource": "workspace:^",
+    "pi-agent-search": "workspace:^",
+    "pi-agent-text": "workspace:^",
+    "pi-agent-text-editor": "workspace:^"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "@oxlint/plugins": "^1.79.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@xterm/headless": "^6.0.0",
+    "diff": "^9.0.0",
+    "oxfmt": "^0.64.0",
+    "oxlint": "^1.79.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "oxnode": "^0.0.34",
+    "pi-agent-ide-ast": "workspace:^",
+    "pi-agent-ide-changes": "workspace:^",
+    "pi-agent-search-text": "workspace:^",
+    "pi-agent-text-anchor-line-hash": "workspace:^",
+    "pi-coding-agent-test": "^0.1.0",
+    "typebox": "^1.1.38",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./src/pi-agent-ide.ts"
+    ]
+  }
 }
