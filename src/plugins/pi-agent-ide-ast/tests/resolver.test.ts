@@ -1,7 +1,7 @@
-import { requiredValue } from "../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, test } from "vitest";
 
-import { AstScopeManager } from "pi-agent-ide-ast/api/scope";
+import { AstScopeManager } from "#src/api/scope.js";
 
 import { createAstScopeAnchorResolver } from "#src/scope-resolver.js";
 

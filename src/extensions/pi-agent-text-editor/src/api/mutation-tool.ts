@@ -40,6 +40,20 @@ export interface TextMutationAnchorField {
   readonly sourceField: string;
   readonly kinds: readonly string[];
   readonly optional?: boolean;
+  /** Values handled by the mutation itself instead of an anchor resolver. */
+  readonly nonAnchorValues?: readonly string[];
+}
+
+/** Returns whether a supplied field value must be resolved as an anchor. */
+export function isMutationAnchorValue(
+  descriptor: TextMutationAnchorField,
+  value: unknown,
+): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    descriptor.nonAnchorValues?.includes(value) !== true
+  );
 }
 
 export type TextMutationIntent = Exclude<TextEditIntent, "mixed">;
@@ -47,6 +61,11 @@ export type TextMutationIntent = Exclude<TextEditIntent, "mixed">;
 export interface TextMutationToolRegistration<TParameters extends TSchema = TSchema> {
   readonly name: string;
   readonly description: string;
+
+  /** Short capability summary shown in Pi's Available tools list. */
+  readonly promptSnippet?: string;
+  /** Operational guidelines shown while this mutation tool is active. */
+  readonly promptGuidelines?: readonly string[];
   readonly parameters: TParameters;
   readonly intent?: TextMutationIntent;
   readonly source: TextMutationSourceDescriptor;
@@ -117,6 +136,25 @@ export function assertTextMutationToolRegistration(value: AnyTextMutationToolReg
     if (new Set(anchor.kinds).size !== anchor.kinds.length) {
       throw new TypeError(
         `Mutation tool ${value.name} anchor ${anchor.field} declares duplicate kinds`,
+      );
+    }
+
+    if (
+      anchor.nonAnchorValues !== undefined &&
+      (anchor.nonAnchorValues.length === 0 ||
+        anchor.nonAnchorValues.some((item) => typeof item !== "string" || item.length === 0))
+    ) {
+      throw new TypeError(
+        `Mutation tool ${value.name} anchor ${anchor.field} must declare non-empty non-anchor values`,
+      );
+    }
+
+    if (
+      anchor.nonAnchorValues !== undefined &&
+      new Set(anchor.nonAnchorValues).size !== anchor.nonAnchorValues.length
+    ) {
+      throw new TypeError(
+        `Mutation tool ${value.name} anchor ${anchor.field} declares duplicate non-anchor values`,
       );
     }
 

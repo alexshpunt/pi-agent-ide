@@ -15,6 +15,30 @@ const web = [
   ".md",
 ];
 
+const oxfmtExtensions = [
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".json",
+  ".jsonc",
+  ".css",
+  ".scss",
+  ".less",
+  ".html",
+  ".htm",
+  ".md",
+  ".markdown",
+  ".mdx",
+  ".yaml",
+  ".yml",
+  ".toml",
+];
+
 /**
 Formatter recipes owned by the formatter plugin.
 */
@@ -47,6 +71,16 @@ export const FORMATTER_RECIPES: readonly ToolRecipe[] = [
     ["biome", "format", "--write", "{file}"],
     "https://biomejs.dev/",
     ["@biomejs/biome"],
+  ),
+  recipe(
+    "oxfmt",
+    ["javascript", "typescript", "json", "css", "html", "markdown", "yaml", "toml"],
+    ["oxfmt"],
+    [".oxfmtrc.json", ".oxfmtrc.jsonc", "oxfmt.config.ts", "oxfmt.config.mts"],
+    oxfmtExtensions,
+    ["oxfmt", "--write", "{file}"],
+    "https://oxc.rs/docs/guide/usage/formatter.html",
+    ["oxfmt"],
   ),
   recipe(
     "ruff-format",

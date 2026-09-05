@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   isAgentContent,
@@ -7,36 +7,46 @@ import {
   type ResourceResolverContext,
 } from "pi-agent-resource";
 import {
-  isTextPresenterRegistration,
   type PresentedTextRow,
   type TextDocument,
   type TextLine,
   type TextLinePresentation,
   type TextPresentationContext,
-  type TextPresenterRegistration,
+  isTextTargetResolutionAttempt,
+  type TextTargetResolver,
+  type TextTargetResolutionAttempt,
 } from "pi-agent-text";
 import { withBlockedToolResult } from "pi-agent-tool-call-interception";
 import { Type } from "typebox";
 
 import {
+  isFragmentResolverRegistration,
+  isReadFragmentResolution,
   isReadHandlerRegistration,
+  isReadViewRegistration,
   isResourceResolverRegistration,
+  isTextTargetResolverRegistration,
+  type FragmentResolverRegistration,
   type ReadHandlerRegistration,
   type ReadPipelineContext,
+  type ReadFailure,
   type ReadPipelineStage,
   type ReadResultDetails,
   type ReadResultRenderer,
   type ReadStageOutcome,
   type ReadState,
   type ReadToolResult,
+  type ReadViewRegistration,
   type ResourceResolverRegistration,
+  type TextTargetResolverRegistration,
 } from "#src/api/tools/read.js";
 import {
   limitReadOutput,
   READ_OUTPUT_MAX_BYTES,
   READ_OUTPUT_MAX_LINES,
 } from "#src/core/tools/read/output-truncation.js";
-import { createReadResultRenderer } from "#src/core/tools/read/read-renderer.js";
+import { createReadResultRenderer, renderReadCall } from "#src/core/tools/read/read-renderer.js";
+import { createLineNumberPresenter } from "#src/core/tools/read/views.js";
 import {
   createReadState,
   failureResult,
@@ -45,9 +55,15 @@ import {
 import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
 
 const readParameters = Type.Object({
-  path: Type.Optional(Type.String()),
+  path: Type.Optional(
+    Type.String({
+      description:
+        "Complete source resource reference: a filesystem path, URL, protocol source, temporary resource, or typed SEARCH#... selection.",
+    }),
+  ),
   offset: Type.Optional(Type.Number()),
   limit: Type.Optional(Type.Number()),
+  views: Type.Optional(Type.Array(Type.String())),
 });
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
@@ -65,21 +81,36 @@ interface RegisteredHandler {
   readonly registration: ReadHandlerRegistration;
 }
 
-interface RegisteredPresenter {
+interface RegisteredView {
   readonly pluginId: string;
-  readonly registration: TextPresenterRegistration;
+  readonly registration: ReadViewRegistration;
   readonly order: number;
 }
 
-interface TextPresenterContribution {
+interface RegisteredFragment {
+  readonly registration: FragmentResolverRegistration;
+  readonly priority: number;
+  readonly order: number;
+}
+
+interface ViewContribution {
   readonly presenterId: string;
   readonly document: TextDocument;
 }
 
+/** Built-in view names that exist without any plugin registration. */
+const BUILTIN_VIEWS = ["lines"] as const;
+
+function createBuiltinViewRegistrations(): ReadViewRegistration[] {
+  return [{ view: "lines", presenter: createLineNumberPresenter() }];
+}
+
 export interface ReadToolContributions {
   readonly resolvers?: readonly ResourceResolverRegistration[];
+  readonly targetResolvers?: readonly TextTargetResolverRegistration[];
   readonly handlers?: readonly ReadHandlerRegistration[];
-  readonly presenters?: readonly TextPresenterRegistration[];
+  readonly views?: readonly ReadViewRegistration[];
+  readonly fragments?: readonly FragmentResolverRegistration[];
 }
 
 export interface ReadTool {
@@ -92,7 +123,7 @@ export interface ReadTool {
   dispose(): Promise<void>;
 }
 
-export function createReadTool(pluginPromptGuideline?: () => string | undefined): ReadTool {
+export function createReadTool(pluginPromptGuidelines?: () => readonly string[]): ReadTool {
   const temporaryResources = new TempResourceStore();
   const resolvers: RegisteredResolver[] = [
     {
@@ -103,25 +134,41 @@ export function createReadTool(pluginPromptGuideline?: () => string | undefined)
     },
   ];
   const handlers: RegisteredHandler[] = [];
-  const presenters: RegisteredPresenter[] = [];
+  const views: RegisteredView[] = createBuiltinViewRegistrations().map((registration, order) => ({
+    pluginId: "core",
+    registration,
+    order,
+  }));
+  const fragments: RegisteredFragment[] = [];
+  const targetResolvers: {
+    readonly resolver: TextTargetResolver;
+    readonly priority: number;
+    readonly order: number;
+  }[] = [];
   const toolId = "read";
 
   return {
     tool: {
       name: toolId,
       label: toolId,
-      description: `Resolve a supported source into agent-native content. Text output is truncated to ${READ_OUTPUT_MAX_LINES} lines or ${
+
+      promptSnippet:
+        "Read files, URLs, temporary resources, search selections, and protocol sources, with optional views projected onto text content",
+      description: `Resolve a supported source into agent-native content. Text output is raw by default; pass optional views (string array) to add annotations: "lines" for a line-number column, or plugin views such as "anchors" (LINE#HASH), "ast", "diagnostics", and "changes" when their extensions are installed. Text output is truncated to ${READ_OUTPUT_MAX_LINES} lines or ${
         READ_OUTPUT_MAX_BYTES / 1024
-      }KB, whichever is reached first. Use offset/limit to read a line range and continue large sources; a negative offset reads from the end.`,
+      }KB, whichever is reached first. Use offset/limit to read a line range and continue large sources; a negative offset reads from the end. A \`path#anchor\` suffix (for example \`src/x.ts#function main\`) starts reading at the anchor's line: offset/limit then count from that line while output keeps absolute line numbers. For anchored reads, omitted offset, offset 0, and offset 1 are equivalent; positive offsets greater than one count forward and negative offsets count upward.`,
       get promptGuidelines(): string[] {
-        const pluginGuideline = pluginPromptGuideline?.();
         return [
-          "For large sources, prefer focused or structural reads over full content.",
-          ...(pluginGuideline === undefined ? [] : [pluginGuideline]),
+          "Use read to examine files and other supported sources instead of cat, sed, head, tail, or similar shell commands.",
+          'You can use read with `views: ["lines"]` to add a line-number column.',
+          "You can use read with `offset` and `limit` to inspect a line range or continue a large source, and with a negative `offset` to read from the end.",
+          "You can combine compatible read views in one request.",
+          "When a read result is truncated and provides a `temp:` source, you can use read with that source to continue reading the saved full output.",
+          ...(pluginPromptGuidelines?.() ?? []),
         ];
       },
       parameters: readParameters,
-      renderShell: "self",
+      renderCall: renderReadCall,
       renderResult(result, options, theme, context) {
         const resolvedBy = result.details.resolvedBy;
         const renderer =
@@ -140,31 +187,63 @@ export function createReadTool(pluginPromptGuideline?: () => string | undefined)
           resolverContext,
           resolvers,
           handlers,
-          presenters,
+          views,
           temporaryResources,
+          fragments,
+          targetResolvers,
         );
       },
     },
     execute(request, context): Promise<ReadToolResult> {
-      return executeRead(request, context, resolvers, handlers, presenters, temporaryResources);
+      return executeRead(
+        request,
+        context,
+        resolvers,
+        handlers,
+        views,
+        temporaryResources,
+        fragments,
+        targetResolvers,
+      );
     },
     registerContributions(pluginId, contributions): void {
       const incomingResolvers = [...(contributions.resolvers ?? [])];
+      const incomingTargetResolvers = [...(contributions.targetResolvers ?? [])];
       const incomingHandlers = [...(contributions.handlers ?? [])];
-      const incomingPresenters = [...(contributions.presenters ?? [])];
+      const incomingViews = [...(contributions.views ?? [])];
+      const incomingFragments = [...(contributions.fragments ?? [])];
       validateContributions(pluginId, incomingResolvers, incomingHandlers, resolvers, handlers);
-      const presenterIds = new Set(presenters.map(({ registration }) => registration.presenter.id));
+      validateFragmentRegistrations(pluginId, incomingFragments, fragments);
+      const targetResolverIds = new Set(targetResolvers.map(({ resolver }) => resolver.id));
+      for (const registration of incomingTargetResolvers) {
+        if (!isTextTargetResolverRegistration(registration)) {
+          throw new TypeError(`Plugin ${pluginId} provided an invalid text target resolver`);
+        }
+        if (targetResolverIds.has(registration.resolver.id)) {
+          throw new Error(`Text target resolver ${registration.resolver.id} is already registered`);
+        }
+        targetResolverIds.add(registration.resolver.id);
+      }
+      const viewNames = new Set(views.map(({ registration }) => registration.view));
+      const presenterIds = new Set(
+        views.map(({ registration }) => `${registration.view}/${registration.presenter.id}`),
+      );
 
-      for (const registration of incomingPresenters) {
-        if (!isTextPresenterRegistration(registration)) {
-          throw new TypeError(`Plugin ${pluginId} provided an invalid text presenter`);
+      for (const registration of incomingViews) {
+        if (!isReadViewRegistration(registration)) {
+          throw new TypeError(`Plugin ${pluginId} provided an invalid view registration`);
         }
 
-        if (presenterIds.has(registration.presenter.id)) {
-          throw new Error(`Text presenter ${registration.presenter.id} is already registered`);
+        const key = `${registration.view}/${registration.presenter.id}`;
+
+        if (presenterIds.has(key)) {
+          throw new Error(
+            `View ${registration.view} already has a presenter ${registration.presenter.id}`,
+          );
         }
 
-        presenterIds.add(registration.presenter.id);
+        viewNames.add(registration.view);
+        presenterIds.add(key);
       }
 
       for (const registration of incomingResolvers) {
@@ -179,12 +258,28 @@ export function createReadTool(pluginPromptGuideline?: () => string | undefined)
         });
       }
 
+      for (const registration of incomingTargetResolvers) {
+        targetResolvers.push({
+          resolver: registration.resolver,
+          priority: registration.priority ?? 0,
+          order: targetResolvers.length,
+        });
+      }
+
       for (const registration of incomingHandlers) {
         handlers.push({ pluginId, registration });
       }
 
-      for (const registration of incomingPresenters) {
-        presenters.push({ pluginId, registration, order: presenters.length });
+      for (const registration of incomingViews) {
+        views.push({ pluginId, registration, order: views.length });
+      }
+
+      for (const registration of incomingFragments) {
+        fragments.push({
+          registration,
+          priority: registration.priority ?? 0,
+          order: fragments.length,
+        });
       }
     },
     dispose(): Promise<void> {
@@ -198,25 +293,59 @@ async function executeRead(
   resolverContext: ResourceResolverContext,
   resolvers: readonly RegisteredResolver[],
   handlers: readonly RegisteredHandler[],
-  presenters: readonly RegisteredPresenter[],
+  views: readonly RegisteredView[],
   temporaryResources: TempResourceStore,
+  fragmentResolvers: readonly RegisteredFragment[],
+  targetResolvers: readonly {
+    readonly resolver: TextTargetResolver;
+    readonly priority: number;
+    readonly order: number;
+  }[],
 ): Promise<ReadToolResult> {
   const resolverSnapshot = [...resolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
   const handlerSnapshot = [...handlers];
-  const presenterSnapshot = [...presenters].sort(
+  const viewSnapshot = [...views].sort(
     (left, right) =>
       (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
       left.order - right.order,
   );
+  const fragmentSnapshot = [...fragmentResolvers].sort(
+    (left, right) => left.priority - right.priority || left.order - right.order,
+  );
+  const targetSnapshot = [...targetResolvers].sort(
+    (left, right) => left.priority - right.priority || left.order - right.order,
+  );
+  const requestedViews = new Set(request.views ?? []);
+  const knownViews = new Set([
+    ...BUILTIN_VIEWS,
+    ...viewSnapshot.map(({ registration }) => registration.view),
+  ]);
+  const ignoredViews = [...requestedViews].filter((view) => !knownViews.has(view));
+  if (request.path !== undefined && targetSnapshot.length > 0) {
+    const targeted = await resolveTextTargets(
+      request,
+      resolverContext,
+      targetSnapshot,
+      resolverSnapshot,
+      handlerSnapshot,
+      viewSnapshot,
+      requestedViews,
+      ignoredViews,
+    );
+    if (targeted !== undefined) return targeted;
+  }
   let pipeline: ReadPipelineContext = { request: { ...request }, resolverContext };
 
   if (!pipeline.request.path?.startsWith("temp:")) {
     const preRead = await runPreReadHandlers(pipeline, handlerSnapshot);
 
     if (preRead.kind === "return") {
-      return limitReadOutput(preRead.result, pipeline.request);
+      return withIgnoredViews(
+        await limitReadOutput(preRead.result, pipeline.request),
+        ignoredViews,
+      );
     }
 
     pipeline = preRead.context;
@@ -228,27 +357,79 @@ async function executeRead(
     return failureResult({ code: "INVALID_REQUEST", message: "No source was provided" });
   }
 
-  const resolved = await resolveSource(pipeline, resolverSnapshot);
+  let resolved = await resolveSource(pipeline, resolverSnapshot);
+  let anchoredFragment: string | undefined;
 
+  // Resource-first rule: when reading the whole source fails, split off an anchor fragment
+  // and try the bare source. If the bare source fails too, keep the original error: a
+  // resolver that claimed the full source owns its own read errors, and replacing its
+  // message with the bare-source error would be misleading.
+  if (
+    resolved.kind === "return" &&
+    resolved.result.isError === true &&
+    isRetryableFailure(resolved.result) &&
+    !source.startsWith("temp:")
+  ) {
+    const split = splitAnchoredSource(source);
+
+    if (split !== undefined) {
+      const wholeSource = { result: resolved, pipeline };
+      const barePipeline = { ...pipeline, request: { ...pipeline.request, path: split.source } };
+      const retried = await resolveSource(barePipeline, resolverSnapshot);
+
+      if (retried.kind === "continue") {
+        resolved = retried;
+        pipeline = barePipeline;
+        anchoredFragment = split.fragment;
+      } else {
+        resolved = wholeSource.result;
+      }
+    }
+  }
   if (resolved.kind === "return") {
     return limitReadOutput(resolved.result, pipeline.request);
   }
 
   pipeline = resolved.context;
 
+  let origin: number | undefined;
+
+  if (anchoredFragment !== undefined) {
+    const outcome = await resolveAnchoredOrigin(pipeline, fragmentSnapshot, anchoredFragment);
+
+    if (typeof outcome !== "number") {
+      return outcome;
+    }
+
+    origin = outcome;
+  }
+
   if (pipeline.state?.textMode === "final") {
-    return limitReadOutput(projectReadState(pipeline.state, pipeline.request), pipeline.request);
+    return withIgnoredViews(
+      await limitReadOutput(
+        projectReadState(pipeline.state, pipeline.request, { originLine: origin }),
+        pipeline.request,
+        undefined,
+        { originLine: origin },
+      ),
+      ignoredViews,
+    );
   }
 
   const processed = await runReadHandlers(pipeline, handlerSnapshot);
 
   if (processed.kind === "return") {
-    return limitReadOutput(processed.result, pipeline.request);
+    return withIgnoredViews(
+      await limitReadOutput(processed.result, pipeline.request, undefined, { originLine: origin }),
+      ignoredViews,
+    );
   }
 
   pipeline = processed.context;
-  pipeline = await runTextPresenters(pipeline, presenterSnapshot);
-  const projected = projectReadState(requiredValue(pipeline.state), pipeline.request);
+  pipeline = await runTextPresenters(pipeline, viewSnapshot, requestedViews);
+  const projected = projectReadState(requiredValue(pipeline.state), pipeline.request, {
+    originLine: origin,
+  });
   pipeline = { ...pipeline, result: projected };
   const postRead = await runPostReadHandlers(pipeline, handlerSnapshot);
   const result =
@@ -257,7 +438,265 @@ async function executeRead(
     pipeline.request.limit === undefined && pipeline.state?.preserveTruncatedOutput === true
       ? (text: string): Promise<string> => temporaryResources.save(text)
       : undefined;
-  return limitReadOutput(result, pipeline.request, saveFullOutput);
+  return withIgnoredViews(
+    await limitReadOutput(result, pipeline.request, saveFullOutput, { originLine: origin }),
+    ignoredViews,
+  );
+}
+
+/**
+ * Failures that allow the anchored-source retry. READ_FAILED is included because
+ * filesystem-style resolvers read lazily inside resolution, so a missing
+ * `<path>#<anchor>` file surfaces as READ_FAILED.
+ */
+const RETRYABLE_FAILURE_CODES: ReadonlySet<ReadFailure["code"]> = new Set([
+  "INVALID_RESOLVER_RESULT",
+  "NO_RESOLVER",
+  "READ_FAILED",
+  "RESOLVE_FAILED",
+]);
+
+/** True when reading the whole source failed for a reason an anchor split might fix. */
+function isRetryableFailure(result: ReadToolResult): boolean {
+  const code = result.details.failure?.code;
+  return code !== undefined && RETRYABLE_FAILURE_CODES.has(code);
+}
+
+async function resolveTextTargets(
+  request: ReadPipelineContext["request"],
+  resolverContext: ResourceResolverContext,
+  targetResolvers: readonly {
+    readonly resolver: TextTargetResolver;
+    readonly priority: number;
+    readonly order: number;
+  }[],
+  resolvers: readonly RegisteredResolver[],
+  handlers: readonly RegisteredHandler[],
+  views: readonly RegisteredView[],
+  requestedViews: ReadonlySet<string>,
+  ignoredViews: readonly string[],
+): Promise<ReadToolResult | undefined> {
+  for (const { resolver } of targetResolvers) {
+    let rawAttempt: unknown;
+    try {
+      rawAttempt = await resolver.tryResolve(request.path ?? "", resolverContext);
+    } catch (error) {
+      return failureResult({
+        code: "RESOLVE_FAILED",
+        source: request.path,
+        message: appendErrorMessage(`Text target resolver ${resolver.id} failed`, error),
+        cause: error,
+      });
+    }
+    if (!isTextTargetResolutionAttempt(rawAttempt)) {
+      return failureResult({
+        code: "INVALID_RESOLVER_RESULT",
+        source: request.path,
+        message: `Text target resolver ${resolver.id} returned an invalid result`,
+        cause: rawAttempt,
+      });
+    }
+    const attempt: TextTargetResolutionAttempt = rawAttempt;
+    if (attempt.kind === "not-handled") continue;
+    if (attempt.kind === "rejected")
+      return failureResult({
+        code: "RESOLVE_FAILED",
+        source: request.path,
+        message: attempt.rejection.reason,
+      });
+    if (attempt.kind === "failed")
+      return failureResult({
+        code: "RESOLVE_FAILED",
+        source: request.path,
+        message: attempt.error instanceof Error ? attempt.error.message : String(attempt.error),
+      });
+    if (attempt.targets.length === 0)
+      return failureResult({
+        code: "RESOLVE_FAILED",
+        source: request.path,
+        message: "Text target resolver returned no targets",
+      });
+    const chunks: string[] = [];
+    let firstDetails: ReadResultDetails | undefined;
+    for (const target of attempt.targets) {
+      const ranges = target.ranges ?? [
+        { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 1 } },
+      ];
+      for (const range of ranges) {
+        const rangeLimit = Math.max(1, range.end.lineNumber - range.start.lineNumber);
+        let rangePipeline: ReadPipelineContext = {
+          request: {
+            ...request,
+            path: target.source,
+            limit: request.limit ?? rangeLimit,
+          },
+          resolverContext,
+        };
+        if (!target.source.startsWith("temp:")) {
+          const preRead = await runPreReadHandlers(rangePipeline, handlers);
+          if (preRead.kind === "return") {
+            if (preRead.result.isError === true)
+              return withIgnoredViews(preRead.result, ignoredViews);
+            for (const block of preRead.result.content) {
+              if (block.type === "text") chunks.push(block.text);
+            }
+            firstDetails ??= preRead.result.details;
+            continue;
+          }
+          rangePipeline = preRead.context;
+        }
+        const resolved = await resolveSource(rangePipeline, resolvers);
+        if (resolved.kind === "return") {
+          return withIgnoredViews(resolved.result, ignoredViews);
+        }
+        const processed = await runReadHandlers(resolved.context, handlers);
+        if (processed.kind === "return") {
+          if (processed.result.isError === true)
+            return withIgnoredViews(processed.result, ignoredViews);
+          for (const block of processed.result.content) {
+            if (block.type === "text") chunks.push(block.text);
+          }
+          firstDetails ??= processed.result.details;
+          continue;
+        }
+        const presented = await runTextPresenters(processed.context, views, requestedViews);
+        const projected = projectReadState(requiredValue(presented.state), presented.request, {
+          originLine: range.start.lineNumber,
+        });
+        const postRead = await runPostReadHandlers({ ...presented, result: projected }, handlers);
+        if (projected.isError === true) return withIgnoredViews(projected, ignoredViews);
+        const result =
+          postRead.kind === "return" ? postRead.result : requiredValue(postRead.context.result);
+        if (result.isError === true) return withIgnoredViews(result, ignoredViews);
+        for (const block of result.content) {
+          if (block.type === "text") chunks.push(block.text);
+        }
+        firstDetails ??= result.details;
+      }
+    }
+    const aggregate = {
+      content: [{ type: "text", text: chunks.join("\n") }],
+      details: firstDetails ?? { source: request.path },
+    } satisfies ReadToolResult;
+    return withIgnoredViews(
+      await limitReadOutput(aggregate, { path: request.path, views: request.views }),
+      ignoredViews,
+    );
+  }
+  return undefined;
+}
+
+const ANCHOR_SEPARATOR = "#";
+
+/** Splits `path#fragment`; returns undefined when there is nothing to anchor. */
+function splitAnchoredSource(
+  source: string,
+): { readonly source: string; readonly fragment: string } | undefined {
+  const index = source.indexOf(ANCHOR_SEPARATOR);
+
+  if (index <= 0 || index === source.length - 1) {
+    return undefined;
+  }
+
+  return {
+    source: source.slice(0, index),
+    fragment: source.slice(index + ANCHOR_SEPARATOR.length),
+  };
+}
+
+type AnchoredOriginOutcome = number | ReadToolResult;
+
+async function resolveAnchoredOrigin(
+  pipeline: ReadPipelineContext,
+  fragments: readonly RegisteredFragment[],
+  fragment: string,
+): Promise<AnchoredOriginOutcome> {
+  const state = requiredValue(pipeline.state);
+
+  if (state.contentKind !== "text") {
+    return failureResult({
+      code: "UNSUPPORTED_RANGE",
+      source: state.source,
+      resolverId: state.resolvedBy,
+      message: "Anchored reads require textual content",
+    });
+  }
+
+  if (fragments.length === 0) {
+    return failureResult({
+      code: "NO_FRAGMENT_RESOLVER",
+      source: state.source,
+      message: `No fragment resolver is registered for anchor "${fragment}"`,
+    });
+  }
+
+  for (const { registration } of fragments) {
+    let outcome: unknown;
+
+    try {
+      outcome = await registration.resolve({
+        source: state.source,
+        fragment,
+        text: state.text,
+        cwd: pipeline.resolverContext.cwd,
+        ...(pipeline.resolverContext.signal !== undefined && {
+          signal: pipeline.resolverContext.signal,
+        }),
+      });
+    } catch (error) {
+      return failureResult({
+        code: "FRAGMENT_FAILED",
+        source: state.source,
+        resolverId: registration.id,
+        message: appendErrorMessage(`Fragment resolver ${registration.id} failed`, error),
+        cause: error,
+      });
+    }
+
+    if (!isReadFragmentResolution(outcome)) {
+      return failureResult({
+        code: "INVALID_RESOLVER_RESULT",
+        source: state.source,
+        resolverId: registration.id,
+        message: `Fragment resolver ${registration.id} returned an invalid result`,
+        cause: outcome,
+      });
+    }
+
+    if (outcome.kind === "not-handled") {
+      continue;
+    }
+
+    if (outcome.kind === "failed") {
+      return failureResult({
+        code: "FRAGMENT_FAILED",
+        source: state.source,
+        resolverId: registration.id,
+        message: outcome.message,
+      });
+    }
+
+    if (
+      !Number.isInteger(outcome.originLine) ||
+      outcome.originLine < 1 ||
+      outcome.originLine > state.text.lines.length
+    ) {
+      return failureResult({
+        code: "INVALID_RESOLVER_RESULT",
+        source: state.source,
+        resolverId: registration.id,
+        message: `Fragment resolver ${registration.id} returned out-of-range origin line ${outcome.originLine}`,
+      });
+    }
+
+    return outcome.originLine;
+  }
+
+  return failureResult({
+    code: "NO_FRAGMENT_RESOLVER",
+    source: state.source,
+    message: `No fragment resolver handled anchor "${fragment}"`,
+  });
 }
 
 async function resolveSource(
@@ -452,11 +891,12 @@ async function runReadHandlers(
 
 async function runTextPresenters(
   context: ReadPipelineContext,
-  presenters: readonly RegisteredPresenter[],
+  views: readonly RegisteredView[],
+  requestedViews: ReadonlySet<string>,
 ): Promise<ReadPipelineContext> {
   const state = context.state;
 
-  if (state?.contentKind !== "text") {
+  if (state?.contentKind !== "text" || requestedViews.size === 0) {
     return context;
   }
 
@@ -468,20 +908,47 @@ async function runTextPresenters(
     resolvedBy: state.resolvedBy,
     ...(context.resolverContext.signal !== undefined && { signal: context.resolverContext.signal }),
   };
+  const requestedRegistrations = views.filter(({ registration }) =>
+    requestedViews.has(registration.view),
+  );
+  const includedViews = new Set(
+    requestedRegistrations.flatMap(({ registration }) => registration.includes ?? []),
+  );
+  const activeViews = requestedRegistrations.filter(
+    ({ registration }) => !includedViews.has(registration.view),
+  );
   const contributions = await Promise.all(
-    presenters.map(async ({ registration }) => ({
+    activeViews.map(async ({ registration }) => ({
       presenterId: registration.presenter.id,
       document: await registration.presenter.present(document, presentationContext),
     })),
   );
-  const presented = mergeTextPresenterContributions(document, contributions);
+  const presented = mergeViewContributions(document, contributions);
 
   return { ...context, state: { ...state, text: presented } };
 }
 
-function mergeTextPresenterContributions(
+/** Prepends a note listing unknown view names so the agent can correct the request. */
+function withIgnoredViews(result: ReadToolResult, ignoredViews: readonly string[]): ReadToolResult {
+  if (ignoredViews.length === 0) {
+    return result;
+  }
+
+  const note = `note: ignored unknown views: ${ignoredViews.join(", ")}`;
+  const block = result.content[0];
+  const content =
+    block?.type === "text" ? [{ ...block, text: `${note}\n${block.text}` }] : [...result.content];
+
+  return {
+    ...result,
+    content,
+    details: { ...result.details, ignoredViews },
+  };
+}
+
+function mergeViewContributions(
   base: TextDocument,
-  contributions: readonly TextPresenterContribution[],
+  contributions: readonly ViewContribution[],
 ): TextDocument {
   let lines = base.lines;
 
@@ -499,7 +966,7 @@ function mergeTextPresenterContributions(
   return lines === base.lines ? base : { ...base, lines };
 }
 
-function assertPresentationOnly(base: TextDocument, contribution: TextPresenterContribution): void {
+function assertPresentationOnly(base: TextDocument, contribution: ViewContribution): void {
   const presented = contribution.document;
 
   if (
@@ -770,6 +1237,25 @@ function validateContributions(
   }
 }
 
+function validateFragmentRegistrations(
+  pluginId: string,
+  incoming: readonly FragmentResolverRegistration[],
+  registered: readonly RegisteredFragment[],
+): void {
+  const ids = new Set(registered.map(({ registration }) => registration.id));
+
+  for (const registration of incoming) {
+    if (!isFragmentResolverRegistration(registration)) {
+      throw new TypeError(`Plugin ${pluginId} provided an invalid fragment resolver`);
+    }
+
+    if (ids.has(registration.id)) {
+      throw new Error(`Fragment resolver ${registration.id} is already registered`);
+    }
+
+    ids.add(registration.id);
+  }
+}
 function appendErrorMessage(message: string, cause: unknown): string {
   if (!(cause instanceof Error) || cause.message.length === 0) {
     return message;

@@ -18,6 +18,7 @@
     "@tree-sitter-grammars/tree-sitter-yaml": "^0.7.1",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-ide": "workspace:^",
+    "pi-agent-invariant": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",
     "pi-agent-search": "workspace:^",

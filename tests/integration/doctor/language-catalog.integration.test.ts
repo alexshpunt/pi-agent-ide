@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../src/utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -75,7 +75,7 @@ describe("doctor language mini-projects", () => {
         requiredValue(relevant.find((recipe) => recipe.kind === kind)),
       );
       await createEvidence(cwd, chosen);
-      await createFakeExecutables(bin, chosen);
+      await createFakeExecutables(bin, allRecipes);
 
       const core = new DoctorCore();
       await core.registerPlugin(languagePlugin(language.id));
@@ -86,9 +86,34 @@ describe("doctor language mini-projects", () => {
       const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` };
       const first = await runDoctor(core.snapshot(), cwd, env);
       expect(first.detectedLanguages.has(language.id)).toBe(true);
-      expect(new Set(first.suggestions.map((candidate) => candidate.recipe.kind))).toEqual(
-        new Set(["formatter", "linter", "lsp"]),
-      );
+      const suggestedKinds = new Set(first.suggestions.map((candidate) => candidate.recipe.kind));
+      for (const kind of ["formatter", "linter", "lsp"] as const) {
+        const active = first.selections.find(
+          (selection) => selection.kind === kind && selection.languageId === language.id,
+        );
+        if (active !== undefined) {
+          expect(
+            first.suggestions.some(
+              (candidate) =>
+                candidate.recipe.kind === kind && candidate.recipe.id === active.toolId,
+            ),
+          ).toBe(false);
+        }
+        const matches = first.candidates.filter(
+          (candidate) =>
+            candidate.recipe.kind === kind &&
+            candidate.recipe.languages.includes(language.id) &&
+            candidate.executable !== undefined &&
+            candidate.recipe.id !== active?.toolId &&
+            candidate.score >= (active === undefined ? 4 : 7),
+        );
+        const topScore = matches[0]?.score;
+        const topMatches = matches.filter((candidate) => candidate.score === topScore);
+
+        if (topMatches.length === 1) {
+          expect(suggestedKinds).toContain(kind);
+        }
+      }
 
       await writeSuggestedConfigs(cwd, first.suggestions);
       const second = await runDoctor(core.snapshot(), cwd, env);
@@ -97,10 +122,49 @@ describe("doctor language mini-projects", () => {
           .flatMap((section) => section.findings)
           .filter((finding) => finding.status === "fail"),
       ).toEqual([]);
-      await expectConfigEntries(cwd);
+      await expectConfigEntries(
+        cwd,
+        new Set(first.suggestions.map((candidate) => candidate.recipe.kind)),
+      );
     }, 30_000);
   }
 });
+
+it("discovers and probes the Oxc formatter and linter", async () => {
+  const cwd = await mkdtemp(path.join(temporaryRoot, "oxc-"));
+  const bin = path.join(cwd, "node_modules", ".bin");
+
+  try {
+    await mkdir(bin, { recursive: true });
+    await writeFile(path.join(cwd, "index.ts"), "debugger;\n", "utf8");
+    await writeFile(
+      path.join(cwd, "package.json"),
+      JSON.stringify({ devDependencies: { oxfmt: "0.64.0", oxlint: "1.79.0" } }),
+      "utf8",
+    );
+    await writeFile(path.join(cwd, ".oxfmtrc.json"), "{}\n", "utf8");
+    await writeFile(path.join(cwd, "oxlint.config.ts"), "export default {};\n", "utf8");
+    await createFakeExecutables(bin, allRecipes);
+
+    const core = new DoctorCore();
+    await core.registerPlugin(languagePlugin("typescript"));
+    await core.registerPlugin(formatterDoctorPlugin);
+    await core.registerPlugin(lintDoctorPlugin);
+    const first = await runDoctor(core.snapshot(), cwd, process.env);
+
+    expect(first.suggestions.map((candidate) => candidate.recipe.id)).toEqual(["oxfmt", "oxlint"]);
+
+    await writeSuggestedConfigs(cwd, first.suggestions);
+    const second = await runDoctor(core.snapshot(), cwd, process.env);
+    expect(
+      second.sections
+        .flatMap((section) => section.findings)
+        .filter((finding) => finding.status === "fail"),
+    ).toEqual([]);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}, 30_000);
 
 function languagePlugin(id: string): DoctorPlugin {
   const language = requiredValue(LANGUAGES.find((candidate) => candidate.id === id));
@@ -171,6 +235,9 @@ if (lsp) {
     formatterNames,
   )}.includes(name) && (args.includes("format") || args.includes("fmt") || args.includes("-w") || args.includes("-i") || args.includes("--write") || args.includes("--replace") || args.includes("--overwrite") || args.includes("-F") || args.includes("-A") || !args.some(value => value.includes("lint") || value.includes("check")));
   if (format && target) appendFileSync(target, "\\n");
+  else if (!format && args.includes("sarif")) process.stdout.write(JSON.stringify({ version: "2.1.0", runs: [] }));
+  else if (!format && args.includes("json")) process.stdout.write("[]");
+  else if (!format && args.includes("xml")) process.stdout.write("<checkstyle/>");
   else if (!format) process.stdout.write((target || "fixture") + ":1:1: warning: fixture diagnostic [fixture]\\n");
 }
 `;
@@ -197,12 +264,19 @@ function sampleSource(language: string): string {
   return sources[language] ?? "fixture\n";
 }
 
-async function expectConfigEntries(cwd: string): Promise<void> {
-  for (const [name, key] of [
-    ["formatters", "formatters"],
-    ["linters", "linters"],
-    ["lsp-servers", "servers"],
+async function expectConfigEntries(
+  cwd: string,
+  expectedKinds: ReadonlySet<"formatter" | "linter" | "lsp">,
+): Promise<void> {
+  for (const [name, key, kind] of [
+    ["formatters", "formatters", "formatter"],
+    ["linters", "linters", "linter"],
+    ["lsp-servers", "servers", "lsp"],
   ] as const) {
+    if (!expectedKinds.has(kind)) {
+      continue;
+    }
+
     const value = JSON.parse(await readFile(projectIdeConfigPath(cwd, name), "utf8")) as Record<
       string,
       Record<string, unknown>

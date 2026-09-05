@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -27,7 +27,10 @@ import {
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TextAnchorInspectionOutcome } from "pi-agent-text-editor/api/anchor-inspection";
-import type { TextMutationToolRegistration } from "pi-agent-text-editor/api/mutation-tool";
+import {
+  isMutationAnchorValue,
+  type TextMutationToolRegistration,
+} from "pi-agent-text-editor/api/mutation-tool";
 
 const CACHE_KEY_PART_SEPARATOR = "\u{0}";
 const CACHE_KEY_LIST_SEPARATOR = "\u{1}";
@@ -114,7 +117,10 @@ function createHandler(
       }
 
       const paired =
-        schema.pair?.every((field) => typeof arguments_[field] === "string") === true
+        schema.pair?.every((field) => {
+          const descriptor = schema.anchors?.find((anchor) => anchor.field === field);
+          return descriptor !== undefined && isMutationAnchorValue(descriptor, arguments_[field]);
+        }) === true
           ? new Set(schema.pair)
           : new Set<string>();
 
@@ -125,7 +131,7 @@ function createHandler(
 
         const anchor = arguments_[descriptor.field];
 
-        if (typeof anchor !== "string") {
+        if (!isMutationAnchorValue(descriptor, anchor)) {
           continue;
         }
 
@@ -239,6 +245,13 @@ async function inspectAnchorPair(
     return undefined;
   }
 
+  if (
+    !isMutationAnchorValue(startDescriptor, start) ||
+    !isMutationAnchorValue(endDescriptor, end)
+  ) {
+    return undefined;
+  }
+
   return inspectAnchors(
     api,
     readApi,
@@ -292,7 +305,9 @@ async function inspectAnchors(
     return makeResolverBlockResult(context.toolCall.name, source, result.reason);
   }
 
-  if (context.partialArgs !== undefined && result.reason === "anchor has invalid format") {
+  // This interceptor owns stale snapshot failures only. Missing, ambiguous, and
+  // invalid anchors continue to the mutation tool for their resolver-owned message.
+  if (result.rejectionCode !== "stale") {
     return undefined;
   }
 
@@ -301,7 +316,8 @@ async function inspectAnchors(
     result.contextRange === undefined
       ? undefined
       : await readApi.read(
-          { path: source, ...result.contextRange },
+          // The blocked message teaches a fresh anchor, so context must carry hashes.
+          { path: source, views: ["anchors"], ...result.contextRange },
           {
             cwd: context.cwd,
             ...(context.signal !== undefined && { signal: context.signal }),

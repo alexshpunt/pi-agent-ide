@@ -10,22 +10,17 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
 const extensions = createExtensionSet();
-const demoExtensions = [
-  ...extensions.paths,
-  path.resolve(
-    "tests/integration/extensions/pi-agent-search/interactive-demos/fixtures/semantic-search-resolver.ts",
-  ),
-  path.resolve(
-    "tests/integration/extensions/pi-agent-search/interactive-demos/fixtures/web-search-transport.ts",
-  ),
-  path.resolve("src/extensions/pi-agent-search/plugins/pi-agent-search-web/index.ts"),
-  path.resolve("src/plugins/pi-agent-ide-lsp/index.ts"),
+const demoExtensions = [...extensions.paths, path.resolve("src/plugins/pi-agent-ide-lsp/index.ts")];
+const searchOnlyExtensions = [
+  path.resolve("src/extensions/pi-agent-search/index.ts"),
+  path.resolve("src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.ts"),
 ];
 const interactivePacing =
   process.env.PI_INTEGRATION_TEST_LIVE === "1"
@@ -46,21 +41,9 @@ const calls = [
     arguments: { path: "src", include: "**/*.ts" },
   },
   {
-    id: "search-semantic",
-    query: "semantic:protocol atlas",
-    resolverId: "semantic",
-    arguments: { limit: 3 },
-  },
-  {
-    id: "search-web",
-    query: "web:Pi Search resolver architecture",
-    resolverId: "web",
-    arguments: { limit: 3 },
-  },
-  {
     id: "search-lsp",
-    query: "lsp:createResolverAtlas",
-    resolverId: "lsp",
+    query: "symbols:createResolverAtlas",
+    resolverId: "symbols",
     arguments: { limit: 5 },
   },
   {
@@ -99,9 +82,9 @@ describe("interactive Search resolver demos", () => {
         timeoutMs: 240_000,
         conversation: [
           ...conversation,
-          assistantMessage([text("All seven Search resolvers completed", { delayMs: 0 })]),
+          assistantMessage([text("All installed Search resolvers completed", { delayMs: 0 })]),
         ],
-      }).run("Demonstrate text, regex, file, semantic, web, LSP, and AST search through one tool");
+      }).run("Demonstrate text, regex, file, LSP, and AST search through one tool");
 
       for (const call of calls) {
         const execution = getToolExecution(result, call.id);
@@ -114,15 +97,184 @@ describe("interactive Search resolver demos", () => {
         expect(result.tuiRenderedOutput).toContain(`search "${call.query}"`);
       }
 
-      expect(getToolResultText(result, "search-semantic")).toContain("Search Resolver Corpus");
-      expect(getToolResultText(result, "search-web")).toContain(
-        "https://example.com/pi-search-resolvers",
-      );
       expect(getToolResultText(result, "search-lsp")).toContain("createResolverAtlas");
       expect(getToolResultText(result, "search-ast")).toContain("createResolverAtlas()");
     });
   }, 240_000);
 });
+
+test("treats the former semantic prefix as ordinary literal text", async () => {
+  await withTempWorkspace(async (directory) => {
+    await prepareWorkspace(directory);
+    await writeFile(
+      path.join(directory, "src/former-prefix.txt"),
+      "semantic:protocol atlas\n",
+      "utf8",
+    );
+
+    const result = await new PiIntegrationTest({
+      testName: "search-former-semantic-prefix-as-literal-text",
+      cwd: directory,
+      extensions: searchOnlyExtensions,
+      tools: ["search"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "search-former-semantic-prefix",
+              name: "search",
+              arguments: { query: "semantic:protocol atlas", path: "src" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Search finished")]),
+      ],
+    }).run("Search for the complete literal text, including its former prefix");
+
+    const execution = getToolExecution(result, "search-former-semantic-prefix");
+    expect(execution.isError).toBe(false);
+    expect((getToolExecutionDetails(execution) as { resolverId?: string }).resolverId).toBe("text");
+    expect(getToolResultText(result, "search-former-semantic-prefix")).toContain(
+      "semantic:protocol atlas",
+    );
+  });
+});
+
+test("uses literal-first fallback and Boolean text search through real Pi", async () => {
+  await withTempWorkspace(async (directory) => {
+    await prepareWorkspace(directory);
+    await writeFile(
+      path.join(directory, "src/search-query.txt"),
+      [
+        "pi install package locally",
+        "install command alone",
+        "npm configuration",
+        "extension settings",
+        "const MAX_RESULT_BYTES = 1024;",
+        "const MAX_LOG_CHARS = 4000;",
+        "wt -C /repo switch @",
+        "wt --config custom.toml list",
+        "providerError handled",
+        "errorMessage handled",
+        "providerError handled ignored",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const searchCalls = [
+      { id: "literal-first", query: "install package" },
+      { id: "word-fallback", query: "npm extension absent" },
+      { id: "boolean-or", query: "MAX_RESULT_BYTES OR MAX_LOG_CHARS" },
+      { id: "boolean-flags", query: "-C OR --config" },
+      { id: "boolean-invalid", query: "MAX_RESULT_BYTES OR" },
+      {
+        id: "boolean-combined",
+        query: "(providerError OR errorMessage) AND handled NOT ignored",
+      },
+    ] as const;
+    const result = await new PiIntegrationTest({
+      testName: "search-literal-fallback-and-boolean-query",
+      cwd: directory,
+      extensions: searchOnlyExtensions,
+      tools: ["search"],
+      conversation: [
+        ...searchCalls.map((call) =>
+          assistantMessage(
+            [
+              toolCall({
+                id: call.id,
+                name: "search",
+                arguments: { query: call.query, path: "src/search-query.txt" },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+        ),
+        assistantMessage([text("Search finished")]),
+      ],
+    }).run("Exercise literal fallback and Boolean text searches");
+
+    const literalResult = plainSearchResult(getToolResultText(result, "literal-first"));
+    expect(literalResult).toContain("install package locally");
+    expect(literalResult).not.toContain("install command alone");
+
+    const fallbackResult = plainSearchResult(getToolResultText(result, "word-fallback"));
+    expect(fallbackResult).toContain("npm configuration");
+    expect(fallbackResult).toContain("extension settings");
+
+    const rawOrResult = getToolResultText(result, "boolean-or");
+    const orResult = plainSearchResult(rawOrResult);
+    expect(orResult).toContain("MAX_RESULT_BYTES");
+    expect(orResult).toContain("MAX_LOG_CHARS");
+    expect(rawOrResult).toContain("⟦MAX_RESULT_BYTES⟧");
+    expect(rawOrResult).toContain("⟦MAX_LOG_CHARS⟧");
+
+    const flagResult = plainSearchResult(getToolResultText(result, "boolean-flags"));
+    expect(flagResult).toContain("wt -C /repo switch @");
+    expect(flagResult).toContain("wt --config custom.toml list");
+
+    expect(getToolExecution(result, "boolean-invalid").isError).toBe(false);
+    expect(getToolResultText(result, "boolean-invalid")).toContain(
+      "Invalid Boolean search query at column 20: expected a term after OR.",
+    );
+    expect(getToolResultText(result, "boolean-invalid")).not.toContain("Resolver text failed");
+
+    const combinedResult = plainSearchResult(getToolResultText(result, "boolean-combined"));
+    expect(combinedResult).toContain("providerError handled");
+    expect(combinedResult).toContain("errorMessage handled");
+    expect(combinedResult).not.toContain("providerError handled ignored");
+
+    for (const call of searchCalls) {
+      expect(getToolExecution(result, call.id).isError, call.id).toBe(false);
+    }
+  });
+});
+
+test("wraps a long structured search line in the real native renderer", async () => {
+  await withTempWorkspace(async (directory) => {
+    await prepareWorkspace(directory);
+    await writeFile(
+      path.join(directory, "src/search-demo.ts"),
+      `export const longResolverLine = "${"alpha beta ".repeat(30)}ResolverAtlas ${"https://example.com/".repeat(10)}";\n`,
+      "utf8",
+    );
+
+    const result = await new PiIntegrationTest({
+      testName: "search-word-wrap",
+      cwd: directory,
+      extensions: searchOnlyExtensions,
+      tools: ["search"],
+      rawMode: false,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "search-word-wrap",
+              name: "search",
+              arguments: { query: "ResolverAtlas", path: "src" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Search finished")]),
+      ],
+    }).run("Search the long source line");
+
+    const rendered = stripTerminalSequences(result.terminalOutput);
+    const panel = rendered.slice(rendered.indexOf("╭─ 1 match"));
+    const panelRows = panel.split("\n").filter((row) => row.includes("│"));
+
+    expect(getToolExecution(result, "search-word-wrap").isError).toBe(false);
+    expect(getToolResultText(result, "search-word-wrap")).toContain("ResolverAtlas");
+    expect(panelRows.length).toBeGreaterThan(2);
+    expect(panel).toContain("ResolverAtlas");
+    expect(panel).toContain("https://example.com/");
+  });
+});
+function plainSearchResult(result: string): string {
+  return result.replaceAll("⟦", "").replaceAll("⟧", "");
+}
 
 async function prepareWorkspace(directory: string): Promise<void> {
   const sourceDirectory = path.join(directory, "src");
@@ -172,18 +324,6 @@ async function prepareWorkspace(directory: string): Promise<void> {
             capabilities: ["diagnostics"],
           },
         },
-      }),
-      "utf8",
-    ),
-    writeFile(
-      path.join(piDirectory, "websearch.json"),
-      JSON.stringify({
-        strategy: "priority",
-        fallback: true,
-        providers: [
-          { id: "empty", provider: "serper", apiKey: "demo", maxResults: 3 },
-          { id: "demo", provider: "duckduckgo-html", maxResults: 3 },
-        ],
       }),
       "utf8",
     ),

@@ -3,7 +3,61 @@ import { runConfiguredProcess } from "pi-agent-ide/api/tool-config";
 import { parseDiagnostics } from "./diagnostics.js";
 import { LintCommandRegistry } from "./registry.js";
 
-import type { Linter } from "pi-agent-ide/api/toolchain";
+import type { LinterCommandConfig, ProcessResult } from "pi-agent-ide/api/tool-config";
+import type { Diagnostic, Linter, LintResult } from "pi-agent-ide/api/toolchain";
+
+/** A lint result with a short failure reason for doctor reports. */
+export interface ConfiguredLintResult extends LintResult {
+  readonly failure?: string;
+}
+
+/**
+ * Runs one configured linter and turns launch or parser errors into a normal failed result.
+ */
+export async function runConfiguredLinter(
+  config: LinterCommandConfig,
+  context: {
+    readonly projectRoot: string;
+    readonly filePath: string;
+    readonly env?: NodeJS.ProcessEnv;
+
+    readonly signal?: AbortSignal;
+  },
+): Promise<ConfiguredLintResult> {
+  let result: ProcessResult;
+
+  try {
+    result = await runConfiguredProcess(config.check, context);
+  } catch (error) {
+    return {
+      ok: false,
+      diagnostics: [],
+      failure: `command could not start: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  const output = result.stdout.trim().length > 0 ? result.stdout : result.stderr;
+  let diagnostics: Diagnostic[];
+
+  try {
+    diagnostics = parseDiagnostics(output, config.diagnostics);
+  } catch {
+    return {
+      ok: false,
+      diagnostics: [],
+      failure: `invalid ${config.diagnostics.format} diagnostics: ${output.trim().slice(0, 200) || "empty command output"}`,
+    };
+  }
+
+  return {
+    ok: result.ok,
+    diagnostics,
+    ...(!result.ok && {
+      failure:
+        result.stderr.trim().slice(0, 200) || `command exited with code ${String(result.exitCode)}`,
+    }),
+  };
+}
 
 /**
 Creates a linter backed by validated project commands.
@@ -24,9 +78,11 @@ export function createCommandLinter(registry: LintCommandRegistry): Linter {
 
       const command =
         fix === true && configured.fix !== undefined ? configured.fix : configured.check;
-      const result = await runConfiguredProcess(command, { projectRoot: context.cwd, filePath });
-      const output = result.stdout.trim().length > 0 ? result.stdout : result.stderr;
-      return { ok: result.ok, diagnostics: parseDiagnostics(output, configured.diagnostics) };
+      const result = await runConfiguredLinter(
+        { ...configured, check: command },
+        { projectRoot: context.cwd, filePath },
+      );
+      return { ok: result.ok, diagnostics: result.diagnostics };
     },
   };
 }

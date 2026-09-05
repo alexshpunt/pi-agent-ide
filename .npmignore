@@ -18,4 +18,3 @@ src/**/docs/
 **/*.integration.test.*
 **/*.test.*
 **/north-star.md
-src/extensions/pi-agent-search/plugins/pi-agent-search-semantic/qmd/

@@ -1,9 +1,11 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.js";
+import type { ReadResultDetails } from "pi-agent-read/api/tools/read";
+
 import {
   assistantMessage,
-  getProviderSystemPrompt,
   getToolResultMessage,
   getToolResultText,
   PiIntegrationTest,
@@ -54,7 +56,7 @@ test("read shows AST scope markers without changing the source", async () => {
             toolCall({
               id: "read-ast-scope-markers",
               name: "read",
-              arguments: { path: fileName },
+              arguments: { path: fileName, views: ["ast"] },
             }),
           ],
           { stopReason: "toolUse" },
@@ -70,14 +72,11 @@ test("read shows AST scope markers without changing the source", async () => {
     expect(rendered).toContain("}  <!-- scope-end-");
 
     const message = getToolResultMessage(result, "read-ast-scope-markers");
-    const details = message.details as {
+    const details = restoreReadDetails(message.details as ReadResultDetails, rendered) as {
       readonly lines?: readonly { readonly lineNumber: number; readonly content: string }[];
     };
     expect(details.lines?.map((line) => line.lineNumber)).toEqual([1, 2, 3, 4, 5]);
     expect(details.lines?.[0]?.content).toBe("export function logValue() {");
-
-    const prompt = getProviderSystemPrompt(result);
-    expect(prompt).toContain("prefer `ast:<path>` for the first read");
   });
 }, 60_000);
 
@@ -112,7 +111,7 @@ test("ast source returns a compressed outline with original file anchors", async
             toolCall({
               id: "read-ast-outline-source",
               name: "read",
-              arguments: { path: `ast:${fileName}` },
+              arguments: { path: `ast:${fileName}`, views: ["anchors"] },
             }),
           ],
           { stopReason: "toolUse" },
@@ -132,11 +131,10 @@ test("ast source returns a compressed outline with original file anchors", async
     expect(rendered).toContain("<!-- scope-begin-");
 
     const message = getToolResultMessage(result, "read-ast-outline-source");
-    const details = message.details as { readonly source?: string };
+    const details = restoreReadDetails(message.details as ReadResultDetails, rendered) as {
+      readonly source?: string;
+    };
     expect(details.source).toMatch(/^ast:\/.*\/outline\.ts$/u);
-
-    const prompt = getProviderSystemPrompt(result);
-    expect(prompt).toContain("`ast:<path>`");
   });
 }, 60_000);
 
@@ -161,7 +159,7 @@ test("range projection keeps only selected source lines and their visible marker
             toolCall({
               id: "read-ast-scope-markers-range",
               name: "read",
-              arguments: { path: fileName, offset: 1, limit: 1 },
+              arguments: { path: fileName, offset: 1, limit: 1, views: ["ast"] },
             }),
           ],
           { stopReason: "toolUse" },
@@ -176,7 +174,7 @@ test("range projection keeps only selected source lines and their visible marker
     expect(rendered).not.toContain("first();");
 
     const message = getToolResultMessage(result, "read-ast-scope-markers-range");
-    const details = message.details as {
+    const details = restoreReadDetails(message.details as ReadResultDetails, rendered) as {
       readonly lines?: readonly { readonly lineNumber: number }[];
     };
     expect(details.lines?.map((line) => line.lineNumber)).toEqual([1, 5]);

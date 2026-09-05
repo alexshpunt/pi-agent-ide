@@ -4,7 +4,7 @@
 
 This protocol connects independently loaded read plugins to one `pi-agent-read` core instance.
 
-A plugin may register ResourceResolvers, resolver-owned TUI result renderers, pipeline handlers, and one static or lazy prompt description. `pi.events` carries registration and readiness messages only.
+A plugin may register ResourceResolvers, typed text target resolvers, resolver-owned TUI result renderers, pipeline handlers, named views, and one static or lazy prompt description. `pi.events` carries registration and readiness messages only.
 
 ## Public surface
 
@@ -12,7 +12,7 @@ The protocol is exported from `pi-agent-read/api/plugin-protocol`:
 
 ```ts
 const READ_PROTOCOL = "pi-agent-read";
-const READ_API_VERSION = 6;
+const READ_API_VERSION = 9;
 const READ_PLUGIN_REGISTER_EVENT = "pi-agent-read/plugin/register";
 const READ_CORE_READY_EVENT = "pi-agent-read/core/ready";
 
@@ -30,9 +30,30 @@ type ReadPluginApi = ReadToolPluginApi;
 interface ReadToolPluginApi {
   read(request: ReadRequest, context: ResourceResolverContext): Promise<ReadToolResult>;
   addResolver(registration: ResourceResolverRegistration): void;
+  addTargetResolver(registration: TextTargetResolverRegistration): void;
   addHandler(registration: ReadHandlerRegistration): void;
-  addTextPresenter(registration: TextPresenterRegistration): void;
+  addView(registration: ReadViewRegistration): void;
+  addFragmentResolver(registration: FragmentResolverRegistration): void;
   describe(description: PromptDescriptionSource): void;
+}
+
+interface ReadFragmentContext {
+  readonly source: string;
+  readonly fragment: string;
+  readonly text: TextDocument;
+  readonly cwd: string;
+  readonly signal?: AbortSignal;
+}
+
+type ReadFragmentResolution =
+  | { readonly kind: "resolved"; readonly originLine: number }
+  | { readonly kind: "not-handled" }
+  | { readonly kind: "failed"; readonly message: string };
+
+interface FragmentResolverRegistration {
+  readonly id: string;
+  readonly priority?: number;
+  resolve(context: ReadFragmentContext): ReadFragmentResolution | Promise<ReadFragmentResolution>;
 }
 
 interface ResourceResolverRegistration {
@@ -41,9 +62,25 @@ interface ResourceResolverRegistration {
   readonly renderResult?: ReadResultRenderer;
   readonly preserveTruncatedOutput?: boolean;
 }
+
+interface TextTargetResolverRegistration {
+  readonly resolver: TextTargetResolver;
+  readonly priority?: number;
+}
+
+interface ReadViewRegistration {
+  readonly view: string;
+  readonly includes?: readonly string[];
+  readonly presenter: TextLinePresenter;
+  readonly priority?: number;
+}
 ```
 
+A view may list other views in `includes` when its complete presentation already contains theirs. If a request names both views, read skips the included view instead of returning duplicate annotations. For example, `anchors` includes `lines` because every line anchor already contains its line number.
+
 `ResourceResolver` comes from `pi-agent-resource`. Priority is read-registry metadata: lower values run first and the default is `0`.
+
+`TextTargetResolver` comes from `pi-agent-text`. It maps one opaque path value to ordered Resource sources and optional character ranges. The read core validates and projects those targets; it does not parse resolver-owned strings. Target resolver priority also runs lower values first and defaults to `0`.
 
 `renderResult` is optional display behavior for results owned by that resolver. It does not change agent content. Core stores the selected resolver ID in `ReadResultDetails.resolvedBy`, then uses that ID to select the renderer when Pi draws a new or restored tool result. If the renderer is unavailable, core uses its source-neutral fallback.
 
@@ -65,15 +102,16 @@ Importing either API module has no registration side effects.
 
 ## Registration boundary
 
-Each core instance owns its accepted plugin IDs, pending setup promises, resolver registrations, handler registrations, description sources, and stable order.
+Each core instance owns its accepted plugin IDs, pending setup promises, Resource and target resolver registrations, view and handler registrations, description sources, and stable order.
 
 Core validates:
 
 - the exact protocol and API version;
 - a non-empty plugin ID;
 - each ResourceResolver with `isResourceResolver`;
+- each typed target resolver and its fulfilled attempts;
 - registry-local resolver ID uniqueness;
-- read-specific priority, optional renderer, and handler registration fields;
+- read-specific priority, optional renderer, view, and handler registration fields;
 - one valid prompt description source per plugin.
 
 `any` is reserved as a read-handler selector and is rejected as a resolver ID by this registry.
@@ -119,6 +157,8 @@ Core and plugin readiness subscriptions are owned by the Pi extension instance t
 ## Execution
 
 After registration, the event bus is not used for reads.
+
+For a non-empty path, typed target resolvers run before normal whole-source resolution. A resolved target set runs the normal read pipeline independently for every selected range. Any terminal target or chunk failure fails the complete call; successful earlier chunks are not returned as a partial result.
 
 For one tool invocation, core creates one `ReadPipelineContext` and passes that same object through every stage:
 

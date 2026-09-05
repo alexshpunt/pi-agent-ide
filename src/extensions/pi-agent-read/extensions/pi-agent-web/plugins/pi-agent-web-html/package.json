@@ -2,6 +2,9 @@
   "name": "pi-agent-web-html",
   "version": "0.1.0",
   "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "defuddle": "^0.19.1",

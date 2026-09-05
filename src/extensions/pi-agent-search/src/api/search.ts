@@ -37,6 +37,8 @@ export interface SearchResolver {
 export interface SearchResolverRegistration {
   readonly resolver: SearchResolver;
   readonly priority?: number;
+  /** Handle unclaimed text after specialized resolvers; also accept empty protocol queries. */
+  readonly fallback?: boolean;
 }
 
 export type SearchDescriptionSource = string | (() => string | undefined);
@@ -64,6 +66,8 @@ export interface SearchPluginApi {
   addResolver(registration: SearchResolverRegistration): void;
   addAction(registration: SearchActionRegistration): void;
   describe(description: SearchDescriptionSource): void;
+  /** Add an operational guideline while this search plugin is active. */
+  addPromptGuideline(guideline: SearchDescriptionSource): void;
   search(request: SearchRequest, context: SearchContext): Promise<AgentToolResult<unknown>>;
   runAction(request: SearchActionRequest, context: SearchContext): Promise<unknown>;
 }

@@ -4,6 +4,8 @@
  * Owned by the LSP extension. Not tied to any specific LSP server implementation.
  */
 
+import type { ToolConfigLayer } from "pi-agent-ide/api/tool-config";
+
 // ── LSP protocol primitives ───────────────────────────────────────────
 
 /**
@@ -81,15 +83,15 @@ export interface LspServersConfig {
 // ── Resolved server info (registry output) ─────────────────────────────
 
 export interface ResolvedServer {
-  /**
-    Server key from lsp-servers.json (e.g. "gopls").
-    */
+  /** Server key from lsp-servers.json (e.g. "gopls"). */
   serverId: string;
   config: ServerConfig;
-  /**
-    LanguageId this extension maps to (e.g. "go").
-    */
+  /** LanguageId this extension maps to (e.g. "go"). */
   languageId: string;
+  /** Configuration layer that supplied this server. */
+  layer: ToolConfigLayer;
+  /** JSON file that supplied this server. */
+  sourcePath: string;
 }
 
 // ── Client state ───────────────────────────────────────────────────────

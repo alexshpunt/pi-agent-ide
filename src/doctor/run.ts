@@ -1,10 +1,10 @@
 import path from "node:path";
 
-import { runContributedChecks } from "./core.js";
+import { runContributedChecks, runContributedSetupChecks } from "./core.js";
 import { discoverRecipeCandidates, selectSuggestedRecipes } from "./discovery.js";
 import { collectProjectFiles, detectProjectLanguages } from "./inventory.js";
 
-import type { DoctorFinding } from "#src/api/doctor.js";
+import type { DoctorFinding, DoctorSetupAction, DoctorToolSelection } from "#src/api/doctor.js";
 import type { DoctorSnapshot } from "./core.js";
 import type { RecipeCandidate } from "./discovery.js";
 
@@ -14,55 +14,80 @@ export interface DoctorSection {
   readonly findings: readonly DoctorFinding[];
 }
 
-export interface DoctorRun {
+export interface DoctorSetupRun {
   readonly cwd: string;
   readonly files: readonly string[];
   readonly detectedLanguages: ReadonlyMap<string, readonly string[]>;
   readonly candidates: readonly RecipeCandidate[];
   readonly suggestions: readonly RecipeCandidate[];
+  readonly selections: readonly (DoctorToolSelection & { readonly pluginId: string })[];
+  readonly actions: readonly (DoctorSetupAction & { readonly pluginId: string })[];
+}
+
+export interface DoctorRun extends DoctorSetupRun {
   readonly sections: readonly DoctorSection[];
 }
 
-/**
-Runs one deterministic doctor inspection from the current contribution snapshot.
-*/
-export async function runDoctor(
+/** Runs the lightweight setup inspection used by startup guidance. */
+export async function inspectDoctorSetup(
   snapshot: DoctorSnapshot,
   cwd: string,
   environment: NodeJS.ProcessEnv = process.env,
-): Promise<DoctorRun> {
-  const files = await collectProjectFiles(cwd);
+  signal?: AbortSignal,
+): Promise<DoctorSetupRun> {
+  signal?.throwIfAborted();
+  const files = await collectProjectFiles(cwd, signal);
+  signal?.throwIfAborted();
   const detectedLanguages = detectProjectLanguages(
     files,
     snapshot.languages.map((entry) => entry.value),
   );
-  const languageIds = new Set(detectedLanguages.keys());
-  const context = { cwd, files, detectedLanguageIds: languageIds, env: environment };
-  const [candidates, checks] = await Promise.all([
-    discoverRecipeCandidates(cwd, languageIds, snapshot.recipes, environment),
-    runContributedChecks(snapshot, context),
+  const detectedLanguageIds = new Set(detectedLanguages.keys());
+  const context = { cwd, files, detectedLanguageIds, detectedLanguages, env: environment };
+  const [candidates, setup] = await Promise.all([
+    discoverRecipeCandidates(cwd, detectedLanguageIds, snapshot.recipes, environment),
+    runContributedSetupChecks(snapshot, context),
   ]);
-  const projectFindings: DoctorFinding[] = [
-    { status: "pass", message: `Project: ${cwd}` },
-    files.length > 0
-      ? { status: "pass", message: `${files.length} project files inspected` }
-      : { status: "warn", message: "No project files found" },
-    languageIds.size > 0
-      ? { status: "pass", message: `Detected: ${[...languageIds].join(", ")}` }
-      : { status: "warn", message: "No registered project languages detected" },
-  ];
-  const toolFindings = toolCoverageFindings(detectedLanguages, candidates);
+
   return {
     cwd,
     files,
     detectedLanguages,
     candidates,
-    suggestions: selectSuggestedRecipes(candidates, languageIds),
-    sections: [
-      { title: "Project", pluginId: "doctor", findings: projectFindings },
-      { title: "Tool discovery", pluginId: "doctor", findings: toolFindings },
-      ...checks,
-    ],
+    selections: setup.selections,
+    actions: setup.actions,
+    suggestions: selectSuggestedRecipes(candidates, detectedLanguageIds, setup.selections),
+  };
+}
+
+/** Runs one deterministic full doctor inspection from the current contribution snapshot. */
+export async function runDoctor(
+  snapshot: DoctorSnapshot,
+  cwd: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<DoctorRun> {
+  const setup = await inspectDoctorSetup(snapshot, cwd, environment);
+  const detectedLanguageIds = new Set(setup.detectedLanguages.keys());
+  const context = {
+    cwd,
+    files: setup.files,
+    detectedLanguageIds,
+    detectedLanguages: setup.detectedLanguages,
+    env: environment,
+  };
+  const checks = await runContributedChecks(snapshot, context);
+  const projectFindings: DoctorFinding[] = [
+    { status: "pass", message: `Project: ${cwd}` },
+    setup.files.length > 0
+      ? { status: "pass", message: `${setup.files.length} project files inspected` }
+      : { status: "warn", message: "No project files found" },
+    detectedLanguageIds.size > 0
+      ? { status: "pass", message: `Detected: ${[...detectedLanguageIds].join(", ")}` }
+      : { status: "warn", message: "No registered project languages detected" },
+  ];
+  return {
+    ...setup,
+    sections: [{ title: "Project", pluginId: "doctor", findings: projectFindings }, ...checks],
   };
 }
 
@@ -81,6 +106,16 @@ export function formatDoctorReport(run: DoctorRun): string {
       if (finding.detail !== undefined) {
         lines.push(`        \`${finding.detail}\``);
       }
+    }
+
+    lines.push("");
+  }
+
+  if (run.actions.length > 0) {
+    lines.push("Setup needs attention");
+
+    for (const action of run.actions) {
+      lines.push(`  ${action.message} [${action.pluginId}]`);
     }
 
     lines.push("");
@@ -106,8 +141,10 @@ export function formatDoctorReport(run: DoctorRun): string {
 Returns true when a report needs setup work.
 */
 export function doctorNeedsWork(run: DoctorRun): boolean {
-  return run.sections.some((section) =>
-    section.findings.some((finding) => finding.status === "fail" || finding.status === "warn"),
+  return (
+    run.actions.length > 0 ||
+    run.suggestions.length > 0 ||
+    run.sections.some((section) => section.findings.some((finding) => finding.status === "fail"))
   );
 }
 
@@ -137,60 +174,4 @@ export function buildDoctorAgentPrompt(run: DoctorRun): string {
     "",
     `Project root: ${path.resolve(run.cwd)}`,
   ].join("\n");
-}
-
-function toolCoverageFindings(
-  detected: ReadonlyMap<string, readonly string[]>,
-  candidates: readonly RecipeCandidate[],
-): DoctorFinding[] {
-  const findings: DoctorFinding[] = [];
-
-  for (const [language, files] of detected) {
-    for (const kind of ["formatter", "linter", "lsp"] as const) {
-      const matches = candidates.filter(
-        (candidate) =>
-          candidate.recipe.kind === kind && candidate.recipe.languages.includes(language),
-      );
-      const topScore = matches[0]?.score;
-      const tied =
-        topScore === undefined ? [] : matches.filter((candidate) => candidate.score === topScore);
-
-      if (tied.length > 1 && tied.some((candidate) => candidate.evidence.length > 0)) {
-        findings.push({
-          status: "warn",
-          message: `${language} ${kind}: choose between ${tied.map((item) => item.recipe.name).join(", ")}`,
-        });
-        continue;
-      }
-
-      const readyConfigured = matches.find(
-        (candidate) =>
-          candidate.evidence.includes("Pi Agent IDE config") ||
-          (candidate.executable !== undefined &&
-            candidate.evidence.some((item) => item.startsWith("project config:"))),
-      );
-
-      if (readyConfigured !== undefined) {
-        findings.push({
-          status: "pass",
-          message: `${language} ${kind}: ${readyConfigured.recipe.name}`,
-        });
-      } else if (matches.length > 0) {
-        findings.push({
-          status: "warn",
-          message: `${language} ${kind}: ${matches
-            .map((item) => item.recipe.name)
-            .join(", ")} available in catalog`,
-          detail: `${files.length} matching files`,
-        });
-      } else {
-        findings.push({
-          status: "skip",
-          message: `${language} ${kind}: no loaded plugin contribution`,
-        });
-      }
-    }
-  }
-
-  return findings;
 }

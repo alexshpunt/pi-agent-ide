@@ -8,6 +8,7 @@
     "cross-spawn": "^7.0.6",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-ide": "workspace:^",
+    "pi-agent-invariant": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",
     "pi-agent-search": "workspace:^",

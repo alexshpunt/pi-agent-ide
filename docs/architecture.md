@@ -24,11 +24,13 @@ Pi Agent IDE
 ├── read core
 │   └── Resource resolvers, presenters, and pipeline handlers
 ├── search core
-│   └── text, structural, semantic, and web resolvers
+│   └── text and structural resolvers
 ├── text-editor core
 │   └── writable Resources, anchors, mutations, guards, and renderers
-└── IDE core
-    └── AST, LSP, formatter, lint, and Git-aware plugins
+├── IDE core
+│   └── AST, LSP, formatter, lint, and Git-aware plugins
+└── startup-tip core
+    └── passive, provider-owned TUI tips
 ```
 
 The cores do not import concrete plugins to discover behavior. Plugins connect through public protocols.
@@ -43,16 +45,17 @@ Shared Resource contracts live under `packages/pi-agent-resource`.
 
 ## Plugin protocols
 
-The umbrella currently exposes four main extension protocols:
+The umbrella currently exposes five main extension protocols:
 
-| Protocol package       | Contributions                                                             |
-| ---------------------- | ------------------------------------------------------------------------- |
-| `pi-agent-read`        | Resource resolvers, read handlers, presenters, result renderers           |
-| `pi-agent-search`      | Search resolvers and search actions                                       |
-| `pi-agent-text-editor` | Writable resolvers, anchors, mutations, guards, renderers, edit listeners |
-| `pi-agent-ide`         | Formatter, compiler, linter, and other toolchain implementations          |
+| Protocol package        | Contributions                                                             |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `pi-agent-read`         | Resource resolvers, read handlers, presenters, result renderers           |
+| `pi-agent-search`       | Search resolvers and search actions                                       |
+| `pi-agent-text-editor`  | Writable resolvers, anchors, mutations, guards, renderers, edit listeners |
+| `pi-agent-ide`          | Formatter, compiler, linter, and other toolchain implementations          |
+| `pi-agent-ide/api/tips` | Provider-owned passive startup tips                                       |
 
-Each plugin declares a protocol name, API version, stable ID, and `setup` function. Setup contributions are validated before they become active.
+Each protocol contribution declares a protocol name, API version, and stable ID. Contributions are validated before they become active; protocols that need setup expose it through their own contract.
 
 The core and plugin may load in either order. They exchange readiness and registration messages through Pi's shared event bus, then use direct in-memory APIs after registration. This lets an external Pi extension connect even though the built-in package is loaded through one composite entrypoint.
 
@@ -61,12 +64,13 @@ The core and plugin may load in either order. They exchange readiness and regist
 Doctor is an independent protocol, not a central list of tool knowledge. Each extension owns and registers its own checks and recipes:
 
 - the language plugin contributes language detection;
-- AST contributes parser probes;
-- formatter, lint, and LSP contribute their own catalogs and config checks;
-- web search contributes provider and credential checks;
+- AST contributes structural-search setup and parser probes;
+- formatter, lint, and LSP contribute their own catalogs, lightweight effective-selection inspections, and full config checks;
+- local search and Git contribute lightweight dependency setup inspections and full runtime checks;
+- browser reads contribute an optional full runtime check, not a startup setup action;
 - external extensions can contribute through `pi-agent-doctor`.
 
-The doctor core only aggregates contributions, runs them, and presents the result. It never imports concrete plugins or assumes their IDs. Disabling a plugin removes its checks and recipes from `/pi-agent-ide-doctor`. Human-facing catalog pages are generated from the same plugin-owned data.
+The doctor core only aggregates contributions, runs them, and presents the result. It never imports concrete plugins or assumes their IDs. Lightweight setup inspections decide whether actionable startup guidance exists without launching project tools. Full checks remain behind `/pi-agent-ide-doctor`. Disabling a plugin removes its checks, setup inspections, and recipes. Human-facing catalog pages are generated from the same plugin-owned data.
 
 ## Anchors
 
@@ -78,9 +82,9 @@ An anchor resolver can:
 - validate it against the current Resource snapshot;
 - return a line or text selection;
 - reject stale or ambiguous input with recovery context;
-- resolve one anchor to several Resource sources.
+- resolve one value to typed ranges in several Resource sources.
 
-Read presenters can display matching markers without changing canonical source text.
+Typed target resolvers own their opaque syntax. Read and editor cores validate and use the returned sources and ranges; they do not parse formats such as `SEARCH#...` themselves. Read presenters can display matching markers without changing canonical source text.
 
 ## Toolchain feedback
 

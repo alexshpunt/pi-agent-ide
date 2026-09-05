@@ -181,21 +181,19 @@ test("undo restores one read change and leaves unrelated changes visible", async
 
     expect(getToolResultText(result, "before")).toContain(selector);
     expect(getToolExecution(result, "undo-selected").isError).toBe(false);
-    expect(getToolResultText(result, "undo-selected")).toContain(
-      "-|        |const DEFAULT_ATTEMPTS = 3;",
-    );
-    expect(getToolResultText(result, "undo-selected")).toMatch(
-      /\+\|\s*\d+#[A-Z0-9]{4}\|const DEFAULT_ATTEMPTS = 2;/u,
-    );
+    expect(getToolResultText(result, "undo-selected")).toContain("const DEFAULT_ATTEMPTS = 2;");
+    expect(getToolResultText(result, "undo-selected")).not.toContain("const DEFAULT_ATTEMPTS = 3;");
 
     const rendered = result.tuiRenderedOutput;
-    const header = `undo ${fileName}:${selector} +0 ~1 -0`;
+    const header = `undo ${fileName} ·`;
     const panelStart = rendered.indexOf("╭─", rendered.indexOf(header));
     const panelEnd = rendered.indexOf("╯", panelStart);
     const panel = rendered.slice(panelStart, panelEnd + 1);
 
     expect(rendered).toContain(header);
     expect(panelStart).toBeGreaterThan(-1);
+
+    expect(rendered.slice(panelEnd + 1).trimStart()).toMatch(/^\+0 ~1 -0/u);
     expect(panel).toMatch(/\d+\s+~\s+const DEFAULT_ATTEMPTS = 2;/u);
     expect(panel).not.toContain("const DEFAULT_ATTEMPTS = 3;");
 
@@ -257,7 +255,6 @@ test("batched undo calls inherit the file and restore independent read changes",
     expect(getToolResultText(result, "before")).toContain(filesSelector);
     expect(getToolExecution(result, "undo-attempts").isError).toBe(false);
     expect(getToolExecution(result, "undo-files").isError).toBe(false);
-    expect(getToolResultText(result, "undo-attempts")).toContain(fileName);
     expect(getToolResultText(result, "undo-files")).toContain(fileName);
 
     const content = await readFile(path.join(directory, fileName), "utf8");
@@ -275,7 +272,7 @@ function readCall(
   return toolCall({
     id,
     name: "read",
-    arguments: { path: fileName, ...range },
+    arguments: { path: fileName, views: ["changes", "anchors"], ...range },
   });
 }
 

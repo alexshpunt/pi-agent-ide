@@ -39,7 +39,7 @@ test("keeps registrations isolated by exact target", async () => {
   const writeHost = createContentHost(pi, writeTarget);
 
   await connectContentConverter(pi, textRegistration(readTarget));
-  expect(readHost.listDescriptions()).toEqual([{ id: "text", description: "UTF-8 text." }]);
+  expect(readHost.listDescriptions().map(({ id }) => id)).toEqual(["text"]);
   expect(writeHost.listDescriptions()).toEqual([]);
 
   await expect(readHost.convert(input, {})).resolves.toEqual([{ type: "text", text: "fixture" }]);

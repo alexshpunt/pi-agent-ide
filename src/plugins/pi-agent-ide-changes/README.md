@@ -6,7 +6,7 @@ This extension gives the agent one stable `CHANGE#...` anchor for each current G
 
 `stage({ file, change: "CHANGE#..." })` puts only the selected change in the Git index. `unstage({ file, change: "CHANGE#..." })` removes only that change from the index. Neither tool changes the worktree file.
 
-`undo({ file, change: "CHANGE#..." })` restores the selected change to its `HEAD` text. If any part of that change is staged, undo also removes it from the index. `undo({ file, change: "last" })` restores the file to its state before the latest text editor invocation that changed it.
+`undo({ file, change: "CHANGE#..." })` restores the selected change to its `HEAD` text. If any part of that change is staged, undo also removes it from the index. `undo({ file, change: "last" })` treats `last` as a command literal, not an anchor, and restores the file to its state before the latest text editor invocation that changed it.
 
 A direct mutation call is one transaction. A coalesced text batch is also one transaction, but its state is stored independently for each changed file. The extension keeps only one transaction per file in memory. A newer edit replaces it, any restore consumes it, and an external change makes it stale. Newly created files are not stored.
 

@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import type { DiagnosticParserConfig } from "pi-agent-ide/api/tool-config";
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
 
@@ -149,6 +149,8 @@ function stringValue(value: unknown, fallback: string): string {
 }
 
 function severityValue(value: unknown): Diagnostic["severity"] {
+  if (value === 2) return "error";
+  if (value === 1) return "warning";
   const normalized = stringValue(value, "warning").toLowerCase();
 
   if (normalized.includes("error")) {

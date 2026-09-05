@@ -99,7 +99,14 @@ function editedFiles(
 
 function readMessage(id: string, filePath: string) {
   return assistantMessage(
-    [toolCall({ id, name: "read", arguments: { path: filePath, offset: 1 } })],
+    [
+      toolCall({
+        id,
+        name: "read",
+        // Surrounding reads mirror an editing agent and request hash anchors.
+        arguments: { path: filePath, offset: 1, views: ["anchors"] },
+      }),
+    ],
     { stopReason: "toolUse" as const },
   );
 }

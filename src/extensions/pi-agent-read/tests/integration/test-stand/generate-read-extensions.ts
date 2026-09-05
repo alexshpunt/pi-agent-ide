@@ -1,9 +1,10 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const packageRoot = path.resolve(import.meta.dirname, "../../..");
-const repoRoot = path.resolve(packageRoot, "../../..");
+const packageRoot = findAncestorDirectory(import.meta.dirname, "package.json");
+const repoRoot = findAncestorDirectory(packageRoot, "pnpm-workspace.yaml");
 const temporaryRoot = path.join(repoRoot, ".tmp");
 
 export interface GeneratedReadExtensions {
@@ -53,4 +54,16 @@ function resolvePackageImport(source: string): string {
 
   const relativePath = source.slice(root.prefix.length).replace(/\.js$/, ".ts");
   return path.join(packageRoot, root.directory, relativePath);
+}
+
+function findAncestorDirectory(startDirectory: string, marker: string): string {
+  let directory = startDirectory;
+  for (;;) {
+    if (existsSync(path.join(directory, marker))) return directory;
+    const parent = path.dirname(directory);
+    if (parent === directory) {
+      throw new Error(`Directory with ${marker} not found above ${directory}`);
+    }
+    directory = parent;
+  }
 }

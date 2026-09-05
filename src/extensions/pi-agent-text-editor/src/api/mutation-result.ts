@@ -13,6 +13,7 @@ export {
   type LintViolation,
   type MutationAnchor,
   type MutationSnapshot,
+  type MutationResultPresentation,
   type StaleAnchorDiagnostic,
   type StaleEditInfo,
   type StrictEditErrorCode,

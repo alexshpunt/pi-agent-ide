@@ -1,17 +1,9 @@
-import { requiredValue } from "../../../../utils/required-value.js";
-import { TextAnchor } from "pi-agent-text";
+import { requiredValue } from "pi-agent-invariant";
+import { TextAnchor, type TextSelectionPosition, type TextSelectionRange } from "pi-agent-text";
+
+export type { TextSelectionPosition, TextSelectionRange } from "pi-agent-text";
 
 const textSelectionAnchorBrand = Symbol.for("pi-agent-text-editor/TextSelectionAnchor");
-
-export interface TextSelectionPosition {
-  readonly lineNumber: number;
-  readonly column: number;
-}
-
-export interface TextSelectionRange {
-  readonly start: TextSelectionPosition;
-  readonly end: TextSelectionPosition;
-}
 
 export class TextSelectionAnchor extends TextAnchor {
   readonly [textSelectionAnchorBrand] = true;
@@ -46,6 +38,7 @@ export class TextSelectionAnchor extends TextAnchor {
     const copied = ranges.map((range) => ({
       start: { ...range.start },
       end: { ...range.end },
+      ...(range.linewise === true && { linewise: true }),
     }));
     assertSelectionRanges(copied);
     super(value, requiredValue(copied[0]).start.lineNumber);
@@ -84,7 +77,11 @@ function isTextSelectionRange(value: unknown): value is TextSelectionRange {
   }
 
   const candidate = value as Partial<TextSelectionRange>;
-  return isTextSelectionPosition(candidate.start) && isTextSelectionPosition(candidate.end);
+  return (
+    isTextSelectionPosition(candidate.start) &&
+    isTextSelectionPosition(candidate.end) &&
+    (candidate.linewise === undefined || typeof candidate.linewise === "boolean")
+  );
 }
 
 function isTextSelectionPosition(value: unknown): value is TextSelectionPosition {

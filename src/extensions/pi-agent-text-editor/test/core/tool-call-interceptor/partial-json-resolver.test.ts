@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, it } from "vitest";
 
 import { resolvePartial } from "#src/core/tool-call-interceptor/partial-json-resolver.js";

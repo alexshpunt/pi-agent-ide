@@ -6,22 +6,27 @@ export function createLineHashPresenter(): TextLinePresenter {
   return {
     id: "line-hash",
     present(document, context) {
-      const anchors = document.lines.map((line) => {
-        if (context.resolvedBy === "filesystem") {
-          return createLineHashAnchor(line.lineNumber, line.content);
-        }
-
-        const sourceLine = getTextSourceLine(line);
-
+      const presented = document.lines.map((line) => {
+        const sourceLine =
+          context.resolvedBy === "filesystem"
+            ? { lineNumber: line.lineNumber, content: line.content }
+            : getTextSourceLine(line);
         return sourceLine === undefined
           ? undefined
-          : createLineHashAnchor(sourceLine.lineNumber, sourceLine.content);
+          : {
+              anchor: createLineHashAnchor(sourceLine.lineNumber, sourceLine.content),
+              lineNumber: sourceLine.lineNumber,
+            };
       });
-      const width = Math.max(0, ...anchors.map((anchor) => anchor?.value.length ?? 0));
+      const anchorWidth = Math.max(0, ...presented.map((item) => item?.anchor.value.length ?? 0));
+      const lineWidth = Math.max(
+        0,
+        ...presented.map((item) => String(item?.lineNumber ?? "").length),
+      );
       const lines = document.lines.map((line, index) => {
-        const anchor = anchors[index];
+        const item = presented[index];
 
-        if (anchor === undefined) {
+        if (item === undefined) {
           return line;
         }
 
@@ -29,7 +34,10 @@ export function createLineHashPresenter(): TextLinePresenter {
           ...line,
           presentation: {
             ...line.presentation,
-            prefix: `${anchor.value.padStart(width)}|${line.presentation?.prefix ?? ""}`,
+            prefix: `${item.anchor.value.padStart(anchorWidth)}|${line.presentation?.prefix ?? ""}`,
+            compactPrefix:
+              line.presentation?.compactPrefix ??
+              `${String(item.lineNumber).padStart(lineWidth)} │ `,
           },
         };
       });

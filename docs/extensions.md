@@ -13,6 +13,7 @@ When its target core is enabled, an external extension can load before or after 
 | A writable source, anchor, mutation, guard, or renderer  | `pi-agent-ide/api/text-editor`, `pi-agent-ide/api/text`                                              |
 | A formatter, compiler, or linter                         | `pi-agent-ide/api/connect-plugin`, `pi-agent-ide/api/toolchain`                                      |
 | Doctor language knowledge, setup recipe, or health check | `pi-agent-ide/api/connect-doctor-plugin`, `pi-agent-ide/api/doctor`, `pi-agent-ide/api/tool-catalog` |
+| Startup tip provider                                     | `pi-agent-ide/api/tips`                                                                              |
 
 The internal packages are bundled into Pi Agent IDE and are not published separately. External extensions import their public contracts through the umbrella package.
 
@@ -143,6 +144,27 @@ A read Resource does not become writable automatically. Register a matching reso
 
 Read plugins can also add pipeline handlers, text presenters, and resolver-specific TUI renderers. See the [read plugin contract](https://github.com/alexshpunt/pi-agent-ide/blob/main/src/extensions/pi-agent-read/docs/plugins/plugin-protocol.md).
 
+## Typed text targets
+
+Use the public typed target contract when one opaque value should select ranges in one or more text Resources. Import it from the umbrella text API:
+
+```ts
+import type {
+  TextSelectionRange,
+  TextTarget,
+  TextTargetResolutionAttempt,
+  TextTargetResolver,
+} from "pi-agent-ide/api/text";
+```
+
+A `TextTarget` contains a non-empty Resource `source` and optional half-open character `ranges`. Positions use one-based lines and zero-based columns. When `ranges` is omitted, read synthesizes a first-line chunk, while the editor treats the source as the target scope. Set `linewise: true` only when a range represents complete lines and mutation tools should preserve whole-line behavior at file edges.
+
+The resolver owns its value syntax and returns `not-handled`, `resolved`, `rejected`, or `failed`. Consumers validate the result and must not parse strings such as `SEARCH#...` themselves.
+
+A read plugin registers this contract with `api.addTargetResolver({ resolver })`. The read core returns one ordered line chunk per selected range, with `offset` and `limit` applied to each chunk before the aggregate output cap.
+
+An editor anchor registration can expose the same resolver through its `resources` field. This lets a value in `path`, `target`, or an anchor field supply Resource sources and ranges before mutation. The editor resolves compatible explicit anchors in every selected Resource and unions the ranges. It rejects incompatible Resource sets, overlaps, stale selections, and malformed results before writing.
+
 ## Anchor plugin
 
 Anchor resolvers recognize opaque values against the current text snapshot. This example adds a constant `middle` position.
@@ -244,7 +266,21 @@ export default function register(pi: ExtensionAPI): void | Promise<void> {
 }
 ```
 
-A real formatter should run its normal formatter command and report how many edits it applied. Compilers and linters return structured diagnostics with one-based line and column positions.
+A real formatter runs inside the edit transaction and reports how many edits it applied. Only a compiler marked `syntaxOnly: true` may run before formatting. It must perform a fast parser check, not LSP or project/type analysis. Syntax errors skip formatting and keep the edit saved. A formatter can instead use its own parser to reject invalid text safely.
+
+### Background diagnostics
+
+IDE API version 3 separates diagnostic producers from file-writing tools. Register a read-only source with `api.addDiagnosticSource({ id, diagnose })`. `diagnose(filePath, context)` receives the workspace, final file `content`, an abort `signal`, and a revision-bound `publish(report)` callback for later updates. Return a report with `status`, `diagnostics`, and an optional failure `reason`. Coordinates are one-based.
+
+- `ready` means the source checked this text.
+- `unversioned` means the server omitted its document version, so freshness cannot be proved.
+- `unavailable` means the source could not check this file. This is not a clean result.
+
+Honor cancellation and never apply fixes from a diagnostic source. The core rejects results for superseded edits and ended sessions. Sources run in a bounded background queue after formatting. LSP push-only and pull-capable servers use the same diagnostic state as command linters. Empty updates clear earlier diagnostics.
+
+`api.readDiagnostics(filePath, { cwd })` returns `{ filePath, content, results }`. It detects external text changes, reuses completed current checks, and waits at most five seconds for pending checks. Results still running have `status: "pending"`. Each background check has a thirty-second deadline; an individual provider may have a shorter timeout. Missing and failed sources remain explicit.
+
+Changed per-file counts enter the next model request as a hidden custom context message. Updates are combined before delivery, contain no diagnostic details, and do not start an idle agent. This delivery is context-only, not a persistent session message. The `diagnostics:` protocol and `diagnostics` view expose details when the agent requests them. Neither replaces project builds or tests.
 
 ## Doctor plugin
 
@@ -252,9 +288,33 @@ A plugin should register only the knowledge and checks it owns. Use `connectDoct
 
 Do not import another plugin's catalog or maintain a second central catalog. If your extension is disabled, its doctor contributions must disappear with it. Keep credentials out of findings and recipe data.
 
-## Install and test your extension
+## Startup tip provider
 
-Try a local extension without installing it permanently:
+Startup tips are optional and passive. A provider returns one tip for a session-start context, or `undefined` when it has nothing to show. Pi Agent IDE calls providers for the session-start lifecycle reason (`startup`, `reload`, `new`, `resume`, or `fork`) and appends at most one eligible tip to the TUI transcript when inspection finishes. Provider work does not block session readiness. Tips do not enter the model context or trigger an agent turn.
+
+Shown tips are stored in the global Pi data directory at `pi-agent-ide/tips.json` (under `PI_CODING_AGENT_DIR`, or `~/.pi/agent` by default). The project path and provider ID are part of the stored identity, so each provider-owned tip is shown once per project. The claim is made atomically before rendering, which prevents concurrent Pi processes from displaying the same tip twice. If rendering fails, the claim is released so the tip can be retried. Unreadable or unwritable state is treated as empty and never blocks startup.
+
+```ts
+import { connectTipProvider, TIP_API_VERSION, TIP_PROTOCOL } from "pi-agent-ide/api/tips";
+
+export default function register(pi: ExtensionAPI): void | Promise<void> {
+  return connectTipProvider(pi, {
+    protocol: TIP_PROTOCOL,
+    apiVersion: TIP_API_VERSION,
+    id: "my-tips",
+    getTip: () => ({
+      id: "my-tips-first-run",
+      title: "Try the project check",
+      body: "Run the project check before opening a pull request.",
+    }),
+  });
+}
+```
+
+Providers should keep trigger decisions in `getTip`, avoid secrets in tip text, and never send the tip as an agent message.
+Pass the supplied `context.signal` to cancellable work and stop when it is aborted. Pi Agent IDE cancels pending inspections when their session ends and ignores late results, including results from providers that do not honor cancellation.
+
+## Install and test your extension
 
 ```bash
 pi --no-extensions -e npm:pi-agent-ide -e ./index.ts
@@ -277,4 +337,4 @@ The repository's external plugin integration fixture is a small working example:
 
 An extension should depend on the public protocol it implements, not on another extension's internal files. Prefer one narrow contribution over a plugin that reaches into several registries without a clear reason.
 
-Do not add an external plugin ID to `disabledExtensions`. That setting controls only the built-ins shipped by Pi Agent IDE. Enable or disable your package through Pi's normal package and extension configuration.
+Do not add an external plugin ID to `disabled`. That setting in `extensions.json` controls only the built-ins shipped by Pi Agent IDE. Enable or disable your package through Pi's normal package and extension configuration.

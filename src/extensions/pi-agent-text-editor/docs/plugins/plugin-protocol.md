@@ -2,16 +2,17 @@
 
 ## Purpose
 
-The protocol lets independent extensions contribute editable Resource resolvers, text anchor resolvers, prompt descriptions, and tool pipeline handlers.
+The protocol lets independent extensions contribute editable Resource resolvers, text anchor and typed target resolvers, prompt descriptions, and tool pipeline handlers.
 
 ```ts
 const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
-const TEXT_EDITOR_API_VERSION = 15;
+const TEXT_EDITOR_API_VERSION = 17;
 
 interface TextEditorPluginApi {
   addResolver(registration: ResourceResolverRegistration): void;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
+  recoveryConfig(section: string): TextEditorRecoveryConfigSection;
   addTextPresenter(registration: TextPresenterRegistration): void;
   addMutationTool(registration: TextMutationToolRegistration): void;
   addMutationGuard(registration: TextMutationGuardRegistration): void;
@@ -21,6 +22,12 @@ interface TextEditorPluginApi {
   previewMutation(request: TextMutationPreviewRequest): Promise<TextMutationPreviewOutcome>;
   describe(description: PromptDescriptionSource): void;
   tool(tool: TextEditorToolId): TextEditorToolPluginApi;
+}
+
+interface TextEditorRecoveryConfigSection {
+  readonly contextLines: number;
+  readonly timeoutMs: number;
+  readonly settings: unknown;
 }
 ```
 
@@ -36,6 +43,10 @@ A mutation receives the representative primary document through `sourceDocument`
 
 A mutation may read and change more than one Resource. Core expands global anchor Resources, reads every required Resource before mutation, calculates every final document, runs mutation guards, then writes changed Resources in stable order. Direct and batched calls use the same change contract; pathless global anchors use the direct path.
 
+For built-in span mutations, a plain source path only scopes anchor resolution. It never selects the full document by itself. A typed source path can supply the selection ranges, so `replace`, `delete`, and `insert` may omit their source anchor. `copy` and `move` may omit their source start only when the typed path yields one usable span in one Resource.
+
+Supplying both start and end fields creates one natural span from the left edge of the start selection through the right edge of the end selection. Both endpoints must resolve to one Resource and one usable range. Without an end field, supported selection operations may apply independently to several ranges and Resources.
+
 A mutation may return `afterWrite` when it must update related state only after all Resource writes, post-edit handlers, and final rereads succeed. Direct and batched calls await it before reporting success. If it fails, the tool reports `POST_WRITE_FAILED` with an applied effect because the Resource writes have already completed. Mutation previews do not run it.
 
 The TypeBox property order is the accepted argument order. Primary source metadata controls sibling path inheritance and batch discovery. `api.onMutationTool()` receives every existing registration immediately and then receives later registrations, so extension load order does not change protection.
@@ -46,7 +57,7 @@ A mutation registration may set `intent` to `restore`; otherwise it is an ordina
 
 `api.onDidEdit()` observes a changed Resource after its write, post-edit handlers, and final reread have finished. One completion contains the requested source, resolved Resource source, resolver ID, cwd, prior existence, raw before and final after documents, and invocation intent.
 
-A direct mutation produces one completion per changed file. A coalesced batch also produces one completion per changed file, with the state before and after the complete batch. Files written before a later batch failure still produce completions. Presenters run after notification and do not alter the raw final document seen by listeners.
+A direct mutation produces one completion per changed file. A successful coalesced batch also produces one completion per changed file, with the state before and after the complete batch. A write-phase failure produces no completions, including when rollback is incomplete. Presenters run after notification and do not alter the raw final document seen by listeners.
 
 The editor does not retain completions or provide history. Listener failures do not turn a successful write into a failed tool result.
 
@@ -64,7 +75,9 @@ The bundled mutation renderer observes every mutation registration and contribut
 
 Core snapshots committed guards once per invocation and runs them after all anchors resolve but before persistence. A rejection is an expected not-applied result. A thrown guard is reported as `PLUGIN_FAILED`.
 
-`copy` and `move` use `targetStart` as their destination position. Without `targetEnd`, they insert after that line. With `targetEnd`, they replace the inclusive resolved target range. The old destination `anchor` field does not exist.
+All Resource resolution, reads, target and anchor checks, change application, and guards finish before the first write. Those failures have no applied effect. If a later Resource write fails, core attempts to restore the failed Resource and every Resource already written, and reports any rollback failures.
+
+`copy` and `move` always need a destination selection. `target` supplies its Resource scope and defaults to the source scope; it does not select a position by itself. `targetStart`, or a typed `target` with an implicit range, supplies the destination selection. Without `targetEnd`, the tools insert after its natural end. With `targetEnd`, they replace the inclusive natural destination span. The old destination `anchor` field does not exist.
 
 ## Resource resolvers
 
@@ -90,7 +103,9 @@ interface TextAnchorResolverRegistration {
 
 `kind` is an open, namespaced string that states which mutation fields may use the resolver. The editor exports `pi-agent-text-editor/position` for line selectors and `pi-agent-text-editor/search` for exact search selections.
 
-`resources` is optional. It recognizes the same opaque value before any Resource is read and may return the complete source list for that anchor. `not-handled` leaves normal source resolution unchanged; rejection or failure stops the mutation before writes. The anchor resolver still runs separately against each returned Resource snapshot.
+`resources` is optional. It is the public `TextTargetResolver` contract from `pi-agent-text`. It recognizes the same opaque value before any Resource is read and may return ordered Resource sources with half-open character ranges. `not-handled` leaves normal source resolution unchanged; rejection, failure, or malformed output stops the mutation before writes. The editor validates and uses this typed result. It does not parse the resolver's string format.
+
+The same typed value may appear in an anchor field or in a mutation source field such as `path` or `target`. A source-field result supplies implicit ranges for that field's anchor. When a compatible explicit anchor is also present, the editor resolves it against every selected Resource and unions its natural range with the implicit ranges. Resource-set mismatches, incompatible selection shapes, ambiguous ranges, and overlaps are rejected before persistence.
 
 `api.addAnchorResolver()` registers one resolver with presentation metadata:
 

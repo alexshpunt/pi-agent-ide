@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { createHash } from "node:crypto";
 
 import {
@@ -61,8 +61,39 @@ export function createLineHashAnchorResolver(): TextAnchorResolver {
     description:
       "Use the complete `LINE#HASH` printed before a source line, for example `12#A4F0`; the hash rejects stale text.",
     normalize: normalizeLineHashAnchor,
+    renderFull(value) {
+      return value;
+    },
+    renderCompact(value) {
+      return `line ${lineHashPattern.exec(value)?.[1] ?? "?"}`;
+    },
     tryResolve(value, context) {
       return Promise.resolve(resolveLineHashAnchor(value, context));
+    },
+    recover(value, context) {
+      const match = lineHashPattern.exec(value);
+      if (match === null) {
+        return Promise.resolve({ kind: "unavailable" });
+      }
+      const requested = Number(match[1]);
+      const lineNumber = Math.min(Math.max(1, requested), context.lines.length);
+      const line = context.lines[lineNumber - 1];
+      if (line === undefined) {
+        return Promise.resolve({ kind: "unavailable" });
+      }
+      return Promise.resolve({
+        kind: "candidates",
+        total: 1,
+        candidates: [
+          {
+            rank: 1,
+            range: {
+              start: { lineNumber, column: 0 },
+              end: { lineNumber, column: line.length },
+            },
+          },
+        ],
+      });
     },
   };
 }

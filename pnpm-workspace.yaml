@@ -4,6 +4,11 @@ packages:
   - "src/plugins/*"
 minimumReleaseAgeExclude:
   - "pi-coding-agent-test@0.1.1"
+
+# node-fetch still depends on this deprecated compatibility shim.
+allowedDeprecatedVersions:
+  node-domexception: "1.0.0"
+
 allowBuilds:
   "@google/genai": true
   "@tree-sitter-grammars/tree-sitter-toml": true

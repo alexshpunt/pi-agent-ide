@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getProviderSystemPrompt, getToolExecution } from "pi-coding-agent-test";
+import { getToolExecution } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
@@ -84,10 +84,7 @@ async function runConstantScenario(
       arguments: toolArguments,
     });
     const { result, mutationCallId } = scenario;
-    const systemPrompt = getProviderSystemPrompt(result);
 
-    expect(systemPrompt).toContain("Text editor anchors:");
-    expect(systemPrompt).toContain("- `begin` and `end` select the first and last existing lines.");
     expect(getToolExecution(result, mutationCallId).isError).toBe(false);
     expectTextToolDiff(scenario, relativeFile, content, expectedContent);
     await expect(readFile(file, "utf8")).resolves.toBe(expectedContent);

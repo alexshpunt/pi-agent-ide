@@ -37,8 +37,11 @@ test("an edit returns the formatter result instead of the requested intermediate
     const formatted = "export const value = { answer: 2 };\n";
     const file = path.join(directory, fileName);
     const formatterScript = path.join(directory, "format.mjs");
-    const configDirectory = path.join(directory, ".pi", "pi-agent-ide");
-    await mkdir(configDirectory, { recursive: true });
+    const agentDirectory = path.join(directory, "agent");
+    const globalConfigDirectory = path.join(agentDirectory, "extensions", "pi-agent-ide");
+    const projectConfigDirectory = path.join(directory, ".pi", "pi-agent-ide");
+    await mkdir(globalConfigDirectory, { recursive: true });
+    await mkdir(projectConfigDirectory, { recursive: true });
 
     await writeFile(
       formatterScript,
@@ -52,7 +55,7 @@ test("an edit returns the formatter result instead of the requested intermediate
       "utf8",
     );
     await writeFile(
-      path.join(configDirectory, "formatters.json"),
+      path.join(globalConfigDirectory, "formatters.json"),
       JSON.stringify({
         version: 1,
         formatters: {
@@ -66,7 +69,7 @@ test("an edit returns the formatter result instead of the requested intermediate
       "utf8",
     );
     await writeFile(
-      path.join(configDirectory, "lsp-servers.json"),
+      path.join(projectConfigDirectory, "lsp-servers.json"),
       JSON.stringify({
         version: 1,
         servers: {
@@ -86,6 +89,9 @@ test("an edit returns the formatter result instead of the requested intermediate
       extensions: generatedExtensions.paths,
       cwd: directory,
       testName: "post-edit-formatter",
+
+      isolateUserResources: false,
+      environment: { PI_CODING_AGENT_DIR: agentDirectory },
       tool: "replace",
       arguments: {
         path: fileName,

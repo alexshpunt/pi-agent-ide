@@ -17,6 +17,8 @@ export type TextAnchorInspectionOutcome =
       readonly kind: "invalid";
       readonly anchorIndex: number;
       readonly reason: string;
+      /** Resolver-owned failure semantics. Only `stale` denotes a stale snapshot anchor. */
+      readonly rejectionCode?: "invalid" | "stale" | "missing" | "ambiguous";
       readonly contextRange?: TextAnchorContextRange;
     }
   | { readonly kind: "failed"; readonly reason: string; readonly cause?: unknown };

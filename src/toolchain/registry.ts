@@ -11,8 +11,6 @@ const formatters: Formatter[] = [];
 const compilers: Compiler[] = [];
 const linters: Linter[] = [];
 
-let activeToolchain: ActiveToolchain | undefined;
-
 // ── Registration ──────────────────────────────────────────────────
 
 function assertUniqueName(kind: string, list: readonly { name: string }[], name: string): void {
@@ -167,28 +165,16 @@ function assertNoPriorityConflicts(active: readonly DetectableTool[]): void {
   }
 }
 
-export async function warmup(context: ToolContext): Promise<ActiveToolchain> {
-  const [fmts, comps, lnts] = await Promise.all([
+/** Detect only formatting and explicitly syntax-only checks; never warm up background analysis. */
+export async function warmupFormatting(context: ToolContext): Promise<ActiveToolchain> {
+  const [fmts, syntax] = await Promise.all([
     filterActive(formatters, context),
-    filterActive(compilers, context),
-    filterActive(linters, context),
+    filterActive(
+      compilers.filter((compiler) => compiler.syntaxOnly === true),
+      context,
+    ),
   ]);
-
-  activeToolchain = { ctx: context, formatters: fmts, compilers: comps, linters: lnts };
-  return activeToolchain;
-}
-
-export function getActiveToolchain(): ActiveToolchain {
-  if (activeToolchain === undefined) {
-    // Graceful default: no tools active → everything resolves to skip-like.
-    return { ctx: { cwd: process.cwd() }, formatters: [], compilers: [], linters: [] };
-  }
-
-  return activeToolchain;
-}
-
-export function isToolchainReady(): boolean {
-  return activeToolchain !== undefined;
+  return { ctx: context, formatters: fmts, compilers: syntax, linters: [] };
 }
 
 // ── Runtime lifecycle ─────────────────────────────────────────────
@@ -197,5 +183,4 @@ export function resetRegistry(): void {
   formatters.length = 0;
   compilers.length = 0;
   linters.length = 0;
-  activeToolchain = undefined;
 }

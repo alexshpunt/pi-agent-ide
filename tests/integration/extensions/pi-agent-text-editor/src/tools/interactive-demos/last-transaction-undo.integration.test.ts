@@ -91,7 +91,7 @@ describe("interactive text editor demos", () => {
       expect(getToolExecution(result, undoCallId).isError).toBe(false);
       await expect(readFile(file, "utf8")).resolves.toBe(baseline);
 
-      const panel = mutationPanel(result.tuiRenderedOutput, `undo ${demoFileName}:last +0 ~1 -0`);
+      const panel = mutationPanel(result.tuiRenderedOutput, `undo ${demoFileName} ·`);
       expect(panel).toMatch(new RegExp(`${line}\\s+~\\s+${escapeRegExp(marker)}`, "u"));
       expect(panel).not.toContain(replacement);
     });
@@ -99,7 +99,9 @@ describe("interactive text editor demos", () => {
 });
 
 function mutationPanel(rendered: string, header: string): string {
-  const panelStart = rendered.indexOf("╭─", rendered.indexOf(header));
+  const headerStart = rendered.indexOf(header);
+  if (headerStart === -1) throw new Error(`Missing mutation header: ${header}`);
+  const panelStart = rendered.indexOf("╭─", headerStart);
   const panelEnd = rendered.indexOf("╯", panelStart);
 
   if (panelStart === -1 || panelEnd === -1) {

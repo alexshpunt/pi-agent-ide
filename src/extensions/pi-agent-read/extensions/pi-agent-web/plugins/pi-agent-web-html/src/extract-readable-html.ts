@@ -1,4 +1,3 @@
-import { Defuddle } from "defuddle/node";
 import { parseHTML } from "linkedom";
 
 interface HtmlElementView {
@@ -37,7 +36,7 @@ export async function extractReadableHtml(
       usedFallback: false,
     };
   } catch {
-    const fallback = extractPlainText(html);
+    const fallback = extractPlainText(html, source);
     return { ...fallback, usedFallback: true };
   }
 }
@@ -46,7 +45,8 @@ async function extractWithDefuddle(
   html: string,
   source: string,
 ): Promise<{ readonly content: string; readonly title: string }> {
-  const document = parseDocument(html);
+  const document = parseDocument(html, source);
+  const { Defuddle } = await import("defuddle/node");
   const result = await Defuddle(document as Document, source, {
     markdown: true,
     useAsync: false,
@@ -58,8 +58,11 @@ async function extractWithDefuddle(
   };
 }
 
-function extractPlainText(html: string): { readonly content: string; readonly title: string } {
-  const document = parseDocument(html);
+function extractPlainText(
+  html: string,
+  source: string,
+): { readonly content: string; readonly title: string } {
+  const document = parseDocument(html, source);
 
   for (const element of document.querySelectorAll(
     "script, style, nav, footer, header, aside, noscript, template",
@@ -73,8 +76,18 @@ function extractPlainText(html: string): { readonly content: string; readonly ti
   return { content, title };
 }
 
-function parseDocument(html: string): HtmlDocumentView {
+function parseDocument(html: string, source: string): HtmlDocumentView {
   const parsed = parseHTML(html) as { readonly document: HtmlDocumentView };
+
+  try {
+    Object.defineProperty(parsed.document, "location", {
+      value: new URL(source),
+      configurable: true,
+    });
+  } catch {
+    // The web resolver validates HTTP(S) sources before conversion.
+  }
+
   return parsed.document;
 }
 

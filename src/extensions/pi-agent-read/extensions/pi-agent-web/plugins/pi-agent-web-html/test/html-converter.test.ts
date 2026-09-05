@@ -1,7 +1,7 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
-import { extractReadableHtml } from "../src/extract-readable-html.js";
-import { createHtmlContentConverter } from "../src/html-converter.js";
+import { extractReadableHtml } from "#src/extract-readable-html.js";
+import { createHtmlContentConverter } from "#src/html-converter.js";
 
 const encoder = new TextEncoder();
 const article = `<!doctype html>
@@ -45,6 +45,25 @@ test("extracts an HTML article as titled Markdown without page chrome", async ()
   expect(markdown).not.toContain("Navigation noise");
   expect(markdown).not.toContain("Sidebar noise");
   expect(markdown).not.toContain("window.unwanted");
+});
+
+test("uses the source URL for relative canonical metadata without writing to the terminal", async () => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+  try {
+    const result = await extractReadableHtml(
+      article.replace(
+        "<title>Deep Work</title>",
+        '<title>Deep Work</title><link rel="canonical" href="/posts/current">',
+      ),
+      "https://example.test/posts/current",
+    );
+
+    expect(result.title).toBe("Deep Work");
+    expect(warning).not.toHaveBeenCalled();
+  } finally {
+    warning.mockRestore();
+  }
 });
 
 test("uses a readable plain-text fallback when extraction fails", async () => {

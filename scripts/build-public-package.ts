@@ -11,7 +11,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { findRepositoryRoot } from "#scripts/repository-root.ts";
+
+import { buildReleaseRuntime } from "#scripts/build-release-runtime.ts";
 
 type StringRecord = Record<string, string>;
 
@@ -29,6 +31,7 @@ interface PackageManifest extends Record<string, unknown> {
   exports?: unknown;
   bundledDependencies?: string[];
   pi?: { extensions?: string[] };
+  workspaces?: string[];
 }
 
 interface InternalPackage {
@@ -60,10 +63,11 @@ interface PackageReport {
   topLevel: string[];
 }
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repositoryRoot = findRepositoryRoot(import.meta.url);
 const outputDirectory = join(repositoryRoot, ".agents", "tmp", "public-package");
 const stageDirectory = join(outputDirectory, "stage");
 const inspectionDirectory = join(outputDirectory, "inspection");
+const gitRuntimeDirectory = parseGitRuntimeDirectory(process.argv.slice(2));
 
 const piPeerNames = new Set([
   "@earendil-works/pi-ai",
@@ -90,6 +94,8 @@ const forbiddenDirectoryNames = new Set([
   "tests",
 ]);
 const allowedTarballRoots = new Set([
+  "CHANGELOG.md",
+  "dist",
   "LICENSE",
   "README.md",
   "assets",
@@ -120,6 +126,7 @@ rmSync(outputDirectory, { recursive: true, force: true });
 mkdirSync(stageDirectory, { recursive: true });
 
 copyRequiredFile("README.md");
+copyRequiredFile("CHANGELOG.md");
 copyRequiredFile("LICENSE");
 copyRuntimeTree(join(repositoryRoot, "assets"), join(stageDirectory, "assets"));
 copyRuntimeTree(join(repositoryRoot, "docs"), join(stageDirectory, "docs"), {
@@ -141,6 +148,18 @@ for (const entry of internalPackages) {
 const releaseManifest = createReleaseManifest();
 writeJson(join(stageDirectory, "package.json"), releaseManifest);
 
+await buildReleaseRuntime(
+  repositoryRoot,
+  stageDirectory,
+  internalPackages.map((entry) => ({
+    source: entry.directory,
+    targets: [
+      join(stageDirectory, "node_modules", entry.manifest.name),
+      join(stageDirectory, relative(repositoryRoot, entry.directory)),
+    ],
+  })),
+);
+
 const packOutput = execFileSync(
   "npm",
   ["pack", "--ignore-scripts", "--json", "--pack-destination", outputDirectory],
@@ -155,6 +174,9 @@ execFileSync("tar", ["-xzf", tarballPath, "-C", inspectionDirectory]);
 const extractedPackage = join(inspectionDirectory, "package");
 const report = validatePackage(extractedPackage, packResult, tarballPath);
 writeJson(join(outputDirectory, "report.json"), report);
+if (gitRuntimeDirectory !== undefined) {
+  await materializeGitRuntime(gitRuntimeDirectory, releaseManifest);
+}
 
 rmSync(stageDirectory, { recursive: true, force: true });
 rmSync(inspectionDirectory, { recursive: true, force: true });
@@ -162,13 +184,61 @@ rmSync(inspectionDirectory, { recursive: true, force: true });
 console.log(JSON.stringify(report, null, 2));
 
 /** Finds the private workspace packages that must travel inside the umbrella tarball. */
+function parseGitRuntimeDirectory(args: string[]): string | undefined {
+  const index = args.indexOf("--git-runtime");
+  if (index === -1) return undefined;
+  const value = args[index + 1];
+  assert(value !== undefined && value.length > 0, "--git-runtime requires a directory");
+  return resolve(repositoryRoot, value);
+}
+
+/** Creates the npm-installable tree used by the Git preview ref. */
+async function materializeGitRuntime(
+  directory: string,
+  releaseManifest: PackageManifest,
+): Promise<void> {
+  rmSync(directory, { recursive: true, force: true });
+  mkdirSync(directory, { recursive: true });
+
+  copyRequiredFile("README.md", directory);
+  copyRequiredFile("CHANGELOG.md", directory);
+  copyRequiredFile("LICENSE", directory);
+  copyRuntimeTree(join(repositoryRoot, "assets"), join(directory, "assets"));
+  copyRuntimeTree(join(repositoryRoot, "docs"), join(directory, "docs"), {
+    includeDocumentation: true,
+  });
+  copyRuntimeTree(join(repositoryRoot, "packages"), join(directory, "packages"));
+  copyRuntimeTree(join(repositoryRoot, "src"), join(directory, "src"));
+
+  for (const entry of internalPackages) {
+    const embeddedManifestPath = join(directory, relative(repositoryRoot, entry.manifestPath));
+    assert(existsSync(embeddedManifestPath), `Missing runtime package ${entry.manifest.name}`);
+    writeJson(embeddedManifestPath, sanitizeInternalManifest(entry.manifest));
+  }
+
+  const runtimeManifest = structuredClone(releaseManifest);
+  delete runtimeManifest.bundledDependencies;
+  delete runtimeManifest.publishConfig;
+  runtimeManifest.workspaces = ["packages/*", "src/extensions/**", "src/plugins/*"];
+  writeJson(join(directory, "package.json"), runtimeManifest);
+
+  await buildReleaseRuntime(
+    repositoryRoot,
+    directory,
+    internalPackages.map((entry) => ({
+      source: entry.directory,
+      targets: [join(directory, relative(repositoryRoot, entry.directory))],
+    })),
+  );
+}
+
 function discoverInternalPackages(): InternalPackage[] {
   const found: InternalPackage[] = [];
   for (const searchRoot of packageSearchRoots) {
     walk(searchRoot, (path) => {
       if (path.endsWith(`${sep}package.json`)) {
         const relativePath = toPosix(relative(repositoryRoot, path));
-        if (isDevelopmentPath(relativePath) || relativePath.includes("/qmd/")) return;
+        if (isDevelopmentPath(relativePath)) return;
         const manifest = readJson(path);
         if (typeof manifest.name !== "string" || manifest.name === sourceManifest.name) return;
         found.push({
@@ -189,7 +259,7 @@ function createReleaseManifest(): PackageManifest {
   delete manifest.devDependencies;
   delete manifest.scripts;
 
-  manifest.files = ["src", "assets", "docs", "LICENSE", "README.md"];
+  manifest.files = ["src", "assets", "docs", "CHANGELOG.md", "LICENSE", "README.md"];
   manifest.publishConfig = { access: "public" };
   manifest.imports = filterPathMap(manifest.imports);
   manifest.exports = filterPathMap(manifest.exports);
@@ -273,10 +343,10 @@ function filterPathMap(value: unknown): unknown {
   );
 }
 
-function copyRequiredFile(relativePath: string): void {
+function copyRequiredFile(relativePath: string, targetRoot = stageDirectory): void {
   const source = join(repositoryRoot, relativePath);
   assert(existsSync(source), `Missing required file ${relativePath}`);
-  const target = join(stageDirectory, relativePath);
+  const target = join(targetRoot, relativePath);
   mkdirSync(dirname(target), { recursive: true });
   copyFileSync(source, target);
 }
@@ -314,11 +384,9 @@ function copyRuntimeTree(source: string, target: string, options: CopyOptions = 
   visit(sourceRoot, target);
 }
 
-function shouldSkipDirectory(name: string, relativePath: string, options: CopyOptions): boolean {
+function shouldSkipDirectory(name: string, _relativePath: string, options: CopyOptions): boolean {
   if (name === "docs") return options.includeDocumentation !== true;
-  if (name === "qmd") return true;
   if (forbiddenDirectoryNames.has(name)) return true;
-  if (relativePath.includes("pi-agent-search-semantic/qmd")) return true;
   return name.startsWith(".");
 }
 
@@ -351,7 +419,6 @@ function validatePackage(
     (path) =>
       isDevelopmentPath(path) ||
       path === "lefthook.yml" ||
-      path.includes("pi-agent-search-semantic/qmd/") ||
       /\.(?:integration\.)?test\.[cm]?[jt]sx?$/.test(path) ||
       /\.spec\.[cm]?[jt]sx?$/.test(path),
   );
@@ -371,7 +438,7 @@ function validatePackage(
     "Release manifest must expose one Pi extension",
   );
   assert(
-    packagedManifest.pi.extensions[0] === "./src/pi-agent-ide.ts",
+    packagedManifest.pi.extensions[0] === "./dist/pi-agent-ide.js",
     "Unexpected Pi extension entrypoint",
   );
 

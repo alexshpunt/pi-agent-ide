@@ -9,10 +9,12 @@
     "@earendil-works/pi-coding-agent": "0.84.2",
     "defuddle": "^0.19.1",
     "linkedom": "^0.18.12",
+    "pi-agent-doctor": "workspace:^",
     "pi-agent-image": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",
-    "pi-agent-text": "workspace:^"
+    "pi-agent-text": "workspace:^",
+    "playwright-core": "^1.62.1"
   },
   "devDependencies": {
     "pi-coding-agent-test": "^0.1.1",

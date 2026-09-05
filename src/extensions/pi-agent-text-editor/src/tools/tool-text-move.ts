@@ -2,10 +2,10 @@ import { Type } from "typebox";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import {
-  lineAnchor,
-  selectionRange,
-  singleSelection,
-  textSelections,
+  anchorSpanRange,
+  deleteAnchorSpan,
+  insertionAfterAnchor,
+  replaceAnchorSpan,
 } from "#src/tools/text-selection.js";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
@@ -13,19 +13,31 @@ import type { TextChange } from "#src/core/text-change-engine.js";
 
 export const moveSchema = Type.Object(
   {
-    path: Type.Optional(Type.String({ description: "Source file to move from" })),
-    start: Type.String({ description: "Registered text anchor selecting the first line to move" }),
-    end: Type.Optional(
+    path: Type.Optional(
       Type.String({
-        description: "Registered text anchor selecting the last line; defaults to start",
+        description:
+          "Source resource reference or file path; a typed resource may select one source span",
       }),
     ),
-    target: Type.Optional(Type.String({ description: "Target file; defaults to the source file" })),
-    targetStart: Type.String({
-      description: "First target line; moved text is inserted after it when targetEnd is omitted",
-    }),
+    start: Type.Optional(
+      Type.String({
+        description: "Registered text anchor or unique exact text at the source start",
+      }),
+    ),
+    end: Type.Optional(Type.String({ description: "Source end anchor; defaults to start" })),
+    target: Type.Optional(
+      Type.String({
+        description:
+          "Target resource reference or file path; a typed resource may select the destination; defaults to the source",
+      }),
+    ),
+    targetStart: Type.Optional(
+      Type.String({
+        description: "Target anchor; moved text is inserted after it when targetEnd is omitted",
+      }),
+    ),
     targetEnd: Type.Optional(
-      Type.String({ description: "Last target line; the inclusive target range is replaced" }),
+      Type.String({ description: "Target end anchor; the natural target range is replaced" }),
     ),
   },
   { additionalProperties: false },
@@ -33,17 +45,19 @@ export const moveSchema = Type.Object(
 
 interface MoveParameters {
   readonly path?: string;
-  readonly start: string;
+  readonly start?: string;
   readonly end?: string;
   readonly target?: string;
-  readonly targetStart: string;
+  readonly targetStart?: string;
   readonly targetEnd?: string;
 }
 
 export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> = {
   name: "move",
-  description:
-    "Move selected lines and insert them after targetStart, or replace targetStart through targetEnd.",
+  description: "Move one span or an anchor range, then insert it or replace a target range.",
+
+  promptSnippet:
+    "Make precise file edits by moving text within or between files using exact matches or anchors",
   parameters: moveSchema,
   source: { field: "path", inherited: true, targets: [{ field: "target", fallbackTo: "path" }] },
   anchors: [
@@ -73,76 +87,48 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
   pair: ["start", "end"],
   mutate: async (context, parameters: MoveParameters) => {
     const starts = await context.resolveAnchors("start");
-    const sourceSelections = textSelections(starts, "start");
-    let source: string;
-    let copied: string;
-    let deletion: TextChange;
-
-    if (sourceSelections === undefined) {
-      source = context.sourceFor("path");
-      const start = lineAnchor(starts, "start");
-      const end =
-        parameters.end === undefined
-          ? start
-          : lineAnchor(await context.resolveAnchors("end"), "end");
-      const sourceDocument = context.documentFor(source);
-      const sourceRange = sourceDocument.lineRange(start.lineNumber, end.lineNumber);
-      copied = sourceDocument.text(sourceRange);
-      deletion = sourceDocument.deleteLines(start.lineNumber, end.lineNumber);
-    } else {
-      if (parameters.end !== undefined) {
-        throw new Error("end cannot be combined with a search selection.");
-      }
-
-      const selection = singleSelection(sourceSelections, "start");
-      [source] = selection;
-      const sourceRange = selectionRange(context, source, selection[1]);
-      copied = context.documentFor(source).text(sourceRange);
-      deletion = { ...sourceRange, insert: "" };
-    }
+    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
+    const sourceSpan = anchorSpanRange(context, starts, ends, "start", "end");
+    const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
+    const deletion = deleteAnchorSpan(context, sourceSpan);
 
     const targetStarts = await context.resolveAnchors("targetStart");
-    const targetSelections = textSelections(targetStarts, "targetStart");
     let target: string;
     let targetChange: TextChange;
-
-    if (targetSelections === undefined) {
-      target = context.sourceFor("target");
-      const targetDocument = context.documentFor(target);
-      const targetStart = lineAnchor(targetStarts, "targetStart");
-      const targetEnd =
-        parameters.targetEnd === undefined
-          ? undefined
-          : lineAnchor(await context.resolveAnchors("targetEnd"), "targetEnd");
-      targetChange =
-        targetEnd === undefined
-          ? targetDocument.insertAfterLine(targetStart.lineNumber, copied)
-          : targetDocument.replaceLines(targetStart.lineNumber, targetEnd.lineNumber, copied);
+    if (parameters.targetEnd === undefined) {
+      [target, targetChange] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
     } else {
-      if (parameters.targetEnd !== undefined) {
-        throw new Error("targetEnd cannot be combined with a search selection.");
-      }
-
-      const selection = singleSelection(targetSelections, "targetStart");
-      [target] = selection;
-      const range = selection[1];
-      const insertion = context
-        .documentFor(target)
-        .range(range.end.lineNumber, range.end.column, range.end.lineNumber, range.end.column);
-      targetChange = { ...insertion, insert: copied };
+      const targetEnds = await context.resolveAnchors("targetEnd");
+      const targetSpan = anchorSpanRange(
+        context,
+        targetStarts,
+        targetEnds,
+        "targetStart",
+        "targetEnd",
+      );
+      target = targetSpan.source;
+      targetChange = replaceAnchorSpan(context, targetSpan, copied);
     }
 
-    if (source === target) {
+    if (sourceSpan.source === target && rangesTouch(deletion, targetChange)) {
+      throw new Error("Move target must not overlap or touch its source range.");
+    }
+
+    if (sourceSpan.source === target) {
       return {
-        edits: new Map([[source, { changes: [deletion, targetChange], action: "edited" }]]),
+        edits: new Map([[target, { changes: [deletion, targetChange], action: "edited" }]]),
       };
     }
 
     return {
       edits: new Map([
-        [source, { changes: [deletion], action: "edited" }],
+        [sourceSpan.source, { changes: [deletion], action: "edited" }],
         [target, { changes: [targetChange], action: "edited" }],
       ]),
     };
   },
 };
+
+function rangesTouch(left: TextChange, right: TextChange): boolean {
+  return left.from <= right.to && right.from <= left.to;
+}

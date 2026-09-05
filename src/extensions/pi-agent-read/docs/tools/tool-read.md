@@ -24,6 +24,7 @@ interface ReadRequest {
   readonly path?: string;
   readonly offset?: number;
   readonly limit?: number;
+  readonly views?: readonly string[];
 }
 ```
 
@@ -40,7 +41,32 @@ interface ReadPipelineContext {
 
 `path` is an opaque source reference. Core passes it unchanged to resolver attempts. An omitted or empty path returns `INVALID_REQUEST`.
 
-`offset` is a 1-based line offset for one text block. A negative offset starts that many lines from the end, so `offset: -20` reads the last 20 lines. `limit` caps the number of lines returned from that resolved start line.
+## Typed target reads
+
+Before normal Resource resolution, core offers the complete `path` value to registered `TextTargetResolver` implementations. A resolver may return ordered targets with Resource sources and half-open character ranges. When `ranges` is omitted, read synthesizes a first-line chunk; the editor treats the same omission as source scope. The resolver owns the value's syntax; core validates the result and does not parse values such as `SEARCH#...`.
+
+For every target range, core runs the normal Resource and read pipeline, then projects an independent chunk whose origin is the range's containing line. The request's `offset` and `limit` apply separately to each chunk. Without an explicit `limit`, the range supplies the chunk's natural line count, with at least one line. Read joins chunks in resolver order and then enforces the aggregate 2,000-line or 50 KiB limit.
+
+A typed target rejection, failed callback, malformed result, missing Resource, pipeline error, or unsupported content fails the complete read. Core does not return the chunks completed before that failure.
+
+The built-in text search resolver exposes `SEARCH#HASH:N:line`, `SEARCH#HASH:N:match`, `SEARCH#HASH:all:line`, and `SEARCH#HASH:all:match` this way. Both `:line` and `:match` reads start at the containing line; the mode controls the selected edit range, not partial-line read rendering.
+
+## Anchored reads
+
+A `path#fragment` suffix turns the read into an anchored read. Core first tries the whole string as a resource; only when no resolver handles it does it split at the first `#` and treat the tail as an anchor value. A real file whose name contains `#` therefore always reads whole.
+
+Registered fragment resolvers translate the fragment into one absolute origin line. The pi-agent-text-editor core contributes a resolver backed by the shared anchor registry, so every anchor kind that works for edits also works here, with the same strictness: missing or ambiguous anchors fail with candidate lines instead of guessing.
+
+Request coordinates are relative to the origin:
+
+- `offset: 1` (default), `offset: 0`, and an omitted offset all start the window at the origin line.
+- A positive offset greater than one moves the window forward from the origin; a negative offset widens it upward, clamped at line one.
+- `limit` caps the window as usual; output keeps absolute line numbers and real line hashes so later edit anchors stay valid.
+- Continuation hints state the next offset in request coordinates, ready to copy into the same anchored request.
+
+Anchored reads on non-textual content return `UNSUPPORTED_RANGE`; an anchor nobody resolves returns `NO_FRAGMENT_RESOLVER`.
+
+For an unanchored text block, `offset` is a 1-based line offset. Without an anchor fragment, a negative offset starts that many lines from the end, so `offset: -20` reads the last 20 lines. `limit` caps the number of lines returned from that resolved start line.
 
 A range on mixed or non-text content returns `UNSUPPORTED_RANGE`.
 
@@ -68,6 +94,17 @@ interface ResourceResolverRegistration {
 The read core validates the resolver before registration. Resolver IDs are unique inside one read core. `any` remains reserved for handler matching.
 
 Lower priority runs first. Equal priority preserves registration order. The registry is snapshotted for each invocation.
+
+Plugins may also register the source-neutral typed target contract from `pi-agent-text`:
+
+```ts
+interface TextTargetResolverRegistration {
+  readonly resolver: TextTargetResolver;
+  readonly priority?: number;
+}
+```
+
+Target resolvers are ordered and snapshotted independently from Resource resolvers. Only `not-handled` continues to the next target resolver.
 
 ## Selection
 
@@ -120,7 +157,7 @@ For one text block, core splits canonical text into source lines before read han
 
 A read handler may change pipeline state before presentation. Text presenters only attach neutral prefixes, suffixes, rows, markers, and metadata. They must preserve the canonical source, content, line count, line numbers, line content, and line endings.
 
-Core starts all text presenters concurrently against the same text snapshot. After all presenters finish, core merges their contributions in priority order, then registration order, before applying the requested range. An empty text Resource remains one text block with an empty string. A range that selects no lines also returns one empty text block.
+Core starts the requested text presenters concurrently against the same text snapshot. When one requested view declares that it includes another, core skips the included view. After all remaining presenters finish, core merges their contributions in priority order, then registration order, before applying the requested range. An empty text Resource remains one text block with an empty string. A range that selects no lines also returns one empty text block.
 
 ## Custom-content projection
 
@@ -149,7 +186,7 @@ A resolver registration may provide an optional Pi `renderResult` function. Succ
 
 The standard renderer has source, Markdown, and code-view modes. It shows at most 12 content rows while collapsed and all saved rows while expanded. A clipped panel shows the configured `app.tools.expand` key. Source integrations choose the mode for the content they own.
 
-For structured text results, the TUI reads canonical `ReadTextLine.content`. It omits presentation prefixes and suffixes, including text anchors and inline diagnostics. Code-view mode also removes protocol scope markers embedded in projected lines. Ranges and truncation appear as short user-facing labels instead of agent continuation instructions.
+For structured text results, the TUI renders the saved text projection. With no requested views, this is the canonical text. Requested views also appear in the panel, including line numbers, anchors, diagnostic annotations, added rows, change markers, and AST scope markers. A requested view is omitted when another requested view declares that it includes its complete presentation. Ranges and truncation appear as short user-facing labels instead of agent continuation instructions.
 
 The result content, canonical lines, resolver ID, line range, and truncation details are serializable session data. The expanded flag remains Pi's global current tool-output mode and is not stored per result. If a restored resolver renderer is unavailable, the tool uses the source-neutral fallback.
 
@@ -187,9 +224,11 @@ The implemented ReadFailure codes are:
 
 ```ts
 type ReadFailureCode =
+  | "FRAGMENT_FAILED"
   | "INVALID_REQUEST"
   | "INVALID_RESOLVER_RESULT"
   | "INVALID_RESOURCE_CONTENT"
+  | "NO_FRAGMENT_RESOLVER"
   | "NO_RESOLVER"
   | "PIPELINE_FAILED"
   | "READ_FAILED"

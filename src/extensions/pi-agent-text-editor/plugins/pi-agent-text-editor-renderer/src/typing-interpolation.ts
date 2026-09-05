@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 const DEFAULT_RATE = 240;
 const MIN_RATE = 12;
 const MAX_RATE = 1_600;
@@ -8,7 +8,9 @@ const MIN_BUFFER = 8;
 const MAX_BUFFER = 40;
 const MAX_START_DELAY_MS = 110;
 const CATCH_UP_GAIN = 7;
+
 const FINAL_DRAIN_MS = 40;
+const MAX_PLAYBACK_LAG_MS = 1_500;
 const MAX_FRAME_ELAPSED_MS = 80;
 const MAX_GRAPHEMES_PER_FRAME = 24;
 const MAX_FINAL_GRAPHEMES_PER_FRAME = 96;
@@ -23,9 +25,13 @@ interface ArrivalSample {
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export class TypingInterpolation {
+  private observedText = "";
   private observedCharacters: readonly string[] = [];
+  private targetText = "";
   private targetCharacters: readonly string[] = [];
   private visibleCount = 0;
+  private visibleTextCache: { readonly count: number; readonly value: string } | undefined;
+
   private arrivals: ArrivalSample[] = [];
   private firstTargetAt: number | undefined;
   private lastFrameAt: number | undefined;
@@ -33,15 +39,15 @@ export class TypingInterpolation {
   private started = false;
   private finished = false;
 
-  public observe(text: string, now: number): void {
-    const characters = graphemes(text);
+  private catchUpBy: number | undefined;
 
-    if (sameCharacters(characters, this.observedCharacters)) {
+  public observe(text: string, now: number): void {
+    if (text === this.observedText) {
       return;
     }
 
-    const isExtendsPrevious =
-      commonPrefixLength(this.observedCharacters, characters) === this.observedCharacters.length;
+    const characters = this.incrementalCharacters(text, this.observedText, this.observedCharacters);
+    const isExtendsPrevious = text.startsWith(this.observedText);
 
     if (!isExtendsPrevious) {
       this.arrivals = [];
@@ -56,12 +62,17 @@ export class TypingInterpolation {
       this.arrivals.push(sample);
     }
 
+    this.observedText = text;
     this.observedCharacters = characters;
     this.pruneArrivals(now);
   }
 
   public setTarget(text: string, now: number): boolean {
-    const characters = graphemes(text);
+    if (text === this.targetText) {
+      return false;
+    }
+
+    const characters = this.incrementalCharacters(text, this.targetText, this.targetCharacters);
     const shared = commonPrefixLength(this.targetCharacters, characters);
     const isVisibleChanged = shared < this.visibleCount;
 
@@ -70,15 +81,28 @@ export class TypingInterpolation {
       this.credit = 0;
     }
 
+    if (this.visibleTextCache !== undefined && this.visibleTextCache.count > shared) {
+      this.visibleTextCache = undefined;
+    }
+
+    this.targetText = text;
     this.targetCharacters = characters;
     this.firstTargetAt ??= now;
     this.lastFrameAt ??= now;
+    if (characters.length <= this.visibleCount) {
+      if (!this.finished) this.catchUpBy = undefined;
+    } else {
+      this.catchUpBy ??= now + MAX_PLAYBACK_LAG_MS;
+    }
     return isVisibleChanged;
   }
 
-  public finish(): void {
+  /** Finish the visible playback within the requested wall-clock budget. */
+  public finish(now = this.lastFrameAt ?? performance.now(), withinMs = MAX_PLAYBACK_LAG_MS): void {
     this.finished = true;
     this.started = true;
+    const deadline = now + Math.max(0, withinMs);
+    this.catchUpBy = Math.min(this.catchUpBy ?? deadline, deadline);
   }
 
   public advance(now: number): boolean {
@@ -93,6 +117,7 @@ export class TypingInterpolation {
 
     if (backlog <= 0) {
       this.credit = 0;
+      if (!this.finished) this.catchUpBy = undefined;
       return false;
     }
 
@@ -122,19 +147,59 @@ export class TypingInterpolation {
     this.credit += (speed * elapsed) / 1_000;
 
     const frameLimit = this.finished ? MAX_FINAL_GRAPHEMES_PER_FRAME : MAX_GRAPHEMES_PER_FRAME;
-    const step = Math.min(backlog, frameLimit, Math.floor(this.credit));
+    const regularStep = Math.min(frameLimit, Math.floor(this.credit));
+    const deadlineStep = catchUpStep(backlog, now, previousFrameAt, this.catchUpBy);
+    const boundedDeadlineStep =
+      this.visibleCount === 0 ? Math.min(frameLimit, deadlineStep) : deadlineStep;
+    const step = Math.min(backlog, Math.max(regularStep, boundedDeadlineStep));
 
     if (step === 0) {
       return false;
     }
 
     this.visibleCount += step;
-    this.credit -= step;
+    this.credit = Math.max(0, this.credit - step);
+    if (this.visibleCount === this.targetCharacters.length) {
+      if (!this.finished) this.catchUpBy = undefined;
+    }
+    this.visibleTextCache = undefined;
     return true;
   }
 
+  private incrementalCharacters(
+    text: string,
+    previousText: string,
+    previousCharacters: readonly string[],
+  ): readonly string[] {
+    if (!text.startsWith(previousText)) {
+      return graphemes(text);
+    }
+
+    const suffix = text.slice(previousText.length);
+    if (suffix.length === 0) {
+      return previousCharacters;
+    }
+
+    const join = previousCharacters.at(-1);
+    if (join === undefined) {
+      return graphemes(suffix);
+    }
+
+    return [...previousCharacters.slice(0, -1), ...graphemes(join + suffix)];
+  }
+
   public get visibleText(): string {
-    return this.targetCharacters.slice(0, this.visibleCount).join("");
+    if (this.visibleTextCache?.count === this.visibleCount) {
+      return this.visibleTextCache.value;
+    }
+
+    const cached = this.visibleTextCache;
+    const value =
+      cached !== undefined && cached.count < this.visibleCount
+        ? cached.value + this.targetCharacters.slice(cached.count, this.visibleCount).join("")
+        : this.targetCharacters.slice(0, this.visibleCount).join("");
+    this.visibleTextCache = { count: this.visibleCount, value };
+    return value;
   }
 
   public get hasVisibleText(): boolean {
@@ -187,10 +252,26 @@ function commonPrefixLength(left: readonly string[], right: readonly string[]): 
   return index;
 }
 
-function sameCharacters(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && commonPrefixLength(left, right) === left.length;
-}
-
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
+}
+
+function catchUpStep(
+  backlog: number,
+  now: number,
+  previousFrameAt: number,
+  deadline: number | undefined,
+): number {
+  if (deadline === undefined) {
+    return 0;
+  }
+
+  const remainingMs = deadline - now;
+  if (remainingMs <= 0) {
+    return backlog;
+  }
+
+  const observedFrameMs = Math.max(TYPING_FRAME_INTERVAL_MS, now - previousFrameAt);
+  const remainingFrames = Math.max(1, Math.ceil(remainingMs / observedFrameMs));
+  return Math.ceil(backlog / remainingFrames);
 }

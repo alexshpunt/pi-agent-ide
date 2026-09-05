@@ -10,6 +10,10 @@ import {
 export interface TextLinePresentation {
   readonly prefix?: string;
   readonly suffix?: string;
+  /** Optional user-facing prefix used by compact TUI renderers. */
+  readonly compactPrefix?: string;
+  /** Optional user-facing suffix used by compact TUI renderers. */
+  readonly compactSuffix?: string;
   readonly marker?: TextChangeMarker;
   readonly before?: readonly PresentedTextRow[];
   readonly after?: readonly PresentedTextRow[];
@@ -76,10 +80,19 @@ export function renderTextDocument(document: TextDocument): string {
   return document.lines.map((line) => `${line.content}${line.lineEnding}`).join("");
 }
 
-export function renderPresentedTextDocument(document: TextDocument): string {
+/** Controls whether user-facing compact presentation fields replace their full forms. */
+export interface PresentedTextDocumentRenderOptions {
+  readonly compact?: boolean;
+}
+
+/** Renders a text document with its presenter-owned annotations. */
+export function renderPresentedTextDocument(
+  document: TextDocument,
+  options: PresentedTextDocumentRenderOptions = {},
+): string {
   const rows = document.lines.flatMap((line) => [
     ...(line.presentation?.before ?? []),
-    presentedRowFor(line),
+    presentedRowFor(line, options.compact === true),
     ...(line.presentation?.after ?? []),
   ]);
   const rendered = renderPresentedTextRows(rows);
@@ -96,11 +109,19 @@ export function renderPresentedTextDocument(document: TextDocument): string {
     .join("");
 }
 
-function presentedRowFor(line: TextLine): PresentedTextRow {
+function presentedRowFor(line: TextLine, compact: boolean): PresentedTextRow {
+  const prefix =
+    compact && line.presentation?.compactPrefix !== undefined
+      ? line.presentation.compactPrefix
+      : line.presentation?.prefix;
+  const suffix =
+    compact && line.presentation?.compactSuffix !== undefined
+      ? line.presentation.compactSuffix
+      : line.presentation?.suffix;
   return {
     content: line.content,
-    ...(line.presentation?.prefix !== undefined && { prefix: line.presentation.prefix }),
-    ...(line.presentation?.suffix !== undefined && { suffix: line.presentation.suffix }),
+    ...(prefix !== undefined && { prefix }),
+    ...(suffix !== undefined && { suffix }),
     ...(line.presentation?.marker !== undefined && { marker: line.presentation.marker }),
   };
 }

@@ -10,6 +10,7 @@ export default defineConfig({
   },
   jsPlugins: [
     { name: "anti-slop", specifier: "./tools/oxlint/anti-slop/index.ts" },
+    { name: "repo", specifier: "./tools/oxlint/repo/index.ts" },
     { name: "ts-slop", specifier: "./tools/oxlint/ts-slop/index.ts" },
   ],
   rules: {
@@ -70,6 +71,7 @@ export default defineConfig({
     "ts-slop/no-redundant-boolean-if": "error",
     "ts-slop/no-sort-for-extremum": "error",
     "ts-slop/no-string-concat-in-reduce": "error",
+    "repo/no-parent-paths": "error",
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "error",
     "typescript/return-await": ["error", "error-handling-correctness-only"],
@@ -82,6 +84,7 @@ export default defineConfig({
     node: true,
   },
   ignorePatterns: [
+    ".worktrees/**",
     ".pi/**",
     ".agents/**",
     ".tmp/**",
@@ -91,7 +94,7 @@ export default defineConfig({
     "**/__fixtures__/**",
     "**/fixtures/**",
     "tools/oxlint/anti-slop/**",
+    "tools/oxlint/repo/**",
     "tools/oxlint/ts-slop/**",
-    "src/extensions/pi-agent-search/plugins/pi-agent-search-semantic/qmd/**",
   ],
 });

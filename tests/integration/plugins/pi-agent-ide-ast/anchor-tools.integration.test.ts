@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { AstScopeManager } from "pi-agent-ide-ast/api/scope";
+import { AstScopeManager } from "#src/plugins/pi-agent-ide-ast/src/api/scope.js";
 import { getToolExecution, getToolResultText } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
@@ -125,6 +125,9 @@ async function runAstScenario(
       testName,
       tool,
       arguments: toolArguments,
+
+      preflightViews: ["anchors", "ast"],
+      postflightViews: ["ast"],
     });
     const { result, mutationCallId, preflightCallIds } = scenario;
     const preflight = preflightCallIds.map((id) => getToolResultText(result, id)).join("\n");
@@ -135,7 +138,10 @@ async function runAstScenario(
 
     expect(getToolExecution(result, mutationCallId).isError).toBe(false);
     expectTextToolDiff(scenario, relativeFile, content, expectedContent);
-    expect(getToolResultText(result, mutationCallId)).toMatch(/<!-- scope-(?:begin|end)-/u);
+    const postflight = scenario.postflightCallIds
+      .map((id) => getToolResultText(result, id))
+      .join("\n");
+    expect(postflight).toMatch(/<!-- scope-(?:begin|end)-/u);
     await expect(readFile(file, "utf8")).resolves.toBe(expectedContent);
   });
 }

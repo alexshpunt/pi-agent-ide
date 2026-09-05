@@ -1,13 +1,24 @@
 export {
+  attachTextAnchorRenderer,
+  getTextAnchorRenderer,
+  isTextAnchorRecoveryOutcome,
+  renderTextAnchor,
   isTextAnchorResolutionAttempt,
   isTextAnchorResolver,
   TextAnchor,
   type TextAnchorDescriptionSource,
+  type TextAnchorRenderContext,
+  type TextAnchorRenderer,
+  type TextAnchorRecoveryCandidate,
+  type TextAnchorRecoveryCandidateRange,
+  type TextAnchorRecoveryOutcome,
+  type TextAnchorRecoveryPosition,
   type TextAnchorRecoveryRange,
   type TextAnchorRejection,
   type TextAnchorResolutionAttempt,
   type TextAnchorResolver,
   type TextAnchorResolverContext,
+  type TextAnchorResolverRecoveryContext,
 } from "./text-anchor.js";
 
 export {
@@ -37,3 +48,15 @@ export {
   isTextualMediaType,
   textFromAgentContent,
 } from "./text-converter.js";
+
+export {
+  isTextTargetResolutionAttempt,
+  type TextSelectionPosition,
+  type TextSelectionRange,
+  type TextTarget,
+  type TextTargetResolutionAttempt,
+  type TextTargetResolver,
+  type TextTargetResolverContext,
+} from "./text-target.js";
+
+export { storeText, restoreText, type StoredText } from "./stored-text.js";

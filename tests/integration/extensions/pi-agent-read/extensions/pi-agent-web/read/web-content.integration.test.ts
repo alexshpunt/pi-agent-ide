@@ -5,6 +5,7 @@ import { createServer, type Server, type ServerResponse } from "node:http";
 import {
   assistantMessage,
   getToolResultMessage,
+  getToolCallNames,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -33,7 +34,7 @@ const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "bas
 const requestCounts = new Map<string, number>();
 let server: Server;
 let baseUrl: string;
-const tempRoot = path.resolve(".tmp/pi-agent-web");
+const tempRoot = path.resolve(".agents/tmp/pi-agent-web");
 let cwd: string;
 
 beforeAll(async () => {
@@ -42,6 +43,18 @@ beforeAll(async () => {
   server = createServer((request, response) => {
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     requestCounts.set(pathname, (requestCounts.get(pathname) ?? 0) + 1);
+    if (pathname === "/browser-fallback") {
+      if (request.headers["user-agent"]?.includes("Pi-LPT")) {
+        response.writeHead(403);
+        response.end("blocked");
+      } else {
+        response.writeHead(200, { "Content-Type": "text/html" });
+        response.end(
+          '<html><body><main></main><script>document.querySelector("main").innerHTML = "<article><p>automatic-browser-fallback-marker with enough useful words for article extraction.</p></article>";</script></body></html>',
+        );
+      }
+      return;
+    }
     serve(pathname, response);
   });
   await new Promise<void>((resolve, reject) => {
@@ -75,6 +88,8 @@ test("reads clean titled Markdown and resolves redirected relative links from th
   expect(article).not.toContain("Navigation noise");
   expect(article).not.toContain("window.unwanted");
   expect(article).not.toContain("## url:");
+
+  expect(articleResult.tuiRenderedOutput).not.toContain("Failed to parse URL");
 
   const redirected = getToolResultText(await runRead("/redirect", "web-redirect"));
   expect(redirected).toContain("# Redirected Article");
@@ -131,12 +146,27 @@ test.each([
   });
 });
 
-async function runRead(
+test("recovers HTTP 403 through real Chromium within one read call", async () => {
+  const run = await runRead("/browser-fallback", "web-browser-fallback");
+  expect(getToolResultMessage(run, "read").isError).toBe(false);
+  expect(getToolResultText(run)).toContain("automatic-browser-fallback-marker");
+  expect(getToolCallNames(run)).toEqual(["read"]);
+  expect(requestCounts.get("/browser-fallback")).toBe(2);
+});
+
+function runRead(
   pathname: string,
   testName: string,
   range: { readonly offset?: number; readonly limit?: number } = {},
 ) {
-  const source = `${baseUrl}${pathname}`;
+  return runSource(`${baseUrl}${pathname}`, testName, range);
+}
+
+function runSource(
+  source: string,
+  testName: string,
+  range: { readonly offset?: number; readonly limit?: number } = {},
+) {
   return new PiIntegrationTest({
     artifactsDir: testArtifactsDir(expect.getState().testPath),
     testName,
@@ -231,7 +261,7 @@ function serve(pathname: string, response: ServerResponse): void {
 
 function html(response: ServerResponse, title: string, body: string, href: string): void {
   response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  response.end(`<!doctype html><html><head><title>${title}</title></head><body>
+  response.end(`<!doctype html><html><head><title>${title}</title><link rel="canonical" href="${href}"></head><body>
 <nav>Navigation noise</nav><main><article><p>${body} with enough words for deterministic extraction.</p>
 <a href="${href}">Next</a></article></main><script>window.unwanted = true;</script></body></html>`);
 }

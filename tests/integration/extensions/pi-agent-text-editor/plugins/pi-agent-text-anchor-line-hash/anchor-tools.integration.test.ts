@@ -133,11 +133,13 @@ async function runLineHashScenario(
 
     expect(getToolExecution(result, mutationCallId).isError).toBe(false);
     expectTextToolDiff(scenario, relativeFile, content, expectedContent);
-    const diff = getToolResultText(result, mutationCallId);
-    expect(diff).toMatch(/^[ +]\|\s*\d+#[A-Z0-9]{4}\|/mu);
+    const finalState = getToolResultText(result, mutationCallId);
+    expect(finalState.split("\n")[0]).toBe(relativeFile);
+    expect(finalState).toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
+    expect(finalState).not.toMatch(/^[+ -]\|/mu);
 
-    for (const removed of diff.split("\n").filter((line) => line.startsWith("-|"))) {
-      expect(removed).not.toMatch(/\d+#[A-Z0-9]{4}/u);
+    for (const [index, line] of expectedContent.split("\n").entries()) {
+      expect(finalState).toContain(`${createLineHashAnchor(index + 1, line).value}|${line}`);
     }
     await expect(readFile(file, "utf8")).resolves.toBe(expectedContent);
   });

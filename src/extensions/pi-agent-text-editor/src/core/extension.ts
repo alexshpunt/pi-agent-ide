@@ -25,6 +25,7 @@ import {
 import { setTextAnchorRecoveryReader } from "#src/core/text-anchor-recovery.js";
 import { setTextEditBatchRenderArgumentSink } from "#src/core/text-edit-batch-registrar.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js";
 import { createTextTool } from "#src/core/text-mutation.js";
 import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
@@ -80,6 +81,18 @@ export default async function registerTextEditorCore(
     id: "text-anchor-recovery",
     setup(api): void {
       readApi = api;
+      api.addTargetResolver({ resolver: core.textTargetResolver() });
+      api.addFragmentResolver(createReadFragmentResolver(core));
+
+      api.addPromptGuideline(
+        "You can use read with `<path>#<anchor>`, `offset`, and `limit` to inspect context around a known anchor without rereading the whole file.",
+      );
+      api.addPromptGuideline(
+        "For an anchored read, omitted `offset`, `offset: 0`, and `offset: 1` all start at the anchor line; positive offsets greater than one count forward, while negative offsets count upward.",
+      );
+      api.addPromptGuideline(
+        "After search finds a relevant result, you can use read with the returned `SEARCH#...` source, `offset`, and `limit` to inspect only the surrounding context you need.",
+      );
     },
   });
   setTextAnchorRecoveryReader(core, (request, context) => {
@@ -87,7 +100,8 @@ export default async function registerTextEditorCore(
       throw new Error("Text anchor recovery requires pi-agent-read");
     }
 
-    return readApi.read(request, context);
+    // Recovery context teaches the agent a fresh anchor, so it must carry hashes.
+    return readApi.read({ ...request, views: ["anchors"] }, context);
   });
 
   const unsubscribeRegistration = pi.events.on(TEXT_EDITOR_PLUGIN_REGISTER_EVENT, (request) => {

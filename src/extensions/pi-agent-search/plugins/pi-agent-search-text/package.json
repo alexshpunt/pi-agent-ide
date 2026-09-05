@@ -19,8 +19,8 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@earendil-works/pi-tui": "0.84.2",
-    "lucene-query-parser": "1.2.0",
     "pi-agent-doctor": "workspace:^",
+    "pi-agent-invariant": "workspace:^",
     "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^"

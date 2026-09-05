@@ -14,7 +14,7 @@ import type {
   ContentInput,
   ContentTarget,
 } from "./content-converter.js";
-import type { AgentContent } from "../content.js";
+import type { AgentContent } from "#src/content.js";
 
 interface RegisteredConverter {
   readonly converter: ContentConverter;

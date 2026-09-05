@@ -1,4 +1,4 @@
-import { requiredValue } from "../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { type TextSourceLine, withTextSourceLine } from "pi-agent-text";
 
 import type { ReadHandler } from "pi-agent-read/api/tools/read";

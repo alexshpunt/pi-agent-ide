@@ -1,5 +1,3 @@
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-
 import type { AgentContent, ContentConverter } from "pi-agent-resource";
 
 const pdfHeader = new TextEncoder().encode("%PDF-");
@@ -55,6 +53,9 @@ export async function createPdfContent(
   bytes: Uint8Array,
   signal?: AbortSignal,
 ): Promise<AgentContent> {
+  throwIfAborted(signal);
+
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   throwIfAborted(signal);
 
   // PDF.js may transfer ownership of its input to a worker. Preserve the caller's bytes.

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { probeExecutable } from "../src/executable.js";
+import { probeExecutable } from "#src/executable.js";
 
 test("reports a runnable executable", async () => {
   const result = await probeExecutable(process.execPath, ["--version"], process.cwd(), process.env);

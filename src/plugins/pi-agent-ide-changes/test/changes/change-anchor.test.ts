@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, test } from "vitest";
 
 import {

@@ -1,4 +1,3 @@
-import { requiredValue } from "../../../../../../../src/utils/required-value.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -6,7 +5,6 @@ import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor"
 import {
   assistantMessage,
   getToolExecution,
-  getToolExecutionDetails,
   PiIntegrationTest,
   text,
   toolCall,
@@ -15,8 +13,6 @@ import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { getTextToolMutationData } from "#integration/support/pi-runtime/scenario.js";
-
 const extensions = createExtensionSet();
 const sourceFile = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/src/tools/interactive-demos/fixtures/stack-store.ts",
@@ -346,10 +342,7 @@ describe("interactive text editor demos", () => {
         expect(getToolExecution(result, callId).isError, callId).toBe(false);
       }
 
-      const finalMutation = getTextToolMutationData(
-        getToolExecutionDetails(getToolExecution(result, requiredValue(callIds.at(-1)))),
-      );
-      expect(finalMutation.afterContent).toBe(expected);
+      expect(await readFile(demoFile, "utf8")).toBe(expected);
     });
   }, 180_000);
 });

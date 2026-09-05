@@ -4,7 +4,6 @@ import { pathToFileURL } from "node:url";
 
 import {
   assistantMessage,
-  getProviderSystemPrompt,
   getToolResultMessage,
   getToolResultText,
   PiIntegrationTest,
@@ -99,27 +98,6 @@ test("reports malformed bytes through the read contract", async () => {
     expect(getToolResultMessage(result, "read")).toMatchObject({
       details: { failure: { code: "READ_FAILED", resolverId: "filesystem" } },
     });
-  });
-});
-
-test("advertises text through the filesystem read provider", async () => {
-  await withTempDirectory(async (directory) => {
-    const result = await new PiIntegrationTest({
-      artifactsDir: testArtifactsDir(expect.getState().testPath),
-      testName: "filesystem-text-prompt",
-      cwd: directory,
-      extensions: generatedExtensions.paths,
-      tools: ["read"],
-      conversation: [assistantMessage([text("The prompt was inspected")])],
-    }).run("Inspect installed filesystem content types");
-
-    expect(getProviderSystemPrompt(result)).toContain(
-      [
-        "- Read supports these installed protocols:",
-        "  - `filesystem` — Reads local filesystem paths and file:// URLs. Directories are read-only listings.",
-        "    - `text` — UTF-8 text.",
-      ].join("\n"),
-    );
   });
 });
 

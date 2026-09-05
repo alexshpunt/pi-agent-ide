@@ -1,7 +1,4 @@
-import {
-  type FileMutationBatchResult,
-  FileMutationResult,
-} from "pi-agent-text-editor/api/mutation-result";
+import { FileMutationResult } from "pi-agent-text-editor/api/mutation-result";
 
 import {
   freezeMutationViewports,
@@ -12,6 +9,8 @@ import {
 import type { MutationRenderResource } from "./render-resource.js";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 
+import type { PersistedMutationDetails } from "./persisted-result.js";
+
 interface PersistedTextChange {
   readonly fromA: number;
   readonly toA: number;
@@ -19,19 +18,37 @@ interface PersistedTextChange {
   readonly toB: number;
   readonly insertedText: string;
 }
+/** Resolves result resources, optionally deferring model projection until completion. */
 
 export function resolveMutationResultResources(
-  details: FileMutationBatchResult | undefined,
+  details: PersistedMutationDetails | undefined,
   runtimeViewports: FrozenMutationViewports | undefined,
+  project = true,
 ): readonly MutationRenderResource[] {
+  const stored = details?.mutationRender;
+  if (stored !== undefined) {
+    return stored.map(({ path, model }) => ({
+      path,
+      model,
+      ranges: [],
+      beforeContent: "",
+      afterContent: "",
+    }));
+  }
+
   const results = (details?.results ?? []).map((result) => FileMutationResult.ensure(result));
   const finalResources = results.flatMap(finalResource);
+  if (!project) {
+    return finalResources;
+  }
+
   const viewports = runtimeViewports ?? persistedViewports(results);
   return projectFinalResources(finalResources, viewports);
 }
 
-function finalResource(result: FileMutationResult): readonly TextMutationPreviewResource[] {
+function finalResource(result: FileMutationResult): readonly MutationRenderResource[] {
   const afterContent = result.afterContent;
+  const changes = persistedChanges(result.data.rawChanges);
 
   if (!result.ok || typeof afterContent !== "string") {
     return [];
@@ -44,11 +61,21 @@ function finalResource(result: FileMutationResult): readonly TextMutationPreview
       return [];
     }
 
+    const replayed = changes === undefined ? undefined : replayChanges(before ?? "", changes);
+    const typingIdentity =
+      replayed === afterContent
+        ? {
+            beforeRanges: changes?.map(({ fromA: from, toA: to }) => ({ from, to })) ?? [],
+            ranges: changes?.map(({ fromB: from, toB: to }) => ({ from, to })) ?? [],
+          }
+        : undefined;
+
     return [
       {
         path,
         ranges: [],
         beforeContent: before ?? "",
+        ...(typingIdentity === undefined ? {} : { typingIdentity }),
         afterContent,
       },
     ];

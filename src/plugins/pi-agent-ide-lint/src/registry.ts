@@ -1,52 +1,97 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  hasConfiguredExecutable,
+  loadLayeredToolConfig,
   matchesConfiguredFile,
   parseLintersConfig,
-  projectIdeConfigPath,
 } from "pi-agent-ide/api/tool-config";
 
-import type { LinterCommandConfig, LintersConfig } from "pi-agent-ide/api/tool-config";
+import type {
+  EffectiveToolConfigEntry,
+  LinterCommandConfig,
+  LintersConfig,
+  LayeredToolConfigOptions,
+} from "pi-agent-ide/api/tool-config";
 
 /**
-Validated linter commands for one project.
+Validated linter commands in project, global, and built-in priority order.
 */
 export class LintCommandRegistry {
-  private constructor(private readonly linters: readonly LinterCommandConfig[]) {}
+  private constructor(
+    private readonly linters: readonly EffectiveToolConfigEntry<LinterCommandConfig>[],
+    private readonly availableBuiltIns: ReadonlySet<string>,
+  ) {}
 
   /**
-    Loads `.pi/pi-agent-ide/linters.json`.
-    */
-  public static async fromDirectory(directory: string): Promise<LintCommandRegistry> {
-    try {
-      const raw = await readFile(projectIdeConfigPath(directory, "linters"), "utf8");
-      return LintCommandRegistry.fromConfig(parseLintersConfig(JSON.parse(raw)));
-    } catch (error) {
-      if (isMissingFile(error)) {
-        return LintCommandRegistry.fromConfig({ version: 1, linters: {} });
-      }
-
-      throw error;
-    }
+  Loads and merges project, global, and built-in `linters.json` files.
+  */
+  public static async fromDirectory(
+    directory: string,
+    options: LayeredToolConfigOptions = {},
+  ): Promise<LintCommandRegistry> {
+    const effective = await loadLayeredToolConfig(
+      directory,
+      "linters",
+      (value) => parseLintersConfig(value).linters,
+      options,
+    );
+    const environment = options.environment ?? process.env;
+    const available = await Promise.all(
+      effective.entries
+        .filter((entry) => entry.layer === "built-in")
+        .map(async (entry) => ({
+          id: entry.id,
+          available: await hasConfiguredExecutable(entry.config.check, directory, environment),
+        })),
+    );
+    return new LintCommandRegistry(
+      effective.entries,
+      new Set(available.filter((entry) => entry.available).map((entry) => entry.id)),
+    );
   }
 
   /**
-    Creates a registry from a validated config.
-    */
+  Creates a project-layer registry from a validated config.
+  */
   public static fromConfig(config: LintersConfig): LintCommandRegistry {
-    return new LintCommandRegistry(Object.values(config.linters));
+    return new LintCommandRegistry(
+      Object.entries(config.linters).map(([id, linter]) => ({
+        id,
+        config: linter,
+        layer: "project",
+        sourcePath: "<memory>",
+      })),
+      new Set(),
+    );
   }
 
   /**
-    Returns the first command matching this file.
-    */
+  Returns the first command matching this file.
+  */
   public resolve(filePath: string, projectRoot: string): LinterCommandConfig | undefined {
-    const absolute = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
-    return this.linters.find((linter) => matchesConfiguredFile(linter, absolute, projectRoot));
+    return this.resolveEntry(filePath, projectRoot)?.config;
   }
-}
 
-function isMissingFile(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+  /**
+  Returns the first matching command together with its stable ID and source layer.
+  */
+  public resolveEntry(
+    filePath: string,
+    projectRoot: string,
+  ): EffectiveToolConfigEntry<LinterCommandConfig> | undefined {
+    const absolute = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
+    return this.linters.find(
+      (linter) =>
+        (linter.layer !== "built-in" || this.availableBuiltIns.has(linter.id)) &&
+        matchesConfiguredFile(linter.config, absolute, projectRoot),
+    );
+  }
+
+  /**
+  Lists all merged entries in runtime resolution order.
+  */
+  public get entries(): readonly EffectiveToolConfigEntry<LinterCommandConfig>[] {
+    return this.linters;
+  }
 }

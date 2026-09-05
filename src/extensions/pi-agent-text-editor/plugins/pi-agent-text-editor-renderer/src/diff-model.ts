@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { diffChars, diffWordsWithSpace, lineDiff } from "diff";
 
 import type { TextMutationPreviewRange } from "pi-agent-text-editor/api/mutation-preview";

@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import path from "node:path";
 
 import {
@@ -8,16 +8,21 @@ import {
   type ThemeColor,
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
-import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  type Component,
+  Text,
+  truncateToWidth,
+  visibleWidth,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 
 import { isSearchToolDetails } from "#src/search-result.js";
 
-import type {
-  SearchResultFile,
-  SearchResultLine,
-  SearchResultRange,
-  SearchToolDetails,
-} from "#src/search-result.js";
+import { restoreSearchDetails } from "#src/persisted-result.js";
+
+const restoredDetails = new WeakMap<object, SearchToolDetails>();
+
+import type { SearchResultFile, SearchResultLine, SearchToolDetails } from "#src/search-result.js";
 
 const COMPACT_SEARCH_ROWS = 12;
 
@@ -37,11 +42,6 @@ const FILE_BADGES: Readonly<
   ".html": { label: "<>", color: "accent" },
 };
 
-interface SearchCallArguments {
-  readonly query?: unknown;
-  readonly path?: unknown;
-}
-
 interface SearchRenderContext {
   readonly lastComponent: Component | undefined;
   readonly isError?: boolean;
@@ -53,33 +53,23 @@ type SearchPanelRow =
   | { readonly kind: "omitted"; readonly matches: number }
   | { readonly kind: "empty" };
 
-interface SearchLineWindow {
-  readonly from: number;
-  readonly to: number;
-  readonly leadingEllipsis: boolean;
-  readonly trailingEllipsis: boolean;
-}
-
-export function renderSearchCall(arguments_: SearchCallArguments, theme: Theme): Component {
-  const query = typeof arguments_.query === "string" ? arguments_.query : "";
-  const scope =
-    typeof arguments_.path === "string" && arguments_.path.length > 0 && arguments_.path !== "."
-      ? ` in ${arguments_.path}`
-      : "";
-  return new Text(
-    theme.fg("toolTitle", theme.bold("search ")) +
-      theme.fg("muted", `${JSON.stringify(query)}${scope}`),
-    0,
-    0,
-  );
-}
-
 export function renderSearchResult(
   result: AgentToolResult<SearchToolDetails>,
   options: ToolRenderResultOptions,
   theme: Theme,
   context: SearchRenderContext,
 ): Component {
+  if (typeof result.details === "object") {
+    let details = restoredDetails.get(result.details);
+    if (details === undefined) {
+      details = restoreSearchDetails(
+        result.details,
+        result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n"),
+      );
+      restoredDetails.set(result.details, details);
+    }
+    result = { ...result, details };
+  }
   if (options.isPartial || context.isError || !isSearchToolDetails(result.details)) {
     const content = result.content[0];
     const text = content?.type === "text" ? content.text : "";
@@ -128,11 +118,11 @@ export class SearchResultPanel implements Component {
     const innerWidth = width - 2;
     const rows = searchViewport(this.details, this.expanded);
     const gutterWidth = maximumLineNumberWidth(this.details.files);
-    const lines = [renderTopBorder(this.details, innerWidth, this.theme)];
-
-    for (const row of rows) {
-      lines.push(renderPanelRow(row, innerWidth, gutterWidth, this.theme));
-    }
+    const renderedRows = rows.flatMap((row) =>
+      renderPanelRow(row, innerWidth, gutterWidth, this.theme),
+    );
+    const visibleRows = compactRenderedRows(renderedRows, this.expanded, innerWidth, this.theme);
+    const lines = [renderTopBorder(this.details, innerWidth, this.theme), ...visibleRows];
 
     lines.push(this.theme.fg("borderMuted", `╰${"─".repeat(innerWidth)}╯`));
     const clipped = lines.map((line) => truncateToWidth(line, width));
@@ -171,33 +161,50 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
   return [...selected, { kind: "omitted", matches: details.matchCount - shownMatches }];
 }
 
+function compactRenderedRows(
+  rows: readonly string[],
+  expanded: boolean,
+  width: number,
+  theme: Theme,
+): readonly string[] {
+  if (expanded || rows.length <= COMPACT_SEARCH_ROWS) {
+    return rows;
+  }
+
+  const hint = `${keyText("app.tools.expand")} to expand`;
+  const notice = framed(theme.fg("dim", `  … output truncated · ${hint}`), width, theme);
+  return [...rows.slice(0, COMPACT_SEARCH_ROWS - 1), notice];
+}
+
 function renderPanelRow(
   row: SearchPanelRow,
   width: number,
   gutterWidth: number,
   theme: Theme,
-): string {
+): readonly string[] {
   if (row.kind === "file") {
-    return framed(renderFileHeader(row.file, width, theme), width, theme, true);
+    return [framed(renderFileHeader(row.file, width, theme), width, theme, true)];
   }
 
   if (row.kind === "line") {
-    return framed(renderMatchLine(row.line, width, gutterWidth, theme), width, theme);
+    return renderMatchLine(row.line, width, gutterWidth, theme);
   }
 
   if (row.kind === "omitted") {
     const hint = `${keyText("app.tools.expand")} to expand`;
-    return framed(
-      theme.fg(
-        "dim",
-        `  … ${String(row.matches)} more ${plural(row.matches, "match", "matches")} · ${hint}`,
+    return [
+      framed(
+        theme.fg(
+          "dim",
+          `  … ${String(row.matches)} more ${plural(row.matches, "match", "matches")} · ${hint}`,
+        ),
+        width,
+        theme,
       ),
-      width,
-      theme,
-    );
+    ];
   }
 
-  return framed(theme.fg("dim", "  No matches found"), width, theme);
+  return [framed(theme.fg("dim", "  No matches found"), width, theme)];
 }
 
 function renderFileHeader(file: SearchResultFile, width: number, theme: Theme): string {
@@ -217,20 +224,23 @@ function renderMatchLine(
   width: number,
   gutterWidth: number,
   theme: Theme,
-): string {
+): readonly string[] {
   const number = String(line.lineNumber).padStart(gutterWidth);
   const gutter = ` ${theme.fg("dim", number)} ${theme.fg("borderMuted", "│")} `;
   const contentWidth = Math.max(1, width - visibleWidth(gutter) - 1);
-  return `${gutter}${renderHighlightedLine(line, contentWidth, theme)}`;
+  const wrapped = wrapTextWithAnsi(renderHighlightedLine(line, theme), contentWidth);
+  const continuationGutter = " ".repeat(visibleWidth(gutter));
+
+  return wrapped.map((content, index) =>
+    framed(`${index === 0 ? gutter : continuationGutter}${content}`, width, theme),
+  );
 }
 
-function renderHighlightedLine(line: SearchResultLine, width: number, theme: Theme): string {
-  const window = searchLineWindow(line, width);
-  const ranges = visibleRanges(line.ranges, window.from, window.to);
-  let result = window.leadingEllipsis ? theme.fg("dim", "…") : "";
-  let offset = window.from;
+function renderHighlightedLine(line: SearchResultLine, theme: Theme): string {
+  let result = "";
+  let offset = 0;
 
-  for (const range of ranges) {
+  for (const range of line.ranges) {
     if (range.from > offset) {
       result += theme.fg("toolOutput", safeText(line.text.slice(offset, range.from)));
     }
@@ -240,68 +250,12 @@ function renderHighlightedLine(line: SearchResultLine, width: number, theme: The
     offset = range.to;
   }
 
-  if (offset < window.to) {
-    result += theme.fg("toolOutput", safeText(line.text.slice(offset, window.to)));
+  if (offset < line.text.length) {
+    result += theme.fg("toolOutput", safeText(line.text.slice(offset)));
   }
 
-  if (window.trailingEllipsis) {
-    result += theme.fg("dim", "…");
-  }
-
-  return truncateToWidth(result, width);
+  return result;
 }
-
-function searchLineWindow(line: SearchResultLine, width: number): SearchLineWindow {
-  if (visibleWidth(safeText(line.text)) <= width) {
-    return { from: 0, to: line.text.length, leadingEllipsis: false, trailingEllipsis: false };
-  }
-
-  const focus = requiredValue(line.ranges[0]);
-  const budget = Math.max(1, width - 2);
-  const matchWidth = Math.min(budget, Math.max(1, focus.to - focus.from));
-  const before = Math.max(0, Math.floor((budget - matchWidth) * 0.4));
-  let from = Math.max(0, focus.from - before);
-  let to = Math.min(line.text.length, from + budget);
-
-  if (to < focus.to) {
-    to = Math.min(line.text.length, focus.to);
-    from = Math.max(0, to - budget);
-  }
-
-  return {
-    from,
-    to,
-    leadingEllipsis: from > 0,
-    trailingEllipsis: to < line.text.length,
-  };
-}
-
-function visibleRanges(
-  ranges: readonly SearchResultRange[],
-  from: number,
-  to: number,
-): readonly SearchResultRange[] {
-  const visible: SearchResultRange[] = [];
-
-  for (const range of ranges) {
-    const clipped = { from: Math.max(from, range.from), to: Math.min(to, range.to) };
-
-    if (clipped.to <= clipped.from) {
-      continue;
-    }
-
-    const previous = visible.at(-1);
-
-    if (previous !== undefined && clipped.from <= previous.to) {
-      visible[visible.length - 1] = { from: previous.from, to: Math.max(previous.to, clipped.to) };
-    } else {
-      visible.push(clipped);
-    }
-  }
-
-  return visible;
-}
-
 function renderTopBorder(details: SearchToolDetails, width: number, theme: Theme): string {
   const frame = (text: string): string => theme.fg("borderMuted", text);
   const title = truncateToWidth(` ${searchSummary(details)} `, Math.max(0, width - 1), "");

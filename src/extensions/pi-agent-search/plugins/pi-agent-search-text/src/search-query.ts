@@ -1,114 +1,297 @@
-import parser, { type LuceneQueryNode } from "lucene-query-parser";
-
 interface CompiledExpression {
   readonly condition: string;
   readonly match: string;
 }
 
-export function compileSearchQuery(query: string): string {
-  if (!containsBooleanOperator(query)) {
-    return escapeRegex(query);
-  }
+type Expression =
+  | { readonly kind: "term"; readonly value: string; readonly quoted?: boolean }
+  | {
+      readonly kind: "and" | "or" | "not";
+      readonly left: Expression;
+      readonly right: Expression;
+    };
 
-  const normalizedQuery = query.replace(/\|{1,2}/gu, " OR ");
-  const expression = compileExpression(parser.parse(normalizedQuery));
-  return `^(?=${expression.condition}).*?(${expression.match})`;
+type TokenType = "term" | "and" | "or" | "not" | "left" | "right" | "end";
+
+interface Token {
+  readonly type: TokenType;
+  readonly value: string;
+  readonly offset: number;
+  readonly quoted?: boolean;
 }
 
-function containsBooleanOperator(query: string): boolean {
-  return /(?:^|\s)(?:AND|OR|NOT)(?=\s|$)|\|{1,2}/u.test(query);
+/** Compile literal terms (or unquoted regex terms) while preserving Boolean conditions. */
+export function compileSearchQuery(query: string, regex = false): string {
+  const tokens = tokenize(query);
+  if (!containsBooleanSyntax(tokens)) return regex ? query : escapeRegex(query);
+
+  const expression = compileExpression(new BooleanQueryParser(query, tokens).parse(), regex);
+  return `^${expression.condition}.*?\\K(${expression.match})`;
 }
 
-function compileExpression(node: LuceneQueryNode, inheritedField?: string): CompiledExpression {
-  const field = concreteField(node.field) ?? inheritedField;
+/** Compile the any-term fallback for an ordinary multi-word query. */
+export function compileSearchFallbackQuery(query: string): string | undefined {
+  if (containsBooleanSyntax(tokenize(query))) return undefined;
 
-  if (typeof node.term === "string") {
-    return compileTerm(node, field);
+  const terms = [...new Set(query.trim().split(/\s+/u).filter(Boolean))];
+  return terms.length > 1 ? `(?:${terms.map(escapeRegex).join("|")})` : undefined;
+}
+
+function containsBooleanSyntax(tokens: readonly Token[]): boolean {
+  return tokens.some(
+    (token) =>
+      token.quoted === true || token.type === "and" || token.type === "or" || token.type === "not",
+  );
+}
+
+class BooleanQueryParser {
+  readonly #query: string;
+  readonly #tokens: readonly Token[];
+  #index = 0;
+
+  constructor(query: string, tokens: readonly Token[]) {
+    this.#query = query;
+    this.#tokens = tokens;
   }
 
-  if (
-    node.left === undefined ||
-    node.operator === undefined ||
-    node.right === undefined ||
-    node.right === null
-  ) {
-    throw new Error("Search query must contain a searchable expression.");
-  }
-
-  const left = compileExpression(node.left, field);
-  const right = compileExpression(node.right, field);
-
-  switch (node.operator) {
-    case "OR": {
-      return {
-        condition: `(?:${left.condition}|${right.condition})`,
-        match: `(?:${left.match}|${right.match})`,
-      };
+  parse(): Expression {
+    const expression = this.#parseOr();
+    const token = this.#current();
+    if (token.type !== "end") {
+      const message =
+        token.type === "right" ? "unexpected ')'." : `unexpected ${quoteToken(token)}.`;
+      throw syntaxError(token.offset, message);
     }
-    case "AND":
-    case "<implicit>": {
-      return {
-        condition: `(?=.*(?:${left.condition}))(?=.*(?:${right.condition}))`,
-        match: `(?:${left.match}|${right.match})`,
-      };
+    return expression;
+  }
+
+  #parseOr(): Expression {
+    let expression = this.#parseAnd();
+    while (this.#current().type === "or") {
+      const operator = this.#take();
+      const right = this.#parseRequiredPrimary(`after ${operator.value}`);
+      expression = { kind: "or", left: expression, right: this.#parseAndTail(right) };
     }
-    case "NOT": {
-      return {
-        condition: `(?=.*(?:${left.condition}))(?!.*(?:${right.condition}))`,
-        match: left.match,
-      };
+    return expression;
+  }
+
+  #parseAnd(): Expression {
+    return this.#parseAndTail(this.#parseRequiredPrimary());
+  }
+
+  #parseAndTail(initial: Expression): Expression {
+    let expression = initial;
+    for (;;) {
+      const token = this.#current();
+      if (token.type === "and" || token.type === "not") {
+        this.#take();
+        const right = this.#parseRequiredPrimary(`after ${token.value}`);
+        expression = { kind: token.type, left: expression, right };
+        continue;
+      }
+      if (token.type === "term" || token.type === "left") {
+        expression = { kind: "and", left: expression, right: this.#parseRequiredPrimary() };
+        continue;
+      }
+      return expression;
     }
-    default: {
-      throw new Error(`Search query operator ${JSON.stringify(node.operator)} is not supported.`);
+  }
+
+  #parseRequiredPrimary(context?: string): Expression {
+    const token = this.#current();
+    if (token.type === "term") {
+      this.#take();
+      return { kind: "term", value: token.value, quoted: token.quoted };
+    }
+    if (token.type === "left") {
+      this.#take();
+      if (this.#current().type === "right" || this.#current().type === "end") {
+        throw syntaxError(this.#current().offset, "expected a term after '('.");
+      }
+      const expression = this.#parseOr();
+      if (this.#current().type !== "right") {
+        throw syntaxError(this.#current().offset, "expected ')'.");
+      }
+      this.#take();
+      return expression;
+    }
+
+    if (
+      context === undefined &&
+      (token.type === "and" || token.type === "or" || token.type === "not")
+    ) {
+      throw syntaxError(token.offset, `expected a term before ${token.value}.`);
+    }
+    const suffix = context === undefined ? "" : ` ${context}`;
+    throw syntaxError(token.offset, `expected a term${suffix}.`);
+  }
+
+  #current(): Token {
+    return (
+      this.#tokens[this.#index] ?? {
+        type: "end",
+        value: "",
+        offset: this.#query.length,
+      }
+    );
+  }
+
+  #take(): Token {
+    const token = this.#current();
+    this.#index += 1;
+    return token;
+  }
+}
+
+function tokenize(query: string): Token[] {
+  const tokens: Token[] = [];
+  let offset = 0;
+
+  while (offset < query.length) {
+    const character = query.charAt(offset);
+    if (/\s/u.test(character)) {
+      offset += 1;
+      continue;
+    }
+    if (character === "(" && isBooleanGroup(query, offset)) {
+      tokens.push({ type: "left", value: character, offset });
+      offset += 1;
+      continue;
+    }
+    if (character === ")") {
+      tokens.push({ type: "right", value: character, offset });
+      offset += 1;
+      continue;
+    }
+    if (isBooleanPipe(query, offset)) {
+      const width = query.charAt(offset + 1) === "|" ? 2 : 1;
+      tokens.push({ type: "or", value: query.slice(offset, offset + width), offset });
+      offset += width;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      const start = offset;
+      const quote = character;
+      let value = "";
+      offset += 1;
+      while (offset < query.length && query.charAt(offset) !== quote) {
+        if (
+          query.charAt(offset) === "\\" &&
+          (query.charAt(offset + 1) === quote || query.charAt(offset + 1) === "\\")
+        ) {
+          offset += 1;
+        }
+        value += query.charAt(offset++);
+      }
+      if (offset >= query.length) {
+        const name = quote === "'" ? "single" : "double";
+        throw syntaxError(start, `unterminated ${name}-quoted term.`);
+      }
+      offset += 1;
+      if (value.length === 0) throw syntaxError(start, "quoted terms must not be empty.");
+      tokens.push({ type: "term", value, offset: start, quoted: true });
+      continue;
+    }
+
+    const start = offset;
+    while (offset < query.length) {
+      const current = query.charAt(offset);
+      if (/\s/u.test(current) || current === ")" || isBooleanPipe(query, offset)) break;
+      if (current === "\\" && offset + 1 < query.length) {
+        offset += 2;
+      } else if (current === "[" || current === "(") {
+        const end = regexBlockEnd(query, offset);
+        offset = end ?? offset + 1;
+      } else {
+        offset += 1;
+      }
+    }
+    const value = query.slice(start, offset);
+    tokens.push({ type: operatorType(value), value, offset: start });
+  }
+
+  tokens.push({ type: "end", value: "", offset: query.length });
+  return tokens;
+}
+
+function isBooleanPipe(query: string, offset: number): boolean {
+  return (
+    query.charAt(offset) === "|" &&
+    (query.charAt(offset + 1) === "|" ||
+      (/\s/u.test(query.charAt(offset - 1)) && /\s/u.test(query.charAt(offset + 1))))
+  );
+}
+
+// Regex blocks own their punctuation, whitespace, and escaped delimiters.
+function regexBlockEnd(query: string, start: number): number | undefined {
+  const closing = query.charAt(start) === "[" ? "]" : ")";
+  let offset = start + 1;
+  while (offset < query.length) {
+    const character = query.charAt(offset);
+    if (character === "\\") {
+      offset += 2;
+    } else if (character === closing) {
+      return offset + 1;
+    } else if (closing === ")" && (character === "(" || character === "[")) {
+      const end = regexBlockEnd(query, offset);
+      if (end === undefined) return undefined;
+      offset = end;
+    } else {
+      offset += 1;
     }
   }
+  return undefined;
 }
 
-function compileTerm(node: LuceneQueryNode, field: string | undefined): CompiledExpression {
-  if (node.prefix !== undefined && node.prefix !== null) {
-    throw new Error("Search query prefix operators are not supported.");
-  }
-
-  if (node.similarity !== undefined && node.similarity !== null) {
-    throw new Error("Search query fuzzy operators are not supported.");
-  }
-
-  if (node.proximity !== undefined && node.proximity !== null) {
-    throw new Error("Search query proximity operators are not supported.");
-  }
-
-  if (node.boost !== undefined && node.boost !== null) {
-    throw new Error("Search query boost operators are not supported.");
-  }
-
-  if (node.regexpr === true) {
-    throw new Error("Use the explicit regex: search protocol for regular expressions.");
-  }
-
-  const term = normalizeTerm(node.term);
-
-  if (term.length === 0) {
-    throw new Error("Search query terms must not be empty.");
-  }
-
-  const pattern = field === undefined ? escapeRegex(term) : fieldPattern(field, term);
-  return { condition: pattern, match: pattern };
+function isBooleanGroup(query: string, offset: number): boolean {
+  const end = regexBlockEnd(query, offset);
+  if (end === undefined) return true;
+  const inner = query.slice(offset + 1, end - 1);
+  if (inner.trim().length === 0) return true;
+  return containsBooleanSyntax(tokenize(inner));
 }
 
-function concreteField(field: string | undefined): string | undefined {
-  return field === undefined || field === "<implicit>" ? undefined : field;
+function operatorType(value: string): TokenType {
+  if (value === "AND") return "and";
+  if (value === "OR") return "or";
+  if (value === "NOT") return "not";
+  return "term";
 }
 
-function normalizeTerm(term: string | undefined): string {
-  if (term === undefined) {
-    throw new Error("Search query term is missing.");
+function quoteToken(token: Token): string {
+  return token.value.length > 0 ? JSON.stringify(token.value) : "the end of the query";
+}
+
+function syntaxError(offset: number, message: string): SyntaxError {
+  return new SyntaxError(
+    `Invalid Boolean search query at column ${String(offset + 1)}: ${message}`,
+  );
+}
+
+function compileExpression(expression: Expression, regex: boolean): CompiledExpression {
+  if (expression.kind === "term") {
+    const pattern = regex && !expression.quoted ? expression.value : escapeRegex(expression.value);
+    return { condition: `(?=.*(?:${pattern}))`, match: pattern };
   }
 
-  return term.length >= 2 && term.startsWith("'") && term.endsWith("'") ? term.slice(1, -1) : term;
-}
-
-function fieldPattern(field: string, term: string): string {
-  return `["']?\\b${escapeRegex(field)}\\b["']?\\s*:\\s*["']?${escapeRegex(term)}["']?`;
+  const left = compileExpression(expression.left, regex);
+  const right = compileExpression(expression.right, regex);
+  if (expression.kind === "or") {
+    return {
+      condition: `(?:${left.condition}|${right.condition})`,
+      match: `(?:${left.match}|${right.match})`,
+    };
+  }
+  if (expression.kind === "not") {
+    return {
+      condition: `${left.condition}(?!${right.condition})`,
+      match: left.match,
+    };
+  }
+  return {
+    condition: `${left.condition}${right.condition}`,
+    match: `(?:${left.match}|${right.match})`,
+  };
 }
 
 function escapeRegex(value: string): string {

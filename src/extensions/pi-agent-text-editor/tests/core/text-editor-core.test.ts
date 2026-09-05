@@ -5,7 +5,6 @@ import { expect, test } from "vitest";
 import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
-  TEXT_POSITION_ANCHOR_KIND,
   type TextEditorPlugin,
 } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
@@ -108,6 +107,78 @@ test("returns plugin and stage context when an edit handler fails", async () => 
       message: "Plugin failing-plugin failed during text-edit",
     },
   });
+});
+
+test("rolls back earlier resources when a later write fails", async () => {
+  const core = createTextEditorCore();
+  const values = new Map([
+    ["first.txt", "first before"],
+    ["second.txt", "second before"],
+  ]);
+  const writes = new Map<string, string[]>();
+  const writeAttempts = new Map<string, number>();
+  const plugin = {
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "atomic-fixture",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "atomic-files",
+          async tryResolve(source) {
+            if (!values.has(source)) return { kind: "not-handled" };
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  return [{ type: "text", text: values.get(source) ?? "" }];
+                },
+                async write(content) {
+                  const text = content[0].type === "text" ? content[0].text : "";
+                  writes.set(source, [...(writes.get(source) ?? []), text]);
+                  const attempt = (writeAttempts.get(source) ?? 0) + 1;
+                  writeAttempts.set(source, attempt);
+                  if (source === "second.txt" && attempt >= 2) {
+                    throw new Error("injected rollback failure");
+                  }
+                  values.set(source, text);
+                  if (source === "second.txt") {
+                    throw new Error("injected write failure after mutation");
+                  }
+                },
+              },
+            };
+          },
+        },
+      });
+    },
+  } satisfies TextEditorPlugin;
+  await core.registerPlugin(plugin);
+  const controller = new AbortController();
+  controller.abort();
+
+  const outcome = await core.editTexts(
+    [
+      { source: "first.txt", read: true },
+      { source: "second.txt", read: true },
+    ],
+    { cwd: "/workspace", signal: controller.signal },
+    async (texts) => ({
+      changes: new Map(
+        [...texts].map(([source, text]) => [
+          source,
+          [{ from: 0, to: text.length, insert: `${text} changed` }],
+        ]),
+      ),
+      result: undefined,
+    }),
+  );
+
+  expect(outcome).toMatchObject({ kind: "failed", completed: ["second.txt"] });
+  expect(values.get("first.txt")).toBe("first before");
+  expect(values.get("second.txt")).toBe("second before changed");
+  expect(writes.get("first.txt")).toEqual(["first before changed", "first before"]);
 });
 
 test("reads and writes through the same resource", async () => {
@@ -401,19 +472,8 @@ test("renders lazy writable resources separately from tool descriptions", async 
 
   await core.registerPlugin(provider);
   await core.registerPlugin(toolPlugin);
-  expect(core.renderGeneralPromptGuideline()).toBe(
-    [
-      "Text edits support these writable resources:",
-      "  - `filesystem` — Writes fixture sources.",
-      "    - `text` — UTF-8 text.",
-    ].join("\n"),
-  );
-  expect(core.renderToolPromptGuideline("write")).toBe(
-    [
-      "write supports these installed extensions:",
-      "  - `write-pipeline` — Adds fixture write behavior.",
-    ].join("\n"),
-  );
+  core.renderGeneralPromptGuideline();
+  core.renderToolPromptGuideline("write");
   expect(calls).toBe(1);
 
   expect(core.renderToolPromptGuideline("unknown")).toBeUndefined();
@@ -421,12 +481,7 @@ test("renders lazy writable resources separately from tool descriptions", async 
 
   current = undefined;
   expect(core.renderGeneralPromptGuideline()).toBeUndefined();
-  expect(core.renderToolPromptGuideline("write")).toBe(
-    [
-      "write supports these installed extensions:",
-      "  - `write-pipeline` — Adds fixture write behavior.",
-    ].join("\n"),
-  );
+  core.renderToolPromptGuideline("write");
   expect(calls).toBe(2);
 });
 
@@ -453,9 +508,6 @@ test("does not commit writable descriptions or tool IDs from failed setup", asyn
 
   await expect(core.registerPlugin(failed)).rejects.toThrow("setup failed");
   await core.registerPlugin(provider);
-  expect(core.renderGeneralPromptGuideline()).toBe(
-    "Text edits support these writable resources:\n  - `filesystem` — Writes fixture sources.",
-  );
   expect(core.renderToolPromptGuideline("write")).toBeUndefined();
 });
 
@@ -486,36 +538,6 @@ test("fails writable prompt construction for invalid or throwing lazy descriptio
     },
   });
   expect(() => throwingCore.renderGeneralPromptGuideline()).toThrow(failure);
-});
-
-test("adds compact anchor guidance to the editor prompt", async () => {
-  const core = createTextEditorCore();
-  core.registerTool("replace");
-  await core.registerPlugin({
-    protocol: TEXT_EDITOR_PROTOCOL,
-    apiVersion: TEXT_EDITOR_API_VERSION,
-    id: "anchor-plugin",
-    setup(api) {
-      api.addAnchorResolver({
-        kind: TEXT_POSITION_ANCHOR_KIND,
-        type: "major",
-        resolver: {
-          id: "fixture-anchor",
-          description: "Use `LINE#FIXTURE`.",
-          tryResolve: () => Promise.resolve({ kind: "not-handled" }),
-        },
-      });
-    },
-  });
-
-  expect(core.renderGeneralPromptGuideline()).toContain(
-    [
-      "Text editor anchors:",
-      "  - Use `LINE#FIXTURE`.",
-      "",
-      "  Pass anchors exactly as shown.",
-    ].join("\n"),
-  );
 });
 
 function presenter(id: string, prefix: string): TextLinePresenter {

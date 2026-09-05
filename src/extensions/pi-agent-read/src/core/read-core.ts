@@ -1,5 +1,3 @@
-import { isTextPresenterRegistration, type TextPresenterRegistration } from "pi-agent-text";
-
 import {
   READ_API_VERSION,
   READ_PROTOCOL,
@@ -7,11 +5,17 @@ import {
   type ReadPluginApi,
 } from "#src/api/plugin-protocol.js";
 import {
+  isFragmentResolverRegistration,
   isReadHandlerRegistration,
+  isReadViewRegistration,
   isResourceResolverRegistration,
+  isTextTargetResolverRegistration,
+  type FragmentResolverRegistration,
   type PromptDescriptionSource,
   type ReadHandlerRegistration,
+  type ReadViewRegistration,
   type ResourceResolverRegistration,
+  type TextTargetResolverRegistration,
 } from "#src/api/tools/read.js";
 import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
 
@@ -25,6 +29,8 @@ interface RegisteredPlugin {
   readonly lifecycle: PluginLifecycle;
   readonly plugin: ReadPlugin;
   readonly promptContributions: PromptDescriptionSource[];
+
+  readonly promptGuidelines: PromptDescriptionSource[];
   readonly ready: Promise<void>;
 }
 
@@ -44,7 +50,7 @@ export interface ReadCore {
 export function createReadCore(): ReadCore {
   const pendingPlugins = new Set<Promise<void>>();
   const plugins = new Map<string, RegisteredPlugin>();
-  const read = createReadTool(() => renderPluginPromptGuideline(plugins));
+  const read = createReadTool(() => renderPromptGuidelines(plugins));
   let registrationQueue = Promise.resolve();
 
   return {
@@ -68,9 +74,12 @@ export function createReadCore(): ReadCore {
 
       const lifecycle: PluginLifecycle = { status: "pending" };
       const promptContributions: PromptDescriptionSource[] = [];
+
+      const promptGuidelines: PromptDescriptionSource[] = [];
       const contributions = createPluginContributionController(
         plugin.id,
         read,
+        promptGuidelines,
         promptContributions,
       );
       const ready = registrationQueue.then(async () => {
@@ -87,6 +96,7 @@ export function createReadCore(): ReadCore {
       const registeredPlugin: RegisteredPlugin = {
         lifecycle,
         plugin,
+        promptGuidelines,
         promptContributions,
         ready,
       };
@@ -142,12 +152,17 @@ function getPluginValidationError(plugin: {
 function createPluginContributionController(
   pluginId: string,
   read: ReadTool,
+  promptGuidelines: PromptDescriptionSource[],
   promptContributions: PromptDescriptionSource[],
 ): PluginContributionController {
   const setupPromptContributions: PromptDescriptionSource[] = [];
+
+  const setupPromptGuidelines: PromptDescriptionSource[] = [];
   const setupResolvers: ResourceResolverRegistration[] = [];
+  const setupTargetResolvers: TextTargetResolverRegistration[] = [];
   const setupReadHandlers: ReadHandlerRegistration[] = [];
-  const setupTextPresenters: TextPresenterRegistration[] = [];
+  const setupViews: ReadViewRegistration[] = [];
+  const setupFragmentResolvers: FragmentResolverRegistration[] = [];
   let state: "active" | "closed" | "setup" = "setup";
   const assertAvailable = (): void => {
     if (state === "closed") {
@@ -161,17 +176,25 @@ function createPluginContributionController(
     },
     addResolver(registration): void {
       assertAvailable();
-
       if (!isResourceResolverRegistration(registration)) {
         throw new TypeError(`Plugin ${pluginId} provided an invalid resource resolver`);
       }
-
       if (state === "setup") {
         setupResolvers.push(registration);
         return;
       }
-
       read.registerContributions(pluginId, { resolvers: [registration] });
+    },
+    addTargetResolver(registration): void {
+      assertAvailable();
+      if (!isTextTargetResolverRegistration(registration)) {
+        throw new TypeError(`Plugin ${pluginId} provided an invalid text target resolver`);
+      }
+      if (state === "setup") {
+        setupTargetResolvers.push(registration);
+        return;
+      }
+      read.registerContributions(pluginId, { targetResolvers: [registration] });
     },
     addHandler(registration): void {
       assertAvailable();
@@ -187,19 +210,33 @@ function createPluginContributionController(
 
       read.registerContributions(pluginId, { handlers: [registration] });
     },
-    addTextPresenter(registration): void {
+    addView(registration): void {
       assertAvailable();
 
-      if (!isTextPresenterRegistration(registration)) {
-        throw new TypeError(`Plugin ${pluginId} provided an invalid text presenter`);
+      if (!isReadViewRegistration(registration)) {
+        throw new TypeError(`Plugin ${pluginId} provided an invalid view registration`);
       }
 
       if (state === "setup") {
-        setupTextPresenters.push(registration);
+        setupViews.push(registration);
         return;
       }
 
-      read.registerContributions(pluginId, { presenters: [registration] });
+      read.registerContributions(pluginId, { views: [registration] });
+    },
+    addFragmentResolver(registration): void {
+      assertAvailable();
+
+      if (!isFragmentResolverRegistration(registration)) {
+        throw new TypeError(`Plugin ${pluginId} provided an invalid fragment resolver`);
+      }
+
+      if (state === "setup") {
+        setupFragmentResolvers.push(registration);
+        return;
+      }
+
+      read.registerContributions(pluginId, { fragments: [registration] });
     },
     describe(description): void {
       assertAvailable();
@@ -217,6 +254,18 @@ function createPluginContributionController(
 
       promptContributions.push(normalized);
     },
+
+    addPromptGuideline(guideline): void {
+      assertAvailable();
+      const normalized = normalizeDescriptionSource(guideline);
+
+      if (state === "setup") {
+        setupPromptGuidelines.push(normalized);
+        return;
+      }
+
+      promptGuidelines.push(normalized);
+    },
   };
 
   return {
@@ -231,13 +280,36 @@ function createPluginContributionController(
 
       read.registerContributions(pluginId, {
         resolvers: setupResolvers,
+        targetResolvers: setupTargetResolvers,
         handlers: setupReadHandlers,
-        presenters: setupTextPresenters,
+        views: setupViews,
+        fragments: setupFragmentResolvers,
       });
       promptContributions.push(...setupPromptContributions);
+
+      promptGuidelines.push(...setupPromptGuidelines);
       state = "active";
     },
   };
+}
+
+function renderPromptGuidelines(plugins: ReadonlyMap<string, RegisteredPlugin>): readonly string[] {
+  const guidelines: string[] = [];
+
+  for (const registeredPlugin of plugins.values()) {
+    if (registeredPlugin.lifecycle.status !== "active") {
+      continue;
+    }
+
+    for (const source of registeredPlugin.promptGuidelines) {
+      const guideline = renderDescriptionSource(source);
+      if (guideline !== undefined) {
+        guidelines.push(guideline);
+      }
+    }
+  }
+
+  return guidelines;
 }
 
 function renderPluginPromptGuideline(

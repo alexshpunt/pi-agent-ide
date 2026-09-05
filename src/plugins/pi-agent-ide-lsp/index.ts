@@ -1,16 +1,8 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
-import {
-  createDiagnosticViewContent,
-  createSourceMappedTextReadHandler,
-  formatDiagnosticViewSource,
-  resolveDiagnosticViewPath,
-} from "pi-agent-ide/api/code-view";
+import { createSourceMappedTextReadHandler } from "pi-agent-ide/api/code-view";
 import { connectIdePlugin } from "pi-agent-ide/api/connect-plugin";
 import { IDE_API_VERSION, IDE_PROTOCOL, type IdePlugin } from "pi-agent-ide/api/plugin-protocol";
-import { type Diagnostic, formatDiagnostic, type IdeTool } from "pi-agent-ide/api/toolchain";
+import type { IdeTool } from "pi-agent-ide/api/toolchain";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -22,26 +14,29 @@ import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 
 import { createLspGraphResolver, createLspSymbolResolver } from "./src/code-view-resolvers.js";
+import { createLspDiagnosticSource } from "./src/diagnostic-source.js";
 import { lspDoctorPlugin } from "./src/doctor-plugin.js";
 import { createLspCompiler, LspManager, LspServerRegistry } from "./src/lsp/index.js";
 import { createLspSearchResolver } from "./src/search-resolver.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ResourceResolutionAttempt, ResourceResolver } from "pi-agent-resource";
-import type { TextDocument, TextLinePresenter } from "pi-agent-text";
 
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "LSP" });
 
 export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
-  let managerCwd: string | undefined;
-  let managerReady: Promise<LspManager> | undefined;
+  const managers = new Map<string, Promise<LspManager>>();
+  let disposed = false;
   const managerFor = (cwd: string): Promise<LspManager> => {
-    if (managerReady === undefined || managerCwd !== cwd) {
-      managerCwd = cwd;
-      managerReady = loadRegistry(cwd).then((registry) => LspManager.init(registry));
+    if (disposed) return Promise.reject(new Error("LSP session has ended"));
+    let ready = managers.get(cwd);
+    if (!ready) {
+      ready = loadRegistry(cwd).then((registry) => {
+        if (disposed) throw new Error("LSP session has ended");
+        return LspManager.init(registry);
+      });
+      managers.set(cwd, ready);
     }
-
-    return managerReady;
+    return ready;
   };
 
   const compiler = {
@@ -64,10 +59,16 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
     id: "lsp",
     setup(api): void {
       api.addTool(compiler);
+
+      api.addDiagnosticSource(createLspDiagnosticSource(managerFor));
     },
   } satisfies IdePlugin;
   pi.on("session_shutdown", async () => {
-    await LspManager.getInstanceOrNull()?.shutdownAll();
+    disposed = true;
+    await Promise.allSettled(
+      [...managers.values()].map(async (ready) => (await ready).shutdownAll()),
+    );
+    managers.clear();
   });
 
   const readPlugin = {
@@ -75,10 +76,6 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
     apiVersion: READ_API_VERSION,
     id: "lsp",
     setup(api) {
-      api.addResolver({
-        resolver: createLspDiagnosticResolver(managerFor),
-        renderResult: renderReadResult,
-      });
       api.addResolver({
         resolver: createLspSymbolResolver(managerFor),
         renderResult: renderReadResult,
@@ -92,12 +89,15 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
         when: { resolvedBy: "any", contentKind: "text" },
         handler: createSourceMappedTextReadHandler(),
       });
-      api.addTextPresenter({
-        priority: 100,
-        presenter: createLspReadPresenter(managerFor),
-      });
       api.describe(
-        "Adds LSP diagnostics to normal file reads. Use `lsp:<path>` to read only lines with LSP errors, `symbol:<path>#<selector>` to read a specific symbol's implementation, and `graph:<path>` or `graph:<path>#<selector>` to inspect dependencies and relationships across files.",
+        "Provides `symbol:<path>#<selector>` for a symbol's implementation, `graph:<path>` for relationships of top-level declarations, and `graph:<path>#<selector>` for one symbol's relationships.",
+      );
+
+      api.addPromptGuideline(
+        "You can use read with `symbol:<path>#<selector>` to inspect a known symbol's implementation without searching for it or reading the whole file.",
+      );
+      api.addPromptGuideline(
+        "You can use read with `graph:<path>` to inspect each top-level declaration's definition, referencing files, and incoming and outgoing calls. Members are listed with selectors; their relationships are not expanded. You can append `#<selector>` to inspect one symbol's references and calls, including a nested method.",
       );
     },
   } satisfies ReadPlugin;
@@ -109,118 +109,19 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
     connectSearchPlugin(pi, {
       protocol: SEARCH_PROTOCOL,
       apiVersion: SEARCH_API_VERSION,
-      id: "lsp-search",
+      id: "symbols",
       setup(api): void {
         api.addResolver({ resolver: createLspSearchResolver(managerFor) });
         api.describe(
-          "Use `lsp:<symbol>` to search workspace symbols and their references through configured language servers.",
+          "Use `symbols:<query>` to search workspace symbols and their references through configured language servers.",
+        );
+
+        api.addPromptGuideline(
+          "You can use search with `symbols:<query>` to find workspace symbols and their references through configured language servers.",
         );
       },
     }),
   ]);
-}
-
-function createLspDiagnosticResolver(
-  getManager: (cwd: string) => Promise<LspManager>,
-): ResourceResolver {
-  return {
-    id: "lsp-diagnostics",
-    tryResolve(source, context) {
-      return Promise.resolve(resolveLspDiagnosticSource(source, context.cwd, getManager));
-    },
-  };
-}
-
-function resolveLspDiagnosticSource(
-  source: string,
-  cwd: string,
-  getManager: (cwd: string) => Promise<LspManager>,
-): ResourceResolutionAttempt {
-  let filePath: string | undefined;
-
-  try {
-    filePath = resolveDiagnosticViewPath(source, "lsp", cwd);
-  } catch (error) {
-    return { kind: "failed", error };
-  }
-
-  if (filePath === undefined) {
-    return { kind: "not-handled" };
-  }
-
-  return {
-    kind: "resolved",
-    resource: {
-      source: formatDiagnosticViewSource("lsp", filePath),
-      async read() {
-        const [text, manager] = await Promise.all([readFile(filePath, "utf8"), getManager(cwd)]);
-        const compiled = await createLspCompiler(manager).compile({ filePath }, { cwd });
-        return [createDiagnosticViewContent(filePath, text, compiled.syntaxErrors, "lsp")];
-      },
-    },
-  };
-}
-
-function createLspReadPresenter(
-  getManager: (cwd: string) => Promise<LspManager>,
-): TextLinePresenter {
-  return {
-    id: "lsp-diagnostics",
-    async present(document, context) {
-      const source = document.source;
-
-      if (context.purpose !== "read" || !path.isAbsolute(source)) {
-        return document;
-      }
-
-      try {
-        const manager = await getManager(context.cwd);
-        const compiled = await createLspCompiler(manager).compile(
-          { filePath: source },
-          { cwd: context.cwd },
-        );
-        return addDiagnostics(document, compiled.diagnostics, "lsp");
-      } catch {
-        return document;
-      }
-    },
-  };
-}
-
-function addDiagnostics(
-  document: TextDocument,
-  diagnostics: readonly Diagnostic[],
-  source: string,
-): TextDocument {
-  const diagnosticsByLine = new Map<number, string[]>();
-
-  for (const diagnostic of diagnostics) {
-    const annotations = diagnosticsByLine.get(diagnostic.line) ?? [];
-    annotations.push(`<!-- ${source}: ${formatDiagnostic(diagnostic, source)} -->`);
-    diagnosticsByLine.set(diagnostic.line, annotations);
-  }
-
-  if (diagnosticsByLine.size === 0) {
-    return document;
-  }
-
-  const lines = document.lines.map((line) => {
-    const annotations = diagnosticsByLine.get(line.lineNumber);
-
-    if (annotations === undefined) {
-      return line;
-    }
-
-    return {
-      ...line,
-      presentation: {
-        ...line.presentation,
-        suffix: `${line.presentation?.suffix ?? ""}  ${annotations.join(" ")}`,
-      },
-    };
-  });
-
-  return { ...document, lines };
 }
 
 async function loadRegistry(cwd: string): Promise<LspServerRegistry> {

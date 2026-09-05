@@ -6,7 +6,6 @@ import {
   assistantMessage,
   getToolCallNames,
   getToolExecution,
-  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   text,
@@ -16,8 +15,6 @@ import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { getTextToolMutationData } from "#integration/support/pi-runtime/scenario.js";
-
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/register-extension.ts",
@@ -94,6 +91,10 @@ describe("interactive text editor demos", () => {
             { stopReason: "toolUse" },
           ),
           assistantMessage(
+            [toolCall({ id: "read-created", name: "read", arguments: { path: demoFileName } })],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
             [
               toolCall({
                 id: blockedOverwriteCallId,
@@ -102,6 +103,10 @@ describe("interactive text editor demos", () => {
                 ...interactivePacing,
               }),
             ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [toolCall({ id: "read-blocked", name: "read", arguments: { path: demoFileName } })],
             { stopReason: "toolUse" },
           ),
           assistantMessage(
@@ -136,18 +141,10 @@ describe("interactive text editor demos", () => {
       );
       expect(confirmedOverwriteExecution.isError).toBe(false);
 
-      const createMutation = getTextToolMutationData(getToolExecutionDetails(createExecution));
-      expect(createMutation).toMatchObject({
-        beforeContentMap: { [demoFileName]: "" },
-        afterContent: initialContent,
-      });
-      const overwriteMutation = getTextToolMutationData(
-        getToolExecutionDetails(confirmedOverwriteExecution),
-      );
-      expect(overwriteMutation).toMatchObject({
-        beforeContentMap: { [demoFileName]: initialContent },
-        afterContent: overwriteContent,
-      });
+      for (const id of ["read-created", "read-blocked"]) {
+        expect(getToolExecution(result, id).isError).not.toBe(true);
+        expect(getToolResultText(result, id)).toBe(initialContent);
+      }
       await expect(readFile(path.join(directory, demoFileName), "utf8")).resolves.toBe(
         overwriteContent,
       );

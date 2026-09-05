@@ -1,5 +1,38 @@
 import { spawn } from "node:child_process";
 
+import { constants } from "node:fs";
+import { access } from "node:fs/promises";
+import path from "node:path";
+
+/** Returns whether an executable is available without starting it. */
+export async function isExecutableAvailable(
+  command: string,
+  cwd: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<boolean> {
+  const candidates =
+    path.isAbsolute(command) || path.dirname(command) !== "."
+      ? [path.resolve(cwd, command)]
+      : [
+          path.join(cwd, "node_modules", ".bin", command),
+          ...(environment.PATH ?? "")
+            .split(path.delimiter)
+            .filter(Boolean)
+            .map((directory) => path.join(directory, command)),
+        ];
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.X_OK);
+      return true;
+    } catch {
+      // Try the next executable location.
+    }
+  }
+
+  return false;
+}
+
 /** Result of checking whether one external command can start successfully. */
 export type ExecutableProbeResult =
   | { readonly ok: true; readonly detail: string }

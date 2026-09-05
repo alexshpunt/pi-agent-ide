@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.2",
     "pi-agent-text": "workspace:^",

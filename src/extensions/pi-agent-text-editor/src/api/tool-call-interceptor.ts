@@ -8,4 +8,4 @@ export {
   type ToolCallAnnotationSink,
   type ToolCallInterceptionDetails,
   type ToolCallInterceptorHandler,
-} from "../core/tool-call-interceptor/coordinator.js";
+} from "#src/core/tool-call-interceptor/coordinator.js";

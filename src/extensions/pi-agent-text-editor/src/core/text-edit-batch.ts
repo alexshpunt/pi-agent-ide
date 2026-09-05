@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { type FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.js";
 import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
@@ -18,6 +18,10 @@ export interface TextBatchEntry extends Record<string, unknown> {
 
 export interface TextBatchDetails extends FileMutationBatchResult {
   readonly callIdsByResult: readonly string[];
+  /** Per-call results retained for the user-facing renderer. */
+  readonly displayResults?: readonly FileMutationResult[];
+  /** Original call id for each user-facing result. */
+  readonly callIdsByDisplayResult?: readonly string[];
 }
 
 function resultPath(result: FileMutationResult): string | undefined {
@@ -31,29 +35,55 @@ export function splitTextBatchResult(
   calls: readonly OriginalToolCall[],
 ): ReadonlyMap<string, AgentToolResult<unknown>> {
   const details = aggregate.details as TextBatchDetails | undefined;
-  const resultsByCall = new Map(calls.map((call) => [call.id, [] as FileMutationResult[]]));
-
-  for (const [index, result] of (details?.results ?? []).entries()) {
-    const callId = details?.callIdsByResult[index];
-
-    if (callId !== undefined) {
-      resultsByCall.get(callId)?.push(result);
-    }
-  }
+  const agentResultsByCall = groupResultsByCall(
+    calls,
+    details?.results ?? [],
+    details?.callIdsByResult ?? [],
+  );
+  const displayResultsByCall = groupResultsByCall(
+    calls,
+    details?.displayResults ?? details?.results ?? [],
+    details?.callIdsByDisplayResult ?? details?.callIdsByResult ?? [],
+  );
 
   return new Map(
     calls.map((call) => {
-      const results = coalesceResults(resultsByCall.get(call.id) ?? []);
+      const agentResults = coalesceResults(agentResultsByCall.get(call.id) ?? []);
+      const displayResults = coalesceResults(displayResultsByCall.get(call.id) ?? []);
       return [
         call.id,
         {
           content:
-            results.length === 0 ? [] : [new FileMutationAgentResult(results).toTextContent()],
-          details: { results },
+            agentResults.length === 0
+              ? [
+                  {
+                    type: "text" as const,
+                    text: "Batch edit applied; the final file result is in the last successful tool call for that file.",
+                  },
+                ]
+              : [new FileMutationAgentResult(agentResults).toTextContent()],
+          details: { results: displayResults },
         },
       ];
     }),
   );
+}
+
+function groupResultsByCall(
+  calls: readonly OriginalToolCall[],
+  results: readonly FileMutationResult[],
+  callIdsByResult: readonly string[],
+): ReadonlyMap<string, FileMutationResult[]> {
+  const grouped = new Map(calls.map((call) => [call.id, [] as FileMutationResult[]]));
+
+  for (const [index, result] of results.entries()) {
+    const callId = callIdsByResult[index];
+    if (callId !== undefined) {
+      grouped.get(callId)?.push(result);
+    }
+  }
+
+  return grouped;
 }
 
 function coalesceResults(results: readonly FileMutationResult[]): FileMutationResult[] {

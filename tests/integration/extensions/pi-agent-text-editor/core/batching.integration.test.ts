@@ -18,6 +18,7 @@ import { createExtensionSet } from "#integration/support/pi-runtime/extension-se
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
 const extensions = createExtensionSet();
+const deferredResult = "final file result is in the last successful tool call for that file";
 afterAll(() => extensions.dispose());
 
 function call(name: string, id: string, arguments_: Record<string, unknown>) {
@@ -52,7 +53,7 @@ describe("pi-agent-text-editor batching", () => {
     });
   });
 
-  test("inherits path and returns a result to every contributing call", async () => {
+  test("inherits path and returns the final file only from its last successful call", async () => {
     await withTempWorkspace(async (directory) => {
       const file = path.join(directory, "shared.txt");
       await writeFile(file, "alpha\nreplace-me\ndelete-me\nomega", "utf8");
@@ -82,8 +83,15 @@ describe("pi-agent-text-editor batching", () => {
 
       expect(getToolExecution(result, "replace-shared").isError).toBe(false);
       expect(getToolExecution(result, "delete-shared").isError).toBe(false);
-      expect(getToolResultText(result, "replace-shared")).toContain("shared.txt");
+      expect(getToolResultText(result, "replace-shared")).toContain(deferredResult);
+      expect(getToolResultText(result, "replace-shared")).not.toContain("replaced");
       expect(getToolResultText(result, "delete-shared")).toContain("shared.txt");
+      expect(getToolResultText(result, "delete-shared")).toContain(
+        `${formatLineHashAnchor(2, "replaced")}|replaced`,
+      );
+      expect(getToolResultText(result, "delete-shared")).toContain(
+        `${formatLineHashAnchor(3, "omega")}|omega`,
+      );
       await expect(readFile(file, "utf8")).resolves.toBe("alpha\nreplaced\nomega");
     });
   });
@@ -146,9 +154,9 @@ describe("pi-agent-text-editor batching", () => {
         expect(getToolExecution(result, callId).isError).toBe(false);
       }
 
-      expect(getToolResultText(result, "all-replace")).toContain("edited.txt");
-      expect(getToolResultText(result, "all-delete")).toContain("moved.txt");
-      expect(getToolResultText(result, "all-insert")).toContain("edited.txt");
+      expect(getToolResultText(result, "all-replace")).toContain(deferredResult);
+      expect(getToolResultText(result, "all-delete")).toContain(deferredResult);
+      expect(getToolResultText(result, "all-insert")).toContain(deferredResult);
       expect(getToolResultText(result, "all-write")).toContain("written.txt");
       expect(getToolResultText(result, "all-move")).toContain("moved.txt");
       expect(getToolResultText(result, "all-copy")).toContain("edited.txt");
@@ -201,8 +209,8 @@ describe("pi-agent-text-editor batching", () => {
 
       for (const [index, file] of files.entries()) {
         const id = String(index + 1);
-        expect(getToolResultText(result, `grouped-${id}-replace`)).toContain(file);
-        expect(getToolResultText(result, `grouped-${id}-insert`)).toContain(file);
+        expect(getToolResultText(result, `grouped-${id}-replace`)).toContain(deferredResult);
+        expect(getToolResultText(result, `grouped-${id}-insert`)).toContain(deferredResult);
         expect(getToolResultText(result, `grouped-${id}-copy`)).toContain(file);
         await expect(readFile(path.join(directory, file), "utf8")).resolves.toBe(
           `alpha\nchanged-${id}\nanchor\nadded-${id}\ntail\nalpha`,
@@ -210,7 +218,7 @@ describe("pi-agent-text-editor batching", () => {
       }
     });
   });
-  test("routes interleaved explicit-path edits back to each original call", async () => {
+  test("routes each interleaved file result to its last successful call", async () => {
     await withTempWorkspace(async (directory) => {
       const firstFile = path.join(directory, "first-mixed.txt");
       const secondFile = path.join(directory, "second-mixed.txt");
@@ -280,15 +288,15 @@ describe("pi-agent-text-editor batching", () => {
         ],
       }).run("Interleave explicit edits for three files");
 
-      for (const [callId, fileName] of [
-        ["mixed-first-replace", "first-mixed.txt"],
-        ["mixed-second-delete", "second-mixed.txt"],
-        ["mixed-third-replace", "third-mixed.txt"],
-        ["mixed-first-insert", "first-mixed.txt"],
-        ["mixed-second-insert", "second-mixed.txt"],
-        ["mixed-third-delete", "third-mixed.txt"],
-      ] as const) {
-        expect(getToolResultText(result, callId)).toContain(fileName);
+      for (const callId of [
+        "mixed-first-replace",
+        "mixed-second-delete",
+        "mixed-third-replace",
+        "mixed-first-insert",
+        "mixed-second-insert",
+        "mixed-third-delete",
+      ]) {
+        expect(getToolResultText(result, callId)).toContain(deferredResult);
       }
 
       expect(getToolResultText(result, "mixed-first-copy")).toContain("first-mixed.txt");
@@ -303,20 +311,51 @@ describe("pi-agent-text-editor batching", () => {
       await expect(readFile(thirdFile, "utf8")).resolves.toBe("changed-third\nanchor\ntail\nalpha");
     });
   });
-  test("removes built-in edit from the integration provider payload", async () => {
+  test("keeps a failed call visible while routing final state to the last successful call", async () => {
     await withTempWorkspace(async (directory) => {
+      const file = path.join(directory, "partial-failure.txt");
+      await writeFile(file, "alpha\nchange\nanchor\nomega", "utf8");
       const result = await new PiIntegrationTest({
         artifactsDir: testArtifactsDir(expect.getState().testPath),
-        testName: "text-editor-no-builtin-edit",
+        testName: "text-editor-batch-partial-failure-results",
         cwd: directory,
         extensions: extensions.paths,
-        tools: ["edit", "write"],
-        conversation: [assistantMessage([text("done")])],
-      }).run("Finish without tools");
-      const request = result.providerRequests[0];
-      const systemPrompt = typeof request.systemPrompt === "string" ? request.systemPrompt : "";
+        tools: ["replace", "insert"],
+        conversation: [
+          assistantMessage(
+            [
+              call("replace", "partial-first", {
+                path: "partial-failure.txt",
+                start: formatLineHashAnchor(2, "change"),
+                text: "changed",
+              }),
+              call("replace", "partial-failed", {
+                path: "partial-failure.txt",
+                start: formatLineHashAnchor(99, "missing"),
+                text: "never",
+              }),
+              call("insert", "partial-last", {
+                path: "partial-failure.txt",
+                anchor: formatLineHashAnchor(3, "anchor"),
+                text: "added",
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("done")]),
+        ],
+      }).run("Apply the valid edits and report the invalid one");
 
-      expect(systemPrompt).not.toContain("- edit:");
+      expect(getToolExecution(result, "partial-first").isError).toBe(false);
+      expect(getToolResultText(result, "partial-first")).toContain(deferredResult);
+      expect(getToolExecution(result, "partial-failed").isError).toBe(true);
+      expect(getToolResultText(result, "partial-failed")).toContain("replace blocked");
+      expect(getToolResultText(result, "partial-failed")).toContain("was not found");
+      expect(getToolExecution(result, "partial-last").isError).toBe(false);
+      expect(getToolResultText(result, "partial-last")).toContain("partial-failure.txt");
+      expect(getToolResultText(result, "partial-last")).toContain("changed");
+      expect(getToolResultText(result, "partial-last")).toContain("added");
+      await expect(readFile(file, "utf8")).resolves.toBe("alpha\nchanged\nanchor\nadded\nomega");
     });
   });
 });

@@ -53,10 +53,15 @@ function createIndexChangeTool(
   return defineTool<typeof indexChangeSchema, IndexChangeToolDetails>({
     name: action,
     label: action,
+
+    promptSnippet: `${pastTense.slice(0, -1)} a selected Git change`,
     description: `${pastTense.slice(
       0,
       -1,
     )} one current Git change selected by a CHANGE# anchor without changing the worktree.`,
+    promptGuidelines: [
+      `You can use ${action} with a complete \`CHANGE#...\` anchor to ${action} only that current Git change without changing the worktree.`,
+    ],
     parameters: indexChangeSchema,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       const file = resolveFile(parameters.file, context.cwd);

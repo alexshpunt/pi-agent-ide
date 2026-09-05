@@ -5,7 +5,6 @@ import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor"
 import {
   assistantMessage,
   getToolExecution,
-  getToolExecutionDetails,
   PiIntegrationTest,
   text,
   toolCall,
@@ -14,8 +13,6 @@ import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { getTextToolMutationData } from "#integration/support/pi-runtime/scenario.js";
-
 const extensions = createExtensionSet();
 const sourceFile = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/src/tools/interactive-demos/fixtures/stack-store.ts",
@@ -152,8 +149,7 @@ describe("interactive text editor demos", () => {
 
       const execution = getToolExecution(result, callId);
       expect(execution.isError).toBe(false);
-      const mutation = getTextToolMutationData(getToolExecutionDetails(execution));
-      expect(mutation.afterContent).toBe(expectedLines.join("\n"));
+      expect(await readFile(demoFile, "utf8")).toBe(expectedLines.join("\n"));
     });
   }, 180_000);
 });

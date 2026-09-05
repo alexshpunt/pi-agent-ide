@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 
 interface Rgb {

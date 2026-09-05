@@ -1,12 +1,4 @@
-/**
- * pi-agent-ide — compile / format / lint pipeline gate.
- *
- * Three independent tool kinds, each with a registry of self-describing
- * implementations. The gate composes them: compile → format → lint.
- *
- * Diagnostic coordinates are 1-based (line/column), matching the
- * VS Code language bridge convention used across lpt.
- */
+/** Diagnostic coordinates are 1-based. Formatting stays synchronous; analysis runs separately. */
 
 export type Severity = "error" | "warning" | "info" | "hint";
 
@@ -70,16 +62,18 @@ export interface CompileResult {
     */
   diagnostics: Diagnostic[];
   /**
-    Syntax errors (e.g. TS1001-1999) — these trigger rollback in the gate.
+    Parser errors from an explicitly syntax-only compiler skip formatting, not the edit.
     */
   syntaxErrors: Diagnostic[];
   /**
-    Non-syntax diagnostics — warnings only, never rollback.
+    Other diagnostics, including type errors. These do not block formatting.
     */
   otherDiagnostics: Diagnostic[];
 }
 
 export interface Compiler {
+  /** Opt in only for fast parsing checks without type, project, or LSP analysis. */
+  readonly syntaxOnly?: boolean;
   readonly kind: "compiler";
   readonly name: string;
   readonly priority: number;
@@ -94,7 +88,7 @@ export interface Compiler {
 export interface LintInput {
   filePath: string;
   /**
-    Request the existing auto-fix command when running the edit gate.
+    Request a configured auto-fix command explicitly. Background diagnostics always use checks.
     */
   fix?: boolean;
 }
@@ -122,66 +116,4 @@ export interface ActiveToolchain {
   formatters: readonly Formatter[];
   compilers: readonly Compiler[];
   linters: readonly Linter[];
-}
-
-export type GateStage = "compile" | "format" | "lint" | "done";
-
-/**
-Phase descriptor for gate progress callbacks.
-*/
-export interface GatePhaseEntry {
-  /**
-    Phase identifier: "compile" | "lint" | "format"
-    */
-  phase: string;
-  /**
-    Human-readable tool name, e.g. "TypeScript", "ESLint", "dprint"
-    */
-  toolName: string;
-  /**
-    Current phase status
-    */
-  status: "pending" | "running" | "done";
-  /**
-    Duration in ms (only set when status === "done")
-    */
-  duration?: number;
-}
-
-/**
- * Callback emitted by Gate.runAll for TUI progress updates.
- * First call: all phases sent with status="pending" — UI allocates height immediately.
- * Subsequent calls: individual phase status changes.
- * Always sends the complete array so consumer can replace, not merge.
- */
-export type GatePhaseCallback = (phases: GatePhaseEntry[]) => void;
-
-/**
-Per-file gate result inside a multi-file gate run.
-*/
-export interface FileGateResult {
-  filePath: string;
-  finalContent: string;
-  sourceContent: string;
-  compile: CompileResult;
-  format: FormatResult;
-  lint: LintResult;
-}
-
-/**
-Gate result for multiple files (always array, even for single file).
-*/
-export interface GateResult {
-  /**
-    Stage where the gate stopped. "done" = full pipeline ran.
-    */
-  stage: GateStage;
-  /**
-    True when a compile syntax error means the edit should roll back.
-    */
-  rollback: boolean;
-  /**
-    Per-file results. Always populated, never empty.
-    */
-  files: FileGateResult[];
 }

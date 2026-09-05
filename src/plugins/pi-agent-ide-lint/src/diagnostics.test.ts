@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 import { parseDiagnostics } from "./diagnostics.js";
 
 describe("linter diagnostic adapters", () => {
+  it("counts ESLint numeric errors separately from warnings", () => {
+    const output = JSON.stringify([
+      {
+        messages: [
+          { line: 1, column: 1, severity: 2, message: "error" },
+          { line: 2, column: 1, severity: 1, message: "warning" },
+        ],
+      },
+    ]);
+    expect(
+      parseDiagnostics(output, { format: "eslint-json" }).map((item) => item.severity),
+    ).toEqual(["error", "warning"]);
+  });
   it("parses Clang diagnostics", () => {
     expect(
       parseDiagnostics("main.cpp:4:9: warning: use nullptr [modernize-use-nullptr]", {
@@ -30,6 +43,41 @@ describe("linter diagnostic adapters", () => {
     ).toMatchObject([{ code: "X1", line: 2, severity: "error" }]);
   });
 
+  it("parses Oxlint SARIF diagnostics", () => {
+    expect(
+      parseDiagnostics(
+        JSON.stringify({
+          runs: [
+            {
+              results: [
+                {
+                  ruleId: "eslint(no-debugger)",
+                  level: "error",
+                  message: { text: "debugger is not allowed" },
+                  locations: [
+                    {
+                      physicalLocation: {
+                        region: { startLine: 4, startColumn: 2 },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+        { format: "sarif" },
+      ),
+    ).toEqual([
+      {
+        code: "eslint(no-debugger)",
+        message: "debugger is not allowed",
+        line: 4,
+        column: 2,
+        severity: "error",
+      },
+    ]);
+  });
   it("parses Checkstyle XML", () => {
     const output =
       '<checkstyle><file name="Main.java"><error line="7" column="2" severity="error" message="Use braces" source="NeedBraces"/></file></checkstyle>';

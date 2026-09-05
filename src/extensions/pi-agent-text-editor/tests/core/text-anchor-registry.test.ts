@@ -1,7 +1,7 @@
 import { TextAnchor, type TextAnchorResolver } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { TextAnchorRegistry } from "#src/core/text-anchor-registry.js";
+import { TextAnchorRegistry, TextAnchorResolutionError } from "#src/core/text-anchor-registry.js";
 
 const POSITION_KIND = "fixture/position";
 const OPERATION_KIND = "fixture/operation";
@@ -111,39 +111,59 @@ test("rejects duplicate resolver IDs, a second major, and missing lines", async 
   ).rejects.toThrow(/empty file/u);
 });
 
-test("renders current resolver descriptions as compact guidance", () => {
+test("rejects recovery candidates outside the current snapshot", async () => {
   const registry = new TextAnchorRegistry();
-  let auxiliary: string | undefined = "Use a sparse marker.";
-
   registry.add({
-    resolver: resolver("major", 1, [], "Use the shown line anchor."),
-    kind: POSITION_KIND,
-    type: "major",
-  });
-  registry.add({
-    resolver: resolver("scope", 1, [], () => auxiliary),
     kind: POSITION_KIND,
     type: "auxiliary",
-  });
-  registry.add({
-    resolver: resolver("position", 1, [], "Use `begin` or `end`."),
-    kind: POSITION_KIND,
-    type: "constant",
+    resolver: {
+      id: "invalid-recovery",
+      description: "Invalid recovery fixture.",
+      renderFull(value) {
+        return value;
+      },
+      renderCompact(value) {
+        return value;
+      },
+      tryResolve: () =>
+        Promise.resolve({
+          kind: "rejected",
+          rejection: { code: "missing", reason: "missing" },
+        }),
+      recover: () =>
+        Promise.resolve({
+          kind: "candidates",
+          total: 1,
+          candidates: [
+            {
+              rank: 1,
+              range: {
+                start: { lineNumber: 99, column: 0 },
+                end: { lineNumber: 99, column: 1 },
+              },
+            },
+          ],
+        }),
+    },
   });
 
-  expect(registry.renderPromptSection()).toBe(
-    [
-      "Text editor anchors:",
-      "- Use the shown line anchor.",
-      "- Use a sparse marker.",
-      "- Use `begin` or `end`.",
-      "",
-      "Pass anchors exactly as shown.",
-    ].join("\n"),
-  );
-
-  auxiliary = undefined;
-  expect(registry.renderPromptSection()).not.toContain("sparse marker");
+  try {
+    await registry.snapshot().resolve("missing", {
+      source: "notes.md",
+      content: "one line",
+      lines: ["one line"],
+      cwd: "/workspace",
+    });
+    throw new Error("Expected anchor resolution to reject");
+  } catch (error) {
+    expect(error).toBeInstanceOf(TextAnchorResolutionError);
+    if (!(error instanceof TextAnchorResolutionError)) {
+      throw error;
+    }
+    expect(error.recovery).toBeUndefined();
+    await error.refreshRecovery();
+    expect(error.recovery).toMatchObject({ kind: "failed" });
+  }
 });
 
 function resolver(
@@ -155,6 +175,12 @@ function resolver(
   return {
     id,
     description,
+    renderFull(value) {
+      return value;
+    },
+    renderCompact(value) {
+      return value;
+    },
     tryResolve() {
       calls.push(id);
       return Promise.resolve(

@@ -4,12 +4,15 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 
 import { LspClient } from "./client.js";
-import { DiagnosticSeverity, type LspDiagnostic, type ResolvedServer } from "./types.js";
+import { toDiagnostic } from "./diagnostics.js";
+import { type LspDiagnostic, type ResolvedServer } from "./types.js";
 
 import type { LspServerRegistry } from "./registry.js";
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
 
+/** A workspace-scoped published report; an omitted version leaves freshness unverified. */
 export interface LspPushDiagnosticsEvent {
+  cwd: string;
   serverId: string;
   uri: string;
   version?: number;
@@ -83,6 +86,7 @@ export class LspManager {
     return this._clients.size;
   }
 
+  /** Subscribe to full published reports, including clearing updates from pull-capable servers. */
   onPushDiagnostics(handler: PushHandler): () => void {
     this._pushHandlers.add(handler);
     return () => this._pushHandlers.delete(handler);
@@ -329,11 +333,7 @@ export class LspManager {
     const unsubscribe = client.onNotification("textDocument/publishDiagnostics", (parameters) => {
       const notification = parsePushNotification(parameters);
 
-      if (
-        !notification ||
-        client.diagnosticMode !== "push" ||
-        client.hasActiveDiagnosticRequest(notification.uri)
-      ) {
+      if (!notification || client.hasActiveDiagnosticRequest(notification.uri)) {
         return;
       }
 
@@ -347,15 +347,9 @@ export class LspManager {
         return;
       }
 
-      const key = `${client.serverId}:${notification.uri}`;
-
-      if (notification.diagnostics.length === 0) {
-        this._pushFingerprints.delete(key);
-        return;
-      }
-
+      const key = `${clientKey}:${notification.uri}`;
       const diagnostics = notification.diagnostics.map(toDiagnostic);
-      const fingerprint = JSON.stringify(diagnostics);
+      const fingerprint = JSON.stringify([notification.version, currentVersion, diagnostics]);
 
       if (this._pushFingerprints.get(key) === fingerprint) {
         return;
@@ -363,6 +357,7 @@ export class LspManager {
 
       this._pushFingerprints.set(key, fingerprint);
       const event: LspPushDiagnosticsEvent = {
+        cwd: URI.parse(client.rootUri).fsPath,
         serverId: client.serverId,
         uri: notification.uri,
         diagnostics,
@@ -421,23 +416,5 @@ function parsePushNotification(parameters: unknown):
     uri: value.uri,
     diagnostics: value.diagnostics as LspDiagnostic[],
     ...(typeof value.version === "number" && { version: value.version }),
-  };
-}
-
-function toDiagnostic(diagnostic: LspDiagnostic): Diagnostic {
-  return {
-    code:
-      typeof diagnostic.code === "number" ? String(diagnostic.code) : (diagnostic.code ?? "LSP"),
-    message: diagnostic.message,
-    line: diagnostic.range.start.line + 1,
-    column: diagnostic.range.start.character + 1,
-    severity:
-      diagnostic.severity === DiagnosticSeverity.Error
-        ? "error"
-        : diagnostic.severity === DiagnosticSeverity.Warning
-          ? "warning"
-          : diagnostic.severity === DiagnosticSeverity.Information
-            ? "info"
-            : "hint",
   };
 }

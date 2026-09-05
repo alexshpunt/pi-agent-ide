@@ -6,6 +6,7 @@ import { createTextDocument } from "pi-agent-text";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import registerConstantTextAnchors from "#pi-agent-text-anchor-constant/index.js";
+import registerExactTextAnchors from "#pi-agent-text-anchor-exact/index.js";
 import registerLineHashTextAnchor from "#pi-agent-text-anchor-line-hash/index.js";
 import {
   TEXT_EDITOR_API_VERSION,
@@ -18,6 +19,10 @@ import { registerTextEditorTools } from "#pi-agent-text-editor/tools/extension.j
 import registerTextEditorRenderer from "#pi-agent-text-editor-renderer/index.js";
 
 export default async function registerRendererTestStand(pi: ExtensionAPI): Promise<void> {
+  pi.on("session_start", (_event, context) => {
+    context.ui.setToolsExpanded(process.env.PI_AGENT_IDE_TEST_EXPANDED === "1");
+  });
+
   const core = await registerTextEditorCore(pi);
 
   core.registerPostEditHandler({
@@ -59,5 +64,9 @@ export default async function registerRendererTestStand(pi: ExtensionAPI): Promi
   registerTextEditorTools(pi, core);
   registerTextEditBatching(pi, core);
   registerBuiltinEditFilter(pi);
-  await Promise.all([registerLineHashTextAnchor(pi), registerConstantTextAnchors(pi)]);
+  await Promise.all([
+    registerLineHashTextAnchor(pi),
+    registerConstantTextAnchors(pi),
+    registerExactTextAnchors(pi),
+  ]);
 }

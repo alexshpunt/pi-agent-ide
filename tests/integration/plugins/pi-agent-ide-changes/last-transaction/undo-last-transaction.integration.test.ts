@@ -25,6 +25,9 @@ const overwriteExtension = path.resolve(
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/index.ts",
 );
 const undoExtension = path.resolve("src/plugins/pi-agent-ide-changes/index.ts");
+const staleAnchorExtension = path.resolve(
+  "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.ts",
+);
 const outsideWriteExtension = path.resolve(
   "tests/integration/plugins/pi-agent-ide-changes/last-transaction/support/register-outside-write.ts",
 );
@@ -32,6 +35,7 @@ const runtimeExtensions = [
   ...extensions.paths,
   overwriteExtension,
   undoExtension,
+  staleAnchorExtension,
   outsideWriteExtension,
 ];
 
@@ -60,7 +64,7 @@ describe("undo last text transaction", () => {
             toolCall({
               id: "direct-undo",
               name: "undo",
-              arguments: { file: fileName, change: "last" },
+              arguments: { change: "last" },
             }),
           ),
           toolMessage(

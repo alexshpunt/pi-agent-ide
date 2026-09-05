@@ -8,6 +8,11 @@ import {
 
 import type { ReadRequest, ReadResultDetails, ReadToolResult } from "#src/api/tools/read.js";
 
+export interface ReadTruncationOptions {
+  /** Absolute 1-based line where an anchored read's window starts. */
+  readonly originLine?: number;
+}
+
 export const READ_OUTPUT_MAX_BYTES = DEFAULT_MAX_BYTES;
 
 export const READ_OUTPUT_MAX_LINES = DEFAULT_MAX_LINES;
@@ -16,7 +21,9 @@ export async function limitReadOutput(
   result: ReadToolResult,
   request: ReadRequest,
   saveFullOutput?: (text: string) => Promise<string>,
+  options?: ReadTruncationOptions,
 ): Promise<ReadToolResult> {
+  const originLine = options?.originLine;
   const block = result.content.length === 1 ? result.content[0] : undefined;
 
   if (block?.type !== "text") {
@@ -33,7 +40,7 @@ export async function limitReadOutput(
       saveFullOutput === undefined ? undefined : await saveFullOutput(block.text);
     const baseNotice = truncation.firstLineExceedsLimit
       ? oversizedFirstLineNotice(block.text, result.details, request)
-      : truncatedOutputNotice(truncation, result.details, request);
+      : truncatedOutputNotice(truncation, result.details, request, originLine);
     const notice =
       temporarySource === undefined
         ? baseNotice
@@ -49,7 +56,7 @@ export async function limitReadOutput(
     };
   }
 
-  const notice = explicitLimitNotice(result.details, request);
+  const notice = explicitLimitNotice(result.details, request, originLine);
 
   if (notice === undefined) {
     return result;
@@ -85,16 +92,16 @@ function truncatedOutputNotice(
   truncation: TruncationResult,
   details: ReadResultDetails,
   request: ReadRequest,
+  originLine?: number,
 ): string {
   const sourceRange = shownSourceRange(truncation, details, request);
 
   if (sourceRange !== undefined && sourceRange.endLine < sourceRange.totalLines) {
     const byteLimit =
       truncation.truncatedBy === "bytes" ? ` (${formatSize(truncation.maxBytes)} limit)` : "";
+    const nextOffset = continuationOffset(sourceRange.endLine + 1, originLine);
 
-    return `[Showing lines ${sourceRange.startLine}-${sourceRange.endLine} of ${sourceRange.totalLines}${byteLimit}. Use offset=${
-      sourceRange.endLine + 1
-    } to continue.]`;
+    return `[Showing lines ${sourceRange.startLine}-${sourceRange.endLine} of ${sourceRange.totalLines}${byteLimit}. Use offset=${nextOffset} to continue.]`;
   }
 
   const limit =
@@ -139,7 +146,11 @@ function shownSourceRange(
   };
 }
 
-function explicitLimitNotice(details: ReadResultDetails, request: ReadRequest): string | undefined {
+function explicitLimitNotice(
+  details: ReadResultDetails,
+  request: ReadRequest,
+  originLine?: number,
+): string | undefined {
   if (request.limit === undefined || details.totalLines === undefined || details.totalLines === 0) {
     return undefined;
   }
@@ -150,15 +161,20 @@ function explicitLimitNotice(details: ReadResultDetails, request: ReadRequest): 
     return undefined;
   }
 
-  const nextOffset =
+  const nextAbsolute =
     details.endLine === undefined || details.endLine < startLine ? startLine : details.endLine + 1;
 
-  if (nextOffset > details.totalLines) {
+  if (nextAbsolute > details.totalLines) {
     return undefined;
   }
 
-  const remaining = details.totalLines - nextOffset + 1;
-  return `[${remaining} more lines in source. Use offset=${nextOffset} to continue.]`;
+  const remaining = details.totalLines - nextAbsolute + 1;
+  return `[${remaining} more lines in source. Use offset=${continuationOffset(nextAbsolute, originLine)} to continue.]`;
+}
+
+/** Converts an absolute next line into the offset the agent should send again. */
+function continuationOffset(absoluteNextLine: number, originLine: number | undefined): number {
+  return originLine === undefined ? absoluteNextLine : absoluteNextLine - originLine + 1;
 }
 
 function sourceStartLine(details: ReadResultDetails, request: ReadRequest): number | undefined {

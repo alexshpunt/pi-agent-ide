@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -511,6 +511,7 @@ function filePathFromUri(uri: string): string {
 function displayFilePath(filePath: string, cwd: string): string {
   const relative = path.relative(cwd, filePath);
 
+  // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
   if (relative.length === 0 || relative.startsWith("..") || path.isAbsolute(relative)) {
     return filePath;
   }

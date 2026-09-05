@@ -1,4 +1,6 @@
-import { probeExecutable } from "pi-agent-doctor/api/executable";
+import { isExecutableAvailable, probeExecutable } from "pi-agent-doctor/api/executable";
+import { access } from "node:fs/promises";
+import path from "node:path";
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
@@ -9,6 +11,25 @@ export const changesDoctorPlugin: DoctorPlugin = {
   apiVersion: DOCTOR_API_VERSION,
   id: "changes",
   setup(api): void {
+    api.addSetupCheck({
+      id: "git",
+      async inspect(context) {
+        if (!(await isGitProject(context.cwd))) {
+          return {};
+        }
+        return (await isExecutableAvailable("git", context.cwd, context.env))
+          ? {}
+          : {
+              actions: [
+                {
+                  id: "git-unavailable",
+                  message: "Git integration is unavailable because Git was not found",
+                },
+              ],
+            };
+      },
+    });
+
     api.addCheck({
       id: "git",
       title: "Git changes",
@@ -27,3 +48,12 @@ export const changesDoctorPlugin: DoctorPlugin = {
     });
   },
 };
+
+async function isGitProject(cwd: string): Promise<boolean> {
+  try {
+    await access(path.join(cwd, ".git"));
+    return true;
+  } catch {
+    return false;
+  }
+}

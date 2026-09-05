@@ -25,6 +25,7 @@ The read core owns:
 - the `pre-read`, `read`, and `post-read` pipeline;
 - content classification for pipeline selection;
 - line and range projection for one text block;
+- typed text target resolution and ordered multi-Resource chunk projection;
 - custom-content projection at the Pi tool-result boundary;
 - final single-block text output limits and truncation notices;
 - prompt contributions and plugin lifecycle;
@@ -50,24 +51,31 @@ The core does not serialize custom data or silently drop a block.
 
 A Resource containing exactly one text block is line-addressable. The core may apply `offset` and `limit`, preserve original 1-based line numbers, and render neutral line presentation supplied by plugins.
 
-Mixed content and non-text content are not line-addressable. A range request for such content fails with `UNSUPPORTED_RANGE`.
+A registered `TextTargetResolver` can map one opaque path value to ordered Resource sources and half-open character ranges. Read projects one independent line chunk for every range, starting at the range's containing line. It applies the request's `offset` and `limit` to each chunk, joins the chunks in resolver order, and then applies the aggregate output limit. The core validates typed results and never parses resolver-owned syntax such as `SEARCH#...`.
+
+Mixed content and non-text content are not line-addressable. A range request or typed target for such content fails with `UNSUPPORTED_RANGE`.
 
 Final output containing one text block is limited to Pi's standard 2,000 lines or 50 KiB. This limit runs after `post-read` handlers and does not change canonical text in pipeline state.
 
 ## Pipeline
 
 ```text
-pre-read
-    -> terminal result
-    OR ResourceResolver selection
-        -> Resource.read
-            -> matching read handlers
-                -> text presenters in parallel
-                    -> text projection when applicable
-                        -> custom-content projection
-                            -> post-read
-                                -> output limit
-                                    -> agent-facing result
+typed target resolution
+    -> for each target range, run Resource resolution, handlers, presentation, and projection
+    -> join ordered chunks
+    -> output limit
+OR normal pipeline
+    -> pre-read
+        -> terminal result
+        OR ResourceResolver selection
+            -> Resource.read
+                -> matching read handlers
+                    -> text presenters in parallel
+                        -> text projection when applicable
+                            -> custom-content projection
+                                -> post-read
+                                    -> output limit
+                                        -> agent-facing result
 ```
 
 Resolvers and pipeline handlers are snapshotted for one invocation and run sequentially in deterministic order. Text presenters are also snapshotted, but they run concurrently against the same canonical text and their presentation contributions merge in priority and registration order. Runtime work stays inside the core; `pi.events` carries registration and readiness only.
@@ -92,5 +100,6 @@ pi-agent-read       -X-> source implementation
 7. Text and image blocks keep their Pi representations.
 8. Remaining custom blocks become explicit markers, never implicit serialization.
 9. Canonical source text remains separate from plugin-provided presentation.
-10. Final single-block text output is bounded without changing canonical pipeline text.
-11. No process-global read registry is required.
+10. Typed target chunks keep resolver order and use per-chunk range coordinates.
+11. Final single-block text output is bounded without changing canonical pipeline text.
+12. No process-global read registry is required.

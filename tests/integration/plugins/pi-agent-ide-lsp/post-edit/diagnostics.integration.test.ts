@@ -22,6 +22,8 @@ const generatedExtensions = await generateReadExtensions([
   path.join(repoRoot, "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.ts"),
   path.join(repoRoot, "src/index.ts"),
   path.join(repoRoot, "src/plugins/pi-agent-ide-lsp/index.ts"),
+
+  path.join(repoRoot, "src/plugins/pi-agent-ide-diagnostics/index.ts"),
 ]);
 const tempRoot = path.join(repoRoot, ".tmp/pi-agent-ide-post-edit-lsp");
 
@@ -30,7 +32,7 @@ afterAll(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
-test("an edit returns diagnostics from the written TypeScript file", async () => {
+test("an edit leaves diagnostics to explicit inspection of the written TypeScript file", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "diagnostics.ts";
     const before = "export const value = 1;\n";
@@ -68,6 +70,8 @@ test("an edit returns diagnostics from the written TypeScript file", async () =>
       extensions: generatedExtensions.paths,
       cwd: directory,
       testName: "post-edit-lsp-diagnostics",
+
+      postflightViews: ["diagnostics"],
       tool: "replace",
       arguments: {
         path: fileName,
@@ -80,25 +84,14 @@ test("an edit returns diagnostics from the written TypeScript file", async () =>
     expectTextToolDiff(scenario, fileName, before, after);
 
     const mutationOutput = getToolResultText(scenario.result, scenario.mutationCallId);
-    expect(mutationOutput).toMatch(/^-\| {6}\|export const value = 1;$/mu);
-    expect(mutationOutput).toMatch(/^\+\|1#[A-Z0-9]{4}\|export const value: string = 1;/mu);
+    expect(mutationOutput).toContain("export const value: string = 1;");
+    expect(mutationOutput).not.toContain("compiler:2322");
 
     const details = getToolExecutionDetails(
       getToolExecution(scenario.result, scenario.mutationCallId),
     );
     const data = getTextToolMutationData(details);
-    expect(data.hints).toEqual([
-      expect.objectContaining({
-        file: fileName,
-        line: 1,
-        code: "2322",
-        severity: "error",
-        source: "compiler",
-      }),
-    ]);
-    expect(
-      JSON.stringify(getToolExecution(scenario.result, scenario.mutationCallId).result),
-    ).toContain("compiler:2322");
+    expect(data.hints ?? []).toEqual([]);
     expect(getToolResultText(scenario.result, scenario.postflightCallIds[0])).toContain("lsp:2322");
   });
 }, 60_000);

@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-ide",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Agent-facing tools for reading, searching, and editing code in Pi.",
   "keywords": [
@@ -23,18 +23,16 @@
     "src",
     "assets",
     "docs",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md",
     "!src/.tmp",
     "!src/**/__tests__",
     "!src/**/docs",
-    "!src/**/qmd",
     "!src/**/test",
     "!src/**/tests",
     "!src/**/node_modules",
     "!src/**/*.config.mjs",
-    "!src/**/*.md",
-    "!src/**/*.integration.test.*",
     "!src/**/*.spec.*",
     "!src/**/*.test.*"
   ],
@@ -45,9 +43,12 @@
     "#integration-tests/*": "./tests/integration/*",
     "#pi-agent-text-anchor-constant/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-constant/*",
     "#pi-agent-text-anchor-line-hash/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/*",
+    "#pi-agent-text-anchor-exact/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-exact/*",
     "#pi-agent-text-editor-renderer/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/*",
     "#pi-agent-text-editor-overwrite/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/*",
-    "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*"
+    "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*",
+    "#test-fixtures/pdf": "./packages/pi-agent-pdf/test/pdf-fixture.ts",
+    "#scripts/*": "./scripts/*"
   },
   "exports": {
     "./api/code-view": {
@@ -73,6 +74,14 @@
     "./api/tool-catalog": {
       "types": "./src/api/tool-catalog.ts",
       "default": "./src/api/tool-catalog.ts"
+    },
+    "./api/tips": {
+      "types": "./src/api/tips.ts",
+      "default": "./src/api/tips.ts"
+    },
+    "./api/connect-tip-provider": {
+      "types": "./src/api/connect-tip-provider.ts",
+      "default": "./src/api/connect-tip-provider.ts"
     },
     "./api/doctor": {
       "types": "./src/api/doctor.ts",
@@ -104,24 +113,38 @@
     }
   },
   "scripts": {
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:catalog && pnpm check:package",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:catalog && pnpm check:package",
+    "check:boundaries": "oxnode scripts/check-package-boundaries.ts",
     "check:catalog": "oxnode scripts/generate-tool-catalog.ts --check",
     "check:package": "oxnode scripts/build-public-package.ts",
     "check:paths": "oxnode scripts/check-no-machine-paths.ts",
-    "dev:modular": "pi --no-extensions -e ./dev/modular",
+    "dev:modular": "oxnode dev/modular/run.ts",
     "docs:catalog": "oxnode scripts/generate-tool-catalog.ts",
     "lint": "oxlint --deny-warnings .",
+    "lint:paths": "oxnode scripts/check-no-parent-paths.ts",
     "lint:fix": "oxlint --fix --deny-warnings .",
     "package:public": "oxnode scripts/build-public-package.ts",
+    "package:git-preview": "oxnode scripts/build-public-package.ts --git-runtime .agents/tmp/git-preview",
     "test": "pnpm test:unit",
+    "security:scan": "oxnode scripts/security-scan.ts",
+    "snapshot:system-prompt": "oxnode scripts/snapshot-system-prompt.ts",
+    "validate:tools:prepare": "oxnode scripts/prepare-tool-capability-workspace.ts",
     "test:unit": "vitest run",
+    "test:unit:report": "vitest run --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/unit.xml",
     "test:integration": "pi-test run -- vitest run --config vitest.integration.config.mjs",
+    "test:integration:shards": "bash scripts/test-integration-shards.sh",
+    "test:integration:live": "oxnode scripts/live-integration-test.ts",
+    "test:integration:live:test": "oxnode scripts/live-integration-test.ts --named-test",
+    "test:integration:report": "vitest run --config vitest.integration.config.mjs --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/integration.xml",
     "typecheck": "oxlint -A all --type-aware --type-check src packages scripts dev",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check ."
   },
   "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "fast-fuzzy": "1.12.0",
     "pi-agent-doctor": "workspace:^",
+    "pi-agent-invariant": "workspace:^",
     "pi-agent-pdf": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",
@@ -134,16 +157,19 @@
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@earendil-works/pi-tui": "0.84.2",
     "@oxlint/plugins": "^1.79.0",
+    "@types/cross-spawn": "^6.0.6",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@xterm/headless": "^6.0.0",
     "diff": "^9.0.0",
+    "esbuild": "0.25.12",
+    "husky": "^8.0.3",
     "oxfmt": "^0.64.0",
     "oxlint": "^1.79.0",
     "oxlint-tsgolint": "^7.0.2001",
     "oxnode": "^0.0.34",
-    "pi-agent-ide-ast": "workspace:^",
     "pi-agent-ide-changes": "workspace:^",
     "pi-agent-search-text": "workspace:^",
+    "pi-agent-text-anchor-exact": "workspace:^",
     "pi-agent-text-anchor-line-hash": "workspace:^",
     "pi-coding-agent-test": "^0.1.1",
     "typebox": "^1.1.38",

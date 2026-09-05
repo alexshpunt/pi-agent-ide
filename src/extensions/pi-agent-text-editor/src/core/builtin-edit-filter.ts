@@ -29,11 +29,18 @@ export function registerBuiltinEditFilter(pi: ExtensionAPI): void {
     label: "edit",
     description: "",
     promptGuidelines: [
-      "Use write, replace, insert, delete, copy, and move for text edits.",
-      "Independent mutations in one tool-call block run as one transaction against the original files.",
-      "Use replace for existing text and write only for a complete file.",
-      "An omitted mutation source inherits the last resolved resource or previous source in the same batch. Write requires path; copy and move targets default to their source.",
-      "Mutation results include diagnostics and hints.",
+      "Use replace, insert, delete, copy, and move for precise changes to existing files. Use write only for new files or deliberate complete rewrites.",
+      "When changing multiple independent locations, place the mutation tool calls in one tool-call block. They are evaluated against the original file contents. Invalid mutations are rejected while valid mutations can still apply; the block is not all-or-nothing.",
+      [
+        "When using plain text in `start`, `end`, `anchor`, `targetStart`, or `targetEnd`:",
+        "  - Use text that matches the file exactly and occurs only once.",
+        "  - Keep it as small as possible while still unique. Do not pad it with large unchanged regions.",
+        "  - Plain text is matched against the original file contents, not after earlier mutations are applied.",
+      ].join("\n"),
+      "Do not emit overlapping or nested mutations in one tool-call block. Merge nearby changes into one mutation.",
+
+      "A mutation that overlaps an earlier accepted mutation is rejected. Check each call's result before retrying; do not repeat edits that already applied.",
+      "You can omit a mutation source to reuse the last resolved resource or the previous source in the same tool-call block. Write requires a path; copy and move default their target to the source.",
     ],
     parameters: Type.Object({}, { additionalProperties: false }),
     execute() {

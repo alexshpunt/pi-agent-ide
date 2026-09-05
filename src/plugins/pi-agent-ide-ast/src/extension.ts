@@ -42,16 +42,20 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         when: { resolvedBy: "ast", contentKind: "text" },
         handler: createSourceMappedTextReadHandler(),
       });
-      api.addTextPresenter({ presenter });
+      api.addView({ view: "ast", presenter });
       api.addHandler({
         stage: "post-read",
         handler: createAstScopePostReadHandler(),
       });
       api.describe(
-        [
-          "For large or unfamiliar supported code and configuration files, prefer `ast:<path>` for the first read so you can inspect their structure without loading the full text.",
-          "Use normal reads afterward for the ranges or scopes you need; they also include AST scope markers.",
-        ].join("\n"),
+        "Provides compact structural outlines of source files through `ast:<path>` and the `ast` view.",
+      );
+      api.addPromptGuideline(
+        "You can use read with `ast:<path>` for a compact structural overview of a source file, including its classes, functions, signatures, and other declarations.",
+      );
+
+      api.addPromptGuideline(
+        'You can use read with `views: ["ast"]` to add scope boundaries alongside the file\'s source text.',
       );
     },
   } satisfies ReadPlugin;
@@ -81,6 +85,10 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         api.addResolver({ resolver: createAstSearchResolver() });
         api.describe(
           "Use `ast:<pattern>` for structural code search through ast-grep. Optional path and glob fields limit the workspace scope.",
+        );
+
+        api.addPromptGuideline(
+          "You can use search with `ast:<pattern>` for structural code search. You can limit it with `path`, `include`, and `exclude`.",
         );
       },
     }),

@@ -1,170 +1,163 @@
 import { readFile } from "node:fs/promises";
-
 import { URI } from "vscode-uri";
-
 import { DiagnosticSeverity, type LspDiagnostic } from "./types.js";
-
 import type { LspClient } from "./client.js";
-import type { Diagnostic, Severity } from "pi-agent-ide/api/toolchain";
 
-/**
- * Request diagnostics from an LSP server for a document.
- *
- * Returns IDE Diagnostic[] with proper severity classification
- * suitable for both compiler (syntax errors cause rollback) and linter
- * (warnings are informational only).
- */
+import { completedDiagnosticAdapter } from "./diagnostic-adapters.js";
+import type { Diagnostic } from "pi-agent-ide/api/toolchain";
+
+/** LSP diagnostics do not reliably distinguish parser errors from type errors. */
+export interface LspDiagnosticResult {
+  diagnostics: Diagnostic[];
+  syntaxErrors: Diagnostic[];
+  otherDiagnostics: Diagnostic[];
+  unversioned: boolean;
+
+  /** False for push snapshots, even when a publication carries a document version. */
+  complete: boolean;
+}
+
+/** Request current diagnostics using pull when supported, otherwise a version-aware push wait. */
 export async function requestDiagnostics(
   client: LspClient,
   uri: string,
   languageId?: string,
-): Promise<{
-  diagnostics: Diagnostic[];
-  syntaxErrors: Diagnostic[];
-  otherDiagnostics: Diagnostic[];
-}> {
-  // Try pull-model first (LSP 3.17+). Fall back to push notifications.
-  try {
-    const raw = await client.sendRequest<LspDiagnosticResult>("textDocument/diagnostic", {
-      textDocument: { uri },
-    });
-    client.setDiagnosticMode("pull");
-    return classify(toDiagnostics(raw.items));
-  } catch (error) {
-    if (isMethodNotFound(error)) {
-      // Server doesn't support pull model — check if it supports diagnostics at all
-      if (!client.hasServerDiagnosticsCapability) {
-        return classify([]);
-      }
-
-      client.setDiagnosticMode("push");
-      return await waitForPushDiagnostics(client, uri, languageId);
-    }
-
-    throw error;
-  }
-}
-
-// ── LSP types ───────────────────────────────────────────────────────
-
-interface LspDiagnosticResult {
-  kind: "full";
-  items: LspDiagnostic[];
-}
-
-// ── conversion ───────────────────────────────────────────────────────
-
-/**
-Convert an LSP diagnostic to a Gate Diagnostic (1-based coordinates).
-*/
-function toGateDiagnostic(d: LspDiagnostic): Diagnostic {
-  return {
-    code: typeof d.code === "number" ? String(d.code) : (d.code ?? "LSP"),
-    message: d.message,
-    line: d.range.start.line + 1,
-    column: d.range.start.character + 1,
-    severity: lspSeverityToGate(d.severity),
-  };
-}
-
-/**
-Map LSP DiagnosticSeverity (1-4) to Gate Severity.
-*/
-function lspSeverityToGate(severity: DiagnosticSeverity): Severity {
-  switch (severity) {
-    case DiagnosticSeverity.Error: {
-      return "error";
-    }
-    case DiagnosticSeverity.Warning: {
-      return "warning";
-    }
-    case DiagnosticSeverity.Information: {
-      return "info";
-    }
-    case DiagnosticSeverity.Hint: {
-      return "hint";
-    }
-  }
-}
-
-// ── helpers ───────────────────────────────────────────────────────────
-
-function toDiagnostics(items: LspDiagnostic[]): Diagnostic[] {
-  return items.map((d) => toGateDiagnostic(d));
-}
-
-function classify(diags: Diagnostic[]): {
-  diagnostics: Diagnostic[];
-  syntaxErrors: Diagnostic[];
-  otherDiagnostics: Diagnostic[];
-} {
-  const syntaxErrors = diags.filter((d) => d.severity === "error");
-  const otherDiagnostics = diags.filter((d) => d.severity !== "error");
-  return { diagnostics: diags, syntaxErrors, otherDiagnostics };
-}
-
-function isMethodNotFound(error: unknown): boolean {
-  return (
-    error !== null &&
-    typeof error === "object" &&
-    "code" in error &&
-    (error as { code: number }).code === -32601
+  options: { signal?: AbortSignal; content?: string } = {},
+): Promise<LspDiagnosticResult> {
+  const controller = new AbortController();
+  const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
+  const timeout = setTimeout(
+    () => controller.abort(new Error(`[lsp] ${client.serverId}: diagnostics timed out for ${uri}`)),
+    client.timeoutMs,
   );
+  try {
+    return await requestCurrentDiagnostics(client, uri, languageId, options.content, signal);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-/**
-Wait for a push diagnostic notification after synchronizing the document.
-*/
-async function waitForPushDiagnostics(
+async function requestCurrentDiagnostics(
   client: LspClient,
   uri: string,
-  languageId?: string,
-): Promise<{
-  diagnostics: Diagnostic[];
-  syntaxErrors: Diagnostic[];
-  otherDiagnostics: Diagnostic[];
-}> {
-  const text = await readFile(URI.parse(uri).fsPath, "utf8").catch(() => null);
-
-  if (text === null) {
-    return classify([]);
+  languageId: string | undefined,
+  content: string | undefined,
+  signal: AbortSignal,
+): Promise<LspDiagnosticResult> {
+  signal.throwIfAborted();
+  if (client.diagnosticMode !== "push") {
+    const version = client.documentVersion(uri);
+    try {
+      const raw = await client.sendRequest<{ kind: string; items?: LspDiagnostic[] }>(
+        "textDocument/diagnostic",
+        { textDocument: { uri } },
+        signal,
+      );
+      if (raw.kind !== "full" || !Array.isArray(raw.items))
+        throw new Error("Invalid full diagnostic report");
+      if (client.documentVersion(uri) !== version)
+        throw new Error("Document changed during diagnostic request");
+      client.setDiagnosticMode("pull");
+      return classify(raw.items, false, true);
+    } catch (error) {
+      if (!isMethodNotFound(error)) throw error;
+      client.setDiagnosticMode("push");
+    }
   }
-
-  const langId = languageId ?? uri.split(".").pop()?.toLowerCase() ?? "";
+  const adapter = completedDiagnosticAdapter(client);
+  if (adapter) {
+    if (client.documentVersion(uri) === undefined)
+      client.syncDocument(
+        uri,
+        content ?? (await readFile(URI.parse(uri).fsPath, "utf8")),
+        languageId ?? "plaintext",
+      );
+    const version = client.documentVersion(uri);
+    const diagnostics = await adapter.request(client, uri, signal);
+    signal.throwIfAborted();
+    if (client.documentVersion(uri) !== version)
+      throw new Error("Document changed during diagnostic request");
+    return {
+      diagnostics,
+      syntaxErrors: [],
+      otherDiagnostics: diagnostics,
+      unversioned: false,
+      complete: true,
+    };
+  }
+  signal.throwIfAborted();
+  const opened = client.documentVersion(uri) !== undefined;
+  const text = opened ? undefined : (content ?? (await readFile(URI.parse(uri).fsPath, "utf8")));
+  signal.throwIfAborted();
   client.beginDiagnosticRequest(uri);
-
   try {
-    const items = await new Promise<LspDiagnostic[]>((resolve) => {
-      let isSettled = false;
-      const unsubscribe = client.onNotification("textDocument/publishDiagnostics", (parameters) => {
-        const notification = parameters as { uri?: unknown; diagnostics?: unknown };
-
-        if (notification.uri !== uri || !Array.isArray(notification.diagnostics)) {
-          return;
-        }
-
-        finish(notification.diagnostics as LspDiagnostic[]);
-      });
-      const timeout = setTimeout(() => {
-        finish([]);
-      }, 500);
-
-      function finish(diagnostics: LspDiagnostic[]): void {
-        if (isSettled) {
-          return;
-        }
-
-        isSettled = true;
-        clearTimeout(timeout);
+    return await new Promise<LspDiagnosticResult>((resolve, reject) => {
+      const expectedVersion = client.documentVersion(uri) ?? 1;
+      const receive = (parameters: unknown) => {
+        const notification = parameters as {
+          uri?: unknown;
+          version?: unknown;
+          diagnostics?: unknown;
+        };
+        if (notification.uri !== uri || !Array.isArray(notification.diagnostics)) return;
+        if (notification.version !== undefined && notification.version !== expectedVersion) return;
+        if (client.documentVersion(uri) !== expectedVersion) return;
+        cleanup();
+        resolve(
+          classify(notification.diagnostics as LspDiagnostic[], notification.version === undefined),
+        );
+      };
+      const unsubscribe = client.onNotification("textDocument/publishDiagnostics", receive);
+      const onAbort = () => {
+        cleanup();
+        reject(signal.reason);
+      };
+      function cleanup(): void {
         unsubscribe();
-        resolve(diagnostics);
+        signal.removeEventListener("abort", onAbort);
       }
-
-      client.syncDocument(uri, text, langId);
+      signal.addEventListener("abort", onAbort, { once: true });
+      try {
+        if (!opened) client.syncDocument(uri, text ?? "", languageId ?? "plaintext");
+        const cached = client.diagnosticPublication(uri);
+        if (cached) receive({ uri, ...cached });
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
     });
-
-    return classify(toDiagnostics(items));
   } finally {
     client.endDiagnosticRequest(uri);
   }
+}
+
+/** Convert protocol coordinates and severity to the shared 1-based diagnostic format. */
+export function toDiagnostic(diagnostic: LspDiagnostic): Diagnostic {
+  return {
+    code: String(diagnostic.code ?? "LSP"),
+    message: diagnostic.message,
+    line: diagnostic.range.start.line + 1,
+    column: diagnostic.range.start.character + 1,
+    severity:
+      diagnostic.severity === DiagnosticSeverity.Warning
+        ? "warning"
+        : diagnostic.severity === DiagnosticSeverity.Information
+          ? "info"
+          : diagnostic.severity === DiagnosticSeverity.Hint
+            ? "hint"
+            : "error",
+  };
+}
+
+function classify(
+  items: LspDiagnostic[],
+  unversioned: boolean,
+  complete = false,
+): LspDiagnosticResult {
+  const diagnostics = items.map(toDiagnostic);
+  return { diagnostics, syntaxErrors: [], otherDiagnostics: diagnostics, unversioned, complete };
+}
+
+function isMethodNotFound(error: unknown): boolean {
+  return error !== null && typeof error === "object" && "code" in error && error.code === -32601;
 }

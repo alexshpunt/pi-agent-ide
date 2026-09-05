@@ -94,6 +94,7 @@ export class GitChangesBackend {
     const absoluteSource = path.resolve(cwd, source);
     const repoPath = path.relative(this.repositoryRoot, absoluteSource);
 
+    // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
     if (repoPath === ".." || repoPath.startsWith(`..${path.sep}`) || path.isAbsolute(repoPath)) {
       return {
         status: "unavailable",

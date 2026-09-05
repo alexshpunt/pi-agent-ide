@@ -1,4 +1,4 @@
-import type { LanguageDefinition, ToolRecipe } from "./catalog.js";
+import type { LanguageDefinition, ToolRecipe, ToolRecipeKind } from "./catalog.js";
 
 /**
 Shared protocol identifier.
@@ -41,12 +41,37 @@ export interface DoctorContext {
   readonly cwd: string;
   readonly files: readonly string[];
   readonly detectedLanguageIds: ReadonlySet<string>;
+
+  readonly detectedLanguages: ReadonlyMap<string, readonly string[]>;
   readonly env: NodeJS.ProcessEnv;
 }
 
-/**
-A health check owned by one plugin.
-*/
+/** One effective tool selection found by a lightweight setup inspection. */
+export interface DoctorToolSelection {
+  readonly kind: ToolRecipeKind;
+  readonly languageId: string;
+  readonly toolId: string;
+}
+
+/** One concrete setup problem that warrants user attention. */
+export interface DoctorSetupAction {
+  readonly id: string;
+  readonly message: string;
+}
+
+/** Lightweight project setup state contributed without running full tool probes. */
+export interface DoctorSetupInspection {
+  readonly selections?: readonly DoctorToolSelection[];
+  readonly actions?: readonly DoctorSetupAction[];
+}
+
+/** A lightweight setup inspection owned by one plugin. */
+export interface DoctorSetupCheck {
+  readonly id: string;
+  readonly inspect: (context: DoctorContext) => Promise<DoctorSetupInspection>;
+}
+
+/** A full health check owned by one plugin. */
 export interface DoctorCheck {
   readonly id: string;
   readonly title: string;
@@ -59,6 +84,7 @@ Contribution API available only during plugin setup.
 export interface DoctorPluginApi {
   addLanguage(language: LanguageDefinition): void;
   addToolRecipe(recipe: ToolRecipe): void;
+  addSetupCheck(check: DoctorSetupCheck): void;
   addCheck(check: DoctorCheck): void;
 }
 

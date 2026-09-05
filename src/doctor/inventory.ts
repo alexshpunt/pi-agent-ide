@@ -23,7 +23,11 @@ const skippedDirectories = new Set([
 /**
 Collects project files while respecting Git ignores when Git is available.
 */
-export async function collectProjectFiles(cwd: string): Promise<readonly string[]> {
+export async function collectProjectFiles(
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  signal?.throwIfAborted();
   try {
     const result = await execFileAsync(
       "git",
@@ -32,15 +36,20 @@ export async function collectProjectFiles(cwd: string): Promise<readonly string[
         cwd,
         encoding: "utf8",
         maxBuffer: 16 * 1024 * 1024,
+
+        signal,
       },
     );
     const files = result.stdout
       .split("\0")
       .filter(Boolean)
-      .map((file) => path.resolve(cwd, file));
-    return files.length > 0 ? files : await walk(cwd);
+      .map((file) => path.resolve(cwd, file))
+      .filter((file) => !isManagedIdeConfig(file));
+    signal?.throwIfAborted();
+    return files.length > 0 ? files : await walk(cwd, signal);
   } catch {
-    return walk(cwd);
+    signal?.throwIfAborted();
+    return walk(cwd, signal);
   }
 }
 
@@ -70,7 +79,8 @@ export function detectProjectLanguages(
   return detected;
 }
 
-async function walk(directory: string): Promise<string[]> {
+async function walk(directory: string, signal?: AbortSignal): Promise<string[]> {
+  signal?.throwIfAborted();
   const files: string[] = [];
 
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -80,12 +90,20 @@ async function walk(directory: string): Promise<string[]> {
 
     const absolute = path.join(directory, entry.name);
 
+    if (isManagedIdeConfig(absolute)) {
+      continue;
+    }
+
     if (entry.isDirectory()) {
-      files.push(...(await walk(absolute)));
+      files.push(...(await walk(absolute, signal)));
     } else if (entry.isFile()) {
       files.push(absolute);
     }
   }
 
   return files;
+}
+
+function isManagedIdeConfig(file: string): boolean {
+  return file.split(path.sep).join("/").includes("/.pi/pi-agent-ide/");
 }

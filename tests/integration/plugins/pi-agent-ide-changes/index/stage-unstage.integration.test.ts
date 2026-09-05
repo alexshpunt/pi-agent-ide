@@ -44,9 +44,9 @@ test("stages and unstages one change, then removes a staged change with undo", a
       timeoutMs: 120_000,
       conversation: [
         toolMessage("stage-change", "stage", { file: fileName, change: selector }),
-        toolMessage("read-staged", "read", { path: fileName }),
+        toolMessage("read-staged", "read", { path: fileName, views: ["changes"] }),
         toolMessage("unstage-change", "unstage", { file: fileName, change: selector }),
-        toolMessage("read-unstaged", "read", { path: fileName }),
+        toolMessage("read-unstaged", "read", { path: fileName, views: ["changes"] }),
         toolMessage("stage-again", "stage", { file: fileName, change: selector }),
         toolMessage("undo-staged", "undo", { file: fileName, change: selector }),
         assistantMessage([text("The Git change cycle finished")]),
@@ -71,7 +71,7 @@ test("stages and unstages one change, then removes a staged change with undo", a
   });
 }, 120_000);
 
-function toolMessage(id: string, name: string, arguments_: Record<string, string>) {
+function toolMessage(id: string, name: string, arguments_: Record<string, unknown>) {
   return assistantMessage([toolCall({ id, name, arguments: arguments_ })], {
     stopReason: "toolUse",
   });

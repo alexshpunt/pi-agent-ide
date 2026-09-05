@@ -8,16 +8,16 @@ export function createLspSearchResolver(
   managerFor: (cwd: string) => Promise<LspManager>,
 ): SearchResolver {
   return {
-    id: "lsp",
+    id: "symbols",
     async tryResolve(request, context) {
-      if (!request.query.startsWith("lsp:")) {
+      if (!request.query.startsWith("symbols:")) {
         return { kind: "not-handled" };
       }
 
-      const query = request.query.slice("lsp:".length).trim();
+      const query = request.query.slice("symbols:".length).trim();
 
       if (query.length === 0) {
-        return { kind: "failed", error: new Error("lsp: query must not be empty") };
+        return { kind: "failed", error: new Error("symbols: query must not be empty") };
       }
 
       await managerFor(context.cwd);
@@ -31,7 +31,7 @@ export function createLspSearchResolver(
       };
       const text =
         hits.length === 0
-          ? "No LSP symbols found."
+          ? "No symbols found."
           : hits
               .map(
                 (hit, index) =>

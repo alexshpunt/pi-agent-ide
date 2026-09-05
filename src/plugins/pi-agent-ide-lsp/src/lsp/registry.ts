@@ -1,57 +1,83 @@
-import { requiredValue } from "../../../../utils/required-value.js";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
+
+import { hasConfiguredExecutable, loadLayeredToolConfig } from "pi-agent-ide/api/tool-config";
 
 import { buildLanguageLookup, type LanguageLookup } from "./language-map.js";
 
+import type {
+  EffectiveToolConfigEntry,
+  LayeredToolConfigOptions,
+} from "pi-agent-ide/api/tool-config";
 import type { LspServersConfig, ResolvedServer, ServerConfig } from "./types.js";
 
 /**
- * LspServerRegistry — loads lsp-servers.json and resolves
- * file extensions to LSP server configurations.
- *
- * Thread-safe: all mutations happen at construction time.
- */
+LSP server configuration in project, global, and built-in priority order.
+*/
 export class LspServerRegistry {
   private readonly _servers: Record<string, ServerConfig>;
+  private readonly _entries: readonly EffectiveToolConfigEntry<ServerConfig>[];
+  private readonly _entriesById: ReadonlyMap<string, EffectiveToolConfigEntry<ServerConfig>>;
   private readonly _lookup: LanguageLookup;
 
-  private constructor(config: LspServersConfig) {
-    this._servers = config.servers;
+  private constructor(
+    entries: readonly EffectiveToolConfigEntry<ServerConfig>[],
+    availableBuiltIns: ReadonlySet<string>,
+  ) {
+    this._entries = entries;
+    this._entriesById = new Map(entries.map((entry) => [entry.id, entry]));
+    const activeEntries = entries.filter(
+      (entry) => entry.layer !== "built-in" || availableBuiltIns.has(entry.id),
+    );
+    this._servers = Object.fromEntries(activeEntries.map((entry) => [entry.id, entry.config]));
     this._lookup = buildLanguageLookup(this._servers);
   }
 
   /**
-   * Load and parse the lsp-servers.json from the project package directory.
-   */
-  static async fromPackageDir(packageDir: string): Promise<LspServerRegistry> {
-    const configPath = path.join(packageDir, ".pi", "pi-agent-ide", "lsp-servers.json");
-    let raw: string;
-
-    try {
-      raw = await readFile(configPath, "utf8");
-    } catch (error) {
-      if (isMissingFile(error)) {
-        return new LspServerRegistry({ version: 1, servers: {} });
-      }
-
-      throw error;
-    }
-
-    return new LspServerRegistry(parseLspConfig(JSON.parse(raw)));
+  Loads and merges project, global, and built-in `lsp-servers.json` files.
+  */
+  static async fromPackageDir(
+    packageDir: string,
+    options: LayeredToolConfigOptions = {},
+  ): Promise<LspServerRegistry> {
+    const effective = await loadLayeredToolConfig(
+      packageDir,
+      "lsp-servers",
+      (value) => parseLspConfig(value).servers,
+      options,
+    );
+    const environment = options.environment ?? process.env;
+    const available = await Promise.all(
+      effective.entries
+        .filter((entry) => entry.layer === "built-in")
+        .map(async (entry) => ({
+          id: entry.id,
+          available: await hasConfiguredExecutable(entry.config, packageDir, environment),
+        })),
+    );
+    return new LspServerRegistry(
+      effective.entries,
+      new Set(available.filter((entry) => entry.available).map((entry) => entry.id)),
+    );
   }
 
   /**
-   * Create from an already-parsed config (for testing).
-   */
+  Creates a project-layer registry from an already-parsed config.
+  */
   static fromConfig(config: LspServersConfig): LspServerRegistry {
-    return new LspServerRegistry(config);
+    return new LspServerRegistry(
+      Object.entries(config.servers).map(([id, server]) => ({
+        id,
+        config: server,
+        layer: "project",
+        sourcePath: "<memory>",
+      })),
+      new Set(),
+    );
   }
 
   /**
-   * Resolve a file extension (with or without leading dot) to its LSP servers.
-   * Returns empty array if no LSP server is configured for this extension.
-   */
+  Resolves a file extension to matching LSP servers in layer priority order.
+  */
   resolve(extension: string): ResolvedServer[] {
     const normalized = extension.startsWith(".")
       ? extension.toLowerCase()
@@ -68,31 +94,42 @@ export class LspServerRegistry {
       return [];
     }
 
-    return serverIds.map((serverId) => ({
-      serverId,
-      config: requiredValue(this._servers[serverId]),
-      languageId,
-    }));
+    return serverIds.map((serverId) => {
+      const entry = requiredValue(this._entriesById.get(serverId));
+      return {
+        serverId,
+        config: entry.config,
+        languageId,
+        layer: entry.layer,
+        sourcePath: entry.sourcePath,
+      };
+    });
   }
 
   /**
-   * All registered server configurations.
-   */
+  All effective server configurations by stable ID.
+  */
   get servers(): Readonly<Record<string, ServerConfig>> {
     return this._servers;
   }
 
   /**
-   * All known extensions (with leading dot, lowercased).
-   */
+  All merged server entries in runtime resolution order.
+  */
+  get entries(): readonly EffectiveToolConfigEntry<ServerConfig>[] {
+    return this._entries;
+  }
+
+  /**
+  All known extensions (with leading dot, lowercased).
+  */
   get knownExtensions(): ReadonlySet<string> {
     return new Set(this._lookup.extToLanguageId.keys());
   }
 
   /**
-   * Resolve a file extension to the canonical LSP languageId.
-   * Returns the extension without dot as fallback if not found.
-   */
+  Resolves a file extension to the canonical LSP languageId.
+  */
   languageId(extension: string): string {
     const normalized = extension.startsWith(".")
       ? extension.toLowerCase()
@@ -101,7 +138,10 @@ export class LspServerRegistry {
   }
 }
 
-function parseLspConfig(value: unknown): LspServersConfig {
+/**
+Validates and returns an LSP server configuration object.
+*/
+export function parseLspConfig(value: unknown): LspServersConfig {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("LSP config must be an object");
   }
@@ -173,8 +213,4 @@ function parseLspConfig(value: unknown): LspServersConfig {
   }
 
   return value as LspServersConfig;
-}
-
-function isMissingFile(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }

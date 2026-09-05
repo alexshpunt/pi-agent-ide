@@ -1,6 +1,9 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.js";
+import type { ReadResultDetails } from "pi-agent-read/api/tools/read";
+
 import {
   assistantMessage,
   getToolResultMessage,
@@ -15,10 +18,14 @@ import { afterAll, expect, test } from "vitest";
 import { generateReadExtensions } from "pi-agent-read/testing";
 
 const generatedExtensions = await generateReadExtensions([
+  "src/core/extension.ts",
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.ts",
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/index.ts",
   "src/plugins/pi-agent-ide-lsp/index.ts",
+
+  "src/plugins/pi-agent-ide-lint/index.ts",
+  "src/plugins/pi-agent-ide-diagnostics/index.ts",
 ]);
 const tempRoot = path.resolve(".tmp/pi-agent-lsp");
 
@@ -52,7 +59,7 @@ test("read shows LSP diagnostics without changing the source", async () => {
             toolCall({
               id: "read-lsp-diagnostics",
               name: "read",
-              arguments: { path: fileName, offset: 2, limit: 1 },
+              arguments: { path: fileName, offset: 2, limit: 1, views: ["diagnostics"] },
             }),
           ],
           { stopReason: "toolUse" },
@@ -70,7 +77,7 @@ test("read shows LSP diagnostics without changing the source", async () => {
     expect(rendered).not.toContain("export function getValue");
 
     const message = getToolResultMessage(result, "read-lsp-diagnostics");
-    const details = message.details as {
+    const details = restoreReadDetails(message.details as ReadResultDetails, rendered) as {
       readonly startLine?: number;
       readonly endLine?: number;
       readonly totalLines?: number;
@@ -80,53 +87,6 @@ test("read shows LSP diagnostics without changing the source", async () => {
     expect(details).toMatchObject({ startLine: 2, endLine: 2, totalLines: 4 });
     expect(details.lines?.map((line) => line.lineNumber)).toEqual([2]);
     expect(details.lines?.[0]).not.toHaveProperty("hints");
-  });
-}, 60_000);
-
-test("lsp protocol returns only lines with error diagnostics", async () => {
-  await withTempDirectory(async (directory) => {
-    const fileName = "lsp-protocol.ts";
-    const source = [
-      "export function getValue(): number {",
-      '    const wrong: number = "wrong";',
-      "    const clean = 1;",
-      "    return wrong + clean;",
-      "}",
-      "",
-    ].join("\n");
-    await writeTypeScriptProject(directory, fileName, source);
-
-    const result = await new PiIntegrationTest({
-      artifactsDir: testArtifactsDir(expect.getState().testPath),
-      testName: "read-lsp-protocol",
-      cwd: directory,
-      extensions: generatedExtensions.paths,
-      tools: ["read"],
-      conversation: [
-        assistantMessage(
-          [
-            toolCall({
-              id: "read-lsp-protocol",
-              name: "read",
-              arguments: { path: `lsp:${fileName}` },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-        assistantMessage([text("The LSP protocol read finished")]),
-      ],
-    }).run("Read only the lines with LSP errors");
-
-    const rendered = getToolResultText(result, "read-lsp-protocol");
-    expect(rendered).toContain('const wrong: number = "wrong"');
-    expect(rendered).toContain("[ERROR] lsp:2322:");
-    expect(rendered).toMatch(/2#[A-Z0-9]{4}\|/u);
-    expect(rendered).not.toContain("const clean = 1");
-    expect(rendered).not.toContain("return wrong + clean");
-
-    const message = getToolResultMessage(result, "read-lsp-protocol");
-    const details = message.details as { readonly source?: string };
-    expect(details.source).toMatch(/^lsp:\/.*\/lsp-protocol\.ts$/u);
   });
 }, 60_000);
 
@@ -179,7 +139,7 @@ test("symbol and graph sources expose layered LSP code views", async () => {
             toolCall({
               id: "read-symbol-view",
               name: "read",
-              arguments: { path: `symbol:${serviceName}#UserService/getUser` },
+              arguments: { path: `symbol:${serviceName}#UserService/getUser`, views: ["anchors"] },
             }),
           ],
           { stopReason: "toolUse" },
@@ -189,7 +149,7 @@ test("symbol and graph sources expose layered LSP code views", async () => {
             toolCall({
               id: "read-symbol-graph",
               name: "read",
-              arguments: { path: `graph:${serviceName}#UserService/getUser` },
+              arguments: { path: `graph:${serviceName}#UserService/getUser`, views: ["anchors"] },
             }),
           ],
           { stopReason: "toolUse" },

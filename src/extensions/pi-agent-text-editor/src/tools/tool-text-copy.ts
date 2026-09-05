@@ -2,29 +2,40 @@ import { Type } from "typebox";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import {
-  lineAnchor,
-  selectionRange,
-  singleSelection,
-  textSelections,
+  anchorSpanRange,
+  insertionAfterAnchor,
+  replaceAnchorSpan,
 } from "#src/tools/text-selection.js";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 
 export const copySchema = Type.Object(
   {
-    path: Type.Optional(Type.String({ description: "Source file to copy from" })),
-    start: Type.String({ description: "Registered text anchor selecting the first line to copy" }),
-    end: Type.Optional(
+    path: Type.Optional(
       Type.String({
-        description: "Registered text anchor selecting the last line; defaults to start",
+        description:
+          "Source resource reference or file path; a typed resource may select one source span",
       }),
     ),
-    target: Type.Optional(Type.String({ description: "Target file; defaults to the source file" })),
-    targetStart: Type.String({
-      description: "First target line; copied text is inserted after it when targetEnd is omitted",
-    }),
+    start: Type.Optional(
+      Type.String({
+        description: "Registered text anchor or unique exact text at the source start",
+      }),
+    ),
+    end: Type.Optional(Type.String({ description: "Source end anchor; defaults to start" })),
+    target: Type.Optional(
+      Type.String({
+        description:
+          "Target resource reference or file path; a typed resource may select the destination; defaults to the source",
+      }),
+    ),
+    targetStart: Type.Optional(
+      Type.String({
+        description: "Target anchor; copied text is inserted after it when targetEnd is omitted",
+      }),
+    ),
     targetEnd: Type.Optional(
-      Type.String({ description: "Last target line; the inclusive target range is replaced" }),
+      Type.String({ description: "Target end anchor; the natural target range is replaced" }),
     ),
   },
   { additionalProperties: false },
@@ -32,17 +43,19 @@ export const copySchema = Type.Object(
 
 interface CopyParameters {
   readonly path?: string;
-  readonly start: string;
+  readonly start?: string;
   readonly end?: string;
   readonly target?: string;
-  readonly targetStart: string;
+  readonly targetStart?: string;
   readonly targetEnd?: string;
 }
 
 export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> = {
   name: "copy",
-  description:
-    "Copy selected lines and insert them after targetStart, or replace targetStart through targetEnd.",
+  description: "Copy one span or an anchor range, then insert it or replace a target range.",
+
+  promptSnippet:
+    "Make precise file edits by copying text within or between files using exact matches or anchors",
   parameters: copySchema,
   source: { field: "path", inherited: true, targets: [{ field: "target", fallbackTo: "path" }] },
   anchors: [
@@ -72,64 +85,31 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
   pair: ["start", "end"],
   mutate: async (context, parameters: CopyParameters) => {
     const starts = await context.resolveAnchors("start");
-    const sourceSelections = textSelections(starts, "start");
-    let copied: string;
-
-    if (sourceSelections === undefined) {
-      const source = context.sourceFor("path");
-      const start = lineAnchor(starts, "start");
-      const end =
-        parameters.end === undefined
-          ? start
-          : lineAnchor(await context.resolveAnchors("end"), "end");
-      const sourceDocument = context.documentFor(source);
-      copied = sourceDocument.text(sourceDocument.lineRange(start.lineNumber, end.lineNumber));
-    } else {
-      if (parameters.end !== undefined) {
-        throw new Error("end cannot be combined with a search selection.");
-      }
-
-      const [source, range] = singleSelection(sourceSelections, "start");
-      copied = context.documentFor(source).text(selectionRange(context, source, range));
-    }
+    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
+    const sourceSpan = anchorSpanRange(context, starts, ends, "start", "end");
+    const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
 
     const targetStarts = await context.resolveAnchors("targetStart");
-    const targetSelections = textSelections(targetStarts, "targetStart");
-
-    if (targetSelections !== undefined) {
-      if (parameters.targetEnd !== undefined) {
-        throw new Error("targetEnd cannot be combined with a search selection.");
-      }
-
-      const [target, range] = singleSelection(targetSelections, "targetStart");
-      const targetDocument = context.documentFor(target);
-      const insertion = targetDocument.range(
-        range.end.lineNumber,
-        range.end.column,
-        range.end.lineNumber,
-        range.end.column,
-      );
-      return {
-        edits: new Map([
-          [target, { changes: [{ ...insertion, insert: copied }], action: "edited" }],
-        ]),
-      };
+    if (parameters.targetEnd === undefined) {
+      const [target, change] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
+      return { edits: new Map([[target, { changes: [change], action: "edited" }]]) };
     }
 
-    const target = context.sourceFor("target");
-    const targetDocument = context.documentFor(target);
-    const targetStart = lineAnchor(targetStarts, "targetStart");
-    const targetEnd =
-      parameters.targetEnd === undefined
-        ? undefined
-        : lineAnchor(await context.resolveAnchors("targetEnd"), "targetEnd");
-    const change =
-      targetEnd === undefined
-        ? targetDocument.insertAfterLine(targetStart.lineNumber, copied)
-        : targetDocument.replaceLines(targetStart.lineNumber, targetEnd.lineNumber, copied);
-
+    const targetEnds = await context.resolveAnchors("targetEnd");
+    const targetSpan = anchorSpanRange(
+      context,
+      targetStarts,
+      targetEnds,
+      "targetStart",
+      "targetEnd",
+    );
     return {
-      edits: new Map([[target, { changes: [change], action: "edited" }]]),
+      edits: new Map([
+        [
+          targetSpan.source,
+          { changes: [replaceAnchorSpan(context, targetSpan, copied)], action: "edited" },
+        ],
+      ]),
     };
   },
 };

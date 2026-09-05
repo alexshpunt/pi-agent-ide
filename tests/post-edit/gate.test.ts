@@ -1,88 +1,101 @@
 import { createTextDocument } from "pi-agent-text";
-import { expect, test, vi } from "vitest";
-
+import { afterEach, expect, test, vi } from "vitest";
 import { runIdePostEditGate } from "#src/post-edit/gate.js";
-
-import type { IdePostEditGateRunner } from "#src/post-edit/gate.js";
-import type { Diagnostic, GateResult } from "#src/toolchain/types.js";
+import { registerTools, resetRegistry } from "#src/toolchain/registry.js";
 import type { TextPostEditTransaction } from "pi-agent-text-editor/api/post-edit";
 
-const syntaxError: Diagnostic = {
-  line: 1,
-  column: 7,
-  severity: "error",
-  code: "TS2322",
-  message: "Type number is not assignable to string",
-};
-
-function transaction(resourceSource = "/workspace/src/example.ts"): TextPostEditTransaction {
+function transaction(resourceSource = "/workspace/example.ts"): TextPostEditTransaction {
   return {
-    source: resourceSource.startsWith("/") ? "src/example.ts" : resourceSource,
+    source: resourceSource,
     resourceSource,
-    resolvedBy: resourceSource.startsWith("/") ? "filesystem" : "memory",
+    resolvedBy: "filesystem",
     cwd: "/workspace",
-    before: createTextDocument(resourceSource, "const value = 1;\n"),
-    requestedAfter: createTextDocument(resourceSource, "const value: string = 1;\n"),
+    before: createTextDocument(resourceSource, "const n = 1;"),
+    requestedAfter: createTextDocument(resourceSource, 'const n: number = "wrong";'),
   };
 }
+afterEach(resetRegistry);
 
-function gateResult(filePath: string): GateResult {
-  return {
-    stage: "done",
-    rollback: false,
-    files: [
-      {
-        filePath,
-        sourceContent: "const value = 1;\n",
-        finalContent: "const value: string = 1;\n",
-        compile: {
-          ok: false,
-          diagnostics: [syntaxError],
-          syntaxErrors: [syntaxError],
-          otherDiagnostics: [],
-        },
-        format: { ok: true, edits: 0 },
-        lint: { ok: true, diagnostics: [] },
-      },
-    ],
-  };
-}
-
-test("collects post-edit diagnostics without formatting anchors", async () => {
-  const implementation: IdePostEditGateRunner = (filePath, toolchain) => {
-    expect(filePath).toBe("/workspace/src/example.ts");
-    expect(toolchain.ctx.cwd).toBe("/workspace");
-    return Promise.resolve(gateResult(filePath));
-  };
-  const runGate = vi.fn(implementation);
-
-  const result = await runIdePostEditGate(transaction(), runGate);
-
-  expect(result).toEqual({
-    hints: [
-      {
-        file: "src/example.ts",
-        line: 1,
-        column: 7,
-        lineText: "const value: string = 1;",
-        severity: "error",
-        source: "compiler",
-        code: "TS2322",
-        message: "Type number is not assignable to string",
-      },
-    ],
-    scopeMarkers: {},
-    warnings: [],
+test("formats without detecting or waiting for LSP and lint, and returns no diagnostic hints", async () => {
+  const background = vi.fn(() => {
+    throw new Error("Analysis must not run in the edit gate");
   });
-  expect(result?.hints[0]).not.toHaveProperty("anchor");
-  expect(runGate).toHaveBeenCalledOnce();
+  const format = vi.fn(async () => ({ ok: true, edits: 1 }));
+  registerTools([
+    {
+      kind: "compiler",
+      name: "lsp",
+      priority: 1,
+      extensions: ["*"],
+      detect: background,
+      compile: background,
+    },
+    {
+      kind: "linter",
+      name: "lint",
+      priority: 1,
+      extensions: ["*"],
+      detect: background,
+      lint: background,
+    },
+    {
+      kind: "formatter",
+      name: "format",
+      priority: 1,
+      extensions: ["*"],
+      detect: async () => true,
+      format,
+    },
+  ]);
+  await expect(runIdePostEditGate(transaction())).resolves.toBeUndefined();
+  expect(format).toHaveBeenCalledOnce();
+  expect(background).not.toHaveBeenCalled();
 });
 
-test("ignores resources without an absolute filesystem identity", async () => {
-  const runGate = vi.fn<IdePostEditGateRunner>();
+test("an explicitly syntax-only check can skip formatting", async () => {
+  const format = vi.fn(async () => ({ ok: true, edits: 1 }));
+  registerTools([
+    {
+      kind: "compiler",
+      syntaxOnly: true,
+      name: "parser",
+      priority: 1,
+      extensions: [".ts"],
+      detect: async () => true,
+      compile: async () => ({
+        ok: false,
+        diagnostics: [],
+        otherDiagnostics: [],
+        syntaxErrors: [
+          { line: 1, column: 1, severity: "error", code: "parse", message: "Expected expression" },
+        ],
+      }),
+    },
+    {
+      kind: "formatter",
+      name: "format",
+      priority: 1,
+      extensions: ["*"],
+      detect: async () => true,
+      format,
+    },
+  ]);
+  await expect(runIdePostEditGate(transaction())).resolves.toBeUndefined();
+  expect(format).not.toHaveBeenCalled();
+});
 
-  await expect(
-    runIdePostEditGate(transaction("memory:example.ts"), runGate),
-  ).resolves.toBeUndefined();
-  expect(runGate).not.toHaveBeenCalled();
+test("non-file edits do not run formatting", async () => {
+  const detect = vi.fn(async () => true);
+  registerTools([
+    {
+      kind: "formatter",
+      name: "format",
+      priority: 1,
+      extensions: ["*"],
+      detect,
+      format: async () => ({ ok: true, edits: 0 }),
+    },
+  ]);
+  await runIdePostEditGate(transaction("memory:example.ts"));
+  expect(detect).not.toHaveBeenCalled();
 });

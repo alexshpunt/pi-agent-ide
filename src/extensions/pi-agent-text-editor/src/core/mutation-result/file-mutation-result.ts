@@ -1,5 +1,5 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
-import type { TextDocument } from "pi-agent-text";
+import { requiredValue } from "pi-agent-invariant";
+import type { TextAnchorRecoveryCandidateRange, TextDocument } from "pi-agent-text";
 
 export interface MutationAnchor {
   readonly lineNumber: number;
@@ -7,6 +7,9 @@ export interface MutationAnchor {
   readonly value?: string;
   readonly anchor?: string;
 }
+
+/** Successful mutation output style selected from the anchors used by the edit. */
+export type MutationResultPresentation = "plain" | "major-anchor";
 
 export interface MutationSnapshot {
   readonly content: string;
@@ -200,6 +203,9 @@ export interface FileMutationData {
   inputEdits?: unknown[] | undefined;
   afterContent?: string | undefined;
   afterDocument?: TextDocument | undefined;
+
+  /** Presentation selected from the anchors used to produce this file change. */
+  resultPresentation?: MutationResultPresentation | undefined;
   /**
     Scope markers attached to post-edit lines, matching read output.
     */
@@ -228,6 +234,17 @@ export interface FileMutationBatchResult {
     Batch-wide gate phases (undefined = no gate was run).
     */
   phases?: GatePhase[];
+  /** Non-mutating candidates returned for rejected anchor fields. */
+  anchorRecoveries?: readonly {
+    readonly field: string;
+    readonly path: string;
+    readonly anchor: string;
+    readonly total: number;
+    readonly candidates: readonly {
+      readonly rank: number;
+      readonly range: TextAnchorRecoveryCandidateRange;
+    }[];
+  }[];
 }
 
 /**

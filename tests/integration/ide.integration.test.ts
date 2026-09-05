@@ -3,7 +3,8 @@ import path from "node:path";
 
 import {
   assistantMessage,
-  getProviderSystemPrompt,
+  getToolExecution,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -57,15 +58,11 @@ test("loads IDE extensions together while preserving read integrations", async (
     }).run("Read a source file through the IDE extension bundle");
 
     expect(await readFile(file, "utf8")).toBe(source);
-
-    const prompt = getProviderSystemPrompt(result);
-    expect(prompt).toContain("prefer `ast:<path>` for the first read");
-    expect(prompt).toContain(
-      "`symbol:<path>#<selector>` to read a specific symbol's implementation",
+    expect(getToolExecution(result, "ide-aggregation-read").isError).not.toBe(true);
+    expect(getToolResultText(result, "ide-aggregation-read")).toContain(
+      "export function readValue()",
     );
-    expect(prompt).toContain(
-      "- `lint` — Adds lint diagnostics to textual read results without applying fixes.",
-    );
+    expect(getToolResultText(result, "ide-aggregation-read")).toContain("return 1;");
   });
 }, 60_000);
 

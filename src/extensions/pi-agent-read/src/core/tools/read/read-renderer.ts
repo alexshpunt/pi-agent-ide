@@ -1,4 +1,5 @@
-import { requiredValue } from "../../../../../../utils/required-value.js";
+import { restoreReadDetails } from "./persisted-result.js";
+import { requiredValue } from "pi-agent-invariant";
 import {
   type AgentToolResult,
   getLanguageFromPath,
@@ -14,13 +15,74 @@ import {
   Text,
   truncateToWidth,
   visibleWidth,
+  wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { getTextSourceLine } from "pi-agent-text";
+import { getTextSourceLine, renderPresentedTextDocument } from "pi-agent-text";
+import { toolCallHeader } from "pi-agent-tool-ui";
 
 import type { ReadResultRendererOptions } from "#src/api/rendering.js";
 import type { ReadResultDetails, ReadResultRenderer, ReadTextLine } from "#src/api/tools/read.js";
 
 export const COMPACT_READ_ROWS = 12;
+
+interface ReadCallArguments {
+  readonly path?: unknown;
+  readonly offset?: unknown;
+  readonly limit?: unknown;
+  readonly views?: unknown;
+}
+
+interface ReadCallRenderContext {
+  readonly expanded?: boolean;
+  readonly lastComponent: Component | undefined;
+}
+
+/** Renders the requested read source and non-default options in the shared tool-card header. */
+export function renderReadCall(
+  arguments_: ReadCallArguments,
+  theme: Theme,
+  context: ReadCallRenderContext,
+): Component {
+  const path = typeof arguments_.path === "string" ? arguments_.path : "inherited source";
+  const offset = typeof arguments_.offset === "number" ? arguments_.offset : undefined;
+  const limit = typeof arguments_.limit === "number" ? arguments_.limit : undefined;
+  const views = Array.isArray(arguments_.views)
+    ? arguments_.views.filter((view): view is string => typeof view === "string")
+    : [];
+  const qualifiers = [
+    ...(offset === undefined
+      ? []
+      : [
+          {
+            text: offset < 0 ? `tail ${String(Math.abs(offset))}` : `offset ${String(offset)}`,
+          },
+        ]),
+    ...(limit === undefined ? [] : [{ text: `limit ${String(limit)}` }]),
+    ...(views.length === 0 ? [] : [{ text: `views ${views.join(",")}` }]),
+  ];
+  const details = [
+    ...(typeof arguments_.path === "string" ? [{ label: "path", value: arguments_.path }] : []),
+    ...(offset === undefined ? [] : [{ label: "offset", value: String(offset) }]),
+    ...(limit === undefined ? [] : [{ label: "limit", value: String(limit) }]),
+    ...(views.length === 0 ? [] : [{ label: "views", value: views.join(",") }]),
+  ];
+  return toolCallHeader(
+    context.lastComponent,
+    {
+      tool: "read",
+      primary: {
+        text: path,
+        color: typeof arguments_.path === "string" ? "accent" : "muted",
+        underline: typeof arguments_.path === "string",
+        truncate: "start",
+      },
+      qualifiers,
+      details,
+      expanded: context.expanded === true,
+    },
+    theme,
+  );
+}
 
 interface ReadPanelState {
   readonly result: AgentToolResult<unknown>;
@@ -31,6 +93,7 @@ interface ReadPanelState {
 }
 
 export function createReadResultRenderer(options: ReadResultRendererOptions): ReadResultRenderer {
+  const restored = new WeakMap<object, ReadResultDetails>();
   return (result, renderOptions, theme, context): Component => {
     if (renderOptions.isPartial || context.isError) {
       const text = textBlocks(result);
@@ -42,7 +105,11 @@ export function createReadResultRenderer(options: ReadResultRendererOptions): Re
       return context.lastComponent instanceof Container ? context.lastComponent : new Container();
     }
 
-    const details = readDetails(result.details);
+    let details = restored.get(result);
+    if (details === undefined) {
+      details = restoreReadDetails(readDetails(result.details), textBlocks(result));
+      restored.set(result, details);
+    }
     const previous =
       context.lastComponent instanceof ReadResultPanel ? context.lastComponent : undefined;
     const panel =
@@ -97,7 +164,9 @@ export class ReadResultPanel implements Component {
     const lines = [renderTopBorder(this.state, innerWidth, this.state.theme)];
 
     for (const row of rows) {
-      lines.push(framed(row, innerWidth, this.state.theme));
+      for (const wrappedRow of wrapTextWithAnsi(row, contentWidth)) {
+        lines.push(framed(wrappedRow, innerWidth, this.state.theme));
+      }
     }
 
     const status = readStatus(this.state.details, this.state.theme);
@@ -119,7 +188,7 @@ export class ReadResultPanel implements Component {
 
 function renderContentRows(state: ReadPanelState, width: number): string[] {
   const lines = readLines(state.details);
-  const text = cleanText(state.result, lines, state.details);
+  const text = cleanText(state.result, lines, state.details, !state.expanded);
 
   if (
     state.options.kind === "markdown" ||
@@ -131,15 +200,16 @@ function renderContentRows(state: ReadPanelState, width: number): string[] {
 
   if (state.options.kind === "code-view") {
     const rows =
-      lines === undefined
-        ? text.split(/\r\n|\r|\n/u).map((line) => renderCodeViewLabel(line, state.theme))
+      lines === undefined || hasPresentation(lines)
+        ? splitTextRows(text).map((line) => renderCodeViewLabel(line, state.theme, false))
         : renderCodeViewLines(lines, state.theme);
     return nonEmptyRows(rows, state.theme);
   }
 
   const sourceLines =
-    lines?.map(({ content }) => normalizeText(content)) ??
-    text.split(/\r\n|\r|\n/u).map(normalizeText);
+    lines === undefined || hasPresentation(lines)
+      ? splitTextRows(text).map(normalizeText)
+      : lines.map(({ content }) => normalizeText(content));
   const language = languageFor(state.details, lines);
   const rows =
     language === undefined
@@ -168,8 +238,8 @@ function stripScopeMarkers(value: string): string {
   return value.replace(/(?:[ \t]{2,}<!--[ \t]+scope-(?:begin|end)-[^\s>]+[ \t]+-->)+[ \t]*$/u, "");
 }
 
-function renderCodeViewLabel(value: string, theme: Theme): string {
-  const line = normalizeText(stripScopeMarkers(value));
+function renderCodeViewLabel(value: string, theme: Theme, stripMarkers = true): string {
+  const line = normalizeText(stripMarkers ? stripScopeMarkers(value) : value);
 
   if (/^#{2,3}\s/u.test(line)) {
     return theme.fg("mdHeading", theme.bold(line.replace(/^#{2,3}\s+/u, "")));
@@ -271,9 +341,17 @@ function cleanText(
   result: AgentToolResult<unknown>,
   lines: readonly ReadTextLine[] | undefined,
   details: ReadResultDetails,
+  compact: boolean,
 ): string {
   if (lines !== undefined) {
-    return lines.map((line) => `${line.content}${line.lineEnding}`).join("");
+    return renderPresentedTextDocument(
+      {
+        source: details.source ?? "",
+        content: "",
+        lines,
+      },
+      { compact },
+    );
   }
 
   const text = textBlocks(result);
@@ -293,6 +371,18 @@ function cleanText(
     /\n\n\[(?:Showing lines|Output truncated|\d+ more lines in source)[\s\S]*\]$/u,
     "",
   );
+}
+
+function hasPresentation(lines: readonly ReadTextLine[]): boolean {
+  return lines.some((line) => line.presentation !== undefined);
+}
+
+function splitTextRows(text: string): string[] {
+  const rows = text.split(/\r\n|\r|\n/u);
+  if (rows.at(-1) === "" && /(?:\r\n|\r|\n)$/u.test(text)) {
+    rows.pop();
+  }
+  return rows;
 }
 
 function textBlocks(result: AgentToolResult<unknown>): string {

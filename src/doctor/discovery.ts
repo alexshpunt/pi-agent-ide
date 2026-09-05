@@ -2,6 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { projectIdeConfigPath } from "#src/api/tool-config.js";
+import type { DoctorToolSelection } from "#src/api/doctor.js";
 import type { ToolRecipe } from "#src/api/tool-catalog.js";
 import type { OwnedContribution } from "./core.js";
 
@@ -81,17 +82,24 @@ Selects at most one recipe per language and tool kind.
 export function selectSuggestedRecipes(
   candidates: readonly RecipeCandidate[],
   detectedLanguageIds: ReadonlySet<string>,
+  selections: readonly DoctorToolSelection[] = [],
 ): readonly RecipeCandidate[] {
   const selected = new Map<string, RecipeCandidate>();
+  const activeBySlot = new Map(
+    selections.map((selection) => [`${selection.kind}:${selection.languageId}`, selection.toolId]),
+  );
 
   for (const language of detectedLanguageIds) {
     for (const kind of ["formatter", "linter", "lsp"] as const) {
+      const activeToolId = activeBySlot.get(`${kind}:${language}`);
+      const minimumScore = activeToolId === undefined ? 4 : 7;
       const matches = candidates.filter(
         (candidate) =>
           candidate.recipe.kind === kind &&
           candidate.recipe.languages.includes(language) &&
           candidate.executable !== undefined &&
-          candidate.score >= 4,
+          candidate.recipe.id !== activeToolId &&
+          candidate.score >= minimumScore,
       );
       const best = matches[0];
 
@@ -103,7 +111,7 @@ export function selectSuggestedRecipes(
         continue;
       }
 
-      selected.set(best.recipe.id, best);
+      selected.set(`${best.recipe.kind}:${best.recipe.id}`, best);
     }
   }
 

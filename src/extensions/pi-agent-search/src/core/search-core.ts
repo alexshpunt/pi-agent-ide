@@ -33,14 +33,14 @@ export interface SearchCore {
     input: unknown,
     context: SearchContext,
   ): Promise<unknown>;
-  renderPromptGuideline(): string | undefined;
+  renderPromptGuidelines(): readonly string[];
   renderer(resolverId: string): SearchResolverRegistration["resolver"]["renderResult"];
 }
 
 export function createSearchCore(): SearchCore {
   const resolvers: RegisteredResolver[] = [];
   const actions = new Map<string, SearchActionRegistration>();
-  const descriptions = new Map<string, SearchDescriptionSource>();
+  const promptGuidelines = new Map<string, SearchDescriptionSource[]>();
   const plugins = new Map<string, Promise<void>>();
   let queue = Promise.resolve();
 
@@ -60,6 +60,7 @@ export function createSearchCore(): SearchCore {
         const draftResolvers: SearchResolverRegistration[] = [];
         const draftActions: SearchActionRegistration[] = [];
         let draftDescription: SearchDescriptionSource | undefined;
+        const draftPromptGuidelines: SearchDescriptionSource[] = [];
         const api: SearchPluginApi = {
           addResolver(registration): void {
             assertResolver(registration);
@@ -75,6 +76,9 @@ export function createSearchCore(): SearchCore {
             }
 
             draftDescription = normalizeDescriptionSource(description);
+          },
+          addPromptGuideline(guideline): void {
+            draftPromptGuidelines.push(normalizeDescriptionSource(guideline));
           },
           search: (request, context) => core.execute(request, context),
           runAction(request, context): Promise<unknown> {
@@ -121,10 +125,9 @@ export function createSearchCore(): SearchCore {
           actions.set(actionKey(action.resolverId, action.capability), action);
         }
 
-        if (draftDescription !== undefined) {
-          descriptions.set(plugin.id, draftDescription);
+        if (draftPromptGuidelines.length > 0) {
+          promptGuidelines.set(plugin.id, draftPromptGuidelines);
         }
-
         return;
       });
       plugins.set(plugin.id, ready);
@@ -145,15 +148,21 @@ export function createSearchCore(): SearchCore {
 
       const snapshot = [...resolvers].sort(
         (left, right) =>
+          Number(left.registration.fallback === true) -
+            Number(right.registration.fallback === true) ||
           (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
           left.order - right.order,
       );
 
+      const emptyProtocol = /^[a-z][\w-]*:\s*$/iu.test(request.query);
+      const protocolLike = /^[a-z][\w-]*:/iu.test(request.query);
       for (const entry of snapshot) {
+        if (emptyProtocol && !entry.registration.fallback) continue;
         const resolver = entry.registration.resolver;
         let attempt: unknown;
 
         try {
+          context.signal?.throwIfAborted();
           attempt = await resolver.tryResolve(request, context);
         } catch (error) {
           return failure(
@@ -197,7 +206,18 @@ export function createSearchCore(): SearchCore {
           }
 
           return {
-            content: formatted.content,
+            content:
+              entry.registration.fallback && protocolLike
+                ? [
+                    {
+                      type: "text",
+                      text: emptyProtocol
+                        ? "Search fallback: empty protocol query; searched the original text."
+                        : "Search fallback: unhandled protocol query; searched the original text.",
+                    },
+                    ...formatted.content,
+                  ]
+                : formatted.content,
             details: { resolverId: resolver.id, payload: formatted.details },
             ...(formatted.usage !== undefined && { usage: formatted.usage }),
           };
@@ -223,32 +243,17 @@ export function createSearchCore(): SearchCore {
 
       return action.execute(reference, input, context);
     },
-    renderPromptGuideline(): string | undefined {
-      const entries = [...descriptions].flatMap(([id, source]) => {
-        const description = renderDescription(source);
-        return description === undefined
-          ? []
-          : [`- \`${id}\` — ${description.replaceAll("\n", "\n  ")}`];
+    renderPromptGuidelines(): readonly string[] {
+      return [...promptGuidelines.values()].flat().flatMap((source) => {
+        const guideline = renderDescription(source);
+        return guideline === undefined ? [] : [guideline];
       });
-      return entries.length === 0
-        ? undefined
-        : indentGuidelineContinuation(
-            ["Search supports these installed protocols:", ...entries].join("\n"),
-          );
     },
     renderer(resolverId) {
       return resolvers.find(({ registration }) => registration.resolver.id === resolverId)
         ?.registration.resolver.renderResult;
     },
   };
-
-  function indentGuidelineContinuation(guideline: string): string {
-    const [firstLine, ...continuationLines] = guideline.split("\n");
-    return [
-      firstLine ?? "",
-      ...continuationLines.map((line) => (line.length === 0 ? line : `  ${line}`)),
-    ].join("\n");
-  }
 
   return core;
 }
@@ -365,7 +370,6 @@ function actionKey(resolverId: string, capability: string): string {
 }
 
 function messageFor(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message.trim().length > 0
-    ? `${fallback}: ${error.message}`
-    : fallback;
+  if (!(error instanceof Error) || error.message.trim().length === 0) return fallback;
+  return error instanceof SyntaxError ? error.message : `${fallback}: ${error.message}`;
 }

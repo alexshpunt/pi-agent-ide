@@ -33,6 +33,7 @@ function toHit(
   const relativePath = path.relative(cwd, filePath);
 
   return {
+    // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
     filePath: relativePath.startsWith("..") ? filePath : relativePath,
     lineNumber: line + 1,
     column: character + 1,

@@ -1,4 +1,5 @@
-import { probeExecutable } from "pi-agent-doctor/api/executable";
+import { isExecutableAvailable, probeExecutable } from "pi-agent-doctor/api/executable";
+
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
 import { resolveRipgrepExecutable } from "#src/ripgrep.js";
@@ -11,6 +12,24 @@ export const textSearchDoctorPlugin: DoctorPlugin = {
   apiVersion: DOCTOR_API_VERSION,
   id: "search-text",
   setup(api): void {
+    api.addSetupCheck({
+      id: "ripgrep",
+      async inspect(context) {
+        const executable = resolveRipgrepExecutable(context.env.PI_CODING_AGENT_DIR);
+        const available = await isExecutableAvailable(executable, context.cwd, context.env);
+        return available
+          ? {}
+          : {
+              actions: [
+                {
+                  id: "ripgrep-unavailable",
+                  message: "Local search is unavailable because ripgrep was not found",
+                },
+              ],
+            };
+      },
+    });
+
     api.addCheck({
       id: "ripgrep",
       title: "Local search",

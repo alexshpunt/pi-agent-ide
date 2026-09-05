@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -232,6 +232,7 @@ describe("Git change domain", () => {
       await inspectCurrent(
         service,
         directory,
+        // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
         path.join(directory, "..", "outside.txt"),
         "outside\n",
       ),

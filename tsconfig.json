@@ -10,9 +10,5 @@
     "target": "ES2023"
   },
   "include": ["dev/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "src/**/*.ts"],
-  "exclude": [
-    "**/dist/**",
-    "**/node_modules/**",
-    "src/extensions/pi-agent-search/plugins/pi-agent-search-semantic/qmd/**"
-  ]
+  "exclude": [".worktrees/**", "**/dist/**", "**/node_modules/**"]
 }

@@ -7,6 +7,13 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
 import {
+  toolCallHeader,
+  type ToolCallHeaderDetail,
+  type ToolCallHeaderModel,
+} from "pi-agent-tool-ui";
+
+import os from "node:os";
+import {
   ToolCallInterceptionRenderStore,
   withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";
@@ -21,13 +28,17 @@ import {
 } from "#src/api/plugin-protocol.js";
 import { createSearchCore } from "#src/core/search-core.js";
 
+import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.js";
+import { runWithSearchTimeout } from "#src/core/search-timeout.js";
+
 import type { SearchToolDetails } from "#src/api/search.js";
 
 const searchSchema = Type.Object(
   {
     query: Type.String({
       minLength: 1,
-      description: "Search query. Installed prefixes select specialized search protocols.",
+      description:
+        "Search query. Local text tries literal terms, then regex, then eligible word fallback. Quotes keep terms literal and Boolean conditions stay intact. Empty or unhandled prefixes are text; nonempty installed prefixes select specialized search protocols.",
     }),
     path: Type.Optional(
       Type.String({ description: "Optional file or directory scope for local search" }),
@@ -45,7 +56,43 @@ const searchSchema = Type.Object(
   { additionalProperties: false },
 );
 
-type SearchParameters = Static<typeof searchSchema>;
+/** Arguments accepted by the search tool. */
+export type SearchParameters = Static<typeof searchSchema>;
+
+/** Builds the width-independent search call presentation. */
+export function searchCallModel(
+  arguments_: SearchParameters,
+  expanded: boolean,
+): ToolCallHeaderModel {
+  const qualifiers = [
+    ...(arguments_.path === undefined
+      ? []
+      : [
+          {
+            text: `in ${arguments_.path}`,
+            color: "accent" as const,
+            underline: true,
+            truncate: "start" as const,
+          },
+        ]),
+    ...(arguments_.include === undefined ? [] : [{ text: `include ${arguments_.include}` }]),
+    ...(arguments_.exclude === undefined ? [] : [{ text: `exclude ${arguments_.exclude}` }]),
+    ...(arguments_.caseSensitive === true ? [{ text: "case sensitive" }] : []),
+    ...(arguments_.wholeWord === true ? [{ text: "whole word" }] : []),
+    ...(arguments_.limit === undefined ? [] : [{ text: `limit ${String(arguments_.limit)}` }]),
+  ];
+  return {
+    tool: "search",
+    primary: {
+      text: JSON.stringify(arguments_.query),
+      color: "accent",
+      truncate: "end",
+    },
+    qualifiers,
+    details: searchCallDetails(arguments_),
+    expanded,
+  };
+}
 
 export default async function registerSearchCore(pi: ExtensionAPI): Promise<void> {
   const core = createSearchCore();
@@ -64,28 +111,23 @@ export default async function registerSearchCore(pi: ExtensionAPI): Promise<void
         name: "search",
         label: "search",
         description:
-          "Search through installed local, semantic, web, language, and structural search protocols.",
-        promptSnippet: "Search workspace text and paths and return reusable anchors for text edits",
+          "Search workspace text and paths through installed local, language, and structural search protocols.",
+        promptSnippet:
+          "Search files and text with literals or regular expressions, plus syntax trees and language symbols",
         get promptGuidelines(): string[] {
-          const pluginGuideline = core.renderPromptGuideline();
           return [
+            "Use search instead of grep, rg, or find to search workspace text and paths.",
             "Use the narrowest useful search query and scope; broaden when needed.",
-            "Do not use search to rediscover a file path already named in the request; use that path directly and search only if access fails.",
-            "When exact text that may need editing is already known, use search directly instead of repeating the lookup with grep or find; search returns reusable anchors.",
-            "When every exact search match needs the same replacement, pass the returned SEARCH#HASH:all anchor to replace.",
-            ...(pluginGuideline === undefined ? [] : [pluginGuideline]),
+            "Do not use search merely to rediscover a file path already named in the request; use that path directly. Search within it only when you need to locate content.",
+            ...core.renderPromptGuidelines(),
           ];
         },
         parameters: searchSchema,
-        renderShell: "self",
-        renderCall(arguments_, theme): Component {
-          const query = typeof arguments_.query === "string" ? arguments_.query : "";
-          const scope =
-            typeof arguments_.path === "string" ? ` ${theme.fg("dim", arguments_.path)}` : "";
-          return new Text(
-            `${theme.fg("toolTitle", theme.bold("search"))} ${theme.fg("accent", JSON.stringify(query))}${scope}`,
-            0,
-            0,
+        renderCall(arguments_, theme, context): Component {
+          return toolCallHeader(
+            context.lastComponent,
+            searchCallModel(arguments_, context.expanded),
+            theme,
           );
         },
         renderResult(result, options, theme, context): Component {
@@ -107,15 +149,20 @@ export default async function registerSearchCore(pi: ExtensionAPI): Promise<void
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
-          await core.waitForPendingPlugins();
-          return core.execute(parameters, {
-            cwd: context.cwd,
-            ...(signal !== undefined && { signal }),
-            ...(onUpdate !== undefined && {
-              onUpdate: (update) => {
-                onUpdate(update);
-              },
-            }),
+          const config = await loadSearchConfig(
+            resolveSearchConfigPaths(process.env, os.homedir(), context.cwd),
+          );
+          return runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
+            await core.waitForPendingPlugins();
+            return core.execute(parameters, {
+              cwd: context.cwd,
+              ...(operationSignal !== undefined && { signal: operationSignal }),
+              ...(onUpdate !== undefined && {
+                onUpdate: (update) => {
+                  onUpdate(update);
+                },
+              }),
+            });
           });
         },
       },
@@ -127,6 +174,31 @@ export default async function registerSearchCore(pi: ExtensionAPI): Promise<void
     apiVersion: SEARCH_API_VERSION,
   });
   await core.waitForPendingPlugins();
+}
+
+function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[] {
+  return [
+    { label: "query", value: JSON.stringify(arguments_.query) },
+    ...optionalDetail("path", arguments_.path),
+    ...optionalDetail("include", arguments_.include),
+    ...optionalDetail("exclude", arguments_.exclude),
+    ...optionalDetail(
+      "caseSensitive",
+      arguments_.caseSensitive === undefined ? undefined : String(arguments_.caseSensitive),
+    ),
+    ...optionalDetail(
+      "wholeWord",
+      arguments_.wholeWord === undefined ? undefined : String(arguments_.wholeWord),
+    ),
+    ...optionalDetail(
+      "limit",
+      arguments_.limit === undefined ? undefined : String(arguments_.limit),
+    ),
+  ];
+}
+
+function optionalDetail(label: string, value: string | undefined): ToolCallHeaderDetail[] {
+  return value === undefined ? [] : [{ label, value }];
 }
 
 function fallbackResult(

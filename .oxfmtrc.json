@@ -9,8 +9,6 @@
     "**/dist/**",
     "pnpm-lock.yaml",
     "**/__fixtures__/**",
-    "**/fixtures/**",
-
-    "src/extensions/pi-agent-search/plugins/pi-agent-search-semantic/qmd/**"
+    "**/fixtures/**"
   ]
 }

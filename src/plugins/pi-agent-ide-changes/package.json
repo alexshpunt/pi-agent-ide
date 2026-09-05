@@ -16,6 +16,7 @@
     "@earendil-works/pi-coding-agent": "0.84.2",
     "diff": "^9.0.0",
     "pi-agent-doctor": "workspace:^",
+    "pi-agent-invariant": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^",

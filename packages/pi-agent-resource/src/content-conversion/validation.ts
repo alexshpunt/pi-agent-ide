@@ -1,7 +1,7 @@
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 
-import { isAgentContent } from "../validation.js";
+import { isAgentContent } from "#src/validation.js";
 
 import type {
   ContentConversionAttempt,

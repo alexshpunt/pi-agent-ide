@@ -1,8 +1,10 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const packageRoot = path.resolve("agent/src/extensions/pi-agent-ide/extensions/pi-agent-read");
+const packageRoot = findAncestorDirectory(import.meta.dirname, "package.json");
+const repositoryRoot = findAncestorDirectory(packageRoot, "pnpm-workspace.yaml");
 const temporaryRoot = path.resolve(".tmp");
 
 export const ASYNC_CORE_FIRST_SOURCE = "async-core-first";
@@ -96,7 +98,7 @@ function pluginSource(
   const connectPlugin = packageModuleUrl("src/api/connect-plugin.ts");
   const pluginProtocol = packageModuleUrl("src/api/plugin-protocol.ts");
   const resourceApi = pathToFileURL(
-    path.resolve("agent/src/extensions/pi-agent-ide/packages/pi-agent-resource/src/index.ts"),
+    path.join(repositoryRoot, "packages/pi-agent-resource/src/index.ts"),
   ).href;
 
   return `import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -151,4 +153,16 @@ function reexportSource(source: string): string {
 
 function packageModuleUrl(relativePath: string): string {
   return pathToFileURL(path.join(packageRoot, relativePath)).href;
+}
+
+function findAncestorDirectory(startDirectory: string, marker: string): string {
+  let directory = startDirectory;
+  for (;;) {
+    if (existsSync(path.join(directory, marker))) return directory;
+    const parent = path.dirname(directory);
+    if (parent === directory) {
+      throw new Error(`Directory with ${marker} not found above ${directory}`);
+    }
+    directory = parent;
+  }
 }

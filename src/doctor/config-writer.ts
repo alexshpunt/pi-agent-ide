@@ -1,4 +1,4 @@
-import { requiredValue } from "../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import { projectIdeConfigDirectory, projectIdeConfigPath } from "#src/api/tool-config.js";

@@ -55,6 +55,12 @@ function createChangeAnchorResolver(
   return {
     id: "git-change",
     description: "Use the complete `CHANGE#HASH` shown beside a current Git change.",
+    renderFull(value) {
+      return value;
+    },
+    renderCompact(value) {
+      return value;
+    },
     async tryResolve(value, context) {
       if (!changeAnchorPattern.test(value)) {
         return { kind: "not-handled" };

@@ -1,12 +1,19 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { Text } from "@earendil-works/pi-tui";
 
-import { createDiffModel } from "./diff-model.js";
+import {
+  TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH,
+  type ToolCallAnchorRenderPatch,
+} from "pi-agent-tool-call-interception";
+import { singleLine, type ToolCallHeaderDetail } from "pi-agent-tool-ui";
+import { NEXT_TOOL_CALL_DRAIN_MS, type MutationAnimationPressure } from "./animation-pressure.js";
+import { loadRendererConfig } from "./config.js";
 import { freezeMutationViewports, type FrozenMutationViewports } from "./frozen-viewport.js";
 import { MutationPanel } from "./mutation-panel.js";
 import {
   advanceTypingProjectionResources,
   extendTypingPreviewResources,
+  preserveCompletedTypingRows,
   projectTypingResources,
 } from "./mutation-projection.js";
 import { resolveMutationResultResources } from "./mutation-result.js";
@@ -23,6 +30,9 @@ import type { TextEditorToolRendererRegistration } from "pi-agent-text-editor/ap
 type MutationRenderOutcome =
   | { readonly kind: "completed"; readonly resources: readonly MutationRenderResource[] }
   | { readonly kind: "failed"; readonly reason: string };
+
+const NO_TOOL_CALL_DETAILS: readonly ToolCallHeaderDetail[] = [];
+const MAX_EXPANDED_GENERATED_ARGUMENT_CHARS = 120;
 
 interface PreviewRequest {
   readonly identity: string;
@@ -52,8 +62,12 @@ interface RenderState {
   preview?: MutationRenderOutcome;
   viewports?: FrozenMutationViewports;
   panel?: MutationPanel;
+
+  stableHeader?: { readonly value: string; readonly expanded: boolean };
   input?: Readonly<Record<string, unknown>>;
   theme?: Theme;
+  cwd?: string;
+  expanded?: boolean;
   invalidate?: () => void;
   latestGenerated?: string;
   typing?: TypingInterpolation;
@@ -61,28 +75,38 @@ interface RenderState {
   queuedPreview?: PreviewRequest;
   previewRunning?: boolean;
   timer?: ReturnType<typeof setInterval>;
+
   displayedResources?: readonly MutationRenderResource[];
   displayedText?: string;
+  [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]?: ToolCallAnchorRenderPatch;
+
   pendingResult?: PendingResult;
+  releaseAnimationPressure?: () => void;
 }
 
-export function registerMutationRenderers(api: TextEditorPluginApi): void {
+/** Register mutation renderers with optional model-stream animation pressure. */
+export function registerMutationRenderers(
+  api: TextEditorPluginApi,
+  animationPressure?: MutationAnimationPressure,
+): void {
   api.onMutationTool((registration) => {
-    api.addToolRenderer(createRenderer(api, registration));
+    api.addToolRenderer(createRenderer(api, registration, animationPressure));
   });
 }
 
 function createRenderer(
   api: TextEditorPluginApi,
   registration: AnyTextMutationToolRegistration,
+  animationPressure?: MutationAnimationPressure,
 ): TextEditorToolRendererRegistration {
   const tool = registration.name;
 
   return {
     tool,
     fallback: true,
+    ...(tool === "write" && { renderShell: "self" as const }),
     renderCall(arguments_, theme, context) {
-      const component = panel(context.lastComponent, theme);
+      const component = panel(context.lastComponent, theme, tool === "write");
       const input = asInput(arguments_);
       const state = context.state as RenderState;
       state.registration = registration;
@@ -91,11 +115,43 @@ function createRenderer(
       state.input = input;
       state.theme = theme;
       state.invalidate = context.invalidate;
-      component.setExpanded(false);
-      component.setBackground(
-        context.isPartial ? "toolPendingBg" : context.isError ? "toolErrorBg" : "toolSuccessBg",
+      // renderCall runs on every frame, so reapply the project's viewport policy each time.
+      state.cwd = context.cwd;
+      component.setExpanded(context.expanded || preferFullDiff(context.cwd));
+      state.expanded = context.expanded;
+
+      component.setResourceLabelsVisible(
+        stringValue(input[registration.source.field]) === undefined,
       );
-      component.setHeader(renderHeader(registration, input, state.preview, theme));
+      component.setBackground(context.isError ? "toolErrorBg" : "toolPendingBg");
+
+      const generated = generatedText(tool, input);
+      const renderedHeader = renderHeader(
+        registration,
+        input,
+        state.preview,
+        theme,
+        state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH],
+        context.expanded,
+      );
+      const sourceReady =
+        stringValue(input[registration.source.field]) !== undefined ||
+        state.preview?.kind === "completed";
+      const argumentsReady =
+        generatedField(tool) === undefined ? context.argsComplete : generated !== undefined;
+      const canFreezeHeader = sourceReady && argumentsReady;
+      const stableHeader =
+        state.stableHeader?.expanded === context.expanded
+          ? state.stableHeader
+          : { value: renderedHeader, expanded: context.expanded };
+      if (canFreezeHeader) {
+        state.stableHeader = stableHeader;
+      }
+      component.setHeader(
+        canFreezeHeader ? stableHeader.value : renderedHeader,
+        mutationCallDetails(registration.name, input, context.expanded),
+        context.expanded,
+      );
 
       if (!context.isPartial && !context.argsComplete) {
         disposeRenderState(state);
@@ -104,15 +160,19 @@ function createRenderer(
 
       const isArgumentsComplete = context.argsComplete;
       const key = `${isArgumentsComplete ? "complete" : "typing"}:${JSON.stringify(input)}`;
-      const generated = generatedText(tool, input);
 
       if (generated !== undefined) {
         const typing = (state.typing ??= new TypingInterpolation());
+
+        state.releaseAnimationPressure ??= animationPressure?.track(context.toolCallId, () => {
+          state.typing?.finish(performance.now(), NEXT_TOOL_CALL_DRAIN_MS);
+          ensureTypingTimer(state);
+        });
         typing.observe(generated, now);
         state.latestGenerated = generated;
 
         if (isArgumentsComplete) {
-          typing.finish();
+          typing.finish(now);
         }
 
         if (state.key !== key && generated.length > 0) {
@@ -143,9 +203,14 @@ function createRenderer(
       state.registration = registration;
       const viewports = state.viewports;
       state.theme = theme;
+      state.cwd = context.cwd;
       state.invalidate = context.invalidate;
+
+      state.expanded = options.expanded;
+
+      state.panel?.setBackground(context.isError ? "toolErrorBg" : "toolSuccessBg");
       cancelPreviewWorker(state);
-      const resources = resolveMutationResultResources(result.details, viewports);
+      const resources = resolveMutationResultResources(result.details, viewports, false);
 
       if (!context.isError && resources.length > 0) {
         const typing = state.typing;
@@ -155,20 +220,39 @@ function createRenderer(
           state.latestGenerated === state.target.generated;
 
         if (canFinishTyping && !typing.caughtUp) {
-          typing.finish();
+          typing.finish(performance.now());
           state.pendingResult = { details: result.details, expanded: options.expanded, theme };
           ensureTypingTimer(state);
           return new Text("", 0, 0);
         }
 
-        applyResultResources(state, resources, options.expanded, theme);
+        applyResultResources(
+          state,
+          resolveMutationResultResources(
+            result.details,
+            registration.name === "write" ? undefined : viewports,
+          ),
+          options.expanded,
+          theme,
+        );
         return new Text("", 0, 0);
       }
 
       clearTypingRuntime(state);
       delete state.preview;
       delete state.viewports;
-      state.panel?.setHeader(renderHeader(registration, state.input ?? {}, undefined, theme));
+      state.panel?.setHeader(
+        renderHeader(
+          registration,
+          state.input ?? {},
+          undefined,
+          theme,
+          state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH],
+          options.expanded,
+        ),
+        mutationCallDetails(registration.name, state.input ?? {}, options.expanded),
+        options.expanded,
+      );
       state.panel?.setPreviewResources([]);
 
       const output = result.content
@@ -177,8 +261,11 @@ function createRenderer(
         )
         .map((item) => item.text)
         .join("\n");
+      const displayedOutput = context.isError ? userFacingFailure(output) : output;
       return new Text(
-        output.length === 0 ? "" : theme.fg(context.isError ? "error" : "toolOutput", output),
+        displayedOutput.length === 0
+          ? ""
+          : theme.fg(context.isError ? "error" : "toolOutput", displayedOutput),
         0,
         0,
       );
@@ -186,8 +273,21 @@ function createRenderer(
   };
 }
 
-function panel(previous: unknown, theme: Theme): MutationPanel {
-  const component = previous instanceof MutationPanel ? previous : new MutationPanel(theme);
+const diffViewCache = new Map<string, boolean>();
+
+/** Returns whether diffs should render fully by default for the given project. */
+function preferFullDiff(cwd: string): boolean {
+  let preferFull = diffViewCache.get(cwd);
+  if (preferFull === undefined) {
+    preferFull = loadRendererConfig(cwd).diffView === "full";
+    diffViewCache.set(cwd, preferFull);
+  }
+  return preferFull;
+}
+
+function panel(previous: unknown, theme: Theme, ownsShell: boolean): MutationPanel {
+  const component =
+    previous instanceof MutationPanel ? previous : new MutationPanel(theme, ownsShell);
   component.setTheme(theme);
   return component;
 }
@@ -238,17 +338,21 @@ function queuePreview(
   const epoch = state.epoch ?? 0;
   state.epoch = epoch;
   state.previewRunning = true;
-  void runPreviewWorker(state, api, tool, epoch).finally(() => {
-    if (state.epoch !== epoch) {
-      return;
-    }
+  // Restored rows receive their saved result synchronously. Let that result cancel
+  // the preview before it can inspect today's file contents.
+  void Promise.resolve()
+    .then(() => runPreviewWorker(state, api, tool, epoch))
+    .finally(() => {
+      if (state.epoch !== epoch) {
+        return;
+      }
 
-    state.previewRunning = false;
+      state.previewRunning = false;
 
-    if (state.queuedPreview !== undefined) {
-      queuePreview(state, state.queuedPreview, api, tool);
-    }
-  });
+      if (state.queuedPreview !== undefined) {
+        queuePreview(state, state.queuedPreview, api, tool);
+      }
+    });
 }
 
 async function runPreviewWorker(
@@ -346,15 +450,24 @@ function showPreviewFailure(state: RenderState, reason: string): void {
 
   if (state.panel !== undefined && state.theme !== undefined) {
     state.panel.setHeader(
-      renderHeader(state.registration, state.input ?? {}, preview, state.theme),
+      state.stableHeader?.value ??
+        renderHeader(
+          state.registration,
+          state.input ?? {},
+          preview,
+          state.theme,
+          state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH],
+          state.expanded ?? false,
+        ),
+      mutationCallDetails(state.registration.name, state.input ?? {}, state.expanded ?? false),
+      state.expanded ?? false,
     );
   }
-
   invalidateState(state);
 }
 
 function ensureTypingTimer(state: RenderState): void {
-  if (state.timer !== undefined || state.typing === undefined || state.target === undefined) {
+  if (state.timer !== undefined || state.panel === undefined) {
     return;
   }
 
@@ -412,7 +525,11 @@ function updateTypingPanel(state: RenderState): boolean {
           visibleText,
         );
   const resources =
-    advanced ?? projectTypingResources(target.resources, target.generated, visibleText);
+    advanced ??
+    preserveCompletedTypingRows(
+      state.displayedResources ?? [],
+      projectTypingResources(target.resources, target.generated, visibleText),
+    );
   state.displayedResources = resources;
   state.displayedText = visibleText;
   const preview = { kind: "completed", resources } as const;
@@ -420,7 +537,21 @@ function updateTypingPanel(state: RenderState): boolean {
   state.viewports = freezeMutationViewports(resources);
   component.setPreviewResources(resources);
   component.setHeader(
-    renderHeader(state.registration, state.input ?? target.input, preview, theme),
+    state.stableHeader?.value ??
+      renderHeader(
+        state.registration,
+        state.input ?? target.input,
+        preview,
+        theme,
+        state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH],
+        state.expanded ?? false,
+      ),
+    mutationCallDetails(
+      state.registration.name,
+      state.input ?? target.input,
+      state.expanded ?? false,
+    ),
+    state.expanded ?? false,
   );
   return true;
 }
@@ -432,7 +563,7 @@ function finishPendingResult(state: RenderState): boolean {
     return false;
   }
 
-  const resources = resolveMutationResultResources(pending.details, state.viewports);
+  const resources = resolveMutationResultResources(pending.details, undefined);
   delete state.pendingResult;
 
   if (resources.length === 0) {
@@ -450,11 +581,24 @@ function applyResultResources(
   expanded: boolean,
   theme: Theme,
 ): void {
-  const preview = { kind: "completed", resources } as const;
+  const stableResources = preserveCompletedTypingRows(state.displayedResources ?? [], resources);
+  const preview = { kind: "completed", resources: stableResources } as const;
   state.preview = preview;
-  state.panel?.setHeader(renderHeader(state.registration, state.input ?? {}, preview, theme));
-  state.panel?.setResultResources(resources);
-  state.panel?.setExpanded(expanded);
+  state.panel?.setHeader(
+    state.stableHeader?.value ??
+      renderHeader(
+        state.registration,
+        state.input ?? {},
+        preview,
+        theme,
+        state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH],
+        expanded,
+      ),
+    mutationCallDetails(state.registration.name, state.input ?? {}, expanded),
+    expanded,
+  );
+  state.panel?.setResultResources(stableResources);
+  state.panel?.setExpanded(expanded || preferFullDiff(state.cwd ?? process.cwd()));
   clearTypingRuntime(state);
 }
 
@@ -472,7 +616,11 @@ function clearTypingRuntime(state: RenderState): void {
     delete state.timer;
   }
 
+  delete state.stableHeader;
   delete state.typing;
+
+  state.releaseAnimationPressure?.();
+  delete state.releaseAnimationPressure;
   delete state.target;
   delete state.latestGenerated;
   delete state.displayedResources;
@@ -529,11 +677,36 @@ function asInput(value: unknown): Readonly<Record<string, unknown>> {
     : {};
 }
 
+function mutationCallDetails(
+  tool: string,
+  input: Readonly<Record<string, unknown>>,
+  expanded: boolean,
+): readonly ToolCallHeaderDetail[] {
+  if (!expanded) {
+    return NO_TOOL_CALL_DETAILS;
+  }
+
+  const generated = generatedField(tool);
+  return Object.entries(input).map(([label, value]) => {
+    const encoded = typeof value === "string" ? value : JSON.stringify(value);
+    const exact = typeof encoded === "string" ? encoded : String(value);
+    return {
+      label,
+      value:
+        label === generated && exact.length > MAX_EXPANDED_GENERATED_ARGUMENT_CHARS
+          ? `${exact.slice(0, MAX_EXPANDED_GENERATED_ARGUMENT_CHARS)}… (${String(exact.length)} chars; full value shown in diff)`
+          : exact,
+    };
+  });
+}
+
 function renderHeader(
   registration: AnyTextMutationToolRegistration,
   input: Readonly<Record<string, unknown>>,
   preview: MutationRenderOutcome | undefined,
   theme: Theme,
+  anchorRenderPatch: ToolCallAnchorRenderPatch | undefined,
+  expanded: boolean,
 ): string {
   const source = registration.source;
   const path = stringValue(input[source.field]);
@@ -555,22 +728,22 @@ function renderHeader(
       (target): target is { readonly field: string; readonly path: string } =>
         target.path !== undefined && target.path !== path,
     );
-  const sourceFallback = targets.length === 0 ? 0 : undefined;
   let header = `${theme.fg("toolTitle", theme.bold(registration.name))} ${renderPath(
     displayedPath,
     sourceLink,
     theme,
-  )}${renderAnchorRange(registration, source.field, input, theme)}${renderStats(
-    preview,
-    path,
-    theme,
-    sourceFallback,
-  )}`;
+  )}${renderAnchorRange(registration, source.field, input, anchorRenderPatch, theme, expanded)}`;
 
   for (const target of targets) {
     header += ` ${theme.fg("muted", "->")} ${renderPath(target.path, resourceLink(preview, target.path), theme)}`;
-    header += renderAnchorRange(registration, target.field, input, theme);
-    header += renderStats(preview, target.path, theme);
+    header += renderAnchorRange(
+      registration,
+      target.field,
+      input,
+      anchorRenderPatch,
+      theme,
+      expanded,
+    );
   }
 
   return header;
@@ -580,7 +753,9 @@ function renderAnchorRange(
   registration: AnyTextMutationToolRegistration,
   sourceField: string,
   input: Readonly<Record<string, unknown>>,
+  anchorRenderPatch: ToolCallAnchorRenderPatch | undefined,
   theme: Theme,
+  expanded: boolean,
 ): string {
   const anchors = (registration.anchors ?? []).filter(
     (anchor) => anchor.sourceField === sourceField,
@@ -589,15 +764,25 @@ function renderAnchorRange(
     sourceField === registration.source.field && registration.pair !== undefined
       ? registration.pair
       : anchors.slice(0, 2).map(({ field }) => field);
-  const startField = fields.at(0);
-  const endField = fields.at(1);
-  return range(
-    startField === undefined ? undefined : stringValue(input[startField]),
-    endField === undefined ? undefined : stringValue(input[endField]),
-    theme,
-  );
+  const renderField = (field: string | undefined): string | undefined => {
+    if (field === undefined) {
+      return undefined;
+    }
+    const state = anchorRenderPatch?.[field];
+    if (state?.kind === "resolved") {
+      return singleLine(expanded ? state.full : state.compact);
+    }
+    if (state?.kind === "failed") {
+      return "selected range";
+    }
+    const raw = stringValue(input[field]);
+    if (raw === undefined) {
+      return undefined;
+    }
+    return expanded ? singleLine(raw) : "selected range";
+  };
+  return range(renderField(fields.at(0)), renderField(fields.at(1)), theme);
 }
-
 function resourceLink(
   preview: MutationRenderOutcome | undefined,
   path: string | undefined,
@@ -605,56 +790,6 @@ function resourceLink(
   return preview?.kind === "completed"
     ? preview.resources.find((resource) => resource.path === path)?.link
     : undefined;
-}
-
-function renderStats(
-  preview: MutationRenderOutcome | undefined,
-  path: string | undefined,
-  theme: Theme,
-  fallbackIndex?: number,
-): string {
-  if (preview?.kind !== "completed") {
-    return "";
-  }
-
-  if (path === undefined) {
-    const totals = { added: 0, modified: 0, removed: 0 };
-
-    for (const resource of preview.resources) {
-      const model =
-        resource.model ??
-        createDiffModel(resource.beforeContent, resource.afterContent, resource.ranges);
-      totals.added += model.added;
-      totals.modified += model.modified;
-      totals.removed += model.removed;
-    }
-
-    return renderStatCounts(totals, theme);
-  }
-
-  const resource =
-    preview.resources.find(
-      (candidate) => candidate.path === path || candidate.path.endsWith(`/${path}`),
-    ) ?? (fallbackIndex === undefined ? undefined : preview.resources[fallbackIndex]);
-
-  if (resource === undefined) {
-    return renderStatCounts({ added: 0, modified: 0, removed: 0 }, theme);
-  }
-
-  const model =
-    resource.model ??
-    createDiffModel(resource.beforeContent, resource.afterContent, resource.ranges);
-  return renderStatCounts(model, theme);
-}
-
-function renderStatCounts(
-  counts: { readonly added: number; readonly modified: number; readonly removed: number },
-  theme: Theme,
-): string {
-  return ` ${theme.fg("success", `+${counts.added}`)} ${theme.fg("warning", `~${counts.modified}`)} ${theme.fg(
-    "error",
-    `-${counts.removed}`,
-  )}`;
 }
 
 function renderPath(path: string, link: string | undefined, theme: Theme): string {
@@ -673,7 +808,32 @@ function range(start: string | undefined, end: string | undefined, theme: Theme)
     return "";
   }
 
-  return theme.fg("warning", `:${start}${end === undefined ? "" : `-${end}`}`);
+  const value = end === undefined ? start : semanticRange(start, end);
+  return `${theme.fg("dim", " · ")}${theme.fg("warning", value)}`;
+}
+
+function semanticRange(start: string, end: string): string {
+  const startLine = /^line (\d+)$/u.exec(start)?.[1];
+  const endLine = /^line (\d+)$/u.exec(end)?.[1];
+  return startLine !== undefined && endLine !== undefined
+    ? `lines ${startLine}–${endLine}`
+    : `${start}–${end}`;
+}
+
+function userFacingFailure(agentOutput: string): string {
+  if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
+    return "Not changed · selection is ambiguous";
+  }
+  if (/\banchor\b[\s\S]*\bis stale\./iu.test(agentOutput)) {
+    return "Not changed · selection is out of date";
+  }
+  if (/\banchor\b[\s\S]*\bwas not found\./iu.test(agentOutput)) {
+    return "Not changed · selected text was not found";
+  }
+  if (/\banchor\b[\s\S]*\bis invalid\./iu.test(agentOutput)) {
+    return "Not changed · selection is invalid";
+  }
+  return "Not changed · edit failed";
 }
 
 function stringValue(value: unknown): string | undefined {

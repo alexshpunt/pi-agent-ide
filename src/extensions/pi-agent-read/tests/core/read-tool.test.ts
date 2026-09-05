@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import type { ResourceResolver } from "pi-agent-resource";
 import type { TextLinePresenter } from "pi-agent-text";
@@ -223,8 +223,9 @@ test("presents text before projecting the read result", async () => {
 
   read.registerContributions("fixture-plugin", {
     resolvers: [{ resolver }],
-    presenters: [
+    views: [
       {
+        view: "fixture",
         presenter: {
           id: "fixture-prefix",
           present(document, context) {
@@ -242,8 +243,54 @@ test("presents text before projecting the read result", async () => {
     ],
   });
 
-  const result = await executeRead(read, "notes.txt");
-  expect(result.content).toEqual([{ type: "text", text: "anchor|alpha" }]);
+  const raw = await executeRead(read, "notes.txt");
+  expect(raw.content).toEqual([{ type: "text", text: "alpha" }]);
+
+  const annotated = await executeRead(read, "notes.txt", ["fixture"]);
+  expect(annotated.content).toEqual([{ type: "text", text: "anchor|alpha" }]);
+});
+
+test("adds a line-number column for the built-in lines view", async () => {
+  const read = createReadTool();
+  read.registerContributions("fixture-plugin", {
+    resolvers: [{ resolver: textResolver("alpha\nbravo") }],
+  });
+
+  const result = await executeRead(read, "notes.txt", ["lines"]);
+  expect(result.content).toEqual([{ type: "text", text: "1|alpha\n2|bravo" }]);
+});
+
+test("ignores unknown views and reports them in a note and details", async () => {
+  const read = createReadTool();
+  read.registerContributions("fixture-plugin", {
+    resolvers: [{ resolver: textResolver("alpha") }],
+    views: [
+      {
+        view: "known",
+        presenter: {
+          id: "known-marker",
+          present(document) {
+            return {
+              ...document,
+              lines: document.lines.map((line) => ({
+                ...line,
+                presentation: { prefix: "known|" },
+              })),
+            };
+          },
+        },
+      },
+    ],
+  });
+
+  const result = await executeRead(read, "notes.txt", ["known", "typo", "ghost"]);
+  const block = result.content[0];
+
+  expect(block?.type).toBe("text");
+  if (block?.type !== "text") throw new Error("Expected a text block");
+  expect(block.text).toBe("note: ignored unknown views: typo, ghost\nknown|alpha");
+  expect(result.details.ignoredViews).toEqual(["typo", "ghost"]);
+  expect(result.details.failure).toBeUndefined();
 });
 
 test("runs text presenters in parallel and merges them in priority order", async () => {
@@ -287,12 +334,12 @@ test("runs text presenters in parallel and merges them in priority order", async
 
   read.registerContributions("fixture-plugin", {
     resolvers: [{ resolver }],
-    presenters: [
-      { priority: 10, presenter: presenter("later", "B") },
-      { priority: -1, presenter: presenter("first", "A") },
+    views: [
+      { view: "later", priority: 10, presenter: presenter("later", "B") },
+      { view: "first", priority: -1, presenter: presenter("first", "A") },
     ],
   });
-  const resultReady = executeRead(read, "notes.txt");
+  const resultReady = executeRead(read, "notes.txt", ["first", "later"]);
   await new Promise((resolve) => setTimeout(resolve, 0));
   const startedTogether = [...started];
   releasePresenters();
@@ -377,8 +424,9 @@ test("saves opt-in truncated output and reads the temporary protocol without pre
         },
       },
     ],
-    presenters: [
+    views: [
       {
+        view: "final",
         presenter: {
           id: "final-prefix",
           present(document) {
@@ -397,7 +445,7 @@ test("saves opt-in truncated output and reads the temporary protocol without pre
   });
 
   try {
-    const first = await executeRead(read, "dynamic:report");
+    const first = await executeRead(read, "dynamic:report", ["final"]);
     const temporarySource = first.details.temporarySource;
     expect(temporarySource).toMatch(/^temp:[0-9a-f-]+$/u);
 
@@ -509,8 +557,14 @@ test("rejects a malformed resolver registration", () => {
   }).toThrow(/invalid resource resolver/u);
 });
 
-function executeRead(read: ReadTool, path: string) {
-  return read.tool.execute("call", { path }, undefined, undefined, { cwd: "/workspace" } as never);
+function executeRead(read: ReadTool, path: string, views?: string[]) {
+  return read.tool.execute(
+    "call",
+    views === undefined ? { path } : { path, views },
+    undefined,
+    undefined,
+    { cwd: "/workspace" } as never,
+  );
 }
 
 function textResolver(content: string): ResourceResolver {

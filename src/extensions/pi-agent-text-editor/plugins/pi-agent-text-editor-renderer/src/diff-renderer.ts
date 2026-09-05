@@ -1,6 +1,8 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { keyHint, type Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+
+import { preserveEnclosingBackground } from "pi-agent-tool-ui";
 
 import { createDiffThemePalette, type DiffThemePalette, type DiffThemeTone } from "./diff-theme.js";
 import { compactViewport, expandedViewport, type ViewportRow } from "./diff-viewport.js";
@@ -15,18 +17,21 @@ export interface DiffPanelResource {
   readonly cursor?: { readonly line: number; readonly column: number };
 }
 
+/** Renders one diff panel, reusing rendered rows when their identity is stable. */
 export function renderDiffPanel(
   resource: DiffPanelResource,
   width: number,
   theme: Theme,
   expanded: boolean,
   pending: boolean,
+  rowCache?: Map<DiffRow, readonly string[]>,
+  showResourceLabel = false,
 ): string[] {
   const panelWidth = Math.max(20, width);
   const innerWidth = panelWidth - 2;
   const palette = createDiffThemePalette(theme, pending);
   const styleFrame = (text: string): string => theme.fg("borderMuted", text);
-  const lines = [styleFrame(border("╭", "─", "╮", innerWidth))];
+  const lines = [renderTopBorder(resource, innerWidth, theme, styleFrame, showResourceLabel)];
   const viewport = expanded ? expandedViewport(resource.model) : compactViewport(resource.model);
   let greatestLine = 0;
 
@@ -49,28 +54,47 @@ export function renderDiffPanel(
       tone === undefined
         ? undefined
         : (text: string) => withBackground(tone.background, text, palette.restoreBackground);
-    lines.push(
-      framed(
-        renderRow(row, resource, gutterWidth, theme, palette, isShowExpandHint),
-        innerWidth,
-        styleFrame,
-        background,
-      ),
-    );
+    const hasCursor =
+      row.row !== undefined &&
+      resource.cursor !== undefined &&
+      resource.cursor.line === row.row.afterLine &&
+      row.row.kind !== "removed";
+    const cached = row.row === undefined || hasCursor ? undefined : rowCache?.get(row.row);
+
+    if (cached !== undefined) {
+      lines.push(...cached);
+      continue;
+    }
+
+    const framedLines = renderRow(
+      row,
+      resource,
+      gutterWidth,
+      innerWidth,
+      theme,
+      palette,
+      isShowExpandHint,
+    ).map((renderedRow) => framed(renderedRow, innerWidth, styleFrame, background));
+
+    if (row.row !== undefined && !hasCursor) {
+      rowCache?.set(row.row, framedLines);
+    }
+    lines.push(...framedLines);
   }
 
   lines.push(styleFrame(border("╰", "─", "╯", innerWidth)));
-  return lines.map((line) => truncateToWidth(line, panelWidth));
+  return lines;
 }
 
 function renderRow(
   item: ViewportRow,
   resource: DiffPanelResource,
   gutterWidth: number,
+  innerWidth: number,
   theme: Theme,
   palette: DiffThemePalette,
   showExpandHint: boolean,
-): string {
+): readonly string[] {
   const omitted = item.omitted ?? item.row?.omitted;
 
   if (omitted !== undefined) {
@@ -78,16 +102,18 @@ function renderRow(
       palette.contextForeground,
       `   ··· ${String(omitted)} lines omitted`,
     );
-    return showExpandHint
-      ? `${summary}${withForeground(palette.contextForeground, " · ")}${keyHint(
-          "app.tools.expand",
-          "to expand",
-        )}${withForeground(palette.contextForeground, " ···")}`
-      : `${summary}${withForeground(palette.contextForeground, " ···")}`;
+    return [
+      showExpandHint
+        ? `${summary}${withForeground(palette.contextForeground, " · ")}${keyHint(
+            "app.tools.expand",
+            "to expand",
+          )}${withForeground(palette.contextForeground, " ···")}`
+        : `${summary}${withForeground(palette.contextForeground, " ···")}`,
+    ];
   }
 
   if (item.row === undefined) {
-    return "";
+    return [""];
   }
 
   const row = item.row;
@@ -115,7 +141,11 @@ function renderRow(
     );
   }
 
-  return `${styledGutter}${content}`;
+  const contentWidth = Math.max(1, innerWidth - 1 - visibleWidth(gutter));
+  const wrapped = wrapTextWithAnsi(content, contentWidth);
+  const continuationGutter = " ".repeat(gutter.length);
+
+  return wrapped.map((line, index) => `${index === 0 ? styledGutter : continuationGutter}${line}`);
 }
 
 function diffTone(
@@ -227,6 +257,31 @@ function expandedOffset(text: string, offset: number): number {
   return text.slice(0, offset).replaceAll("\t", " ".repeat(4)).length;
 }
 
+function renderTopBorder(
+  resource: DiffPanelResource,
+  width: number,
+  theme: Theme,
+  styleFrame: (text: string) => string,
+  showResourceLabel: boolean,
+): string {
+  if (!showResourceLabel) {
+    return styleFrame(border("╭", "─", "╮", width));
+  }
+
+  const displayedPath = truncateToWidth(resource.path, Math.max(1, width - 3));
+  const label = renderResourcePath(displayedPath, resource.link, theme);
+  const title = ` ${label} `;
+  const fill = "─".repeat(Math.max(0, width - visibleWidth(title) - 1));
+  return `${styleFrame("╭─")}${title}${styleFrame(`${fill}╮`)}`;
+}
+
+function renderResourcePath(path: string, link: string | undefined, theme: Theme): string {
+  const label = theme.underline(theme.fg("accent", path));
+  return link === undefined || link.includes("\u{7}") || link.includes("\u{1B}")
+    ? label
+    : `\u{1B}]8;;${link}\u{7}${label}\u{1B}]8;;\u{7}`;
+}
+
 function framed(
   content: string,
   width: number,
@@ -243,7 +298,7 @@ function withForeground(ansi: string, text: string): string {
 }
 
 function withBackground(ansi: string, text: string, restoreBackground: string): string {
-  return `${ansi}${text}${restoreBackground}`;
+  return `${ansi}${preserveEnclosingBackground(text, ansi)}${restoreBackground}`;
 }
 
 function border(left: string, fill: string, right: string, width: number): string {

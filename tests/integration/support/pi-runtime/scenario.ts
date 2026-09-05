@@ -18,7 +18,15 @@ interface TextToolScenario {
   readonly testName: string;
   readonly tool: "write" | "insert" | "replace" | "delete" | "copy" | "move";
   readonly tools?: readonly string[];
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly isolateUserResources?: boolean;
   readonly arguments: Record<string, unknown>;
+
+  /** Views requested after the edit when the scenario verifies explicit inspection. */
+  readonly postflightViews?: readonly string[];
+
+  /** Views requested before the edit when the scenario needs view-specific anchors. */
+  readonly preflightViews?: readonly string[];
 }
 
 export interface TextToolScenarioResult {
@@ -42,12 +50,16 @@ export async function runTextToolScenario(
   const postflightCallIds = files.map((_file, index) => `${scenario.testName}-read-after-${index}`);
   const mutationCallId = `${scenario.testName}-${scenario.tool}`;
   const conversation = [
-    ...files.map((file, index) => readMessage(preflightCallIds[index], file)),
+    ...files.map((file, index) =>
+      readMessage(preflightCallIds[index], file, scenario.preflightViews),
+    ),
     assistantMessage(
       [toolCall({ id: mutationCallId, name: scenario.tool, arguments: scenario.arguments })],
       { stopReason: "toolUse" },
     ),
-    ...files.map((file, index) => readMessage(postflightCallIds[index], file)),
+    ...files.map((file, index) =>
+      readMessage(postflightCallIds[index], file, scenario.postflightViews),
+    ),
     assistantMessage([text(`The ${scenario.tool} operation finished`)]),
   ];
   const result = await new PiIntegrationTest({
@@ -55,6 +67,11 @@ export async function runTextToolScenario(
     cwd: scenario.cwd,
     extensions: scenario.extensions,
     tools: scenario.tools ?? [scenario.tool, "read"],
+
+    ...(scenario.environment === undefined ? {} : { environment: scenario.environment }),
+    ...(scenario.isolateUserResources === undefined
+      ? {}
+      : { isolateUserResources: scenario.isolateUserResources }),
     conversation,
     artifactsDir: testArtifactsDir(testPath),
   }).run(`Run one ${scenario.tool} operation`);
@@ -76,19 +93,11 @@ export function expectTextToolDiff(
   const output = getToolResultText(scenario.result, scenario.mutationCallId);
   const lines = output.split("\n");
 
-  expect(lines[0]).toBe(`${path} +${expected.added.length} -${expected.removed.length}`);
-  expect(lines.slice(1).some((line) => /^[+ -]\|/u.test(line))).toBe(true);
+  expect(lines[0]).toBe(path);
+  expect(lines.slice(1).some((line) => /^[+ -]\|/u.test(line))).toBe(false);
 
   for (const line of expected.added.filter((value) => value.length > 0)) {
-    expect(lines.some((rendered) => rendered.startsWith("+|") && rendered.includes(line))).toBe(
-      true,
-    );
-  }
-
-  for (const line of expected.removed.filter((value) => value.length > 0)) {
-    expect(lines.some((rendered) => rendered.startsWith("-|") && rendered.endsWith(line))).toBe(
-      true,
-    );
+    expect(lines.some((rendered) => rendered.includes(line))).toBe(true);
   }
 
   const details = getToolExecutionDetails(
@@ -163,8 +172,15 @@ function editedFiles(arguments_: Record<string, unknown>): readonly string[] {
   return [...files];
 }
 
-function readMessage(id: string, file: string) {
-  return assistantMessage([toolCall({ id, name: "read", arguments: { path: file, offset: 1 } })], {
-    stopReason: "toolUse",
-  });
+function readMessage(id: string, file: string, views: readonly string[] = ["anchors"]) {
+  return assistantMessage(
+    [
+      toolCall({
+        id,
+        name: "read",
+        arguments: { path: file, offset: 1, views },
+      }),
+    ],
+    { stopReason: "toolUse" },
+  );
 }

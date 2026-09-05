@@ -1,14 +1,24 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { type ChildProcess } from "node:child_process";
 
 import spawnProcess from "cross-spawn";
+import { createConfiguredProcessEnvironment } from "pi-agent-ide/api/tool-config";
 import {
   createMessageConnection,
+  CancellationTokenSource,
   type MessageConnection,
   StreamMessageReader,
   StreamMessageWriter,
 } from "vscode-jsonrpc/node";
 import { URI } from "vscode-uri";
+
+import type { LspDiagnostic } from "./types.js";
+
+/** Latest push observation for an open document, without a completion guarantee. */
+export interface LspDiagnosticPublication {
+  readonly version?: number;
+  readonly diagnostics: LspDiagnostic[];
+}
 
 /**
  * Generic LSP client — JSON-RPC over stdio.
@@ -26,6 +36,8 @@ export class LspClient {
   private _crashed = false;
   private readonly _handlers = new Map<string, ((parameters: unknown) => void)[]>();
   private readonly _documentVersions = new Map<string, number>();
+
+  private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
   private readonly _activeDiagnosticRequests = new Set<string>();
 
@@ -79,28 +91,17 @@ export class LspClient {
     this._diagnosticMode = mode;
   }
 
-  get hasServerDiagnosticsCapability(): boolean {
-    if (!this._serverCapabilities) {
-      return false;
-    }
+  /** Maximum wait for a server response, including pushed diagnostics. */
+  get timeoutMs(): number {
+    return this._timeoutMs;
+  }
 
-    const td = this._serverCapabilities.textDocument as Record<string, unknown> | undefined;
-
-    if (!td) {
-      return false;
-    }
-
-    // Pull-model diagnostic (LSP 3.17+)
-    if (td.diagnostic) {
-      return true;
-    }
-
-    // Push-model publishDiagnostics
-    if (td.publishDiagnostics) {
-      return true;
-    }
-
-    return false;
+  /** Whether initialization advertised a server-specific executeCommand capability. */
+  supportsCommand(command: string): boolean {
+    const provider = this._serverCapabilities?.executeCommandProvider as
+      | { commands?: unknown }
+      | undefined;
+    return Array.isArray(provider?.commands) && provider.commands.includes(command);
   }
 
   get hasFoldingRangeCapability(): boolean {
@@ -110,6 +111,11 @@ export class LspClient {
 
   documentVersion(uri: string): number | undefined {
     return this._documentVersions.get(uri);
+  }
+
+  /** Reuse a push that arrived after the latest synchronization, including an empty publication. */
+  diagnosticPublication(uri: string): LspDiagnosticPublication | undefined {
+    return this._diagnosticPublications.get(uri);
   }
 
   beginDiagnosticRequest(uri: string): void {
@@ -134,11 +140,16 @@ export class LspClient {
     }
 
     const bin = requiredValue(this._command[0]);
+    const projectRoot = URI.parse(this.rootUri).fsPath;
 
     const childProcess = spawnProcess(bin, this._args, {
       stdio: ["pipe", "pipe", "pipe"],
-      cwd: URI.parse(this.rootUri).fsPath,
-      env: { ...process.env, ...this._env },
+      cwd: projectRoot,
+      env: createConfiguredProcessEnvironment(
+        { command: this._command, env: this._env },
+        projectRoot,
+        process.env,
+      ),
     });
     this._process = childProcess;
     const spawnPromise = waitForSpawn(childProcess);
@@ -187,6 +198,24 @@ export class LspClient {
 
     // Forward all incoming notifications to registered handlers
     this._connection.onNotification((method, ...parameters) => {
+      if (method === "textDocument/publishDiagnostics") {
+        const publication = parameters[0] as
+          | { uri?: unknown; version?: unknown; diagnostics?: unknown }
+          | undefined;
+        if (
+          publication &&
+          typeof publication.uri === "string" &&
+          Array.isArray(publication.diagnostics) &&
+          this._documentVersions.has(publication.uri) &&
+          (publication.version === undefined ||
+            publication.version === this.documentVersion(publication.uri))
+        ) {
+          this._diagnosticPublications.set(publication.uri, {
+            diagnostics: publication.diagnostics as LspDiagnostic[],
+            ...(typeof publication.version === "number" && { version: publication.version }),
+          });
+        }
+      }
       for (const handler of this._handlers.get(method) ?? []) {
         handler(parameters[0] as unknown);
       }
@@ -244,6 +273,7 @@ export class LspClient {
     this._crashed = false;
     this._disposed = false;
     this._documentVersions.clear();
+    this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
@@ -252,9 +282,37 @@ export class LspClient {
 
   // ── LSP protocol ───────────────────────────────────────────────────
 
-  async sendRequest<T = unknown>(method: string, parameters: unknown): Promise<T> {
+  /** Send a request, forwarding optional cancellation to the language server. */
+  async sendRequest<T = unknown>(
+    method: string,
+    parameters: unknown,
+    signal?: AbortSignal,
+  ): Promise<T> {
     this._assertReady();
-    return requiredValue(this._connection).sendRequest(method, parameters);
+    signal?.throwIfAborted();
+    if (!signal) return requiredValue(this._connection).sendRequest(method, parameters);
+    const cancellation = new CancellationTokenSource();
+    let onAbort: (() => void) | undefined;
+    try {
+      const request = requiredValue(this._connection).sendRequest<T>(
+        method,
+        parameters,
+        cancellation.token,
+      );
+      return await Promise.race([
+        request,
+        new Promise<never>((_resolve, reject) => {
+          onAbort = () => {
+            cancellation.cancel();
+            reject(signal.reason);
+          };
+          signal.addEventListener("abort", onAbort, { once: true });
+        }),
+      ]);
+    } finally {
+      if (onAbort) signal.removeEventListener("abort", onAbort);
+      cancellation.dispose();
+    }
   }
 
   sendNotification(method: string, parameters: unknown): void {
@@ -299,6 +357,7 @@ export class LspClient {
       return;
     }
 
+    this._diagnosticPublications.delete(uri);
     this.sendNotification("textDocument/didOpen", {
       textDocument: { uri, languageId, version, text },
     });
@@ -319,6 +378,7 @@ export class LspClient {
   changeDocument(uri: string, text: string, version: number): void {
     const currentVersion = this._documentVersions.get(uri);
     const nextVersion = Math.max(version, (currentVersion ?? 0) + 1);
+    this._diagnosticPublications.delete(uri);
     this.sendNotification("textDocument/didChange", {
       textDocument: { uri, version: nextVersion },
       contentChanges: [{ text }],
@@ -329,6 +389,8 @@ export class LspClient {
   closeDocument(uri: string): void {
     this.sendNotification("textDocument/didClose", { textDocument: { uri } });
     this._documentVersions.delete(uri);
+
+    this._diagnosticPublications.delete(uri);
   }
 
   // ── cleanup ────────────────────────────────────────────────────────
@@ -342,7 +404,11 @@ export class LspClient {
 
     if (this._connection && this._initialized) {
       try {
-        await this._connection.sendRequest("shutdown");
+        await withTimeout(
+          this._connection.sendRequest("shutdown"),
+          Math.min(this._timeoutMs, 1000),
+          `[lsp] ${this.serverId}: shutdown timed out`,
+        );
         await this._connection.sendNotification("exit").catch(() => {
           /* ok */
         });
@@ -367,6 +433,7 @@ export class LspClient {
 
     this._initialized = false;
     this._documentVersions.clear();
+    this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;

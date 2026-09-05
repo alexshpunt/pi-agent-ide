@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { diffLines } from "diff";
 import { type PresentedTextRow, renderPresentedTextRows } from "pi-agent-text";
 
@@ -16,7 +16,7 @@ const SEVERITY_RANK: Record<DiagnosticHint["severity"], number> = {
   hint: 3,
 };
 
-interface AgentDiffLine {
+export interface AgentDiffLine {
   readonly kind: "context" | "added" | "removed";
   readonly text: string;
   readonly beforeLine?: number;
@@ -24,7 +24,7 @@ interface AgentDiffLine {
   readonly positionLine: number;
 }
 
-interface LineRange {
+export interface LineRange {
   start: number;
   end: number;
 }
@@ -166,7 +166,11 @@ function renderUnavailableSourceDiff(fmr: FileMutationResult, diffPath: string):
   return renderDiffEntries(entries);
 }
 
-function buildDiffLines(before: string, after: string, afterLineCount: number): AgentDiffLine[] {
+export function buildDiffLines(
+  before: string,
+  after: string,
+  afterLineCount: number,
+): AgentDiffLine[] {
   const result: AgentDiffLine[] = [];
   let beforeLine = 1;
   let afterLine = 1;
@@ -191,7 +195,7 @@ function buildDiffLines(before: string, after: string, afterLineCount: number): 
   return result;
 }
 
-function editRanges(
+export function editRanges(
   fmr: FileMutationResult,
   after: string,
   afterLineCount: number,
@@ -225,7 +229,7 @@ function editRanges(
   ];
 }
 
-function expandAndMerge(ranges: readonly LineRange[], lineCount: number): LineRange[] {
+export function expandAndMerge(ranges: readonly LineRange[], lineCount: number): LineRange[] {
   if (lineCount === 0) {
     return [];
   }
@@ -256,7 +260,7 @@ function expandAndMerge(ranges: readonly LineRange[], lineCount: number): LineRa
   return merged;
 }
 
-function selectSyntaxHints(
+export function selectSyntaxHints(
   hints: readonly DiagnosticHint[],
   visibleRanges: readonly LineRange[],
 ): DiagnosticHint[] {
@@ -279,7 +283,7 @@ function compareHints(left: DiagnosticHint, right: DiagnosticHint): number {
   );
 }
 
-function metadataForLine(
+export function metadataForLine(
   lineNumber: number,
   hints: readonly DiagnosticHint[],
   visibleRanges: readonly LineRange[],
@@ -310,7 +314,7 @@ function isDiffLineVisible(line: AgentDiffLine, range: LineRange): boolean {
   return line.positionLine >= range.start && line.positionLine <= range.end;
 }
 
-function isLineVisible(line: number, ranges: readonly LineRange[]): boolean {
+export function isLineVisible(line: number, ranges: readonly LineRange[]): boolean {
   return ranges.some((range) => line >= range.start && line <= range.end);
 }
 
@@ -319,7 +323,7 @@ function lineAtOffset(content: string, offset: number): number {
   return content.slice(0, boundedOffset).split("\n").length;
 }
 
-function splitLines(content: string): string[] {
+export function splitLines(content: string): string[] {
   if (content.length === 0) {
     return [];
   }

@@ -3,7 +3,6 @@ import path from "node:path";
 
 import {
   assistantMessage,
-  getProviderSystemPrompt,
   getToolResultMessage,
   PiIntegrationTest,
   testArtifactsDir,
@@ -42,27 +41,6 @@ test("delivers native image content from bytes when loaded before the provider",
     expect(getToolResultMessage(ranged, "read")).toMatchObject({
       details: { failure: { code: "UNSUPPORTED_RANGE", resolverId: "filesystem" } },
     });
-  });
-});
-
-test("advertises images through the filesystem read provider", async () => {
-  await withTempDirectory(async (directory) => {
-    const result = await new PiIntegrationTest({
-      artifactsDir: testArtifactsDir(expect.getState().testPath),
-      testName: "filesystem-image-prompt",
-      cwd: directory,
-      extensions: generatedExtensions.paths,
-      tools: ["read"],
-      conversation: [assistantMessage([text("The prompt was inspected")])],
-    }).run("Inspect installed filesystem content types");
-
-    expect(getProviderSystemPrompt(result)).toContain(
-      [
-        "- Read supports these installed protocols:",
-        "  - `filesystem` — Reads local filesystem paths and file:// URLs. Directories are read-only listings.",
-        "    - `image` — JPEG, static PNG, GIF, WebP, and BMP images.",
-      ].join("\n"),
-    );
   });
 });
 

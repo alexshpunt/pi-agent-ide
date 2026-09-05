@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 import { probeExecutable } from "pi-agent-doctor/api/executable";
 
+import { hasConfiguredExecutable } from "pi-agent-ide/api/tool-config";
+
 import { parseDocument } from "./ast/manager.js";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
@@ -27,6 +29,29 @@ export const astDoctorPlugin: DoctorPlugin = {
   apiVersion: DOCTOR_API_VERSION,
   id: "ast",
   setup(api): void {
+    api.addSetupCheck({
+      id: "structural-search",
+      async inspect(context) {
+        if (![...context.detectedLanguageIds].some((language) => supported.has(language))) {
+          return {};
+        }
+        const available = await hasConfiguredExecutable(
+          { command: ["ast-grep"] },
+          context.cwd,
+          context.env,
+        );
+        return available
+          ? {}
+          : {
+              actions: [
+                {
+                  id: "ast-grep-unavailable",
+                  message: "Structural search is unavailable because ast-grep was not found",
+                },
+              ],
+            };
+      },
+    });
     api.addCheck({
       id: "parsers",
       title: "AST",

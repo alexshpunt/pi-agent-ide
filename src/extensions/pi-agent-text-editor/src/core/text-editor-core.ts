@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import {
   isAgentContent,
   isResourceResolutionAttempt,
@@ -15,6 +15,8 @@ import {
   type TextDocument,
   type TextPresentationContext,
   type TextPresenterRegistration,
+  type TextTarget,
+  type TextTargetResolver,
 } from "pi-agent-text";
 
 import {
@@ -44,6 +46,7 @@ import {
   type TextAnchorResourceResolverContext,
   type TextEditorPlugin,
   type TextEditorPluginApi,
+  type TextEditorRecoveryConfigSection,
   type TextEditorToolId,
 } from "#src/api/plugin-protocol.js";
 import {
@@ -66,6 +69,7 @@ import {
   type TextChangeResult,
 } from "#src/core/text-change-engine.js";
 import { previewTextMutation } from "#src/core/text-mutation.js";
+import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.js";
 
 import type {
   TextAnchorInspectionOutcome,
@@ -244,6 +248,15 @@ export type ResolveResourceTextAnchor = (
   kinds?: readonly string[],
 ) => Promise<TextAnchor>;
 
+/** Input for resolving an anchor value against already-available text content. */
+export interface TextAnchorInTextRequest {
+  readonly source: string;
+  readonly content: string;
+  readonly value: string;
+  readonly cwd: string;
+  readonly signal?: AbortSignal;
+}
+
 export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
@@ -254,7 +267,10 @@ export interface TextEditorCore {
     value: string,
     kinds: readonly string[],
     context: TextAnchorResourceResolverContext,
-  ): Promise<readonly string[] | undefined>;
+  ): Promise<readonly TextTarget[] | undefined>;
+  textTargetResolver(): TextTargetResolver;
+  /** Resolves one anchor value against provided text content without reading resources. */
+  resolveAnchorInText(request: TextAnchorInTextRequest): Promise<TextAnchor>;
   editText<Result>(
     source: string,
     context: ResourceResolverContext,
@@ -294,6 +310,8 @@ export interface TextEditorCore {
   registerTool(tool: TextEditorToolId): void;
   waitForPendingPlugins(): Promise<void>;
   renderGeneralPromptGuideline(): string | undefined;
+  /** Returns the configured number of lines around recovery candidates. */
+  recoveryContextLines(): number;
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
 }
 
@@ -303,6 +321,7 @@ export function createTextEditorCore(
     core: TextEditorCore,
   ) => void,
 ): TextEditorCore {
+  const projectConfig = loadTextEditorConfig(process.cwd());
   const resolvers: RegisteredResolver[] = [];
   const anchorRegistry = new TextAnchorRegistry();
   const handlers: RegisteredHandler[] = [];
@@ -451,8 +470,28 @@ export function createTextEditorCore(
     inspectTextAnchors(request): Promise<TextAnchorInspectionOutcome> {
       return inspectTextResource(request, [...resolvers], anchorRegistry.snapshot());
     },
-    resolveTextAnchorResources(value, kinds, context): Promise<readonly string[] | undefined> {
+    resolveTextAnchorResources(value, kinds, context): Promise<readonly TextTarget[] | undefined> {
       return anchorRegistry.snapshot().resolveResources(value, context, new Set(kinds));
+    },
+    textTargetResolver(): TextTargetResolver {
+      return {
+        id: "text-editor-anchors",
+        tryResolve: async (value, context) => {
+          const targets = await anchorRegistry.snapshot().resolveResources(value, context);
+          return targets === undefined ? { kind: "not-handled" } : { kind: "resolved", targets };
+        },
+      };
+    },
+    resolveAnchorInText(request: TextAnchorInTextRequest): Promise<TextAnchor> {
+      const context: TextAnchorResolverContext = {
+        source: request.source,
+        content: request.content,
+        lines: request.content.length === 0 ? [] : request.content.split(/\r?\n/u),
+        cwd: request.cwd,
+        ...(request.signal !== undefined && { signal: request.signal }),
+      };
+
+      return anchorRegistry.snapshot().resolve(request.value, context);
     },
     editText<Result>(
       source: string,
@@ -609,6 +648,7 @@ export function createTextEditorCore(
         (listener) => core.onMutationTool(listener),
         (listener) => core.onDidEdit(listener),
         (request) => previewTextMutation(core, request),
+        (section) => recoverySection(projectConfig, section),
       );
       const ready = registrationQueue.then(async () => {
         try {
@@ -643,6 +683,9 @@ export function createTextEditorCore(
       );
 
       return ready;
+    },
+    recoveryContextLines(): number {
+      return projectConfig.contextLines;
     },
     renderGeneralPromptGuideline(): string | undefined {
       const sections: string[] = [];
@@ -1001,6 +1044,7 @@ async function editTextResources<Result>(
   }
 
   const completed: string[] = [];
+  const written: string[] = [];
   const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
 
   for (const source of sources) {
@@ -1031,20 +1075,41 @@ async function editTextResources<Result>(
         context.signal === undefined ? {} : { signal: context.signal },
       );
     } catch (error) {
+      const rollbackFailures: string[] = [];
+      for (const writtenSource of [source, ...written].reverse()) {
+        const writtenItem = requiredValue(prepared.get(writtenSource));
+        try {
+          await writtenItem.resource.write(
+            [{ type: "text", text: writtenItem.before.content }],
+            {},
+          );
+        } catch {
+          rollbackFailures.push(writtenSource);
+        }
+      }
       return {
         kind: "failed",
         failure: {
           code: "WRITE_FAILED",
           source,
           resolverId: item.resolverId,
-          message: `Unable to write ${source}`,
+          message:
+            rollbackFailures.length === 0
+              ? `Unable to write ${source}; completed writes were rolled back`
+              : `Unable to write ${source}; rollback failed for ${rollbackFailures.join(", ")}`,
           cause: error,
         },
-        completed,
+        completed: rollbackFailures,
       };
     }
 
+    written.push(source);
     completed.push(source);
+  }
+
+  for (const source of written) {
+    const text = requiredValue(applied.get(source)).content;
+    const item = requiredValue(prepared.get(source));
     outcomes.push(
       await finalizeTextResource({
         requestedSource: item.requestedSource,
@@ -1594,6 +1659,7 @@ function createPluginContributionController(
   onMutationTool: (listener: TextMutationToolListener) => () => void,
   onDidEdit: (listener: TextEditCompletionListener) => () => void,
   previewMutation: (request: TextMutationPreviewRequest) => Promise<TextMutationPreviewOutcome>,
+  recoveryConfig: (section: string) => TextEditorRecoveryConfigSection,
 ): PluginContributionController {
   const setupDraft: PluginContributionDraft = {
     resolvers: [],
@@ -1767,6 +1833,10 @@ function createPluginContributionController(
     inspectTextAnchors(request): Promise<TextAnchorInspectionOutcome> {
       assertAvailable();
       return inspectTextAnchors(request);
+    },
+    recoveryConfig(section): TextEditorRecoveryConfigSection {
+      assertAvailable();
+      return recoveryConfig(section);
     },
     previewMutation(request): Promise<TextMutationPreviewOutcome> {
       assertAvailable();

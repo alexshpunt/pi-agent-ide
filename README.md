@@ -10,6 +10,8 @@
   <a href="https://www.npmjs.com/package/pi-agent-ide"><img src="https://img.shields.io/npm/v/pi-agent-ide" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/pi-agent-ide"><img src="https://img.shields.io/npm/dm/pi-agent-ide" alt="npm downloads"></a>
   <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Funit.json" alt="Unit test count"></a>
+  <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Fintegration.json" alt="Integration test count"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/pi-agent-ide" alt="MIT license"></a>
 </p>
 
@@ -24,7 +26,7 @@ The current focus is measurement. The project is being compared with vanilla Pi 
 Pi Agent IDE provides a small set of tools with more specialized behavior behind them:
 
 - `read` handles files, web pages, images, PDFs, code views, and diagnostics;
-- `search` routes text, structural, semantic, and web searches;
+- `search` routes text and structural searches;
 - `write`, `replace`, `insert`, `delete`, `copy`, and `move` cover common text mutations; range-based edits can target snapshot and semantic anchors instead of reproducing the `oldText` block required by Pi's built-in `edit` tool;
 - optional plugins add AST, LSP, formatting, linting, and Git-aware behavior;
 - `/pi-agent-ide-doctor` detects project languages and lets each loaded plugin check or configure its own scope.
@@ -41,7 +43,9 @@ pi install npm:pi-agent-ide
 
 Pi packages run with your full system permissions. Review the package before installing it.
 
-## Check project setup
+## Check project tools
+
+Pi Agent IDE includes formatter, linter, and LSP mappings. It runs their external commands through your current `PATH`, so projects work without copied IDE config files when those commands are installed.
 
 Start Pi in your project directory, then run:
 
@@ -49,11 +53,13 @@ Start Pi in your project directory, then run:
 /pi-agent-ide-doctor
 ```
 
-Doctor detects the project languages and asks each loaded plugin to check its own tools and configuration. It reports missing executables, formatter and linter mappings, language servers, AST support, search setup, and Git support.
+Doctor checks the effective project, global, and built-in mappings. It reports each applicable ID, its source layer and command, and the real probe result. It also checks AST support, search, and Git.
 
-Doctor shows its report before changing anything. If you approve the suggested setup, it writes project-local mappings under `.pi/pi-agent-ide/` without replacing native files such as `eslint.config.js`, `.clang-format`, or `pyproject.toml`. When setup still needs work, you can ask the agent to finish it; doctor runs the checks again afterward.
+Doctor shows its report before changing anything. If project evidence points to a different installed tool, it can write a project-only override under `.pi/pi-agent-ide/`. It never changes global or built-in configuration. Native files such as `eslint.config.js`, `.clang-format`, and `pyproject.toml` remain unchanged.
 
-Run doctor again after installing or changing project tools. For non-interactive use and command flags, see [Configuration](./docs/configuration.md#project-setup).
+Doctor also reports optional system Chrome/Chromium support for browser-rendered web reads. When setup still needs work, you can ask the agent to finish it; doctor runs the checks again afterward.
+
+Run doctor again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
 
 ## Documentation
 

@@ -1,8 +1,7 @@
 import path from "node:path";
 
 import { searchFiles } from "#src/file-search.js";
-import { searchText } from "#src/search-backend.js";
-import { compileSearchQuery } from "#src/search-query.js";
+import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.js";
 import { renderSearchResult } from "#src/search-renderer.js";
 import { createSearchToolDetails } from "#src/search-result.js";
 
@@ -17,6 +16,8 @@ interface TextPayload {
   readonly request: SearchRequest;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
+  readonly recipe: SearchRecipe;
+  readonly notices: readonly string[];
 }
 
 interface FilePayload {
@@ -25,22 +26,21 @@ interface FilePayload {
   readonly complete: boolean;
 }
 
-const explicitPrefixes = ["regex:", "files:", "semantic:", "web:", "lsp:", "ast:"] as const;
-
+/** Search unhandled requests with literal-first hybrid matching. */
 export function createTextResolver(sessions: SearchSessionStore): SearchResolver {
-  return createMatchResolver("text", sessions, (query) =>
-    explicitPrefixes.some((prefix) => query.startsWith(prefix))
-      ? undefined
-      : compileSearchQuery(query),
-  );
+  return createMatchResolver("text", sessions, createSearchRecipe);
 }
 
+/** Search an explicit regex without broadening or swallowing syntax errors. */
 export function createRegexResolver(sessions: SearchSessionStore): SearchResolver {
-  return createMatchResolver("regex", sessions, (query) =>
-    query.startsWith("regex:") ? query.slice("regex:".length) : undefined,
+  return createMatchResolver("regex", sessions, (request) =>
+    request.query.startsWith("regex:")
+      ? { ...request, query: request.query.slice("regex:".length), regex: true }
+      : undefined,
   );
 }
 
+/** Resolve file-pattern queries through the local file search backend. */
 export function createFileResolver(): SearchResolver {
   return {
     id: "files",
@@ -69,29 +69,21 @@ export function createFileResolver(): SearchResolver {
 function createMatchResolver(
   id: "text" | "regex",
   sessions: SearchSessionStore,
-  queryBody: (query: string) => string | undefined,
+  queryBody: (request: SearchRequest) => SearchRecipe | undefined,
 ): SearchResolver {
   return {
     id,
     async tryResolve(request, context) {
-      const query = queryBody(request.query);
-
-      if (query === undefined) {
-        return { kind: "not-handled" };
-      }
-
-      if (query.length === 0) {
-        return { kind: "failed", error: new Error(`${id} search query must not be empty`) };
-      }
-
-      const result = await searchText(
-        { ...request, query, regex: true },
-        context.cwd,
-        context.signal,
-      );
+      const recipe = queryBody(request);
+      if (recipe === undefined) return { kind: "not-handled" };
+      const result = await runSearchRecipe(recipe, context.cwd, context.signal);
       return {
         kind: "resolved",
-        payload: { request: { ...request, query }, ...result } satisfies TextPayload,
+        payload: {
+          request: { ...request, query: result.query },
+          ...result,
+          recipe,
+        } satisfies TextPayload,
       };
     },
     async format(payload, context) {
@@ -99,7 +91,7 @@ function createMatchResolver(
 
       if (result.matches.length === 0) {
         return {
-          content: [{ type: "text", text: "No matches found." }],
+          content: [{ type: "text", text: [...result.notices, "No matches found."].join("\n") }],
           details: createSearchToolDetails(result.request.query, [], result.complete, context.cwd),
         };
       }
@@ -110,9 +102,15 @@ function createMatchResolver(
         result.complete,
         context.cwd,
         context.signal,
+        result.recipe,
       );
       return {
-        content: [{ type: "text", text: formatSearchSession(session, context.cwd) }],
+        content: [
+          {
+            type: "text",
+            text: [...result.notices, formatSearchSession(session, context.cwd)].join("\n"),
+          },
+        ],
         details: createSearchToolDetails(
           session.query,
           session.matches,
@@ -130,7 +128,7 @@ function formatSearchSession(session: TextSearchSession, cwd: string): string {
   const fileCount = new Set(session.matches.map((match) => match.source)).size;
   const count = session.matches.length;
   const heading = session.complete
-    ? `SEARCH#${session.id}:all — ${String(count)} ${plural(count, "match", "matches")} in ${String(fileCount)} ${plural(
+    ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${String(count)} ${plural(count, "match", "matches")} in ${String(fileCount)} ${plural(
         fileCount,
         "file",
         "files",
@@ -139,9 +137,12 @@ function formatSearchSession(session: TextSearchSession, cwd: string): string {
         fileCount,
         "file",
         "files",
-      )} (limit reached; no all anchor was registered)`;
-  const lines = [heading];
+      )} (limit reached; no all anchors were registered)`;
   let previousSource: string | undefined;
+  const lines = [
+    "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)",
+    heading,
+  ];
 
   for (const [index, match] of session.matches.entries()) {
     if (previousSource !== undefined && previousSource !== match.source) {
@@ -152,7 +153,7 @@ function formatSearchSession(session: TextSearchSession, cwd: string): string {
     lines.push(
       `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${String(
         match.endColumn + 1,
-      )} SEARCH#${session.id}:${String(index + 1)}`,
+      )} SEARCH#${session.id}:${String(index + 1)}:line SEARCH#${session.id}:${String(index + 1)}:match`,
       `  ${previewMatch(match)}`,
     );
     previousSource = match.source;
@@ -177,6 +178,7 @@ function previewMatch(match: TextSearchMatch): string {
 
 function displaySource(source: string, cwd: string): string {
   const relative = path.relative(cwd, source);
+  // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
     ? relative
     : source;

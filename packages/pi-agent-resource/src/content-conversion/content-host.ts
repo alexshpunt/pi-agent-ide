@@ -13,7 +13,7 @@ import type {
   ContentInput,
   ContentTarget,
 } from "./content-converter.js";
-import type { AgentContent } from "../content.js";
+import type { AgentContent } from "#src/content.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export interface ContentHost {

@@ -14,7 +14,8 @@ import type {
   TextDocument,
   TextLine,
   TextLinePresentation,
-  TextPresenterRegistration,
+  TextLinePresenter,
+  TextTargetResolver,
 } from "pi-agent-text";
 
 export type ReadPipelineStage = "pre-read" | "read" | "post-read";
@@ -25,13 +26,17 @@ export interface ReadRequest {
   readonly path?: string;
   readonly offset?: number;
   readonly limit?: number;
+  /** Requested presentation views; without them text reads return raw content. */
+  readonly views?: readonly string[];
 }
 
 export interface ReadFailure {
   readonly code:
+    | "FRAGMENT_FAILED"
     | "INVALID_REQUEST"
     | "INVALID_RESOLVER_RESULT"
     | "INVALID_RESOURCE_CONTENT"
+    | "NO_FRAGMENT_RESOLVER"
     | "NO_RESOLVER"
     | "PIPELINE_FAILED"
     | "READ_FAILED"
@@ -54,6 +59,45 @@ export interface ResourceResolverRegistration {
   readonly priority?: number;
   readonly renderResult?: ReadResultRenderer;
   readonly preserveTruncatedOutput?: boolean;
+}
+
+export interface TextTargetResolverRegistration {
+  readonly resolver: TextTargetResolver;
+  readonly priority?: number;
+}
+
+/** Input for resolving the anchor fragment of an anchored read source. */
+export interface ReadFragmentContext {
+  readonly source: string;
+  readonly fragment: string;
+  readonly text: TextDocument;
+  readonly cwd: string;
+  readonly signal?: AbortSignal;
+}
+
+/** One fragment resolver's outcome for an anchored read. */
+export type ReadFragmentResolution =
+  | { readonly kind: "resolved"; readonly originLine: number }
+  | { readonly kind: "not-handled" }
+  | { readonly kind: "failed"; readonly message: string };
+
+export interface FragmentResolverRegistration {
+  readonly id: string;
+  readonly priority?: number;
+  resolve(context: ReadFragmentContext): ReadFragmentResolution | Promise<ReadFragmentResolution>;
+}
+
+/**
+ * One named presentation view. A view collects line annotations (prefixes, suffixes,
+ * extra rows) that the read output shows only when the request lists the view name.
+ * Several plugins may contribute presenters under one view name.
+ */
+export interface ReadViewRegistration {
+  readonly view: string;
+  /** Requested views whose complete presentation this view already provides. */
+  readonly includes?: readonly string[];
+  readonly presenter: TextLinePresenter;
+  readonly priority?: number;
 }
 
 export type ReadTextLinePresentation = TextLinePresentation;
@@ -111,6 +155,8 @@ export interface ReadResultDetails extends UnsupportedContentDetails {
   readonly truncation?: TruncationResult;
   readonly temporarySource?: string;
   readonly lines?: readonly ReadTextLine[];
+  /** Requested view names that no registration backed; they were ignored. */
+  readonly ignoredViews?: readonly string[];
   readonly failure?: ReadFailure;
 }
 
@@ -149,9 +195,15 @@ export type PromptDescriptionSource = string | (() => string | undefined);
 export interface ReadToolPluginApi {
   read(request: ReadRequest, context: ResourceResolverContext): Promise<ReadToolResult>;
   addResolver(registration: ResourceResolverRegistration): void;
+  addTargetResolver(registration: TextTargetResolverRegistration): void;
   addHandler(registration: ReadHandlerRegistration): void;
-  addTextPresenter(registration: TextPresenterRegistration): void;
+  /** Registers a named view whose presenter runs when a request lists the view. */
+  addView(registration: ReadViewRegistration): void;
+  addFragmentResolver(registration: FragmentResolverRegistration): void;
   describe(description: PromptDescriptionSource): void;
+
+  /** Adds an operational rule to the read tool's system-prompt guidelines. */
+  addPromptGuideline(guideline: PromptDescriptionSource): void;
 }
 
 const functionSchema = Type.Function([], Type.Unknown());
@@ -160,6 +212,21 @@ const resourceResolverRegistrationSchema = Type.Object({
   priority: Type.Optional(Type.Number()),
   renderResult: Type.Optional(functionSchema),
   preserveTruncatedOutput: Type.Optional(Type.Boolean()),
+});
+const textTargetResolverRegistrationSchema = Type.Object({
+  resolver: Type.Unknown(),
+  priority: Type.Optional(Type.Number()),
+});
+const fragmentResolverRegistrationSchema = Type.Object({
+  id: Type.String({ pattern: "\\S" }),
+  priority: Type.Optional(Type.Number()),
+  resolve: functionSchema,
+});
+const viewRegistrationSchema = Type.Object({
+  view: Type.String({ pattern: "\\S" }),
+  includes: Type.Optional(Type.Array(Type.String({ pattern: "\\S" }))),
+  presenter: Type.Object({ id: Type.String(), present: functionSchema }),
+  priority: Type.Optional(Type.Number()),
 });
 const readHandlerWhenSchema = Type.Object({
   resolvedBy: Type.String({ pattern: "\\S" }),
@@ -174,6 +241,20 @@ const readHandlerRegistrationSchema = Type.Union([
   }),
   Type.Object({ stage: Type.Literal("post-read"), handler: functionSchema }),
 ]);
+
+export function isTextTargetResolverRegistration(
+  value: unknown,
+): value is TextTargetResolverRegistration {
+  if (!Value.Check(textTargetResolverRegistrationSchema, value)) return false;
+  const registration = value as { resolver?: unknown };
+  const resolver = registration.resolver as { id?: unknown; tryResolve?: unknown };
+  return (
+    typeof resolver.id === "string" &&
+    resolver.id.length > 0 &&
+    typeof resolver.tryResolve === "function" &&
+    (!("priority" in registration) || typeof registration.priority === "number")
+  );
+}
 
 export function isResourceResolverRegistration(
   value: unknown,
@@ -197,4 +278,34 @@ export function isResourceResolverRegistration(
 
 export function isReadHandlerRegistration(value: unknown): value is ReadHandlerRegistration {
   return Value.Check(readHandlerRegistrationSchema, value);
+}
+
+export function isReadViewRegistration(value: unknown): value is ReadViewRegistration {
+  return Value.Check(viewRegistrationSchema, value);
+}
+
+export function isFragmentResolverRegistration(
+  value: unknown,
+): value is FragmentResolverRegistration {
+  return Value.Check(fragmentResolverRegistrationSchema, value);
+}
+
+export function isReadFragmentResolution(value: unknown): value is ReadFragmentResolution {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (value.kind === "not-handled") {
+    return true;
+  }
+
+  if (value.kind === "failed") {
+    return typeof value.message === "string" && value.message.length > 0;
+  }
+
+  return value.kind === "resolved" && typeof value.originLine === "number";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

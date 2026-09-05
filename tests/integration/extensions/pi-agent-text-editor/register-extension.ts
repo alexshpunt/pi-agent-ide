@@ -1,6 +1,7 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import registerConstantTextAnchors from "#pi-agent-text-anchor-constant/index.js";
+import registerExactTextAnchors from "#pi-agent-text-anchor-exact/index.js";
 import registerLineHashTextAnchor from "#pi-agent-text-anchor-line-hash/index.js";
 import { registerBuiltinEditFilter } from "#pi-agent-text-editor/core/builtin-edit-filter.js";
 import registerTextEditorCore from "#pi-agent-text-editor/core/extension.js";
@@ -14,5 +15,9 @@ export default async function registerTextEditorIntegrationExtension(
   registerTextEditorTools(pi, core);
   registerTextEditBatching(pi, core);
   registerBuiltinEditFilter(pi);
-  await Promise.all([registerLineHashTextAnchor(pi), registerConstantTextAnchors(pi)]);
+  await Promise.all([
+    registerLineHashTextAnchor(pi),
+    registerConstantTextAnchors(pi),
+    registerExactTextAnchors(pi),
+  ]);
 }

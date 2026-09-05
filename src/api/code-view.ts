@@ -8,7 +8,11 @@ export {
 } from "#src/code-view/reference.js";
 
 export {
+  addDiagnosticAnnotations,
+  diagnosticStatus,
   createDiagnosticViewContent,
+  type DiagnosticSource,
+  type DiagnosticViewOptions,
   formatDiagnosticViewSource,
   resolveDiagnosticViewPath,
 } from "#src/code-view/diagnostic-view.js";

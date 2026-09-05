@@ -1,7 +1,10 @@
-import { requiredValue } from "../utils/required-value.js";
-import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import spawn from "cross-spawn";
+import { requiredValue } from "pi-agent-invariant";
+import { constants } from "node:fs";
+import { access, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
 Current on-disk tool configuration version.
@@ -89,6 +92,51 @@ export interface ProcessResult {
 }
 
 /**
+Configuration files supported by the layered tool loader.
+*/
+export type ToolConfigName = "formatters" | "linters" | "lsp-servers";
+
+/**
+The origin of one effective formatter, linter, or LSP entry.
+*/
+export type ToolConfigLayer = "project" | "global" | "built-in";
+
+/**
+Physical files consulted for one tool configuration category.
+*/
+export interface ToolConfigPaths {
+  readonly project: string;
+  readonly global: string;
+  readonly builtIn: string;
+}
+
+/**
+One validated entry in the effective layered configuration.
+*/
+export interface EffectiveToolConfigEntry<T> {
+  readonly id: string;
+  readonly config: T;
+  readonly layer: ToolConfigLayer;
+  readonly sourcePath: string;
+}
+
+/**
+Validated entries in runtime resolution order, with their source files.
+*/
+export interface EffectiveToolConfig<T> {
+  readonly entries: readonly EffectiveToolConfigEntry<T>[];
+  readonly paths: ToolConfigPaths;
+}
+
+/**
+Optional environment inputs used to resolve global tool configuration.
+*/
+export interface LayeredToolConfigOptions {
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly homeDirectory?: string;
+}
+
+/**
 Resolves the project-local Pi Agent IDE configuration directory.
 */
 export function projectIdeConfigDirectory(projectRoot: string): string {
@@ -98,11 +146,63 @@ export function projectIdeConfigDirectory(projectRoot: string): string {
 /**
 Resolves a named project-local Pi Agent IDE JSON file.
 */
-export function projectIdeConfigPath(
-  projectRoot: string,
-  name: "formatters" | "linters" | "lsp-servers",
-): string {
+export function projectIdeConfigPath(projectRoot: string, name: ToolConfigName): string {
   return path.join(projectIdeConfigDirectory(projectRoot), `${name}.json`);
+}
+
+/**
+Resolves project, global, and package-built-in files for one tool category.
+*/
+export function resolveToolConfigPaths(
+  projectRoot: string,
+  name: ToolConfigName,
+  options: LayeredToolConfigOptions = {},
+): ToolConfigPaths {
+  const environment = options.environment ?? process.env;
+  const configuredAgentDirectory = environment.PI_CODING_AGENT_DIR?.trim();
+  const agentDirectory =
+    configuredAgentDirectory === undefined || configuredAgentDirectory.length === 0
+      ? path.join(options.homeDirectory ?? os.homedir(), ".pi", "agent")
+      : path.resolve(configuredAgentDirectory);
+  return {
+    project: projectIdeConfigPath(projectRoot, name),
+    global: path.join(agentDirectory, "extensions", "pi-agent-ide", `${name}.json`),
+    builtIn: fileURLToPath(new URL(`tool-config/${name}.json`, import.meta.url)),
+  };
+}
+
+/**
+Loads and validates all present layers, replaces lower entries by ID, and preserves layer priority.
+*/
+export async function loadLayeredToolConfig<T>(
+  projectRoot: string,
+  name: ToolConfigName,
+  parseEntries: (value: unknown) => Readonly<Record<string, T>>,
+  options: LayeredToolConfigOptions = {},
+): Promise<EffectiveToolConfig<T>> {
+  const paths = resolveToolConfigPaths(projectRoot, name, options);
+  const layers = [
+    { layer: "project", sourcePath: paths.project, optional: true },
+    { layer: "global", sourcePath: paths.global, optional: true },
+    { layer: "built-in", sourcePath: paths.builtIn, optional: false },
+  ] as const;
+  const entries: EffectiveToolConfigEntry<T>[] = [];
+  const claimedIds = new Set<string>();
+
+  for (const source of layers) {
+    const parsed = await readToolConfigLayer(source, name, parseEntries);
+
+    for (const [id, config] of Object.entries(parsed)) {
+      if (claimedIds.has(id)) {
+        continue;
+      }
+
+      claimedIds.add(id);
+      entries.push({ id, config, layer: source.layer, sourcePath: source.sourcePath });
+    }
+  }
+
+  return { entries, paths };
 }
 
 /**
@@ -131,14 +231,49 @@ export function matchesConfiguredFile(
 }
 
 /**
-Runs a configured process after expanding file and project placeholders.
+Returns whether a configured process executable can be launched from the project.
 */
+export async function hasConfiguredExecutable(
+  config: ProcessConfig,
+  projectRoot: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  assertProcessConfig(config, "process");
+  const executable = requiredValue(config.command[0]).replaceAll("{project}", projectRoot);
+  const effectiveEnvironment = createConfiguredProcessEnvironment(config, projectRoot, environment);
+  const candidates =
+    path.isAbsolute(executable) || path.dirname(executable) !== "."
+      ? [path.resolve(projectRoot, executable)]
+      : (effectiveEnvironment.PATH ?? "")
+          .split(path.delimiter)
+          .filter(Boolean)
+          .map((directory) => path.join(directory, executable));
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.X_OK);
+      return true;
+    } catch {
+      // Try the next executable location.
+    }
+  }
+
+  return false;
+}
+
+/**
+Runs a configured process after expanding placeholders.
+Project-local package binaries take priority over the configured process path.
+An optional abort signal terminates the child process.
+*/
+
 export async function runConfiguredProcess(
   config: ProcessConfig,
   context: {
     readonly projectRoot: string;
     readonly filePath: string;
     readonly env?: NodeJS.ProcessEnv;
+    readonly signal?: AbortSignal;
   },
 ): Promise<ProcessResult> {
   assertProcessConfig(config, "process");
@@ -147,26 +282,35 @@ export async function runConfiguredProcess(
   const arguments_ = command.slice(1);
   const cwd = config.cwd === "file" ? path.dirname(context.filePath) : context.projectRoot;
   const accepted = config.successExitCodes ?? [0];
+  const environment = createConfiguredProcessEnvironment(
+    config,
+    context.projectRoot,
+    context.env ?? process.env,
+  );
 
   return new Promise((resolve, reject) => {
     const child = spawn(executable, arguments_, {
       cwd,
-      env: { ...(context.env ?? process.env), ...config.env },
+      env: environment,
+      signal: context.signal,
+      killSignal: "SIGKILL",
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
+    const childStdout = requiredValue(child.stdout);
+    const childStderr = requiredValue(child.stderr);
     let isTimedOut = false;
     const timeout = setTimeout(() => {
       isTimedOut = true;
       child.kill("SIGKILL");
     }, config.timeoutMs ?? 30_000);
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    childStdout.setEncoding("utf8");
+    childStderr.setEncoding("utf8");
+    childStdout.on("data", (chunk: string) => {
       stdout += chunk;
     });
-    child.stderr.on("data", (chunk: string) => {
+    childStderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
     child.on("error", (error) => {
@@ -200,6 +344,10 @@ export async function runConfiguredFormatter(
   const result = await runConfiguredProcess(config.run, context);
 
   if (!result.ok) {
+    // A failed in-place formatter must not leave a partially formatted edit behind.
+    if (config.output === "in-place" && (await readFile(context.filePath, "utf8")) !== before) {
+      await writeFile(context.filePath, before, "utf8");
+    }
     return { ok: false, changed: false };
   }
 
@@ -350,6 +498,62 @@ function configRecord(value: unknown, label: string): Record<string, unknown> {
 
 function normalizeExtension(extension: string): string {
   return extension.startsWith(".") ? extension.toLowerCase() : `.${extension.toLowerCase()}`;
+}
+
+async function readToolConfigLayer<T>(
+  source: {
+    readonly layer: ToolConfigLayer;
+    readonly sourcePath: string;
+    readonly optional: boolean;
+  },
+  name: ToolConfigName,
+  parseEntries: (value: unknown) => Readonly<Record<string, T>>,
+): Promise<Readonly<Record<string, T>>> {
+  let raw: string;
+
+  try {
+    raw = await readFile(source.sourcePath, "utf8");
+  } catch (error) {
+    if (source.optional && isMissingFile(error)) {
+      return {};
+    }
+
+    throw new Error(
+      `Cannot read ${source.layer} ${name} config at ${source.sourcePath}: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+
+  try {
+    return parseEntries(JSON.parse(raw));
+  } catch (error) {
+    throw new Error(
+      `Invalid ${source.layer} ${name} config at ${source.sourcePath}: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+Builds the environment used to launch a configured project tool.
+*/
+export function createConfiguredProcessEnvironment(
+  config: Pick<ProcessConfig, "command" | "env">,
+  projectRoot: string,
+  environment: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const effective = { ...environment, ...config.env };
+  const projectBin = path.resolve(projectRoot, "node_modules", ".bin");
+  effective.PATH = [projectBin, effective.PATH].filter(Boolean).join(path.delimiter);
+  return effective;
 }
 
 function expandPlaceholders(

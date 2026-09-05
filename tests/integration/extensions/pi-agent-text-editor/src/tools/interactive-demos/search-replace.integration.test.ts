@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   text,
@@ -11,7 +12,6 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { createSearchSessionId, type TextSearchMatch } from "pi-agent-search-text/search-session";
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
@@ -21,6 +21,10 @@ const defaultTextEditorExtension = path.resolve(
 );
 const rendererTestStand = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/register-extension.ts",
+);
+
+const runtimeAnchorExtension = path.resolve(
+  "tests/integration/extensions/pi-agent-text-editor/support/search-anchor-runtime-extension.ts",
 );
 const interactivePacing =
   process.env.PI_INTEGRATION_TEST_LIVE === "1"
@@ -40,8 +44,8 @@ const files = {
     "}",
     "",
   ].join("\n"),
-  "src/runtime/worker.ts": [
-    'import type { QueueOptions } from "../api/queue.js";',
+  "src/api/worker.ts": [
+    'import type { QueueOptions } from "./queue.js";',
     "",
     'export const workerQueue: QueueOptions = { legacyQueue: "jobs" };',
     'export const queueKey = "legacyQueue";',
@@ -67,40 +71,18 @@ describe("interactive text editor demos", () => {
         await writeFile(absolute, content, "utf8");
       }
 
-      const matches = Object.entries(files).flatMap(([file, content]) =>
-        content.split("\n").flatMap((lineText, lineIndex) => {
-          const found: TextSearchMatch[] = [];
-          let from = 0;
-
-          for (;;) {
-            const startColumn = lineText.indexOf("legacyQueue", from);
-
-            if (startColumn === -1) {
-              return found;
-            }
-
-            found.push({
-              source: path.join(directory, file),
-              lineNumber: lineIndex + 1,
-              startColumn,
-              endColumn: startColumn + "legacyQueue".length,
-              matchedText: "legacyQueue",
-              lineText,
-            });
-            from = startColumn + "legacyQueue".length;
-          }
-        }),
-      );
-      const searchId = createSearchSessionId("legacyQueue", matches, directory);
-      const allAnchor = `SEARCH#${searchId}:all`;
+      const runtimeAllAnchor = "SEARCH#RUNTIME:1:all:match";
       const searchCallId = "demo-search-preview";
       const replaceCallId = "demo-search-replace-all";
       const result = await new PiIntegrationTest({
         testName: "interactive-demo-search-replace",
         cwd: directory,
-        extensions: extensions.paths.map((extension) =>
-          extension === defaultTextEditorExtension ? rendererTestStand : extension,
-        ),
+        extensions: [
+          ...extensions.paths.map((extension) =>
+            extension === defaultTextEditorExtension ? rendererTestStand : extension,
+          ),
+          runtimeAnchorExtension,
+        ],
         tools: ["search", "replace"],
         rawMode: false,
         timeoutMs: 180_000,
@@ -121,7 +103,7 @@ describe("interactive text editor demos", () => {
               toolCall({
                 id: replaceCallId,
                 name: "replace",
-                arguments: { start: allAnchor, text: "queueName" },
+                arguments: { start: runtimeAllAnchor, text: "queueName" },
                 ...interactivePacing,
               }),
             ],
@@ -131,24 +113,32 @@ describe("interactive text editor demos", () => {
         ],
       }).run("Preview every legacy queue reference, then rename the complete result set");
 
-      expect(getToolExecution(result, searchCallId).isError).toBe(false);
+      const searchExecution = getToolExecution(result, searchCallId);
+      expect(searchExecution.isError).toBe(false);
+      const searchId = runtimeSearchSessionId(getToolExecutionDetails(searchExecution));
       expect(getToolResultText(result, searchCallId)).toContain(
-        `${allAnchor} — 6 matches in 3 files`,
+        `SEARCH#${searchId}:all:match — 6 matches in 3 files`,
       );
       expect(getToolExecution(result, replaceCallId).isError).toBe(false);
       const rendered = result.tuiRenderedOutput;
-      const searchView = rendered.slice(
-        rendered.indexOf('search "legacyQueue"'),
-        rendered.indexOf("replace 3 files:"),
-      );
+      const searchStart = rendered.indexOf('search "legacyQueue"');
+      const replaceStart = rendered.indexOf("replace", searchStart + 1);
+      const searchView = rendered.slice(searchStart, replaceStart);
+      const replaceHeader = rendered.slice(replaceStart, rendered.indexOf("\n", replaceStart));
+      expect(searchView).toContain("include **/*.ts");
       expect(searchView).toContain("6 matches in 3 files");
       expect(searchView).toMatch(/src\/api\/queue\.ts\s+2/u);
       expect(searchView).toMatch(/src\/runtime\/status\.ts\s+2/u);
-      expect(searchView).toMatch(/src\/runtime\/worker\.ts\s+2/u);
+      expect(searchView).toMatch(/src\/api\/worker\.ts\s+2/u);
       expect(searchView).toContain("legacyQueue");
       expect(searchView).not.toContain("SEARCH#");
       expect(searchView).not.toContain("⟦");
+
+      expect(replaceHeader).toContain("all matches");
+      expect(replaceHeader).not.toContain("SEARCH#");
       expect(rendered).toContain("queueName");
+
+      expectHighlightedSearchBackgrounds(result.terminalOutput, "legacyQueue");
 
       for (const [file, content] of Object.entries(files)) {
         await expect(readFile(path.join(directory, file), "utf8")).resolves.toBe(
@@ -158,3 +148,48 @@ describe("interactive text editor demos", () => {
     });
   }, 180_000);
 });
+
+function expectHighlightedSearchBackgrounds(terminalOutput: string, match: string): void {
+  const backgroundReset = "\u001B[49m";
+  let highlightedMatches = 0;
+  let offset = 0;
+
+  while (offset < terminalOutput.length) {
+    const matchAt = terminalOutput.indexOf(match, offset);
+    if (matchAt === -1) {
+      break;
+    }
+
+    const rowStart = terminalOutput.lastIndexOf("\n", matchAt) + 1;
+    const enclosingBackground = terminalOutput
+      .slice(rowStart, matchAt)
+      .match(/\u001B\[48(?:;\d+)+m/u)?.[0];
+    const suffix = terminalOutput.slice(matchAt + match.length, matchAt + match.length + 64);
+    const resetAt = suffix.indexOf(backgroundReset);
+    if (resetAt !== -1 && enclosingBackground !== undefined) {
+      highlightedMatches++;
+      expect(suffix.slice(resetAt + backgroundReset.length).startsWith(enclosingBackground)).toBe(
+        true,
+      );
+    }
+    offset = matchAt + match.length;
+  }
+
+  expect(highlightedMatches).toBeGreaterThan(0);
+}
+
+function runtimeSearchSessionId(details: unknown): string {
+  if (
+    typeof details === "object" &&
+    details !== null &&
+    "payload" in details &&
+    typeof details.payload === "object" &&
+    details.payload !== null &&
+    "sessionId" in details.payload &&
+    typeof details.payload.sessionId === "string"
+  ) {
+    return details.payload.sessionId;
+  }
+
+  throw new Error("Search result did not expose its runtime session ID.");
+}

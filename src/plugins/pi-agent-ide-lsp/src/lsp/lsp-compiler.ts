@@ -11,7 +11,7 @@ import type { Compiler, CompileResult, Diagnostic, ToolContext } from "pi-agent-
  * higher than skip (0). Handles any language with a configured LSP server
  * that provides diagnostics capability.
  *
- * Syntax errors from LSP (severity=Error) trigger rollback in the Gate.
+ * LSP errors include type errors and never act as a syntax-only formatting gate.
  */
 export function createLspCompiler(manager: LspManager): Compiler {
   let _client: LspClient | null = null;
@@ -33,7 +33,7 @@ export function createLspCompiler(manager: LspManager): Compiler {
       _client = client;
 
       return {
-        ok: syntaxErrors.length === 0,
+        ok: !diagnostics.some((diagnostic) => diagnostic.severity === "error"),
         diagnostics,
         syntaxErrors,
         otherDiagnostics,

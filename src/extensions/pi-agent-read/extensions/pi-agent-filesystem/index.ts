@@ -37,6 +37,10 @@ export default async function registerFilesystemPlugin(pi: ExtensionAPI): Promis
           readHost.listDescriptions(),
         ),
       );
+
+      api.addPromptGuideline(
+        "Use read with paths relative to the current working directory for project files. Use read with absolute paths for files elsewhere on the system.",
+      );
     },
   } satisfies ReadPlugin;
   const textEditorPlugin = {
@@ -45,9 +49,6 @@ export default async function registerFilesystemPlugin(pi: ExtensionAPI): Promis
     id: "filesystem",
     setup(api) {
       api.addResolver({ resolver: writeResolver });
-      api.describe(() =>
-        renderContentDescription("Writes local filesystem paths.", writeHost.listDescriptions()),
-      );
     },
   } satisfies TextEditorPlugin;
 

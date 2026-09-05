@@ -181,6 +181,7 @@ function isCount(value: unknown): value is number {
 
 function displaySource(source: string, cwd: string): string {
   const relative = path.relative(cwd, source);
+  // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
     ? relative
     : source;

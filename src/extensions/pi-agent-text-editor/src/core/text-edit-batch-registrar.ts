@@ -1,5 +1,11 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
+import { renderTextAnchor } from "pi-agent-text";
+import {
+  TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH,
+  type ToolCallAnchorRenderState,
+} from "pi-agent-tool-call-interception";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
+import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.js";
 import {
   applyTextChanges,
   type TextChange,
@@ -17,16 +23,21 @@ import {
   type TextBatchEntry,
   type TextBatchParams,
 } from "#src/core/text-edit-batch.js";
-import { contextualizeTextMutationAnchorError } from "#src/core/text-mutation-anchor-error.js";
+import {
+  contextualizeTextMutationAnchorError,
+  TextMutationAnchorAggregateError,
+  TextMutationAnchorResolutionError,
+} from "#src/core/text-mutation-anchor-error.js";
 import {
   buildFailedTextMutationResult,
   buildSuccessfulTextMutationResult,
   mutationSources,
+  preflightMutationAnchors,
 } from "#src/core/text-mutation.js";
 import { registerBlockedToolCallSink } from "#src/core/tool-call-interceptor/coordinator.js";
 
 import type { TextEditIntent } from "#src/api/edit-completion.js";
-import type { FileMutationResult } from "#src/api/mutation-result.js";
+import type { FileMutationResult, MutationResultPresentation } from "#src/api/mutation-result.js";
 import type { AnyTextMutationToolRegistration, TextMutation } from "#src/api/mutation-tool.js";
 import type { BatchExecutionReporter } from "#src/core/text-edit-batch-execution.js";
 import type {
@@ -45,9 +56,15 @@ interface TextBatchState {
   readonly source: string;
   readonly registration: AnyTextMutationToolRegistration;
 }
+interface PlannedTextMutation extends TextMutation {
+  readonly resultPresentations: ReadonlyMap<string, MutationResultPresentation>;
+}
 
 interface PlannedTextBatch {
-  readonly mutations: readonly { readonly callId: string; readonly mutation: TextMutation }[];
+  readonly mutations: readonly {
+    readonly callId: string;
+    readonly mutation: PlannedTextMutation;
+  }[];
   readonly failures: readonly {
     readonly callId: string;
     readonly source: string;
@@ -120,6 +137,7 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
         onUpdate,
         context,
         reporter,
+        renderArguments,
       ),
     splitResult: splitTextBatchResult,
     onRenderArguments: renderArguments,
@@ -141,6 +159,7 @@ export async function executeRegisteredTextBatch(
   onUpdate: AgentToolUpdateCallback<TextBatchDetails> | undefined,
   context: ExtensionContext,
   reporter: BatchExecutionReporter,
+  renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
 ): Promise<AgentToolResult<TextBatchDetails>> {
   const prepared = parameters.edits.map((entry) => {
     const registration = registrations.get(entry.op);
@@ -182,7 +201,7 @@ export async function executeRegisteredTextBatch(
       [...requests.values()],
       { cwd: context.cwd, intent, ...(signal !== undefined && { signal }) },
       async (texts, resolveAnchor) => {
-        const mutations: { readonly callId: string; readonly mutation: TextMutation }[] = [];
+        const mutations: PlannedTextBatch["mutations"][number][] = [];
         const failures: PlannedTextBatch["failures"][number][] = [];
         const changes = new Map<string, TextChange[]>();
 
@@ -205,6 +224,16 @@ export async function executeRegisteredTextBatch(
 
             return new TextChangeDocument(text);
           };
+
+          const majorAnchorSources = new Set<string>();
+          const publishAnchorRenderPatch = (
+            field: string,
+            state: ToolCallAnchorRenderState,
+          ): void => {
+            renderArguments(item.callId, {
+              [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
+            });
+          };
           const resolveAnchors = async (field: string) => {
             const descriptor = (item.registration.anchors ?? []).find(
               (anchor) => anchor.field === field,
@@ -214,12 +243,25 @@ export async function executeRegisteredTextBatch(
               descriptor === undefined ? undefined : item.sources.get(descriptor.sourceField);
 
             if (descriptor === undefined || typeof value !== "string" || source === undefined) {
+              publishAnchorRenderPatch(field, { kind: "failed" });
               throw new Error(`Unable to resolve mutation anchor ${field}`);
             }
 
             try {
-              return new Map([[source, await resolveAnchor(source, value, descriptor.kinds)]]);
+              const anchor = await resolveAnchor(source, value, descriptor.kinds);
+              if (resolvedTextAnchorType(anchor) === "major") {
+                majorAnchorSources.add(source);
+              }
+              const rendered = renderTextAnchor(anchor, value, { source, anchor });
+              publishAnchorRenderPatch(field, {
+                kind: "resolved",
+                full: rendered.full,
+                compact: rendered.compact,
+                resolverId: rendered.resolverId,
+              });
+              return new Map([[source, anchor]]);
             } catch (error) {
+              publishAnchorRenderPatch(field, { kind: "failed" });
               throw contextualizeTextMutationAnchorError(
                 error,
                 item.registration.name,
@@ -229,25 +271,46 @@ export async function executeRegisteredTextBatch(
               );
             }
           };
-
           try {
-            const mutation = await item.registration.mutate(
-              {
-                cwd: context.cwd,
-                ...(signal !== undefined && { signal }),
-                sourceDocument: documentFor(sourceFor(item.registration.source.field)),
-                sourceFor,
-                documentFor,
-                targetDocument: (field) => documentFor(sourceFor(field)),
-                resolveAnchors,
-                async resolveAnchor(field) {
-                  const resolved = await resolveAnchors(field);
-                  return requiredValue(resolved.values().next().value);
-                },
+            const mutationContext = {
+              cwd: context.cwd,
+              ...(signal !== undefined && { signal }),
+              sourceDocument: documentFor(sourceFor(item.registration.source.field)),
+              sourceFor,
+              documentFor,
+              targetDocument: (field: string) => documentFor(sourceFor(field)),
+              resolveAnchors,
+              async resolveAnchor(field: string) {
+                const resolved = await resolveAnchors(field);
+                return requiredValue(resolved.values().next().value);
               },
-              item.input,
-            );
-            mutations.push({ callId: item.callId, mutation });
+            };
+            await preflightMutationAnchors(item.registration, item.input, mutationContext);
+            const mutation = await item.registration.mutate(mutationContext, item.input);
+            for (const [source, edit] of mutation.edits) {
+              const existing = changes.get(source) ?? [];
+              if (
+                edit.changes.some((change) =>
+                  existing.some((prior) => textChangesConflict(prior, change)),
+                )
+              ) {
+                throw new Error(
+                  `Text mutation ${item.callId} overlaps an earlier successful mutation.`,
+                );
+              }
+            }
+            mutations.push({
+              callId: item.callId,
+              mutation: {
+                ...mutation,
+                resultPresentations: new Map(
+                  [...mutation.edits.keys()].map((source) => [
+                    source,
+                    majorAnchorSources.has(source) ? "major-anchor" : "plain",
+                  ]),
+                ),
+              },
+            });
 
             for (const [source, edit] of mutation.edits) {
               changes.set(source, [...(changes.get(source) ?? []), ...edit.changes]);
@@ -304,28 +367,102 @@ export async function executeRegisteredTextBatch(
 
   const results: FileMutationResult[] = [];
   const callIdsByResult: string[] = [];
+  const displayResults: FileMutationResult[] = [];
+  const callIdsByDisplayResult: string[] = [];
+  const finalCallIdBySource = new Map<string, string>();
+  const finalPresentationBySource = new Map<string, MutationResultPresentation>();
+  const resultsByCallId = new Map<string, FileMutationResult[]>();
+  const displayResultsByCallId = new Map<string, FileMutationResult[]>();
 
   for (const { callId, mutation } of completedMutations) {
-    const callResults = [...mutation.edits].flatMap(([source, edit]) => {
+    resultsByCallId.set(callId, []);
+    const callDisplayResults = [...mutation.edits].flatMap(([source, edit]) => {
       const resource = outcome.resources.find((candidate) => candidate.source === source);
-
       if (resource === undefined) {
         return [];
       }
 
       const ownAfter = applyTextChanges(resource.before.content, edit.changes).content;
-      return [buildSuccessfulTextMutationResult(resource, source, edit, ownAfter)];
+      return [
+        buildSuccessfulTextMutationResult(
+          resource,
+          source,
+          edit,
+          ownAfter,
+          mutation.resultPresentations.get(source) ?? "plain",
+        ),
+      ];
     });
-    const callResult = textBatchResult(
-      callResults,
-      callResults.map(() => callId),
+    displayResultsByCallId.set(callId, callDisplayResults);
+    displayResults.push(...callDisplayResults);
+    callIdsByDisplayResult.push(...callDisplayResults.map(() => callId));
+
+    for (const source of mutation.edits.keys()) {
+      finalCallIdBySource.set(source, callId);
+      finalPresentationBySource.set(source, mutation.resultPresentations.get(source) ?? "plain");
+    }
+  }
+
+  for (const [source, finalCallId] of finalCallIdBySource) {
+    const resource = outcome.resources.find((candidate) => candidate.source === source);
+    const edits = outcome.result.mutations.flatMap(({ mutation }) => {
+      const edit = mutation.edits.get(source);
+      return edit === undefined ? [] : [edit];
+    });
+
+    if (resource === undefined || edits.length === 0) {
+      continue;
+    }
+
+    const result = buildSuccessfulTextMutationResult(
+      resource,
+      source,
+      {
+        changes: edits.flatMap((edit) => edit.changes),
+        action: edits.some((edit) => edit.action === "overwritten") ? "overwritten" : "edited",
+      },
+      resource.after.content,
+      finalPresentationBySource.get(source) ?? "plain",
+      edits.length,
     );
-    reporter.complete(callId, callResult);
-    results.push(...callResults);
-    callIdsByResult.push(...callResults.map(() => callId));
+    resultsByCallId.get(finalCallId)?.push(result);
+    results.push(result);
+    callIdsByResult.push(finalCallId);
+  }
+
+  for (const { callId } of completedMutations) {
+    const callResults = resultsByCallId.get(callId) ?? [];
+    const callDisplayResults = displayResultsByCallId.get(callId) ?? [];
+    reporter.complete(
+      callId,
+      textBatchResult(
+        callResults,
+        callResults.map(() => callId),
+        callDisplayResults,
+        callDisplayResults.map(() => callId),
+      ),
+    );
   }
 
   for (const failure of failures) {
+    const anchorFailures =
+      failure.error instanceof TextMutationAnchorAggregateError
+        ? failure.error.failures
+        : failure.error instanceof TextMutationAnchorResolutionError
+          ? [failure.error]
+          : [];
+    for (const anchorFailure of anchorFailures) {
+      const resource = outcome.resources.find(({ source }) => source === anchorFailure.source);
+      if (resource !== undefined) {
+        await anchorFailure.resolution.refreshRecovery({
+          source: resource.source,
+          content: resource.after.content,
+          lines: resource.after.lines.map(({ content }) => content),
+          cwd: context.cwd,
+          ...(signal !== undefined && { signal }),
+        });
+      }
+    }
     const failedResult = await buildFailedTextMutationResult(
       core,
       {
@@ -345,13 +482,20 @@ export async function executeRegisteredTextBatch(
     });
     results.push(...failureResults);
     callIdsByResult.push(...failureResults.map(() => failure.callId));
+    displayResults.push(...failureResults);
+    callIdsByDisplayResult.push(...failureResults.map(() => failure.callId));
   }
 
   onUpdate?.({
     content: [{ type: "text", text: "post-edit progress" }],
-    details: { results: [...results], callIdsByResult: [...callIdsByResult] },
+    details: {
+      results: [...results],
+      callIdsByResult: [...callIdsByResult],
+      displayResults: [...displayResults],
+      callIdsByDisplayResult: [...callIdsByDisplayResult],
+    },
   });
-  return textBatchResult(results, callIdsByResult);
+  return textBatchResult(results, callIdsByResult, displayResults, callIdsByDisplayResult);
 }
 
 async function failTextBatch(
@@ -398,6 +542,19 @@ function isTextResourceEditFailure(value: unknown): value is TextResourceEditFai
   );
 }
 
+function textChangesConflict(left: TextChange, right: TextChange): boolean {
+  if (left.from === left.to && right.from === right.to) {
+    return false;
+  }
+  if (left.from === left.to) {
+    return left.from > right.from && left.from < right.to;
+  }
+  if (right.from === right.to) {
+    return right.from > left.from && right.from < left.to;
+  }
+  return left.from < right.to && right.from < left.to;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -409,10 +566,12 @@ function asTextBatchParams(value: unknown): TextBatchParams {
 function textBatchResult(
   results: FileMutationResult[],
   callIdsByResult: string[],
+  displayResults: FileMutationResult[] = results,
+  callIdsByDisplayResult: string[] = callIdsByResult,
 ): AgentToolResult<TextBatchDetails> {
   return {
     content: [new FileMutationAgentResult(results).toTextContent()],
-    details: { results, callIdsByResult },
+    details: { results, callIdsByResult, displayResults, callIdsByDisplayResult },
   };
 }
 

@@ -1,4 +1,4 @@
-import type { AgentContent } from "../content.js";
+import type { AgentContent } from "#src/content.js";
 
 export type ContentCapability = "read" | "write";
 

@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { createHash } from "node:crypto";
 
 import { diffLines } from "diff";

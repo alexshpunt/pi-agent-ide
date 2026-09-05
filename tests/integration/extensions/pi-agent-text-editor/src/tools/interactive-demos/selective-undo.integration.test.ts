@@ -68,7 +68,7 @@ describe("interactive text editor demos", () => {
               toolCall({
                 id: readCallId,
                 name: "read",
-                arguments: { path: demoFileName },
+                arguments: { path: demoFileName, views: ["changes"] },
                 ...interactivePacing,
               }),
             ],
@@ -93,7 +93,7 @@ describe("interactive text editor demos", () => {
       expect(getToolExecution(result, undoCallId).isError).toBe(false);
       await expect(readFile(file, "utf8")).resolves.toBe(restored);
 
-      const header = `undo ${demoFileName}:${selector} +0 ~1 -0`;
+      const header = `undo ${demoFileName} ·`;
       const panel = mutationPanel(result.tuiRenderedOutput, header);
       const line = lineNumber(current, "const MAX_PARALLEL_JOBS = 24;");
       expect(panel).toMatch(new RegExp(`${line}\\s+~\\s+const MAX_PARALLEL_JOBS = 8;`, "u"));
@@ -141,7 +141,9 @@ function selectorForMarker(marker: string): string {
 }
 
 function mutationPanel(rendered: string, header: string): string {
-  const panelStart = rendered.indexOf("╭─", rendered.indexOf(header));
+  const headerStart = rendered.indexOf(header);
+  if (headerStart === -1) throw new Error(`Missing mutation header: ${header}`);
+  const panelStart = rendered.indexOf("╭─", headerStart);
   const panelEnd = rendered.indexOf("╯", panelStart);
 
   if (panelStart === -1 || panelEnd === -1) {

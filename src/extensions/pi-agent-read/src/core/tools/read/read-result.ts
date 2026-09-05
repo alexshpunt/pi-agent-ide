@@ -41,7 +41,16 @@ export function createReadState(
   };
 }
 
-export function projectReadState(state: ReadState, request: ReadRequest): ReadToolResult {
+export interface ReadProjectionOptions {
+  /** Absolute 1-based line where an anchored read's window starts. */
+  readonly originLine?: number;
+}
+
+export function projectReadState(
+  state: ReadState,
+  request: ReadRequest,
+  options?: ReadProjectionOptions,
+): ReadToolResult {
   if (state.contentKind !== "text") {
     if (request.offset !== undefined || request.limit !== undefined) {
       return failureResult({
@@ -66,7 +75,7 @@ export function projectReadState(state: ReadState, request: ReadRequest): ReadTo
   }
 
   const totalLines = state.text.lines.length;
-  const range = resolveTextRange(request, totalLines);
+  const range = resolveTextRange(request, totalLines, options?.originLine);
   const lines = state.text.lines.slice(range.startIndex, range.endIndex);
   const renderedText =
     state.textMode === "final"
@@ -162,15 +171,30 @@ function projectAgentContent(content: AgentContent): {
 function resolveTextRange(
   request: ReadRequest,
   totalLines: number,
+  originLine?: number,
 ): { startIndex: number; endIndex: number } {
   const offset = request.offset === undefined ? 1 : Math.trunc(request.offset);
-  const startLine = offset < 0 ? Math.max(1, totalLines + offset + 1) : Math.max(1, offset);
+  const startLine = anchoredStartLine(offset, totalLines, originLine);
   const limit = request.limit === undefined ? totalLines : Math.max(0, Math.trunc(request.limit));
 
   return {
     startIndex: Math.min(totalLines, startLine - 1),
     endIndex: Math.min(totalLines, startLine - 1 + limit),
   };
+}
+
+/** Resolves the absolute window start; anchored reads count offsets from their origin. */
+export function anchoredStartLine(
+  offset: number,
+  totalLines: number,
+  originLine: number | undefined,
+): number {
+  if (originLine === undefined) {
+    return offset < 0 ? Math.max(1, totalLines + offset + 1) : Math.max(1, offset);
+  }
+
+  const requested = offset < 0 ? originLine + offset : originLine + Math.max(1, offset) - 1;
+  return Math.max(1, requested);
 }
 
 function isSingleTextContent(content: AgentContent): content is readonly [TextContent] {

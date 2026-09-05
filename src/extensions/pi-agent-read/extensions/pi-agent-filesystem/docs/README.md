@@ -32,7 +32,7 @@ The resolvers handle ordinary host filesystem paths:
 
 - relative paths;
 - absolute paths;
-- paths containing `..`;
+- paths with dot-dot segments;
 - platform drive paths.
 
 An explicit reference with another scheme, such as `https:`, `symbol:`, or `internal:`, returns `not-handled`.
@@ -73,7 +73,7 @@ Mixed, image, or custom content is rejected. The common Resource contract does n
 `cwd` is only the base for a relative source:
 
 - an absolute path remains absolute;
-- `..` may escape `cwd`;
+- dot-dot segments may escape `cwd`;
 - paths outside the active project are valid;
 - symlinks follow host filesystem behavior;
 - no project-root or allowlist check is performed.
@@ -104,5 +104,3 @@ This package does not:
 - implement mutation algorithms;
 - invoke formatters, LSP, AST, Git, or UI behavior;
 - reconcile conflicts with another filesystem provider.
-
-Open implementation gaps are listed in [`known-gaps.md`](./known-gaps.md).

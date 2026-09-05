@@ -12,6 +12,13 @@ export class TextMutationAnchorResolutionError extends Error {
   }
 }
 
+/** Groups every rejected anchor field from one mutation call. */
+export class TextMutationAnchorAggregateError extends AggregateError {
+  public constructor(readonly failures: readonly TextMutationAnchorResolutionError[]) {
+    super(failures, `${failures.length} text anchors could not resolve`);
+  }
+}
+
 export function contextualizeTextMutationAnchorError(
   error: unknown,
   toolName: string,

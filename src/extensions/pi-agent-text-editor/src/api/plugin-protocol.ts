@@ -1,9 +1,10 @@
 import { isResourceResolver, type ResourceResolver } from "pi-agent-resource";
 import {
   isTextAnchorResolver,
-  type TextAnchorRejection,
   type TextAnchorResolver,
   type TextPresenterRegistration,
+  type TextTargetResolutionAttempt,
+  type TextTargetResolver,
 } from "pi-agent-text";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
@@ -27,7 +28,7 @@ import type { TextEditorToolRendererRegistration } from "#src/api/tool-renderer.
 
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 15;
+export const TEXT_EDITOR_API_VERSION = 17;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 
@@ -53,18 +54,9 @@ export interface TextAnchorResourceResolverContext {
   readonly signal?: AbortSignal;
 }
 
-export type TextAnchorResourceResolutionAttempt =
-  | { readonly kind: "not-handled" }
-  | { readonly kind: "resolved"; readonly sources: readonly string[] }
-  | { readonly kind: "rejected"; readonly rejection: TextAnchorRejection }
-  | { readonly kind: "failed"; readonly error: unknown };
+export type TextAnchorResourceResolutionAttempt = TextTargetResolutionAttempt;
 
-export interface TextAnchorResourceResolver {
-  tryResolve(
-    value: string,
-    context: TextAnchorResourceResolverContext,
-  ): TextAnchorResourceResolutionAttempt | Promise<TextAnchorResourceResolutionAttempt>;
-}
+export interface TextAnchorResourceResolver extends TextTargetResolver {}
 
 export interface TextAnchorResolverRegistration {
   readonly resolver: TextAnchorResolver;
@@ -72,6 +64,8 @@ export interface TextAnchorResolverRegistration {
   readonly kind: string;
   readonly type: TextAnchorType;
   readonly priority?: number;
+  /** Whether this resolver's description appears in the text-editor anchor prompt. Default: true. */
+  readonly describeInPrompt?: boolean;
 }
 
 export interface TextEditorCoreReady {
@@ -79,10 +73,18 @@ export interface TextEditorCoreReady {
   readonly apiVersion: typeof TEXT_EDITOR_API_VERSION;
 }
 
+/** Generic limits plus one plugin-owned recovery config value. */
+export interface TextEditorRecoveryConfigSection {
+  readonly contextLines: number;
+  readonly timeoutMs: number;
+  readonly settings: unknown;
+}
 export interface TextEditorPluginApi {
   addResolver(registration: ResourceResolverRegistration): void;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
+  /** Reads this plugin's project recovery subsection. */
+  recoveryConfig(section: string): TextEditorRecoveryConfigSection;
   addTextPresenter(registration: TextPresenterRegistration): void;
   addMutationTool(registration: TextMutationToolRegistration): void;
   addMutationGuard(registration: TextMutationGuardRegistration): void;
@@ -111,12 +113,25 @@ const textAnchorResourceResolverSchema = Type.Object(
   { tryResolve: functionSchema },
   { additionalProperties: true },
 );
+const textTargetPositionSchema = Type.Object({
+  lineNumber: Type.Integer({ minimum: 1 }),
+  column: Type.Integer({ minimum: 0 }),
+});
+const textTargetRangeSchema = Type.Object({
+  start: textTargetPositionSchema,
+  end: textTargetPositionSchema,
+  linewise: Type.Optional(Type.Boolean()),
+});
+const textTargetSchema = Type.Object({
+  source: Type.String({ minLength: 1 }),
+  ranges: Type.Optional(Type.Array(textTargetRangeSchema)),
+});
 const textAnchorResourceResolutionAttemptSchema = Type.Union([
   Type.Object({ kind: Type.Literal("not-handled") }, { additionalProperties: true }),
   Type.Object(
     {
       kind: Type.Literal("resolved"),
-      sources: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+      targets: Type.Array(textTargetSchema, { minItems: 1 }),
     },
     { additionalProperties: true },
   ),

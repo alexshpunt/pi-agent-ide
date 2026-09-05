@@ -1,0 +1,68 @@
+name: Git preview package
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - preview
+permissions:
+  contents: write
+
+concurrency:
+  group: git-preview
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24.19.0"
+  NPM_VERSION: "11.19.0"
+jobs:
+  build:
+    name: Build and publish preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup npm
+        run: npm install --global "npm@${NPM_VERSION}"
+
+      - name: Build runtime tree
+        run: node --experimental-strip-types scripts/build-public-package.ts --git-runtime .agents/tmp/git-preview
+
+      - name: Validate runtime install
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime=".agents/tmp/git-preview"
+          npm install --omit=dev --package-lock=false --prefix "$runtime"
+          if find "$runtime" -path "$runtime/node_modules" -prune -o -name package.json -print0 | xargs -0 grep -nE 'pi-coding-agent-test|workspace:'; then
+            echo "Runtime manifests contain development-only dependencies" >&2
+            exit 1
+          fi
+          test ! -e "$runtime/node_modules/pi-coding-agent-test"
+          rm -rf "$runtime/node_modules" "$runtime/package-lock.json"
+
+      - name: Publish preview ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$PWD/.agents/tmp/git-preview"
+          worktree="$RUNNER_TEMP/pi-agent-ide-preview"
+          git worktree add --detach "$worktree" HEAD
+          git -C "$worktree" switch --orphan preview
+          git -C "$worktree" rm --quiet --ignore-unmatch --cached -r .
+          find "$worktree" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a "$runtime/." "$worktree/"
+          git -C "$worktree" add --all
+          git -C "$worktree" -c core.hooksPath=/dev/null -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -m "build: update Git preview from ${GITHUB_SHA}"
+          git -C "$worktree" push --force origin HEAD:refs/heads/preview

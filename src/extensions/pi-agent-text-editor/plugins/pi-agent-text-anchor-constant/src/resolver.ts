@@ -15,6 +15,12 @@ export function createConstantTextAnchorResolver(): TextAnchorResolver {
   return {
     id: "file-position",
     description: "`begin` and `end` select the first and last existing lines.",
+    renderFull(value) {
+      return value;
+    },
+    renderCompact(value) {
+      return value === "begin" ? "file start" : "file end";
+    },
     tryResolve(value, context) {
       return Promise.resolve(resolveConstantAnchor(value, context));
     },

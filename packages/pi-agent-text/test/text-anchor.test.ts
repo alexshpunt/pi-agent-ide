@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { isTextAnchorResolutionAttempt, isTextAnchorResolver, TextAnchor } from "../src/index.js";
+import { isTextAnchorResolutionAttempt, isTextAnchorResolver, TextAnchor } from "#src/index.js";
 
 class FixtureTextAnchor extends TextAnchor {
   public constructor(value: string, lineNumber: number) {
@@ -13,6 +13,8 @@ describe("text anchor runtime contracts", () => {
       isTextAnchorResolver({
         id: "fixture",
         description: "Fixture anchors.",
+        renderFull: (value: string): string => value,
+        renderCompact: (value: string): string => value,
         tryResolve: () => Promise.resolve({ kind: "not-handled" }),
       }),
     ).toBe(true);
@@ -28,8 +30,20 @@ describe("text anchor runtime contracts", () => {
     );
   });
 
+  test("accepts a whitespace-only exact anchor value", () => {
+    expect(() => new FixtureTextAnchor("  \n\t", 1)).not.toThrow();
+  });
+
   test("rejects malformed resolver and attempt values", () => {
     expect(isTextAnchorResolver({ id: "fixture", description: "Missing callback." })).toBe(false);
+    expect(
+      isTextAnchorResolver({
+        id: "fixture",
+        description: "Malformed recovery callback.",
+        tryResolve: () => Promise.resolve({ kind: "not-handled" }),
+        recover: "not a function",
+      }),
+    ).toBe(false);
     expect(
       isTextAnchorResolutionAttempt({
         kind: "resolved",

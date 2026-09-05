@@ -26,9 +26,16 @@ const forbidden: { readonly label: string; readonly pattern: RegExp }[] = [
 ];
 const failures: string[] = [];
 const forbiddenRepositoryPrefixes = [".pi/skills/"];
+const publicProjectSkillPrefixes = [
+  ".pi/skills/design-terminal-ui/",
+  ".pi/skills/write-agent-tool-prompts/",
+];
 
 for (const file of files) {
-  if (forbiddenRepositoryPrefixes.some((prefix) => file.startsWith(prefix))) {
+  if (
+    forbiddenRepositoryPrefixes.some((prefix) => file.startsWith(prefix)) &&
+    !publicProjectSkillPrefixes.some((prefix) => file.startsWith(prefix))
+  ) {
     failures.push(`${file}: private repository path`);
   }
   let content: string;

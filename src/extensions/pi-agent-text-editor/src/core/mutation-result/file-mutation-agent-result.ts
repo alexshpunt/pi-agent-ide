@@ -1,4 +1,5 @@
 import { renderAgentDiff } from "./agent-diff.js";
+import { renderFinalStateFragment } from "./final-state-fragment.js";
 import { type FileMutationResult } from "./file-mutation-result.js";
 
 // ─── Agent-facing result formatter ───────────────────────────────────────
@@ -288,12 +289,12 @@ export class FileMutationAgentResult {
 
     for (const diff of fmr.diffs) {
       const path = /^--- (.+)$/m.exec(diff)?.[1] ?? fmr.path ?? "<unknown file>";
-      blocks.push(renderAgentDiff(fmr, path).join("\n"));
+      blocks.push(renderFinalStateFragment(fmr, path).join("\n"));
     }
 
     if (blocks.length === 0) {
       for (const file of fmr.files) {
-        blocks.push(`${file.path} +0 -0`);
+        blocks.push(file.path);
       }
     }
 

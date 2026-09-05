@@ -38,6 +38,12 @@ describe("text change engine", () => {
     ).toThrow("overlap");
   });
 
+  test("rejects a change that leaves its selected text unchanged", () => {
+    expect(() => applyTextChanges("alpha", [{ from: 0, to: 5, insert: "alpha" }])).toThrow(
+      "must change",
+    );
+  });
+
   test("reports coordinates and text before and after the change", () => {
     expect(applyTextChanges("abc", [{ from: 1, to: 2, insert: "XYZ" }]).changes).toEqual([
       {

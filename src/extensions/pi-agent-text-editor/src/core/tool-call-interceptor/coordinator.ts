@@ -330,15 +330,7 @@ class InterceptorImpl implements ToolCallInterceptor {
     pi.on("agent_end", async () => {
       await this.finalizeRecovery();
 
-      for (const [contentIndex, entry] of this.streamedBatchEntries) {
-        if (
-          !entry.complete &&
-          !this.recoveryAppliedBatchIndexes.has(entry.index) &&
-          !this.emittedToolCallAnnotationKinds.get(contentIndex)?.has("stale-anchor")
-        ) {
-          this.annotateContent(contentIndex, { kind: "aborted" });
-        }
-      }
+      this.annotateIncompleteCalls();
 
       this.cleanupAll();
     });
@@ -585,8 +577,12 @@ class InterceptorImpl implements ToolCallInterceptor {
   }
   private annotateIncompleteCalls(): void {
     for (const [contentIndex, entry] of this.streamedBatchEntries) {
+      // Contents whose transient state was already cleaned up ended one way or
+      // another; re-annotating them would leak the annotation onto the next
+      // call that reuses the same content index.
       if (
         !entry.complete &&
+        this.contentNames.has(contentIndex) &&
         !this.recoveryAppliedBatchIndexes.has(entry.index) &&
         !this.emittedToolCallAnnotationKinds.get(contentIndex)?.has("stale-anchor")
       ) {

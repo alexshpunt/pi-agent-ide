@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { createConstantTextAnchorResolver } from "../src/resolver.js";
+import { createConstantTextAnchorResolver } from "#src/resolver.js";
 
 const resolver = createConstantTextAnchorResolver();
 

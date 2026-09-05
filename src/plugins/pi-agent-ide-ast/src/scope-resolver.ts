@@ -8,6 +8,12 @@ export function createAstScopeAnchorResolver(manager: AstScopeManager): TextAnch
     id: "ast-scope",
     description:
       "Use `scope-begin-HASH` or `scope-end-HASH` as shown beside source lines; a numeric suffix may distinguish repeated scopes.",
+    renderFull(value) {
+      return value;
+    },
+    renderCompact(value) {
+      return scopeAnchorPattern.exec(value)?.[1] === "begin" ? "scope start" : "scope end";
+    },
     async tryResolve(value, context) {
       if (!scopeAnchorPattern.test(value)) {
         return { kind: "not-handled" };

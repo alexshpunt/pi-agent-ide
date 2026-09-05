@@ -4,6 +4,9 @@ import type {
   DoctorFinding,
   DoctorPlugin,
   DoctorPluginApi,
+  DoctorSetupAction,
+  DoctorSetupCheck,
+  DoctorToolSelection,
 } from "#src/api/doctor.js";
 import type { LanguageDefinition, ToolRecipe } from "#src/api/tool-catalog.js";
 
@@ -15,6 +18,7 @@ export interface OwnedContribution<T> {
 export interface DoctorSnapshot {
   readonly languages: readonly OwnedContribution<LanguageDefinition>[];
   readonly recipes: readonly OwnedContribution<ToolRecipe>[];
+  readonly setupChecks: readonly OwnedContribution<DoctorSetupCheck>[];
   readonly checks: readonly OwnedContribution<DoctorCheck>[];
 }
 
@@ -25,6 +29,7 @@ export class DoctorCore {
   private readonly plugins = new Map<string, Promise<void>>();
   private readonly languages: OwnedContribution<LanguageDefinition>[] = [];
   private readonly recipes: OwnedContribution<ToolRecipe>[] = [];
+  private readonly setupChecks: OwnedContribution<DoctorSetupCheck>[] = [];
   private readonly checks: OwnedContribution<DoctorCheck>[] = [];
   private queue = Promise.resolve();
 
@@ -42,6 +47,7 @@ export class DoctorCore {
       let isOpen = true;
       const ownLanguages: OwnedContribution<LanguageDefinition>[] = [];
       const ownRecipes: OwnedContribution<ToolRecipe>[] = [];
+      const ownSetupChecks: OwnedContribution<DoctorSetupCheck>[] = [];
       const ownChecks: OwnedContribution<DoctorCheck>[] = [];
       const api: DoctorPluginApi = {
         addLanguage: (value) => {
@@ -49,6 +55,9 @@ export class DoctorCore {
         },
         addToolRecipe: (value) => {
           add(value, ownRecipes, plugin.id, "tool recipe", () => isOpen);
+        },
+        addSetupCheck: (value) => {
+          add(value, ownSetupChecks, plugin.id, "setup check", () => isOpen);
         },
         addCheck: (value) => {
           add(value, ownChecks, plugin.id, "check", () => isOpen);
@@ -65,6 +74,7 @@ export class DoctorCore {
       assertAvailable(this.recipes, ownRecipes, "tool recipe");
       this.languages.push(...ownLanguages);
       this.recipes.push(...ownRecipes);
+      this.setupChecks.push(...ownSetupChecks);
       this.checks.push(...ownChecks);
       return undefined;
     });
@@ -91,9 +101,46 @@ export class DoctorCore {
     return {
       languages: [...this.languages],
       recipes: [...this.recipes],
+      setupChecks: [...this.setupChecks],
       checks: [...this.checks],
     };
   }
+}
+
+export interface DoctorSetupState {
+  readonly selections: readonly (DoctorToolSelection & { readonly pluginId: string })[];
+  readonly actions: readonly (DoctorSetupAction & { readonly pluginId: string })[];
+}
+
+/** Runs lightweight setup checks while isolating a broken plugin. */
+export async function runContributedSetupChecks(
+  snapshot: DoctorSnapshot,
+  context: DoctorContext,
+): Promise<DoctorSetupState> {
+  const selections: (DoctorToolSelection & { readonly pluginId: string })[] = [];
+  const actions: (DoctorSetupAction & { readonly pluginId: string })[] = [];
+
+  for (const contribution of snapshot.setupChecks) {
+    try {
+      const result = await contribution.value.inspect(context);
+      selections.push(
+        ...(result.selections ?? []).map((selection) => ({
+          ...selection,
+          pluginId: contribution.pluginId,
+        })),
+      );
+      actions.push(
+        ...(result.actions ?? []).map((action) => ({
+          ...action,
+          pluginId: contribution.pluginId,
+        })),
+      );
+    } catch {
+      // Setup guidance is optional. An internal inspection failure is not a user action.
+    }
+  }
+
+  return { selections, actions };
 }
 
 /**

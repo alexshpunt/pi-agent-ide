@@ -1,10 +1,14 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import {
+  attachTextAnchorRenderer,
+  isTextAnchorRecoveryOutcome,
   isTextAnchorResolutionAttempt,
   type TextAnchor,
+  type TextAnchorRecoveryOutcome,
   type TextAnchorRejection,
   type TextAnchorResolver,
   type TextAnchorResolverContext,
+  type TextTarget,
 } from "pi-agent-text";
 
 import {
@@ -17,6 +21,12 @@ import {
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
 
 import type { TextAnchorInspectionOutcome } from "#src/api/anchor-inspection.js";
+const resolvedAnchorTypes = new WeakMap<TextAnchor, TextAnchorType>();
+
+/** Returns the registered resolver type that produced an anchor. */
+export function resolvedTextAnchorType(anchor: TextAnchor): TextAnchorType | undefined {
+  return resolvedAnchorTypes.get(anchor);
+}
 
 interface RegisteredTextAnchorResolver {
   readonly resolver: TextAnchorResolver;
@@ -25,6 +35,7 @@ interface RegisteredTextAnchorResolver {
   readonly type: TextAnchorType;
   readonly priority: number;
   readonly order: number;
+  readonly describeInPrompt: boolean;
 }
 
 export class TextAnchorResolutionError extends Error {
@@ -33,8 +44,21 @@ export class TextAnchorResolutionError extends Error {
     readonly resolverId?: string,
     options?: ErrorOptions,
     readonly rejection?: TextAnchorRejection,
+    public recovery?: TextAnchorRecoveryOutcome,
+    private readonly recoverAgain?: (
+      context: TextAnchorResolverContext,
+    ) => Promise<TextAnchorRecoveryOutcome>,
+    private readonly originalRecoveryContext?: TextAnchorResolverContext,
   ) {
     super(message, options);
+  }
+
+  /** Recomputes recovery against a supplied or original immutable source snapshot. */
+  public async refreshRecovery(context?: TextAnchorResolverContext): Promise<void> {
+    const recoveryContext = context === undefined ? this.originalRecoveryContext : context;
+    if (this.recoverAgain !== undefined && recoveryContext !== undefined) {
+      this.recovery = await this.recoverAgain(recoveryContext);
+    }
   }
 }
 
@@ -63,6 +87,7 @@ export class TextAnchorRegistry {
       type: registration.type,
       priority: registration.priority ?? 0,
       order: this.#resolvers.length,
+      describeInPrompt: registration.describeInPrompt ?? true,
     });
   }
 
@@ -101,12 +126,15 @@ export class TextAnchorRegistry {
 
   public renderPromptSection(): string | undefined {
     const entries = this.#resolvers
+      .filter(({ describeInPrompt }) => describeInPrompt)
       .map(({ resolver }) => renderResolverDescription(resolver))
       .filter((entry): entry is string => entry !== undefined);
 
     return entries.length === 0
       ? undefined
-      : ["Text editor anchors:", ...entries, "", "Pass anchors exactly as shown."].join("\n");
+      : ["Text editor anchors:", ...entries, "Pass structured anchors exactly as shown."].join(
+          "\n",
+        );
   }
 }
 
@@ -134,6 +162,7 @@ export class TextAnchorRegistrySnapshot {
           kind: "invalid",
           anchorIndex: index,
           reason: error.rejection.reason,
+          rejectionCode: error.rejection.code,
           ...(error.rejection.contextRange !== undefined && {
             contextRange: error.rejection.contextRange,
           }),
@@ -148,7 +177,7 @@ export class TextAnchorRegistrySnapshot {
     value: string,
     context: TextAnchorResourceResolverContext,
     allowedKinds?: ReadonlySet<string>,
-  ): Promise<readonly string[] | undefined> {
+  ): Promise<readonly TextTarget[] | undefined> {
     for (const { kind, resolver, resources } of this.resolvers) {
       if (resources === undefined || (allowedKinds !== undefined && !allowedKinds.has(kind))) {
         continue;
@@ -195,7 +224,7 @@ export class TextAnchorRegistrySnapshot {
         );
       }
 
-      return [...new Set(attempt.sources)];
+      return attempt.targets;
     }
 
     return undefined;
@@ -209,7 +238,7 @@ export class TextAnchorRegistrySnapshot {
       throw new TextAnchorResolutionError(`Anchor "${value}" cannot resolve in an empty file`);
     }
 
-    for (const { kind, resolver } of this.resolvers) {
+    for (const { kind, resolver, type } of this.resolvers) {
       if (allowedKinds !== undefined && !allowedKinds.has(kind)) {
         continue;
       }
@@ -220,7 +249,7 @@ export class TextAnchorRegistrySnapshot {
       try {
         normalizedValue = resolver.normalize?.(value) ?? value;
 
-        if (typeof normalizedValue !== "string" || normalizedValue.trim().length === 0) {
+        if (typeof normalizedValue !== "string" || normalizedValue.length === 0) {
           throw new TypeError("Text anchor normalization must return non-empty text");
         }
 
@@ -254,11 +283,19 @@ export class TextAnchorRegistrySnapshot {
       }
 
       if (attempt.kind === "rejected") {
+        const recoverAgain =
+          resolver.recover === undefined
+            ? undefined
+            : (latest: TextAnchorResolverContext) =>
+                runAnchorRecovery(resolver, normalizedValue, attempt.rejection, latest);
         throw new TextAnchorResolutionError(
           attempt.rejection.reason,
           resolver.id,
           undefined,
           attempt.rejection,
+          undefined,
+          recoverAgain,
+          context,
         );
       }
 
@@ -284,6 +321,9 @@ export class TextAnchorRegistrySnapshot {
         );
       }
 
+      attachTextAnchorRenderer(attempt.anchor, resolver, resolver.id);
+
+      resolvedAnchorTypes.set(attempt.anchor, type);
       return attempt.anchor;
     }
 
@@ -302,11 +342,16 @@ function isSelectionWithinContext(
   return anchor.ranges.every((range) => {
     const startLine = context.lines[range.start.lineNumber - 1];
     const endLine = context.lines[range.end.lineNumber - 1];
+    const virtualTrailingLine =
+      endLine === undefined &&
+      range.end.lineNumber === context.lines.length + 1 &&
+      range.end.column === 0 &&
+      /(?:\r\n|\r|\n)$/u.test(context.content);
     return (
       startLine !== undefined &&
-      endLine !== undefined &&
+      (endLine !== undefined || virtualTrailingLine) &&
       range.start.column <= startLine.length &&
-      range.end.column <= endLine.length
+      (virtualTrailingLine || range.end.column <= (endLine?.length ?? -1))
     );
   });
 }
@@ -324,4 +369,47 @@ function renderResolverDescription(resolver: TextAnchorResolver): string | undef
   }
 
   return `- ${value.trim().replaceAll("\n", " ")}`;
+}
+
+async function runAnchorRecovery(
+  resolver: TextAnchorResolver,
+  value: string,
+  rejection: TextAnchorRejection,
+  context: TextAnchorResolverContext,
+): Promise<TextAnchorRecoveryOutcome> {
+  if (resolver.recover === undefined) {
+    return { kind: "unavailable" };
+  }
+  try {
+    const recovered: unknown = await resolver.recover(value, { ...context, rejection });
+    return isTextAnchorRecoveryOutcome(recovered) && recoveryFitsContext(recovered, context)
+      ? recovered
+      : {
+          kind: "failed",
+          error: new Error(`Text anchor resolver ${resolver.id} returned invalid recovery`),
+        };
+  } catch (error) {
+    return { kind: "failed", error };
+  }
+}
+
+function recoveryFitsContext(
+  recovery: TextAnchorRecoveryOutcome,
+  context: TextAnchorResolverContext,
+): boolean {
+  if (recovery.kind !== "candidates" || recovery.total < recovery.candidates.length) {
+    return recovery.kind !== "candidates";
+  }
+  return recovery.candidates.every(({ rank, range }, index) => {
+    const startLine = context.lines[range.start.lineNumber - 1];
+    const endLine = context.lines[range.end.lineNumber - 1];
+    return (
+      rank === index + 1 &&
+      startLine !== undefined &&
+      endLine !== undefined &&
+      range.start.column <= startLine.length &&
+      range.end.column <= endLine.length &&
+      (range.start.lineNumber < range.end.lineNumber || range.start.column <= range.end.column)
+    );
+  });
 }

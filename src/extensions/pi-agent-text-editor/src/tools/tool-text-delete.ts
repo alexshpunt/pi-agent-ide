@@ -1,18 +1,32 @@
 import { Type } from "typebox";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
-import { lineAnchor, selectionChanges, textSelections } from "#src/tools/text-selection.js";
+import {
+  anchorSpanRange,
+  deleteAnchorSpan,
+  selectionChanges,
+  textSelections,
+} from "#src/tools/text-selection.js";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 
 export const deleteSchema = Type.Object(
   {
-    path: Type.Optional(Type.String({ description: "File path to edit" })),
+    path: Type.Optional(
+      Type.String({
+        description:
+          "Source resource reference or file path. A typed SEARCH#... resource can select deletion ranges.",
+      }),
+    ),
     start: Type.Optional(
-      Type.String({ description: "Registered text anchor selecting the first line to delete" }),
+      Type.String({
+        description: "Registered text anchor or unique exact text selecting the first span",
+      }),
     ),
     end: Type.Optional(
-      Type.String({ description: "Registered text anchor selecting the last line to delete" }),
+      Type.String({
+        description: "Registered text anchor or unique exact text selecting the last span",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -26,7 +40,9 @@ interface DeleteParameters {
 
 export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchema> = {
   name: "delete",
-  description: "Delete lines selected by registered text anchors.",
+  description: "Delete one selected span or the natural range between two anchors.",
+
+  promptSnippet: "Make precise file edits by deleting text using exact matches or anchors",
   parameters: deleteSchema,
   source: { field: "path", inherited: true },
   anchors: [
@@ -45,18 +61,9 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
   ],
   pair: ["start", "end"],
   mutate: async (context, parameters: DeleteParameters) => {
-    if (parameters.start === undefined) {
-      throw new Error("start anchor is required.");
-    }
-
     const starts = await context.resolveAnchors("start");
     const selections = textSelections(starts, "start");
-
-    if (selections !== undefined) {
-      if (parameters.end !== undefined) {
-        throw new Error("end cannot be combined with a search selection.");
-      }
-
+    if (parameters.end === undefined && selections !== undefined) {
       const changes = selectionChanges(context, selections, "");
       return {
         edits: new Map(
@@ -68,19 +75,11 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
       };
     }
 
-    const source = context.sourceFor("path");
-    const start = lineAnchor(starts, "start");
-    const end =
-      parameters.end === undefined ? start : lineAnchor(await context.resolveAnchors("end"), "end");
+    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
+    const span = anchorSpanRange(context, starts, ends, "start", "end");
     return {
       edits: new Map([
-        [
-          source,
-          {
-            changes: [context.documentFor(source).deleteLines(start.lineNumber, end.lineNumber)],
-            action: "edited",
-          },
-        ],
+        [span.source, { changes: [deleteAnchorSpan(context, span)], action: "edited" }],
       ]),
     };
   },

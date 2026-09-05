@@ -4,10 +4,12 @@ import path from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { assistantMessage, PiIntegrationTest, testArtifactsDir, text } from "pi-coding-agent-test";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const root = path.resolve(".agents", "tmp", "doctor-command-integration");
 const extension = path.resolve("src", "pi-agent-ide.ts");
 const workspaces: string[] = [];
+const restoreSharedRunner = forceStandaloneIntegrationFile();
 
 beforeAll(async () => {
   await mkdir(root, { recursive: true });
@@ -15,25 +17,46 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
+  restoreSharedRunner();
 });
 
 test("the real Pi command detects C++ and applies plugin-owned recipes", async () => {
   const cwd = await cppWorkspace();
+
+  const agentDirectory = await mkdtemp(path.join(root, "agent-"));
+  workspaces.push(agentDirectory);
+  const globalFile = path.join(agentDirectory, "extensions", "pi-agent-ide", "formatters.json");
+  const globalContent = JSON.stringify({
+    version: 1,
+    formatters: {
+      "global-ruby": {
+        extensions: [".rb"],
+        run: { command: ["rubyfmt", "{file}"] },
+        output: "in-place",
+      },
+    },
+  });
+  await mkdir(path.dirname(globalFile), { recursive: true });
+  await writeFile(globalFile, globalContent, "utf8");
   const result = await new PiIntegrationTest({
     testName: "doctor-cpp-apply",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd,
     extensions: [extension],
     tools: [],
-    environment: { PATH: `${path.join(cwd, "bin")}${path.delimiter}${process.env.PATH ?? ""}` },
+    isolateUserResources: false,
+    environment: {
+      PI_CODING_AGENT_DIR: agentDirectory,
+      PATH: `${path.join(cwd, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+    },
     conversation: [assistantMessage([text("Setup reviewed")])],
   }).run("/pi-agent-ide-doctor --apply --agent");
 
   expect(result.exitCode).toBe(0);
   const transcript = JSON.stringify(result.messages);
   expect(transcript).toContain("Detected: cpp");
-  expect(transcript).toContain("clang-format [formatter]");
-  expect(transcript).toContain("clangd [lsp]");
+  expect(transcript).toContain("clang-format [built-in]");
+  expect(transcript).toContain("clangd [built-in]");
   expect(transcript).toContain("ripgrep is available");
   expect(transcript).toContain("ast-grep is available");
   expect(transcript).toContain("Git is available");
@@ -41,30 +64,30 @@ test("the real Pi command detects C++ and applies plugin-owned recipes", async (
   expect(transcript).not.toContain("irrelevant-linter");
   expect(transcript).not.toContain("irrelevant-language-server");
   expect(JSON.stringify(result.traceEvents)).toContain("Doctor recheck after agent setup");
-  expect(
-    JSON.parse(await readFile(path.join(cwd, ".pi", "pi-agent-ide", "formatters.json"), "utf8")),
-  ).toMatchObject({
-    version: 1,
-    formatters: { "clang-format": {} },
-  });
-  expect(
-    JSON.parse(await readFile(path.join(cwd, ".pi", "pi-agent-ide", "linters.json"), "utf8")),
-  ).toMatchObject({
-    version: 1,
-    linters: { "clang-tidy": {} },
-  });
-  expect(
-    JSON.parse(await readFile(path.join(cwd, ".pi", "pi-agent-ide", "lsp-servers.json"), "utf8")),
-  ).toMatchObject({ version: 1, servers: { clangd: {} } });
+
+  expect(await readFile(globalFile, "utf8")).toBe(globalContent);
+  const formatterConfig = JSON.parse(
+    await readFile(path.join(cwd, ".pi", "pi-agent-ide", "formatters.json"), "utf8"),
+  ) as { readonly formatters: Record<string, unknown> };
+  const linterConfig = JSON.parse(
+    await readFile(path.join(cwd, ".pi", "pi-agent-ide", "linters.json"), "utf8"),
+  ) as { readonly linters: Record<string, unknown> };
+  expect(formatterConfig.formatters).not.toHaveProperty("clang-format");
+  expect(linterConfig.linters).not.toHaveProperty("clang-tidy");
+  const lspConfig = JSON.parse(
+    await readFile(path.join(cwd, ".pi", "pi-agent-ide", "lsp-servers.json"), "utf8"),
+  ) as { readonly servers: Record<string, unknown> };
+  expect(lspConfig.servers).not.toHaveProperty("clangd");
 });
 
 test("disabling plugins removes their doctor checks and catalog knowledge", async () => {
   const cwd = await cppWorkspace();
-  const config = path.join(cwd, "pi-agent-ide.json");
+  const config = path.join(cwd, ".pi", "pi-agent-ide", "extensions.json");
+  await mkdir(path.dirname(config), { recursive: true });
   await writeFile(
     config,
     JSON.stringify({
-      disabledExtensions: ["ide.formatter", "search.text", "ide.ast", "ide.changes"],
+      disabled: ["ide.formatter", "search.text", "ide.ast", "ide.changes"],
     }),
     "utf8",
   );
@@ -76,7 +99,6 @@ test("disabling plugins removes their doctor checks and catalog knowledge", asyn
     tools: [],
     environment: {
       PATH: `${path.join(cwd, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
-      PI_AGENT_IDE_CONFIG: config,
     },
     conversation: [assistantMessage([text("Setup reviewed")])],
   }).run("/pi-agent-ide-doctor --no-apply --agent");
@@ -87,7 +109,7 @@ test("disabling plugins removes their doctor checks and catalog knowledge", asyn
   expect(transcript).not.toContain("Local search (search-text)");
   expect(transcript).not.toContain("Structural search (ast)");
   expect(transcript).not.toContain("Git changes (changes)");
-  expect(transcript).toContain("clang-tidy [lint]");
+  expect(transcript).toContain("clang-tidy [built-in]");
 });
 
 async function cppWorkspace(): Promise<string> {

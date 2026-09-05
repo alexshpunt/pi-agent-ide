@@ -8,7 +8,14 @@ import {
 
 import { writeSuggestedConfigs } from "./config-writer.js";
 import { DoctorCore } from "./core.js";
-import { buildDoctorAgentPrompt, doctorNeedsWork, formatDoctorReport, runDoctor } from "./run.js";
+import {
+  buildDoctorAgentPrompt,
+  doctorNeedsWork,
+  formatDoctorReport,
+  inspectDoctorSetup,
+  runDoctor,
+} from "./run.js";
+import { registerDoctorTipProvider } from "./tip-provider.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -17,6 +24,10 @@ Registers the modular doctor core and `/pi-agent-ide-doctor`.
 */
 export default async function registerDoctor(pi: ExtensionAPI): Promise<void> {
   const core = new DoctorCore();
+  registerDoctorTipProvider(pi, async (context) => {
+    await core.waitForPlugins();
+    return inspectDoctorSetup(core.snapshot(), context.cwd, process.env, context.signal);
+  });
   let delegatedProject: string | undefined;
   const unsubscribe = pi.events.on(DOCTOR_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isDoctorPluginRegistrationRequest(request)) {

@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { diffLines } from "diff";
 
 import { ChangeService } from "#src/changes/change-service.js";

@@ -39,6 +39,12 @@ export function createUndoMutationTool(
     name: "undo",
     description:
       "Restore one selected current Git change to HEAD in the worktree and index, or restore one file to its state before its latest text-editor transaction.",
+
+    promptSnippet: "Restore a Git change or the latest text edit",
+    promptGuidelines: [
+      "You can use undo with a complete `CHANGE#...` anchor to restore that current Git change to HEAD in both the worktree and index.",
+      'You can use undo with `change: "last"` to restore a file to its state before its latest text-editor transaction.',
+    ],
     parameters: undoSchema,
     intent: "restore",
     source: { field: "file", inherited: true },
@@ -47,6 +53,7 @@ export function createUndoMutationTool(
         field: "change",
         sourceField: "file",
         kinds: [CHANGE_ANCHOR_KIND],
+        nonAnchorValues: ["last"],
       },
     ],
     async mutate(context, parameters: UndoParameters) {

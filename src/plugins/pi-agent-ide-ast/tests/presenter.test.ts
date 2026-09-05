@@ -1,5 +1,5 @@
 import { createTextDocument } from "pi-agent-text";
-import { AstScopeManager } from "pi-agent-ide-ast/api/scope";
+import { AstScopeManager } from "#src/api/scope.js";
 import { expect, test } from "vitest";
 
 import { createAstScopePresenter } from "#src/scope-handler.js";

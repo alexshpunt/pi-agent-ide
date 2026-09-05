@@ -13,6 +13,7 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
+import { preserveEnclosingBackground, toolBackgroundAnsi } from "pi-agent-tool-ui";
 
 export const TOOL_CALL_INTERCEPTION_DETAILS_KEY = "pi-agent-text-editor/tool-call-interception";
 
@@ -50,9 +51,26 @@ export interface ToolCallInterceptionDetails {
 const INTERCEPTION_ANNOTATION = Symbol("pi-agent-tool-call-interception/annotation");
 const RENDER_ARGUMENT_PATCH = Symbol("pi-agent-tool-call-interception/render-argument-patch");
 
+export const TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH = Symbol(
+  "pi-agent-tool-call-interception/anchor-render-patch",
+);
+
+/** The render state for one anchor field. */
+export type ToolCallAnchorRenderState =
+  | {
+      readonly kind: "resolved";
+      readonly full: string;
+      readonly compact: string;
+      readonly resolverId: string;
+    }
+  | { readonly kind: "failed" };
+
+/** Resolver-owned rendering state keyed by argument field. */
+export type ToolCallAnchorRenderPatch = Readonly<Record<string, ToolCallAnchorRenderState>>;
 interface InterceptionRenderState {
   [INTERCEPTION_ANNOTATION]?: ToolCallAnnotation;
   [RENDER_ARGUMENT_PATCH]?: Readonly<Record<string, unknown>>;
+  [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]?: ToolCallAnchorRenderPatch;
 }
 
 interface ToolCallInterceptionRenderEntry {
@@ -107,10 +125,52 @@ function sameArgumentPatch(
     return false;
   }
 
-  const keys = Object.keys(right);
-  return keys.length === Object.keys(left).length && keys.every((key) => left[key] === right[key]);
+  const leftRecord = left as Readonly<Record<PropertyKey, unknown>>;
+  const rightRecord = right as Readonly<Record<PropertyKey, unknown>>;
+  const keys = Reflect.ownKeys(right);
+  return (
+    keys.length === Reflect.ownKeys(left).length &&
+    keys.every((key) => leftRecord[key] === rightRecord[key])
+  );
 }
 
+function mergeArgumentPatches(
+  current: Readonly<Record<string, unknown>> | undefined,
+  patch: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const merged: Record<PropertyKey, unknown> = { ...current, ...patch };
+  const currentAnchors = anchorRenderPatchFromArguments(current);
+  const nextAnchors = anchorRenderPatchFromArguments(patch);
+  if (currentAnchors !== undefined || nextAnchors !== undefined) {
+    merged[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH] = {
+      ...currentAnchors,
+      ...nextAnchors,
+    };
+  }
+  return merged;
+}
+
+function argumentPatchWithoutAnchorRendering(
+  patch: Readonly<Record<string, unknown>> | undefined,
+): Readonly<Record<string, unknown>> | undefined {
+  if (patch === undefined || !(TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH in patch)) {
+    return patch;
+  }
+  const result = { ...patch } as Record<PropertyKey, unknown>;
+  delete result[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH];
+  return result;
+}
+
+function anchorRenderPatchFromArguments(
+  patch: Readonly<Record<string, unknown>> | undefined,
+): ToolCallAnchorRenderPatch | undefined {
+  if (patch === undefined) {
+    return undefined;
+  }
+  return (patch as Readonly<Record<string, unknown>> & InterceptionRenderState)[
+    TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH
+  ];
+}
 export class ToolCallInterceptionRenderStore {
   private readonly entries = new Map<string, ToolCallInterceptionRenderEntry>();
 
@@ -144,18 +204,18 @@ export class ToolCallInterceptionRenderStore {
   ): void => {
     const current = this.entries.get(toolCallId);
 
-    if (sameArgumentPatch(current?.renderArgumentPatch, patch)) {
+    const mergedPatch = mergeArgumentPatches(current?.renderArgumentPatch, patch);
+    if (sameArgumentPatch(current?.renderArgumentPatch, mergedPatch)) {
       return;
     }
 
     this.entries.set(toolCallId, {
       annotation: current?.annotation,
-      renderArgumentPatch: patch,
+      renderArgumentPatch: mergedPatch,
       invalidate: current?.invalidate,
     });
     current?.invalidate?.();
   };
-
   public getRenderArgumentPatch(toolCallId: string): Readonly<Record<string, unknown>> | undefined {
     return this.entries.get(toolCallId)?.renderArgumentPatch;
   }
@@ -176,48 +236,90 @@ class AnnotatedToolCall implements Component {
     private state: InterceptionRenderState,
     private readonly annotations: ToolCallInterceptionRenderStore,
     private readonly toolCallId: string,
+    private backgroundAnsi: string | undefined,
   ) {}
 
   public get inner(): Component {
     return this.component;
   }
 
-  public update(component: Component, theme: Theme, state: InterceptionRenderState): void {
+  public update(
+    component: Component,
+    theme: Theme,
+    state: InterceptionRenderState,
+    backgroundAnsi: string | undefined,
+  ): void {
     this.component = component;
     this.theme = theme;
     this.state = state;
+    this.backgroundAnsi = backgroundAnsi;
   }
 
   public render(width: number): string[] {
     const lines = this.component.render(width);
     const annotation = this.annotations.get(this.toolCallId) ?? this.state[INTERCEPTION_ANNOTATION];
+    let renderedLines: string[];
 
     if (annotation === undefined) {
-      return lines;
+      renderedLines = lines;
+    } else {
+      const rendered = renderAnnotation(annotation, this.theme);
+
+      if (lines.length === 0) {
+        renderedLines = [truncateToWidth(rendered, width)];
+      } else {
+        const suffix = `  ← ${rendered}`;
+        const suffixWidth = visibleWidth(suffix);
+
+        renderedLines =
+          suffixWidth >= width
+            ? [truncateToWidth(suffix.trimStart(), width, ""), ...lines.slice(1)]
+            : [
+                `${truncateToWidth(lines[0] ?? "", width - suffixWidth, "")}${suffix}`,
+                ...lines.slice(1),
+              ];
+      }
     }
 
-    const rendered = renderAnnotation(annotation, this.theme);
-
-    if (lines.length === 0) {
-      return [truncateToWidth(rendered, width)];
-    }
-
-    const suffix = `  ← ${rendered}`;
-    const suffixWidth = visibleWidth(suffix);
-
-    if (suffixWidth >= width) {
-      return [truncateToWidth(suffix.trimStart(), width, ""), ...lines.slice(1)];
-    }
-
-    return [
-      `${truncateToWidth(lines[0] ?? "", width - suffixWidth, "")}${suffix}`,
-      ...lines.slice(1),
-    ];
+    return preserveBackgroundLines(renderedLines, this.backgroundAnsi);
   }
 
   public invalidate(): void {
     this.component.invalidate();
   }
+}
+
+class EnclosingBackgroundComponent implements Component {
+  public constructor(
+    private component: Component,
+    private backgroundAnsi: string,
+  ) {}
+
+  public get inner(): Component {
+    return this.component;
+  }
+
+  public update(component: Component, backgroundAnsi: string): void {
+    this.component = component;
+    this.backgroundAnsi = backgroundAnsi;
+  }
+
+  public render(width: number): string[] {
+    return preserveBackgroundLines(this.component.render(width), this.backgroundAnsi);
+  }
+
+  public invalidate(): void {
+    this.component.invalidate();
+  }
+}
+
+function preserveBackgroundLines(
+  lines: readonly string[],
+  backgroundAnsi: string | undefined,
+): string[] {
+  return backgroundAnsi === undefined
+    ? [...lines]
+    : lines.map((line) => preserveEnclosingBackground(line, backgroundAnsi));
 }
 
 export function withToolCallInterceptionRendering<TParameters extends TSchema, TDetails, TState>(
@@ -226,6 +328,8 @@ export function withToolCallInterceptionRendering<TParameters extends TSchema, T
 ): ToolDefinition<TParameters, TDetails, TState> {
   const renderCall = definition.renderCall;
   const renderResult = definition.renderResult;
+
+  const inheritsToolBackground = definition.renderShell !== "self";
 
   return {
     ...definition,
@@ -237,16 +341,20 @@ export function withToolCallInterceptionRendering<TParameters extends TSchema, T
       const annotation = annotations.bind(context.toolCallId, context.invalidate);
       const renderArgumentPatch =
         annotations.getRenderArgumentPatch(context.toolCallId) ?? state[RENDER_ARGUMENT_PATCH];
+      const anchorRenderPatch = anchorRenderPatchFromArguments(renderArgumentPatch);
+      const argumentPatch = argumentPatchWithoutAnchorRendering(renderArgumentPatch);
 
       if (renderArgumentPatch !== undefined) {
         state[RENDER_ARGUMENT_PATCH] = renderArgumentPatch;
       }
+      if (anchorRenderPatch !== undefined) {
+        state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH] = anchorRenderPatch;
+      }
 
       const effectiveArguments =
-        renderArgumentPatch === undefined
+        argumentPatch === undefined
           ? arguments_
-          : ({ ...renderArgumentPatch, ...arguments_ } as typeof arguments_);
-
+          : ({ ...argumentPatch, ...arguments_ } as typeof arguments_);
       if (annotation !== undefined) {
         state[INTERCEPTION_ANNOTATION] = annotation;
       }
@@ -266,26 +374,47 @@ export function withToolCallInterceptionRendering<TParameters extends TSchema, T
         component = fallbackCall(definition.name, theme);
       }
 
+      const backgroundAnsi = inheritsToolBackground
+        ? toolBackgroundAnsi(theme, context)
+        : undefined;
+
       if (previous !== undefined) {
-        previous.update(component, theme, state);
+        previous.update(component, theme, state, backgroundAnsi);
         return previous;
       }
 
-      return new AnnotatedToolCall(component, theme, state, annotations, context.toolCallId);
+      return new AnnotatedToolCall(
+        component,
+        theme,
+        state,
+        annotations,
+        context.toolCallId,
+        backgroundAnsi,
+      );
     },
     renderResult(result, options, theme, context) {
       const state = context.state as InterceptionRenderState;
       const renderArgumentPatch =
         annotations.getRenderArgumentPatch(context.toolCallId) ?? state[RENDER_ARGUMENT_PATCH];
+      const anchorRenderPatch = anchorRenderPatchFromArguments(renderArgumentPatch);
+      const argumentPatch = argumentPatchWithoutAnchorRendering(renderArgumentPatch);
 
       if (renderArgumentPatch !== undefined) {
         state[RENDER_ARGUMENT_PATCH] = renderArgumentPatch;
       }
+      if (anchorRenderPatch !== undefined) {
+        state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH] = anchorRenderPatch;
+      }
 
-      const effectiveContext =
-        renderArgumentPatch === undefined
-          ? context
-          : { ...context, args: { ...renderArgumentPatch, ...context.args } };
+      const previous =
+        context.lastComponent instanceof EnclosingBackgroundComponent
+          ? context.lastComponent
+          : undefined;
+      const effectiveContext = {
+        ...context,
+        ...(argumentPatch !== undefined && { args: { ...argumentPatch, ...context.args } }),
+        lastComponent: previous?.inner ?? context.lastComponent,
+      };
       const persisted = getToolCallInterception(result.details)?.annotation;
       const transient = annotations.get(context.toolCallId) ?? state[INTERCEPTION_ANNOTATION];
       const annotation =
@@ -315,15 +444,29 @@ export function withToolCallInterceptionRendering<TParameters extends TSchema, T
       annotations.complete(context.toolCallId);
       Reflect.deleteProperty(state, INTERCEPTION_ANNOTATION);
 
+      let component: Component;
+
       if (renderResult !== undefined) {
         try {
-          return renderResult(result, options, theme, effectiveContext);
+          component = renderResult(result, options, theme, effectiveContext);
         } catch {
-          return fallbackResult(result, theme, context.isError);
+          component = fallbackResult(result, theme, context.isError);
         }
+      } else {
+        component = fallbackResult(result, theme, context.isError);
       }
 
-      return fallbackResult(result, theme, context.isError);
+      if (!inheritsToolBackground) {
+        return component;
+      }
+
+      const backgroundAnsi = toolBackgroundAnsi(theme, context);
+      if (previous !== undefined) {
+        previous.update(component, backgroundAnsi);
+        return previous;
+      }
+
+      return new EnclosingBackgroundComponent(component, backgroundAnsi);
     },
   };
 }

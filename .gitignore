@@ -1,6 +1,18 @@
 node_modules/
+.worktrees/
 *.tgz
+
+.env
+.env.*
+!.env.example
 
 .agents/
 .tmp/
-.pi/skills/
+.pi/skills/*
+
+!.pi/skills/write-agent-tool-prompts/
+!.pi/skills/write-agent-tool-prompts/SKILL.md
+
+# Local session-runtime artifacts from agent tooling (never publishable).
+.linear-project
+.mesh/

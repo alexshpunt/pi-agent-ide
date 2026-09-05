@@ -1,4 +1,4 @@
-import { requiredValue } from "../../../../utils/required-value.js";
+import { requiredValue } from "pi-agent-invariant";
 import { ChangeSet, Text } from "@codemirror/state";
 
 export interface TextRange {
@@ -168,6 +168,9 @@ export function applyTextChanges(source: string, changes: readonly TextChange[])
     .sort((left, right) => left.change.from - right.change.from || left.index - right.index)
     .map(({ change }) => change);
   validateChanges(source.length, ordered);
+  if (ordered.some((change) => source.slice(change.from, change.to) === change.insert)) {
+    throw new Error("Text changes must change the document.");
+  }
   const document = Text.of([source]);
   const changeSet = ChangeSet.of(
     ordered.map((change) => ({ ...change, insert: Text.of([change.insert]) })),

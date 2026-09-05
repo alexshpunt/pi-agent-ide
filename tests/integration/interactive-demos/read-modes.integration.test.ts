@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   assistantMessage,
+  getToolExecution,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -11,8 +12,10 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 
 import { generateReadExtensions } from "pi-agent-read/testing";
+import { expectToolRowsHaveBackground } from "#integration/support/tui-background.js";
 
 const generatedExtensions = await generateReadExtensions([
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",
@@ -105,6 +108,79 @@ test("shows every read rendering mode", async () => {
     expect(source).toContain("export type CodeViewScheme");
     expect(ast).toContain("export function parseCodeViewReference");
     expect(article).toContain("# Demo Article");
+  });
+});
+
+test("shows included views once in the real read panel", async () => {
+  await withTempDirectory(async (directory) => {
+    const fileName = "view-read.ts";
+    await writeFile(path.join(directory, fileName), "alpha\nbravo\n", "utf8");
+
+    const result = await new PiIntegrationTest({
+      artifactsDir: testArtifactsDir(expect.getState().testPath),
+      testName: "interactive-demo-read-views",
+      cwd: directory,
+      extensions: generatedExtensions.paths,
+      tools: ["read"],
+      rawMode: false,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "read-views",
+              name: "read",
+              arguments: { path: fileName, views: ["lines", "anchors"] },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Read finished")]),
+      ],
+    }).run("Read a file with line and anchor views");
+
+    const projected = getToolResultText(result, "read-views");
+    const firstProjectedLine = projected.split("\n")[0] ?? "";
+    const rendered = stripTerminalSequences(result.tuiRenderedOutput);
+    const panel = rendered.slice(rendered.lastIndexOf("╭─"));
+
+    expect(firstProjectedLine).toMatch(/^1#[A-F\d]+\|alpha$/u);
+    expect(panel).toContain(firstProjectedLine);
+  });
+});
+
+test("wraps a long source line in the real read panel", async () => {
+  await withTempDirectory(async (directory) => {
+    const fileName = "inherited-background.ts";
+    const line = `const url = "${"alpha beta ".repeat(35)}https://example.com/${"x".repeat(120)}";`;
+    await writeFile(path.join(directory, fileName), `${line}\n`, "utf8");
+
+    const result = await new PiIntegrationTest({
+      artifactsDir: testArtifactsDir(expect.getState().testPath),
+      testName: "interactive-demo-read-word-wrap",
+      cwd: directory,
+      extensions: generatedExtensions.paths,
+      tools: ["read"],
+      rawMode: false,
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "read-word-wrap", name: "read", arguments: { path: fileName } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Read finished")]),
+      ],
+    }).run("Read the long source file");
+
+    const rendered = stripTerminalSequences(result.tuiRenderedOutput);
+    const panel = rendered.slice(rendered.lastIndexOf("╭─"));
+    const panelRows = panel.split("\n").filter((row) => row.includes("│"));
+
+    expect(getToolExecution(result, "read-word-wrap").isError).toBe(false);
+    expect(getToolResultText(result, "read-word-wrap")).toContain("https://example.com/");
+    expect(panelRows.length).toBeGreaterThan(2);
+    expect(panel).toContain("https://example.com/");
+    expect(panel).toContain("xxx");
+
+    expectToolRowsHaveBackground(result.terminalOutput, "https://example.com/");
   });
 });
 

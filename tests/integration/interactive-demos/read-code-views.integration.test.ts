@@ -51,7 +51,7 @@ test("shows every read code-view protocol on a production TypeScript file", asyn
             toolCall({
               id: "demo-read-ast",
               name: "read",
-              arguments: { path: `ast:${fileName}` },
+              arguments: { path: `ast:${fileName}`, views: ["anchors"] },
               ...interactivePacing,
             }),
           ],
@@ -62,7 +62,7 @@ test("shows every read code-view protocol on a production TypeScript file", asyn
             toolCall({
               id: "demo-read-symbol",
               name: "read",
-              arguments: { path: `symbol:${fileName}#parseCodeViewReference` },
+              arguments: { path: `symbol:${fileName}#parseCodeViewReference`, views: ["anchors"] },
               ...interactivePacing,
             }),
           ],

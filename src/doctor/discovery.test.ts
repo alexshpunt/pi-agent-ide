@@ -15,6 +15,24 @@ it("does not choose between equally supported tools", () => {
   expect(selectSuggestedRecipes(candidates, new Set(["typescript"]))).toEqual([]);
 });
 
+it("does not suggest the tool already selected by the effective runtime", () => {
+  const prettier = candidate("prettier");
+  expect(
+    selectSuggestedRecipes([prettier], new Set(["typescript"]), [
+      { kind: "formatter", languageId: "typescript", toolId: "prettier" },
+    ]),
+  ).toEqual([]);
+});
+
+it("requires project evidence before replacing another active tool", () => {
+  const prettier = { ...candidate("prettier"), score: 4, evidence: ["executable: prettier"] };
+  expect(
+    selectSuggestedRecipes([prettier], new Set(["typescript"]), [
+      { kind: "formatter", languageId: "typescript", toolId: "biome" },
+    ]),
+  ).toEqual([]);
+});
+
 it("treats managed tool mappings as project evidence", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-agent-doctor-discovery-"));
 

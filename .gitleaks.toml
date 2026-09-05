@@ -1,0 +1,15 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pi-local-registry-credential"
+description = "Credential embedded in a local npm registry URL"
+regex = '''(?i)https?://[^\s/:]+:[^\s/@]+@(?:localhost|127\.0\.0\.1):4873'''
+keywords = ["localhost", "127.0.0.1"]
+
+[[rules]]
+id = "pi-project-secret"
+description = "Project-specific credential marker"
+regex = '''PI_(?:RELEASE|PUBLISH|REGISTRY)_SECRET\s*[:=]\s*["']?([A-Za-z0-9_./+=-]{16,})'''
+secretGroup = 1
+keywords = ["PI_RELEASE_SECRET", "PI_PUBLISH_SECRET", "PI_REGISTRY_SECRET"]

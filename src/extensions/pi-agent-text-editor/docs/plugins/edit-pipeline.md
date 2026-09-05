@@ -68,6 +68,8 @@ Resource failures become `TextResourceEditFailure` outcomes. A thrown caller mut
 
 Core builds the mutation plan from that engine result. The plan contains each original document, final document, existence state, and applied changes. Committed mutation guards run in registration order before the first write. A guard may accept the plan or return a structured, not-applied rejection. A thrown guard is a plugin failure; an expected rejection uses `MUTATION_REJECTED`.
 
+Resource resolution, reads, anchor and target validation, change application, and guards all finish before persistence. Failures in those steps write nothing. If a write fails after another Resource was written, core attempts to restore the failed Resource and every earlier write from their saved snapshots. `WRITE_FAILED` states whether rollback completed and lists any Resources that could not be restored. Failures after all writes and final rereads may instead report that the effect was already applied.
+
 The bundled overwrite guard blocks a changed existing Resource when one applied change covers `[0, before.content.length)`. The check does not depend on the tool name. The first call asks the agent to repeat the same final mutation. A matching second call is allowed automatically and consumes the pending attempt.
 
 ## Ordering
@@ -107,4 +109,4 @@ The pipeline does not provide:
 - UI rendering;
 - execution through `pi.events`.
 
-Batch recovery reuses the registered mutation and the normal execution path, but it remains an integration concern outside the pipeline. See [Batch recovery](../batch-recovery.md).
+Batch recovery reuses the registered mutation and the normal execution path, but it remains an integration concern outside the pipeline. See [Batch recovery](/src/extensions/pi-agent-text-editor/docs/batch-recovery.md).

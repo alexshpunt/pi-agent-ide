@@ -34,6 +34,10 @@ const rebindProviderExtension = path.join(
   process.cwd(),
   "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/rebind-provider-extension.ts",
 );
+const annotationRecorderExtension = path.join(
+  process.cwd(),
+  "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/annotation-recorder-extension.ts",
+);
 
 afterAll(() => extensions.dispose());
 
@@ -281,6 +285,70 @@ describe("pi-agent-text-editor stale anchor", () => {
         "insert",
       ]);
       await expect(readFile(file, "utf8")).resolves.toBe("alpha\nrecovered\nbeta");
+    });
+  });
+
+  // Regression: a call blocked mid-stream must not leak its annotation onto the
+  // next streamed call that reuses the same content index.
+  test("does not leak the blocked annotation onto the next streamed call", async () => {
+    await withTempWorkspace(async (directory) => {
+      const file = path.join(directory, "subject.txt");
+      const blockedCallId = "leak-blocked";
+      const nextCallId = "leak-next";
+      await writeFile(file, "alpha\nbeta", "utf8");
+
+      const result = await new PiIntegrationTest({
+        artifactsDir: testArtifactsDir(expect.getState().testPath),
+        testName: nextCallId,
+        cwd: directory,
+        extensions: [...extensions.paths, staleAnchorExtension, annotationRecorderExtension],
+        tools: ["insert"],
+        rawMode: false,
+        conversation: [
+          assistantMessage(
+            [
+              toolCall({
+                id: blockedCallId,
+                name: "insert",
+                argumentsJson: staleArgumentsJson,
+                chunks: staleDeliveries[0].chunks,
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: nextCallId,
+                name: "insert",
+                argumentsJson: '{"path":"subject.txt","anchor":"1#BE76","text":"patched"}',
+                chunks: {
+                  kind: "explicit",
+                  chunks: ['{"path":"subject.txt","anchor":"1#BE76",', '"text":"patched"}'],
+                },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("done")]),
+        ],
+      }).run("Insert after a mid-stream blocked insert");
+
+      expect(getToolResultText(result, blockedCallId)).toContain(
+        'insert blocked: anchor anchor "1#AAAA" is stale',
+      );
+      expect(getToolExecution(result, nextCallId).isError).toBe(false);
+      await expect(readFile(file, "utf8")).resolves.toBe("alpha\npatched\nbeta");
+
+      // Only the actually blocked call may be annotated; a leaked annotation
+      // would arrive here tagged with the second call's id.
+      const annotations = (await readFile(path.join(directory, "annotation-events.log"), "utf8"))
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { toolCallId: string; annotation: { kind: string } });
+      expect(annotations).toEqual([
+        { toolCallId: blockedCallId, annotation: { kind: "stale-anchor" } },
+      ]);
     });
   });
 });

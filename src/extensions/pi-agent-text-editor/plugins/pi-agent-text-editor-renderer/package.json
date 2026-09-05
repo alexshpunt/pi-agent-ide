@@ -10,7 +10,10 @@
     "@earendil-works/pi-coding-agent": "0.84.2",
     "@earendil-works/pi-tui": "0.84.1",
     "diff": "^9.0.0",
-    "pi-agent-text-editor": "workspace:^"
+    "pi-agent-invariant": "workspace:^",
+    "pi-agent-text-editor": "workspace:^",
+    "pi-agent-tool-call-interception": "workspace:^",
+    "pi-agent-tool-ui": "workspace:^"
   },
   "pi": {
     "extensions": [
