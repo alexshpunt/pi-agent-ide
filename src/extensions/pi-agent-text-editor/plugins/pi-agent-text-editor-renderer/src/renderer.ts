@@ -32,7 +32,7 @@ type MutationRenderOutcome =
   | { readonly kind: "failed"; readonly reason: string };
 
 const NO_TOOL_CALL_DETAILS: readonly ToolCallHeaderDetail[] = [];
-const MAX_EXPANDED_GENERATED_ARGUMENT_CHARS = 120;
+const MAX_EXPANDED_ARGUMENT_CHARS = 120;
 
 interface PreviewRequest {
   readonly identity: string;
@@ -693,8 +693,8 @@ function mutationCallDetails(
     return {
       label,
       value:
-        label === generated && exact.length > MAX_EXPANDED_GENERATED_ARGUMENT_CHARS
-          ? `${exact.slice(0, MAX_EXPANDED_GENERATED_ARGUMENT_CHARS)}… (${String(exact.length)} chars; full value shown in diff)`
+        exact.length > MAX_EXPANDED_ARGUMENT_CHARS
+          ? `${exact.slice(0, MAX_EXPANDED_ARGUMENT_CHARS)}… (${String(exact.length)} chars${label === generated ? "; full value shown in diff" : ""})`
           : exact,
     };
   });

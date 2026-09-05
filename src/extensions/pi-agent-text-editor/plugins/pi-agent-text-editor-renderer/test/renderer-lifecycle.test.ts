@@ -491,6 +491,37 @@ describe("mutation renderer lifecycle", () => {
     expect(rendered).not.toContain(content);
   });
 
+  test.each([false, true])("bounds long exact-anchor arguments with expanded=%s", (expanded) => {
+    let renderer: TextEditorToolRendererRegistration | undefined;
+    const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+      onMutationTool(listener: (registration: unknown) => void): void {
+        listener({ name: "replace", source: { field: "path" }, pair: ["start", "end"] });
+      },
+      addToolRenderer(value: TextEditorToolRendererRegistration): void {
+        renderer = value;
+      },
+    });
+    registerMutationRenderers(api);
+    if (renderer?.renderCall === undefined) throw new Error("Missing replace renderer");
+    const anchor = "    old_value = calculate_value()\n".repeat(100);
+    const args = { path: "monitor.py", start: anchor, end: anchor, text: "updated_value = 1" };
+    const panel = renderer.renderCall(args, theme, {
+      args,
+      toolCallId: "long-exact-anchor",
+      invalidate: vi.fn(),
+      lastComponent: undefined,
+      state: {},
+      cwd: process.cwd(),
+      executionStarted: true,
+      argsComplete: false,
+      isPartial: false,
+      expanded,
+      showImages: true,
+      isError: false,
+    });
+    expect(panel.render(100).length).toBeLessThanOrEqual(expanded ? 12 : 2);
+  });
+
   test("keeps the header stable when anchor details resolve during active rendering", () => {
     let renderer: TextEditorToolRendererRegistration | undefined;
     const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
