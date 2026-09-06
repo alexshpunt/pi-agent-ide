@@ -44,7 +44,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes fd-find ripgrep clangd
           sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
-          npm install --global @ast-grep/cli@0.45.1 eslint_d@15.0.2
+          npm install --global @ast-grep/cli@0.45.1 eslint_d@15.0.2 typescript-language-server@5.3.0 typescript@6.0.3
+          typescript-language-server --version
 
       - name: Verify tag and public branch
         shell: bash
