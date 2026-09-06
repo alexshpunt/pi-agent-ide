@@ -1,0 +1,176 @@
+{
+  "name": "pi-agent-ide",
+  "version": "0.2.0",
+  "description": "Agent-facing tools for reading, searching, and editing code in Pi.",
+  "keywords": [
+    "agent-tools",
+    "code-editing",
+    "coding-agent",
+    "pi",
+    "pi-package"
+  ],
+  "homepage": "https://github.com/alexshpunt/pi-agent-ide#readme",
+  "bugs": {
+    "url": "https://github.com/alexshpunt/pi-agent-ide/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexshpunt/pi-agent-ide.git"
+  },
+  "files": [
+    "src",
+    "assets",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "dist"
+  ],
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*",
+    "#pi-agent-text-anchor-constant/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-constant/*",
+    "#pi-agent-text-anchor-line-hash/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/*",
+    "#pi-agent-text-anchor-exact/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-exact/*",
+    "#pi-agent-text-editor-renderer/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/*",
+    "#pi-agent-text-editor-overwrite/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/*",
+    "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*",
+    "#scripts/*": "./scripts/*"
+  },
+  "exports": {
+    "./api/code-view": {
+      "types": "./src/api/code-view.ts",
+      "default": "./dist/entry-0.js"
+    },
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./dist/entry-1.js"
+    },
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./dist/entry-2.js"
+    },
+    "./api/toolchain": {
+      "types": "./src/api/toolchain.ts",
+      "default": "./dist/entry-3.js"
+    },
+    "./api/tool-config": {
+      "types": "./src/api/tool-config.ts",
+      "default": "./dist/entry-4.js"
+    },
+    "./api/tool-catalog": {
+      "types": "./src/api/tool-catalog.ts",
+      "default": "./dist/entry-5.js"
+    },
+    "./api/tips": {
+      "types": "./src/api/tips.ts",
+      "default": "./dist/entry-6.js"
+    },
+    "./api/connect-tip-provider": {
+      "types": "./src/api/connect-tip-provider.ts",
+      "default": "./dist/entry-7.js"
+    },
+    "./api/doctor": {
+      "types": "./src/api/doctor.ts",
+      "default": "./dist/entry-8.js"
+    },
+    "./api/connect-doctor-plugin": {
+      "types": "./src/api/connect-doctor-plugin.ts",
+      "default": "./dist/entry-9.js"
+    },
+    "./api/read": {
+      "types": "./src/api/read.ts",
+      "default": "./dist/entry-10.js"
+    },
+    "./api/resource": {
+      "types": "./src/api/resource.ts",
+      "default": "./dist/entry-11.js"
+    },
+    "./api/search": {
+      "types": "./src/api/search.ts",
+      "default": "./dist/entry-12.js"
+    },
+    "./api/text": {
+      "types": "./src/api/text.ts",
+      "default": "./dist/entry-13.js"
+    },
+    "./api/text-editor": {
+      "types": "./src/api/text-editor.ts",
+      "default": "./dist/entry-14.js"
+    }
+  },
+  "dependencies": {
+    "@codemirror/state": "^6.5.0",
+    "@tree-sitter-grammars/tree-sitter-toml": "^0.7.0",
+    "@tree-sitter-grammars/tree-sitter-yaml": "^0.7.1",
+    "cross-spawn": "^7.0.6",
+    "defuddle": "^0.19.1",
+    "diff": "^9.0.0",
+    "fast-fuzzy": "1.12.0",
+    "linkedom": "^0.18.12",
+    "partial-json": "^0.1.7",
+    "pdfjs-dist": "^6.2.108",
+    "pi-agent-doctor": "0.2.0",
+    "pi-agent-filesystem": "0.2.0",
+    "pi-agent-filesystem-image": "0.2.0",
+    "pi-agent-filesystem-pdf": "0.2.0",
+    "pi-agent-filesystem-text": "0.2.0",
+    "pi-agent-ide-ast": "0.2.0",
+    "pi-agent-ide-changes": "0.2.0",
+    "pi-agent-ide-formatter": "0.2.0",
+    "pi-agent-ide-languages": "0.2.0",
+    "pi-agent-ide-lint": "0.2.0",
+    "pi-agent-ide-lsp": "0.2.0",
+    "pi-agent-image": "0.2.0",
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-pdf": "0.2.0",
+    "pi-agent-read": "0.2.0",
+    "pi-agent-resource": "0.2.0",
+    "pi-agent-search": "0.2.0",
+    "pi-agent-search-text": "0.2.0",
+    "pi-agent-text": "0.2.0",
+    "pi-agent-text-anchor-constant": "0.2.0",
+    "pi-agent-text-anchor-exact": "0.2.0",
+    "pi-agent-text-anchor-line-hash": "0.2.0",
+    "pi-agent-text-editor": "0.2.0",
+    "pi-agent-text-editor-argument-order": "0.2.0",
+    "pi-agent-text-editor-overwrite": "0.2.0",
+    "pi-agent-text-editor-renderer": "0.2.0",
+    "pi-agent-text-editor-stale-anchor": "0.2.0",
+    "pi-agent-tool-call-interception": "0.2.0",
+    "pi-agent-tool-ui": "0.2.0",
+    "pi-agent-web": "0.2.0",
+    "pi-agent-web-html": "0.2.0",
+    "pi-agent-web-image": "0.2.0",
+    "pi-agent-web-pdf": "0.2.0",
+    "pi-agent-web-text": "0.2.0",
+    "playwright-core": "^1.62.1",
+    "tree-sitter-cpp": "^0.23.4",
+    "tree-sitter-javascript": "^0.25.0",
+    "tree-sitter-json": "^0.24.8",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-rust": "^0.24.0",
+    "tree-sitter-typescript": "^0.23.2",
+    "typebox-guard": "npm:typebox@^1.1.38",
+    "vscode-jsonrpc": "^9.0.0",
+    "vscode-uri": "^3.1.0",
+    "web-tree-sitter": "^0.26.11"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/pi-agent-ide.js"
+    ]
+  },
+  "workspaces": [
+    "packages/*",
+    "src/extensions/**",
+    "src/plugins/*"
+  ]
+}

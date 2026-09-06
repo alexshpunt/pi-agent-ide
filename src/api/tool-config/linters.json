@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "linters": {
+    "clang-tidy": {
+      "extensions": [".c", ".h", ".cc", ".cpp", ".cxx", ".hpp"],
+      "check": {
+        "command": ["clang-tidy", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "clang"
+      }
+    },
+    "eslint": {
+      "extensions": [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"],
+      "check": {
+        "command": ["eslint", "--format", "json", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "eslint-json"
+      }
+    },
+    "oxlint": {
+      "extensions": [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"],
+      "check": {
+        "command": ["oxlint", "--format", "sarif", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "sarif"
+      }
+    },
+    "ruff": {
+      "extensions": [".py", ".pyi"],
+      "check": {
+        "command": ["ruff", "check", "--output-format", "concise", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): (?<code>\\S+) (?<message>.+)$"
+      }
+    },
+    "golangci-lint": {
+      "extensions": [".go"],
+      "check": {
+        "command": ["golangci-lint", "run", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "clippy": {
+      "extensions": [".rs"],
+      "check": {
+        "command": ["cargo", "clippy", "--message-format", "short"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "dotnet-format": {
+      "extensions": [".cs"],
+      "check": {
+        "command": ["dotnet", "format", "--verify-no-changes"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "checkstyle": {
+      "extensions": [".java"],
+      "check": {
+        "command": ["checkstyle", "-f", "xml", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "checkstyle"
+      }
+    },
+    "detekt": {
+      "extensions": [".kt", ".kts"],
+      "check": {
+        "command": ["detekt", "--input", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "rubocop": {
+      "extensions": [".rb", ".rake"],
+      "check": {
+        "command": ["rubocop", "--format", "clang", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "clang"
+      }
+    },
+    "phpcs": {
+      "extensions": [".php"],
+      "check": {
+        "command": ["phpcs", "--report=emacs", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "swiftlint": {
+      "extensions": [".swift"],
+      "check": {
+        "command": ["swiftlint", "lint", "--path", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "luacheck": {
+      "extensions": [".lua"],
+      "check": {
+        "command": ["luacheck", "--formatter", "plain", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "shellcheck": {
+      "extensions": [".sh", ".bash", ".zsh"],
+      "check": {
+        "command": ["shellcheck", "-f", "gcc", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "stylelint": {
+      "extensions": [".css", ".scss", ".sass", ".less"],
+      "check": {
+        "command": ["stylelint", "--formatter", "compact", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "yamllint": {
+      "extensions": [".yaml", ".yml"],
+      "check": {
+        "command": ["yamllint", "-f", "parsable", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "markdownlint": {
+      "extensions": [".md", ".mdx"],
+      "check": {
+        "command": ["markdownlint", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "sqlfluff": {
+      "extensions": [".sql"],
+      "check": {
+        "command": ["sqlfluff", "lint", "--format", "sarif", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "sarif"
+      }
+    },
+    "hadolint": {
+      "extensions": ["*"],
+      "check": {
+        "command": ["hadolint", "--format", "tty", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      },
+      "include": ["Dockerfile", "**/Dockerfile"]
+    },
+    "tflint": {
+      "extensions": [".tf"],
+      "check": {
+        "command": ["tflint", "--format", "compact"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "cmake-lint": {
+      "extensions": [".cmake"],
+      "check": {
+        "command": ["cmake-lint", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "htmlhint": {
+      "extensions": [".html", ".htm"],
+      "check": {
+        "command": ["htmlhint", "--format", "unix", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "jsonlint": {
+      "extensions": [".json", ".jsonc"],
+      "check": {
+        "command": ["jsonlint", "-q", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "taplo-check": {
+      "extensions": [".toml"],
+      "check": {
+        "command": ["taplo", "check", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "xmllint": {
+      "extensions": [".xml", ".xsd", ".xsl"],
+      "check": {
+        "command": ["xmllint", "--noout", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    }
+  }
+}

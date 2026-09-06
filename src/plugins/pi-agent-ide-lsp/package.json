@@ -1,0 +1,25 @@
+{
+  "name": "pi-agent-ide-lsp",
+  "version": "0.2.0",
+  "type": "module",
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "pi-agent-doctor": "0.2.0",
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-read": "0.2.0",
+    "pi-agent-resource": "0.2.0",
+    "pi-agent-search": "0.2.0",
+    "pi-agent-text": "0.2.0",
+    "vscode-jsonrpc": "^9.0.0",
+    "vscode-uri": "^3.1.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-31.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "pi-agent-ide": "0.2.0"
+  }
+}

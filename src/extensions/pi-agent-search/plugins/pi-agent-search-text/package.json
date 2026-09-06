@@ -1,0 +1,34 @@
+{
+  "name": "pi-agent-search-text",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.ts",
+      "default": "./runtime/entry-45.js"
+    },
+    "./search-session": {
+      "types": "./src/search-session.ts",
+      "default": "./runtime/entry-46.js"
+    }
+  },
+  "dependencies": {
+    "pi-agent-doctor": "0.2.0",
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-search": "0.2.0",
+    "pi-agent-text": "0.2.0",
+    "pi-agent-text-editor": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-45.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

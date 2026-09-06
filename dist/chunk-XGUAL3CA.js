@@ -1,0 +1,1 @@
+import{v as t}from"./chunk-EW2KVKCN.js";import{p as i}from"./chunk-2SKAED2I.js";import{a as r}from"./chunk-EI7MMDWY.js";var o=i(),n={target:{provider:"filesystem",capability:"read"},converter:o,priority:300},s={target:{provider:"filesystem",capability:"write"},converter:o,priority:300};async function a(e){await Promise.all([t(e,n),t(e,s)])}r(a,"registerFilesystemText");export{a};

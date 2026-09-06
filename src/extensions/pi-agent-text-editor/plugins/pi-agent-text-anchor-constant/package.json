@@ -1,0 +1,20 @@
+{
+  "name": "pi-agent-text-anchor-constant",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "pi-agent-text": "0.2.0",
+    "pi-agent-text-editor": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-48.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

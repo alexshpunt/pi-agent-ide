@@ -1,0 +1,17 @@
+{
+  "name": "pi-agent-text-editor-overwrite",
+  "version": "0.2.0",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-text-editor": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-70.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

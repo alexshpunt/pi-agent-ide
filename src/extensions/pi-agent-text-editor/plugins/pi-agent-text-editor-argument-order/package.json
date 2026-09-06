@@ -1,0 +1,16 @@
+{
+  "name": "pi-agent-text-editor-argument-order",
+  "version": "0.2.0",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-text-editor": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-69.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

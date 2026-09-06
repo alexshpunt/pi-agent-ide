@@ -1,0 +1,43 @@
+{
+  "name": "pi-agent-read",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./runtime/entry-35.js"
+    },
+    "./api/rendering": {
+      "types": "./src/api/rendering.ts",
+      "default": "./runtime/entry-36.js"
+    },
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./runtime/entry-37.js"
+    },
+    "./api/tools/read": {
+      "types": "./src/api/tools/read.ts",
+      "default": "./runtime/entry-38.js"
+    }
+  },
+  "dependencies": {
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-resource": "0.2.0",
+    "pi-agent-text": "0.2.0",
+    "pi-agent-tool-call-interception": "0.2.0",
+    "pi-agent-tool-ui": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-39.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

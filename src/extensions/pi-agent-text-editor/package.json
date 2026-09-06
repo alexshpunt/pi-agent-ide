@@ -1,0 +1,93 @@
+{
+  "name": "pi-agent-text-editor",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*",
+    "#overwrite/*": "./plugins/pi-agent-text-editor-overwrite/*"
+  },
+  "exports": {
+    "./api/anchor-inspection": {
+      "types": "./src/api/anchor-inspection.ts",
+      "default": "./runtime/entry-53.js"
+    },
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./runtime/entry-54.js"
+    },
+    "./api/edit-completion": {
+      "types": "./src/api/edit-completion.ts",
+      "default": "./runtime/entry-55.js"
+    },
+    "./api/edit-pipeline": {
+      "types": "./src/api/edit-pipeline.ts",
+      "default": "./runtime/entry-56.js"
+    },
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./runtime/entry-57.js"
+    },
+    "./api/stale-anchor-message": {
+      "types": "./src/api/stale-anchor-message.ts",
+      "default": "./runtime/entry-58.js"
+    },
+    "./api/text-selection-anchor": {
+      "types": "./src/api/text-selection-anchor.ts",
+      "default": "./runtime/entry-59.js"
+    },
+    "./api/post-edit": {
+      "types": "./src/api/post-edit.ts",
+      "default": "./runtime/entry-60.js"
+    },
+    "./api/mutation-result": {
+      "types": "./src/api/mutation-result.ts",
+      "default": "./runtime/entry-61.js"
+    },
+    "./api/mutation-guard": {
+      "types": "./src/api/mutation-guard.ts",
+      "default": "./runtime/entry-62.js"
+    },
+    "./api/mutation-tool": {
+      "types": "./src/api/mutation-tool.ts",
+      "default": "./runtime/entry-63.js"
+    },
+    "./api/mutation-preview": {
+      "types": "./src/api/mutation-preview.ts",
+      "default": "./runtime/entry-64.js"
+    },
+    "./api/last-resolved-resource": {
+      "types": "./src/api/last-resolved-resource.ts",
+      "default": "./runtime/entry-65.js"
+    },
+    "./api/tool-call-interceptor": {
+      "types": "./src/api/tool-call-interceptor.ts",
+      "default": "./runtime/entry-66.js"
+    },
+    "./api/tool-renderer": {
+      "types": "./src/api/tool-renderer.ts",
+      "default": "./runtime/entry-67.js"
+    }
+  },
+  "dependencies": {
+    "@codemirror/state": "^6.5.0",
+    "diff": "^9.0.0",
+    "partial-json": "^0.1.7",
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-read": "0.2.0",
+    "pi-agent-resource": "0.2.0",
+    "pi-agent-text": "0.2.0",
+    "pi-agent-tool-call-interception": "0.2.0",
+    "typebox-guard": "npm:typebox@^1.1.38"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-68.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

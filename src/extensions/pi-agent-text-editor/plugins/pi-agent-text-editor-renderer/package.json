@@ -1,0 +1,24 @@
+{
+  "name": "pi-agent-text-editor-renderer",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-text-editor": "0.2.0",
+    "pi-agent-tool-call-interception": "0.2.0",
+    "pi-agent-tool-ui": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-71.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

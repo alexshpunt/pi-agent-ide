@@ -1,0 +1,21 @@
+{
+  "name": "pi-agent-web-html",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "defuddle": "^0.19.1",
+    "linkedom": "^0.18.12",
+    "pi-agent-resource": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-76.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

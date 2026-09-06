@@ -1,0 +1,36 @@
+{
+  "name": "pi-agent-search",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    "./api/connect-plugin": {
+      "types": "./src/api/connect-plugin.ts",
+      "default": "./runtime/entry-41.js"
+    },
+    "./api/plugin-protocol": {
+      "types": "./src/api/plugin-protocol.ts",
+      "default": "./runtime/entry-42.js"
+    },
+    "./api/search": {
+      "types": "./src/api/search.ts",
+      "default": "./runtime/entry-43.js"
+    }
+  },
+  "dependencies": {
+    "pi-agent-tool-call-interception": "0.2.0",
+    "pi-agent-tool-ui": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-44.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}

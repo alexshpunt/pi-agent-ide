@@ -1,0 +1,17 @@
+{
+  "name": "pi-agent-ide-formatter",
+  "version": "0.2.0",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-doctor": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-28.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "pi-agent-ide": "0.2.0"
+  }
+}

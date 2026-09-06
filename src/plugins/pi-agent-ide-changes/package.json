@@ -1,0 +1,31 @@
+{
+  "name": "pi-agent-ide-changes",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    "./changes/change-groups": {
+      "types": "./src/changes/change-groups.ts",
+      "default": "./runtime/entry-26.js"
+    }
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "pi-agent-doctor": "0.2.0",
+    "pi-agent-invariant": "0.2.0",
+    "pi-agent-read": "0.2.0",
+    "pi-agent-text": "0.2.0",
+    "pi-agent-text-editor": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-27.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

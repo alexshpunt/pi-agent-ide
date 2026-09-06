@@ -1,0 +1,20 @@
+{
+  "name": "pi-agent-filesystem-image",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#extension": "./index.ts"
+  },
+  "dependencies": {
+    "pi-agent-image": "0.2.0",
+    "pi-agent-resource": "0.2.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-21.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

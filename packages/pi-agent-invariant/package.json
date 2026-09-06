@@ -1,0 +1,12 @@
+{
+  "name": "pi-agent-invariant",
+  "version": "0.2.0",
+  "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./runtime/entry-33.js"
+    }
+  }
+}

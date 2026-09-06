@@ -1,0 +1,26 @@
+{
+  "name": "pi-agent-web",
+  "version": "0.2.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "defuddle": "^0.19.1",
+    "linkedom": "^0.18.12",
+    "pi-agent-doctor": "0.2.0",
+    "pi-agent-image": "0.2.0",
+    "pi-agent-read": "0.2.0",
+    "pi-agent-resource": "0.2.0",
+    "pi-agent-text": "0.2.0",
+    "playwright-core": "^1.62.1"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-75.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

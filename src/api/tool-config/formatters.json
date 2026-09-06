@@ -1,0 +1,215 @@
+{
+  "version": 1,
+  "formatters": {
+    "clang-format": {
+      "extensions": [".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"],
+      "run": {
+        "command": ["clang-format", "-i", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "prettier": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".json",
+        ".jsonc",
+        ".css",
+        ".scss",
+        ".html",
+        ".md"
+      ],
+      "run": {
+        "command": ["prettier", "--write", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "biome": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".json",
+        ".jsonc",
+        ".css",
+        ".scss",
+        ".html",
+        ".md"
+      ],
+      "run": {
+        "command": ["biome", "format", "--write", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "oxfmt": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".mts",
+        ".cts",
+        ".json",
+        ".jsonc",
+        ".css",
+        ".scss",
+        ".less",
+        ".html",
+        ".htm",
+        ".md",
+        ".markdown",
+        ".mdx",
+        ".yaml",
+        ".yml",
+        ".toml"
+      ],
+      "run": {
+        "command": ["oxfmt", "--write", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "ruff-format": {
+      "extensions": [".py", ".pyi"],
+      "run": {
+        "command": ["ruff", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "black": {
+      "extensions": [".py", ".pyi"],
+      "run": {
+        "command": ["black", "--quiet", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "gofmt": {
+      "extensions": [".go"],
+      "run": {
+        "command": ["gofmt", "-w", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "goimports": {
+      "extensions": [".go"],
+      "run": {
+        "command": ["goimports", "-w", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "rustfmt": {
+      "extensions": [".rs"],
+      "run": {
+        "command": ["rustfmt", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "csharpier": {
+      "extensions": [".cs"],
+      "run": {
+        "command": ["dotnet-csharpier", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "google-java-format": {
+      "extensions": [".java"],
+      "run": {
+        "command": ["google-java-format", "--replace", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "ktlint-format": {
+      "extensions": [".kt", ".kts"],
+      "run": {
+        "command": ["ktlint", "-F", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "rubocop-format": {
+      "extensions": [".rb", ".rake"],
+      "run": {
+        "command": ["rubocop", "-A", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "pint": {
+      "extensions": [".php"],
+      "run": {
+        "command": ["pint", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "swift-format": {
+      "extensions": [".swift"],
+      "run": {
+        "command": ["swift-format", "format", "--in-place", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "stylua": {
+      "extensions": [".lua"],
+      "run": {
+        "command": ["stylua", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "shfmt": {
+      "extensions": [".sh", ".bash", ".zsh"],
+      "run": {
+        "command": ["shfmt", "-w", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "taplo": {
+      "extensions": [".toml"],
+      "run": {
+        "command": ["taplo", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "sqlfluff-format": {
+      "extensions": [".sql"],
+      "run": {
+        "command": ["sqlfluff", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "terraform-fmt": {
+      "extensions": [".tf", ".tfvars"],
+      "run": {
+        "command": ["terraform", "fmt", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "cmake-format": {
+      "extensions": [".cmake"],
+      "run": {
+        "command": ["cmake-format", "-i", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "xmlformat": {
+      "extensions": [".xml", ".xsd", ".xsl"],
+      "run": {
+        "command": ["xmlformat", "--overwrite", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "dockfmt": {
+      "extensions": ["*"],
+      "run": {
+        "command": ["dockfmt", "fmt", "{file}"]
+      },
+      "output": "in-place",
+      "include": ["Dockerfile", "**/Dockerfile"]
+    }
+  }
+}

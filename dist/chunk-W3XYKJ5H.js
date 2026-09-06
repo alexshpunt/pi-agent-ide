@@ -1,0 +1,1 @@
+import{a as r}from"./chunk-PODWLGNO.js";import{v as e}from"./chunk-EW2KVKCN.js";import{a as t}from"./chunk-EI7MMDWY.js";var n={target:{provider:"filesystem",capability:"read"},converter:r(),priority:200};async function i(o){await e(o,n)}t(i,"registerFilesystemPdf");export{i as a};
