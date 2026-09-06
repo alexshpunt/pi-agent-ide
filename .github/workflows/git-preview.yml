@@ -15,6 +15,7 @@ concurrency:
 env:
   NODE_VERSION: "24.19.0"
   NPM_VERSION: "11.19.0"
+  PNPM_VERSION: "11.22.0"
 jobs:
   build:
     name: Build and publish preview
@@ -33,8 +34,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
-      - name: Setup npm
-        run: npm install --global "npm@${NPM_VERSION}"
+      - name: Setup npm and pnpm
+        run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
+
+      - name: Install build dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Build runtime tree
         run: node --experimental-strip-types scripts/build-public-package.ts --git-runtime .agents/tmp/git-preview
