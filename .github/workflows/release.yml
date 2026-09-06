@@ -1,162 +1,92 @@
 name: Publish to npm
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: Merged release PR number
+        required: true
+        type: string
+      candidate_run:
+        description: Successful CI run for the release PR
+        required: true
+        type: string
+      publish:
+        description: Publish after verifying the candidate (requires npm approval)
+        default: false
+        type: boolean
 
 concurrency:
   group: npm-release
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: read
+
 env:
   NODE_VERSION: "24.19.0"
   NPM_VERSION: "11.19.0"
-  PNPM_VERSION: "11.22.0"
 
 jobs:
   validate:
-    name: Validate release
+    name: Verify candidate
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
+    timeout-minutes: 10
     outputs:
-      version: ${{ steps.artifact.outputs.version }}
-
+      version: ${{ steps.candidate.outputs.version }}
+      commit: ${{ steps.candidate.outputs.commit }}
     steps:
-      - name: Checkout tagged commit
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
-
-      - name: Setup npm and pnpm
-        run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
-
-      - name: Setup runtime tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes fd-find ripgrep clangd
-          sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
-          npm install --global @ast-grep/cli@0.45.1 eslint_d@15.0.2 typescript-language-server@5.3.0 typescript@6.0.3
-          typescript-language-server --version
-
-      - name: Verify tag and public branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          version="${tag#v}"
-          package_version="$(node -p "require('./package.json').version")"
-          [[ "$tag" == "v$package_version" ]]
-          [[ "$(git cat-file -t "$tag")" == "tag" ]]
-          git fetch origin main
-          tag_commit="$(git rev-list -n 1 "$tag")"
-          git merge-base --is-ancestor "$tag_commit" origin/main
-          echo "Validated pi-agent-ide@$version"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Scan full history
-        run: pnpm security:scan -- history
-
-      - name: Check source and package
-        run: pnpm check
-
-      - name: Verify public tree
-        run: pnpm security:scan -- tree .
-
-      - name: Run unit tests
-        run: pnpm test:unit:report
-
-      - name: Run integration tests
-        run: pnpm test:integration:report
-
-      - name: Build reproducible release artifact
-        id: artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          pnpm package:public
-          first="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
-          test -n "$first"
-          mkdir -p .agents/tmp/reproducibility
-          cp "$first" .agents/tmp/reproducibility/first.tgz
-          pnpm package:public
-          final="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
-          test -n "$final"
-          cmp .agents/tmp/reproducibility/first.tgz "$final"
-          pnpm security:scan -- artifact "$final"
-
-          output=".agents/tmp/release-artifact"
-          rm -rf "$output"
-          mkdir -p "$output"
-          cp "$final" "$output/"
-          cp .agents/tmp/public-package/report.json "$output/package-report.json"
-          cp .agents/tmp/test-results/unit.xml "$output/unit.xml"
-          cp .agents/tmp/test-results/integration.xml "$output/integration.xml"
-          tar -tzf "$final" | LC_ALL=C sort > "$output/PACKAGE_FILES.txt"
-          (cd "$output" && sha256sum "pi-agent-ide-$version.tgz" > SHA256SUMS && sha512sum "pi-agent-ide-$version.tgz" > SHA512SUMS)
-          node -e 'const fs=require("node:fs"); const crypto=require("node:crypto"); const file=process.argv[1]; const report={package:"pi-agent-ide",version:process.env.GITHUB_REF_NAME.slice(1),tag:process.env.GITHUB_REF_NAME,commit:process.env.GITHUB_SHA,sha256:crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")}; fs.writeFileSync(process.argv[2],JSON.stringify(report,null,2)+"\n")' "$final" "$output/release-report.json"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Upload exact release artifact
-        id: upload
+      - name: Verify candidate identity and archive
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PR: ${{ inputs.pull_request }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run }}
+        run: node --experimental-strip-types scripts/promote-release.ts
+      - name: Retain verified artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: release-${{ steps.artifact.outputs.version }}
-          path: .agents/tmp/release-artifact/*
+          name: release-${{ steps.candidate.outputs.version }}
+          path: .agents/tmp/promoted-release/*
           if-no-files-found: error
           compression-level: 0
-
-      - name: Record artifact digest
-        run: echo "Artifact digest ${{ steps.upload.outputs.artifact-digest }}"
 
   publish:
     name: Publish package
     needs: validate
+    if: inputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: npm
     permissions:
-      contents: read
+      contents: write
+      actions: read
       id-token: write
-
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Setup Node and npm registry
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
-
       - name: Install pinned npm
         run: npm install --global "npm@${NPM_VERSION}"
-
-      - name: Download validated artifact
+      - name: Download verified artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-${{ needs.validate.outputs.version }}
-          path: release-artifact
-
-      - name: Verify and publish exact tarball
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          cd release-artifact
-          sha256sum --check SHA256SUMS
-          sha512sum --check SHA512SUMS
-          mapfile -t tarballs < <(find . -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print)
-          [[ "${#tarballs[@]}" -eq 1 ]]
-          [[ "${tarballs[0]}" == "./pi-agent-ide-$version.tgz" ]]
-          [[ "$(find . -maxdepth 1 -type f | wc -l)" -eq 8 ]]
-          npm publish "${tarballs[0]}" --access public --provenance
+          path: .agents/tmp/promoted-release
+      - name: Publish exact archive without replacing tags or versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
+        run: node --experimental-strip-types scripts/publish-candidate.ts
