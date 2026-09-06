@@ -46,6 +46,30 @@ export function verifyCandidate(
   }
 }
 
+/** Loads the installed entry points declared for Pi, rather than TypeScript source files. */
+export function verifyInstalledPackage(directory: string): void {
+  execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `
+    import { readFileSync } from 'node:fs';
+    import path from 'node:path';
+    import { pathToFileURL } from 'node:url';
+    const root = path.resolve('node_modules/pi-agent-ide');
+    const manifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+    if (!Array.isArray(manifest.pi?.extensions) || manifest.pi.extensions.length === 0) throw new Error('No Pi entry points');
+    for (const entry of manifest.pi.extensions) {
+      const loaded = await import(pathToFileURL(path.resolve(root, entry)).href);
+      if (typeof loaded.default !== 'function') throw new Error('Invalid Pi extension export');
+    }
+  `,
+    ],
+    { cwd: directory, stdio: "inherit" },
+  );
+}
+
 /** Checks the exact archive bytes and package identity before they can be published. */
 export function verifyCandidateArchive(directory: string, evidence: CandidateEvidence): string {
   const filename = `pi-agent-ide-${evidence.version}.tgz`;

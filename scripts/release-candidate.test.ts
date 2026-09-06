@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import {
   verifyCandidate,
   verifyCandidateArchive,
+  verifyInstalledPackage,
   type CandidateEvidence,
 } from "./release-candidate.ts";
 
@@ -21,6 +22,27 @@ const evidence: CandidateEvidence = {
   sha512: "",
 };
 const expected = { ...evidence, parents: ["base"] };
+
+test("install smoke loads the declared compiled extension and rejects invalid exports", () => {
+  const root = path.resolve(".agents/tmp/installed-entry-contract");
+  mkdirSync(root, { recursive: true });
+  const directory = mkdtempSync(path.join(root, "case-"));
+  try {
+    const installed = path.join(directory, "node_modules/pi-agent-ide");
+    mkdirSync(path.join(installed, "runtime"), { recursive: true });
+    writeFileSync(
+      path.join(installed, "package.json"),
+      JSON.stringify({ type: "module", pi: { extensions: ["./runtime/entry.js"] } }),
+    );
+    const entry = path.join(installed, "runtime/entry.js");
+    writeFileSync(entry, "export default function extension() {}\n");
+    expect(() => verifyInstalledPackage(directory)).not.toThrow(Error);
+    writeFileSync(entry, "export default 42;\n");
+    expect(() => verifyInstalledPackage(directory)).toThrow(Error);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("promotes the exact checked tree after a squash merge", () => {
   expect(() => verifyCandidate(evidence, expected)).not.toThrow(Error);

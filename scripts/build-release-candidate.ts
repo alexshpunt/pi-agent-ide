@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { CandidateEvidence } from "./release-candidate.ts";
+import { verifyInstalledPackage, type CandidateEvidence } from "./release-candidate.ts";
 
 function run(command: string, args: string[], cwd = process.cwd()): void {
   execFileSync(command, args, { cwd, stdio: "inherit" });
@@ -38,16 +38,7 @@ const smoke = path.resolve(".agents/tmp/candidate-install");
 mkdirSync(smoke, { recursive: true });
 writeFileSync(path.join(smoke, "package.json"), JSON.stringify({ private: true, type: "module" }));
 run("npm", ["install", path.resolve(source), "--registry=https://registry.npmjs.org/"], smoke);
-run(
-  "node",
-  [
-    "--experimental-strip-types",
-    "--input-type=module",
-    "--eval",
-    "await import('./node_modules/pi-agent-ide/src/pi-agent-ide.ts')",
-  ],
-  smoke,
-);
+verifyInstalledPackage(smoke);
 const evidence: CandidateEvidence = {
   version,
   repository: pr.head.repo.full_name,
