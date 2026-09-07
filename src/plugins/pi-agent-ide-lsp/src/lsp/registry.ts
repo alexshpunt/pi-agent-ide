@@ -1,4 +1,6 @@
-import { requiredValue } from "pi-agent-invariant";
+import path from "node:path";
+
+import { existsSync } from "node:fs";
 
 import { hasConfiguredExecutable, loadLayeredToolConfig } from "pi-agent-ide/api/tool-config";
 
@@ -16,15 +18,14 @@ LSP server configuration in project, global, and built-in priority order.
 export class LspServerRegistry {
   private readonly _servers: Record<string, ServerConfig>;
   private readonly _entries: readonly EffectiveToolConfigEntry<ServerConfig>[];
-  private readonly _entriesById: ReadonlyMap<string, EffectiveToolConfigEntry<ServerConfig>>;
   private readonly _lookup: LanguageLookup;
 
   private constructor(
     entries: readonly EffectiveToolConfigEntry<ServerConfig>[],
     availableBuiltIns: ReadonlySet<string>,
+    private readonly _projectRoot: string,
   ) {
     this._entries = entries;
-    this._entriesById = new Map(entries.map((entry) => [entry.id, entry]));
     const activeEntries = entries.filter(
       (entry) => entry.layer !== "built-in" || availableBuiltIns.has(entry.id),
     );
@@ -57,13 +58,14 @@ export class LspServerRegistry {
     return new LspServerRegistry(
       effective.entries,
       new Set(available.filter((entry) => entry.available).map((entry) => entry.id)),
+      path.resolve(packageDir),
     );
   }
 
   /**
   Creates a project-layer registry from an already-parsed config.
   */
-  static fromConfig(config: LspServersConfig): LspServerRegistry {
+  static fromConfig(config: LspServersConfig, projectRoot = process.cwd()): LspServerRegistry {
     return new LspServerRegistry(
       Object.entries(config.servers).map(([id, server]) => ({
         id,
@@ -72,38 +74,56 @@ export class LspServerRegistry {
         sourcePath: "<memory>",
       })),
       new Set(),
+      path.resolve(projectRoot),
     );
   }
 
-  /**
-  Resolves a file extension to matching LSP servers in layer priority order.
-  */
-  resolve(extension: string): ResolvedServer[] {
-    const normalized = extension.startsWith(".")
-      ? extension.toLowerCase()
-      : `.${extension.toLowerCase()}`;
-    const serverIds = this._lookup.extToServerIds.get(normalized);
+  /** Resolve a file path or extension to servers in layer priority order. */
+  resolve(file: string): ResolvedServer[] {
+    const basename = path.basename(file);
+    const extension = path.extname(file) || (file.startsWith(".") ? file : `.${file}`);
+    const normalizeName = (name: string) =>
+      process.platform === "win32" ? name.toLowerCase() : name;
+    const matches: ResolvedServer[] = [];
+    for (const entry of this._entries) {
+      if (!this._servers[entry.id]) continue;
 
-    if (!serverIds || serverIds.length === 0) {
-      return [];
+      if (entry.config.requireRootMarker && !this.hasRootMarker(file, entry.config.rootMarkers))
+        continue;
+      for (const [languageId, language] of Object.entries(entry.config.languages)) {
+        if (
+          language.extensions.some(
+            (candidate) => candidate.toLowerCase() === extension.toLowerCase(),
+          ) ||
+          language.fileNames?.some((name) => normalizeName(name) === normalizeName(basename))
+        ) {
+          matches.push({
+            serverId: entry.id,
+            config: entry.config,
+            languageId,
+            layer: entry.layer,
+            sourcePath: entry.sourcePath,
+          });
+          break;
+        }
+      }
     }
+    return matches;
+  }
 
-    const languageId = this._lookup.extToLanguageId.get(normalized);
-
-    if (!languageId) {
-      return [];
+  private hasRootMarker(file: string, markers: readonly string[]): boolean {
+    let directory = path.dirname(path.resolve(this._projectRoot, file));
+    if (file.startsWith(".") && !file.includes(path.sep)) directory = this._projectRoot;
+    for (;;) {
+      const relative = path.relative(this._projectRoot, directory);
+      // This checks containment; it does not construct a parent-relative path.
+      // eslint-disable-next-line repo/no-parent-paths
+      if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+        return false;
+      if (markers.some((marker) => existsSync(path.join(directory, marker)))) return true;
+      if (directory === this._projectRoot) return false;
+      directory = path.dirname(directory);
     }
-
-    return serverIds.map((serverId) => {
-      const entry = requiredValue(this._entriesById.get(serverId));
-      return {
-        serverId,
-        config: entry.config,
-        languageId,
-        layer: entry.layer,
-        sourcePath: entry.sourcePath,
-      };
-    });
   }
 
   /**
@@ -131,10 +151,7 @@ export class LspServerRegistry {
   Resolves a file extension to the canonical LSP languageId.
   */
   languageId(extension: string): string {
-    const normalized = extension.startsWith(".")
-      ? extension.toLowerCase()
-      : `.${extension.toLowerCase()}`;
-    return this._lookup.extToLanguageId.get(normalized) ?? extension.slice(1);
+    return this.resolve(extension)[0]?.languageId ?? extension.slice(1);
   }
 }
 
@@ -182,6 +199,13 @@ export function parseLspConfig(value: unknown): LspServersConfig {
       throw new Error(`LSP server ${id}.rootMarkers must be a string array`);
     }
 
+    if (server.requireRootMarker !== undefined && typeof server.requireRootMarker !== "boolean") {
+      throw new TypeError(`LSP server ${id}.requireRootMarker must be a boolean`);
+    }
+    if (server.requireRootMarker && (server.rootMarkers as string[]).length === 0) {
+      throw new Error(`LSP server ${id}.requireRootMarker requires rootMarkers`);
+    }
+
     if (
       typeof server.languages !== "object" ||
       server.languages === null ||
@@ -204,6 +228,17 @@ export function parseLspConfig(value: unknown): LspServersConfig {
         extensions.some((part) => typeof part !== "string")
       ) {
         throw new Error(`LSP server ${id} language ${language} requires extensions`);
+      }
+
+      const fileNames = (languageValue as Record<string, unknown>).fileNames;
+      if (
+        fileNames !== undefined &&
+        (!Array.isArray(fileNames) ||
+          fileNames.some(
+            (name) => typeof name !== "string" || name.length === 0 || /[/\\]/u.test(name),
+          ))
+      ) {
+        throw new Error(`LSP server ${id} language ${language}.fileNames must contain basenames`);
       }
     }
 

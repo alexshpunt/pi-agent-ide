@@ -49,13 +49,45 @@ export async function inspectDoctorSetup(
     runContributedSetupChecks(snapshot, context),
   ]);
 
+  const missingActions = new Map<string, DoctorSetupAction & { readonly pluginId: string }>();
+  for (const language of detectedLanguageIds) {
+    for (const kind of ["formatter", "linter", "lsp"] as const) {
+      if (
+        setup.selections.some(
+          (selection) => selection.languageId === language && selection.kind === kind,
+        )
+      )
+        continue;
+      const relevant = candidates.filter(
+        (candidate) =>
+          candidate.recipe.kind === kind && candidate.recipe.languages.includes(language),
+      );
+      const nativeScore = (candidate: RecipeCandidate) =>
+        candidate.score - (candidate.executable === undefined ? 0 : 3);
+      const bestScore = Math.max(1, ...relevant.map(nativeScore));
+      for (const candidate of relevant) {
+        if (
+          candidate.executable !== undefined ||
+          nativeScore(candidate) !== bestScore ||
+          bestScore <= 1
+        )
+          continue;
+        const id = `${kind}-${candidate.recipe.id}-unavailable`;
+        missingActions.set(id, {
+          id,
+          pluginId: candidate.pluginId,
+          message: `Native project setup selects ${candidate.recipe.id}, but its executable is unavailable. Install ${candidate.recipe.executables.join(" or ")} and run Doctor again.`,
+        });
+      }
+    }
+  }
   return {
     cwd,
     files,
     detectedLanguages,
     candidates,
     selections: setup.selections,
-    actions: setup.actions,
+    actions: [...setup.actions, ...missingActions.values()],
     suggestions: selectSuggestedRecipes(candidates, detectedLanguageIds, setup.selections),
   };
 }

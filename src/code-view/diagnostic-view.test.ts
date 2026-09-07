@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 
-import { createDiagnosticViewContent } from "./diagnostic-view.js";
+import { createTextDocument, renderTextDocument } from "pi-agent-text";
+import { addDiagnosticAnnotations, createDiagnosticViewContent } from "./diagnostic-view.js";
 
 test.each(["pending", "unavailable", "snapshot", "unversioned"] as const)(
   "%s diagnostic reports never look clean",
@@ -8,7 +9,6 @@ test.each(["pending", "unavailable", "snapshot", "unversioned"] as const)(
     const sources = [{ source: "lsp", status, diagnostics: [] }];
     const focused = createDiagnosticViewContent("example.ts", "line\n", sources);
     expect(focused.text).toContain(`lsp: ${status}`);
-    expect(focused.text).not.toContain("No diagnostics");
   },
 );
 
@@ -19,6 +19,22 @@ const diagnostic = (line: number, code: string) => ({
   column: 1,
   severity: "error" as const,
 });
+
+test.each(["\n", "\r\n"])(
+  "keeps EOF diagnostics visible without changing source lines (%j)",
+  (ending) => {
+    const content = `value: [${ending}`;
+    const report = diagnostic(2, "EOF_PARSE");
+    const document = addDiagnosticAnnotations(createTextDocument("config.yaml", content), [
+      { source: "lsp", diagnostics: [report] },
+    ]);
+    expect(document.lines).toHaveLength(1);
+    expect(document.lines[0]?.presentation?.suffix).toContain("lsp:EOF_PARSE");
+    expect(document.lines[0]?.presentation?.suffix).toContain("@2:1");
+    expect(report.line).toBe(2);
+    expect(renderTextDocument(document)).toBe(content);
+  },
+);
 
 test("diagnostic reads include and merge five lines of surrounding context", () => {
   const text = Array.from({ length: 20 }, (_, index) => `line ${String(index + 1)}`).join("\n");

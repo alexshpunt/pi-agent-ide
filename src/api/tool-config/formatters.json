@@ -1,6 +1,21 @@
 {
   "version": 1,
   "formatters": {
+    "dart-format": {
+      "extensions": [".dart"],
+      "run": { "command": ["dart", "format", "{file}"] },
+      "output": "in-place"
+    },
+    "zig-format": {
+      "extensions": [".zig", ".zon"],
+      "run": { "command": ["zig", "fmt", "{file}"] },
+      "output": "in-place"
+    },
+    "styler": {
+      "extensions": [".r"],
+      "run": { "command": ["Rscript", "-e", "styler::style_file(commandArgs(TRUE)[1])", "{file}"] },
+      "output": "in-place"
+    },
     "clang-format": {
       "extensions": [".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"],
       "run": {
@@ -16,12 +31,19 @@
         ".cjs",
         ".ts",
         ".tsx",
+
+        ".mts",
+        ".cts",
         ".json",
         ".jsonc",
         ".css",
         ".scss",
         ".html",
-        ".md"
+        ".md",
+        ".yaml",
+        ".yml",
+        ".vue",
+        ".svelte"
       ],
       "run": {
         "command": ["prettier", "--write", "{file}"]
@@ -36,12 +58,11 @@
         ".cjs",
         ".ts",
         ".tsx",
+        ".mts",
+        ".cts",
         ".json",
         ".jsonc",
-        ".css",
-        ".scss",
-        ".html",
-        ".md"
+        ".css"
       ],
       "run": {
         "command": ["biome", "format", "--write", "{file}"]
@@ -115,7 +136,7 @@
     "csharpier": {
       "extensions": [".cs"],
       "run": {
-        "command": ["dotnet-csharpier", "format", "{file}"]
+        "command": ["csharpier", "format", "{file}"]
       },
       "output": "in-place"
     },
@@ -136,7 +157,7 @@
     "rubocop-format": {
       "extensions": [".rb", ".rake"],
       "run": {
-        "command": ["rubocop", "-A", "{file}"]
+        "command": ["rubocop", "--fix-layout", "{file}"]
       },
       "output": "in-place"
     },
@@ -191,6 +212,7 @@
     },
     "cmake-format": {
       "extensions": [".cmake"],
+      "fileNames": ["CMakeLists.txt"],
       "run": {
         "command": ["cmake-format", "-i", "{file}"]
       },
@@ -203,13 +225,49 @@
       },
       "output": "in-place"
     },
-    "dockfmt": {
-      "extensions": ["*"],
+    "mix-format": {
+      "extensions": [".ex", ".exs"],
+      "run": { "command": ["mix", "format", "{file}"] },
+      "output": "in-place"
+    },
+    "scalafmt": {
+      "extensions": [".scala", ".sc", ".sbt"],
+      "run": { "command": ["scalafmt", "{file}"] },
+      "output": "in-place"
+    },
+    "julia-format": {
+      "extensions": [".jl"],
       "run": {
-        "command": ["dockfmt", "fmt", "{file}"]
+        "command": [
+          "julia",
+          "--startup-file=no",
+          "--history-file=no",
+          "-e",
+          "using JuliaFormatter; format_file(ARGS[1])",
+          "{file}"
+        ]
       },
-      "output": "in-place",
-      "include": ["Dockerfile", "**/Dockerfile"]
+      "output": "in-place"
+    },
+    "powershell-format": {
+      "extensions": [".ps1", ".psm1", ".psd1"],
+      "run": {
+        "command": [
+          "pwsh",
+          "-NoProfile",
+          "-NonInteractive",
+          "-CommandWithArgs",
+          "$ErrorActionPreference=\"Stop\";$p=$args[0];$options=@{};if(Test-Path -LiteralPath PSScriptAnalyzerSettings.psd1){$options.Settings=\"PSScriptAnalyzerSettings.psd1\"};[IO.File]::WriteAllText($p,(Invoke-Formatter -ScriptDefinition ([IO.File]::ReadAllText($p)) @options))",
+          "{file}"
+        ]
+      },
+      "output": "in-place"
+    },
+    "dockfmt": {
+      "extensions": [".dockerfile"],
+      "fileNames": ["Dockerfile", "Containerfile"],
+      "run": { "command": ["dockfmt", "fmt", "--write", "{file}"] },
+      "output": "in-place"
     }
   }
 }

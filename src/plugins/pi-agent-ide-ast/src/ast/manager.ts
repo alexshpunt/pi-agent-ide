@@ -65,6 +65,9 @@ function grammarWasmPath(extension: string): string | undefined {
     }
 
     case ".c":
+    case ".cc":
+    case ".hh":
+    case ".hxx":
     case ".cpp":
     case ".cxx":
     case ".h":

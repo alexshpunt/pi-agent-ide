@@ -1,6 +1,86 @@
 {
   "version": 1,
   "servers": {
+    "vue-typescript-language-server": {
+      "command": ["typescript-language-server", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["tsconfig.json", "package.json"],
+      "languages": { "vue": { "extensions": [".vue"] } },
+      "capabilities": ["diagnostics"],
+      "initializationOptions": {
+        "plugins": [
+          {
+            "name": "@vue/typescript-plugin",
+            "location": "{project}/node_modules/@vue/typescript-plugin",
+            "languages": ["vue"]
+          }
+        ]
+      }
+    },
+    "elixir-ls": {
+      "command": ["elixir-ls"],
+
+      "settings": { "elixirLS": { "mcpEnabled": false } },
+      "transport": "stdio",
+      "rootMarkers": ["mix.exs"],
+      "languages": { "elixir": { "extensions": [".ex", ".exs"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "metals": {
+      "command": ["metals"],
+      "transport": "stdio",
+      "rootMarkers": ["build.sbt", "project.scala", ".bsp"],
+      "languages": { "scala": { "extensions": [".scala", ".sc"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "angular-language-server": {
+      "command": ["ngserver", "--stdio", "--tsProbeLocations", ".", "--ngProbeLocations", "."],
+      "transport": "stdio",
+      "rootMarkers": ["angular.json"],
+      "requireRootMarker": true,
+      "languages": { "typescript": { "extensions": [".ts"] }, "html": { "extensions": [".html"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "svelte-language-server": {
+      "command": ["svelteserver", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["svelte.config.js", "package.json"],
+      "languages": { "svelte": { "extensions": [".svelte"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "dart-language-server": {
+      "command": ["dart", "language-server", "--protocol=lsp"],
+      "transport": "stdio",
+      "rootMarkers": ["pubspec.yaml", "analysis_options.yaml"],
+      "languages": {
+        "dart": {
+          "extensions": [".dart"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "r-language-server": {
+      "command": ["Rscript", "-e", "languageserver::run()"],
+      "transport": "stdio",
+      "rootMarkers": ["DESCRIPTION", ".lintr", ".Rprofile"],
+      "languages": {
+        "r": {
+          "extensions": [".r"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "zls": {
+      "command": ["zls"],
+      "transport": "stdio",
+      "rootMarkers": ["build.zig", "build.zig.zon", "zls.json"],
+      "languages": {
+        "zig": {
+          "extensions": [".zig", ".zon"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
     "clangd": {
       "command": ["clangd"],
       "transport": "stdio",
@@ -21,10 +101,16 @@
       "rootMarkers": ["tsconfig.json", "jsconfig.json", "package.json"],
       "languages": {
         "javascript": {
-          "extensions": [".js", ".jsx", ".mjs", ".cjs"]
+          "extensions": [".js", ".mjs", ".cjs"]
+        },
+        "javascriptreact": {
+          "extensions": [".jsx"]
         },
         "typescript": {
-          "extensions": [".ts", ".tsx", ".mts", ".cts"]
+          "extensions": [".ts", ".mts", ".cts"]
+        },
+        "typescriptreact": {
+          "extensions": [".tsx"]
         }
       },
       "capabilities": ["diagnostics"]
@@ -152,6 +238,8 @@
     },
     "vscode-css-language-server": {
       "command": ["vscode-css-language-server", "--stdio"],
+
+      "settings": { "css": {}, "scss": {}, "less": {} },
       "transport": "stdio",
       "rootMarkers": ["package.json"],
       "languages": {
@@ -216,13 +304,59 @@
       },
       "capabilities": ["diagnostics"]
     },
-    "cmake-language-server": {
-      "command": ["cmake-language-server"],
+    "kotlin-lsp": {
+      "command": ["intellij-server", "--stdio"],
       "transport": "stdio",
-      "rootMarkers": ["CMakeLists.txt"],
+      "rootMarkers": ["build.gradle.kts", "build.gradle", "pom.xml", "settings.gradle.kts"],
+      "languages": {
+        "kotlin": {
+          "extensions": [".kt", ".kts"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "julia-language-server": {
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--history-file=no",
+        "-e",
+        "using LanguageServer; runserver()"
+      ],
+      "transport": "stdio",
+      "rootMarkers": ["Project.toml", "JuliaProject.toml"],
+      "languages": {
+        "julia": {
+          "extensions": [".jl"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "powershell-editor-services": {
+      "command": [
+        "pwsh",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$ErrorActionPreference=\"Stop\";Import-Module PowerShellEditorServices;$d=Join-Path (Get-Location) \".agents/tmp/powershell-lsp-$PID\";[IO.Directory]::CreateDirectory($d)|Out-Null;Start-EditorServices -HostName Pi -HostProfileId Pi -HostVersion 1.0.0 -Stdio -LanguageServiceOnly -LogPath (Join-Path $d \"server.log\") -SessionDetailsPath (Join-Path $d \"session.json\")"
+      ],
+      "transport": "stdio",
+      "rootMarkers": ["PSScriptAnalyzerSettings.psd1"],
+      "languages": {
+        "powershell": {
+          "extensions": [".ps1", ".psm1", ".psd1"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "neocmakelsp": {
+      "command": ["neocmakelsp", "stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["CMakeLists.txt", ".neocmake.toml", ".neocmakelint.toml"],
       "languages": {
         "cmake": {
-          "extensions": [".cmake"]
+          "extensions": [".cmake"],
+          "fileNames": ["CMakeLists.txt"]
         }
       },
       "capabilities": ["diagnostics"]
@@ -266,7 +400,8 @@
       "rootMarkers": ["Dockerfile"],
       "languages": {
         "dockerfile": {
-          "extensions": [".dockerfile"]
+          "extensions": [".dockerfile"],
+          "fileNames": ["Dockerfile", "Containerfile"]
         }
       },
       "capabilities": ["diagnostics"]

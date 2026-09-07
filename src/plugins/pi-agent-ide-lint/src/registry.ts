@@ -1,9 +1,10 @@
-import path from "node:path";
+import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
+import { LINTER_RECIPES } from "./catalog.js";
 
 import {
   hasConfiguredExecutable,
   loadLayeredToolConfig,
-  matchesConfiguredFile,
+  selectConfiguredEntry,
   parseLintersConfig,
 } from "pi-agent-ide/api/tool-config";
 
@@ -21,6 +22,8 @@ export class LintCommandRegistry {
   private constructor(
     private readonly linters: readonly EffectiveToolConfigEntry<LinterCommandConfig>[],
     private readonly availableBuiltIns: ReadonlySet<string>,
+
+    private readonly evidence: ReadonlyMap<string, { readonly score: number }> = new Map(),
   ) {}
 
   /**
@@ -45,9 +48,17 @@ export class LintCommandRegistry {
           available: await hasConfiguredExecutable(entry.config.check, directory, environment),
         })),
     );
+    const evidence = await inspectRecipeEvidence(directory, LINTER_RECIPES);
+    const entries = [...effective.entries].sort((left, right) =>
+      left.layer === "built-in" && right.layer === "built-in"
+        ? (evidence.get(right.id)?.score ?? 0) - (evidence.get(left.id)?.score ?? 0)
+        : 0,
+    );
     return new LintCommandRegistry(
-      effective.entries,
+      entries,
       new Set(available.filter((entry) => entry.available).map((entry) => entry.id)),
+
+      evidence,
     );
   }
 
@@ -80,11 +91,12 @@ export class LintCommandRegistry {
     filePath: string,
     projectRoot: string,
   ): EffectiveToolConfigEntry<LinterCommandConfig> | undefined {
-    const absolute = path.isAbsolute(filePath) ? filePath : path.join(projectRoot, filePath);
-    return this.linters.find(
-      (linter) =>
-        (linter.layer !== "built-in" || this.availableBuiltIns.has(linter.id)) &&
-        matchesConfiguredFile(linter.config, absolute, projectRoot),
+    return selectConfiguredEntry(
+      this.linters,
+      this.availableBuiltIns,
+      this.evidence,
+      filePath,
+      projectRoot,
     );
   }
 

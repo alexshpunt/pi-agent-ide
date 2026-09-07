@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { runConfiguredProcess } from "pi-agent-ide/api/tool-config";
 
 import { parseDiagnostics } from "./diagnostics.js";
@@ -36,7 +38,12 @@ export async function runConfiguredLinter(
     };
   }
 
-  const output = result.stdout.trim().length > 0 ? result.stdout : result.stderr;
+  const output =
+    config.diagnostics.format === "regex" || config.diagnostics.format === "clang"
+      ? [result.stdout, result.stderr].filter((stream) => stream.trim().length > 0).join("\n")
+      : result.stdout.trim().length > 0
+        ? result.stdout
+        : result.stderr;
   let diagnostics: Diagnostic[];
 
   try {
@@ -49,10 +56,23 @@ export async function runConfiguredLinter(
     };
   }
 
+  const ok = result.ok && (result.exitCode === 0 || diagnostics.length > 0);
+
+  const workingDirectory =
+    config.check.cwd === "file" ? path.dirname(context.filePath) : context.projectRoot;
+  diagnostics = diagnostics
+    .filter((diagnostic) => {
+      if (diagnostic.file === undefined) return true;
+      const file = diagnostic.file.startsWith("file:")
+        ? fileURLToPath(diagnostic.file)
+        : diagnostic.file;
+      return path.resolve(workingDirectory, file) === path.resolve(context.filePath);
+    })
+    .map(({ file: _file, ...diagnostic }) => diagnostic);
   return {
-    ok: result.ok,
+    ok,
     diagnostics,
-    ...(!result.ok && {
+    ...(!ok && {
       failure:
         result.stderr.trim().slice(0, 200) || `command exited with code ${String(result.exitCode)}`,
     }),

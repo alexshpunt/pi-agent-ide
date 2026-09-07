@@ -1,7 +1,12 @@
 import spawn from "cross-spawn";
+
+import {
+  isExecutableAvailable,
+  normalizeProcessEnvironment,
+  projectProcessEnvironment,
+} from "pi-agent-doctor/api/executable";
 import { requiredValue } from "pi-agent-invariant";
-import { constants } from "node:fs";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +32,9 @@ File selection shared by formatter and linter commands.
 */
 export interface FileMatcherConfig {
   readonly extensions: readonly string[];
+
+  /** Exact basenames accepted in addition to extensions, such as CMakeLists.txt. */
+  readonly fileNames?: readonly string[];
   readonly include?: readonly string[];
   readonly exclude?: readonly string[];
 }
@@ -62,6 +70,9 @@ Describes how a linter's output becomes Pi Agent IDE diagnostics.
 export interface DiagnosticParserConfig {
   readonly format: DiagnosticFormat;
   readonly pattern?: string;
+
+  /** Column numbering used by a regex reporter; IDE diagnostics are always one-based. */
+  readonly columnBase?: 0 | 1;
 }
 
 /**
@@ -218,6 +229,11 @@ export function matchesConfiguredFile(
   if (
     config.extensions.every(
       (candidate) => !(normalizeExtension(candidate) === extension || candidate === "*"),
+    ) &&
+    !config.fileNames?.some((name) =>
+      process.platform === "win32"
+        ? name.toLowerCase() === path.basename(filePath).toLowerCase()
+        : name === path.basename(filePath),
     )
   ) {
     return false;
@@ -231,6 +247,29 @@ export function matchesConfiguredFile(
 }
 
 /**
+Selects an explicit override first, then an available built-in with the strongest native evidence.
+A missing native choice never falls back to an unrelated installed tool.
+*/
+export function selectConfiguredEntry<T extends FileMatcherConfig>(
+  entries: readonly EffectiveToolConfigEntry<T>[],
+  availableBuiltIns: ReadonlySet<string>,
+  evidence: ReadonlyMap<string, { readonly score: number }>,
+  filePath: string,
+  projectRoot: string,
+): EffectiveToolConfigEntry<T> | undefined {
+  const absolute = path.resolve(projectRoot, filePath);
+  const matching = entries.filter((entry) =>
+    matchesConfiguredFile(entry.config, absolute, projectRoot),
+  );
+  const override = matching.find((entry) => entry.layer !== "built-in");
+  if (override !== undefined) return override;
+  const score = Math.max(0, ...matching.map((entry) => evidence.get(entry.id)?.score ?? 0));
+  return matching.find(
+    (entry) => availableBuiltIns.has(entry.id) && (evidence.get(entry.id)?.score ?? 0) === score,
+  );
+}
+
+/**
 Returns whether a configured process executable can be launched from the project.
 */
 export async function hasConfiguredExecutable(
@@ -241,24 +280,7 @@ export async function hasConfiguredExecutable(
   assertProcessConfig(config, "process");
   const executable = requiredValue(config.command[0]).replaceAll("{project}", projectRoot);
   const effectiveEnvironment = createConfiguredProcessEnvironment(config, projectRoot, environment);
-  const candidates =
-    path.isAbsolute(executable) || path.dirname(executable) !== "."
-      ? [path.resolve(projectRoot, executable)]
-      : (effectiveEnvironment.PATH ?? "")
-          .split(path.delimiter)
-          .filter(Boolean)
-          .map((directory) => path.join(directory, executable));
-
-  for (const candidate of candidates) {
-    try {
-      await access(candidate, constants.X_OK);
-      return true;
-    } catch {
-      // Try the next executable location.
-    }
-  }
-
-  return false;
+  return isExecutableAvailable(executable, projectRoot, effectiveEnvironment);
 }
 
 /**
@@ -408,6 +430,13 @@ export function parseLintersConfig(value: unknown): LintersConfig {
       throw new Error(`linter ${name} has an unsupported diagnostics format`);
     }
 
+    if (
+      diagnostics.columnBase !== undefined &&
+      (diagnostics.format !== "regex" ||
+        (diagnostics.columnBase !== 0 && diagnostics.columnBase !== 1))
+    ) {
+      throw new Error(`linter ${name} columnBase must be 0 or 1 for regex diagnostics`);
+    }
     if (diagnostics.format === "regex" && typeof diagnostics.pattern !== "string") {
       throw new Error(`linter ${name} regex diagnostics require pattern`);
     }
@@ -432,6 +461,9 @@ function configRoot(
 
 function assertMatcher(record: Record<string, unknown>, label: string): void {
   assertStringArray(record.extensions, `${label}.extensions`, false);
+
+  if (record.fileNames !== undefined)
+    assertStringArray(record.fileNames, `${label}.fileNames`, false);
 
   if (record.include !== undefined) {
     assertStringArray(record.include, `${label}.include`, false);
@@ -550,10 +582,10 @@ export function createConfiguredProcessEnvironment(
   projectRoot: string,
   environment: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
-  const effective = { ...environment, ...config.env };
-  const projectBin = path.resolve(projectRoot, "node_modules", ".bin");
-  effective.PATH = [projectBin, effective.PATH].filter(Boolean).join(path.delimiter);
-  return effective;
+  return projectProcessEnvironment(projectRoot, {
+    ...normalizeProcessEnvironment(environment),
+    ...normalizeProcessEnvironment(config.env ?? {}),
+  });
 }
 
 function expandPlaceholders(

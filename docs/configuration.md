@@ -54,7 +54,7 @@ A project can override it in `<project>/.pi/pi-agent-ide/search.json`. Set `time
 
 ## Tool configuration
 
-Pi Agent IDE ships working formatter, linter, and LSP mappings. You do not need to copy them into each project. The commands are not bundled: Pi runs them through its current `PATH`.
+Pi Agent IDE ships formatter, linter, and LSP mappings. You do not need to copy them into each project. Install the tools and their required modules separately. Pi looks in project `node_modules/.bin`, Python `.venv` and `venv` executable directories, `vendor/bin`, and `PATH`. Python environments use `Scripts` on Windows and `bin` elsewhere. Windows command lookup respects `PATHEXT`, including `.cmd` launchers.
 
 You can replace built-in entries or add custom entries in either of these directories:
 
@@ -76,6 +76,37 @@ Use a global override for a nonstandard command shared by your projects. Use a p
 Use direct argument arrays in tool commands. Available placeholders are `{file}`, `{relativeFile}`, `{fileDir}`, and `{project}`. Formatter output can be `in-place` or `stdout`. Linters have separate `check` and optional `fix` commands. See the [generated tool catalog](./generated/tool-catalog/index.md) for built-in IDs and commands.
 
 When `PI_CODING_AGENT_DIR` is set, the global directory follows it as `<PI_CODING_AGENT_DIR>/extensions/pi-agent-ide/`. Restart Pi or use `/reload` after changing a configuration file.
+
+### Files without a language extension
+
+Formatter and linter `fileNames` entries match exact basenames, such as `Dockerfile` or `CMakeLists.txt`. A file can match either `extensions` or `fileNames`; existing `include` and `exclude` rules still apply. LSP entries put `fileNames` beside `extensions` inside each language. Basenames are case-insensitive on Windows.
+
+### Framework language servers
+
+An LSP entry can set `requireRootMarker: true`. It then applies only when one of its `rootMarkers` exists in the file's directory or an ancestor inside the project. Markers are relative paths, not globs. The Angular built-in uses `angular.json`, so installing Angular's server does not make it claim ordinary TypeScript or HTML projects. A single-file server can leave this option unset.
+
+JSX and TSX use the LSP language IDs `javascriptreact` and `typescriptreact`, not plain JavaScript and TypeScript.
+
+LSP `initializationOptions` can use `{project}` inside string values, including nested plugin locations. Pi expands it to the absolute project path before starting the server. `settings` values are sent through the LSP configuration protocol.
+
+Vue diagnostics use `typescript-language-server` with the project-local `@vue/typescript-plugin`. Install both, along with TypeScript, and enable the Vue plugin in the native `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "plugins": [{ "name": "@vue/typescript-plugin" }]
+  },
+  "include": ["src/**/*.vue"]
+}
+```
+
+The Vue mapping is separate from ordinary TypeScript, so other projects do not load the Vue plugin. This setup does not claim the extra custom commands of `@vue/language-server`.
+
+### Custom diagnostic reporters
+
+Regex diagnostic parsers run with multiline matching. Set `columnBase: 0` when a reporter counts columns from zero; the default is one. Returned diagnostic positions remain one-based. This setting applies only to `format: "regex"` parsers.
+
+A runtime being installed does not prove its modules or language-server features are installed. For example, Taplo's npm build can format TOML but does not include its LSP. Use an LSP-enabled Taplo build for language-server diagnostics. Doctor reports the actual startup failure rather than treating that file as clean.
 
 ## Doctor
 

@@ -3,6 +3,8 @@
 export type Severity = "error" | "warning" | "info" | "hint";
 
 export interface Diagnostic {
+  /** Source path when a tool reports more than the requested file. */
+  file?: string;
   code: string;
   message: string;
   /**

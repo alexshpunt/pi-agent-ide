@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 import { URI } from "vscode-uri";
 
@@ -106,7 +104,7 @@ async function inspectLspSetup(context: DoctorContext): Promise<DoctorSetupInspe
 
     for (const [languageId, files] of context.detectedLanguages) {
       const selected = files
-        .flatMap((file) => registry.resolve(path.extname(file)))
+        .flatMap((file) => registry.resolve(file))
         .find((server) => server.languageId === languageId);
       if (selected === undefined) {
         continue;
@@ -141,7 +139,7 @@ function applicableServers(
   const applicable = new Map<string, ResolvedServer>();
 
   for (const file of files) {
-    const server = registry.resolve(path.extname(file))[0];
+    const server = registry.resolve(file)[0];
 
     if (server !== undefined && !applicable.has(server.serverId)) {
       applicable.set(server.serverId, server);

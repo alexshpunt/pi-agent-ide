@@ -39,6 +39,25 @@ mkdirSync(smoke, { recursive: true });
 writeFileSync(path.join(smoke, "package.json"), JSON.stringify({ private: true, type: "module" }));
 run("npm", ["install", path.resolve(source), "--registry=https://registry.npmjs.org/"], smoke);
 verifyInstalledPackage(smoke);
+execFileSync(
+  "pnpm",
+  [
+    "exec",
+    "vitest",
+    "run",
+    "--config",
+    "vitest.integration.config.mjs",
+    "tests/integration/composite/release-runtime.integration.test.ts",
+    "--reporter=default",
+    "--reporter=junit",
+    "--outputFile.junit=.agents/tmp/test-results/installed-runtime.xml",
+  ],
+  {
+    stdio: "inherit",
+    env: { ...process.env, PI_AGENT_IDE_TEST_INSTALLATION: smoke },
+  },
+);
+cpSync(".agents/tmp/test-results/installed-runtime.xml", `${directory}/installed-runtime.xml`);
 const evidence: CandidateEvidence = {
   version,
   repository: pr.head.repo.full_name,

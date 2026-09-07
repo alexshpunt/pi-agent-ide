@@ -23,34 +23,6 @@ import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
 
 const temporaryRoot = path.resolve(".agents", "tmp", "doctor-language-integration");
 const allRecipes = [...FORMATTER_RECIPES, ...LINTER_RECIPES, ...LSP_RECIPES];
-const sampleNames: Record<string, string> = {
-  c: "main.c",
-  cpp: "main.cpp",
-  csharp: "Program.cs",
-  go: "main.go",
-  java: "Main.java",
-  kotlin: "Main.kt",
-  javascript: "index.js",
-  typescript: "index.ts",
-  python: "main.py",
-  rust: "main.rs",
-  ruby: "main.rb",
-  php: "index.php",
-  swift: "main.swift",
-  lua: "main.lua",
-  shell: "main.sh",
-  html: "index.html",
-  css: "style.css",
-  json: "data.json",
-  yaml: "data.yaml",
-  toml: "data.toml",
-  xml: "data.xml",
-  markdown: "README.md",
-  sql: "query.sql",
-  dockerfile: "Dockerfile",
-  terraform: "main.tf",
-  cmake: "CMakeLists.txt",
-};
 
 beforeAll(async () => {
   await mkdir(temporaryRoot, { recursive: true });
@@ -66,12 +38,16 @@ describe("doctor language mini-projects", () => {
       const cwd = await mkdtemp(path.join(temporaryRoot, `${language.id}-`));
       const bin = path.join(cwd, "bin");
       await mkdir(bin);
-      await writeFile(path.join(cwd, sampleNames[language.id]), sampleSource(language.id), "utf8");
+      const sampleName = language.fileNames?.[0] ?? `main${requiredValue(language.extensions[0])}`;
+      await writeFile(path.join(cwd, sampleName), sampleSource(language.id), "utf8");
       const relevant = allRecipes.filter((recipe) => recipe.languages.includes(language.id));
-      expect(new Set(relevant.map((recipe) => recipe.kind))).toEqual(
-        new Set(["formatter", "linter", "lsp"]),
-      );
-      const chosen = (["formatter", "linter", "lsp"] as const).map((kind) =>
+      // Julia diagnostics come from its language server, not a standalone linter.
+      const kinds =
+        language.id === "julia"
+          ? (["formatter", "lsp"] as const)
+          : (["formatter", "linter", "lsp"] as const);
+      expect(new Set(relevant.map((recipe) => recipe.kind))).toEqual(new Set(kinds));
+      const chosen = kinds.map((kind) =>
         requiredValue(relevant.find((recipe) => recipe.kind === kind)),
       );
       await createEvidence(cwd, chosen);
@@ -152,7 +128,13 @@ it("discovers and probes the Oxc formatter and linter", async () => {
     await core.registerPlugin(lintDoctorPlugin);
     const first = await runDoctor(core.snapshot(), cwd, process.env);
 
-    expect(first.suggestions.map((candidate) => candidate.recipe.id)).toEqual(["oxfmt", "oxlint"]);
+    expect(first.selections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "formatter", languageId: "typescript", toolId: "oxfmt" }),
+        expect.objectContaining({ kind: "linter", languageId: "typescript", toolId: "oxlint" }),
+      ]),
+    );
+    expect(first.suggestions).toEqual([]);
 
     await writeSuggestedConfigs(cwd, first.suggestions);
     const second = await runDoctor(core.snapshot(), cwd, process.env);
