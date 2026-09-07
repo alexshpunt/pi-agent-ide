@@ -100,12 +100,16 @@ export function createDiagnosticViewContent(
   };
 }
 
-/** Adds named diagnostic annotations to their source lines without filtering the document. */
+/** Add annotations without changing source lines. EOF reports attach to the last line with their original coordinates. */
 export function addDiagnosticAnnotations(
   document: TextDocument,
   sources: readonly DiagnosticSource[],
 ): TextDocument {
-  const diagnostics = diagnosticsByValidLine(sources, document.lines.length);
+  const diagnostics = diagnosticsByValidLine(
+    sources,
+    document.lines.length,
+    /[\r\n]$/u.test(document.content),
+  );
 
   const lines = document.lines.map((line) => {
     const annotations = diagnostics.get(line.lineNumber);
@@ -116,7 +120,8 @@ export function addDiagnosticAnnotations(
 
     const suffix = annotations
       .map(
-        ({ diagnostic, source }) => `<!-- ${source}: ${formatDiagnostic(diagnostic, source)} -->`,
+        ({ diagnostic, source }) =>
+          `<!-- ${source}: ${formatDiagnostic(diagnostic, source)}${diagnostic.line === line.lineNumber ? "" : ` @${diagnostic.line}:${diagnostic.column}`} -->`,
       )
       .join(" ");
 
@@ -151,22 +156,21 @@ interface NamedDiagnostic {
 function diagnosticsByValidLine(
   sources: readonly DiagnosticSource[],
   lineCount: number,
+  trailingNewline = false,
 ): Map<number, NamedDiagnostic[]> {
   const diagnosticsByLine = new Map<number, NamedDiagnostic[]>();
 
   for (const { diagnostics, source } of sources) {
     for (const diagnostic of diagnostics) {
-      if (
-        !Number.isInteger(diagnostic.line) ||
-        diagnostic.line < 1 ||
-        diagnostic.line > lineCount
-      ) {
+      const renderedLine =
+        trailingNewline && diagnostic.line === lineCount + 1 ? lineCount : diagnostic.line;
+      if (!Number.isInteger(diagnostic.line) || renderedLine < 1 || renderedLine > lineCount) {
         continue;
       }
 
-      const lineDiagnostics = diagnosticsByLine.get(diagnostic.line) ?? [];
+      const lineDiagnostics = diagnosticsByLine.get(renderedLine) ?? [];
       lineDiagnostics.push({ diagnostic, source });
-      diagnosticsByLine.set(diagnostic.line, lineDiagnostics);
+      diagnosticsByLine.set(renderedLine, lineDiagnostics);
     }
   }
 

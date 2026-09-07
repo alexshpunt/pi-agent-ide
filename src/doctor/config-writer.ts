@@ -57,8 +57,21 @@ export async function writeSuggestedConfigs(
         command: recipe.command,
         transport: "stdio",
         rootMarkers: recipe.rootMarkers,
+
+        ...(recipe.initializationOptions !== undefined && {
+          initializationOptions: recipe.initializationOptions,
+        }),
+
+        ...(recipe.settings !== undefined && { settings: recipe.settings }),
+
+        ...(recipe.requireRootMarker !== undefined && {
+          requireRootMarker: recipe.requireRootMarker,
+        }),
         languages: Object.fromEntries(
-          Object.entries(recipe.languageIds).map(([id, extensions]) => [id, { extensions }]),
+          Object.entries(recipe.languageIds).map(([id, extensions]) => [
+            id,
+            { extensions, ...(recipe.fileNames?.[id] && { fileNames: recipe.fileNames[id] }) },
+          ]),
         ),
         capabilities: ["diagnostics"],
       };

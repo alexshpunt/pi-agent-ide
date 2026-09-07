@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import { requestDiagnostics, type LspDiagnosticResult } from "./lsp/diagnostics.js";
 import { completedDiagnosticAdapter } from "./lsp/diagnostic-adapters.js";
 import type { LspManager } from "./lsp/manager.js";
@@ -16,8 +14,7 @@ export function createLspDiagnosticSource(
     async diagnose(filePath, context) {
       const manager = await managerFor(context.cwd);
       context.signal.throwIfAborted();
-      const extension = path.extname(filePath).toLowerCase();
-      const client = await manager.getOrStart(extension, context.cwd, "diagnostics");
+      const client = await manager.getOrStart(filePath, context.cwd, "diagnostics");
       context.signal.throwIfAborted();
       if (!client)
         return {
@@ -26,8 +23,8 @@ export function createLspDiagnosticSource(
           reason: "No language server configured for this file",
         };
       const uri = client.toUri(filePath);
-      const languageId = manager.languageId(extension);
-      client.syncDocument(uri, context.content, languageId);
+      const languageId = manager.languageId(filePath);
+      client.syncDocument(uri, context.content, languageId, true);
       let version = client.documentVersion(uri);
       const refreshState = { active: true, queued: false };
       const current = () => !context.signal.aborted && client.documentVersion(uri) === version;

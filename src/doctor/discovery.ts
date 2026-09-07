@@ -1,5 +1,8 @@
-import { access, readFile } from "node:fs/promises";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
+
+import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
+
+import { isExecutableAvailable } from "pi-agent-doctor/api/executable";
 
 import { projectIdeConfigPath } from "#src/api/tool-config.js";
 import type { DoctorToolSelection } from "#src/api/doctor.js";
@@ -23,7 +26,10 @@ export async function discoverRecipeCandidates(
   recipes: readonly OwnedContribution<ToolRecipe>[],
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<readonly RecipeCandidate[]> {
-  const dependencies = await packageDependencies(cwd);
+  const nativeEvidence = await inspectRecipeEvidence(
+    cwd,
+    recipes.map((entry) => entry.value),
+  );
   const managedRecipes = await managedRecipeIds(cwd);
   const candidates: RecipeCandidate[] = [];
 
@@ -36,7 +42,8 @@ export async function discoverRecipeCandidates(
 
     const evidence: string[] = [];
     let score = 1;
-    const nativeConfig = await firstExisting(cwd, recipe.configFiles ?? []);
+    const native = nativeEvidence.get(recipe.id);
+    const nativeConfig = native?.config;
 
     if (nativeConfig !== undefined) {
       score += 6;
@@ -48,7 +55,7 @@ export async function discoverRecipeCandidates(
       evidence.push("Pi Agent IDE config");
     }
 
-    const dependency = recipe.dependencies?.find((name) => dependencies.has(name));
+    const dependency = native?.dependency;
 
     if (dependency !== undefined) {
       score += 4;
@@ -118,47 +125,14 @@ export function selectSuggestedRecipes(
   return [...selected.values()];
 }
 
-async function firstExisting(cwd: string, names: readonly string[]): Promise<string | undefined> {
-  for (const name of names) {
-    try {
-      await access(path.join(cwd, name));
-      return name;
-    } catch {
-      // Try the next project marker.
-    }
-  }
-
-  return undefined;
-}
-
 async function firstExecutable(
   cwd: string,
   names: readonly string[],
   environment: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
-  const pathDirectories = (environment.PATH ?? "").split(path.delimiter).filter(Boolean);
-  const directories = [path.join(cwd, "node_modules", ".bin"), ...pathDirectories];
-
   for (const name of names) {
-    if (name.includes(path.sep)) {
-      try {
-        await access(path.resolve(cwd, name));
-        return name;
-      } catch {
-        continue;
-      }
-    }
-
-    for (const directory of directories) {
-      try {
-        await access(path.join(directory, name));
-        return name;
-      } catch {
-        // Try the next executable location.
-      }
-    }
+    if (await isExecutableAvailable(name, cwd, environment)) return name;
   }
-
   return undefined;
 }
 
@@ -191,33 +165,4 @@ async function managedRecipeIds(cwd: string): Promise<ReadonlySet<string>> {
   }
 
   return ids;
-}
-
-async function packageDependencies(cwd: string): Promise<ReadonlySet<string>> {
-  try {
-    const value = JSON.parse(await readFile(path.join(cwd, "package.json"), "utf8")) as Record<
-      string,
-      unknown
-    >;
-    const names = new Set<string>();
-
-    for (const key of [
-      "dependencies",
-      "devDependencies",
-      "peerDependencies",
-      "optionalDependencies",
-    ]) {
-      const section = value[key];
-
-      if (typeof section === "object" && section !== null && !Array.isArray(section)) {
-        for (const name of Object.keys(section)) {
-          names.add(name);
-        }
-      }
-    }
-
-    return names;
-  } catch {
-    return new Set();
-  }
 }

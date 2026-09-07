@@ -78,11 +78,16 @@ test.each(["push"])(
 
 test("an empty push cannot clear errors from a completed pull report", async () => {
   const { cwd, file, store, manager } = await fixture("pull-push", "broken clear-later");
-  expect((await store.read(file, { cwd })).results[0]?.diagnostics).toHaveLength(1);
   const client = await manager.getOrStart(".ts", cwd, "diagnostics");
   if (!client) throw new Error("Missing fixture server");
   const requests = vi.spyOn(client, "sendRequest");
+  const pushes = vi.fn();
+  const unsubscribe = client.onNotification("textDocument/publishDiagnostics", pushes);
   try {
+    expect((await store.read(file, { cwd })).results[0]?.diagnostics).toHaveLength(1);
+    await vi.waitFor(() =>
+      expect(pushes).toHaveBeenCalledWith(expect.objectContaining({ diagnostics: [] })),
+    );
     await vi.waitFor(() =>
       expect(requests).toHaveBeenCalledWith(
         "textDocument/diagnostic",
@@ -95,6 +100,7 @@ test("an empty push cannot clear errors from a completed pull report", async () 
       diagnostics: [{ code: "type" }],
     });
   } finally {
+    unsubscribe();
     requests.mockRestore();
   }
 });

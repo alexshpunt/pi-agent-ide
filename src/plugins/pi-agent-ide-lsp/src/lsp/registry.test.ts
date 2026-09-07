@@ -1,10 +1,9 @@
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { LspServerRegistry } from "./registry.js";
+import { LspServerRegistry, parseLspConfig } from "./registry.js";
 
 const directories: string[] = [];
 const originalAgentDirectory = process.env.PI_CODING_AGENT_DIR;
@@ -79,6 +78,85 @@ test("orders project servers before matching global and built-in servers", async
   expect(registry.resolve(".global").some((entry) => entry.serverId === "shared")).toBe(false);
 });
 
+test("routes exact native basenames without claiming unrelated text files", () => {
+  const registry = LspServerRegistry.fromConfig({
+    version: 1,
+    servers: {
+      cmake: {
+        command: ["cmake-language-server"],
+        rootMarkers: [],
+        capabilities: ["diagnostics"],
+        languages: { cmake: { extensions: [".cmake"], fileNames: ["CMakeLists.txt"] } },
+      },
+      docker: {
+        command: ["docker-langserver"],
+        rootMarkers: [],
+        capabilities: ["diagnostics"],
+        languages: {
+          dockerfile: { extensions: [".dockerfile"], fileNames: ["Dockerfile", "Containerfile"] },
+        },
+      },
+    },
+  });
+  expect(registry.resolve(path.join("project with spaces", "CMakeLists.txt"))[0]?.serverId).toBe(
+    "cmake",
+  );
+  expect(registry.languageId("Dockerfile")).toBe("dockerfile");
+  expect(registry.resolve("Containerfile")[0]?.serverId).toBe("docker");
+  expect(registry.resolve("README.txt")).toEqual([]);
+  expect(registry.resolve("Dockerfile.backup")).toEqual([]);
+  expect(registry.resolve("module.cmake")[0]?.serverId).toBe("cmake");
+  expect(registry.resolve(".cmake")[0]?.serverId).toBe("cmake");
+});
+
+test("gates framework servers by the file's native project, including nested projects", async () => {
+  const project = await temporaryDirectory("lsp-framework-");
+  const framework = path.join(project, "apps", "frontend");
+  await mkdir(framework, { recursive: true });
+  const registry = LspServerRegistry.fromConfig(
+    {
+      version: 1,
+      servers: {
+        angular: {
+          command: ["ngserver"],
+          rootMarkers: ["angular.json"],
+          requireRootMarker: true,
+          languages: { typescript: { extensions: [".ts"] } },
+          capabilities: ["diagnostics"],
+        },
+        generic: {
+          command: ["typescript-language-server"],
+          rootMarkers: [],
+          languages: { typescript: { extensions: [".ts"] } },
+          capabilities: ["diagnostics"],
+        },
+      },
+    },
+    project,
+  );
+  const file = path.join(framework, "src", "main.ts");
+  expect(registry.resolve(file).map((entry) => entry.serverId)).toEqual(["generic"]);
+  await writeFile(path.join(framework, "angular.json"), "{}");
+  expect(registry.resolve(file).map((entry) => entry.serverId)).toEqual(["angular", "generic"]);
+  expect(registry.resolve("library.ts").map((entry) => entry.serverId)).toEqual(["generic"]);
+  expect(registry.resolve(".ts").map((entry) => entry.serverId)).toEqual(["generic"]);
+  await writeFile(path.join(project, "angular.json"), "{}");
+  expect(registry.resolve(".ts")[0]?.serverId).toBe("angular");
+});
+
+test("validates native marker gates before loading a server", () => {
+  const config = (requireRootMarker: unknown, rootMarkers: string[]) => ({
+    version: 1,
+    servers: { framework: { ...server(".ts", "ngserver"), requireRootMarker, rootMarkers } },
+  });
+  expect(() => parseLspConfig(config("true", ["angular.json"]))).toThrow(TypeError);
+  expect(() => parseLspConfig(config(true, []))).toThrow(Error);
+  expect(parseLspConfig(config(true, ["angular.json"])).servers.framework?.requireRootMarker).toBe(
+    true,
+  );
+  expect(parseLspConfig(config(false, [])).servers.framework?.requireRootMarker).toBe(false);
+});
+
 function server(extension: string, executable: string): Record<string, unknown> {
   return {
     command: [executable],
@@ -89,7 +167,9 @@ function server(extension: string, executable: string): Record<string, unknown> 
 }
 
 async function temporaryDirectory(prefix: string): Promise<string> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
+  const root = path.resolve(".agents/tmp/lsp-registry-tests");
+  await mkdir(root, { recursive: true });
+  const directory = await mkdtemp(path.join(root, prefix));
   directories.push(directory);
   return directory;
 }

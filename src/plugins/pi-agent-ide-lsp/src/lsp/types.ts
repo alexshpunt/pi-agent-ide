@@ -53,6 +53,8 @@ export interface LspTextEdit {
 
 export interface LanguageEntry {
   extensions: string[];
+  /** Exact basenames for files such as Dockerfile and CMakeLists.txt. */
+  fileNames?: string[];
 }
 
 export type ServerCapability = "diagnostics";
@@ -61,6 +63,9 @@ export interface ServerConfig {
   command: string[];
   transport?: "stdio";
   rootMarkers: string[];
+
+  /** Require a root marker in the file's directory or an ancestor inside the project. */
+  requireRootMarker?: boolean;
   languages: Record<string, LanguageEntry>;
   capabilities: ServerCapability[];
   env?: Record<string, string>;

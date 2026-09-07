@@ -1,6 +1,8 @@
 import { requiredValue } from "pi-agent-invariant";
 import { type ChildProcess } from "node:child_process";
 
+import path from "node:path";
+
 import spawnProcess from "cross-spawn";
 import { createConfiguredProcessEnvironment } from "pi-agent-ide/api/tool-config";
 import {
@@ -8,11 +10,14 @@ import {
   CancellationTokenSource,
   type MessageConnection,
   StreamMessageReader,
-  StreamMessageWriter,
 } from "vscode-jsonrpc/node";
 import { URI } from "vscode-uri";
 
 import type { LspDiagnostic } from "./types.js";
+
+import { LspFileWatchers } from "./file-watchers.js";
+
+import { TransportWriter } from "./transport-writer.js";
 
 /** Latest push observation for an open document, without a completion guarantee. */
 export interface LspDiagnosticPublication {
@@ -34,8 +39,14 @@ export class LspClient {
   private _disposed = false;
 
   private _crashed = false;
+
+  private _stderr = "";
+
+  private _fileWatchers: LspFileWatchers | undefined;
   private readonly _handlers = new Map<string, ((parameters: unknown) => void)[]>();
   private readonly _documentVersions = new Map<string, number>();
+
+  private readonly _documentContents = new Map<string, string>();
 
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
@@ -142,6 +153,10 @@ export class LspClient {
     const bin = requiredValue(this._command[0]);
     const projectRoot = URI.parse(this.rootUri).fsPath;
 
+    const workspaceFolders = [
+      { uri: this.rootUri, name: path.basename(projectRoot) || projectRoot },
+    ];
+
     const childProcess = spawnProcess(bin, this._args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: projectRoot,
@@ -160,6 +175,12 @@ export class LspClient {
     childProcess.stdout?.on("error", () => void 0);
     childProcess.stderr?.on("error", () => void 0);
 
+    this._stderr = "";
+    childProcess.stderr?.setEncoding("utf8");
+    childProcess.stderr?.on("data", (chunk: string) => {
+      this._stderr = (this._stderr + chunk).slice(-4096);
+    });
+
     childProcess.on("error", (error) => {
       const code = "code" in error ? (error as { code?: unknown }).code : undefined;
 
@@ -174,6 +195,7 @@ export class LspClient {
     });
 
     childProcess.on("exit", (code, _signal) => {
+      this._fileWatchers?.dispose();
       if (!this._disposed && code !== 0 && code !== null) {
         this._crashed = true;
       }
@@ -185,14 +207,76 @@ export class LspClient {
     });
 
     await spawnPromise;
-    this._connection = createMessageConnection(
+    const connection = createMessageConnection(
       new StreamMessageReader(requiredValue(childProcess.stdout)),
-      new StreamMessageWriter(requiredValue(childProcess.stdin)),
+      new TransportWriter(requiredValue(childProcess.stdin), (error) => {
+        if (this._connection !== connection || this._disposed) return;
+        this._crashed = true;
+        this._initialized = false;
+        this._fileWatchers?.dispose();
+        connection.dispose();
+        console.error(`[lsp] ${this.serverId}: transport write failed:`, error);
+      }),
     );
+    this._connection = connection;
 
     this._connection.onError((error) => {
       console.error(`[lsp] ${this.serverId}: connection error:`, error);
     });
+
+    this._fileWatchers = new LspFileWatchers(
+      projectRoot,
+      (change) => {
+        this._sendNotification("workspace/didChangeWatchedFiles", { changes: [change] });
+      },
+      (error) => console.error(`[lsp] ${this.serverId}: file watcher failed:`, error),
+    );
+    this._connection.onRequest(
+      "client/registerCapability",
+      async (parameters: {
+        registrations: {
+          id: string;
+          method: string;
+          registerOptions?: { watchers?: Parameters<LspFileWatchers["register"]>[1] };
+        }[];
+      }) => {
+        for (const registration of parameters.registrations) {
+          // Settings are fixed for this client and already served by workspace/configuration.
+          if (registration.method === "workspace/didChangeConfiguration") continue;
+          if (registration.method !== "workspace/didChangeWatchedFiles")
+            throw new Error(`Unsupported dynamic capability: ${registration.method}`);
+          await this._fileWatchers?.register(
+            registration.id,
+            registration.registerOptions?.watchers ?? [],
+          );
+        }
+        return null;
+      },
+    );
+    this._connection.onRequest(
+      "client/unregisterCapability",
+      (parameters: { unregisterations: { id: string }[] }) => {
+        for (const registration of parameters.unregisterations)
+          this._fileWatchers?.unregister(registration.id);
+        return null;
+      },
+    );
+    this._connection.onRequest("window/workDoneProgress/create", () => null);
+
+    this._connection.onRequest(
+      "workspace/configuration",
+      (parameters: { items: { section?: string }[] }) =>
+        parameters.items.map((item) => {
+          let value: unknown = this._settings ?? null;
+          for (const segment of item.section?.split(".").filter(Boolean) ?? []) {
+            value =
+              typeof value === "object" && value !== null
+                ? ((value as Record<string, unknown>)[segment] ?? null)
+                : null;
+          }
+          return value;
+        }),
+    );
 
     this._connection.listen();
 
@@ -221,6 +305,8 @@ export class LspClient {
       }
     });
 
+    this._connection.onRequest("workspace/workspaceFolders", () => workspaceFolders);
+
     interface InitResult {
       capabilities: Record<string, unknown>;
     }
@@ -229,14 +315,24 @@ export class LspClient {
       this._connection.sendRequest<InitResult>("initialize", {
         processId: process.pid,
         rootUri: this.rootUri,
+
+        workspaceFolders,
         capabilities: {
           workspace: {
             applyEdit: false,
+
+            configuration: true,
+
+            workspaceFolders: true,
+
+            didChangeWatchedFiles: { dynamicRegistration: true, relativePatternSupport: true },
             symbol: { dynamicRegistration: false },
           },
           textDocument: {
             synchronization: { didOpen: true, didChange: true, didClose: true },
             publishDiagnostics: { relatedInformation: true },
+
+            diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
             documentSymbol: { hierarchicalDocumentSymbolSupport: true },
             foldingRange: { lineFoldingOnly: true },
           },
@@ -245,20 +341,30 @@ export class LspClient {
       }),
       this._timeoutMs,
       `[lsp] ${this.serverId}: initialize timed out`,
-    );
+    ).catch((error: unknown) => {
+      const detail = this._stderr.trim();
+      if (!detail) throw error;
+      throw new Error(`[lsp] ${this.serverId}: ${detail}`, { cause: error });
+    });
 
-    void this._connection.sendNotification("initialized", {
+    await this._connection.sendNotification("initialized", {
       capabilities: initResult.capabilities,
     });
 
     if (this._settings !== undefined) {
-      void this._connection.sendNotification("workspace/didChangeConfiguration", {
+      await this._connection.sendNotification("workspace/didChangeConfiguration", {
         settings: this._settings,
       });
     }
 
+    if (this._crashed)
+      throw new Error(`[lsp] ${this.serverId}: transport failed during initialization`);
+
     this._initialized = true;
     this._serverCapabilities = initResult.capabilities;
+
+    // Unadvertised methods may return null or internal errors rather than MethodNotFound.
+    this._diagnosticMode = initResult.capabilities.diagnosticProvider ? "pull" : "push";
   }
 
   touch(): void {
@@ -266,6 +372,7 @@ export class LspClient {
   }
 
   async restart(): Promise<void> {
+    this._fileWatchers?.dispose();
     this._connection?.dispose();
     this._connection = null;
     this._process = null;
@@ -273,6 +380,7 @@ export class LspClient {
     this._crashed = false;
     this._disposed = false;
     this._documentVersions.clear();
+    this._documentContents.clear();
     this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
     this._activeDiagnosticRequests.clear();
@@ -315,9 +423,23 @@ export class LspClient {
     }
   }
 
+  /** Queue a notification; a failed write makes this client unavailable without escaping to Pi. */
   sendNotification(method: string, parameters: unknown): void {
     this._assertReady();
-    void requiredValue(this._connection).sendNotification(method, parameters);
+    this._sendNotification(method, parameters);
+  }
+
+  private _sendNotification(method: string, parameters: unknown): void {
+    const connection = this._connection;
+    if (!connection) return;
+    void connection.sendNotification(method, parameters).catch((error: unknown) => {
+      if (this._connection !== connection || this._disposed) return;
+      this._crashed = true;
+      this._initialized = false;
+      this._fileWatchers?.dispose();
+      connection.dispose();
+      console.error(`[lsp] ${this.serverId}: notification ${method} failed:`, error);
+    });
   }
 
   /**
@@ -362,17 +484,31 @@ export class LspClient {
       textDocument: { uri, languageId, version, text },
     });
     this._documentVersions.set(uri, version);
+
+    this._documentContents.set(uri, text);
   }
 
-  syncDocument(uri: string, text: string, languageId: string): void {
+  /** Sync content, optionally reporting a completed disk write to servers that request saves. */
+  syncDocument(uri: string, text: string, languageId: string, saved = false): void {
+    if (this._documentContents.get(uri) === text) return;
     const currentVersion = this._documentVersions.get(uri);
 
     if (currentVersion === undefined) {
       this.openDocument(uri, text, languageId);
-      return;
+    } else {
+      this.changeDocument(uri, text, currentVersion + 1);
     }
-
-    this.changeDocument(uri, text, currentVersion + 1);
+    const synchronization = this._serverCapabilities?.textDocumentSync;
+    const save =
+      typeof synchronization === "object" && synchronization !== null
+        ? (synchronization as { save?: boolean | { includeText?: boolean } }).save
+        : undefined;
+    if (saved && save) {
+      this.sendNotification("textDocument/didSave", {
+        textDocument: { uri },
+        ...(typeof save === "object" && save.includeText && { text }),
+      });
+    }
   }
 
   changeDocument(uri: string, text: string, version: number): void {
@@ -384,11 +520,15 @@ export class LspClient {
       contentChanges: [{ text }],
     });
     this._documentVersions.set(uri, nextVersion);
+
+    this._documentContents.set(uri, text);
   }
 
   closeDocument(uri: string): void {
     this.sendNotification("textDocument/didClose", { textDocument: { uri } });
     this._documentVersions.delete(uri);
+
+    this._documentContents.delete(uri);
 
     this._diagnosticPublications.delete(uri);
   }
@@ -401,6 +541,8 @@ export class LspClient {
     }
 
     this._disposed = true;
+
+    this._fileWatchers?.dispose();
 
     if (this._connection && this._initialized) {
       try {
@@ -433,6 +575,7 @@ export class LspClient {
 
     this._initialized = false;
     this._documentVersions.clear();
+    this._documentContents.clear();
     this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
     this._activeDiagnosticRequests.clear();

@@ -43,7 +43,14 @@ for (const language of LANGUAGES) {
       ...entries.map(
         (recipe) =>
           `| ${recipe.kind} | \`${recipe.id}\` | ${
-            (recipe.configFiles ?? []).map((item) => `\`${item}\``).join(", ") || "executable"
+            [
+              ...(recipe.configFiles ?? []),
+              ...Object.entries(recipe.configSections ?? {}).flatMap(([file, sections]) =>
+                sections.map((section) => `${file}: ${section}`),
+              ),
+            ]
+              .map((item) => `\`${item}\``)
+              .join(", ") || "executable"
           } | [Official docs](${recipe.documentation}) |`,
       ),
       "",

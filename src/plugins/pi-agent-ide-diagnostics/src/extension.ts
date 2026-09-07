@@ -118,6 +118,14 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
       api.addPromptGuideline(
         "Treat diagnostic snapshots as incomplete observations, not completed checks; an empty snapshot is not evidence that the file is clean.",
       );
+
+      api.addPromptGuideline(
+        "Explicit formatter, linter, and LSP overrides can match exact basenames with fileNames, such as Dockerfile or CMakeLists.txt. LSP requireRootMarker limits a server to files below one of its rootMarkers inside the project, keeping framework servers from claiming unrelated files. LSP initializationOptions can use {project} in string values for project-local plugin paths. Regex diagnostic parsers support multiline output and columnBase: 0 for zero-based tool columns.",
+      );
+
+      api.addPromptGuideline(
+        "For missing formatting or diagnostics, check native project configuration and installed executables before adding IDE overrides. Built-ins find tools in node_modules/.bin, Python virtualenv bin directories (Scripts on Windows), and vendor/bin; Windows executable suffixes follow PATHEXT. /pi-agent-ide-doctor reports detected tools and missing dependencies. A detected runtime does not prove its formatter modules or language server can run.",
+      );
     },
   } satisfies ReadPlugin;
 

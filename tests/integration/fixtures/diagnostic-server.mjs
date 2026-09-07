@@ -12,7 +12,7 @@ const diagnostics = (text) => text.includes("broken") ? [{
 }] : [];
 function handle(message) {
   const { id, method, params } = message;
-  if (method === "initialize") send({ id, result: { capabilities: mode === "pull" ? { diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false } } : {} } });
+  if (method === "initialize") send({ id, result: { capabilities: mode.startsWith("pull") ? { diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false } } : {} } });
   else if (method === "shutdown") { if (mode !== "shutdown-stuck") send({ id, result: null }); }
   else if (method === "exit") process.exit(0);
   else if (method === "textDocument/diagnostic") {

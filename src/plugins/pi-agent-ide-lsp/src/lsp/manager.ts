@@ -4,6 +4,8 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 
 import { LspClient } from "./client.js";
+
+import { resolveInitializationOptions } from "./initialization-options.js";
 import { toDiagnostic } from "./diagnostics.js";
 import { type LspDiagnostic, type ResolvedServer } from "./types.js";
 
@@ -159,7 +161,10 @@ export class LspManager {
         command: match.config.command,
         ...(match.config.env && { env: match.config.env }),
         ...(match.config.initializationOptions && {
-          initOptions: match.config.initializationOptions,
+          initOptions: resolveInitializationOptions(
+            match.config.initializationOptions,
+            URI.parse(rootUri).fsPath,
+          ),
         }),
         ...(match.config.settings && { settings: match.config.settings }),
         ...(match.config.timeoutMs && { timeoutMs: match.config.timeoutMs }),
@@ -299,16 +304,15 @@ export class LspManager {
     cwd: string,
     capability: "diagnostics" | "symbols" = "diagnostics",
   ): Promise<{ client: LspClient; uri: string; languageId: string } | null> {
-    const extension = filePath.slice(filePath.lastIndexOf(".")).toLowerCase();
     const absolutePath = path.resolve(cwd, filePath);
-    const client = await this.getOrStart(extension, cwd, capability);
+    const client = await this.getOrStart(absolutePath, cwd, capability);
 
     if (!client) {
       return null;
     }
 
     const uri = client.toUri(absolutePath);
-    const resolved = this._registry.resolve(extension);
+    const resolved = this._registry.resolve(absolutePath);
     const languageId = resolved[0]?.languageId ?? "plaintext";
 
     // Read file content for didOpen

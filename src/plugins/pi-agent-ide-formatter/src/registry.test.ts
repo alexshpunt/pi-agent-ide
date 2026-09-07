@@ -97,6 +97,43 @@ test("an invalid global formatter file fails this configuration category", async
   );
 });
 
+test.each([
+  ["biome.json", "{}", "source.ts", "biome"],
+  [".oxfmtrc.json", "{}", "source.ts", "oxfmt"],
+  ["prettier.config.mjs", "export default {};", "source.mts", "prettier"],
+  ["pyproject.toml", "[tool.black]\nline-length = 88\n", "source.py", "black"],
+])(
+  "uses native %s configuration ahead of unrelated installed formatters",
+  async (name, content, file, expected) => {
+    const project = await temporaryDirectory("formatter-native-");
+    const bin = path.join(project, "node_modules", ".bin");
+    await mkdir(bin, { recursive: true });
+    for (const tool of ["prettier", "biome", "oxfmt", "ruff", "black"]) {
+      const executable = path.join(bin, tool);
+      await writeFile(executable, "#!/bin/sh\nexit 0\n");
+      await chmod(executable, 0o755);
+    }
+    await writeFile(path.join(project, name), content);
+    const registry = await FormatterCommandRegistry.fromDirectory(project, {
+      environment: { PATH: "", PI_CODING_AGENT_DIR: path.join(project, "agent") },
+    });
+    expect(registry.resolveEntry(file, project)?.id).toBe(expected);
+  },
+);
+
+test("does not replace a missing native formatter with an unrelated installed one", async () => {
+  const project = await temporaryDirectory("formatter-missing-native-");
+  const bin = path.join(project, "node_modules", ".bin");
+  await mkdir(bin, { recursive: true });
+  await writeFile(path.join(bin, "prettier"), "#!/bin/sh\nexit 0\n");
+  await chmod(path.join(bin, "prettier"), 0o755);
+  await writeFile(path.join(project, "biome.json"), "{}");
+  const registry = await FormatterCommandRegistry.fromDirectory(project, {
+    environment: { PATH: "", PI_CODING_AGENT_DIR: path.join(project, "agent") },
+  });
+  expect(registry.resolveEntry("source.ts", project)).toBeUndefined();
+});
+
 function formatter(extension: string, executable: string): Record<string, unknown> {
   return {
     extensions: [extension],
