@@ -90,14 +90,7 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
         handler: createSourceMappedTextReadHandler(),
       });
       api.describe(
-        "Provides `symbol:<path>#<selector>` for a symbol's implementation, `graph:<path>` for relationships of top-level declarations, and `graph:<path>#<selector>` for one symbol's relationships.",
-      );
-
-      api.addPromptGuideline(
-        "You can use read with `symbol:<path>#<selector>` to inspect a known symbol's implementation without searching for it or reading the whole file.",
-      );
-      api.addPromptGuideline(
-        "You can use read with `graph:<path>` to inspect each top-level declaration's definition, referencing files, and incoming and outgoing calls. Members are listed with selectors; their relationships are not expanded. You can append `#<selector>` to inspect one symbol's references and calls, including a nested method.",
+        "symbol:<file>#<selector> — declaration source, e.g. symbol:src/catalog.ts#Catalog/find. graph:<file> — top-level declarations, references and calls; members include selectors. graph:<file>#<selector> — references and incoming/outgoing calls for that declaration or member.",
       );
     },
   } satisfies ReadPlugin;
@@ -114,10 +107,6 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
         api.addResolver({ resolver: createLspSearchResolver(managerFor) });
         api.describe(
           "Use `symbols:<query>` to search workspace symbols and their references through configured language servers.",
-        );
-
-        api.addPromptGuideline(
-          "You can use search with `symbols:<query>` to find workspace symbols and their references through configured language servers.",
         );
       },
     }),

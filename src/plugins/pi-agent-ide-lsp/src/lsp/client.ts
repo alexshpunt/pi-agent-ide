@@ -4,7 +4,10 @@ import { type ChildProcess } from "node:child_process";
 import path from "node:path";
 
 import spawnProcess from "cross-spawn";
-import { createConfiguredProcessEnvironment } from "pi-agent-ide/api/tool-config";
+import {
+  configuredExecutableName,
+  createConfiguredProcessEnvironment,
+} from "pi-agent-ide/api/tool-config";
 import {
   createMessageConnection,
   CancellationTokenSource,
@@ -94,6 +97,10 @@ export class LspClient {
     return this._process?.pid ?? null;
   }
 
+  /** Executable used to start this server, independent of its configured ID. */
+  get commandName(): string {
+    return configuredExecutableName(this._command);
+  }
   get diagnosticMode(): "unknown" | "pull" | "push" {
     return this._diagnosticMode;
   }

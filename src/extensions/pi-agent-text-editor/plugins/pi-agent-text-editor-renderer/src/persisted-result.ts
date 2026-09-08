@@ -1,6 +1,7 @@
 import {
   FileMutationResult,
   type FileMutationBatchResult,
+  type MutationDiffStatus,
 } from "pi-agent-text-editor/api/mutation-result";
 import { resolveMutationResultResources } from "./mutation-result.js";
 import type { DiffModel } from "./diff-model.js";
@@ -9,6 +10,7 @@ import type { DiffModel } from "./diff-model.js";
 export interface PersistedMutationResource {
   readonly path: string;
   readonly model: DiffModel;
+  readonly diffStatuses?: readonly MutationDiffStatus[];
 }
 
 /** Completed history owns diff fragments, not the engine's document snapshots. */
@@ -35,13 +37,17 @@ export function compactMutationDetails(details: FileMutationBatchResult): Persis
         inputEdits: _input,
         beforeReadText: _read,
         rawChanges: _changes,
+
+        diffPeerRanges: _peerRanges,
         diffs: _diffs,
         ...data
       } = result.data;
       return new FileMutationResult(data);
     }),
-    mutationRender: resources.flatMap(({ path, model }) =>
-      model === undefined ? [] : [{ path, model }],
+    mutationRender: resources.flatMap(({ path, model, diffStatuses }) =>
+      model === undefined
+        ? []
+        : [{ path, model, ...(diffStatuses === undefined ? {} : { diffStatuses }) }],
     ),
   };
 }

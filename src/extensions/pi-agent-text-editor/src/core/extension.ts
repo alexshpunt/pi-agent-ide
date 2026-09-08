@@ -55,7 +55,11 @@ export default async function registerTextEditorCore(
         interceptionRendering,
         () =>
           [
-            editor.renderGeneralPromptGuideline(),
+            (registration.anchors?.length ?? 0) > 0
+              ? editor.renderGeneralPromptGuideline(
+                  new Set(registration.anchors?.flatMap((anchor) => anchor.kinds)),
+                )
+              : undefined,
             editor.renderToolPromptGuideline(registration.name),
           ]
             .filter((guideline): guideline is string => guideline !== undefined)
@@ -84,14 +88,8 @@ export default async function registerTextEditorCore(
       api.addTargetResolver({ resolver: core.textTargetResolver() });
       api.addFragmentResolver(createReadFragmentResolver(core));
 
-      api.addPromptGuideline(
-        "You can use read with `<path>#<anchor>`, `offset`, and `limit` to inspect context around a known anchor without rereading the whole file.",
-      );
-      api.addPromptGuideline(
-        "For an anchored read, omitted `offset`, `offset: 0`, and `offset: 1` all start at the anchor line; positive offsets greater than one count forward, while negative offsets count upward.",
-      );
-      api.addPromptGuideline(
-        "After search finds a relevant result, you can use read with the returned `SEARCH#...` source, `offset`, and `limit` to inspect only the surrounding context you need.",
+      api.describe(
+        "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# references go directly in path, without a file prefix. offset/limit select context relative to each location; output keeps original line numbers.",
       );
     },
   });

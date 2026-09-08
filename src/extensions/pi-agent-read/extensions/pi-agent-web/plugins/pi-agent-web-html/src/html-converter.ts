@@ -8,7 +8,7 @@ const htmlSignature = /^\u{FEFF}?\s*(?:<!doctype\s+html\b|<(?:article|body|head|
 export function createHtmlContentConverter(): ContentConverter {
   return {
     id: "html",
-    description: "HTML and XHTML pages converted to Markdown.",
+    description: "Web page URLs return readable page content.",
     async tryConvert(input, context) {
       if (!isHtmlInput(input.bytes, input.mediaType)) {
         return { kind: "not-handled" };

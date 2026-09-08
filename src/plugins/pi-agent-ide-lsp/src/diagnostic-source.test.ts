@@ -9,7 +9,7 @@ test("late empty TypeScript pushes requery complete reports without resyncing th
   const client = new LspClient({
     serverId: "custom-name",
     rootUri: "file:///project",
-    command: ["unused"],
+    command: ["/tools/typescript-language-server", "--stdio"],
   });
   vi.spyOn(client, "supportsCommand").mockReturnValue(true);
   vi.spyOn(client, "syncDocument").mockImplementation(() => {});
@@ -52,7 +52,11 @@ test("late empty TypeScript pushes requery complete reports without resyncing th
     signal: controller.signal,
     publish,
   });
-  expect(report).toMatchObject({ status: "ready", diagnostics: [{ code: "2322" }] });
+  expect(report).toMatchObject({
+    source: "typescript-language-server",
+    status: "ready",
+    diagnostics: [{ code: "2322" }],
+  });
   push({
     uri: client.toUri("/project/file.ts"),
     serverId: "custom-name",
@@ -63,6 +67,7 @@ test("late empty TypeScript pushes requery complete reports without resyncing th
   expect(publish).toHaveBeenCalledWith(
     expect.objectContaining({
       status: "ready",
+      source: "typescript-language-server",
       diagnostics: [expect.objectContaining({ code: "2322" })],
     }),
   );

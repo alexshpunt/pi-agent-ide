@@ -15,17 +15,19 @@ export const deleteSchema = Type.Object(
     path: Type.Optional(
       Type.String({
         description:
-          "Source resource reference or file path. A typed SEARCH#... resource can select deletion ranges.",
+          "Source resource reference or file path. A returned SEARCH# reference can select deletion ranges.",
       }),
     ),
     start: Type.Optional(
       Type.String({
-        description: "Registered text anchor or unique exact text selecting the first span",
+        description:
+          "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects only its line. Required unless path supplies a SEARCH# selection. With end, selects a whole-line range.",
       }),
     ),
     end: Type.Optional(
       Type.String({
-        description: "Registered text anchor or unique exact text selecting the last span",
+        description:
+          "Optional anchor or unique exact text. Range includes start's first line through end's last line, even for SEARCH :match. Mixed types allowed; boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start. The end line is included, not a stopping point before it.",
       }),
     ),
   },
@@ -40,7 +42,8 @@ interface DeleteParameters {
 
 export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchema> = {
   name: "delete",
-  description: "Delete one selected span or the natural range between two anchors.",
+  description:
+    "Use delete to remove an existing text fragment or an inclusive range of whole lines. Select only the content to remove; surrounding text is kept.",
 
   promptSnippet: "Make precise file edits by deleting text using exact matches or anchors",
   parameters: deleteSchema,

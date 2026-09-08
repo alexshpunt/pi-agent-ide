@@ -21,6 +21,7 @@ import {
 import { AstScopeManager } from "./ast/manager.js";
 import { astDoctorPlugin } from "./doctor-plugin.js";
 import { createAstOutlineResolver } from "./outline-resolver.js";
+import { createAstOverflowHandler } from "./overflow-handler.js";
 import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.js";
 import { createAstScopeAnchorResolver } from "./scope-resolver.js";
 import { createAstSearchResolver } from "./search-resolver.js";
@@ -43,19 +44,17 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         handler: createSourceMappedTextReadHandler(),
       });
       api.addView({ view: "ast", presenter });
+      const overflow = createAstOverflowHandler();
+      const scopes = createAstScopePostReadHandler();
       api.addHandler({
         stage: "post-read",
-        handler: createAstScopePostReadHandler(),
+        async handler(context) {
+          const result = await overflow(context);
+          return result.kind === "return" ? result : scopes(result.context);
+        },
       });
       api.describe(
-        "Provides compact structural outlines of source files through `ast:<path>` and the `ast` view.",
-      );
-      api.addPromptGuideline(
-        "You can use read with `ast:<path>` for a compact structural overview of a source file, including its classes, functions, signatures, and other declarations.",
-      );
-
-      api.addPromptGuideline(
-        'You can use read with `views: ["ast"]` to add scope boundaries alongside the file\'s source text.',
+        'ast:<path> — compact declaration outline. views: ["ast"] — scope boundaries alongside source text. Oversized code reads may return an outline with source line numbers; offset/limit read a smaller source range.',
       );
     },
   } satisfies ReadPlugin;
@@ -84,11 +83,7 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
       setup(api): void {
         api.addResolver({ resolver: createAstSearchResolver() });
         api.describe(
-          "Use `ast:<pattern>` for structural code search through ast-grep. Optional path and glob fields limit the workspace scope.",
-        );
-
-        api.addPromptGuideline(
-          "You can use search with `ast:<pattern>` for structural code search. You can limit it with `path`, `include`, and `exclude`.",
+          "Search code structure with ast:<pattern>, using source-code syntax and placeholders such as $NAME for one node and $$$BODY for several nodes. path, include and exclude narrow the search.",
         );
       },
     }),

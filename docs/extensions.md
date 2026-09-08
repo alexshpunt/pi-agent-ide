@@ -268,9 +268,11 @@ export default function register(pi: ExtensionAPI): void | Promise<void> {
 
 A real formatter runs inside the edit transaction and reports how many edits it applied. Only a compiler marked `syntaxOnly: true` may run before formatting. It must perform a fast parser check, not LSP or project/type analysis. Syntax errors skip formatting and keep the edit saved. A formatter can instead use its own parser to reject invalid text safely.
 
+A formatter result can set `formatter` to the actual executable name. Built-in command formatters do this so diff statuses and agent results name the command, not the wrapper extension. Omit it for a formatter implemented by the named plugin itself. Set it to `null` when no formatter was selected; the edit then has no formatting-success status.
+
 ### Background diagnostics
 
-IDE API version 3 separates diagnostic producers from file-writing tools. Register a read-only source with `api.addDiagnosticSource({ id, diagnose })`. `diagnose(filePath, context)` receives the workspace, final file `content`, an abort `signal`, and a revision-bound `publish(report)` callback for later updates. Return a report with `status`, `diagnostics`, and an optional failure `reason`. Coordinates are one-based.
+IDE API version 3 separates diagnostic producers from file-writing tools. Register a read-only source with `api.addDiagnosticSource({ id, diagnose })`. `diagnose(filePath, context)` receives the workspace, final file `content`, an abort `signal`, and a revision-bound `publish(report)` callback for later updates. Return a report with `status`, `diagnostics`, and an optional failure `reason`. Set `source` to the actual reporting tool name when the registered producer delegates to a command. The core keeps the registered ID for updates, but uses the report's name in reads, model notifications, and chat summaries. Coordinates are one-based.
 
 - `ready` means the source checked this text.
 - `unversioned` means the server omitted its document version, so freshness cannot be proved.
@@ -280,7 +282,7 @@ Honor cancellation and never apply fixes from a diagnostic source. The core reje
 
 `api.readDiagnostics(filePath, { cwd })` returns `{ filePath, content, results }`. It detects external text changes, reuses completed current checks, and waits at most five seconds for pending checks. Results still running have `status: "pending"`. Each background check has a thirty-second deadline; an individual provider may have a shorter timeout. Missing and failed sources remain explicit.
 
-Changed per-file counts enter the next model request as a hidden custom context message. Updates are combined before delivery, contain no diagnostic details, and do not start an idle agent. This delivery is context-only, not a persistent session message. The `diagnostics:` protocol and `diagnostics` view expose details when the agent requests them. Neither replaces project builds or tests.
+Changed per-file counts from nonempty reports immediately send a hidden custom session message and appear in a separate chat summary. Pending, unavailable, and empty sources are excluded from both. Empty updates still clear cached findings without sending a notification, and a later recurrence can notify again. Delivery is serialized and duplicate reports stay silent. Messages contain counts rather than diagnostic details. They start a turn when the agent is idle and use Pi's steering queue during an active run. Session shutdown cancels pending checks and delivery. The `diagnostics:` protocol and `diagnostics` view expose details when the agent requests them. Neither replaces project builds or tests.
 
 ## Doctor plugin
 

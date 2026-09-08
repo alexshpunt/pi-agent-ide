@@ -14,10 +14,12 @@ const LINE_ANCHOR = /(?<![A-Za-z0-9])([1-9]\d*#[A-Z0-9]{3,4})\|/u;
 export default function registerSearchAnchorRuntimeExtension(pi: ExtensionAPI): void {
   let sessionIds: string[] = [];
   let lineAnchors: string[] = [];
+  let scopeAnchors: string[] = [];
 
   pi.on("session_start", () => {
     sessionIds = [];
     lineAnchors = [];
+    scopeAnchors = [];
   });
 
   pi.on("tool_result", (event: ToolResultEvent) => {
@@ -45,6 +47,8 @@ export default function registerSearchAnchorRuntimeExtension(pi: ExtensionAPI): 
     }
 
     if (event.toolName === "read") {
+      const scope = text.match(/scope-begin-[A-Z0-9]+(?:-\d+)?/u)?.[0];
+      if (scope !== undefined) scopeAnchors.push(scope);
       const anchor = text.match(LINE_ANCHOR)?.[1];
       if (anchor !== undefined) {
         lineAnchors.push(anchor);
@@ -53,6 +57,10 @@ export default function registerSearchAnchorRuntimeExtension(pi: ExtensionAPI): 
   });
 
   pi.on("tool_call", (event: ToolCallEvent) => {
+    const scope = scopeAnchors.at(0);
+    for (const [key, value] of Object.entries(event.input)) {
+      if (value === "SCOPE#RUNTIME:1" && scope !== undefined) event.input[key] = scope;
+    }
     rewriteInput(event.input, sessionIds, lineAnchors);
   });
 }

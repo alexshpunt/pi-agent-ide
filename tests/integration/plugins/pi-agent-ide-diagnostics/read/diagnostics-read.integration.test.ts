@@ -122,10 +122,10 @@ test("diagnostics source combines lint and LSP with context and normal ranges", 
     expect(focused).toContain("// context 15");
     expect(focused).not.toContain("export function checkValue");
     expect(focused).not.toMatch(/\n\s*17#[A-Z0-9]{4}\|/u);
-    expect(focused).toContain("<!-- lint:");
-    expect(focused).toContain("lint:no-console");
-    expect(focused).toContain("<!-- lsp:");
-    expect(focused).toContain("lsp:2352");
+    expect(focused).toContain("<!-- eslint_d:");
+    expect(focused).toContain("eslint_d:no-console");
+    expect(focused).toContain("<!-- tsc:");
+    expect(focused).toContain("tsc:2352");
     expect(focused).toMatch(/7#[A-Z0-9]{4}\|/u);
     expect(focused).toMatch(/11#[A-Z0-9]{4}\|/u);
 
@@ -141,8 +141,8 @@ test("diagnostics source combines lint and LSP with context and normal ranges", 
     expect(ranged).not.toContain("// context 6");
 
     const annotated = getToolResultText(result, "read-diagnostics-view");
-    expect(annotated).toContain("<!-- lint:");
-    expect(annotated).toContain("<!-- lsp:");
+    expect(annotated).toContain("<!-- eslint_d:");
+    expect(annotated).toContain("<!-- tsc:");
     expect(annotated).not.toContain("// context 6");
 
     expect(getToolExecution(result, "read-old-lint-source").isError).toBe(true);

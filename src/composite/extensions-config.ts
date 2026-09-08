@@ -16,6 +16,10 @@ export interface PiAgentIdeExtensionsConfigPaths {
 export interface PiAgentIdeExtensionsConfig {
   readonly disabled: readonly string[];
   readonly enabled: readonly string[];
+  /** Disable decorative mutation playback while keeping final results visible. */
+  readonly noAnimations?: boolean;
+  /** Skip automatic formatting and diagnostics triggered by edits. */
+  readonly noPostProcessing?: boolean;
 }
 
 /**
@@ -54,6 +58,8 @@ export async function readPiAgentIdeExtensionsConfig(
   return {
     disabled: [...new Set([...globalConfig.disabled, ...projectConfig.disabled])],
     enabled: [...new Set([...globalConfig.enabled, ...projectConfig.enabled])],
+    noAnimations: projectConfig.noAnimations ?? globalConfig.noAnimations ?? false,
+    noPostProcessing: projectConfig.noPostProcessing ?? globalConfig.noPostProcessing ?? false,
   };
 }
 
@@ -91,7 +97,19 @@ async function readConfigExtensionIds(configPath: string): Promise<PiAgentIdeExt
   return {
     disabled: readIdField(value, "disabled", configPath),
     enabled: readIdField(value, "enabled", configPath),
+    ...(value.noAnimations === undefined
+      ? {}
+      : { noAnimations: readBoolean(value, "noAnimations", configPath) }),
+    ...(value.noPostProcessing === undefined
+      ? {}
+      : { noPostProcessing: readBoolean(value, "noPostProcessing", configPath) }),
   };
+}
+
+function readBoolean(value: Record<string, unknown>, field: string, configPath: string): boolean {
+  const setting = value[field];
+  if (typeof setting !== "boolean") throw new Error(`${field} in ${configPath} must be a boolean`);
+  return setting;
 }
 
 function readIdField(

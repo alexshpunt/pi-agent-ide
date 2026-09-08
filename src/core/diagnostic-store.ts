@@ -9,6 +9,13 @@ import type {
 } from "#src/api/plugin-protocol.js";
 import type { ToolContext } from "#src/toolchain/types.js";
 
+/** Nonempty findings shared by hidden model delivery and a separate UI summary. */
+export interface DiagnosticNotification {
+  readonly filePath: string;
+  readonly results: readonly IdeDiagnosticResult[];
+  readonly text: string;
+}
+
 interface FileState {
   readonly cwd: string;
   readonly filePath: string;
@@ -27,6 +34,13 @@ export class DiagnosticStore {
   private readonly queue: (() => Promise<void>)[] = [];
   private running = 0;
   private disposed = false;
+  private readonly changeListeners = new Set<(cwd: string) => void>();
+
+  /** Observe published reports immediately, independently of agent turns. */
+  onDidChange(listener: (cwd: string) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
 
   constructor(
     private readonly sources: readonly IdeDiagnosticSource[],
@@ -57,41 +71,48 @@ export class DiagnosticStore {
     return { filePath: absolute, content: current.content, results: [...current.results.values()] };
   }
 
-  /** Drain changed current counts at a model boundary, not at each provider event. */
-  async takeNotifications(cwd: string): Promise<string[]> {
-    const lines: string[] = [];
+  /** Drain current findings for delivery; pending, unavailable and empty reports stay silent. */
+  async takeNotifications(cwd: string): Promise<DiagnosticNotification[]> {
+    const notifications: DiagnosticNotification[] = [];
     for (const state of [...this.dirty]) {
       if (state.cwd !== path.resolve(cwd)) continue;
       this.dirty.delete(state);
       if (!(await this.isCurrent(state))) continue;
-      const results = [...state.results.values()];
-      const summary = results
-        .map((result) => {
-          if (result.status === "pending" || result.status === "unavailable") {
-            return `${result.source} ${result.status}`;
-          }
-          const counts = ["error", "warning", "info", "hint"].map(
-            (severity) =>
-              `${result.diagnostics.filter((item) => item.severity === severity).length} ${severity}`,
-          );
-          return `${result.source} ${counts.join(", ")}${result.status === "snapshot" ? " (snapshot; completion unknown)" : result.status === "unversioned" ? " (unversioned)" : ""}`;
-        })
-        .join("; ");
+      const results = [...state.results.values()].filter(
+        (result) =>
+          result.status !== "pending" &&
+          result.status !== "unavailable" &&
+          result.diagnostics.length > 0,
+      );
       const key = this.key(state.filePath, state.cwd);
-      // Fingerprint details too: a different error with the same count is still a change.
+      // Fingerprint only findings: empty provider updates must not resend the same report.
       const fingerprint = JSON.stringify(results);
       if (this.sent.get(key) === fingerprint) continue;
       this.sent.set(key, fingerprint);
-      lines.push(
-        `${JSON.stringify(path.relative(cwd, state.filePath))}: ${summary || "no diagnostic sources"}.`,
-      );
+      // Remember the empty state so a later recurrence can notify again.
+      if (results.length === 0) continue;
+      const summary = results
+        .map((result) => {
+          const counts = ["error", "warning", "info", "hint"].flatMap((severity) => {
+            const count = result.diagnostics.filter((item) => item.severity === severity).length;
+            return count > 0 ? [`${count} ${severity}`] : [];
+          });
+          return `${result.source} ${counts.join(", ")}${result.status === "snapshot" ? " (snapshot; completion unknown)" : result.status === "unversioned" ? " (unversioned)" : ""}`;
+        })
+        .join("; ");
+      notifications.push({
+        filePath: path.relative(cwd, state.filePath),
+        results,
+        text: `${JSON.stringify(path.relative(cwd, state.filePath))}: ${summary}.`,
+      });
     }
-    return lines;
+    return notifications;
   }
 
   /** Invalidate all revision-bound callbacks and cancel session-owned work. */
   dispose(): void {
     this.disposed = true;
+    this.changeListeners.clear();
     for (const state of this.files.values()) state.controller.abort();
     this.files.clear();
     this.dirty.clear();
@@ -181,10 +202,11 @@ export class DiagnosticStore {
     const publication = (state.publications.get(source) ?? 0) + 1;
     state.publications.set(source, publication);
     if (!(await this.isCurrent(state)) || state.publications.get(source) !== publication) return;
-    const result: IdeDiagnosticResult = { source, ...report };
+    const result: IdeDiagnosticResult = { ...report, source: report.source ?? source };
     if (JSON.stringify(state.results.get(source)) === JSON.stringify(result)) return;
     state.results.set(source, result);
     this.dirty.add(state);
+    for (const listener of this.changeListeners) listener(state.cwd);
   }
 
   private async check(state: FileState, source: IdeDiagnosticSource): Promise<void> {

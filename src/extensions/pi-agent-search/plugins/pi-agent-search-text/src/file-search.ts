@@ -71,7 +71,7 @@ export function searchFiles(
         .split("\n")
         .filter(Boolean)
         .map((file) => path.relative(cwd, path.resolve(cwd, file)))
-        .filter((file) => fuzzyMatch(file, query))
+        .filter((file) => matchFile(file, query))
         .sort((left, right) => left.localeCompare(right));
       resolve({ files: matches.slice(0, limit), complete: matches.length <= limit });
     });
@@ -85,6 +85,14 @@ function splitGlobs(value: string | undefined): string[] {
       .map((item) => item.trim())
       .filter(Boolean) ?? []
   );
+}
+
+function matchFile(file: string, query: string): boolean {
+  if (/[*?[\]{}]/u.test(query)) {
+    const pattern = query.replace(/^\.\//u, "");
+    return path.matchesGlob(pattern.includes("/") ? file : path.basename(file), pattern);
+  }
+  return fuzzyMatch(file, query);
 }
 
 function fuzzyMatch(file: string, query: string): boolean {

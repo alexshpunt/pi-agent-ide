@@ -1,4 +1,5 @@
 import { renderAgentDiff } from "./agent-diff.js";
+import { groupReplacements, renderGroupedReplacements } from "./grouped-replacements.js";
 import { renderFinalStateFragment } from "./final-state-fragment.js";
 import { type FileMutationResult } from "./file-mutation-result.js";
 
@@ -23,6 +24,8 @@ export class FileMutationAgentResult {
    * Returned string is suitable for content[0].text in a tool response.
    */
   public toText(): string {
+    const grouped = groupReplacements(this.results);
+    if (grouped !== undefined) return renderGroupedReplacements(grouped);
     const parts: string[] = Array.from(this.results, (fmr) => this.formatSingle(fmr));
 
     return parts.join("\n\n");
@@ -285,14 +288,36 @@ export class FileMutationAgentResult {
   // ── Success formatting ────────────────────────────────────────────────
 
   private formatSuccess(fmr: FileMutationResult): string {
-    const blocks: string[] = [];
+    const operations = fmr.data.operations ?? [];
+    const verbs: Record<string, string> = {
+      replace: "Replaced selected text",
+      insert: "Inserted new text",
+      delete: "Deleted selected text",
+      copy: "Copied selected text",
+      move: "Moved selected text",
+      write: "Wrote file content",
+      undo: "Restored file content",
+      stage: "Staged selected changes",
+      unstage: "Unstaged selected changes",
+    };
+    const blocks: string[] = [
+      operations.length === 0
+        ? "Changes applied."
+        : operations
+            .map(
+              ({ operation, changes }) =>
+                `${verbs[operation] ?? `Applied ${operation}`}: ${changes} text change(s) in this file.`,
+            )
+            .join("\n"),
+      `Formatting: ${fmr.data.formatting?.status ?? "not-reported"}${fmr.data.formatting?.formatter === undefined ? "" : ` (${fmr.data.formatting.formatter})`}.`,
+    ];
 
     for (const diff of fmr.diffs) {
       const path = /^--- (.+)$/m.exec(diff)?.[1] ?? fmr.path ?? "<unknown file>";
       blocks.push(renderFinalStateFragment(fmr, path).join("\n"));
     }
 
-    if (blocks.length === 0) {
+    if (fmr.diffs.length === 0) {
       for (const file of fmr.files) {
         blocks.push(file.path);
       }

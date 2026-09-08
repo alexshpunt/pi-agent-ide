@@ -39,6 +39,59 @@ afterEach(() => {
 });
 
 describe("mutation renderer lifecycle", () => {
+  test("disabled animations skip preview work and timers but show the final diff", () => {
+    const interval = vi.spyOn(globalThis, "setInterval");
+    const previewMutation = vi.fn();
+    const track = vi.fn(() => () => {});
+    let renderer: TextEditorToolRendererRegistration | undefined;
+    const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+      onMutationTool(listener: (registration: unknown) => void) {
+        listener({ name: "replace", source: { field: "path" } });
+      },
+      addToolRenderer(value: TextEditorToolRendererRegistration) {
+        renderer = value;
+      },
+      previewMutation,
+    });
+    registerMutationRenderers(api, { track }, () => false);
+    if (!renderer?.renderCall || !renderer.renderResult) throw new Error("Missing renderer");
+    const args = { path: "fixture.txt", start: "old", text: "new" };
+    const context = {
+      args,
+      toolCallId: "static",
+      state: {},
+      lastComponent: undefined,
+      cwd: process.cwd(),
+      executionStarted: true,
+      argsComplete: true,
+      isPartial: true,
+      expanded: false,
+      showImages: true,
+      isError: false,
+      invalidate: vi.fn(),
+    };
+    const panel = renderer.renderCall(args, theme, context);
+    const details = compactMutationDetails({
+      results: [
+        new FileMutationResult({
+          ok: true,
+          path: "fixture.txt",
+          beforeContentMap: { "fixture.txt": "old\n" },
+          afterContent: "new\n",
+        }),
+      ],
+    });
+    renderer.renderResult(
+      { content: [{ type: "text", text: "changed" }], details },
+      { expanded: false, isPartial: false },
+      theme,
+      { ...context, isPartial: false },
+    );
+    expect(previewMutation).not.toHaveBeenCalled();
+    expect(interval).not.toHaveBeenCalled();
+    expect(track).not.toHaveBeenCalled();
+    expect(panel.render(80).join("\n")).toContain("new");
+  });
   test("restores a completed row without asking the engine to read today's source", async () => {
     let renderer: TextEditorToolRendererRegistration | undefined;
     const previewMutation = vi.fn();

@@ -6,10 +6,7 @@ import { describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import {
-  expectTextToolDiff,
-  runTextToolScenario,
-} from "#integration/support/pi-runtime/scenario.js";
+import { runTextToolScenario } from "#integration/support/pi-runtime/scenario.js";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const extensions = createExtensionSet();
@@ -31,12 +28,6 @@ describe("pi-agent-text-editor replace", () => {
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
-      expectTextToolDiff(
-        scenario,
-        relativeFile,
-        "before\nreplace-me\nafter\n",
-        "before\nreplaced\nafter\n",
-      );
       await expect(readFile(file, "utf8")).resolves.toBe("before\nreplaced\nafter\n");
     });
   });

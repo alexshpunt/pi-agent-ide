@@ -56,6 +56,51 @@ const plainTheme = {
   getColorMode: () => "truecolor" as const,
 } as Theme;
 
+test("diff statuses stay at the tail, fit narrow widths, and do not change completed diff rows", () => {
+  const panel = new MutationPanel(plainTheme);
+  const resource = { path: "example.ts", beforeContent: "a\n", afterContent: "b\n", ranges: [] };
+  panel.setResultResources([resource]);
+  const before = panel.render(100);
+  panel.setResultResources([
+    { ...resource, diffStatuses: [{ text: "plugin-status", tone: "success" }] },
+  ]);
+  const after = panel.render(100);
+  expect(after.slice(0, -1)).toEqual(before.slice(0, -1));
+  expect(stripTerminalSequences(requiredValue(after.at(-1)))).toBe("+0 ~1 -0 · plugin-status");
+  for (const width of [8, 20, 40]) {
+    expect(panel.render(width).every((line) => visibleWidth(line) <= width)).toBe(true);
+  }
+});
+
+test("an unassignable diff still has a visible bounded tail without a body", () => {
+  const panel = new MutationPanel(plainTheme);
+  panel.setResultResources([
+    {
+      path: "example.ts",
+      beforeContent: "",
+      afterContent: "",
+      ranges: [],
+      model: {
+        rows: [],
+        added: 0,
+        modified: 0,
+        removed: 0,
+        focusRow: 0,
+        omittedChanges: { outside: 0, ambiguous: 30 },
+      },
+    },
+  ]);
+  for (const expanded of [false, true]) {
+    panel.setExpanded(expanded);
+    for (const width of [8, 20, 40, 100]) {
+      const lines = panel.render(width);
+      expect(lines.length).toBeGreaterThan(0);
+      expect(lines.some((line) => stripTerminalSequences(line).trim().length > 0)).toBe(true);
+      expect(lines.every((line) => visibleWidth(line) <= width)).toBe(true);
+    }
+  }
+});
+
 describe("semantic text mutation diff", () => {
   test.each([200, 600, 1_000])(
     "TS-03 keeps append-only projection work proportional at %d rows",

@@ -152,7 +152,7 @@ test("returns raw text by default even when plugin views are registered", async 
   }
 });
 
-test("shows the built-in line-number column for the lines view", async () => {
+test("reports the removed lines view as unknown", async () => {
   await mkdir(tempRoot, { recursive: true });
   const cwd = await mkdtemp(path.join(tempRoot, "pi-agent-read-views-lines-"));
 
@@ -179,7 +179,7 @@ test("shows the built-in line-number column for the lines view", async () => {
     }).run("Read with the lines view");
 
     expect(getToolResultMessage(result, "read")).toMatchObject({
-      content: [{ type: "text", text: "1|alpha\n2|bravo\n3|charlie" }],
+      details: { ignoredViews: ["lines"] },
     });
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -239,7 +239,7 @@ test("does not repeat a view already included by another view", async () => {
               name: "read",
               arguments: {
                 path: "views-fixture:notes",
-                views: ["anchors", "lines", "diagnostics"],
+                views: ["anchors", "diagnostics"],
               },
             }),
           ],

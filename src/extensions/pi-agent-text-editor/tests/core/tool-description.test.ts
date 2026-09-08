@@ -23,11 +23,8 @@ test("appends schema fields in declaration order", () => {
 
 test("describes mutation source fields as resource references", () => {
   for (const schema of [replaceSchema, insertSchema, deleteSchema, copySchema, moveSchema]) {
-    expect(JSON.stringify(schema.properties.path)).toContain("resource reference or file path");
-  }
-
-  for (const schema of [replaceSchema, insertSchema, deleteSchema]) {
-    expect(JSON.stringify(schema.properties.path)).toContain("typed SEARCH#... resource");
+    expect(JSON.stringify(schema.properties.path)).toContain("file path");
+    expect(JSON.stringify(schema.properties.path)).toContain("SEARCH#");
   }
 
   for (const schema of [copySchema, moveSchema]) {

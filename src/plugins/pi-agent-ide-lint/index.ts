@@ -1,3 +1,4 @@
+import { configuredExecutableName } from "pi-agent-ide/api/tool-config";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { connectIdePlugin } from "pi-agent-ide/api/connect-plugin";
 import { IDE_API_VERSION, IDE_PROTOCOL, type IdePlugin } from "pi-agent-ide/api/plugin-protocol";
@@ -52,6 +53,7 @@ export default async function registerLint(pi: ExtensionAPI): Promise<void> {
               diagnostics: [],
               reason: "No linter configured for this file",
             };
+          const source = configuredExecutableName(config.check.command);
           const result = await runConfiguredLinter(config, {
             projectRoot: context.cwd,
             filePath,
@@ -62,8 +64,9 @@ export default async function registerLint(pi: ExtensionAPI): Promise<void> {
                 status: "unavailable",
                 diagnostics: [],
                 reason: result.failure ?? "Lint check failed",
+                source,
               }
-            : { status: "ready", diagnostics: result.diagnostics };
+            : { status: "ready", diagnostics: result.diagnostics, source };
         },
       });
     },

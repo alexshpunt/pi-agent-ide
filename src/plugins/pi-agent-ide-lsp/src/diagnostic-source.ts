@@ -41,7 +41,7 @@ export function createLspDiagnosticSource(
           while (refreshState.queued && current()) {
             refreshState.queued = false;
             const result = await request();
-            if (current()) context.publish(toReport(result));
+            if (current()) context.publish(toReport(result, client.commandName));
           }
         } catch (error) {
           if (current())
@@ -49,6 +49,7 @@ export function createLspDiagnosticSource(
               status: "unavailable",
               diagnostics: [],
               reason: error instanceof Error ? error.message : String(error),
+              source: client.commandName,
             });
         } finally {
           refreshState.active = false;
@@ -70,6 +71,7 @@ export function createLspDiagnosticSource(
           context.publish({
             status: "snapshot",
             diagnostics: event.diagnostics,
+            source: client.commandName,
             reason: snapshotReason(event.version === undefined),
           });
         }
@@ -78,7 +80,7 @@ export function createLspDiagnosticSource(
       try {
         const result = await request();
         version = client.documentVersion(uri);
-        return toReport(result);
+        return toReport(result, client.commandName);
       } catch (error) {
         refreshState.queued = false;
         unsubscribe();
@@ -99,12 +101,13 @@ function snapshotReason(unversioned: boolean): string {
   return `Latest push snapshot; completion is unknown${unversioned ? "; language server omitted the document version" : ""}`;
 }
 
-function toReport(result: LspDiagnosticResult): IdeDiagnosticReport {
+function toReport(result: LspDiagnosticResult, source: string): IdeDiagnosticReport {
   return result.complete
-    ? { status: "ready", diagnostics: result.diagnostics }
+    ? { status: "ready", diagnostics: result.diagnostics, source }
     : {
         status: "snapshot",
         diagnostics: result.diagnostics,
         reason: snapshotReason(result.unversioned),
+        source,
       };
 }

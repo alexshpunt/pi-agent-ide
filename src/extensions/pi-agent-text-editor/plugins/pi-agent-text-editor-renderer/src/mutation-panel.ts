@@ -1,5 +1,11 @@
 import { getLanguageFromPath, highlightCode, type Theme } from "@earendil-works/pi-coding-agent";
-import { Box, type Component, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+  Box,
+  type Component,
+  truncateToWidth,
+  visibleWidth,
+  wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import {
   preserveEnclosingBackground,
   renderToolCallDetails,
@@ -191,9 +197,12 @@ export class MutationPanel implements Component {
     const details = this.headerExpanded
       ? renderToolCallDetails(this.headerDetails, this.theme, contentWidth)
       : [];
-    const tail = renderCounts(this.resources, this.theme);
-    const lines = [...summary, ...details, ...panels, ...(tail === undefined ? [] : [tail])].map(
-      (line) => preserveEnclosingBackground(line, this.theme.getBgAnsi(this.background)),
+    const tail = renderTail(this.resources, this.theme, contentWidth);
+    const lines = [...summary, ...details, ...panels, ...tail].map((line) =>
+      preserveEnclosingBackground(
+        truncateToWidth(line, contentWidth),
+        this.theme.getBgAnsi(this.background),
+      ),
     );
     this.cache = {
       width: contentWidth,
@@ -219,6 +228,45 @@ export class MutationPanel implements Component {
     });
     return shell.render(width);
   }
+}
+
+function renderTail(
+  resources: readonly MutationRenderResource[],
+  theme: Theme,
+  width: number,
+): string[] {
+  const counts = renderCounts(resources, theme);
+  const statuses = resources.flatMap((resource) =>
+    [
+      ...(resource.diffStatuses ?? []),
+      ...(resource.model?.omittedChanges === undefined
+        ? []
+        : [
+            {
+              text: resource.model.omittedChanges.unavailable
+                ? "Local diff unavailable: alignment limit reached"
+                : [
+                    ...(resource.model.omittedChanges.outside > 0
+                      ? [`${resource.model.omittedChanges.outside} changed rows outside this area`]
+                      : []),
+                    ...(resource.model.omittedChanges.ambiguous > 0
+                      ? [`${resource.model.omittedChanges.ambiguous} changed rows unassigned`]
+                      : []),
+                  ].join("; "),
+              tone: "warning" as const,
+            },
+          ]),
+    ].map((status) => {
+      const label = resources.length > 1 ? `${resource.path}: ${status.text}` : status.text;
+      // Contributions are plain text; control characters must not alter terminal rows.
+      return theme.fg(status.tone ?? "muted", label.replace(/[\u0000-\u001f\u007f-\u009f]/g, " "));
+    }),
+  );
+  const text = [counts, ...statuses]
+    .filter((item) => item !== undefined)
+    .join(theme.fg("dim", " · "));
+  if (text.length === 0) return [];
+  return visibleWidth(text) <= width ? [text] : wrapTextWithAnsi(text, Math.max(1, width));
 }
 
 function renderCounts(

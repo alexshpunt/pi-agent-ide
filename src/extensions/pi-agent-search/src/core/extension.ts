@@ -38,7 +38,7 @@ const searchSchema = Type.Object(
     query: Type.String({
       minLength: 1,
       description:
-        "Search query. Local text tries literal terms, then regex, then eligible word fallback. Quotes keep terms literal and Boolean conditions stay intact. Empty or unhandled prefixes are text; nonempty installed prefixes select specialized search protocols.",
+        "Text to find, a Boolean expression, or a prefixed query described below, such as files:*.ts. Quote text to keep it literal, or use regex:<pattern> for regular-expression matching.",
     }),
     path: Type.Optional(
       Type.String({ description: "Optional file or directory scope for local search" }),
@@ -110,15 +110,17 @@ export default async function registerSearchCore(pi: ExtensionAPI): Promise<void
       {
         name: "search",
         label: "search",
-        description:
-          "Search workspace text and paths through installed local, language, and structural search protocols.",
+        get description(): string {
+          return [
+            "Use search to locate text, file paths and code structures in the workspace.",
+            ...core.renderDescriptions(),
+          ].join("\n");
+        },
         promptSnippet:
           "Search files and text with literals or regular expressions, plus syntax trees and language symbols",
         get promptGuidelines(): string[] {
           return [
-            "Use search instead of grep, rg, or find to search workspace text and paths.",
             "Use the narrowest useful search query and scope; broaden when needed.",
-            "Do not use search merely to rediscover a file path already named in the request; use that path directly. Search within it only when you need to locate content.",
             ...core.renderPromptGuidelines(),
           ];
         },

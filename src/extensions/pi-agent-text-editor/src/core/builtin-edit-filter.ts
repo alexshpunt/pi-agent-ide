@@ -29,18 +29,10 @@ export function registerBuiltinEditFilter(pi: ExtensionAPI): void {
     label: "edit",
     description: "",
     promptGuidelines: [
-      "Use replace, insert, delete, copy, and move for precise changes to existing files. Use write only for new files or deliberate complete rewrites.",
-      "When changing multiple independent locations, place the mutation tool calls in one tool-call block. They are evaluated against the original file contents. Invalid mutations are rejected while valid mutations can still apply; the block is not all-or-nothing.",
-      [
-        "When using plain text in `start`, `end`, `anchor`, `targetStart`, or `targetEnd`:",
-        "  - Use text that matches the file exactly and occurs only once.",
-        "  - Keep it as small as possible while still unique. Do not pad it with large unchanged regions.",
-        "  - Plain text is matched against the original file contents, not after earlier mutations are applied.",
-      ].join("\n"),
-      "Do not emit overlapping or nested mutations in one tool-call block. Merge nearby changes into one mutation.",
-
-      "A mutation that overlaps an earlier accepted mutation is rejected. Check each call's result before retrying; do not repeat edits that already applied.",
-      "You can omit a mutation source to reuse the last resolved resource or the previous source in the same tool-call block. Write requires a path; copy and move default their target to the source.",
+      "Use the smallest useful source view: reuse sufficient content and anchors, search for known text, or inspect structure when locating a declaration. Read nearby context when boundaries are unclear; resolve ambiguity rather than guessing.",
+      "Use an available anchor when it selects exactly the intended text; otherwise use minimal unique exact text. Keep the edit limited to the intended content.",
+      "When search broadens to separate words, treat its results as location hints. Refine the query before using those matches for replacement.",
+      "Submit independent mutations together in one tool-call block. They are evaluated against the original file contents. Combine overlapping changes into one mutation. A rejected mutation does not cancel other valid mutations; check each result and retry only changes that were not applied.",
     ],
     parameters: Type.Object({}, { additionalProperties: false }),
     execute() {

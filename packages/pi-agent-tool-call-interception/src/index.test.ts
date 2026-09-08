@@ -42,6 +42,19 @@ const definition: ToolDefinition = {
   renderResult: () => new ResettingComponent("result\u001B[49mafter"),
 };
 
+test("keeps description callbacks live after wrapping", () => {
+  let revision = 0;
+  const dynamic = {
+    ...definition,
+    get description() {
+      return String(revision);
+    },
+  };
+  const wrapped = withToolCallInterceptionRendering(dynamic, new ToolCallInterceptionRenderStore());
+  expect(wrapped.description).toBe(dynamic.description);
+  revision += 1;
+  expect(wrapped.description).toBe(dynamic.description);
+});
 test("preserves Pi's pending, success, and error backgrounds around intercepted renderers", () => {
   const wrapped = withToolCallInterceptionRendering(
     definition,

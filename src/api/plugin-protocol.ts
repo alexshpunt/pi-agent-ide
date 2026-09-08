@@ -15,6 +15,8 @@ export interface IdeCoreReady {
 
 /** One source's result. Ready means complete; snapshot has no completion guarantee, even if empty. */
 export interface IdeDiagnosticReport {
+  /** Actual reporting tool name; defaults to the registered source ID when omitted. */
+  readonly source?: string;
   readonly status: "ready" | "snapshot" | "unversioned" | "unavailable";
   readonly diagnostics: readonly Diagnostic[];
   readonly reason?: string;

@@ -46,7 +46,7 @@ When `path` is a typed text resource, `read` returns one independent chunk for e
 
 ### Diagnostic completion
 
-Edits save before background diagnostics finish. The next model context receives changed counts and statuses; explicit `diagnostics:<path>` reads and the diagnostics view return details.
+Edits save before background diagnostics finish. Automatic notifications show only sources with findings, in the chat as soon as they arrive, with a matching hidden message sent to the agent. A new finding wakes an idle agent; during a run it is queued as steering input for the next model call. Each source names the actual reporting command, such as `eslint_d` or `typescript-language-server`, rather than a wrapper extension. Chat summaries show that name in parentheses beside its counts. Pending, unavailable, and empty reports stay silent, including updates that clear earlier findings. Silence does not mean checks passed. Explicit `diagnostics:<path>` reads and the diagnostics view still return details and readiness.
 
 LSP reads prefer standard pull reports. Servers that advertise a supported completed-request command can use an adapter; TypeScript language server uses one adapter for both TypeScript and JavaScript. Adapter selection uses server capabilities, not language names. All requests remain tied to the synchronized document revision and are canceled when it becomes stale.
 

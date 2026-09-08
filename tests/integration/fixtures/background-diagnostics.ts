@@ -46,7 +46,10 @@ export default async function backgroundFixture(pi: ExtensionAPI): Promise<void>
         await Promise.all([waitFor("A:lsp"), waitFor("A:lint")]);
         return { content: [{ type: "text", text: "Both checks started after formatting." }], details: {} };
       }
-      if (action === "partial") {
+      if (action === "unavailable") {
+        await Promise.all([waitFor("A:lsp"), waitFor("A:lint")]);
+        for (const id of ["lsp", "lint"]) jobs.get(`A:${id}`)?.finish({ status: "unavailable", diagnostics: [] });
+      } else if (action === "partial") {
         await Promise.all([waitFor("B:lsp"), waitFor("B:lint")]);
         if (!jobs.get("A:lsp")?.context.signal.aborted) throw new Error("Old check was not cancelled");
         jobs.get("A:lsp")?.finish(report("error")); jobs.get("A:lint")?.finish(report("error"));
@@ -63,5 +66,4 @@ export default async function backgroundFixture(pi: ExtensionAPI): Promise<void>
       return { content: [{ type: "text", text: snapshot.results.map((item) => `${item.source}:${item.status}`).join(",") }], details: {} };
     },
   });
-  pi.on("agent_end", () => { jobs.get("C:lsp")?.context.publish(report("error")); });
 }

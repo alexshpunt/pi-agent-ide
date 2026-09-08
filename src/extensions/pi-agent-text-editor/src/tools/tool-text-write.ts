@@ -17,7 +17,8 @@ interface WriteParameters {
 
 export const writeMutationTool: TextMutationToolRegistration<typeof writeSchema> = {
   name: "write",
-  description: "Create a file or overwrite its complete text.",
+  description:
+    "Use write to create a new file or deliberately replace a file's entire contents. Supply the complete new text; existing contents are overwritten.",
 
   promptSnippet: "Create or overwrite files",
   parameters: writeSchema,

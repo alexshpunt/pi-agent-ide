@@ -7,7 +7,7 @@ export function createAstScopeAnchorResolver(manager: AstScopeManager): TextAnch
   return {
     id: "ast-scope",
     description:
-      "Use `scope-begin-HASH` or `scope-end-HASH` as shown beside source lines; a numeric suffix may distinguish repeated scopes.",
+      '`scope-begin-HASH` / `scope-end-HASH` from read views: ["ast"] — first/last lines of a scope. Any numeric suffix is part of the anchor.',
     renderFull(value) {
       return value;
     },

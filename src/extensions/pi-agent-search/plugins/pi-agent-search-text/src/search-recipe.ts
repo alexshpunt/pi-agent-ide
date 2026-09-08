@@ -13,6 +13,8 @@ export interface SearchFallback {
 
 /** Replayable search inputs, including the same ordered fallbacks used by the original call. */
 export interface SearchRecipe extends TextSearchRequest {
+  /** User-facing query retained separately from the compiled matching expression. */
+  readonly originalQuery?: string;
   readonly fallbacks?: readonly SearchFallback[];
 }
 

@@ -88,6 +88,8 @@ A view may list other views in `includes` when its complete presentation already
 
 `pi-agent-read/api/rendering` exports `createReadResultRenderer()` for the standard source, Markdown, and code-view panels. A source plugin may use that factory or provide its own Pi tool-result renderer.
 
+A local-file plugin can pass `{ kind: "source", nativeResources: true }` to use Pi's native result presentation for `SKILL.md`, Pi's own documentation, and recognized AGENTS/CLAUDE files. Successful compact reads hide their body; expansion shows the saved result. Other protocols, annotated views, anchors, and negative offsets keep their IDE presentation. The filesystem plugin enables this option; other plugins keep their chosen renderer.
+
 Read has one tool, so the plugin API is flat. The protocol exports no tool ID value.
 
 `api.read()` runs the same live pipeline as the registered `read` tool. It uses the current resolvers, handlers, and text presenters, so another extension can request agent-ready read output without copying read behavior or invoking a Pi tool.

@@ -23,6 +23,13 @@ export interface DiffRow {
 }
 
 export interface DiffModel {
+  /** Changed rows excluded from this operation's local presentation. */
+  readonly omittedChanges?: {
+    readonly outside: number;
+    readonly ambiguous: number;
+    /** Alignment exhausted its budget; changed-row counts are unknown. */
+    readonly unavailable?: boolean;
+  };
   readonly rows: readonly DiffRow[];
   readonly added: number;
   readonly modified: number;

@@ -18,7 +18,7 @@ import { createFilesystemReadResolver, createFilesystemWriteResolver } from "#sr
 
 const readTarget = { provider: "filesystem", capability: "read" } satisfies ContentTarget;
 const writeTarget = { provider: "filesystem", capability: "write" } satisfies ContentTarget;
-const renderReadResult = createReadResultRenderer({ kind: "source" });
+const renderReadResult = createReadResultRenderer({ kind: "source", nativeResources: true });
 
 export default async function registerFilesystemPlugin(pi: ExtensionAPI): Promise<void> {
   const readHost = createContentHost(pi, readTarget);
@@ -33,7 +33,7 @@ export default async function registerFilesystemPlugin(pi: ExtensionAPI): Promis
       api.addResolver({ resolver: readResolver, renderResult: renderReadResult });
       api.describe(() =>
         renderContentDescription(
-          "Reads local filesystem paths and file:// URLs. Directories are read-only listings.",
+          "File path — file content; directory path — entry listing. Relative, absolute and file:// paths accepted.",
           readHost.listDescriptions(),
         ),
       );

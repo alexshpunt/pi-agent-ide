@@ -46,7 +46,6 @@ import {
   READ_OUTPUT_MAX_LINES,
 } from "#src/core/tools/read/output-truncation.js";
 import { createReadResultRenderer, renderReadCall } from "#src/core/tools/read/read-renderer.js";
-import { createLineNumberPresenter } from "#src/core/tools/read/views.js";
 import {
   createReadState,
   failureResult,
@@ -58,12 +57,27 @@ const readParameters = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "Complete source resource reference: a filesystem path, URL, protocol source, temporary resource, or typed SEARCH#... selection.",
+        "What to read: a file or directory path, URL, returned temp: or SEARCH# reference, or one of the source forms listed in the description. Supply a path; an empty call cannot select a source.",
     }),
   ),
-  offset: Type.Optional(Type.Number()),
-  limit: Type.Optional(Type.Number()),
-  views: Type.Optional(Type.Array(Type.String())),
+  offset: Type.Optional(
+    Type.Number({
+      description:
+        "First line to return, numbered from 1. Omit or use 0 to start at line 1; -1 starts at the last line, -10 at the tenth line from the end. For path#anchor or a SEARCH selection, count from its containing line instead: 0 or 1 starts there, 2 starts one line later, -1 one line earlier.",
+    }),
+  ),
+  limit: Type.Optional(
+    Type.Number({
+      description:
+        "Maximum lines to read from the selected starting position, subject to the output budget. Omit for the default bounded read.",
+    }),
+  ),
+  views: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        'Optional additions to the returned text. Use the views listed in the tool description. Combine views when needed, for example ["anchors", "ast"] for source text with editable line references and scope boundaries. Omit for the source\'s default presentation.',
+    }),
+  ),
 });
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
@@ -98,13 +112,6 @@ interface ViewContribution {
   readonly document: TextDocument;
 }
 
-/** Built-in view names that exist without any plugin registration. */
-const BUILTIN_VIEWS = ["lines"] as const;
-
-function createBuiltinViewRegistrations(): ReadViewRegistration[] {
-  return [{ view: "lines", presenter: createLineNumberPresenter() }];
-}
-
 export interface ReadToolContributions {
   readonly resolvers?: readonly ResourceResolverRegistration[];
   readonly targetResolvers?: readonly TextTargetResolverRegistration[];
@@ -123,7 +130,11 @@ export interface ReadTool {
   dispose(): Promise<void>;
 }
 
-export function createReadTool(pluginPromptGuidelines?: () => readonly string[]): ReadTool {
+/** Creates a read pipeline whose prompt contributions reflect the currently installed plugins. */
+export function createReadTool(
+  pluginPromptGuidelines?: () => readonly string[],
+  pluginDescription?: () => string | undefined,
+): ReadTool {
   const temporaryResources = new TempResourceStore();
   const resolvers: RegisteredResolver[] = [
     {
@@ -134,11 +145,7 @@ export function createReadTool(pluginPromptGuidelines?: () => readonly string[])
     },
   ];
   const handlers: RegisteredHandler[] = [];
-  const views: RegisteredView[] = createBuiltinViewRegistrations().map((registration, order) => ({
-    pluginId: "core",
-    registration,
-    order,
-  }));
+  const views: RegisteredView[] = [];
   const fragments: RegisteredFragment[] = [];
   const targetResolvers: {
     readonly resolver: TextTargetResolver;
@@ -154,16 +161,17 @@ export function createReadTool(pluginPromptGuidelines?: () => readonly string[])
 
       promptSnippet:
         "Read files, URLs, temporary resources, search selections, and protocol sources, with optional views projected onto text content",
-      description: `Resolve a supported source into agent-native content. Text output is raw by default; pass optional views (string array) to add annotations: "lines" for a line-number column, or plugin views such as "anchors" (LINE#HASH), "ast", "diagnostics", and "changes" when their extensions are installed. Text output is truncated to ${READ_OUTPUT_MAX_LINES} lines or ${
-        READ_OUTPUT_MAX_BYTES / 1024
-      }KB, whichever is reached first. Use offset/limit to read a line range and continue large sources; a negative offset reads from the end. A \`path#anchor\` suffix (for example \`src/x.ts#function main\`) starts reading at the anchor's line: offset/limit then count from that line while output keeps absolute line numbers. For anchored reads, omitted offset, offset 0, and offset 1 are equivalent; positive offsets greater than one count forward and negative offsets count upward.`,
+      get description(): string {
+        return [
+          `Use read to inspect files, directories, URLs and supported sources without changing them. path selects the source; offset/limit select a text window; views add annotations. Text limit: ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB. Continuation: returned offset, or returned temp: reference as path.`,
+          pluginDescription?.() ?? "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      },
       get promptGuidelines(): string[] {
         return [
-          "Use read to examine files and other supported sources instead of cat, sed, head, tail, or similar shell commands.",
-          'You can use read with `views: ["lines"]` to add a line-number column.',
-          "You can use read with `offset` and `limit` to inspect a line range or continue a large source, and with a negative `offset` to read from the end.",
-          "You can combine compatible read views in one request.",
-          "When a read result is truncated and provides a `temp:` source, you can use read with that source to continue reading the saved full output.",
+          "Use read to examine supported sources instead of cat, sed, head or tail. Use search to locate workspace text and paths instead of grep, rg or find.",
           ...(pluginPromptGuidelines?.() ?? []),
         ];
       },
@@ -318,10 +326,7 @@ async function executeRead(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
   const requestedViews = new Set(request.views ?? []);
-  const knownViews = new Set([
-    ...BUILTIN_VIEWS,
-    ...viewSnapshot.map(({ registration }) => registration.view),
-  ]);
+  const knownViews = new Set([...viewSnapshot.map(({ registration }) => registration.view)]);
   const ignoredViews = [...requestedViews].filter((view) => !knownViews.has(view));
   if (request.path !== undefined && targetSnapshot.length > 0) {
     const targeted = await resolveTextTargets(

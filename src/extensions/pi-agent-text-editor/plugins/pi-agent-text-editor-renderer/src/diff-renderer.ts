@@ -100,7 +100,7 @@ function renderRow(
   if (omitted !== undefined) {
     const summary = withForeground(
       palette.contextForeground,
-      `   ··· ${String(omitted)} lines omitted`,
+      `   ··· ${String(omitted)} lines omitted${item.omittedChanged ? ` (${item.omittedChanged} changed)` : ""}`,
     );
     return [
       showExpandHint

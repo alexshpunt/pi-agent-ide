@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.2.2 — 2026-09-08
+
+### Agent guidance
+
+- Clarify tool descriptions and input parameters so agents can choose the right read, search, or edit operation. Keep tool-specific details with each tool and shared workflow rules in the system prompt.
+- Explain how to reuse anchors, recover from broadened searches, and batch independent edits without retrying changes that already applied.
+
+### Editing and search
+
+- Fix ranges that mix exact text, line anchors, and search references. Explicit start and end anchors select inclusive whole lines; insert, copy, and move destinations use the containing line boundaries.
+- Fix empty replacements of whole-line selections so they remove the lines instead of leaving a blank line.
+- Preserve unselected line breaks when deleting exact search matches at the end of a file.
+- Fix `files:` glob matching, including nested paths, basename patterns, character classes, and brace alternatives.
+- Report applied edit counts and formatting outcomes. Group repeated replacements into a compact summary with every affected file, and rerun referenced searches to report remaining matches within their original scope.
+
+### Reading
+
+- Show a compact, source-numbered AST overview when a supported code file exceeds the read limit. Reduce detail until it fits, and keep ordinary truncation when no usable outline is available.
+- Fix AST outline positions for CRLF text and characters such as emoji.
+- Remove the standalone `lines` view. Use `anchors` for source line numbers with edit references.
+- Preserve Pi's native read presentation for skills, agent context files, and Pi documentation when no extra views are requested.
+
+### Interface and configuration
+
+- Keep local diffs aligned after formatting shifts lines. Report changes outside the displayed area or changes that cannot be assigned to one edit instead of showing misleading hunks.
+- Show formatting status alongside diffs and visible background diagnostic summaries with per-file counts and expandable provider details. Send automatic notifications only for actual findings; keep pending, unavailable, and empty reports out of both the chat and the agent's context.
+- Add `noAnimations` and `noPostProcessing` settings, with matching `--pi-agent-ide-no-animations` and `--pi-agent-ide-no-post-processing` flags. These can disable edit animations or automatic post-edit checks and formatting while keeping explicit reads and requested edits available.
+- Name the actual formatter, linter, or language-server executable in formatting results and diagnostic messages. Show diagnostic tool names beside their counts even when the entry is collapsed.
+- Deliver new diagnostic findings immediately to the chat and agent. Late findings wake an idle agent without waiting for another user message; duplicate and empty reports stay silent.
+- Load built-in extension entry modules only when selected, avoiding imports for disabled built-ins.
+
 ## 0.2.1 — 2026-09-07
 
 ### Stability and Windows

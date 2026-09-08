@@ -27,9 +27,10 @@ export function resolveMutationResultResources(
 ): readonly MutationRenderResource[] {
   const stored = details?.mutationRender;
   if (stored !== undefined) {
-    return stored.map(({ path, model }) => ({
+    return stored.map(({ path, model, diffStatuses }) => ({
       path,
       model,
+      ...(diffStatuses === undefined ? {} : { diffStatuses }),
       ranges: [],
       beforeContent: "",
       afterContent: "",
@@ -62,6 +63,12 @@ function finalResource(result: FileMutationResult): readonly MutationRenderResou
     }
 
     const replayed = changes === undefined ? undefined : replayChanges(before ?? "", changes);
+    const finalLineOwnership = unchangedBatchOwnership(
+      before ?? "",
+      afterContent,
+      changes,
+      result.data.diffPeerRanges,
+    );
     const typingIdentity =
       replayed === afterContent
         ? {
@@ -76,10 +83,55 @@ function finalResource(result: FileMutationResult): readonly MutationRenderResou
         ranges: [],
         beforeContent: before ?? "",
         ...(typingIdentity === undefined ? {} : { typingIdentity }),
+
+        ...(finalLineOwnership === undefined ? {} : { finalLineOwnership }),
+
+        ...(result.data.diffPeerRanges === undefined
+          ? {}
+          : { diffPeerRanges: result.data.diffPeerRanges }),
+        ...(result.data.diffStatuses === undefined
+          ? {}
+          : { diffStatuses: result.data.diffStatuses }),
+
         afterContent,
       },
     ];
   });
+}
+
+function unchangedBatchOwnership(
+  before: string,
+  after: string,
+  own: readonly PersistedTextChange[] | undefined,
+  peers: FileMutationResult["data"]["diffPeerRanges"],
+): MutationRenderResource["finalLineOwnership"] {
+  if (own === undefined || peers === undefined) return undefined;
+  const edits = [
+    ...own.map(({ fromA: from, toA: to, insertedText: insert }) => ({
+      from,
+      to,
+      insert,
+      own: true,
+    })),
+    ...peers.map((peer) => ({ ...peer, own: false })),
+  ].sort((a, b) => a.from - b.from);
+  const ownership = { own: new Set<number>(), peers: new Set<number>() };
+  let content = "";
+  let offset = 0;
+  for (const edit of edits) {
+    if (edit.from < offset || edit.to < edit.from || edit.to > before.length) return undefined;
+    content += before.slice(offset, edit.from);
+    const firstLine = content.split("\n").length;
+    content += edit.insert;
+    if (edit.insert.length > 0) {
+      const lastLine = content.slice(0, -1).split("\n").length;
+      for (let line = firstLine; line <= lastLine; line++)
+        ownership[edit.own ? "own" : "peers"].add(line);
+    }
+    offset = edit.to;
+  }
+  if (content + before.slice(offset) !== after) return undefined;
+  return { own: [...ownership.own], peers: [...ownership.peers] };
 }
 
 function persistedViewports(

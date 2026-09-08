@@ -39,11 +39,7 @@ export default async function registerGitChanges(pi: ExtensionAPI): Promise<void
     setup(api) {
       api.addView({ view: "changes", presenter });
       api.describe(
-        "Adds CHANGE anchors and Git index state to current changes in tracked text files that request the `changes` view. Use these anchors with undo, stage, and unstage.",
-      );
-
-      api.addPromptGuideline(
-        'You can use read with `views: ["changes"]` to add `CHANGE#...` anchors and Git index state for current file changes.',
+        'views: ["changes"] — uncommitted edits in tracked files, staged/unstaged state, and CHANGE# anchors for stage, unstage and undo.',
       );
     },
   } satisfies ReadPlugin;

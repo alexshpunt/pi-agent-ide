@@ -24,13 +24,9 @@ export default async function registerLineHashTextAnchor(pi: ExtensionAPI): Prom
     apiVersion: READ_API_VERSION,
     id: "text-anchor-line-hash",
     setup(api) {
-      api.addView({ view: "anchors", includes: ["lines"], presenter });
+      api.addView({ view: "anchors", presenter });
       api.describe(
-        "Adds `LINE#HASH` anchors to textual read results that request the `anchors` view.",
-      );
-
-      api.addPromptGuideline(
-        'You can use read with `views: ["anchors"]` to add `LINE#HASH` anchors for later edits.',
+        'views: ["anchors"] — LINE#HASH references for editing individual source lines.',
       );
     },
   } satisfies ReadPlugin;

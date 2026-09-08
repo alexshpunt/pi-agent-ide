@@ -34,6 +34,8 @@ export interface SearchCore {
     context: SearchContext,
   ): Promise<unknown>;
   renderPromptGuidelines(): readonly string[];
+  /** Describes capabilities contributed by successfully registered plugins. */
+  renderDescriptions(): readonly string[];
   renderer(resolverId: string): SearchResolverRegistration["resolver"]["renderResult"];
 }
 
@@ -41,6 +43,7 @@ export function createSearchCore(): SearchCore {
   const resolvers: RegisteredResolver[] = [];
   const actions = new Map<string, SearchActionRegistration>();
   const promptGuidelines = new Map<string, SearchDescriptionSource[]>();
+  const descriptions = new Map<string, SearchDescriptionSource>();
   const plugins = new Map<string, Promise<void>>();
   let queue = Promise.resolve();
 
@@ -125,6 +128,7 @@ export function createSearchCore(): SearchCore {
           actions.set(actionKey(action.resolverId, action.capability), action);
         }
 
+        if (draftDescription !== undefined) descriptions.set(plugin.id, draftDescription);
         if (draftPromptGuidelines.length > 0) {
           promptGuidelines.set(plugin.id, draftPromptGuidelines);
         }
@@ -242,6 +246,12 @@ export function createSearchCore(): SearchCore {
       }
 
       return action.execute(reference, input, context);
+    },
+    renderDescriptions(): readonly string[] {
+      return [...descriptions.values()].flatMap((source) => {
+        const description = renderDescription(source);
+        return description === undefined ? [] : [description];
+      });
     },
     renderPromptGuidelines(): readonly string[] {
       return [...promptGuidelines.values()].flat().flatMap((source) => {

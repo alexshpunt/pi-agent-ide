@@ -57,6 +57,7 @@ interface TextBatchState {
   readonly registration: AnyTextMutationToolRegistration;
 }
 interface PlannedTextMutation extends TextMutation {
+  readonly operation: string;
   readonly resultPresentations: ReadonlyMap<string, MutationResultPresentation>;
 }
 
@@ -303,6 +304,8 @@ export async function executeRegisteredTextBatch(
               callId: item.callId,
               mutation: {
                 ...mutation,
+
+                operation: item.registration.name,
                 resultPresentations: new Map(
                   [...mutation.edits.keys()].map((source) => [
                     source,
@@ -390,6 +393,19 @@ export async function executeRegisteredTextBatch(
           edit,
           ownAfter,
           mutation.resultPresentations.get(source) ?? "plain",
+
+          1,
+          [{ operation: mutation.operation, changes: edit.changes.length }],
+
+          completedMutations.flatMap((peer) =>
+            peer.callId === callId
+              ? []
+              : (peer.mutation.edits.get(source)?.changes ?? []).map(({ from, to, insert }) => ({
+                  from,
+                  to,
+                  insert,
+                })),
+          ),
         ),
       ];
     });
@@ -424,6 +440,13 @@ export async function executeRegisteredTextBatch(
       resource.after.content,
       finalPresentationBySource.get(source) ?? "plain",
       edits.length,
+
+      completedMutations.flatMap(({ mutation }) => {
+        const edit = mutation.edits.get(source);
+        return edit === undefined
+          ? []
+          : [{ operation: mutation.operation, changes: edit.changes.length }];
+      }),
     );
     resultsByCallId.get(finalCallId)?.push(result);
     results.push(result);

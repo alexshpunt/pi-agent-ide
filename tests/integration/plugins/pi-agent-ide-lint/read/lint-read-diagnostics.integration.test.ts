@@ -68,8 +68,8 @@ test("read shows lint diagnostics without changing the source", async () => {
 
     const rendered = getToolResultText(result, "read-lint-diagnostics");
     expect(rendered).toContain('console.log("debug")');
-    expect(rendered).toContain("[ERROR] lint:no-console:");
-    expect(rendered).toContain("<!-- lint:");
+    expect(rendered).toContain("[ERROR] eslint_d:no-console:");
+    expect(rendered).toContain("<!-- eslint_d:");
     expect(rendered).not.toContain("export function logValue");
 
     const message = getToolResultMessage(result, "read-lint-diagnostics");

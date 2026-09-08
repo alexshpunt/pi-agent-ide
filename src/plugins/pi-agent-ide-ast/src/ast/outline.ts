@@ -134,6 +134,9 @@ export function formatAstOutline(block: SourceViewBlock): SourceMappedTextConten
 export class AstOutlineManager {
   private readonly fallbackScopeManager = new AstScopeManager();
 
+  /** Limit syntax-tree nesting for automatic overviews; explicit outlines keep their existing depth. */
+  public constructor(private readonly maxDepth = Number.POSITIVE_INFINITY) {}
+
   public async readFileOutline(filePath: string, cwd: string): Promise<SourceViewBlock> {
     const absolutePath = resolvePath(filePath, cwd);
     const displayPath = path.relative(cwd, absolutePath) || absolutePath;
@@ -143,21 +146,50 @@ export class AstOutlineManager {
     }
 
     const snapshot = await readTextFile(absolutePath);
-    const tree = await parseDocument(absolutePath, cwd, snapshot.lines);
+    return this.readDocumentOutline(absolutePath, cwd, snapshot.lines);
+  }
+
+  /** Build an outline from the read snapshot. With a finite depth and a budget
+   * predicate, reduce nesting until it fits or reaches file-only detail. Parse once.
+   */
+  public async readDocumentOutline(
+    filePath: string,
+    cwd: string,
+    lines: readonly string[],
+    fits?: (outline: SourceViewBlock) => boolean,
+  ): Promise<SourceViewBlock> {
+    const absolutePath = resolvePath(filePath, cwd);
+    const displayPath = path.relative(cwd, absolutePath) || absolutePath;
+    if (!isSupportedOutlinePath(absolutePath)) {
+      throw new Error(`AST outline is not supported for ${displayPath}.`);
+    }
+    const tree = await parseDocument(absolutePath, cwd, lines);
 
     if (!tree) {
       throw new Error(`No AST parser is available for ${displayPath}.`);
     }
+    if (Number.isFinite(this.maxDepth) && tree.rootNode.hasError) {
+      throw new Error(`Cannot build an automatic outline from invalid syntax in ${displayPath}.`);
+    }
 
-    return await this.createSourceViewBlock(
-      tree.rootNode,
-      absolutePath,
-      displayPath,
-      cwd,
-      snapshot.lines,
-      snapshot.content,
-      path.extname(absolutePath).toLowerCase(),
-    );
+    const content = lines.join("\n");
+    for (let depth = this.maxDepth; ; depth -= 1) {
+      const outline = await this.createSourceViewBlock(
+        tree.rootNode,
+        absolutePath,
+        displayPath,
+        cwd,
+        lines,
+        content,
+        path.extname(absolutePath).toLowerCase(),
+        undefined,
+        undefined,
+        depth,
+      );
+      if (fits === undefined || fits(outline) || depth <= 0 || !Number.isFinite(depth)) {
+        return outline;
+      }
+    }
   }
 
   public async formatFile(filePath: string, cwd: string): Promise<SourceMappedTextContent> {
@@ -248,8 +280,9 @@ export class AstOutlineManager {
     extension: string,
     heading?: string,
     details?: readonly string[],
+    maxDepth = this.maxDepth,
   ): Promise<SourceViewBlock> {
-    const projectedLines = renderNodeLines(node, source, extension);
+    const projectedLines = renderNodeLines(node, source, extension, maxDepth);
     const scopes = await getOutlineScopes(this.fallbackScopeManager, filePath, cwd, sourceLines);
     const markersByLine = buildScopeMarkers(scopes);
     const renderedLines = projectedLines.map((line) => {
@@ -439,13 +472,18 @@ interface MappedCharacter {
   readonly sourceLine?: number;
 }
 
-function renderNodeLines(node: WTS.Node, source: string, extension: string): ProjectedLine[] {
+function renderNodeLines(
+  node: WTS.Node,
+  source: string,
+  extension: string,
+  maxDepth: number,
+): ProjectedLine[] {
   const replacements: Replacement[] = [];
 
   if (DATA_EXTENSIONS.has(extension)) {
-    collectDataReplacements(node, extension, replacements);
+    collectDataReplacements(node, extension, replacements, maxDepth);
   } else {
-    collectReplacements(node, extension, replacements);
+    collectReplacements(node, extension, replacements, false, maxDepth);
   }
 
   const start = lineStartAt(source, node.startIndex);
@@ -501,7 +539,10 @@ function mapSourceRange(source: string, start: number, end: number): MappedChara
   let sourceLine = source.slice(0, start).split("\n").length;
   const mapped: MappedCharacter[] = [];
 
-  for (const char of source.slice(start, end)) {
+  // Tree-sitter offsets use UTF-16 code units, just like String.slice/splice offsets.
+  // Iterating code points would shift replacements after supplementary characters.
+  for (let index = start; index < end; index += 1) {
+    const char = requiredValue(source[index]);
     mapped.push({ char, sourceLine });
 
     if (char === "\n") {
@@ -531,11 +572,29 @@ function mapReplacement(replacement: Replacement): MappedCharacter[] {
   return mapped;
 }
 
+function collapseDeepNode(
+  node: WTS.Node,
+  replacements: Replacement[],
+  depth: number,
+  maxDepth: number,
+): boolean {
+  if (depth < maxDepth || node.namedChildCount === 0) return false;
+  replacements.push({
+    start: node.startIndex,
+    end: node.endIndex,
+    text: "…",
+    lineSourceLines: [node.startPosition.row + 1],
+  });
+  return true;
+}
 function collectDataReplacements(
   node: WTS.Node,
   extension: string,
   replacements: Replacement[],
+  maxDepth: number,
+  depth = 0,
 ): void {
+  if (collapseDeepNode(node, replacements, depth, maxDepth)) return;
   for (const child of node.namedChildren) {
     if (isDataScalar(child, extension)) {
       if (!isDataKey(child)) {
@@ -550,7 +609,7 @@ function collectDataReplacements(
       continue;
     }
 
-    collectDataReplacements(child, extension, replacements);
+    collectDataReplacements(child, extension, replacements, maxDepth, depth + 1);
   }
 }
 
@@ -602,9 +661,13 @@ function collectReplacements(
   node: WTS.Node,
   extension: string,
   replacements: Replacement[],
-  topLevel = false,
+  topLevel: boolean,
+  maxDepth: number,
+  depth = 0,
 ): void {
-  if (topLevel && !isTopLevelInterfaceNode(node)) {
+  if (collapseDeepNode(node, replacements, depth, maxDepth)) return;
+  const keepCall = Number.isFinite(maxDepth) && node.type === "expression_statement";
+  if (topLevel && !isTopLevelInterfaceNode(node) && !keepCall) {
     replacements.push({
       start: node.startIndex,
       end: node.endIndex,
@@ -644,7 +707,14 @@ function collectReplacements(
   }
 
   for (const child of node.namedChildren) {
-    collectReplacements(child, extension, replacements, ROOT_TYPES.has(node.type));
+    collectReplacements(
+      child,
+      extension,
+      replacements,
+      ROOT_TYPES.has(node.type),
+      maxDepth,
+      depth + 1,
+    );
   }
 }
 

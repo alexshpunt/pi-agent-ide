@@ -43,6 +43,8 @@ describe("Pi Agent IDE extension config", () => {
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
       disabled: [],
       enabled: [],
+      noAnimations: false,
+      noPostProcessing: false,
     });
   });
 
@@ -61,6 +63,8 @@ describe("Pi Agent IDE extension config", () => {
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
       disabled: ["editor.overwrite", "editor.argument-order", "editor.stale-anchor"],
       enabled: [],
+      noAnimations: false,
+      noPostProcessing: false,
     });
   });
 
@@ -77,7 +81,42 @@ describe("Pi Agent IDE extension config", () => {
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
       disabled: [],
       enabled: ["editor.argument-order", "ide.lsp"],
+      noAnimations: false,
+      noPostProcessing: false,
     });
+  });
+
+  test("project booleans override global booleans, including explicit false", async () => {
+    const directory = await temporaryDirectory();
+    const paths = {
+      globalPath: path.join(directory, "global.json"),
+      projectPath: path.join(directory, "project.json"),
+    };
+    await writeJson(paths.globalPath, { noAnimations: true, noPostProcessing: true });
+    await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toMatchObject({
+      noAnimations: true,
+      noPostProcessing: true,
+    });
+    await writeJson(paths.projectPath, { noAnimations: false });
+    await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toMatchObject({
+      noAnimations: false,
+      noPostProcessing: true,
+    });
+    await writeJson(paths.projectPath, { noPostProcessing: false });
+    await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toMatchObject({
+      noAnimations: true,
+      noPostProcessing: false,
+    });
+  });
+
+  test.each(["noAnimations", "noPostProcessing"])("rejects non-boolean %s", async (field) => {
+    const directory = await temporaryDirectory();
+    const paths = {
+      globalPath: path.join(directory, "global.json"),
+      projectPath: path.join(directory, "project.json"),
+    };
+    await writeJson(paths.globalPath, { [field]: "true" });
+    await expect(readPiAgentIdeExtensionsConfig(paths)).rejects.toThrow(Error);
   });
 
   test("rejects duplicate IDs in one config file for either field", async () => {

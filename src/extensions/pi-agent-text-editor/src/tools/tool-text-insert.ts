@@ -15,17 +15,24 @@ export const insertSchema = Type.Object(
     path: Type.Optional(
       Type.String({
         description:
-          "Source resource reference or file path. A typed SEARCH#... resource can select insertion positions.",
+          "Source resource reference or file path. A returned SEARCH# reference can select insertion positions.",
       }),
     ),
     anchor: Type.Optional(
       Type.String({
-        description: "Registered text anchor or unique exact text span",
+        description:
+          "Registered anchor or unique exact text locating the insertion. Required unless path already supplies a SEARCH selection. Inserts after the last containing line by default, or before the first containing line when before is true. This includes SEARCH :match and multiline exact text; the selected text is kept. Multiple matches on the same insertion line produce one insertion.",
       }),
     ),
-    text: Type.String({ description: "Content to insert" }),
+    text: Type.String({
+      description:
+        "New text only. The tool supplies the line boundary; do not prefix a newline just to start a new line. For example, 'NEW' inserts one line, while '\\nNEW' intentionally adds a blank line before it. A missing trailing newline is supplied before following text; additional newlines remain intentional blank lines. When appending after an unterminated final line, the tool supplies the separator before the new text and removes one trailing newline from the payload. Payload line endings follow the destination file's LF/CRLF style.",
+    }),
     before: Type.Optional(
-      Type.Boolean({ description: "Insert before the anchor instead of after it" }),
+      Type.Boolean({
+        description:
+          "Defaults to false: insert after the last containing line. True: insert before the first containing line. The anchor's text and its lines are kept.",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -40,7 +47,8 @@ interface InsertParameters {
 
 export const insertMutationTool: TextMutationToolRegistration<typeof insertSchema> = {
   name: "insert",
-  description: "Insert text before or after a registered anchor or one unique exact text span.",
+  description:
+    "Use insert to add new text before or after selected lines while keeping existing text. Insertion is line-based, including for exact-text and SEARCH :match anchors.",
 
   promptSnippet:
     "Make precise file edits by inserting text before or after exact matches or anchors",

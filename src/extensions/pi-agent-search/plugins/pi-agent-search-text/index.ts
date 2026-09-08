@@ -20,6 +20,44 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export default async function registerTextSearch(pi: ExtensionAPI): Promise<void> {
   const sessions = new SearchSessionStore();
 
+  pi.on("tool_result", async (event, ctx) => {
+    if (
+      event.toolName !== "replace" ||
+      event.isError ||
+      typeof event.details !== "object" ||
+      event.details === null
+    )
+      return;
+    const observations = await sessions.observeAfterEdit(
+      [event.input.path, event.input.start, event.input.end],
+      ctx.signal,
+    );
+    if (observations.length === 0) return;
+    return {
+      content: [
+        ...event.content,
+        {
+          type: "text" as const,
+          text: [
+            "Original search observed after editing (not task validation):",
+            ...observations.map((observation) => {
+              const { query: _compiledQuery, fallbacks: _fallbacks, ...scope } = observation.scope;
+              return [
+                `SEARCH#${observation.sessionId}: ${JSON.stringify(observation.query)}`,
+                `Scope and options: ${JSON.stringify(scope)}`,
+                observation.error === undefined
+                  ? `Matches: ${observation.matches}${observation.complete === true ? "; complete search." : "+; incomplete search, lower bound only."}`
+                  : `Search failed: ${observation.error}. Applied edits remain applied.`,
+                ...(observation.notices ?? []),
+              ].join("\n");
+            }),
+          ].join("\n"),
+        },
+      ],
+      details: { ...event.details, searchObservations: observations },
+    };
+  });
+
   pi.on("tool_result", (event) => {
     if (event.toolName !== "search" || typeof event.details !== "object" || event.details === null)
       return;
@@ -47,40 +85,11 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
         api.addResolver({ resolver: createTextResolver(sessions), fallback: true });
         api.describe(
           [
-            "Searches workspace text and paths.",
-            "Local queries try literal terms first, then unquoted terms as regex when no literal results exist, then separate words for ordinary multi-word queries. Quoted terms stay literal. Boolean conditions stay intact across fallback. Uppercase AND/OR, infix NOT, ||, and space-separated | are Boolean operators; unspaced | and regex groups/classes belong to regex terms. Parentheses containing Boolean operators group Boolean conditions. regex:<pattern> forces regex-only matching; files:<pattern> searches file paths.",
-            "Complete text and regex result sessions register four stale-safe typed resources for read and text-editor operations: SEARCH#HASH:N:line, SEARCH#HASH:N:match, SEARCH#HASH:all:line, and SEARCH#HASH:all:match. Search IDs use four uppercase hexadecimal characters by default and grow only on collision. Limited or incomplete sessions omit the all-result resources.",
+            "Local queries try literal terms first, then unquoted terms as regex when no literal results exist, then separate words for ordinary multi-word queries. Quoted terms stay literal. Boolean conditions stay intact across fallback. Uppercase AND/OR, infix NOT, ||, and space-separated | are Boolean operators; unspaced | and regex groups/classes belong to regex terms. Parentheses containing Boolean operators group Boolean conditions. regex:<pattern> forces regex-only matching; files:<pattern> searches file paths: glob patterns use *, **, ?, character classes and braces; other queries use case-insensitive subsequence matching. Slash-containing globs match cwd-relative paths; basename globs match at any depth.",
+            "The result says when a query was broadened. Empty or unknown prefixes are searched as plain text. A recognized prefixed query returns its own results or error; it does not silently become a text search.",
+            "SEARCH#HASH:N:line selects one containing line; :match selects its exact match. :all:line selects all unique containing lines and :all:match selects all matches. Read returns containing lines for both forms. A SEARCH resource can be used as a read path or mutation path/anchor; omit the file path for an all-selection spanning files.",
+            "Use SEARCH references exactly as returned to select the matching content. A single-result reference becomes stale when its file changes; obtain a fresh result before using it again. An :all reference refreshes the original query when a selected file changes. Limited or incomplete searches do not provide :all selections.",
           ].join("\n"),
-        );
-
-        api.addPromptGuideline(
-          "Local search tries literal terms first, then unquoted terms as regex if no matches exist, then separate words for ordinary multi-word queries. Search reports each fallback; invalid optional regex is skipped. Quoted and Boolean queries never fall back to separate words.",
-        );
-        api.addPromptGuideline(
-          'You can combine search terms with uppercase `AND`/`OR`, infix `NOT`, `||`, or space-separated `|`. Parentheses containing Boolean operators group conditions. Regex groups, classes, and escapes stay inside terms: `(?:foo|bar)\\d+ AND "keep.me" NOT ignored`. Quoted terms stay literal, including during regex fallback; `foo|bar` first searches that exact text, then regex alternatives.',
-        );
-        api.addPromptGuideline(
-          "You can use `regex:<pattern>` to force regex-only search and `files:<pattern>` for file paths. Empty or unhandled protocol queries fall back to searching the original text, including the prefix. Resolver errors, timeouts, and successful empty protocol results do not trigger text fallback.",
-        );
-        api.addPromptGuideline(
-          "You can narrow local search with `path`, `include`, `exclude`, `caseSensitive`, `wholeWord`, and `limit`.",
-        );
-        api.addPromptGuideline(
-          [
-            "You can reuse complete text and regex search results through these `SEARCH#...` values:",
-            "  - `SEARCH#HASH:N:line` selects one result's full line.",
-            "  - `SEARCH#HASH:N:match` selects one exact match.",
-            "  - `SEARCH#HASH:all:line` selects every unique containing line.",
-            "  - `SEARCH#HASH:all:match` selects every exact match.",
-            "  Read shows the containing lines for both modes; `:line` and `:match` control the edit range, not partial-line read rendering.",
-            "  Limited or incomplete searches omit the `all` values.",
-          ].join("\n"),
-        );
-        api.addPromptGuideline(
-          "You can pass a returned `SEARCH#...` value directly to read or a compatible mutation tool as its path or anchor. Omit the file path when an `all` value spans files.",
-        );
-        api.addPromptGuideline(
-          "You can replace every exact search match by passing `SEARCH#HASH:all:match` as the replace path, or replace whole matched lines with `SEARCH#HASH:all:line`.",
         );
       },
     }),

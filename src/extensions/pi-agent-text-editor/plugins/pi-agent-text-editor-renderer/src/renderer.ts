@@ -88,16 +88,18 @@ interface RenderState {
 export function registerMutationRenderers(
   api: TextEditorPluginApi,
   animationPressure?: MutationAnimationPressure,
+  animationsEnabled: () => boolean = () => true,
 ): void {
   api.onMutationTool((registration) => {
-    api.addToolRenderer(createRenderer(api, registration, animationPressure));
+    api.addToolRenderer(createRenderer(api, registration, animationPressure, animationsEnabled));
   });
 }
 
 function createRenderer(
   api: TextEditorPluginApi,
   registration: AnyTextMutationToolRegistration,
-  animationPressure?: MutationAnimationPressure,
+  animationPressure: MutationAnimationPressure | undefined,
+  animationsEnabled: () => boolean,
 ): TextEditorToolRendererRegistration {
   const tool = registration.name;
 
@@ -161,7 +163,7 @@ function createRenderer(
       const isArgumentsComplete = context.argsComplete;
       const key = `${isArgumentsComplete ? "complete" : "typing"}:${JSON.stringify(input)}`;
 
-      if (generated !== undefined) {
+      if (generated !== undefined && animationsEnabled()) {
         const typing = (state.typing ??= new TypingInterpolation());
 
         state.releaseAnimationPressure ??= animationPressure?.track(context.toolCallId, () => {

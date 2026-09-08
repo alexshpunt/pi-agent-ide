@@ -309,7 +309,7 @@ export interface TextEditorCore {
   registerPostEditHandler(registration: TextPostEditHandlerRegistration): () => void;
   registerTool(tool: TextEditorToolId): void;
   waitForPendingPlugins(): Promise<void>;
-  renderGeneralPromptGuideline(): string | undefined;
+  renderGeneralPromptGuideline(kinds?: ReadonlySet<string>): string | undefined;
   /** Returns the configured number of lines around recovery candidates. */
   recoveryContextLines(): number;
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
@@ -687,7 +687,7 @@ export function createTextEditorCore(
     recoveryContextLines(): number {
       return projectConfig.contextLines;
     },
-    renderGeneralPromptGuideline(): string | undefined {
+    renderGeneralPromptGuideline(kinds?: ReadonlySet<string>): string | undefined {
       const sections: string[] = [];
       const writableEntries: string[] = [];
 
@@ -717,7 +717,7 @@ export function createTextEditorCore(
         );
       }
 
-      const anchorSection = anchorRegistry.renderPromptSection();
+      const anchorSection = anchorRegistry.renderPromptSection(kinds);
 
       if (anchorSection !== undefined) {
         sections.push(anchorSection);
@@ -739,15 +739,11 @@ export function createTextEditorCore(
         );
 
         if (contribution !== undefined) {
-          entries.push(renderPromptEntry(registeredPlugin.plugin.id, contribution.description));
+          entries.push(contribution.description);
         }
       }
 
-      return entries.length === 0
-        ? undefined
-        : indentGuidelineContinuation(
-            [`${tool} supports these installed extensions:`, ...entries].join("\n"),
-          );
+      return entries.length === 0 ? undefined : entries.join("\n");
     },
     async waitForPendingPlugins(): Promise<void> {
       await Promise.all(pendingPlugins);

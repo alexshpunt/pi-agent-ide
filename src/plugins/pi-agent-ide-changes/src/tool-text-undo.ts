@@ -38,13 +38,9 @@ export function createUndoMutationTool(
   return {
     name: "undo",
     description:
-      "Restore one selected current Git change to HEAD in the worktree and index, or restore one file to its state before its latest text-editor transaction.",
+      "Use undo to revert a selected uncommitted Git change or the latest text-editor transaction for one file. A CHANGE# anchor restores that change to HEAD in both worktree and index; last restores the file's state before its latest text-editor transaction.",
 
     promptSnippet: "Restore a Git change or the latest text edit",
-    promptGuidelines: [
-      "You can use undo with a complete `CHANGE#...` anchor to restore that current Git change to HEAD in both the worktree and index.",
-      'You can use undo with `change: "last"` to restore a file to its state before its latest text-editor transaction.',
-    ],
     parameters: undoSchema,
     intent: "restore",
     source: { field: "file", inherited: true },

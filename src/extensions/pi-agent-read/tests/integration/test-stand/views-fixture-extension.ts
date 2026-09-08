@@ -41,7 +41,6 @@ export default async function registerViewsFixture(pi: ExtensionAPI): Promise<vo
       });
       api.addView({
         view: "anchors",
-        includes: ["lines"],
         presenter: {
           id: "views-fixture-anchor",
           present(document) {
