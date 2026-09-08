@@ -1,4 +1,11 @@
 import { restoreReadDetails } from "./persisted-result.js";
+
+import {
+  nativeReadArguments,
+  nativeReadContext,
+  nativeReadPresentation,
+  type ReadRenderContext,
+} from "./native-resource-renderer.js";
 import { requiredValue } from "pi-agent-invariant";
 import {
   type AgentToolResult,
@@ -32,17 +39,20 @@ interface ReadCallArguments {
   readonly views?: unknown;
 }
 
-interface ReadCallRenderContext {
-  readonly expanded?: boolean;
-  readonly lastComponent: Component | undefined;
-}
-
 /** Renders the requested read source and non-default options in the shared tool-card header. */
 export function renderReadCall(
   arguments_: ReadCallArguments,
   theme: Theme,
-  context: ReadCallRenderContext,
+  context: ReadRenderContext,
 ): Component {
+  const nativeArgs = nativeReadArguments(arguments_, context.cwd);
+  if (nativeArgs !== undefined) {
+    return requiredValue(nativeReadPresentation.renderCall)(
+      nativeArgs,
+      theme,
+      nativeReadContext(context, nativeArgs),
+    );
+  }
   const path = typeof arguments_.path === "string" ? arguments_.path : "inherited source";
   const offset = typeof arguments_.offset === "number" ? arguments_.offset : undefined;
   const limit = typeof arguments_.limit === "number" ? arguments_.limit : undefined;
@@ -78,7 +88,7 @@ export function renderReadCall(
       },
       qualifiers,
       details,
-      expanded: context.expanded === true,
+      expanded: context.expanded,
     },
     theme,
   );
@@ -95,6 +105,17 @@ interface ReadPanelState {
 export function createReadResultRenderer(options: ReadResultRendererOptions): ReadResultRenderer {
   const restored = new WeakMap<object, ReadResultDetails>();
   return (result, renderOptions, theme, context): Component => {
+    const nativeArgs = options.nativeResources
+      ? nativeReadArguments(context.args, context.cwd)
+      : undefined;
+    if (nativeArgs !== undefined && !renderOptions.isPartial) {
+      return requiredValue(nativeReadPresentation.renderResult)(
+        { ...result, details: { truncation: readDetails(result.details).truncation } },
+        renderOptions,
+        theme,
+        nativeReadContext(context, nativeArgs),
+      );
+    }
     if (renderOptions.isPartial || context.isError) {
       const text = textBlocks(result);
       const color = context.isError ? "error" : "dim";

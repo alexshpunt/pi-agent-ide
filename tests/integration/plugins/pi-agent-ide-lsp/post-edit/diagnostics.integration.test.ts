@@ -92,7 +92,7 @@ test("an edit leaves diagnostics to explicit inspection of the written TypeScrip
     );
     const data = getTextToolMutationData(details);
     expect(data.hints ?? []).toEqual([]);
-    expect(getToolResultText(scenario.result, scenario.postflightCallIds[0])).toContain("lsp:2322");
+    expect(getToolResultText(scenario.result, scenario.postflightCallIds[0])).toContain("tsc:2322");
   });
 }, 60_000);
 

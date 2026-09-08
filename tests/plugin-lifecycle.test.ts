@@ -91,7 +91,7 @@ function createExtensionEnvironment(): { createExtension(): TestExtension } {
   return {
     createExtension(): TestExtension {
       const shutdownHandlers: LifecycleHandler[] = [];
-      const pi = {
+      const pi: Partial<ExtensionAPI> = {
         events,
         on(event: string, handler: LifecycleHandler): void {
           if (event === "session_shutdown") {
@@ -99,10 +99,11 @@ function createExtensionEnvironment(): { createExtension(): TestExtension } {
           }
         },
         registerFlag(): void {},
-      } as ExtensionAPI;
+        registerEntryRenderer(): void {},
+      };
 
       return {
-        pi,
+        pi: pi as ExtensionAPI,
         async shutdown(): Promise<void> {
           for (const handler of shutdownHandlers) {
             await handler({ reason: "reload" }, {});

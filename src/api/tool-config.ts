@@ -15,6 +15,10 @@ import { fileURLToPath } from "node:url";
 Current on-disk tool configuration version.
 */
 export const TOOL_CONFIG_VERSION = 1 as const;
+/** Executable name for user-facing tool provenance, without arguments or machine-specific paths. */
+export function configuredExecutableName(command: readonly string[]): string {
+  return path.win32.basename(requiredValue(command[0]));
+}
 
 /**
 A direct process invocation. Shell expansion is never implicit.

@@ -21,6 +21,17 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
   });
   const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
+  pi.registerFlag("pi-agent-ide-no-animations", {
+    description: "Show IDE mutation results without animated playback",
+    type: "boolean",
+    default: config.noAnimations ?? false,
+  });
+  pi.registerFlag("pi-agent-ide-no-post-processing", {
+    description:
+      "Skip automatic post-edit formatting and diagnostics; explicit reads remain available",
+    type: "boolean",
+    default: config.noPostProcessing ?? false,
+  });
   const { enabled } = selectBuiltinExtensions(BUILTIN_EXTENSIONS, config.disabled, config.enabled);
 
   for (const extension of enabled) {

@@ -29,6 +29,8 @@ export interface FormatInput {
 }
 
 export interface FormatResult {
+  /** Actual formatter executable. Omit for a named formatter plugin; null means no formatter was selected. */
+  formatter?: string | null;
   ok: boolean;
   /**
     Number of edits applied. 0 = no change.

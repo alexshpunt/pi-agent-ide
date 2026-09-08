@@ -15,29 +15,38 @@ export const moveSchema = Type.Object(
   {
     path: Type.Optional(
       Type.String({
-        description:
-          "Source resource reference or file path; a typed resource may select one source span",
+        description: "Source file path, or a returned SEARCH# reference selecting the text to move",
       }),
     ),
     start: Type.Optional(
       Type.String({
-        description: "Registered text anchor or unique exact text at the source start",
+        description:
+          "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects only its line. Required unless path supplies a SEARCH# selection. With end, selects a whole-line range.",
       }),
     ),
-    end: Type.Optional(Type.String({ description: "Source end anchor; defaults to start" })),
+    end: Type.Optional(
+      Type.String({
+        description:
+          "Optional anchor or unique exact text. Range includes start's first line through end's last line, even for SEARCH :match. Mixed types allowed; boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start. The end line is included, not a stopping point before it.",
+      }),
+    ),
     target: Type.Optional(
       Type.String({
         description:
-          "Target resource reference or file path; a typed resource may select the destination; defaults to the source",
+          "Target resource reference or file path; a returned SEARCH# reference may select the destination; defaults to the source",
       }),
     ),
     targetStart: Type.Optional(
       Type.String({
-        description: "Target anchor; moved text is inserted after it when targetEnd is omitted",
+        description:
+          "Registered anchor or unique exact text in the destination. Required unless target already selects one destination range. Without targetEnd, inserts after the last containing line, keeping the selected text. With targetEnd, replacement starts at the first containing line. SEARCH :match also uses these line boundaries.",
       }),
     ),
     targetEnd: Type.Optional(
-      Type.String({ description: "Target end anchor; the natural target range is replaced" }),
+      Type.String({
+        description:
+          "Optional inclusive destination end. Replaces whole lines through the last line containing this anchor, including SEARCH :match. May differ in type from targetStart; both must resolve uniquely in the target file and in forward order. Omit to insert after targetStart instead.",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -54,7 +63,8 @@ interface MoveParameters {
 
 export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> = {
   name: "move",
-  description: "Move one span or an anchor range, then insert it or replace a target range.",
+  description:
+    "Use move to relocate existing text within or between files. Select the source and destination without reproducing the text in your call. The selected text is removed from the source and inserted at the destination, or replaces a destination range.",
 
   promptSnippet:
     "Make precise file edits by moving text within or between files using exact matches or anchors",

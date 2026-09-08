@@ -15,21 +15,25 @@ export const replaceSchema = Type.Object(
     path: Type.Optional(
       Type.String({
         description:
-          "Source resource reference or file path. A typed SEARCH#... resource can select replacement ranges.",
+          "Source resource reference or file path. A returned SEARCH# reference can select replacement ranges.",
       }),
     ),
     start: Type.Optional(
       Type.String({
         description:
-          "Registered text anchor or unique exact text selecting the first span to replace",
+          "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects only its line. Required unless path supplies a SEARCH# selection. With end, selects a whole-line range.",
       }),
     ),
     end: Type.Optional(
       Type.String({
-        description: "Registered text anchor or unique exact text selecting the last span",
+        description:
+          "Optional anchor or unique exact text. Range includes start's first line through end's last line, even for SEARCH :match. Mixed types allowed; boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start. The end line is included, not a stopping point before it.",
       }),
     ),
-    text: Type.String({ description: "Replacement text" }),
+    text: Type.String({
+      description:
+        "Replacement text. Empty text removes the selection; a whole-line selection removes its lines without inserting a blank line. Adjacent unselected lines are kept.",
+    }),
   },
   { additionalProperties: false },
 );
@@ -44,7 +48,7 @@ interface ReplaceParameters {
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
   name: "replace",
   description:
-    "Replace one span, a range between anchors, or every exact search match. A unique unregistered value is exact text.",
+    "Use replace to change an existing text fragment, an inclusive line range, or every selected search match. Exact text must be unique; SEARCH#...:all:match selects every returned match for replacement.",
 
   promptSnippet: "Make precise file edits by replacing text using exact matches or anchors",
   parameters: replaceSchema,

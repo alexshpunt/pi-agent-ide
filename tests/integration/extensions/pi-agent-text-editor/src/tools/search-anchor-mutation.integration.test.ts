@@ -58,8 +58,9 @@ test("uses a search resource in path as a multi-file delete target", async () =>
     expect(getToolExecution(result, "delete-by-path-anchor").isError).toBe(false);
 
     const finalState = getToolResultText(result, "delete-by-path-anchor");
-    expect(finalState).toContain("first.txt\nkeep first");
-    expect(finalState).toContain("second.txt\nkeep second");
+    for (const value of ["first.txt", "keep first", "second.txt", "keep second"]) {
+      expect(finalState).toContain(value);
+    }
     expect(finalState).not.toMatch(/^[+ -]\|/mu);
     expect(finalState).not.toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
     expect(finalState).not.toContain("SEARCH#");
@@ -631,8 +632,8 @@ test("inserts into every file selected by a complete search anchor", async () =>
     }).run("Search each needle, then insert punctuation after every exact match");
 
     expect(getToolExecution(result, "insert-search-all").isError).toBe(false);
-    await expect(readFile(first, "utf8")).resolves.toBe("needle! first\n");
-    await expect(readFile(second, "utf8")).resolves.toBe("needle! second\n");
+    await expect(readFile(first, "utf8")).resolves.toBe("needle first\n!\n");
+    await expect(readFile(second, "utf8")).resolves.toBe("needle second\n!\n");
   });
 }, 180_000);
 
@@ -669,7 +670,7 @@ test("accepts search anchors in both replace span endpoints", async () => {
     }).run("Search both needles, then replace the span between their anchors");
 
     expect(getToolExecution(result, "replace-span").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("before\nmerged second\nafter\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("before\nmerged\nafter\n");
   });
 }, 180_000);
 

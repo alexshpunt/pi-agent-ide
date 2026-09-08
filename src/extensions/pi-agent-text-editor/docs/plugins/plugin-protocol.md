@@ -45,7 +45,7 @@ A mutation may read and change more than one Resource. Core expands global ancho
 
 For built-in span mutations, a plain source path only scopes anchor resolution. It never selects the full document by itself. A typed source path can supply the selection ranges, so `replace`, `delete`, and `insert` may omit their source anchor. `copy` and `move` may omit their source start only when the typed path yields one usable span in one Resource.
 
-Supplying both start and end fields creates one natural span from the left edge of the start selection through the right edge of the end selection. Both endpoints must resolve to one Resource and one usable range. Without an end field, supported selection operations may apply independently to several ranges and Resources.
+Supplying both start and end fields selects whole containing lines inclusively. Endpoint types may differ, but each must resolve uniquely in the same Resource. Reversed endpoints are rejected before writes, not reordered. Without an end field, exact selections keep their fragment extent; supported selection operations may apply independently to several ranges and Resources. Insert uses containing-line boundaries, including for SEARCH match selections, and inserts once per distinct insertion line.
 
 A mutation may return `afterWrite` when it must update related state only after all Resource writes, post-edit handlers, and final rereads succeed. Direct and batched calls await it before reporting success. If it fails, the tool reports `POST_WRITE_FAILED` with an applied effect because the Resource writes have already completed. Mutation previews do not run it.
 
@@ -77,7 +77,7 @@ Core snapshots committed guards once per invocation and runs them after all anch
 
 All Resource resolution, reads, target and anchor checks, change application, and guards finish before the first write. Those failures have no applied effect. If a later Resource write fails, core attempts to restore the failed Resource and every Resource already written, and reports any rollback failures.
 
-`copy` and `move` always need a destination selection. `target` supplies its Resource scope and defaults to the source scope; it does not select a position by itself. `targetStart`, or a typed `target` with an implicit range, supplies the destination selection. Without `targetEnd`, the tools insert after its natural end. With `targetEnd`, they replace the inclusive natural destination span. The old destination `anchor` field does not exist.
+`copy` and `move` always need a destination selection. `target` supplies its Resource scope and defaults to the source scope; it does not select a position by itself. `targetStart`, or a typed `target` with an implicit range, supplies the destination selection. Without `targetEnd`, the tools insert after its last containing line. With `targetEnd`, they replace the inclusive whole-line destination range using independently resolved, forward-ordered endpoints. The old destination `anchor` field does not exist.
 
 ## Resource resolvers
 
@@ -105,7 +105,7 @@ interface TextAnchorResolverRegistration {
 
 `resources` is optional. It is the public `TextTargetResolver` contract from `pi-agent-text`. It recognizes the same opaque value before any Resource is read and may return ordered Resource sources with half-open character ranges. `not-handled` leaves normal source resolution unchanged; rejection, failure, or malformed output stops the mutation before writes. The editor validates and uses this typed result. It does not parse the resolver's string format.
 
-The same typed value may appear in an anchor field or in a mutation source field such as `path` or `target`. A source-field result supplies implicit ranges for that field's anchor. When a compatible explicit anchor is also present, the editor resolves it against every selected Resource and unions its natural range with the implicit ranges. Resource-set mismatches, incompatible selection shapes, ambiguous ranges, and overlaps are rejected before persistence.
+The same typed value may appear in an anchor field or in a mutation source field such as `path` or `target`. A source-field result supplies implicit ranges only for that source field's first anchor (start or targetStart), not its end boundary. A sibling anchor may determine the Resource but never contributes its selection to another endpoint. When a compatible explicit anchor is also present, the editor resolves it against every selected Resource and unions its natural range with the implicit ranges. Resource-set mismatches, incompatible selection shapes, ambiguous ranges, and overlaps are rejected before persistence.
 
 `api.addAnchorResolver()` registers one resolver with presentation metadata:
 
@@ -139,6 +139,14 @@ When an editor tool is active, core may render:
 Anchor descriptions are grouped as Major, Auxiliary, and Constant. Each resolver owns its complete prose, examples, and restrictions. Lazy descriptions are evaluated for each prompt snapshot and may return `undefined`.
 
 No anchor section is rendered when no active resolver supplies a description or no editor tool is active.
+
+## Successful mutation receipts
+
+Successful results identify the applied operation and the number of text changes in that file. These counts describe engine changes, not every possible match in the workspace. Batched results may combine operations for one file; rejected calls are not included in successful operation counts.
+
+The displayed text is the resulting file region, labelled with its line range. It is not a proposal or a before/after diff. The existing excerpt selection and size remain unchanged.
+
+Post-edit integrations can contribute `formatting: { status, formatter? }`. Status is `disabled`, `unavailable`, `skipped-syntax`, `unchanged`, `changed`, `failed`, or `not-reported`. A missing report remains unknown. Formatter failure does not turn a saved edit into an unapplied edit. Formatting metadata does not claim diagnostics or tests passed.
 
 ## Setup validation
 

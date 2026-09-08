@@ -54,18 +54,20 @@ for (const mode of ["focused", "view", "combined", "javascript"]) {
       }).run("Read the first diagnostic report, fix the type error, and read the updated report.");
       for (const id of ["first", "edit", "clean"])
         expect(getToolExecution(result, id).isError).not.toBe(true);
-      expect(getToolResultText(result, "first")).toContain("lsp:2322");
+      expect(getToolResultText(result, "first")).toContain("typescript-language-server:2322");
       expect(getToolResultText(result, "first")).not.toMatch(
-        /lsp: (pending|snapshot|unversioned|unavailable)/u,
+        /(?:lsp|typescript-language-server): (pending|snapshot|unversioned|unavailable)/u,
       );
-      expect(getToolResultText(result, "edit")).not.toMatch(/<!-- lsp:|File diagnostics:/u);
+      expect(getToolResultText(result, "edit")).not.toContain("<!-- typescript-language-server:");
       expect(getToolResultText(result, "clean")).not.toMatch(
-        /lsp:2322|lsp: (pending|snapshot|unavailable)/u,
+        /typescript-language-server:2322|(?:lsp|typescript-language-server): (pending|snapshot|unavailable)/u,
       );
       expect(await readFile(path.join(cwd, name), "utf8")).toContain("= 0;");
-      expect(JSON.stringify(result.providerRequests.map((request) => request.messages))).toMatch(
-        /File diagnostics:[^}]*lsp 0 error/u,
-      );
+      // Only the first nonempty report adds automatic model context; clearing it stays silent.
+      const notifications = ((result.providerRequests.at(-1)?.messages ?? []) as { role: string }[])
+        .filter((message) => message.role === "user")
+        .slice(1);
+      expect(notifications).toHaveLength(1);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -95,7 +97,7 @@ test("clangd push reports remain usable snapshots without TypeScript commands", 
     }).run("Read the latest C++ diagnostic snapshot without claiming a completed check.");
     expect(getToolExecution(result, "cpp").isError).not.toBe(true);
     const output = getToolResultText(result, "cpp");
-    expect(output).toContain("lsp: snapshot");
+    expect(output).toContain("clangd: snapshot");
     expect(output).toContain("completion is unknown");
     expect(output).not.toContain("No diagnostics.");
   } finally {

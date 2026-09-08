@@ -72,8 +72,8 @@ test("read shows LSP diagnostics without changing the source", async () => {
 
     const rendered = getToolResultText(result, "read-lsp-diagnostics");
     expect(rendered).toContain('const value: number = "wrong"');
-    expect(rendered).toContain("<!-- lsp:");
-    expect(rendered).toContain("[ERROR] lsp:2322:");
+    expect(rendered).toContain("<!-- tsc:");
+    expect(rendered).toContain("[ERROR] tsc:2322:");
     expect(rendered).not.toContain("export function getValue");
 
     const message = getToolResultMessage(result, "read-lsp-diagnostics");

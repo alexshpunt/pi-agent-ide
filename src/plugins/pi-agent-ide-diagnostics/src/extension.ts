@@ -106,25 +106,10 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
         },
       });
       api.describe(
-        "`diagnostics:<path>` returns lint and LSP diagnostics with five lines of source context on each side. The `diagnostics` view adds the same diagnostics alongside a normal file read. Both reuse background results, wait briefly for current checks, and report pending, unavailable, snapshot, or unversioned sources explicitly. A snapshot is the latest push update, not a completed check; an empty snapshot does not mean the file is clean.",
+        'diagnostics:<path> — lint and language-server diagnostics. views: ["diagnostics"] — diagnostics alongside source text. Diagnostic sources name the actual reporting tools. Automatic notices include findings only and wake an idle agent as soon as results arrive; silence does not prove the file is clean. Use an explicit diagnostic read to check readiness. Pending results and snapshots are not completed checks; an empty snapshot does not prove the file is clean.',
       );
       api.addPromptGuideline(
         "Use read with `diagnostics:<path>` or the `diagnostics` view for per-file diagnostics instead of running equivalent checks through Bash. Project builds and tests remain separate verification.",
-      );
-      api.addPromptGuideline(
-        'You can use read with `views: ["diagnostics"]` to add lint and LSP diagnostics alongside file content.',
-      );
-
-      api.addPromptGuideline(
-        "Treat diagnostic snapshots as incomplete observations, not completed checks; an empty snapshot is not evidence that the file is clean.",
-      );
-
-      api.addPromptGuideline(
-        "Explicit formatter, linter, and LSP overrides can match exact basenames with fileNames, such as Dockerfile or CMakeLists.txt. LSP requireRootMarker limits a server to files below one of its rootMarkers inside the project, keeping framework servers from claiming unrelated files. LSP initializationOptions can use {project} in string values for project-local plugin paths. Regex diagnostic parsers support multiline output and columnBase: 0 for zero-based tool columns.",
-      );
-
-      api.addPromptGuideline(
-        "For missing formatting or diagnostics, check native project configuration and installed executables before adding IDE overrides. Built-ins find tools in node_modules/.bin, Python virtualenv bin directories (Scripts on Windows), and vendor/bin; Windows executable suffixes follow PATHEXT. /pi-agent-ide-doctor reports detected tools and missing dependencies. A detected runtime does not prove its formatter modules or language server can run.",
       );
     },
   } satisfies ReadPlugin;

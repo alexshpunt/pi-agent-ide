@@ -82,7 +82,7 @@ function createMatchResolver(
         payload: {
           request: { ...request, query: result.query },
           ...result,
-          recipe,
+          recipe: { ...recipe, originalQuery: request.query },
         } satisfies TextPayload,
       };
     },

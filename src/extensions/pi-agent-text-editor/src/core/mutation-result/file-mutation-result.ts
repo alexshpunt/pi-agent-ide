@@ -11,6 +11,31 @@ export interface MutationAnchor {
 /** Successful mutation output style selected from the anchors used by the edit. */
 export type MutationResultPresentation = "plain" | "major-anchor";
 
+/** Observed formatter outcome; it does not imply diagnostics or tests passed. */
+export interface MutationFormatting {
+  readonly status:
+    | "disabled"
+    | "unavailable"
+    | "skipped-syntax"
+    | "unchanged"
+    | "changed"
+    | "failed"
+    | "not-reported";
+  readonly formatter?: string;
+}
+
+/** Plain-text, per-file status shown beside diff counts and retained in history. */
+export interface MutationDiffStatus {
+  readonly text: string;
+  readonly tone?: "muted" | "success" | "warning" | "error";
+}
+
+/** One successful operation contributing changes to this file. */
+export interface MutationOperationReceipt {
+  readonly operation: string;
+  readonly changes: number;
+}
+
 export interface MutationSnapshot {
   readonly content: string;
 }
@@ -164,6 +189,19 @@ export interface FileMutationData {
   isPartial?: boolean | undefined;
 
   // ── Result fields ──
+
+  /** Successful operations represented by this result, including batched calls. */
+  operations?: readonly MutationOperationReceipt[] | undefined;
+  /** Formatter outcome reported by the post-edit integration. */
+  formatting?: MutationFormatting | undefined;
+
+  /** Display-only status contributions from post-edit handlers, in registration order. */
+  diffStatuses?: readonly MutationDiffStatus[] | undefined;
+
+  /** Original character spans owned by other calls in the same batch; display only. */
+  diffPeerRanges?:
+    | readonly { readonly from: number; readonly to: number; readonly insert: string }[]
+    | undefined;
   diffs?: string[] | undefined;
   files?: FileChange[] | undefined;
   warnings?: Warning[] | undefined;

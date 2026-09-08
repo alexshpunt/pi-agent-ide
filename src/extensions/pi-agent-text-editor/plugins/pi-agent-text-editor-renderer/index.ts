@@ -22,7 +22,11 @@ export default async function registerTextEditorRenderer(pi: ExtensionAPI): Prom
     setup(api) {
       const tools = new Set<string>();
       api.onMutationTool(({ name }) => tools.add(name));
-      registerMutationRenderers(api, animationPressure);
+      registerMutationRenderers(
+        api,
+        animationPressure,
+        () => pi.getFlag("pi-agent-ide-no-animations") !== true,
+      );
       pi.on("tool_result", (event) => {
         if (
           !tools.has(event.toolName) ||

@@ -86,7 +86,7 @@ test("TypeScript push diagnostics appear in focused, annotated, and combined rea
     for (const call of calls) {
       expect(getToolExecution(result, call.id).isError).toBe(false);
       const output = getToolResultText(result, call.id);
-      expect(output).toContain("lsp:2322");
+      expect(output).toContain("typescript-language-server:2322");
       expect(output).toContain("Type 'string' is not assignable to type 'number'.");
     }
     const combined = getToolResultText(result, "combined");

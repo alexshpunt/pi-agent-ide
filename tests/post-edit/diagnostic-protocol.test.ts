@@ -110,7 +110,7 @@ test("push without a document version is explicitly unverified", async () => {
   const result = (await store.read(file, { cwd })).results[0];
   expect(result.status).toBe("snapshot");
   expect(result.reason).toContain("omitted the document version");
-  expect((await store.takeNotifications(cwd)).join()).toContain("snapshot; completion unknown");
+  expect((await store.takeNotifications(cwd))[0]?.results[0]).toEqual(result);
 });
 
 test("a server that ignores shutdown cannot hold the session open forever", async () => {

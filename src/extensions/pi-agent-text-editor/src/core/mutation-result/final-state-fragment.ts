@@ -48,6 +48,8 @@ export function renderFinalStateFragment(fmr: FileMutationResult, path: string):
     }
 
     const range = requiredValue(ranges[rangeIndex]);
+
+    result.push(`Final text, lines ${range.start}–${range.end}:`);
     for (let lineNumber = range.start; lineNumber <= range.end; lineNumber += 1) {
       const content = lines[lineNumber - 1] ?? "";
       const metadata = metadataForLine(lineNumber, fmr.hints, visibleRanges, allowedSyntaxHints);

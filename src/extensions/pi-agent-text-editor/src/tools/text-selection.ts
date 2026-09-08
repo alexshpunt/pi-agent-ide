@@ -50,6 +50,7 @@ export function singleAnchorSpan(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
+  wholeLines = false,
 ): TextAnchorSpan {
   if (anchors.size !== 1) {
     throw new Error(`Anchor ${field} must resolve in one resource.`);
@@ -63,7 +64,9 @@ export function singleAnchorSpan(
     const selectedRange = requiredValue(anchor.ranges[0]);
     const document = context.documentFor(source);
     const exactRange = selectionRange(context, source, selectedRange);
-    const endLine = linewiseSelectionEndLine(selectedRange);
+    const endLine = wholeLines
+      ? containingEndLine(selectedRange)
+      : linewiseSelectionEndLine(selectedRange);
     if (endLine !== undefined) {
       const range = document.lineRange(selectedRange.start.lineNumber, endLine);
       return {
@@ -89,7 +92,7 @@ export function singleAnchorSpan(
   };
 }
 
-/** Builds a natural range from the left edge of start through the right edge of end. */
+/** A single anchor keeps its own extent; two ordered anchors select inclusive whole lines. */
 export function anchorSpanRange(
   context: TextMutationContext,
   starts: ReadonlyMap<string, TextAnchor>,
@@ -102,15 +105,18 @@ export function anchorSpanRange(
   if (start.source !== end.source) {
     throw new Error(`Anchors ${startField} and ${endField} must resolve in one resource.`);
   }
-  if (start.from > end.to) {
+  if (start.from > end.from) {
     throw new Error(`Anchor ${startField} must not come after ${endField}.`);
   }
+  if (ends === undefined) return start;
+  const first = singleAnchorSpan(context, starts, startField, true);
+  const last = singleAnchorSpan(context, ends, endField, true);
   return {
-    source: start.source,
-    from: start.from,
-    to: end.to,
-    selection: start.selection || end.selection,
-    preservesTrailingLineBreak: end.preservesTrailingLineBreak,
+    source: first.source,
+    from: first.from,
+    to: last.to,
+    selection: false,
+    preservesTrailingLineBreak: true,
   };
 }
 
@@ -120,12 +126,13 @@ export function targetText(context: TextMutationContext, source: string, text: s
   return text.replace(/\r\n|\r|\n/gu, separator);
 }
 
-/** Creates a replacement while preserving a line endpoint's trailing separator. */
+/** Empty text deletes the selection; nonempty text preserves a line endpoint's separator. */
 export function replaceAnchorSpan(
   context: TextMutationContext,
   span: TextAnchorSpan,
   text: string,
 ): { readonly from: number; readonly to: number; readonly insert: string } {
+  if (text === "") return deleteAnchorSpan(context, span);
   const document = context.documentFor(span.source);
   let insert = targetText(context, span.source, text);
   const selected = document.text(span);
@@ -159,18 +166,15 @@ export function deleteAnchorSpan(
   return { from: span.from, to: span.to, insert: "" };
 }
 
-/** Creates an insertion after a selection span or after a line anchor. */
+/** Inserts after the last containing line of one resolved anchor. */
 export function insertionAfterAnchor(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
   insert: string,
 ): readonly [string, { readonly from: number; readonly to: number; readonly insert: string }] {
-  const span = singleAnchorSpan(context, anchors, field);
+  const span = singleAnchorSpan(context, anchors, field, true);
   const normalizedInsert = targetText(context, span.source, insert);
-  if (span.selection) {
-    return [span.source, { from: span.to, to: span.to, insert: normalizedInsert }];
-  }
 
   const lineNumber = span.linewiseEndLine ?? lineAnchor(anchors, field).lineNumber;
   return [
@@ -179,18 +183,15 @@ export function insertionAfterAnchor(
   ];
 }
 
-/** Creates an insertion before a selection span or before a line anchor. */
+/** Inserts before the first containing line of one resolved anchor. */
 export function insertionBeforeAnchor(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
   insert: string,
 ): readonly [string, { readonly from: number; readonly to: number; readonly insert: string }] {
-  const span = singleAnchorSpan(context, anchors, field);
+  const span = singleAnchorSpan(context, anchors, field, true);
   const normalizedInsert = targetText(context, span.source, insert);
-  if (span.selection) {
-    return [span.source, { from: span.from, to: span.from, insert: normalizedInsert }];
-  }
 
   const lineNumber = span.linewiseStartLine ?? lineAnchor(anchors, field).lineNumber;
   return [
@@ -233,15 +234,16 @@ export function selectionChanges(
       (insert.length === 0 ? coalesceAdjacentLinewiseRanges(anchor.ranges) : anchor.ranges).map(
         (range) => {
           const span = selectionRange(context, source, range);
-          const lineSpan = {
-            source,
-            ...span,
-            selection: false,
-            preservesTrailingLineBreak: range.linewise === true && insert.length > 0,
-          };
-          return insert.length === 0 && range.linewise === true
-            ? deleteAnchorSpan(context, lineSpan)
-            : replaceAnchorSpan(context, lineSpan, insert);
+          return replaceAnchorSpan(
+            context,
+            {
+              source,
+              ...span,
+              selection: range.linewise !== true,
+              preservesTrailingLineBreak: range.linewise === true,
+            },
+            insert,
+          );
         },
       ),
     ]),
@@ -261,23 +263,19 @@ export function insertionChanges(
   return new Map(
     [...selections].map(([source, anchor]) => [
       source,
-      anchor.ranges.map((range) => {
+      [
+        ...new Set(
+          anchor.ranges.map((range) => {
+            selectionRange(context, source, range);
+            return before ? range.start.lineNumber : containingEndLine(range);
+          }),
+        ),
+      ].map((line) => {
         const document = context.documentFor(source);
         const normalizedInsert = targetText(context, source, insert);
-        const linewiseEnd = linewiseSelectionEndLine(range);
-        if (linewiseEnd !== undefined) {
-          return before
-            ? document.insertBeforeLine(range.start.lineNumber, normalizedInsert)
-            : document.insertAfterLine(linewiseEnd, normalizedInsert);
-        }
-        const position = before ? range.start : range.end;
-        const at = document.range(
-          position.lineNumber,
-          position.column,
-          position.lineNumber,
-          position.column,
-        );
-        return { ...at, insert: normalizedInsert };
+        return before
+          ? document.insertBeforeLine(line, normalizedInsert)
+          : document.insertAfterLine(line, normalizedInsert);
       }),
     ]),
   );
@@ -314,6 +312,10 @@ function linewiseSelectionEndLine(range: TextSelectionRange): number | undefined
   if (range.linewise !== true) {
     return undefined;
   }
+  return containingEndLine(range);
+}
+
+function containingEndLine(range: TextSelectionRange): number {
   return range.end.column === 0 && range.end.lineNumber > range.start.lineNumber
     ? range.end.lineNumber - 1
     : range.end.lineNumber;

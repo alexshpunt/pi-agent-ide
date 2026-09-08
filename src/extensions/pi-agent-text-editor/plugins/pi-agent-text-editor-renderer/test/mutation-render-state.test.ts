@@ -150,7 +150,7 @@ describe("text mutation render state", () => {
 
     expect(model).toMatchObject({ added: 0, modified: 2, removed: 0 });
     expect(model.rows.map(({ afterLine }) => afterLine).filter(Boolean)).toEqual([
-      18, 19, 20, 21, 22,
+      17, 18, 19, 20, 21, 22,
     ]);
     expect(model.rows.map(({ text }) => text)).toContain("const value19 = formattedContext();");
     expect(model.rows.map(({ text }) => text)).not.toContain("// formatter changed a distant line");

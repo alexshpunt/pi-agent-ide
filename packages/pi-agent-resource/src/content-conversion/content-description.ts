@@ -14,12 +14,5 @@ export function renderContentDescription(
     throw new TypeError("Content provider summary must be one non-empty line");
   }
 
-  return [
-    normalizedSummary,
-    ...descriptions.map(({ id, description }) => `- \`${escapeInlineCode(id)}\` — ${description}`),
-  ].join("\n");
-}
-
-function escapeInlineCode(value: string): string {
-  return value.replaceAll("`", "\\`");
+  return [normalizedSummary, ...descriptions.map(({ description }) => description)].join("\n");
 }

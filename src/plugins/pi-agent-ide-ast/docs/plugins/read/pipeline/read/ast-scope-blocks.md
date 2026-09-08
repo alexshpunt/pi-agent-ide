@@ -6,18 +6,17 @@ The `ast-scope-blocks` plugin identifies structural blocks in source text and at
 
 It is an independently loaded Pi extension. It enriches normal filesystem reads and owns the `ast:` source resolver.
 
-Its `read` handler is registered with this selector:
+The `ast` view adds scope markers to filesystem text. Its read handler maps source positions for explicit `ast:` reads. Its post-read handler handles automatic overflow outlines and adds missing closing scope lines.
 
-```ts
-when: {
-    resolvedBy: "filesystem",
-    contentKind: "text",
-}
-```
+The generated prompt explains these modes and how to read exact source text after an overview.
 
-Core invokes it only for decoded text returned by the filesystem resolver and never for another resolver or non-text content. The plugin preserves the resolved text and adds structural metadata.
+## Automatic overflow overview
 
-Its prompt contribution explains both behaviors and advertises `ast:<path>`.
+When the requested filesystem text exceeds Pi's normal output buffer, the plugin tries a compact outline of the whole read snapshot. It keeps original line numbers, collapses bodies and starts at 12 syntax-tree levels. If the rendered overview still exceeds the buffer, it lowers the depth one level at a time and stops at the first fit. At depth zero only file-level information remains. It parses once and never rereads the file for these attempts.
+
+Small windows stay exact, even in large files. Unsupported files, invalid syntax and unavailable parsers keep normal truncation. The overview is labelled as compressed text; read a small source range when exact implementation text is needed. This mode does not restore the removed `lines` view or change explicit `ast:` depth.
+
+The prompt recommends explicit `ast:<path>` when the agent needs structure to locate a declaration or choose a region. It does not require a structural read when the location or a sufficient edit anchor is already known.
 
 ## Outline source
 

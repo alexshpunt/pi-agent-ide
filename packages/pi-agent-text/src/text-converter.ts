@@ -25,7 +25,7 @@ const textualAppMediaTypes = new Set([
 export function createTextContentConverter(): ContentConverter {
   return {
     id: "text",
-    description: "UTF-8 text.",
+    description: "Text file paths and URLs return their text.",
     tryConvert(input, context) {
       return Promise.resolve(convertText(input, context));
     },

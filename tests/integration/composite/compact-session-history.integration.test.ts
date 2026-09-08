@@ -261,7 +261,9 @@ function toolPanel(screen: string, name: string): string {
   const last = lines.findIndex(
     (line, index) =>
       index > start &&
-      (name === "replace" ? /^\+\d+ ~\d+ -\d+$/u.test(line.trim()) : line.trimEnd().endsWith("╯")),
+      (name === "replace"
+        ? /^\+\d+ ~\d+ -\d+(?: · .*)?$/u.test(line.trim())
+        : line.trimEnd().endsWith("╯")),
   );
   const end = last < 0 ? -1 : last + 1;
   if (start < 0 || end < 0) throw new Error(`Missing ${name} panel:\n${screen}`);

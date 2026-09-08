@@ -19,6 +19,7 @@ import {
   type FileMutationBatchResult,
   FileMutationResult,
   type MutationResultPresentation,
+  type MutationOperationReceipt,
 } from "#src/api/mutation-result.js";
 import {
   isMutationAnchorValue,
@@ -28,7 +29,11 @@ import {
   type TextMutationEdit,
   type TextMutationToolRegistration,
 } from "#src/api/mutation-tool.js";
-import { isTextMutationResultContributionData } from "#src/api/post-edit.js";
+import {
+  isFormattingContribution,
+  isDiffStatusContribution,
+  isTextMutationResultContributionData,
+} from "#src/api/post-edit.js";
 import {
   formatStaleAnchorMessage,
   type StaleAnchorMessageDetails,
@@ -49,7 +54,6 @@ import {
   type ToolCallInterceptionRenderStore,
   withToolCallInterceptionRendering,
 } from "#src/core/tool-call-interceptor/rendering.js";
-import { appendSchemaFieldOrder } from "#src/core/tool-description.js";
 
 import type { TextEditExecutionOutcome } from "#src/api/edit-pipeline.js";
 import type {
@@ -83,7 +87,9 @@ export function createTextTool<TParameters extends TSchema>(
       label: definition.name,
 
       promptSnippet: definition.promptSnippet,
-      description: appendSchemaFieldOrder(definition.description, definition.parameters),
+      promptGuidelines:
+        definition.promptGuidelines === undefined ? undefined : [...definition.promptGuidelines],
+      description: definition.description,
       parameters: definition.parameters,
       prepareArguments: (arguments_) =>
         // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
@@ -116,15 +122,18 @@ export function createTextTool<TParameters extends TSchema>(
     }),
     annotations,
   );
-  Object.defineProperty(tool, "promptGuidelines", {
+  Object.defineProperty(tool, "description", {
     enumerable: true,
-    get(): string[] | undefined {
-      const pluginGuideline = pluginPromptGuideline();
-      const guidelines = [
-        ...(pluginGuideline === undefined ? [] : [pluginGuideline]),
-        ...(definition.promptGuidelines ?? []),
-      ];
-      return guidelines.length === 0 ? undefined : guidelines;
+    get(): string {
+      return [
+        definition.description,
+        definition.source.inherited
+          ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
+          : "",
+        pluginPromptGuideline() ?? "",
+      ]
+        .filter(Boolean)
+        .join("\n");
     },
   });
   return tool;
@@ -195,6 +204,7 @@ async function resolveMutationSources(
   const expandedByAnchor = new Map<string, readonly TextTarget[]>();
   const expandedBySourceField = new Map<string, readonly TextTarget[]>();
   const expandedFromExplicitSource = new Set<string>();
+  const sourceSelections = new Map<string, readonly TextTarget[]>();
   const explicitlyScopedSourceFields = new Set<string>();
   const allKinds = [
     ...new Set((definition.anchors ?? []).flatMap((descriptor) => descriptor.kinds)),
@@ -239,6 +249,7 @@ async function resolveMutationSources(
     const expanded = await resolveTargets(explicit, descriptor.field, explicit);
     if (expanded !== undefined) {
       expandedFromExplicitSource.add(descriptor.field);
+      sourceSelections.set(descriptor.field, expanded);
       expandedBySourceField.set(
         descriptor.field,
         mergeTargets(expandedBySourceField.get(descriptor.field) ?? [], expanded),
@@ -288,14 +299,20 @@ async function resolveMutationSources(
   const anchors = new Map<string, readonly string[]>();
   const implicitTargets = new Map<string, readonly TextTarget[]>();
   for (const descriptor of definition.anchors ?? []) {
-    const targets = expandedBySourceField.get(descriptor.sourceField);
+    const targets = sourceSelections.get(descriptor.sourceField);
+    const firstAnchor = definition.anchors?.find(
+      (anchor) => anchor.sourceField === descriptor.sourceField,
+    );
 
     const hasExplicitAnchor = isMutationAnchorValue(descriptor, input[descriptor.field]);
     const hasImplicitSourceSelection = expandedFromExplicitSource.has(descriptor.sourceField);
     if (!hasExplicitAnchor && !hasImplicitSourceSelection) continue;
+    // A sibling endpoint can identify the file, but must not contribute its
+    // selected ranges to this endpoint. Only a typed source supplies a selection.
     if (
       targets !== undefined &&
-      (hasImplicitSourceSelection || !expandedByAnchor.has(descriptor.field))
+      hasImplicitSourceSelection &&
+      descriptor.field === firstAnchor?.field
     ) {
       implicitTargets.set(descriptor.field, targets);
     }
@@ -759,7 +776,7 @@ export async function executeTextMutation<TParameters extends TSchema>(
     },
   );
 
-  return buildToolResult(core, pipeline, source, context);
+  return buildToolResult(core, pipeline, source, context, definition.name);
 }
 
 export function mutationSources(
@@ -795,6 +812,7 @@ type CompletedTextResource = Extract<
   { readonly kind: "completed" }
 >;
 
+/** Builds a mutation receipt; peer ranges are supplied only for per-call batch display results. */
 export function buildSuccessfulTextMutationResult(
   resource: CompletedTextResource,
   resultSource: string,
@@ -802,6 +820,13 @@ export function buildSuccessfulTextMutationResult(
   diffAfterContent = resource.after.content,
   resultPresentation: MutationResultPresentation = "plain",
   editCount = 1,
+  operations: readonly MutationOperationReceipt[] = [],
+
+  diffPeerRanges?: readonly {
+    readonly from: number;
+    readonly to: number;
+    readonly insert: string;
+  }[],
 ): FileMutationResult {
   const before = resource.before.content;
   const finalAfter = resource.after.content;
@@ -822,6 +847,17 @@ export function buildSuccessfulTextMutationResult(
 
   return new FileMutationResult({
     ...mutationResultData,
+
+    ...(diffPeerRanges === undefined ? {} : { diffPeerRanges }),
+
+    operations,
+    diffStatuses: resource.postEditContributions
+      .map((item) => item.data)
+      .filter(isDiffStatusContribution)
+      .flatMap((item) => item.diffStatuses),
+    formatting: resource.postEditContributions
+      .map((item) => item.data)
+      .find(isFormattingContribution)?.formatting ?? { status: "not-reported" },
     ok: true,
     path: resultSource,
     diffs: [unified.diff],
@@ -868,6 +904,7 @@ async function buildToolResult(
   pipeline: TextEditExecutionOutcome,
   source: string,
   context: ExtensionContext,
+  operation: string,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (pipeline.kind === "failed") {
     return failureToolResult(
@@ -916,6 +953,9 @@ async function buildToolResult(
             edit,
             undefined,
             mutation.resultPresentations.get(resultSource) ?? "plain",
+
+            1,
+            [{ operation, changes: edit.changes.length }],
           ),
         ];
   });

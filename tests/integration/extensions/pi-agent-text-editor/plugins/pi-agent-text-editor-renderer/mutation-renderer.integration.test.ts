@@ -732,7 +732,8 @@ describe("text mutation renderer", () => {
       expect(panel).toContain("19 ~ const value19 = formattedContext();");
       expect(panel).toContain("20 ~ const value20 = computeValue();");
       expect(panel).not.toContain("formatted outside generated viewport");
-      expect(panel).not.toContain("value17");
+      expect(panel).toContain("17   const value17 = 17;");
+      expect(panel).not.toContain("value16");
       expect(panel).not.toContain("value23");
     });
   });

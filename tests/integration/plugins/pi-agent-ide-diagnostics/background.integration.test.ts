@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, test } from "vitest";
 import { generateReadExtensions } from "pi-agent-read/testing";
+import type { DiagnosticEntryData } from "#src/core/diagnostic-entry.js";
+import { PiRun } from "pi-coding-agent-test/base";
 import {
   assistantMessage,
   getToolExecution,
@@ -104,7 +106,7 @@ test("a formatter's syntax rejection keeps the successful edit saved", async () 
   }
 }, 60_000);
 
-test("real Pi edits continue while diagnostics arrive only in model context", async () => {
+test("real Pi receives immediate findings during edits while empty and stale reports stay silent", async () => {
   const root = path.resolve(".agents/tmp/background-integration");
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "project-"));
@@ -125,6 +127,7 @@ test("real Pi edits continue while diagnostics arrive only in model context", as
       conversation: [
         edit("edit-a", "initial", "A"),
         call("started", "diagnostic_control", { action: "started" }),
+        call("unavailable", "diagnostic_control", { action: "unavailable" }),
         edit("edit-b", "A", "B"),
         call("partial", "diagnostic_control", { action: "partial" }),
         call("complete", "diagnostic_control", { action: "complete" }),
@@ -151,14 +154,58 @@ test("real Pi edits continue while diagnostics arrive only in model context", as
     }
     expect(getToolResultText(result, "clean")).toContain("No diagnostics.");
     expect(await readFile(file, "utf8")).toBe("C\n");
-    const requests = JSON.stringify(result.providerRequests);
-    expect(requests).toContain("File diagnostics:");
-    expect(requests).toContain("lsp 1 error");
-    expect(requests).toContain("lint 0 error, 1 warning");
-    expect(requests).toContain("lsp 0 error");
-    expect(result.tuiRenderedOutput).not.toContain("File diagnostics:");
-    // Twelve scripted turns plus the test runner's preflight/postflight reads; late push must not start another turn.
-    expect(result.providerRequests).toHaveLength(14);
+    const captured = await PiRun.open(result.artifacts.run);
+    if (!captured.session) throw new Error("Missing session capture");
+    const notifications = captured.session
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; customType?: string; display?: boolean })
+      .filter((entry) => entry.type === "custom_message" && entry.customType === "ide-diagnostics");
+    // Pending, unavailable, repeated and cleared reports add no automatic messages.
+    expect(notifications).toHaveLength(2);
+    expect(notifications.every((entry) => entry.display === false)).toBe(true);
+    const entries = captured.session
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type: string;
+            customType?: string;
+            message?: { toolCallId?: string };
+          },
+      );
+    // The UI receives the finding while the control tool is still waiting, not at the next model call.
+    expect(
+      entries.findIndex((entry) => entry.customType === "ide-diagnostic-summary"),
+    ).toBeLessThan(entries.findIndex((entry) => entry.message?.toolCallId === "partial"));
+    const lastMessages = result.providerRequests.at(-1)?.messages as { role: string }[];
+    expect(lastMessages.filter((message) => message.role === "user")).toHaveLength(3);
+    const summaries = captured.session
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as { type: string; customType?: string; data?: DiagnosticEntryData },
+      )
+      .filter((entry) => entry.type === "custom" && entry.customType === "ide-diagnostic-summary");
+    expect(summaries.map((entry) => entry.data)).toEqual([
+      {
+        filePath: "example.ts",
+        sources: [
+          { source: "lint", status: "ready", counts: { error: 0, warning: 1, info: 0, hint: 0 } },
+        ],
+      },
+      {
+        filePath: "example.ts",
+        sources: [
+          { source: "lsp", status: "ready", counts: { error: 1, warning: 0, info: 0, hint: 0 } },
+          { source: "lint", status: "ready", counts: { error: 0, warning: 1, info: 0, hint: 0 } },
+        ],
+      },
+    ]);
+    // Thirteen scripted turns plus preflight/postflight; duplicate and empty updates add no turns.
+    expect(result.providerRequests).toHaveLength(15);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
-import { getToolResultText } from "pi-coding-agent-test";
+import { getToolExecution, getToolExecutionDetails, getToolResultText } from "pi-coding-agent-test";
 import { generateReadExtensions } from "pi-agent-read/testing";
 import { afterAll, expect, test } from "vitest";
 
@@ -104,6 +104,12 @@ test("an edit returns the formatter result instead of the requested intermediate
 
     expect(await readFile(file, "utf8")).toBe(formatted);
     expectTextToolDiff(scenario, fileName, before, formatted);
+    expect(
+      getToolExecutionDetails(getToolExecution(scenario.result, scenario.mutationCallId)),
+    ).toMatchObject({
+      results: [{ data: { formatting: { status: "changed", formatter: "node" } } }],
+    });
+    expect(scenario.result.tuiRenderedOutput).toContain("(node)");
 
     const output = getToolResultText(scenario.result, scenario.mutationCallId);
     expect(output).toContain("export const value = { answer: 2 };");

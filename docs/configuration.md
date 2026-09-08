@@ -34,6 +34,31 @@ A project config is useful for repository-specific choices. The global config ap
 
 Restart Pi or use `/reload` after changing extension selection. Search timeout settings are read for every search call.
 
+Built-in entry modules are imported only after selection. Disabled built-ins, including those disabled through a dependency, are not imported by the catalog. Selected built-ins still register in catalog order. Shared libraries used by a selected built-in may still load.
+
+## Animations and post-edit processing
+
+Start Pi with either or both flags:
+
+```sh
+pi --pi-agent-ide-no-animations --pi-agent-ide-no-post-processing
+```
+
+Both settings also belong in `extensions.json`:
+
+```json
+{
+  "noAnimations": true,
+  "noPostProcessing": true
+}
+```
+
+Both default to `false`. A project boolean overrides the global boolean, including an explicit `false`. A command-line flag forces its setting on for that invocation. Restart Pi or reload after changing the config.
+
+`noAnimations` skips IDE mutation preview playback, interpolation timers and preview preparation. The pending tool header and final static diff remain visible. It does not change model-facing results or disable Pi's own activity indicator.
+
+`noPostProcessing` skips syntax checks used by the post-edit formatting gate, automatic formatting, and automatic diagnostic scheduling after an edit. Requested edits and their safety checks still run. Explicit diagnostic and AST reads remain available and may run their normal tools. This is useful when a benchmark requires exact byte preservation without automatic formatting or diagnostic cache files.
+
 ## Search timeout
 
 The complete `search` call has a 30-second timeout by default. This covers resolver work and result formatting. When it expires, the active resolver is cancelled and the agent receives this error:

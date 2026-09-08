@@ -88,7 +88,7 @@ test("shows read intent in one compact line and exact arguments when expanded", 
     path: "src/features/authentication/extra-long-authentication-source.ts",
     offset: 40,
     limit: 30,
-    views: ["lines", "anchors"],
+    views: ["anchors"],
   };
   const compact = renderCall(arguments_, plainTheme, {
     expanded: false,
@@ -116,7 +116,7 @@ test("shows read intent in one compact line and exact arguments when expanded", 
   );
   expect(expandedText).toContain("offset=40");
   expect(expandedText).toContain("limit=30");
-  expect(expandedText).toContain("views=lines,anchors");
+  expect(expandedText).toContain("views=anchors");
 });
 
 test("wraps long source rows without changing the saved line", () => {

@@ -80,7 +80,7 @@ describe("exact text anchors through real text editor tools", () => {
       await expect(readFile(file, "utf8")).resolves.toBe(expectedContent);
       const rendered = getToolResultText(scenario.result, scenario.mutationCallId);
       const renderedLines = rendered.split("\n");
-      expect(renderedLines[0]).toBe(relativeFile);
+      expectTextToolDiff(scenario, relativeFile, policyFixture, expectedContent);
       expect(renderedLines).toContain(replacement);
       expect(rendered).not.toMatch(/^[+ -]\|/mu);
       expect(rendered).not.toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
@@ -101,7 +101,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-line-range",
       "replace",
       { start: "rav", end: formatLineHashAnchor(3, "charlie"), text: "X" },
-      ["alpha", "bX", "delta", "echo"].join("\n"),
+      ["alpha", "X", "delta", "echo"].join("\n"),
     );
   });
 

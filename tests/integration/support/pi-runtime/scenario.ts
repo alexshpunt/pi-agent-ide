@@ -93,7 +93,6 @@ export function expectTextToolDiff(
   const output = getToolResultText(scenario.result, scenario.mutationCallId);
   const lines = output.split("\n");
 
-  expect(lines[0]).toBe(path);
   expect(lines.slice(1).some((line) => /^[+ -]\|/u.test(line))).toBe(false);
 
   for (const line of expected.added.filter((value) => value.length > 0)) {

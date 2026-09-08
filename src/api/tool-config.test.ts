@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   parseFormattersConfig,
+  configuredExecutableName,
   parseLintersConfig,
   resolveToolConfigPaths,
   runConfiguredFormatter,
@@ -21,6 +22,13 @@ afterEach(async () => {
 });
 
 describe("versioned tool config", () => {
+  it.each([
+    ["oxfmt", "oxfmt"],
+    ["/project/node_modules/.bin/prettier", "prettier"],
+    ["C:\\tools\\typescript-language-server.cmd", "typescript-language-server.cmd"],
+  ])("labels the configured executable %s without arguments", (command, expected) => {
+    expect(configuredExecutableName([command, "--private-argument"])).toBe(expected);
+  });
   it("keeps the written edit when an in-place formatter fails after writing", async () => {
     await mkdir(root, { recursive: true });
     const directory = await mkdtemp(path.join(root, "failed-format-"));

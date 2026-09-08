@@ -6,6 +6,11 @@ import {
   isIdePluginRegistrationRequest,
 } from "#src/api/plugin-protocol.js";
 import { createIdeCore } from "#src/core/ide-core.js";
+import {
+  diagnosticEntryData,
+  DIAGNOSTIC_ENTRY_TYPE,
+  registerDiagnosticEntryRenderer,
+} from "#src/core/diagnostic-entry.js";
 import { runIdePostEditGate } from "#src/post-edit/gate.js";
 import { resetRegistry } from "#src/toolchain/registry.js";
 import { connectTextEditorPostEditHandler } from "pi-agent-text-editor/api/post-edit";
@@ -27,6 +32,7 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
   });
   resetRegistry();
   const core = createIdeCore();
+  registerDiagnosticEntryRenderer(pi);
   const unsubscribePlugins = pi.events.on(IDE_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isIdePluginRegistrationRequest(request)) {
       throw new Error("Invalid pi-agent-ide plugin registration request");
@@ -41,7 +47,10 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
   });
   connectTextEditorPostEditHandler(pi, {
     id: "pi-agent-ide",
-    handler: runIdePostEditGate,
+    handler: (transaction) =>
+      pi.getFlag("pi-agent-ide-no-post-processing") === true
+        ? Promise.resolve({ formatting: { status: "disabled" } })
+        : runIdePostEditGate(transaction),
   });
   pi.events.emit(IDE_CORE_READY_EVENT, {
     protocol: IDE_PROTOCOL,
@@ -54,6 +63,7 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
     id: "ide-diagnostics",
     setup(api) {
       api.onDidEdit((completion) => {
+        if (pi.getFlag("pi-agent-ide-no-post-processing") === true) return;
         if (path.isAbsolute(completion.resourceSource)) {
           core.diagnostics.schedule(completion.resourceSource, completion.after.content, {
             cwd: completion.cwd,
@@ -62,22 +72,34 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
       });
     },
   });
-  pi.on("context", async (event, ctx) => {
-    const lines = await core.diagnostics.takeNotifications(ctx.cwd);
-    if (lines.length === 0) return;
-    // Context-only delivery cannot wake an idle agent or create visible transcript rows.
-    return {
-      messages: [
-        ...event.messages,
-        {
-          role: "custom" as const,
-          customType: "ide-diagnostics",
-          display: false,
-          content: `File diagnostics:\n${lines.join("\n")}`,
-          timestamp: Date.now(),
-        },
-      ],
-    };
+  let delivery = Promise.resolve();
+  let closed = false;
+  const isClosed = () => closed;
+  const unsubscribeDiagnostics = core.diagnostics.onDidChange((cwd) => {
+    delivery = delivery
+      .then(async () => {
+        if (closed) return;
+        const notifications = await core.diagnostics.takeNotifications(cwd);
+        if (isClosed() || notifications.length === 0) return;
+        pi.sendMessage(
+          {
+            customType: "ide-diagnostics",
+            display: false,
+            content: `File diagnostics:\n${notifications.map((item) => item.text).join("\n")}`,
+          },
+          { triggerTurn: true, deliverAs: "steer" },
+        );
+        for (const notification of notifications) {
+          pi.appendEntry(DIAGNOSTIC_ENTRY_TYPE, diagnosticEntryData(notification));
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Diagnostic delivery failed", error);
+      });
+  });
+  pi.on("session_shutdown", () => {
+    closed = true;
+    unsubscribeDiagnostics();
   });
 
   await core.waitForPendingPlugins();

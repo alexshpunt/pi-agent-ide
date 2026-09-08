@@ -333,6 +333,9 @@ export function withToolCallInterceptionRendering<TParameters extends TSchema, T
 
   return {
     ...definition,
+    get description() {
+      return definition.description;
+    },
     get promptGuidelines() {
       return definition.promptGuidelines;
     },

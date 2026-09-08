@@ -94,7 +94,7 @@ test("background lint reports fixable errors without changing the edited file", 
     expect(output).toContain("export const value = 'after'");
     expect(output).not.toContain("<!-- lint:");
     expect(getToolResultText(scenario.result, scenario.postflightCallIds[0])).toContain(
-      "lint:quotes",
+      "eslint_d:quotes",
     );
   });
 }, 60_000);

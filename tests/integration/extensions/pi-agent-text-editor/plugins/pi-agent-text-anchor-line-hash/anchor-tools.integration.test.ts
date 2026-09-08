@@ -124,7 +124,7 @@ async function runLineHashScenario(
       tool,
       arguments: toolArguments,
     });
-    const { result, mutationCallId, preflightCallIds } = scenario;
+    const { result, mutationCallId, preflightCallIds, postflightCallIds } = scenario;
     const preflight = preflightCallIds.map((id) => getToolResultText(result, id)).join("\n");
 
     for (const expectedAnchor of expectedAnchors) {
@@ -133,8 +133,7 @@ async function runLineHashScenario(
 
     expect(getToolExecution(result, mutationCallId).isError).toBe(false);
     expectTextToolDiff(scenario, relativeFile, content, expectedContent);
-    const finalState = getToolResultText(result, mutationCallId);
-    expect(finalState.split("\n")[0]).toBe(relativeFile);
+    const finalState = postflightCallIds.map((id) => getToolResultText(result, id)).join("\n");
     expect(finalState).toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
     expect(finalState).not.toMatch(/^[+ -]\|/mu);
 

@@ -175,6 +175,54 @@ export class SearchSessionStore {
     return session;
   }
 
+  /** Repeats each referenced search once, keeping its original scope, limits and fallback rules. */
+  public async observeAfterEdit(
+    values: readonly unknown[],
+    signal?: AbortSignal,
+  ): Promise<
+    readonly {
+      sessionId: string;
+      query: string;
+      scope: Record<string, unknown>;
+      matches?: number;
+      complete?: boolean;
+      notices?: readonly string[];
+      error?: string;
+    }[]
+  > {
+    const ids = new Set(
+      values.flatMap((value) => {
+        const anchor = typeof value === "string" ? parseSearchAnchor(value) : undefined;
+        return anchor === undefined ? [] : [anchor.id];
+      }),
+    );
+    const observations = [];
+    for (const id of ids) {
+      const session = this.#sessions.get(id);
+      if (session === undefined) continue;
+      const base = {
+        sessionId: id,
+        query: session.recipe.originalQuery ?? session.query,
+        scope: normalizeRecipe(session.recipe, session.cwd),
+      };
+      try {
+        const result = await runSearchRecipe(session.recipe, session.cwd, signal);
+        observations.push({
+          ...base,
+          matches: result.matches.length,
+          complete: result.complete,
+          notices: result.notices,
+        });
+      } catch (error) {
+        observations.push({
+          ...base,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return observations;
+  }
+
   public anchorResolver(): TextAnchorResolver {
     return {
       id: "search",

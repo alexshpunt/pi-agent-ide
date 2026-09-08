@@ -29,13 +29,8 @@ export default async function registerWeb(pi: ExtensionAPI): Promise<void> {
         preserveTruncatedOutput: true,
       });
       api.describe(() =>
-        renderContentDescription(
-          "Reads HTTP(S) URLs, automatically retrying failed reads or empty HTML in a local browser.",
-          readHost.listDescriptions(),
-        ),
+        renderContentDescription("HTTP(S) URL — remote content.", readHost.listDescriptions()),
       );
-
-      api.addPromptGuideline("Use read with the plain HTTP(S) URL; browser fallback is automatic.");
     },
   } satisfies ReadPlugin;
 

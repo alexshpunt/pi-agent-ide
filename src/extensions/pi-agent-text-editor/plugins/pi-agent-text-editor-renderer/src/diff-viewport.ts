@@ -5,6 +5,9 @@ export const COMPACT_BODY_ROWS = 12;
 export interface ViewportRow {
   readonly row?: DiffRow;
   readonly omitted?: number;
+
+  /** Changed rows hidden by compact presentation, available when expanded. */
+  readonly omittedChanged?: number;
 }
 
 export function compactViewport(model: DiffModel): readonly ViewportRow[] {
@@ -17,11 +20,17 @@ export function compactViewport(model: DiffModel): readonly ViewportRow[] {
   const selected: ViewportRow[] = model.rows.slice(start, end).map((row) => ({ row }));
 
   if (start > 0) {
-    selected[0] = { omitted: start };
+    selected[0] = {
+      omitted: start + 1,
+      omittedChanged: model.rows.slice(0, start + 1).filter((row) => row.changed).length,
+    };
   }
 
   if (end < model.rows.length) {
-    selected[selected.length - 1] = { omitted: model.rows.length - end };
+    selected[selected.length - 1] = {
+      omitted: model.rows.length - end + 1,
+      omittedChanged: model.rows.slice(end - 1).filter((row) => row.changed).length,
+    };
   }
 
   return selected;

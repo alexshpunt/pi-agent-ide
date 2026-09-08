@@ -50,7 +50,10 @@ export interface ReadCore {
 export function createReadCore(): ReadCore {
   const pendingPlugins = new Set<Promise<void>>();
   const plugins = new Map<string, RegisteredPlugin>();
-  const read = createReadTool(() => renderPromptGuidelines(plugins));
+  const read = createReadTool(
+    () => renderPromptGuidelines(plugins),
+    () => renderPluginPromptGuideline(plugins),
+  );
   let registrationQueue = Promise.resolve();
 
   return {
@@ -331,15 +334,13 @@ function renderPluginPromptGuideline(
     const description = renderDescriptionSource(source);
 
     if (description !== undefined) {
-      entries.push(renderPromptEntry(registeredPlugin.plugin.id, description));
+      entries.push(description);
     }
   }
 
   return entries.length === 0
     ? undefined
-    : indentGuidelineContinuation(
-        ["Read supports these installed protocols:", ...entries].join("\n"),
-      );
+    : [...new Set(entries.flatMap((entry) => entry.split("\n")))].join("\n");
 }
 
 function normalizeDescriptionSource(value: unknown): PromptDescriptionSource {
@@ -389,25 +390,4 @@ function normalizeDescription(value: unknown): string {
   }
 
   return description;
-}
-
-function renderPromptEntry(pluginId: string, description: string): string {
-  const [firstLine, ...continuationLines] = description.split("\n");
-
-  return [
-    `- \`${escapeInlineCode(pluginId)}\` — ${firstLine ?? ""}`,
-    ...continuationLines.map((line) => `  ${line}`),
-  ].join("\n");
-}
-
-function indentGuidelineContinuation(guideline: string): string {
-  const [firstLine, ...continuationLines] = guideline.split("\n");
-  return [
-    firstLine ?? "",
-    ...continuationLines.map((line) => (line.length === 0 ? line : `  ${line}`)),
-  ].join("\n");
-}
-
-function escapeInlineCode(value: string): string {
-  return value.replaceAll("`", "\\`");
 }

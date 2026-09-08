@@ -1,4 +1,4 @@
-import { runConfiguredFormatter } from "pi-agent-ide/api/tool-config";
+import { configuredExecutableName, runConfiguredFormatter } from "pi-agent-ide/api/tool-config";
 
 import { FormatterCommandRegistry } from "./registry.js";
 
@@ -24,14 +24,19 @@ export function createFormatter(): Formatter {
       const formatter = registry.resolve(filePath, context.cwd);
 
       if (formatter === undefined) {
-        return { ok: true, edits: 0 };
+        return { ok: true, edits: 0, formatter: null };
       }
 
-      const result = await runConfiguredFormatter(formatter, {
-        projectRoot: context.cwd,
-        filePath,
-      });
-      return { ok: result.ok, edits: result.changed ? 1 : 0 };
+      const name = configuredExecutableName(formatter.run.command);
+      try {
+        const result = await runConfiguredFormatter(formatter, {
+          projectRoot: context.cwd,
+          filePath,
+        });
+        return { ok: result.ok, edits: result.changed ? 1 : 0, formatter: name };
+      } catch {
+        return { ok: false, edits: 0, formatter: name };
+      }
     },
   };
 }

@@ -129,7 +129,7 @@ test("shows included views once in the real read panel", async () => {
             toolCall({
               id: "read-views",
               name: "read",
-              arguments: { path: fileName, views: ["lines", "anchors"] },
+              arguments: { path: fileName, views: ["anchors"] },
             }),
           ],
           { stopReason: "toolUse" },

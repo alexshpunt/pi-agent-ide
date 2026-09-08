@@ -124,9 +124,12 @@ export class TextAnchorRegistry {
     );
   }
 
-  public renderPromptSection(): string | undefined {
+  public renderPromptSection(kinds?: ReadonlySet<string>): string | undefined {
     const entries = this.#resolvers
-      .filter(({ describeInPrompt }) => describeInPrompt)
+      .filter(
+        ({ describeInPrompt, kind }) =>
+          describeInPrompt && (kinds === undefined || kinds.has(kind)),
+      )
       .map(({ resolver }) => renderResolverDescription(resolver))
       .filter((entry): entry is string => entry !== undefined);
 

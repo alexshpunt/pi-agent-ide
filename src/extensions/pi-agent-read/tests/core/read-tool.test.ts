@@ -250,14 +250,20 @@ test("presents text before projecting the read result", async () => {
   expect(annotated.content).toEqual([{ type: "text", text: "anchor|alpha" }]);
 });
 
-test("adds a line-number column for the built-in lines view", async () => {
+test("treats the removed lines view as unknown and leaves source bytes raw", async () => {
   const read = createReadTool();
   read.registerContributions("fixture-plugin", {
     resolvers: [{ resolver: textResolver("alpha\nbravo") }],
   });
 
   const result = await executeRead(read, "notes.txt", ["lines"]);
-  expect(result.content).toEqual([{ type: "text", text: "1|alpha\n2|bravo" }]);
+  expect(result.details.ignoredViews).toEqual(["lines"]);
+  const text = result.content
+    .filter((item) => item.type === "text")
+    .map((item) => item.text)
+    .join("\n");
+  expect(text.endsWith("alpha\nbravo")).toBe(true);
+  expect(result.details.lines?.map((line) => line.content)).toEqual(["alpha", "bravo"]);
 });
 
 test("ignores unknown views and reports them in a note and details", async () => {

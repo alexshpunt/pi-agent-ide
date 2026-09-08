@@ -66,25 +66,75 @@ test("edits supersede old jobs; independent sources report partial readiness wit
     { source: "lsp", status: "pending", diagnostics: [] },
     { source: "lint", ...clean },
   ]);
-  const pending = await store.takeNotifications(cwd);
-  expect(pending.join()).toContain("lsp pending");
-  expect(pending.join()).not.toContain("1 error");
+  expect(await store.takeNotifications(cwd)).toEqual([]);
   requiredValue(lsp.calls[1]).finish(broken);
   await vi.waitFor(async () =>
     expect((await store.read(file, { cwd })).results[0]).toEqual({ source: "lsp", ...broken }),
   );
-  expect((await store.takeNotifications(cwd)).join()).toContain("lsp 1 error");
+  expect((await store.takeNotifications(cwd))[0]?.results[0]).toEqual({ source: "lsp", ...broken });
   expect(await store.takeNotifications(cwd)).toEqual([]);
   requiredValue(lsp.calls[1]).context.publish(clean);
   await vi.waitFor(async () =>
     expect((await store.read(file, { cwd })).results[0]).toEqual({ source: "lsp", ...clean }),
   );
-  const cleared = (await store.takeNotifications(cwd)).join();
-  expect(cleared).toContain("lsp 0 error");
-  expect(cleared).not.toContain("Private diagnostic detail");
+  expect(await store.takeNotifications(cwd)).toEqual([]);
+  requiredValue(lsp.calls[1]).context.publish(broken);
+  await vi.waitFor(async () =>
+    expect((await store.read(file, { cwd })).results[0]).toEqual({ source: "lsp", ...broken }),
+  );
+  expect((await store.takeNotifications(cwd))[0]?.results).toEqual([{ source: "lsp", ...broken }]);
   expect(await readFile(file, "utf8")).toBe("B");
 });
 
+test.each(["ready", "snapshot", "unversioned", "unavailable"] as const)(
+  "empty %s reports stay readable without automatic notifications",
+  async (status) => {
+    const report: IdeDiagnosticReport = { status, diagnostics: [] };
+    const { store, cwd, file } = await fixture([{ id: "check", diagnose: async () => report }]);
+    await vi.waitFor(async () =>
+      expect((await store.read(file, { cwd })).results).toEqual([{ source: "check", ...report }]),
+    );
+    expect(await store.takeNotifications(cwd)).toEqual([]);
+  },
+);
+
+test("actual tool names survive storage and replace the registered wrapper ID", async () => {
+  const report = { ...broken, source: "eslint_d" };
+  const { store, cwd, file } = await fixture([{ id: "lint", diagnose: async () => report }]);
+  await vi.waitFor(async () => expect((await store.read(file, { cwd })).results).toEqual([report]));
+  expect((await store.takeNotifications(cwd))[0]?.results).toEqual([report]);
+});
+test("missing sources stay silent", async () => {
+  const { store, cwd, file } = await fixture([]);
+  expect((await store.read(file, { cwd })).results[0]?.status).toBe("unavailable");
+  expect(await store.takeNotifications(cwd)).toEqual([]);
+});
+
+test.each(["error", "warning", "info", "hint"] as const)(
+  "nonempty %s reports survive filtering and unrelated empty updates stay silent",
+  async (severity) => {
+    const idle = controlled("idle");
+    const report: IdeDiagnosticReport = {
+      status: "snapshot",
+      diagnostics: [{ severity, line: 1, column: 1, code: "fixture", message: "Finding" }],
+    };
+    const { store, cwd, file } = await fixture([
+      idle.source,
+      { id: "findings", diagnose: async () => report },
+    ]);
+    await vi.waitFor(async () =>
+      expect((await store.read(file, { cwd })).results[1]?.diagnostics).toHaveLength(1),
+    );
+    expect((await store.takeNotifications(cwd))[0]?.results).toEqual([
+      { source: "findings", ...report },
+    ]);
+    requiredValue(idle.calls[0]).finish({ status: "unavailable", diagnostics: [] });
+    await vi.waitFor(async () =>
+      expect((await store.read(file, { cwd })).results[0]?.status).toBe("unavailable"),
+    );
+    expect(await store.takeNotifications(cwd)).toEqual([]);
+  },
+);
 test("reads reuse current results and detect changes outside the IDE", async () => {
   const diagnose = vi.fn(async () => clean);
   const { store, cwd, file } = await fixture([{ id: "lint", diagnose }]);
@@ -118,6 +168,9 @@ test("failed and timed-out sources are unavailable rather than clean", async () 
     expect(results[2]?.diagnostics).toHaveLength(1);
   });
   expect(requiredValue(stuck.calls[0]).context.signal.aborted).toBe(true);
+  expect((await store.takeNotifications(cwd))[0]?.results).toEqual([
+    { source: "ready", ...broken },
+  ]);
   requiredValue(stuck.calls[0]).context.publish(clean);
   expect((await store.read(file, { cwd })).results[0]?.status).toBe("unavailable");
 });
@@ -144,6 +197,36 @@ test("workspace identities isolate the same relative file name", async () => {
   store.schedule(file, "A", { cwd });
   store.schedule(other, "A", { cwd: otherCwd });
   await vi.waitFor(() => expect(provider.calls).toHaveLength(2));
+  expect(await store.takeNotifications(cwd)).toEqual([]);
+  expect(await store.takeNotifications(otherCwd)).toEqual([]);
+  for (const call of provider.calls) call.finish(broken);
+  await vi.waitFor(async () => {
+    expect((await store.read(file, { cwd })).results[0]?.diagnostics).toHaveLength(1);
+    expect((await store.read(other, { cwd: otherCwd })).results[0]?.diagnostics).toHaveLength(1);
+  });
   expect(await store.takeNotifications(cwd)).toHaveLength(1);
   expect(await store.takeNotifications(otherCwd)).toHaveLength(1);
+});
+
+test("publication signals delivery without a read or model boundary and stops after disposal", async () => {
+  const lsp = controlled("lsp");
+  const { store, cwd, file } = await fixture([lsp.source]);
+  const changed = vi.fn();
+  const unsubscribe = store.onDidChange(changed);
+  store.schedule(file, "A", { cwd });
+  await vi.waitFor(() => expect(lsp.calls).toHaveLength(1));
+  expect(changed).not.toHaveBeenCalled();
+  requiredValue(lsp.calls[0]).finish(broken);
+  await vi.waitFor(() => expect(changed).toHaveBeenCalledExactlyOnceWith(cwd));
+  expect(await store.takeNotifications(cwd)).toHaveLength(1);
+  unsubscribe();
+  requiredValue(lsp.calls[0]).context.publish(clean);
+  await vi.waitFor(async () =>
+    expect((await store.read(file, { cwd })).results[0]?.diagnostics).toEqual([]),
+  );
+  expect(changed).toHaveBeenCalledTimes(1);
+  store.onDidChange(changed);
+  store.dispose();
+  requiredValue(lsp.calls[0]).context.publish(broken);
+  expect(changed).toHaveBeenCalledTimes(1);
 });
