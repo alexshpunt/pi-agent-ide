@@ -1,0 +1,339 @@
+{
+  "version": 1,
+  "linters": {
+    "dart-analyze": {
+      "extensions": [".dart"],
+      "check": {
+        "command": ["dart", "analyze", "--format", "machine", "{file}"],
+        "successExitCodes": [0, 1, 2, 3]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<severity>[^|]+)\\|[^|]+\\|(?<code>[^|]+)\\|(?<file>[^|]+)\\|(?<line>\\d+)\\|(?<column>\\d+)\\|\\d+\\|(?<message>.*)$"
+      }
+    },
+    "zig-ast-check": {
+      "extensions": [".zig", ".zon"],
+      "check": { "command": ["zig", "ast-check", "{file}"], "successExitCodes": [0, 1] },
+      "diagnostics": { "format": "gcc" }
+    },
+    "lintr": {
+      "extensions": [".r"],
+      "check": {
+        "command": ["Rscript", "-e", "print(lintr::lint(commandArgs(TRUE)[1]))", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): (?<severity>[^:]+): \\[(?<code>[^\\]]+)\\] (?<message>.*)$"
+      }
+    },
+    "clang-tidy": {
+      "extensions": [".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"],
+      "check": {
+        "command": ["clang-tidy", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "clang"
+      }
+    },
+    "eslint": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".mts",
+        ".cts",
+        ".vue",
+        ".svelte"
+      ],
+      "check": {
+        "command": ["eslint", "--format", "json", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "eslint-json"
+      }
+    },
+    "oxlint": {
+      "extensions": [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"],
+      "check": {
+        "command": ["oxlint", "--format", "sarif", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "sarif"
+      }
+    },
+    "ruff": {
+      "extensions": [".py", ".pyi"],
+      "check": {
+        "command": ["ruff", "check", "--output-format", "concise", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): (?<code>\\S+) (?<message>.+)$"
+      }
+    },
+    "golangci-lint": {
+      "extensions": [".go"],
+      "check": {
+        "command": [
+          "golangci-lint",
+          "run",
+          "--output.text.path=",
+          "--output.checkstyle.path=stdout",
+          "--show-stats=false",
+          "./..."
+        ],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "checkstyle"
+      }
+    },
+    "clippy": {
+      "extensions": [".rs"],
+      "check": {
+        "command": ["cargo", "clippy", "--message-format", "short"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "dotnet-format": {
+      "extensions": [".cs"],
+      "check": {
+        "command": ["dotnet", "format", "--verify-no-changes", "--include", "{relativeFile}"],
+        "successExitCodes": [0, 2]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+)\\((?<line>\\d+),(?<column>\\d+)\\): (?<severity>error|warning) (?<code>[^:]+): (?<message>.*?)(?: \\[.*\\])?$"
+      }
+    },
+    "checkstyle": {
+      "extensions": [".java"],
+      "check": {
+        "command": ["checkstyle", "-c", "checkstyle.xml", "-f", "xml", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "checkstyle"
+      }
+    },
+    "detekt": {
+      "extensions": [".kt", ".kts"],
+      "check": {
+        "command": ["detekt", "--input", "{file}", "--config", "detekt.yml"],
+        "successExitCodes": [0, 2]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): (?<message>.*?) \\[(?<code>[^\\]]+)\\]$"
+      }
+    },
+    "rubocop": {
+      "extensions": [".rb", ".rake"],
+      "check": {
+        "command": ["rubocop", "--format", "clang", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): (?<severity>[A-Z]): (?:\\[Correctable\\] )?(?<code>[^:]+): (?<message>.*)$"
+      }
+    },
+    "phpcs": {
+      "extensions": [".php"],
+      "check": {
+        "command": ["phpcs", "--report=checkstyle", "{file}"],
+        "successExitCodes": [0, 1, 2, 3]
+      },
+      "diagnostics": {
+        "format": "checkstyle"
+      }
+    },
+    "swiftlint": {
+      "extensions": [".swift"],
+      "check": {
+        "command": ["swiftlint", "lint", "--quiet", "--reporter", "checkstyle", "{file}"],
+        "successExitCodes": [0, 2]
+      },
+      "diagnostics": { "format": "checkstyle" }
+    },
+    "scalafix": {
+      "extensions": [".scala", ".sc"],
+      "check": {
+        "command": ["scalafix", "--check", "--files", "{file}"],
+        "successExitCodes": [0, 2, 64, 66]
+      },
+      "diagnostics": { "format": "gcc" }
+    },
+    "credo": {
+      "extensions": [".ex", ".exs"],
+      "check": {
+        "command": [
+          "mix",
+          "credo",
+          "--strict",
+          "--format",
+          "flycheck",
+          "--files-included",
+          "{file}"
+        ],
+        "successExitCodes": [
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+          25, 26, 27, 28, 29, 30, 31
+        ]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+):(?<line>\\d+):(?<column>\\d+): (?<severity>[A-Z]): (?<message>.+)$"
+      }
+    },
+    "psscriptanalyzer": {
+      "extensions": [".ps1", ".psm1", ".psd1"],
+      "check": {
+        "command": [
+          "pwsh",
+          "-NoProfile",
+          "-NonInteractive",
+          "-CommandWithArgs",
+          "$ErrorActionPreference=\"Stop\";$options=@{};if(Test-Path -LiteralPath PSScriptAnalyzerSettings.psd1){$options.Settings=\"PSScriptAnalyzerSettings.psd1\"};Invoke-ScriptAnalyzer -Path $args[0] @options | ForEach-Object {\"$($_.ScriptPath):$($_.Line):$($_.Column): $($_.Severity): $($_.Message) [$($_.RuleName)]\"}",
+          "{file}"
+        ],
+        "successExitCodes": [0]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+):(?<line>\\d+):(?<column>\\d+): (?<severity>\\w+): (?<message>.+) \\[(?<code>[^\\]]+)\\]$"
+      }
+    },
+    "luacheck": {
+      "extensions": [".lua"],
+      "check": {
+        "command": ["luacheck", "--formatter", "plain", "--codes", "--no-color", "{file}"],
+        "successExitCodes": [0, 1, 2]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+):(?<line>\\d+):(?<column>\\d+): \\((?<code>(?<severity>[WE])\\d+)\\) (?<message>.+)$"
+      }
+    },
+    "shellcheck": {
+      "extensions": [".sh", ".bash", ".zsh"],
+      "check": {
+        "command": ["shellcheck", "-f", "gcc", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "gcc"
+      }
+    },
+    "stylelint": {
+      "extensions": [".css", ".scss", ".sass", ".less"],
+      "check": {
+        "command": ["stylelint", "--formatter", "compact", "{file}"],
+        "successExitCodes": [0, 2]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+): line (?<line>\\d+), col (?<column>\\d+), (?<severity>error|warning) - (?<message>.+) \\((?<code>[^)]+)\\)$"
+      }
+    },
+    "yamllint": {
+      "extensions": [".yaml", ".yml"],
+      "check": { "command": ["yamllint", "-f", "parsable", "{file}"], "successExitCodes": [0, 1] },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): \\[(?<severity>[^\\]]+)\\] (?<message>.*?) \\((?<code>[^)]+)\\)$"
+      }
+    },
+    "markdownlint": {
+      "extensions": [".md", ".mdx"],
+      "check": { "command": ["markdownlint", "{file}"], "successExitCodes": [0, 1] },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+)(?::(?<column>\\d+))? (?<severity>error|warning) (?<code>MD\\d+)(?:/\\S+)? (?<message>.*)$"
+      }
+    },
+    "sqlfluff": {
+      "extensions": [".sql"],
+      "check": {
+        "command": ["sqlfluff", "lint", "--format", "sarif", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "sarif"
+      }
+    },
+    "hadolint": {
+      "extensions": [".dockerfile"],
+      "fileNames": ["Dockerfile", "Containerfile"],
+      "check": {
+        "command": ["hadolint", "--format", "checkstyle", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": { "format": "checkstyle" }
+    },
+    "tflint": {
+      "extensions": [".tf"],
+      "check": { "command": ["tflint", "--format", "checkstyle"], "successExitCodes": [0, 2] },
+      "diagnostics": { "format": "checkstyle" }
+    },
+    "cmake-lint": {
+      "extensions": [".cmake"],
+      "fileNames": ["CMakeLists.txt"],
+      "check": { "command": ["cmake-lint", "{file}"], "successExitCodes": [0, 1] },
+      "diagnostics": {
+        "format": "regex",
+        "columnBase": 0,
+        "pattern": "^(?<file>.+?):(?<line>\\d+),(?<column>\\d+): \\[(?<code>(?<severity>[A-Z])\\d+)\\] (?<message>.*)$"
+      }
+    },
+    "htmlhint": {
+      "extensions": [".html", ".htm"],
+      "check": {
+        "command": ["htmlhint", "--format", "checkstyle", "--nocolor", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "checkstyle"
+      }
+    },
+    "jsonlint": {
+      "extensions": [".json"],
+      "check": { "command": ["jsonlint", "-q", "{file}"], "successExitCodes": [0, 1] },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?:Error: )?(?<message>Parse (?<severity>error) on line (?<line>\\d+)(?:, column (?<column>\\d+))?:[^\\n]*)$"
+      }
+    },
+    "taplo-check": {
+      "extensions": [".toml"],
+      "check": {
+        "command": ["taplo", "check", "--colors", "never", "{file}"],
+        "successExitCodes": [0, 1]
+      },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<severity>error): (?<message>[^\\n]+)\\n\\s*┌─ (?<file>.+):(?<line>\\d+):(?<column>\\d+)"
+      }
+    },
+    "xmllint": {
+      "extensions": [".xml", ".xsd", ".xsl"],
+      "check": { "command": ["xmllint", "--noout", "{file}"], "successExitCodes": [0, 1, 2, 3, 4] },
+      "diagnostics": {
+        "format": "regex",
+        "pattern": "^(?<file>.+?):(?<line>\\d+): (?<severity>(?:parser |validity )?(?:error|warning)) : (?<message>.*)$"
+      }
+    }
+  }
+}

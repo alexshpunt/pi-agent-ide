@@ -1,0 +1,410 @@
+{
+  "version": 1,
+  "servers": {
+    "vue-typescript-language-server": {
+      "command": ["typescript-language-server", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["tsconfig.json", "package.json"],
+      "languages": { "vue": { "extensions": [".vue"] } },
+      "capabilities": ["diagnostics"],
+      "initializationOptions": {
+        "plugins": [
+          {
+            "name": "@vue/typescript-plugin",
+            "location": "{project}/node_modules/@vue/typescript-plugin",
+            "languages": ["vue"]
+          }
+        ]
+      }
+    },
+    "elixir-ls": {
+      "command": ["elixir-ls"],
+
+      "settings": { "elixirLS": { "mcpEnabled": false } },
+      "transport": "stdio",
+      "rootMarkers": ["mix.exs"],
+      "languages": { "elixir": { "extensions": [".ex", ".exs"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "metals": {
+      "command": ["metals"],
+      "transport": "stdio",
+      "rootMarkers": ["build.sbt", "project.scala", ".bsp"],
+      "languages": { "scala": { "extensions": [".scala", ".sc"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "angular-language-server": {
+      "command": ["ngserver", "--stdio", "--tsProbeLocations", ".", "--ngProbeLocations", "."],
+      "transport": "stdio",
+      "rootMarkers": ["angular.json"],
+      "requireRootMarker": true,
+      "languages": { "typescript": { "extensions": [".ts"] }, "html": { "extensions": [".html"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "svelte-language-server": {
+      "command": ["svelteserver", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["svelte.config.js", "package.json"],
+      "languages": { "svelte": { "extensions": [".svelte"] } },
+      "capabilities": ["diagnostics"]
+    },
+    "dart-language-server": {
+      "command": ["dart", "language-server", "--protocol=lsp"],
+      "transport": "stdio",
+      "rootMarkers": ["pubspec.yaml", "analysis_options.yaml"],
+      "languages": {
+        "dart": {
+          "extensions": [".dart"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "r-language-server": {
+      "command": ["Rscript", "-e", "languageserver::run()"],
+      "transport": "stdio",
+      "rootMarkers": ["DESCRIPTION", ".lintr", ".Rprofile"],
+      "languages": {
+        "r": {
+          "extensions": [".r"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "zls": {
+      "command": ["zls"],
+      "transport": "stdio",
+      "rootMarkers": ["build.zig", "build.zig.zon", "zls.json"],
+      "languages": {
+        "zig": {
+          "extensions": [".zig", ".zon"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "clangd": {
+      "command": ["clangd"],
+      "transport": "stdio",
+      "rootMarkers": [".clangd", "compile_commands.json", "CMakeLists.txt"],
+      "languages": {
+        "c": {
+          "extensions": [".c", ".h"]
+        },
+        "cpp": {
+          "extensions": [".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "typescript-language-server": {
+      "command": ["typescript-language-server", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["tsconfig.json", "jsconfig.json", "package.json"],
+      "languages": {
+        "javascript": {
+          "extensions": [".js", ".mjs", ".cjs"]
+        },
+        "javascriptreact": {
+          "extensions": [".jsx"]
+        },
+        "typescript": {
+          "extensions": [".ts", ".mts", ".cts"]
+        },
+        "typescriptreact": {
+          "extensions": [".tsx"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "basedpyright": {
+      "command": ["basedpyright-langserver", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["pyproject.toml", "pyrightconfig.json"],
+      "languages": {
+        "python": {
+          "extensions": [".py", ".pyi"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "gopls": {
+      "command": ["gopls"],
+      "transport": "stdio",
+      "rootMarkers": ["go.mod", "go.work"],
+      "languages": {
+        "go": {
+          "extensions": [".go"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "rust-analyzer": {
+      "command": ["rust-analyzer"],
+      "transport": "stdio",
+      "rootMarkers": ["Cargo.toml", "rust-project.json"],
+      "languages": {
+        "rust": {
+          "extensions": [".rs"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "csharp-ls": {
+      "command": ["csharp-ls"],
+      "transport": "stdio",
+      "rootMarkers": [".sln", ".csproj"],
+      "languages": {
+        "csharp": {
+          "extensions": [".cs"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "jdtls": {
+      "command": ["jdtls"],
+      "transport": "stdio",
+      "rootMarkers": ["pom.xml", "build.gradle", ".project"],
+      "languages": {
+        "java": {
+          "extensions": [".java"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "kotlin-language-server": {
+      "command": ["kotlin-language-server"],
+      "transport": "stdio",
+      "rootMarkers": ["build.gradle.kts", "pom.xml"],
+      "languages": {
+        "kotlin": {
+          "extensions": [".kt", ".kts"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "solargraph": {
+      "command": ["solargraph", "stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["Gemfile", ".solargraph.yml"],
+      "languages": {
+        "ruby": {
+          "extensions": [".rb", ".rake"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "intelephense": {
+      "command": ["intelephense", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["composer.json"],
+      "languages": {
+        "php": {
+          "extensions": [".php"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "sourcekit-lsp": {
+      "command": ["sourcekit-lsp"],
+      "transport": "stdio",
+      "rootMarkers": ["Package.swift"],
+      "languages": {
+        "swift": {
+          "extensions": [".swift"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "lua-language-server": {
+      "command": ["lua-language-server"],
+      "transport": "stdio",
+      "rootMarkers": [".luarc.json", ".luarc.jsonc"],
+      "languages": {
+        "lua": {
+          "extensions": [".lua"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "bash-language-server": {
+      "command": ["bash-language-server", "start"],
+      "transport": "stdio",
+      "rootMarkers": [".shellcheckrc"],
+      "languages": {
+        "shell": {
+          "extensions": [".sh", ".bash"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "vscode-css-language-server": {
+      "command": ["vscode-css-language-server", "--stdio"],
+
+      "settings": { "css": {}, "scss": {}, "less": {} },
+      "transport": "stdio",
+      "rootMarkers": ["package.json"],
+      "languages": {
+        "css": {
+          "extensions": [".css", ".scss", ".less"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "vscode-html-language-server": {
+      "command": ["vscode-html-language-server", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["package.json"],
+      "languages": {
+        "html": {
+          "extensions": [".html", ".htm"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "yaml-language-server": {
+      "command": ["yaml-language-server", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": [".yamllint", "package.json"],
+      "languages": {
+        "yaml": {
+          "extensions": [".yaml", ".yml"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "taplo-lsp": {
+      "command": ["taplo", "lsp", "stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["taplo.toml"],
+      "languages": {
+        "toml": {
+          "extensions": [".toml"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "marksman": {
+      "command": ["marksman", "server"],
+      "transport": "stdio",
+      "rootMarkers": [".marksman.toml"],
+      "languages": {
+        "markdown": {
+          "extensions": [".md", ".mdx"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "terraform-ls": {
+      "command": ["terraform-ls", "serve"],
+      "transport": "stdio",
+      "rootMarkers": [".terraform.lock.hcl"],
+      "languages": {
+        "terraform": {
+          "extensions": [".tf", ".tfvars"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "kotlin-lsp": {
+      "command": ["intellij-server", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["build.gradle.kts", "build.gradle", "pom.xml", "settings.gradle.kts"],
+      "languages": {
+        "kotlin": {
+          "extensions": [".kt", ".kts"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "julia-language-server": {
+      "command": [
+        "julia",
+        "--startup-file=no",
+        "--history-file=no",
+        "-e",
+        "using LanguageServer; runserver()"
+      ],
+      "transport": "stdio",
+      "rootMarkers": ["Project.toml", "JuliaProject.toml"],
+      "languages": {
+        "julia": {
+          "extensions": [".jl"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "powershell-editor-services": {
+      "command": [
+        "pwsh",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$ErrorActionPreference=\"Stop\";Import-Module PowerShellEditorServices;$d=Join-Path (Get-Location) \".agents/tmp/powershell-lsp-$PID\";[IO.Directory]::CreateDirectory($d)|Out-Null;Start-EditorServices -HostName Pi -HostProfileId Pi -HostVersion 1.0.0 -Stdio -LanguageServiceOnly -LogPath (Join-Path $d \"server.log\") -SessionDetailsPath (Join-Path $d \"session.json\")"
+      ],
+      "transport": "stdio",
+      "rootMarkers": ["PSScriptAnalyzerSettings.psd1"],
+      "languages": {
+        "powershell": {
+          "extensions": [".ps1", ".psm1", ".psd1"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "neocmakelsp": {
+      "command": ["neocmakelsp", "stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["CMakeLists.txt", ".neocmake.toml", ".neocmakelint.toml"],
+      "languages": {
+        "cmake": {
+          "extensions": [".cmake"],
+          "fileNames": ["CMakeLists.txt"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "vscode-json-language-server": {
+      "command": ["vscode-json-language-server", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["package.json"],
+      "languages": {
+        "json": {
+          "extensions": [".json", ".jsonc"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "lemminx": {
+      "command": ["lemminx"],
+      "transport": "stdio",
+      "rootMarkers": [".lemminx.json"],
+      "languages": {
+        "xml": {
+          "extensions": [".xml", ".xsd", ".xsl"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "sqls": {
+      "command": ["sqls"],
+      "transport": "stdio",
+      "rootMarkers": [".sqls.yml"],
+      "languages": {
+        "sql": {
+          "extensions": [".sql"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
+    "docker-langserver": {
+      "command": ["docker-langserver", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["Dockerfile"],
+      "languages": {
+        "dockerfile": {
+          "extensions": [".dockerfile"],
+          "fileNames": ["Dockerfile", "Containerfile"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+import{a,b,c,d,e,f,g}from"./chunk-KZBAJFCV.js";import"./chunk-EI7MMDWY.js";export{b as IDE_API_VERSION,c as IDE_CORE_READY_EVENT,d as IDE_PLUGIN_REGISTER_EVENT,a as IDE_PROTOCOL,e as isIdeCoreReady,f as isIdePlugin,g as isIdePluginRegistrationRequest};

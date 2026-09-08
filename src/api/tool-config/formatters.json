@@ -1,0 +1,273 @@
+{
+  "version": 1,
+  "formatters": {
+    "dart-format": {
+      "extensions": [".dart"],
+      "run": { "command": ["dart", "format", "{file}"] },
+      "output": "in-place"
+    },
+    "zig-format": {
+      "extensions": [".zig", ".zon"],
+      "run": { "command": ["zig", "fmt", "{file}"] },
+      "output": "in-place"
+    },
+    "styler": {
+      "extensions": [".r"],
+      "run": { "command": ["Rscript", "-e", "styler::style_file(commandArgs(TRUE)[1])", "{file}"] },
+      "output": "in-place"
+    },
+    "clang-format": {
+      "extensions": [".c", ".h", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"],
+      "run": {
+        "command": ["clang-format", "-i", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "prettier": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+
+        ".mts",
+        ".cts",
+        ".json",
+        ".jsonc",
+        ".css",
+        ".scss",
+        ".html",
+        ".md",
+        ".yaml",
+        ".yml",
+        ".vue",
+        ".svelte"
+      ],
+      "run": {
+        "command": ["prettier", "--write", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "biome": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".mts",
+        ".cts",
+        ".json",
+        ".jsonc",
+        ".css"
+      ],
+      "run": {
+        "command": ["biome", "format", "--write", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "oxfmt": {
+      "extensions": [
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".mts",
+        ".cts",
+        ".json",
+        ".jsonc",
+        ".css",
+        ".scss",
+        ".less",
+        ".html",
+        ".htm",
+        ".md",
+        ".markdown",
+        ".mdx",
+        ".yaml",
+        ".yml",
+        ".toml"
+      ],
+      "run": {
+        "command": ["oxfmt", "--write", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "ruff-format": {
+      "extensions": [".py", ".pyi"],
+      "run": {
+        "command": ["ruff", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "black": {
+      "extensions": [".py", ".pyi"],
+      "run": {
+        "command": ["black", "--quiet", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "gofmt": {
+      "extensions": [".go"],
+      "run": {
+        "command": ["gofmt", "-w", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "goimports": {
+      "extensions": [".go"],
+      "run": {
+        "command": ["goimports", "-w", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "rustfmt": {
+      "extensions": [".rs"],
+      "run": {
+        "command": ["rustfmt", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "csharpier": {
+      "extensions": [".cs"],
+      "run": {
+        "command": ["csharpier", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "google-java-format": {
+      "extensions": [".java"],
+      "run": {
+        "command": ["google-java-format", "--replace", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "ktlint-format": {
+      "extensions": [".kt", ".kts"],
+      "run": {
+        "command": ["ktlint", "-F", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "rubocop-format": {
+      "extensions": [".rb", ".rake"],
+      "run": {
+        "command": ["rubocop", "--fix-layout", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "pint": {
+      "extensions": [".php"],
+      "run": {
+        "command": ["pint", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "swift-format": {
+      "extensions": [".swift"],
+      "run": {
+        "command": ["swift-format", "format", "--in-place", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "stylua": {
+      "extensions": [".lua"],
+      "run": {
+        "command": ["stylua", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "shfmt": {
+      "extensions": [".sh", ".bash", ".zsh"],
+      "run": {
+        "command": ["shfmt", "-w", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "taplo": {
+      "extensions": [".toml"],
+      "run": {
+        "command": ["taplo", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "sqlfluff-format": {
+      "extensions": [".sql"],
+      "run": {
+        "command": ["sqlfluff", "format", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "terraform-fmt": {
+      "extensions": [".tf", ".tfvars"],
+      "run": {
+        "command": ["terraform", "fmt", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "cmake-format": {
+      "extensions": [".cmake"],
+      "fileNames": ["CMakeLists.txt"],
+      "run": {
+        "command": ["cmake-format", "-i", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "xmlformat": {
+      "extensions": [".xml", ".xsd", ".xsl"],
+      "run": {
+        "command": ["xmlformat", "--overwrite", "{file}"]
+      },
+      "output": "in-place"
+    },
+    "mix-format": {
+      "extensions": [".ex", ".exs"],
+      "run": { "command": ["mix", "format", "{file}"] },
+      "output": "in-place"
+    },
+    "scalafmt": {
+      "extensions": [".scala", ".sc", ".sbt"],
+      "run": { "command": ["scalafmt", "{file}"] },
+      "output": "in-place"
+    },
+    "julia-format": {
+      "extensions": [".jl"],
+      "run": {
+        "command": [
+          "julia",
+          "--startup-file=no",
+          "--history-file=no",
+          "-e",
+          "using JuliaFormatter; format_file(ARGS[1])",
+          "{file}"
+        ]
+      },
+      "output": "in-place"
+    },
+    "powershell-format": {
+      "extensions": [".ps1", ".psm1", ".psd1"],
+      "run": {
+        "command": [
+          "pwsh",
+          "-NoProfile",
+          "-NonInteractive",
+          "-CommandWithArgs",
+          "$ErrorActionPreference=\"Stop\";$p=$args[0];$options=@{};if(Test-Path -LiteralPath PSScriptAnalyzerSettings.psd1){$options.Settings=\"PSScriptAnalyzerSettings.psd1\"};[IO.File]::WriteAllText($p,(Invoke-Formatter -ScriptDefinition ([IO.File]::ReadAllText($p)) @options))",
+          "{file}"
+        ]
+      },
+      "output": "in-place"
+    },
+    "dockfmt": {
+      "extensions": [".dockerfile"],
+      "fileNames": ["Dockerfile", "Containerfile"],
+      "run": { "command": ["dockfmt", "fmt", "--write", "{file}"] },
+      "output": "in-place"
+    }
+  }
+}

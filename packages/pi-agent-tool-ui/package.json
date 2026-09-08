@@ -1,0 +1,15 @@
+{
+  "name": "pi-agent-tool-ui",
+  "version": "0.2.2",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./runtime/entry-75.js"
+    }
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  }
+}

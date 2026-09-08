@@ -1,0 +1,1 @@
+import{v as r}from"./chunk-S3ZPXWX7.js";import{p as e}from"./chunk-RAZOACDD.js";import{a as t}from"./chunk-EI7MMDWY.js";var n={target:{provider:"web",capability:"read"},converter:e(),priority:300};async function i(o){await r(o,n)}t(i,"registerWebText");export{i as default};
