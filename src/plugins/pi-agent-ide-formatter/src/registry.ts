@@ -56,7 +56,15 @@ export class FormatterCommandRegistry {
     );
     return new FormatterCommandRegistry(
       entries,
-      new Set(available.filter((entry) => entry.available).map((entry) => entry.id)),
+      new Set(
+        available
+          .filter(
+            (entry) =>
+              entry.available &&
+              (!options.requireBuiltInEvidence || (evidence.get(entry.id)?.score ?? 0) > 0),
+          )
+          .map((entry) => entry.id),
+      ),
 
       evidence,
     );

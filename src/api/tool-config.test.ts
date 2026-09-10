@@ -7,6 +7,7 @@ import {
   parseFormattersConfig,
   configuredExecutableName,
   parseLintersConfig,
+  resolveExternalToolProjectRoot,
   resolveToolConfigPaths,
   runConfiguredFormatter,
   runConfiguredProcess,
@@ -77,6 +78,98 @@ describe("versioned tool config", () => {
         environment: { PI_CODING_AGENT_DIR: "/agent" },
       }).global,
     ).toBe(path.join("/agent", "extensions", "pi-agent-ide", "linters.json"));
+  });
+  it("resolves the nearest external tooling root without using an unrelated directory", async () => {
+    await mkdir(root, { recursive: true });
+    const directory = await mkdtemp(path.join(root, "external-root-"));
+    directories.push(directory);
+    const currentProject = path.join(directory, "current");
+    const externalProject = path.join(directory, "external");
+    const nestedProject = path.join(externalProject, "packages", "nested");
+    const file = path.join(nestedProject, "src", "source.ts");
+    await mkdir(path.dirname(file), { recursive: true });
+    await mkdir(currentProject, { recursive: true });
+    await writeFile(path.join(externalProject, "prettier.config.mjs"), "export default {};");
+    await writeFile(path.join(nestedProject, "package.json"), JSON.stringify({ prettier: {} }));
+    await writeFile(file, "export {};\n");
+
+    const recipe = {
+      id: "prettier",
+      name: "prettier",
+      kind: "formatter" as const,
+      languages: ["typescript"],
+      executables: ["prettier"],
+      configFiles: ["prettier.config.mjs"],
+      configSections: { "package.json": ["prettier"] },
+      formatter: {
+        extensions: [".ts"],
+        run: { command: ["prettier"] },
+        output: "stdout" as const,
+      },
+      documentation: "https://example.test",
+    };
+
+    await expect(
+      resolveExternalToolProjectRoot(currentProject, file, "formatters", [recipe]),
+    ).resolves.toBe(nestedProject);
+    const unrelatedNested = path.join(externalProject, "packages", "python-marked");
+    const typescriptFile = path.join(unrelatedNested, "source.ts");
+    await mkdir(unrelatedNested, { recursive: true });
+    await writeFile(path.join(unrelatedNested, "pyproject.toml"), "[tool.black]\n");
+    await writeFile(typescriptFile, "export {};\n");
+    const blackRecipe = {
+      id: "black",
+      name: "black",
+      kind: "formatter" as const,
+      languages: ["python"],
+      executables: ["black"],
+      configFiles: ["pyproject.toml"],
+      formatter: {
+        extensions: [".py"],
+        run: { command: ["black"] },
+        output: "in-place" as const,
+      },
+      documentation: "https://example.test",
+    };
+    await expect(
+      resolveExternalToolProjectRoot(currentProject, typescriptFile, "formatters", [
+        recipe,
+        blackRecipe,
+      ]),
+    ).resolves.toBe(externalProject);
+    await expect(
+      resolveExternalToolProjectRoot(
+        currentProject,
+        path.join(currentProject, "source.ts"),
+        "formatters",
+        [recipe],
+      ),
+    ).resolves.toBe(path.resolve(currentProject));
+    await expect(
+      resolveExternalToolProjectRoot(
+        currentProject,
+        path.join(directory, "unrelated", "source.ts"),
+        "formatters",
+        [recipe],
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("treats an external project-local IDE config as a tooling root", async () => {
+    await mkdir(root, { recursive: true });
+    const directory = await mkdtemp(path.join(root, "external-local-config-"));
+    directories.push(directory);
+    const currentProject = path.join(directory, "current");
+    const externalProject = path.join(directory, "external");
+    const file = path.join(externalProject, "src", "source.fixture");
+    await mkdir(path.dirname(file), { recursive: true });
+    await mkdir(currentProject, { recursive: true });
+    await mkdir(path.join(externalProject, ".pi", "pi-agent-ide"), { recursive: true });
+    await writeFile(path.join(externalProject, ".pi", "pi-agent-ide", "formatters.json"), "{}");
+
+    await expect(
+      resolveExternalToolProjectRoot(currentProject, file, "formatters", []),
+    ).resolves.toBe(externalProject);
   });
   it("rejects unversioned and incomplete configs", () => {
     expect(() => parseFormattersConfig({ formatters: {} })).toThrow("version");

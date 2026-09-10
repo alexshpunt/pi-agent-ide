@@ -44,6 +44,12 @@ Browser reads discover `google-chrome`, `google-chrome-stable`, `chromium`, or `
 
 When `path` is a typed text resource, `read` returns one independent chunk for each selected range, in resolver order. Each chunk starts at the range's containing line. `offset` and `limit` are applied to every chunk, not across the combined result. The chunks are then joined and the normal aggregate limit of 2,000 lines or 50 KiB is applied.
 
+### Original bytes
+
+Use `read({path: "raw:sample.bin", offset: 0, limit: 64})` to inspect original local file bytes, including PDF and image headers. In `raw:` mode only, offset is zero-based in bytes (negative from EOF), and limit is a non-negative byte count. The output shows hexadecimal offsets, hex bytes, and printable ASCII. Follow its returned byte offset to continue. No views or text anchors apply.
+
+Inside Apply, the same call returns `kind: "bytes"`, `source`, `byteOffset`, `byteLength`, `totalBytes`, `bytes: number[]`, and `ok`. The script receives the complete selected range; the displayed answer stays bounded. Use `result(doc)` to retain the hex view rather than printing the byte array. This is read-only; byte editing and byte diff are not included.
+
 ### Diagnostic completion
 
 Edits save before background diagnostics finish. Automatic notifications show only sources with findings, in the chat as soon as they arrive, with a matching hidden message sent to the agent. A new finding wakes an idle agent; during a run it is queued as steering input for the next model call. Each source names the actual reporting command, such as `eslint_d` or `typescript-language-server`, rather than a wrapper extension. Chat summaries show that name in parentheses beside its counts. Pending, unavailable, and empty reports stay silent, including updates that clear earlier findings. Silence does not mean checks passed. Explicit `diagnostics:<path>` reads and the diagnostics view still return details and readiness.

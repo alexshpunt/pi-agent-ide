@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -21,14 +22,7 @@ import { runSearchRecipe, type SearchRecipe } from "#src/search-recipe.js";
 const searchAnchorPattern = /^SEARCH#([A-F0-9]{4,64}):(all|[1-9]\d*):(line|match)$/u;
 const minimumSearchSessionIdLength = 4;
 
-export interface TextSearchMatch {
-  readonly source: string;
-  readonly lineNumber: number;
-  readonly startColumn: number;
-  readonly endColumn: number;
-  readonly matchedText: string;
-  readonly lineText: string;
-}
+export type TextSearchMatch = SearchSelectionMatch;
 
 export interface TextSearchSession {
   readonly id: string;
@@ -44,6 +38,7 @@ interface SearchSnapshot {
 }
 
 interface StoredSearchSession extends TextSearchSession, SearchSnapshot {
+  readonly refresh?: SearchSelectionRegistration["refresh"];
   readonly recipe: SearchRecipe;
   readonly cwd: string;
   readonly refreshedComplete?: SearchSnapshot;
@@ -92,6 +87,7 @@ export function createSearchSessionIdentity(
       source,
       match.lineNumber,
       match.startColumn,
+      match.endLineNumber ?? match.lineNumber,
       match.endColumn,
       match.matchedText,
       match.lineText,
@@ -153,6 +149,7 @@ export class SearchSessionStore {
       query,
       regex: true,
     },
+    refresh?: SearchSelectionRegistration["refresh"],
   ): Promise<TextSearchSession> {
     const matches = sourceMatches
       .map((match) => ({ ...match, source: path.resolve(match.source) }))
@@ -168,6 +165,7 @@ export class SearchSessionStore {
       complete,
       contentBySource,
       recipe,
+      ...(refresh !== undefined && { refresh }),
       cwd: path.resolve(cwd),
     };
     this.#idsByIdentity.set(identity, id);
@@ -206,7 +204,10 @@ export class SearchSessionStore {
         scope: normalizeRecipe(session.recipe, session.cwd),
       };
       try {
-        const result = await runSearchRecipe(session.recipe, session.cwd, signal);
+        const result =
+          session.refresh === undefined
+            ? await runSearchRecipe(session.recipe, session.cwd, signal)
+            : await session.refresh(signal);
         observations.push({
           ...base,
           matches: result.matches.length,
@@ -363,14 +364,21 @@ export class SearchSessionStore {
       );
       grouped.set(match.source, ranges);
     }
-    const targets: TextTarget[] = [...grouped].map(([source, ranges]) => ({ source, ranges }));
+    const targets: TextTarget[] = [...grouped].map(([source, ranges]) => ({
+      source,
+      ranges,
+      expectedContent: snapshot.contentBySource.get(source),
+    }));
     return targets.length === 0
       ? { kind: "rejected", rejection: { code: "missing", reason: "search anchor has no matches" } }
       : { kind: "resolved", targets };
   }
 
   async #refresh(session: StoredSearchSession, signal?: AbortSignal): Promise<SearchSnapshot> {
-    const result = await runSearchRecipe(session.recipe, session.cwd, signal);
+    const result =
+      session.refresh === undefined
+        ? await runSearchRecipe(session.recipe, session.cwd, signal)
+        : await session.refresh(signal);
     const matches = result.matches
       .map((match) => ({ ...match, source: path.resolve(match.source) }))
       .sort(compareMatches);
@@ -410,13 +418,28 @@ function selectMatches(
   }
 
   const seenLines = new Set<string>();
-  return selected.filter((match) => {
-    const key = `${match.source}\u0000${String(match.lineNumber)}`;
-    if (seenLines.has(key)) {
-      return false;
-    }
-    seenLines.add(key);
-    return true;
+  return selected.flatMap((match) => {
+    const document = createTextDocument(
+      match.source,
+      session.contentBySource.get(match.source) ?? match.lineText,
+    );
+    const last = lastContainingLine(match);
+    return document.lines.slice(match.lineNumber - 1, last).flatMap((line) => {
+      const key = `${match.source}\u0000${String(line.lineNumber)}`;
+      if (seenLines.has(key)) return [];
+      seenLines.add(key);
+      return [
+        {
+          ...match,
+          lineNumber: line.lineNumber,
+          endLineNumber: line.lineNumber,
+          startColumn: 0,
+          endColumn: line.content.length,
+          lineText: line.content,
+          matchedText: line.content,
+        },
+      ];
+    });
   });
 }
 
@@ -424,6 +447,10 @@ function isMatch(value: TextSearchMatch | undefined): value is TextSearchMatch {
   return value !== undefined;
 }
 
+function lastContainingLine(match: TextSearchMatch): number {
+  const end = match.endLineNumber ?? match.lineNumber;
+  return end > match.lineNumber && match.endColumn === 0 ? end - 1 : end;
+}
 function selectionRange(
   document: ReturnType<typeof createTextDocument>,
   match: TextSearchMatch,
@@ -432,21 +459,36 @@ function selectionRange(
   if (mode === "match") {
     return {
       start: { lineNumber: match.lineNumber, column: match.startColumn },
-      end: { lineNumber: match.lineNumber, column: match.endColumn },
+      end: { lineNumber: match.endLineNumber ?? match.lineNumber, column: match.endColumn },
     };
   }
 
-  const line = requiredValue(document.lines[match.lineNumber - 1]);
+  const lastLine = lastContainingLine(match);
+  const line = requiredValue(document.lines[lastLine - 1]);
   return {
     start: { lineNumber: match.lineNumber, column: 0 },
     end: {
-      lineNumber: match.lineNumber + (line.lineEnding.length > 0 ? 1 : 0),
+      lineNumber: lastLine + (line.lineEnding.length > 0 ? 1 : 0),
       column: line.lineEnding.length > 0 ? 0 : line.content.length,
     },
     linewise: true,
   };
 }
 
+function matchedSourceText(
+  document: ReturnType<typeof createTextDocument>,
+  match: TextSearchMatch,
+): string {
+  const endLine = match.endLineNumber ?? match.lineNumber;
+  return document.lines
+    .slice(match.lineNumber - 1, endLine)
+    .map((line) => {
+      const start = line.lineNumber === match.lineNumber ? match.startColumn : 0;
+      const end = line.lineNumber === endLine ? match.endColumn : line.content.length;
+      return line.content.slice(start, end) + (line.lineNumber === endLine ? "" : line.lineEnding);
+    })
+    .join("");
+}
 async function snapshotContents(
   matches: readonly TextSearchMatch[],
   signal?: AbortSignal,
@@ -460,10 +502,7 @@ async function snapshotContents(
     const document = createTextDocument(source, content);
     for (const match of matches.filter((candidate) => candidate.source === source)) {
       const line = document.lines[match.lineNumber - 1]?.content;
-      if (
-        line !== match.lineText ||
-        line.slice(match.startColumn, match.endColumn) !== match.matchedText
-      ) {
+      if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText) {
         throw new Error(`Search result in ${source} changed before its anchors were registered.`);
       }
     }
@@ -541,6 +580,7 @@ function compareMatches(left: TextSearchMatch, right: TextSearchMatch): number {
     left.source.localeCompare(right.source) ||
     left.lineNumber - right.lineNumber ||
     left.startColumn - right.startColumn ||
+    (left.endLineNumber ?? left.lineNumber) - (right.endLineNumber ?? right.lineNumber) ||
     left.endColumn - right.endColumn
   );
 }

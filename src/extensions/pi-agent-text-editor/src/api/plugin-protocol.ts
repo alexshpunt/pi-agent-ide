@@ -1,3 +1,5 @@
+import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { TSchema } from "typebox";
 import { isResourceResolver, type ResourceResolver } from "pi-agent-resource";
 import {
   isTextAnchorResolver,
@@ -26,9 +28,19 @@ import type {
 } from "#src/api/mutation-tool.js";
 import type { TextEditorToolRendererRegistration } from "#src/api/tool-renderer.js";
 
+/** Shared index operations; Apply uses the same implementation and guards as standalone tools. */
+export interface ScriptIndexOperation {
+  readonly name: "stage" | "unstage";
+  readonly parameters: TSchema;
+  execute(
+    input: unknown,
+    signal: AbortSignal,
+    context: ExtensionContext,
+  ): Promise<AgentToolResult<unknown>>;
+}
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 17;
+export const TEXT_EDITOR_API_VERSION = 20;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 
@@ -89,6 +101,8 @@ export interface TextEditorPluginApi {
   addMutationTool(registration: TextMutationToolRegistration): void;
   addMutationGuard(registration: TextMutationGuardRegistration): void;
   addToolRenderer(registration: TextEditorToolRendererRegistration): void;
+  /** Register an index operation for Apply without exposing unrelated Pi tools. */
+  addScriptIndexOperation(operation: ScriptIndexOperation): void;
   onMutationTool(listener: TextMutationToolListener): () => void;
   onDidEdit(listener: TextEditCompletionListener): () => void;
   previewMutation(request: TextMutationPreviewRequest): Promise<TextMutationPreviewOutcome>;

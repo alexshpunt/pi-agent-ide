@@ -62,13 +62,65 @@ export interface SearchActionRegistration {
   execute(reference: string, input: unknown, context: SearchContext): Promise<unknown>;
 }
 
+/** Full resolver data plus registered selection details, separate from rendered output. */
+export interface SearchScriptData {
+  readonly resolverId: string;
+  readonly data: unknown;
+  readonly details: unknown;
+}
+
+/** A search execution with optional data for script callers. */
+export interface SearchToolResult extends AgentToolResult<SearchToolDetails> {
+  readonly script?: SearchScriptData;
+}
+/** Exact text ranges discovered by any search backend. Columns are zero-based UTF-16 offsets. */
+export interface SearchSelectionMatch {
+  readonly source: string;
+  readonly lineNumber: number;
+  readonly endLineNumber?: number;
+  readonly startColumn: number;
+  readonly endColumn: number;
+  readonly matchedText: string;
+  readonly lineText: string;
+}
+export interface SearchSelectionSnapshot {
+  readonly matches: readonly SearchSelectionMatch[];
+  readonly complete: boolean;
+  readonly notices?: readonly string[];
+}
+/** Keep the original backend when refreshing an all-selection or observing an edit. */
+export interface SearchSelectionRegistration extends SearchSelectionSnapshot {
+  readonly request: SearchRequest;
+  readonly refresh: (signal?: AbortSignal) => Promise<SearchSelectionSnapshot>;
+}
+export interface RegisteredSearchSelection {
+  readonly id: string;
+  readonly matches: readonly SearchSelectionMatch[];
+  readonly complete: boolean;
+}
+export type SearchSelectionProvider = (
+  selection: SearchSelectionRegistration,
+  context: SearchContext,
+) => Promise<RegisteredSearchSelection>;
 export interface SearchPluginApi {
   addResolver(registration: SearchResolverRegistration): void;
+  /** Register the one shared SEARCH reference store. */
+  addSelectionProvider(provider: SearchSelectionProvider): void;
+  /** Register exact ranges with the shared store, retaining backend refresh behavior. */
+  registerSelection(
+    selection: SearchSelectionRegistration,
+    context: SearchContext,
+  ): Promise<RegisteredSearchSelection>;
   addAction(registration: SearchActionRegistration): void;
   describe(description: SearchDescriptionSource): void;
   /** Add an operational guideline while this search plugin is active. */
   addPromptGuideline(guideline: SearchDescriptionSource): void;
-  search(request: SearchRequest, context: SearchContext): Promise<AgentToolResult<unknown>>;
+  /** Execute configured resolvers and register references before returning script data. */
+  search(
+    request: SearchRequest,
+    context: SearchContext,
+    audience?: "agent" | "script",
+  ): Promise<SearchToolResult>;
   runAction(request: SearchActionRequest, context: SearchContext): Promise<unknown>;
 }
 
@@ -87,3 +139,5 @@ export interface SearchToolDetails {
     readonly cause?: unknown;
   };
 }
+
+export { searchSchema } from "#src/api/search-parameters.js";

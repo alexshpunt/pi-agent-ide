@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -17,24 +17,73 @@ afterEach(async () => {
   );
 });
 
-test("keeps a temporary resource alive while it is read and expires it after inactivity", async () => {
+test("keeps resources readable across long idle periods until disposal", async () => {
   vi.useFakeTimers();
-  const parentDirectory = await mkdtemp(path.join(tmpdir(), "pi-agent-read-temp-test-"));
-  directories.push(parentDirectory);
-  const store = new TempResourceStore({ parentDirectory, ttlMs: 5 * 60_000 });
-  stores.push(store);
+  const { store } = await createStore();
   const source = await store.save("alpha\nbravo\ncharlie");
 
-  await vi.advanceTimersByTimeAsync(4 * 60_000);
+  await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
   expect(await readTemporarySource(store, source)).toBe("alpha\nbravo\ncharlie");
-
-  await vi.advanceTimersByTimeAsync(4 * 60_000);
+  await vi.advanceTimersByTimeAsync(24 * 60 * 60_000);
   expect(await readTemporarySource(store, source)).toBe("alpha\nbravo\ncharlie");
-
-  await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
-  const expired = await store.resolver.tryResolve(source, { cwd: "/workspace" });
-  expect(expired).toMatchObject({ kind: "failed" });
 });
+
+test("isolates resources and removes only the disposed store's files", async () => {
+  const { store: first, parentDirectory } = await createStore();
+  const second = new TempResourceStore({ parentDirectory });
+  stores.push(second);
+  const source = await first.save("first");
+  const other = await second.save("second");
+  const resolved = await first.resolver.tryResolve(source, { cwd: "/workspace" });
+  expect(resolved.kind).toBe("resolved");
+  expect(await second.resolver.tryResolve(source, { cwd: "/workspace" })).toMatchObject({
+    kind: "failed",
+  });
+  expect(await first.resolver.tryResolve("file.txt", { cwd: "/workspace" })).toEqual({
+    kind: "not-handled",
+  });
+  expect(await readdir(parentDirectory)).toHaveLength(2);
+
+  await first.dispose();
+  expect(await readdir(parentDirectory)).toHaveLength(1);
+  expect(await first.resolver.tryResolve(source, { cwd: "/workspace" })).toMatchObject({
+    kind: "failed",
+  });
+  if (resolved.kind !== "resolved" || resolved.resource.read === undefined)
+    throw new Error("Missing resource");
+  await expect(resolved.resource.read({})).rejects.toBeInstanceOf(Error);
+  await expect(first.save("closed")).rejects.toBeInstanceOf(Error);
+  await first.dispose();
+  expect(await readTemporarySource(second, other)).toBe("second");
+  await second.dispose();
+  expect(await readdir(parentDirectory)).toEqual([]);
+});
+
+test("finishes pending saves before disposal completes without retaining resources", async () => {
+  const { store, parentDirectory } = await createStore();
+  const saving = store.save("pending");
+  await Promise.all([store.dispose(), store.dispose()]);
+  const source = await saving;
+  expect(await readdir(parentDirectory)).toEqual([]);
+  expect(await store.resolver.tryResolve(source, { cwd: "/workspace" })).toMatchObject({
+    kind: "failed",
+  });
+});
+
+test("disposes an unused store without creating a directory", async () => {
+  const { store, parentDirectory } = await createStore();
+  await store.dispose();
+  await expect(store.save("closed")).rejects.toBeInstanceOf(Error);
+  expect(await readdir(parentDirectory)).toEqual([]);
+});
+
+async function createStore(): Promise<{ store: TempResourceStore; parentDirectory: string }> {
+  const parentDirectory = await mkdtemp(path.join(tmpdir(), "pi-agent-read-temp-test-"));
+  directories.push(parentDirectory);
+  const store = new TempResourceStore({ parentDirectory });
+  stores.push(store);
+  return { store, parentDirectory };
+}
 
 async function readTemporarySource(store: TempResourceStore, source: string): Promise<string> {
   const attempt = await store.resolver.tryResolve(source, { cwd: "/workspace" });

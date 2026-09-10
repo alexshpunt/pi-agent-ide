@@ -7,14 +7,29 @@ import type { IdeDiagnosticReport, IdeDiagnosticSource } from "pi-agent-ide/api/
 export function createLspDiagnosticSource(
   managerFor: (
     cwd: string,
+    external?: boolean,
   ) => Promise<Pick<LspManager, "getOrStart" | "languageId" | "onPushDiagnostics">>,
+  resolveProject: (
+    filePath: string,
+    cwd: string,
+  ) => Promise<{ readonly cwd: string; readonly external: boolean } | undefined> = (
+    filePath,
+    cwd,
+  ) => Promise.resolve({ cwd, external: false }),
 ): IdeDiagnosticSource {
   return {
     id: "lsp",
     async diagnose(filePath, context) {
-      const manager = await managerFor(context.cwd);
+      const project = await resolveProject(filePath, context.cwd);
+      if (project === undefined)
+        return {
+          status: "unavailable",
+          diagnostics: [],
+          reason: "No local language-server project found for this file",
+        };
+      const manager = await managerFor(project.cwd, project.external);
       context.signal.throwIfAborted();
-      const client = await manager.getOrStart(filePath, context.cwd, "diagnostics");
+      const client = await manager.getOrStart(filePath, project.cwd, "diagnostics");
       context.signal.throwIfAborted();
       if (!client)
         return {
@@ -60,7 +75,7 @@ export function createLspDiagnosticSource(
           !current() ||
           event.uri !== uri ||
           event.serverId !== client.serverId ||
-          event.cwd !== context.cwd ||
+          event.cwd !== project.cwd ||
           (event.version !== undefined && event.version !== version)
         )
           return;

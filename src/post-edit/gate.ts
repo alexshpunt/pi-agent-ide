@@ -36,11 +36,24 @@ export async function runIdePostEditGate(
         formatter: formatterName,
       },
       ...(result.ok
-        ? { diffStatuses: [{ text: `Formatted (${formatterName})`, tone: "success" as const }] }
-        : {}),
+        ? {
+            diffStatuses: [
+              {
+                text: `Formatted (${formatterName})`,
+                tone: "success" as const,
+                formatter: formatterName,
+              },
+            ],
+          }
+        : {
+            diffStatuses: [
+              { text: `Formatting failed (${formatterName})`, tone: "error" as const },
+            ],
+          }),
     };
   } catch {
     return {
+      diffStatuses: [{ text: "Formatting failed", tone: "error" as const }],
       formatting: {
         status: "failed",
         ...(formatterName === undefined ? {} : { formatter: formatterName }),

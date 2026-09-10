@@ -21,7 +21,7 @@ import {
 import { AstScopeManager } from "./ast/manager.js";
 import { astDoctorPlugin } from "./doctor-plugin.js";
 import { createAstOutlineResolver } from "./outline-resolver.js";
-import { createAstOverflowHandler } from "./overflow-handler.js";
+import { createAstOverflowHandler, reduceAstReadOutput } from "./overflow-handler.js";
 import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.js";
 import { createAstScopeAnchorResolver } from "./scope-resolver.js";
 import { createAstSearchResolver } from "./search-resolver.js";
@@ -45,6 +45,7 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
       });
       api.addView({ view: "ast", presenter });
       const overflow = createAstOverflowHandler();
+      api.addOutputReducer(reduceAstReadOutput);
       const scopes = createAstScopePostReadHandler();
       api.addHandler({
         stage: "post-read",
@@ -81,9 +82,9 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
       apiVersion: SEARCH_API_VERSION,
       id: "ast-search",
       setup(api): void {
-        api.addResolver({ resolver: createAstSearchResolver() });
+        api.addResolver({ resolver: createAstSearchResolver(api.registerSelection) });
         api.describe(
-          "Search code structure with ast:<pattern>, using source-code syntax and placeholders such as $NAME for one node and $$$BODY for several nodes. path, include and exclude narrow the search.",
+          "Search code structure with ast:<pattern>, using source-code syntax and placeholders such as $NAME for one node and $$$BODY for several nodes. path, include and exclude narrow the search. Use returned SEARCH# references to read, replace, copy, move or delete exact AST matches, including multiline nodes. A single :match reference becomes stale after its file changes; :all:match reruns the original structural query. Incomplete results do not provide all selections. Use captures in Apply to compute replacement text; these edits do not update imports or references.",
         );
       },
     }),

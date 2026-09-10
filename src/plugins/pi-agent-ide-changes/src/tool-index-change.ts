@@ -14,7 +14,8 @@ import type { ChangeIndexAction } from "#src/changes/change-types.js";
 import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
 import type { IndexMutationQueue } from "#src/index-mutation-queue.js";
 
-const indexChangeSchema = Type.Object(
+/** Shared validation for standalone and composed index changes. */
+export const indexChangeSchema = Type.Object(
   {
     file: Type.String({ description: "Path to the tracked text file" }),
     change: Type.String({
@@ -42,7 +43,8 @@ export function registerIndexChangeTools(
   pi.registerTool(createIndexChangeTool("unstage", executor, queue));
 }
 
-function createIndexChangeTool(
+/** Build one guarded index change shared by standalone tools and Apply. */
+export function createIndexChangeTool(
   action: ChangeIndexAction,
   executor: GitCommandExecutor,
   queue: IndexMutationQueue,

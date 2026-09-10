@@ -1,5 +1,8 @@
 import { requiredValue } from "pi-agent-invariant";
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { TextEditCompletion } from "#src/api/edit-completion.js";
+import { Value } from "typebox/value";
 import type {
   TextAnchorRecoveryCandidateRange,
   TextAnchorRecoveryRange,
@@ -71,6 +74,7 @@ import { renderTextAnchor, type TextAnchor } from "pi-agent-text";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
 import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception";
 import type { Static, TSchema } from "typebox";
+import type { ScriptMutationOutcome } from "#src/core/apply/mutation-outcome.js";
 
 export function createTextTool<TParameters extends TSchema>(
   core: TextEditorCore,
@@ -372,9 +376,16 @@ function mergeTargets(left: readonly TextTarget[], right: readonly TextTarget[])
       merged.set(target.source, target);
       continue;
     }
+    if (
+      previous.expectedContent !== undefined &&
+      target.expectedContent !== undefined &&
+      previous.expectedContent !== target.expectedContent
+    )
+      throw new Error("Selections refer to different source revisions. Read the source again.");
     const ranges = [...(previous.ranges ?? []), ...(target.ranges ?? [])];
     merged.set(target.source, {
       source: target.source,
+      expectedContent: target.expectedContent ?? previous.expectedContent,
       ...(ranges.length > 0 && { ranges: deduplicateRanges(ranges) }),
     });
   }
@@ -715,6 +726,37 @@ export async function executeTextMutation<TParameters extends TSchema>(
   publishAnchorRenderState?: (field: string, state: ToolCallAnchorRenderState) => void,
   lastResolvedSource?: string,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
+  const execution = await executeTextMutationPipeline(
+    core,
+    definition,
+    parameters,
+    signal,
+    context,
+    publishAnchorRenderState,
+    lastResolvedSource,
+  );
+  const result = await buildToolResult(
+    core,
+    execution.pipeline,
+    execution.source,
+    context,
+    definition.name,
+  );
+  return execution.pipeline.kind === "completed" && execution.pipeline.state.metadata !== undefined
+    ? { ...result, details: { ...result.details, metadata: execution.pipeline.state.metadata } }
+    : result;
+}
+
+/** Runs configured mutation semantics without creating model-facing presentation. */
+export async function executeTextMutationPipeline<TParameters extends TSchema>(
+  core: TextEditorCore,
+  definition: TextMutationToolRegistration<TParameters>,
+  parameters: Static<TParameters>,
+  signal: AbortSignal | undefined,
+  context: ExtensionContext,
+  publishAnchorRenderState?: (field: string, state: ToolCallAnchorRenderState) => void,
+  lastResolvedSource?: string,
+): Promise<{ readonly pipeline: TextEditExecutionOutcome; readonly source: string }> {
   const source = mutationSource(definition, parameters);
   const pipeline = await core.executeEdit(
     definition.name,
@@ -725,6 +767,46 @@ export async function executeTextMutation<TParameters extends TSchema>(
     },
     async (state) => {
       try {
+        if (state.editPlan !== undefined) {
+          const plan = state.editPlan;
+          if (
+            plan.files.length === 0 ||
+            new Set(plan.files.map((file) => file.source)).size !== plan.files.length
+          )
+            throw new Error("Semantic edit plan must contain distinct source files.");
+          const outcome = await core.editTexts(
+            plan.files.map((file) => ({ source: file.source, read: true })),
+            {
+              cwd: state.cwd,
+              intent: definition.intent ?? "edit",
+              ...(state.signal !== undefined && { signal: state.signal }),
+            },
+            (texts) => {
+              for (const file of plan.files) {
+                if (texts.get(file.source) !== file.expectedContent)
+                  throw new Error(
+                    "A semantic edit source changed. Resolve the symbol again before retrying.",
+                  );
+              }
+              const edits = new Map(
+                plan.files.map((file) => [
+                  file.source,
+                  { changes: file.changes, action: "edited" as const },
+                ]),
+              );
+              return Promise.resolve({
+                changes: new Map(plan.files.map((file) => [file.source, file.changes])),
+                result: {
+                  edits,
+                  resultPresentations: new Map(
+                    plan.files.map((file) => [file.source, "plain" as const]),
+                  ),
+                },
+              });
+            },
+          );
+          return await completeTextMutation(outcome, requiredValue(plan.files[0]).source);
+        }
         const sources = await resolveMutationSources(
           core,
           definition,
@@ -744,6 +826,15 @@ export async function executeTextMutation<TParameters extends TSchema>(
             ...(state.signal !== undefined && { signal: state.signal }),
           },
           async (texts, resolveAnchor) => {
+            for (const target of sources.targets) {
+              if (
+                target.expectedContent !== undefined &&
+                texts.get(target.source) !== target.expectedContent
+              )
+                throw new Error(
+                  "The selected source changed before editing. Resolve the symbol again.",
+                );
+            }
             const mutationContext = createMutationContext(
               definition,
               state.input,
@@ -776,9 +867,142 @@ export async function executeTextMutation<TParameters extends TSchema>(
     },
   );
 
-  return buildToolResult(core, pipeline, source, context, definition.name);
+  return { pipeline, source };
 }
 
+const scriptMutationScope = new AsyncLocalStorage<TextEditCompletion[]>();
+
+async function captureScriptMutation<T>(core: TextEditorCore, action: () => Promise<T>) {
+  const completions: TextEditCompletion[] = [];
+  const unsubscribe = core.onDidEdit((completion) => {
+    if (scriptMutationScope.getStore() === completions) completions.push(completion);
+  });
+  try {
+    const value = await scriptMutationScope.run(completions, action);
+    return { kind: "completed" as const, value, completions };
+  } catch (error) {
+    return { kind: "failed" as const, error, completions };
+  } finally {
+    unsubscribe();
+  }
+}
+/**
+ * Runs the configured mutation pipeline and returns plain script data.
+ * onPresentation retains rich edit annotations on the host without sending classes to the guest.
+ */
+export async function executeScriptMutation<TParameters extends TSchema>(
+  core: TextEditorCore,
+  definition: TextMutationToolRegistration<TParameters>,
+  arguments_: unknown,
+  signal: AbortSignal | undefined,
+  context: ExtensionContext,
+  lastResolvedSource?: string,
+  onPresentation?: (source: string, result: FileMutationResult) => void,
+): Promise<ScriptMutationOutcome> {
+  const parameters = prepareGuardedArguments(
+    definition.parameters,
+    arguments_,
+    definition.source.inherited ? definition.source.field : undefined,
+    lastResolvedSource,
+    definition.anchors ?? [],
+  );
+  if (!Value.Check(definition.parameters, parameters)) {
+    throw Object.assign(new Error(`Invalid arguments for ${definition.name}`), {
+      code: "INVALID_ARGUMENTS",
+      details: { operation: definition.name, effect: "not-applied" },
+    });
+  }
+  const captured = await captureScriptMutation(core, () =>
+    executeTextMutationPipeline(
+      core,
+      definition,
+      parameters,
+      signal,
+      context,
+      undefined,
+      lastResolvedSource,
+    ),
+  );
+  const source =
+    captured.kind === "completed" ? captured.value.source : mutationSource(definition, parameters);
+  const observedFiles: ScriptMutationOutcome["files"] = captured.completions.map((completion) => ({
+    source: completion.resourceSource,
+    before: completion.existed ? completion.before.content : null,
+    after: completion.after.content,
+    action: definition.name === "write" ? "overwritten" : "edited",
+    changes: [],
+    formatting: { status: "not-reported" },
+  }));
+  const failed = (
+    code: string,
+    message: string,
+    effect: ScriptMutationOutcome["effect"],
+    completed: readonly string[] = [],
+  ): ScriptMutationOutcome => ({
+    operation: definition.name,
+    ok: false,
+    effect: effect === "unknown" ? "unknown" : observedFiles.length > 0 ? "applied" : effect,
+    completed: [...new Set([...completed, ...observedFiles.map((file) => file.source)])],
+    files: observedFiles,
+    errors: [{ source, code, message }],
+  });
+  if (captured.kind === "failed")
+    return failed("EXECUTION_FAILED", errorMessage(captured.error), "unknown");
+  const { pipeline } = captured.value;
+  if (pipeline.kind === "failed")
+    return {
+      ...failed(pipeline.failure.code, pipeline.failure.message, "not-applied"),
+      recoveries: await scriptAnchorRecoveries(pipeline.failure.cause),
+    };
+  const outcome = pipeline.state.result;
+  if (!isResourcesEditOutcome(outcome))
+    return failed("INVALID_RESULT", "Invalid mutation outcome", "unknown");
+  if (outcome.kind === "failed")
+    return {
+      ...failed(
+        outcome.failure.code,
+        outcome.failure.message,
+        outcome.completed.length > 0 ? "unknown" : "not-applied",
+        outcome.completed,
+      ),
+      recoveries: await scriptAnchorRecoveries(outcome.failure.cause),
+    };
+  const mutation = outcome.result as ExecutedTextMutation;
+  const files = outcome.resources.flatMap((resource) => {
+    const edit = mutation.edits.get(resource.source);
+    if (edit === undefined) return [];
+    const presentation = withPipelineStatuses(
+      buildSuccessfulTextMutationResult(resource, resource.source, edit),
+      pipeline.state.metadata,
+    );
+    onPresentation?.(resource.after.source, presentation);
+    const data = presentation.data;
+    return [
+      {
+        source: resource.after.source,
+        before:
+          captured.completions.find(
+            (completion) => completion.resourceSource === resource.after.source,
+          )?.existed === false
+            ? null
+            : resource.before.content,
+        after: resource.after.content,
+        action: edit.action,
+        changes: data.rawChanges ?? [],
+        formatting: data.formatting ?? { status: "not-reported" as const },
+      },
+    ];
+  });
+  return {
+    operation: definition.name,
+    ok: true,
+    effect: files.length > 0 ? "applied" : "not-applied",
+    files,
+    completed: files.map((file) => file.source),
+    ...(pipeline.state.metadata !== undefined && { metadata: pipeline.state.metadata }),
+    errors: [],
+  };
+}
 export function mutationSources(
   definition: TextMutationToolRegistration,
   parameters: Readonly<Record<string, unknown>>,
@@ -830,7 +1054,7 @@ export function buildSuccessfulTextMutationResult(
 ): FileMutationResult {
   const before = resource.before.content;
   const finalAfter = resource.after.content;
-  const applied = applyTextChanges(before, edit.changes);
+  const applied = applyTextChanges(before, edit.changes, before.length === 0);
   const unified = createUnifiedDiff(resultSource, before, diffAfterContent);
   const mutationResultData = resource.postEditContributions
     .map((contribution) => contribution.data)
@@ -857,7 +1081,7 @@ export function buildSuccessfulTextMutationResult(
       .flatMap((item) => item.diffStatuses),
     formatting: resource.postEditContributions
       .map((item) => item.data)
-      .find(isFormattingContribution)?.formatting ?? { status: "not-reported" },
+      .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
     ok: true,
     path: resultSource,
     diffs: [unified.diff],
@@ -960,12 +1184,43 @@ async function buildToolResult(
         ];
   });
 
+  const presented = results.map((result) => withPipelineStatuses(result, pipeline.state.metadata));
   return {
-    content: [new FileMutationAgentResult(results).toTextContent()],
-    details: { results },
+    content: [new FileMutationAgentResult(presented).toTextContent()],
+    details: { results: presented },
   };
 }
 
+function withPipelineStatuses(result: FileMutationResult, metadata: unknown): FileMutationResult {
+  if (!isDiffStatusContribution(metadata)) return result;
+  return new FileMutationResult({
+    ...result.data,
+    diffStatuses: [...(result.data.diffStatuses ?? []), ...metadata.diffStatuses],
+  });
+}
+async function resolveAnchorRecovery(error: TextMutationAnchorResolutionError) {
+  if (error.resolution.recovery === undefined) await error.resolution.refreshRecovery();
+  return error.resolution.recovery;
+}
+
+async function scriptAnchorRecoveries(
+  cause: unknown,
+): Promise<NonNullable<ScriptMutationOutcome["recoveries"]>> {
+  if (cause instanceof TextMutationAnchorAggregateError)
+    return (await Promise.all(cause.failures.map(scriptAnchorRecoveries))).flat();
+  if (!(cause instanceof TextMutationAnchorResolutionError)) return [];
+  const recovery = await resolveAnchorRecovery(cause);
+  return [
+    {
+      path: cause.source,
+      field: cause.field,
+      anchor: cause.anchor,
+      status: recovery?.kind ?? "unavailable",
+      candidates: recovery?.kind === "candidates" ? recovery.candidates : [],
+      total: recovery?.kind === "candidates" ? recovery.total : 0,
+    },
+  ];
+}
 async function anchorFailureToolResult(
   core: TextEditorCore,
   failure: TextResourceEditFailure,
@@ -1006,10 +1261,7 @@ async function anchorFailureToolResult(
 
   const contextual = failure.cause;
   const resolution = contextual.resolution;
-  if (resolution.recovery === undefined) {
-    await resolution.refreshRecovery();
-  }
-  const recovery = resolution.recovery;
+  const recovery = await resolveAnchorRecovery(contextual);
   if (recovery?.kind === "timed-out") {
     return failureToolResult(
       contextual.source,

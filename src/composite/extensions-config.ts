@@ -16,6 +16,8 @@ export interface PiAgentIdeExtensionsConfigPaths {
 export interface PiAgentIdeExtensionsConfig {
   readonly disabled: readonly string[];
   readonly enabled: readonly string[];
+  /** Boolean flag overrides keyed by their registered flag IDs. */
+  readonly flags?: Readonly<Record<string, boolean>>;
   /** Disable decorative mutation playback while keeping final results visible. */
   readonly noAnimations?: boolean;
   /** Skip automatic formatting and diagnostics triggered by edits. */
@@ -58,11 +60,39 @@ export async function readPiAgentIdeExtensionsConfig(
   return {
     disabled: [...new Set([...globalConfig.disabled, ...projectConfig.disabled])],
     enabled: [...new Set([...globalConfig.enabled, ...projectConfig.enabled])],
+    ...(globalConfig.flags === undefined && projectConfig.flags === undefined
+      ? {}
+      : {
+          flags: {
+            ...configuredFeatureFlags(globalConfig),
+            ...configuredFeatureFlags(projectConfig),
+          },
+        }),
     noAnimations: projectConfig.noAnimations ?? globalConfig.noAnimations ?? false,
     noPostProcessing: projectConfig.noPostProcessing ?? globalConfig.noPostProcessing ?? false,
   };
 }
 
+/** Resolve feature values in one scope, including existing top-level switches. */
+export function configuredFeatureFlags(
+  config: PiAgentIdeExtensionsConfig,
+): Readonly<Record<string, boolean>> {
+  return {
+    ...(config.noAnimations === undefined
+      ? {}
+      : { "pi-agent-ide-no-animations": config.noAnimations }),
+    ...(config.noPostProcessing === undefined
+      ? {}
+      : { "pi-agent-ide-no-post-processing": config.noPostProcessing }),
+    ...config.flags,
+  };
+}
+/** Read one settings scope using the same validation as startup. */
+export async function readExtensionSettingsScope(
+  configPath: string,
+): Promise<PiAgentIdeExtensionsConfig> {
+  return readConfigExtensionIds(configPath);
+}
 async function readConfigExtensionIds(configPath: string): Promise<PiAgentIdeExtensionsConfig> {
   let source: string;
 
@@ -97,6 +127,7 @@ async function readConfigExtensionIds(configPath: string): Promise<PiAgentIdeExt
   return {
     disabled: readIdField(value, "disabled", configPath),
     enabled: readIdField(value, "enabled", configPath),
+    ...(value.flags === undefined ? {} : { flags: readFlags(value.flags, configPath) }),
     ...(value.noAnimations === undefined
       ? {}
       : { noAnimations: readBoolean(value, "noAnimations", configPath) }),
@@ -106,6 +137,16 @@ async function readConfigExtensionIds(configPath: string): Promise<PiAgentIdeExt
   };
 }
 
+function readFlags(value: unknown, configPath: string): Record<string, boolean> {
+  if (!isRecord(value)) throw new Error(`flags in ${configPath} must be an object`);
+  const flags: Record<string, boolean> = {};
+  for (const [id, setting] of Object.entries(value)) {
+    if (typeof setting !== "boolean")
+      throw new Error(`Flag ${id} in ${configPath} must be a boolean`);
+    flags[id] = setting;
+  }
+  return flags;
+}
 function readBoolean(value: Record<string, unknown>, field: string, configPath: string): boolean {
   const setting = value[field];
   if (typeof setting !== "boolean") throw new Error(`${field} in ${configPath} must be a boolean`);

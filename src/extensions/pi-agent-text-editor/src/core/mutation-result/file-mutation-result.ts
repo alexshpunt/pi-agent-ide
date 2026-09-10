@@ -20,12 +20,15 @@ export interface MutationFormatting {
     | "unchanged"
     | "changed"
     | "failed"
-    | "not-reported";
+    | "not-reported"
+    | "deferred";
   readonly formatter?: string;
 }
 
 /** Plain-text, per-file status shown beside diff counts and retained in history. */
 export interface MutationDiffStatus {
+  /** Formatter identity allows multi-file summaries without parsing display text. */
+  readonly formatter?: string;
   readonly text: string;
   readonly tone?: "muted" | "success" | "warning" | "error";
 }
@@ -264,6 +267,8 @@ export interface FileMutationData {
  * Phases are batch-wide (gate runs once for all files), not per-FMR.
  */
 export interface FileMutationBatchResult {
+  /** Structured contributions from configured IDE mutation handlers. */
+  readonly metadata?: Readonly<Record<string, unknown>>;
   /**
     Per-file mutation results (undefined when tool aborted).
     */

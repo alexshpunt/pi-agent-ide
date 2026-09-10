@@ -6,6 +6,79 @@ import { expect, test } from "vitest";
 
 import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
 
+test("script reads retain full requested lines without changing ordinary output limits", async () => {
+  const read = createReadTool();
+  const content = Array.from(
+    { length: DEFAULT_MAX_LINES + 100 },
+    (_, index) => `line ${index}`,
+  ).join("\n");
+  read.registerContributions("fixture", { resolvers: [{ resolver: textResolver(content) }] });
+  try {
+    const script = await read.execute({ path: "large.txt" }, { cwd: process.cwd() }, "script");
+    expect(script.details.lines).toHaveLength(DEFAULT_MAX_LINES + 100);
+    expect(script.details.truncation).toBeUndefined();
+    expect(script.script).toMatchObject({
+      kind: "text",
+      content,
+      totalLines: DEFAULT_MAX_LINES + 100,
+    });
+    const ordinary = await read.execute({ path: "large.txt" }, { cwd: process.cwd() });
+    expect(ordinary.details.lines?.length).toBeLessThanOrEqual(DEFAULT_MAX_LINES);
+    const window = await read.execute(
+      { path: "large.txt", offset: 3, limit: 2 },
+      { cwd: process.cwd() },
+      "script",
+    );
+    expect(window.details.lines?.map((line) => line.lineNumber)).toEqual([3, 4]);
+    expect(window.script).toMatchObject({
+      kind: "text",
+      content: "line 2\nline 3\n",
+      startLine: 3,
+      endLine: 4,
+    });
+  } finally {
+    await read.dispose();
+  }
+});
+test("script multi-target reads keep every selected resource", async () => {
+  const read = createReadTool();
+  read.registerContributions("fixture", {
+    resolvers: [{ resolver: textResolver("alpha\nbeta\n") }],
+    targetResolvers: [
+      {
+        resolver: {
+          id: "targets",
+          tryResolve: () => ({
+            kind: "resolved",
+            targets: ["one.txt", "two.txt"].map((source) => ({
+              source,
+              ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 3, column: 0 } }],
+            })),
+          }),
+        },
+      },
+    ],
+  });
+  try {
+    const result = await read.execute({ path: "selection" }, { cwd: process.cwd() }, "script");
+    expect(result.script).toMatchObject({
+      kind: "resources",
+      resources: [
+        { kind: "text", source: "one.txt", content: "alpha\nbeta\n" },
+        { kind: "text", source: "two.txt", content: "alpha\nbeta\n" },
+      ],
+    });
+    expect(result.details.resources?.map((resource) => resource.details.source)).toEqual([
+      "one.txt",
+      "two.txt",
+    ]);
+    expect(result.details.resources?.map((resource) => resource.details.lines?.length)).toEqual([
+      2, 2,
+    ]);
+  } finally {
+    await read.dispose();
+  }
+});
 test("reads a validated resource and projects custom content", async () => {
   const read = createReadTool();
   const resolver = {
@@ -461,7 +534,7 @@ test("saves opt-in truncated output and reads the temporary protocol without pre
     const firstBlock = first.content[0];
     expect(firstBlock?.type).toBe("text");
     if (firstBlock?.type === "text") {
-      expect(firstBlock.text).toContain(`Full output: ${temporarySource}`);
+      expect(firstBlock.text).toContain(temporarySource);
     }
 
     const remainder = await read.tool.execute(
@@ -589,3 +662,15 @@ function textResolver(content: string): ResourceResolver {
     },
   };
 }
+
+test("shared output resources can be read in windows until disposal", async () => {
+  const read = createReadTool();
+  const reference = await read.saveTemporary("first\nsecond\nthird\n");
+  const selected = await read.execute(
+    { path: reference, offset: 2, limit: 1 },
+    { cwd: process.cwd() },
+  );
+  expect(selected.details.lines?.map(({ content }) => content)).toEqual(["second"]);
+  await read.dispose();
+  await expect(read.saveTemporary("late")).rejects.toBeInstanceOf(Error);
+});

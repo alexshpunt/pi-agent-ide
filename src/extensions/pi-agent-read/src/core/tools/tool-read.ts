@@ -17,7 +17,6 @@ import {
   type TextTargetResolutionAttempt,
 } from "pi-agent-text";
 import { withBlockedToolResult } from "pi-agent-tool-call-interception";
-import { Type } from "typebox";
 
 import {
   isFragmentResolverRegistration,
@@ -53,32 +52,8 @@ import {
 } from "#src/core/tools/read/read-result.js";
 import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
 
-const readParameters = Type.Object({
-  path: Type.Optional(
-    Type.String({
-      description:
-        "What to read: a file or directory path, URL, returned temp: or SEARCH# reference, or one of the source forms listed in the description. Supply a path; an empty call cannot select a source.",
-    }),
-  ),
-  offset: Type.Optional(
-    Type.Number({
-      description:
-        "First line to return, numbered from 1. Omit or use 0 to start at line 1; -1 starts at the last line, -10 at the tenth line from the end. For path#anchor or a SEARCH selection, count from its containing line instead: 0 or 1 starts there, 2 starts one line later, -1 one line earlier.",
-    }),
-  ),
-  limit: Type.Optional(
-    Type.Number({
-      description:
-        "Maximum lines to read from the selected starting position, subject to the output budget. Omit for the default bounded read.",
-    }),
-  ),
-  views: Type.Optional(
-    Type.Array(Type.String(), {
-      description:
-        'Optional additions to the returned text. Use the views listed in the tool description. Combine views when needed, for example ["anchors", "ast"] for source text with editable line references and scope boundaries. Omit for the source\'s default presentation.',
-    }),
-  ),
-});
+import { readParameters } from "#src/api/read-parameters.js";
+import { readRaw } from "#src/core/tools/read/raw-read.js";
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
 
@@ -121,10 +96,13 @@ export interface ReadToolContributions {
 }
 
 export interface ReadTool {
+  /** Shares the read runtime's temporary resource store with composed operations. */
+  saveTemporary(text: string): Promise<string>;
   readonly tool: ToolDefinition<typeof readParameters, ReadResultDetails>;
   execute(
     request: ReadPipelineContext["request"],
     context: ResourceResolverContext,
+    audience?: "agent" | "script",
   ): Promise<ReadToolResult>;
   registerContributions(pluginId: string, contributions: ReadToolContributions): void;
   dispose(): Promise<void>;
@@ -155,15 +133,17 @@ export function createReadTool(
   const toolId = "read";
 
   return {
+    saveTemporary: (text) => temporaryResources.save(text),
     tool: {
       name: toolId,
       label: toolId,
 
       promptSnippet:
-        "Read files, URLs, temporary resources, search selections, and protocol sources, with optional views projected onto text content",
+        "Read files, original bytes with raw:, URLs, temporary resources, search selections, and protocol sources, with optional views projected onto text content",
       get description(): string {
         return [
-          `Use read to inspect files, directories, URLs and supported sources without changing them. path selects the source; offset/limit select a text window; views add annotations. Text limit: ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB. Continuation: returned offset, or returned temp: reference as path.`,
+          `Use read to inspect files, directories, URLs and supported sources without changing them. path selects the source; offset/limit select a text window; views add annotations. Text limit: ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB. Continuation: returned offset, or returned temp: reference as path. Temporary references remain available until their owning runtime is disposed.`,
+          "Use raw:<local-file> to inspect original bytes without decoding or conversion, including PDFs and images. In raw: mode offset is a zero-based byte position (negative from EOF), limit is a non-negative byte count, and 0 reads no bytes. Output uses hexadecimal offsets, hex bytes and printable ASCII; dots stand for nonprintable bytes. Follow the returned byte offset to continue. Raw sources do not accept views or text anchors.",
           pluginDescription?.() ?? "",
         ]
           .filter(Boolean)
@@ -172,6 +152,7 @@ export function createReadTool(
       get promptGuidelines(): string[] {
         return [
           "Use read to examine supported sources instead of cat, sed, head or tail. Use search to locate workspace text and paths instead of grep, rg or find.",
+          "Use read with raw:<local-file> instead of xxd, od or hexdump to inspect original bytes. In raw: mode offset/limit count bytes, not lines; omit text views.",
           ...(pluginPromptGuidelines?.() ?? []),
         ];
       },
@@ -202,7 +183,7 @@ export function createReadTool(
         );
       },
     },
-    execute(request, context): Promise<ReadToolResult> {
+    execute(request, context, audience = "agent"): Promise<ReadToolResult> {
       return executeRead(
         request,
         context,
@@ -212,6 +193,7 @@ export function createReadTool(
         temporaryResources,
         fragments,
         targetResolvers,
+        audience,
       );
     },
     registerContributions(pluginId, contributions): void {
@@ -309,7 +291,12 @@ async function executeRead(
     readonly priority: number;
     readonly order: number;
   }[],
+  audience: "agent" | "script" = "agent",
 ): Promise<ReadToolResult> {
+  if (request.path?.startsWith("raw:")) return readRaw(request, resolverContext, audience);
+  resolverContext = { ...resolverContext, audience };
+  const limitOutput: typeof limitReadOutput =
+    audience === "script" ? async (result) => result : limitReadOutput;
   const resolverSnapshot = [...resolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
@@ -325,7 +312,10 @@ async function executeRead(
   const targetSnapshot = [...targetResolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
-  const requestedViews = new Set(request.views ?? []);
+  const requestedViews = new Set([
+    ...(request.views ?? []),
+    ...(audience === "script" ? viewSnapshot.map(({ registration }) => registration.view) : []),
+  ]);
   const knownViews = new Set([...viewSnapshot.map(({ registration }) => registration.view)]);
   const ignoredViews = [...requestedViews].filter((view) => !knownViews.has(view));
   if (request.path !== undefined && targetSnapshot.length > 0) {
@@ -338,19 +328,17 @@ async function executeRead(
       viewSnapshot,
       requestedViews,
       ignoredViews,
+      audience,
     );
     if (targeted !== undefined) return targeted;
   }
-  let pipeline: ReadPipelineContext = { request: { ...request }, resolverContext };
+  let pipeline: ReadPipelineContext = { request: { ...request }, resolverContext, audience };
 
   if (!pipeline.request.path?.startsWith("temp:")) {
     const preRead = await runPreReadHandlers(pipeline, handlerSnapshot);
 
     if (preRead.kind === "return") {
-      return withIgnoredViews(
-        await limitReadOutput(preRead.result, pipeline.request),
-        ignoredViews,
-      );
+      return withIgnoredViews(await limitOutput(preRead.result, pipeline.request), ignoredViews);
     }
 
     pipeline = preRead.context;
@@ -392,7 +380,7 @@ async function executeRead(
     }
   }
   if (resolved.kind === "return") {
-    return limitReadOutput(resolved.result, pipeline.request);
+    return limitOutput(resolved.result, pipeline.request);
   }
 
   pipeline = resolved.context;
@@ -411,8 +399,8 @@ async function executeRead(
 
   if (pipeline.state?.textMode === "final") {
     return withIgnoredViews(
-      await limitReadOutput(
-        projectReadState(pipeline.state, pipeline.request, { originLine: origin }),
+      await limitOutput(
+        projectReadState(pipeline.state, pipeline.request, { originLine: origin, audience }),
         pipeline.request,
         undefined,
         { originLine: origin },
@@ -425,7 +413,7 @@ async function executeRead(
 
   if (processed.kind === "return") {
     return withIgnoredViews(
-      await limitReadOutput(processed.result, pipeline.request, undefined, { originLine: origin }),
+      await limitOutput(processed.result, pipeline.request, undefined, { originLine: origin }),
       ignoredViews,
     );
   }
@@ -433,6 +421,7 @@ async function executeRead(
   pipeline = processed.context;
   pipeline = await runTextPresenters(pipeline, viewSnapshot, requestedViews);
   const projected = projectReadState(requiredValue(pipeline.state), pipeline.request, {
+    audience,
     originLine: origin,
   });
   pipeline = { ...pipeline, result: projected };
@@ -444,7 +433,7 @@ async function executeRead(
       ? (text: string): Promise<string> => temporaryResources.save(text)
       : undefined;
   return withIgnoredViews(
-    await limitReadOutput(result, pipeline.request, saveFullOutput, { originLine: origin }),
+    await limitOutput(result, pipeline.request, saveFullOutput, { originLine: origin }),
     ignoredViews,
   );
 }
@@ -480,7 +469,10 @@ async function resolveTextTargets(
   views: readonly RegisteredView[],
   requestedViews: ReadonlySet<string>,
   ignoredViews: readonly string[],
+  audience: "agent" | "script",
 ): Promise<ReadToolResult | undefined> {
+  const limitOutput: typeof limitReadOutput =
+    audience === "script" ? async (result) => result : limitReadOutput;
   for (const { resolver } of targetResolvers) {
     let rawAttempt: unknown;
     try {
@@ -522,6 +514,7 @@ async function resolveTextTargets(
         message: "Text target resolver returned no targets",
       });
     const chunks: string[] = [];
+    const resources: ReadToolResult[] = [];
     let firstDetails: ReadResultDetails | undefined;
     for (const target of attempt.targets) {
       const ranges = target.ranges ?? [
@@ -536,6 +529,7 @@ async function resolveTextTargets(
             limit: request.limit ?? rangeLimit,
           },
           resolverContext,
+          audience,
         };
         if (!target.source.startsWith("temp:")) {
           const preRead = await runPreReadHandlers(rangePipeline, handlers);
@@ -545,6 +539,7 @@ async function resolveTextTargets(
             for (const block of preRead.result.content) {
               if (block.type === "text") chunks.push(block.text);
             }
+            resources.push(preRead.result);
             firstDetails ??= preRead.result.details;
             continue;
           }
@@ -561,11 +556,13 @@ async function resolveTextTargets(
           for (const block of processed.result.content) {
             if (block.type === "text") chunks.push(block.text);
           }
+          resources.push(processed.result);
           firstDetails ??= processed.result.details;
           continue;
         }
         const presented = await runTextPresenters(processed.context, views, requestedViews);
         const projected = projectReadState(requiredValue(presented.state), presented.request, {
+          audience,
           originLine: range.start.lineNumber,
         });
         const postRead = await runPostReadHandlers({ ...presented, result: projected }, handlers);
@@ -576,15 +573,36 @@ async function resolveTextTargets(
         for (const block of result.content) {
           if (block.type === "text") chunks.push(block.text);
         }
+        resources.push(result);
         firstDetails ??= result.details;
       }
     }
     const aggregate = {
+      ...(audience === "script" && {
+        script:
+          resources.length === 1 && resources[0]?.script !== undefined
+            ? resources[0].script
+            : {
+                kind: "resources" as const,
+                source: request.path,
+                resources: resources.map(
+                  (result) =>
+                    result.script ?? {
+                      kind: "native" as const,
+                      source: result.details.source ?? request.path ?? "",
+                      blocks: result.content,
+                    },
+                ),
+              },
+      }),
       content: [{ type: "text", text: chunks.join("\n") }],
-      details: firstDetails ?? { source: request.path },
+      details:
+        audience === "script"
+          ? { source: request.path, resources }
+          : (firstDetails ?? { source: request.path }),
     } satisfies ReadToolResult;
     return withIgnoredViews(
-      await limitReadOutput(aggregate, { path: request.path, views: request.views }),
+      await limitOutput(aggregate, { path: request.path, views: request.views }),
       ignoredViews,
     );
   }
@@ -908,6 +926,8 @@ async function runTextPresenters(
   const document = state.text;
   const presentationContext: TextPresentationContext = {
     purpose: "read",
+    audience: context.resolverContext.audience,
+    requestedViews: context.request.views,
     source: state.source,
     cwd: context.resolverContext.cwd,
     resolvedBy: state.resolvedBy,
@@ -1003,7 +1023,15 @@ function mergePresentedLine(base: TextLine, current: TextLine, contribution: Tex
   );
   const metadata = mergeLineMetadata(base.metadata, current.metadata, contribution.metadata);
 
-  if (presentation === current.presentation && metadata === current.metadata) {
+  const anchors =
+    contribution.anchors === undefined
+      ? current.anchors
+      : [...new Set([...(current.anchors ?? []), ...contribution.anchors])];
+  if (
+    presentation === current.presentation &&
+    metadata === current.metadata &&
+    anchors === current.anchors
+  ) {
     return current;
   }
 
@@ -1011,6 +1039,7 @@ function mergePresentedLine(base: TextLine, current: TextLine, contribution: Tex
     ...current,
     ...(presentation !== undefined && { presentation }),
     ...(metadata !== undefined && { metadata }),
+    ...(anchors !== undefined && { anchors }),
   };
 }
 

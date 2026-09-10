@@ -10,6 +10,6 @@ This extension gives the agent one stable `CHANGE#...` anchor for each current G
 
 A direct mutation call is one transaction. A coalesced text batch is also one transaction, but its state is stored independently for each changed file. The extension keeps only one transaction per file in memory. A newer edit replaces it, any restore consumes it, and an external change makes it stale. Newly created files are not stored.
 
-Undo writes through the normal text editor pipeline. It keeps path inheritance, batching, post-edit processing, the final reread, overwrite protection for ordinary edits, and the standard mutation diff.
+Undo writes through the normal text editor pipeline. It keeps path inheritance, batching, post-edit processing, the final reread, the standard mutation diff.
 
 The extension supports tracked, non-conflicted text files in a Git worktree with an existing `HEAD`. It has no redo, stack, journal, disk cache, or session reconstruction. It is part of the default `pi-agent-ide` extension list.

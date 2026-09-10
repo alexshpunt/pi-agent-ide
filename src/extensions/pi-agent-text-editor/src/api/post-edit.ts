@@ -1,3 +1,4 @@
+export { hasDeferredPostEdit, afterPostEditScope } from "#src/core/post-edit-scope.js";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
@@ -58,6 +59,7 @@ export function isFormattingContribution(
             "changed",
             "failed",
             "not-reported",
+            "deferred",
           ].map((status) => Type.Literal(status)),
         ),
         formatter: Type.Optional(Type.String()),
@@ -89,6 +91,7 @@ export function isDiffStatusContribution(value: unknown): value is TextPostEditS
       diffStatuses: Type.Array(
         Type.Object({
           text: Type.String({ minLength: 1 }),
+          formatter: Type.Optional(Type.String()),
           tone: Type.Optional(
             Type.Union(["muted", "success", "warning", "error"].map((tone) => Type.Literal(tone))),
           ),

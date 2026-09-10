@@ -25,10 +25,6 @@ const defaultTextEditorExtension = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/register-extension.ts",
 );
 const rendererTestStand = path.resolve(import.meta.dirname, "register-extension.ts");
-const overwriteGuardExtension = path.resolve(
-  process.cwd(),
-  "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/index.ts",
-);
 const staleAnchorGuardExtension = path.resolve(
   process.cwd(),
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.ts",
@@ -300,7 +296,7 @@ describe("text mutation renderer", () => {
       const panelStart = rendered.indexOf("╭─", rendered.indexOf("replace stable.txt · "));
       const panelEnd = rendered.indexOf("╯", panelStart);
       const panel = rendered.slice(panelStart, panelEnd + 1);
-      expect(rendered).toContain("replace stable.txt · line 27");
+      expect(rendered).toMatch(/replace stable\.txt · 27#[0-9A-F]+/u);
       expect(rendered).toContain("+0 ~1 -0");
       expect(rendered.match(/╭─{40,}╮/gu)).toHaveLength(1);
       expect(panel).toMatch(/27\s+~\s+latest visible change/u);
@@ -609,7 +605,7 @@ describe("text mutation renderer", () => {
       const panels = mutationPanels(rendered, "replace post-edit-viewport.ts · ");
       const finalContent = await readFile(path.resolve(directory, "post-edit-viewport.ts"), "utf8");
 
-      expect(rendered.match(/replace post-edit-viewport\.ts · line \d+/gu)).toHaveLength(2);
+      expect(rendered.match(/replace post-edit-viewport\.ts · \d+#[0-9A-F]+/gu)).toHaveLength(2);
       expect(rendered.match(/\+0 ~1 -0/gu)).toHaveLength(2);
       expect(panels).toHaveLength(2);
       expect(panels[0]).toContain("loadPrimaryValue");
@@ -727,7 +723,7 @@ describe("text mutation renderer", () => {
       await expect(readFile(file, "utf8")).resolves.toContain(
         "// formatted outside generated viewport",
       );
-      expect(rendered).toMatch(/replace post-edit-viewport\.ts · (?:line 20|selected range)/u);
+      expect(rendered).toMatch(/replace post-edit-viewport\.ts · (?:line 20|20#[0-9A-F]+)/u);
       expect(rendered).toContain("+0 ~2 -0");
       expect(panel).toContain("19 ~ const value19 = formattedContext();");
       expect(panel).toContain("20 ~ const value20 = computeValue();");
@@ -790,7 +786,7 @@ describe("text mutation renderer", () => {
       const rendered = resumed.tuiRenderedOutput;
       const [panel] = mutationPanels(rendered, "replace post-edit-viewport.ts · ");
 
-      expect(rendered).toMatch(/replace post-edit-viewport\.ts · (?:line 20|selected range)/u);
+      expect(rendered).toMatch(/replace post-edit-viewport\.ts · (?:line 20|20#[0-9A-F]+)/u);
       expect(rendered).toContain("+0 ~2 -0");
       expect(panel).toContain("19 ~ const value19 = formattedContext();");
       expect(panel).toContain("20 ~ const value20 = computeValue();");
@@ -885,7 +881,7 @@ describe("text mutation renderer", () => {
       const rendered = result.tuiRenderedOutput;
       const panel = mutationPanels(rendered, "copy source.txt · ");
 
-      expect(rendered).toContain("copy source.txt · selected range -> target.txt · selected range");
+      expect(rendered).toMatch(/copy source\.txt · 2#[0-9A-F]+ -> target\.txt · 1#[0-9A-F]+/u);
       expect(rendered).toContain("+1 ~0 -0");
       expect(panel).toHaveLength(1);
       expect(panel[0]).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
@@ -900,65 +896,12 @@ describe("text mutation renderer", () => {
       const rendered = result.tuiRenderedOutput;
       const panels = mutationPanels(rendered, "move source.txt · ");
 
-      expect(rendered).toContain("move source.txt · selected range -> target.txt · selected range");
+      expect(rendered).toMatch(/move source\.txt · 2#[0-9A-F]+ -> target\.txt · 1#[0-9A-F]+/u);
       expect(rendered).toContain("+1 ~0 -1");
       expect(panels).toHaveLength(2);
       expect(panels.join("\n")).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
     });
   });
-
-  test.each(["before content starts", "when arguments arrive together"])(
-    "does not render a diff for an overwrite blocked $delivery",
-    async (delivery) => {
-      await withTempWorkspace(async (directory) => {
-        await createFixture(directory, "blocked-overwrite.txt", "original content\n");
-        const generated = Array.from(
-          { length: 12 },
-          (_, index) => `blocked line ${index + 1}`,
-        ).join("\n");
-        const argumentsJson = JSON.stringify({ path: "blocked-overwrite.txt", content: generated });
-        const chunks =
-          delivery === "before content starts"
-            ? ['{"path":"blocked-overwrite.txt",', `"content":${JSON.stringify(generated)}}`]
-            : [argumentsJson];
-        const result = await new PiIntegrationTest({
-          testName: `text-editor-renderer-blocked-overwrite-${delivery.replaceAll(" ", "-")}`,
-          cwd: directory,
-          extensions: [
-            ...extensions.paths.map((extension) =>
-              extension === defaultTextEditorExtension ? rendererTestStand : extension,
-            ),
-            overwriteGuardExtension,
-          ],
-          tools: ["write"],
-          rawMode: false,
-          conversation: [
-            assistantMessage(
-              [
-                toolCall({
-                  id: "blocked-overwrite",
-                  name: "write",
-                  argumentsJson,
-                  chunks: { kind: "explicit", chunks },
-                  delayMs: 40,
-                }),
-              ],
-              { stopReason: "toolUse" },
-            ),
-            assistantMessage([text("Done")]),
-          ],
-        }).run("Try to overwrite the file");
-
-        expect(getToolResultText(result, "blocked-overwrite")).toContain(
-          "Reason: The file already exists",
-        );
-        expect(result.tuiRenderedOutput).toContain("← ⊘ Overwrite Blocked");
-        expect(result.tuiRenderedOutput).not.toContain("Reason: The file already exists");
-        expect(result.tuiRenderedOutput).not.toMatch(/╭─{40,}╮/u);
-        expect(result.terminalOutput).not.toContain("original content");
-      });
-    },
-  );
 
   test("does not retain a diff after a stale-anchor block", async () => {
     await withTempWorkspace(async (directory) => {
@@ -1369,8 +1312,7 @@ describe("exact anchor header rendering", () => {
 
       const rendered = result.tuiRenderedOutput;
       expect(getToolExecution(result, "replace-exact-multiline").isError).toBe(false);
-      expect(rendered).toContain("replace service.txt · selected text");
-      expect(rendered).not.toContain("replace service.txt · function buildService()");
+      expect(rendered).toContain("replace service.txt · function buildService()");
       await expect(readFile(file, "utf8")).resolves.toContain("return resolveEndpoint");
     });
   });

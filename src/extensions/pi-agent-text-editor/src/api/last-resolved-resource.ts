@@ -16,6 +16,11 @@ export function rememberLastResolvedResource(pi: ExtensionAPI, details: unknown)
     return;
   }
 
+  if (Array.isArray(details.resources)) {
+    for (const resource of details.resources) {
+      if (isRecord(resource)) rememberLastResolvedResource(pi, resource.details);
+    }
+  }
   const source = details.source;
   const resolverId = details.resolvedBy;
 

@@ -86,6 +86,44 @@ test("read shows lint diagnostics without changing the source", async () => {
   });
 }, 60_000);
 
+test("external diagnostics use the external project's linter", async () => {
+  await withTempDirectory(async (currentProject) => {
+    const externalProject = await mkdtemp(path.join(tempRoot, "external-"));
+    try {
+      const fileName = "external-lint.js";
+      const file = path.join(externalProject, fileName);
+      const source = 'console.log("external");\n';
+      await writeJavaScriptProject(externalProject, fileName, source);
+
+      const result = await new PiIntegrationTest({
+        artifactsDir: testArtifactsDir(expect.getState().testPath),
+        testName: "external-project-lint-diagnostics",
+        cwd: currentProject,
+        extensions: generatedExtensions.paths,
+        tools: ["read"],
+        conversation: [
+          assistantMessage(
+            [
+              toolCall({
+                id: "external-lint",
+                name: "read",
+                arguments: { path: file, views: ["diagnostics"] },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("The external lint diagnostic read finished")]),
+        ],
+      }).run("Read the external file with diagnostics");
+
+      expect(await readFile(file, "utf8")).toBe(source);
+      const rendered = getToolResultText(result, "external-lint");
+      expect(rendered).toContain("[ERROR] eslint_d:no-console:");
+    } finally {
+      await rm(externalProject, { recursive: true, force: true });
+    }
+  });
+}, 60_000);
 async function writeJavaScriptProject(
   directory: string,
   fileName: string,

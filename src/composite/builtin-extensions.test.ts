@@ -3,18 +3,14 @@ import { describe, expect, test } from "vitest";
 import { BUILTIN_EXTENSIONS } from "./builtin-extensions.js";
 
 describe("built-in extension catalog", () => {
-  test("marks the opt-in editor plugins as off by default", () => {
-    const byId = new Map(BUILTIN_EXTENSIONS.map((extension) => [extension.id, extension]));
-
-    expect(byId.get("editor.argument-order")?.defaultEnabled).toBe(false);
-    expect(byId.get("editor.overwrite")?.defaultEnabled).toBe(false);
+  test("does not register removed editing restrictions", () => {
+    const ids = BUILTIN_EXTENSIONS.map((extension) => extension.id);
+    expect(ids).not.toContain("editor.argument-order");
+    expect(ids).not.toContain("editor.overwrite");
+    expect(ids).toContain("editor.stale-anchor");
   });
 
-  test("keeps every other built-in enabled by default", () => {
-    const defaultOff = BUILTIN_EXTENSIONS.filter(
-      (extension) => extension.defaultEnabled === false,
-    ).map((extension) => extension.id);
-
-    expect(defaultOff).toEqual(["editor.argument-order", "editor.overwrite"]);
+  test("enables the built-in extensions by default", () => {
+    expect(BUILTIN_EXTENSIONS.every((extension) => extension.defaultEnabled !== false)).toBe(true);
   });
 });

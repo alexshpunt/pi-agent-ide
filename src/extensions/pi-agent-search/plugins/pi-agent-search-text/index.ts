@@ -28,10 +28,17 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
       event.details === null
     )
       return;
-    const observations = await sessions.observeAfterEdit(
-      [event.input.path, event.input.start, event.input.end],
-      ctx.signal,
-    );
+    const metadata = "metadata" in event.details ? event.details.metadata : undefined;
+    const recorded =
+      metadata && typeof metadata === "object" && "searchObservations" in metadata
+        ? metadata.searchObservations
+        : undefined;
+    const observations = Array.isArray(recorded)
+      ? (recorded as Awaited<ReturnType<SearchSessionStore["observeAfterEdit"]>>)
+      : await sessions.observeAfterEdit(
+          [event.input.path, event.input.start, event.input.end],
+          ctx.signal,
+        );
     if (observations.length === 0) return;
     return {
       content: [
@@ -80,6 +87,17 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
       apiVersion: SEARCH_API_VERSION,
       id: "local",
       setup(api): void {
+        api.addSelectionProvider((selection, context) =>
+          sessions.register(
+            selection.request.query,
+            selection.matches,
+            selection.complete,
+            context.cwd,
+            context.signal,
+            { ...selection.request, regex: false },
+            selection.refresh,
+          ),
+        );
         api.addResolver({ resolver: createRegexResolver(sessions), priority: -10 });
         api.addResolver({ resolver: createFileResolver(), priority: -10 });
         api.addResolver({ resolver: createTextResolver(sessions), fallback: true });
@@ -98,6 +116,28 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
       apiVersion: TEXT_EDITOR_API_VERSION,
       id: "search-anchors",
       setup(api): void {
+        api.tool("replace").addHandler({
+          stage: "text-post-edit",
+          async handler(state) {
+            if (
+              !state.result ||
+              typeof state.result !== "object" ||
+              !("kind" in state.result) ||
+              state.result.kind !== "completed" ||
+              !state.input ||
+              typeof state.input !== "object"
+            )
+              return state;
+            const input = state.input as Record<string, unknown>;
+            const observations = await sessions.observeAfterEdit(
+              [input.path, input.start, input.end],
+              state.signal,
+            );
+            return observations.length === 0
+              ? state
+              : { ...state, metadata: { ...state.metadata, searchObservations: observations } };
+          },
+        });
         api.addAnchorResolver({
           resolver: sessions.anchorResolver(),
           resources: sessions.resourceResolver(),

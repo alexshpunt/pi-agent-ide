@@ -3,6 +3,7 @@ import path from "node:path";
 
 import type {
   IdeDiagnosticReport,
+  IdeDiagnosticReadContext,
   IdeDiagnosticResult,
   IdeDiagnosticSnapshot,
   IdeDiagnosticSource,
@@ -34,10 +35,10 @@ export class DiagnosticStore {
   private readonly queue: (() => Promise<void>)[] = [];
   private running = 0;
   private disposed = false;
-  private readonly changeListeners = new Set<(cwd: string) => void>();
+  private readonly changeListeners = new Set<(cwd: string, findings: boolean) => void>();
 
   /** Observe published reports immediately, independently of agent turns. */
-  onDidChange(listener: (cwd: string) => void): () => void {
+  onDidChange(listener: (cwd: string, findings: boolean) => void): () => void {
     this.changeListeners.add(listener);
     return () => this.changeListeners.delete(listener);
   }
@@ -57,20 +58,65 @@ export class DiagnosticStore {
   }
 
   /** Read one current text snapshot; never label unfinished checks as clean. */
-  async read(filePath: string, { cwd }: ToolContext): Promise<IdeDiagnosticSnapshot> {
+  async read(
+    filePath: string,
+    { cwd, mode, signal }: IdeDiagnosticReadContext,
+  ): Promise<IdeDiagnosticSnapshot> {
+    signal?.throwIfAborted();
     this.assertActive();
     const absolute = path.resolve(cwd, filePath);
     const content = await readFile(absolute, "utf8");
     this.assertActive();
     const state = this.ensure(absolute, content, cwd);
-    await waitAtMost(Promise.all(state.jobs), this.options.readWaitMs ?? 5000);
+    if (mode === "complete") await this.waitComplete(state, signal);
+    else if (mode !== "snapshot")
+      await waitAtMost(Promise.all(state.jobs), this.options.readWaitMs ?? 5000);
+    signal?.throwIfAborted();
     this.assertActive();
     const currentText = await readFile(absolute, "utf8");
     this.assertActive();
     const current = this.ensure(absolute, currentText, cwd);
+    if (mode === "complete" && current !== state)
+      throw Object.assign(new Error("File changed during diagnostics"), {
+        code: "DIAGNOSTICS_STALE",
+      });
     return { filePath: absolute, content: current.content, results: [...current.results.values()] };
   }
 
+  private async waitComplete(state: FileState, signal?: AbortSignal): Promise<void> {
+    const combined = signal
+      ? AbortSignal.any([signal, state.controller.signal])
+      : state.controller.signal;
+    combined.throwIfAborted();
+    const cleanupWaiters: (() => void)[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const fail = (code: string) =>
+        reject(Object.assign(new Error(code), { code, details: [...state.results.values()] }));
+      const check = () => {
+        const results = [...state.results.values()];
+        if (results.some((result) => result.status === "unavailable"))
+          fail("DIAGNOSTICS_UNAVAILABLE");
+        else if (results.every((result) => result.status === "ready")) resolve();
+      };
+      const abort = () => reject(combined.reason);
+      const detach = this.onDidChange(check);
+      const timer = setTimeout(
+        () => fail("DIAGNOSTICS_TIMEOUT"),
+        this.options.checkTimeoutMs ?? 30_000,
+      );
+      combined.addEventListener("abort", abort, { once: true });
+      const cleanup = () => {
+        clearTimeout(timer);
+        detach();
+        combined.removeEventListener("abort", abort);
+      };
+      // Cleanup follows either outcome without changing the original rejection.
+      void Promise.resolve().then(check);
+      cleanupWaiters.push(cleanup);
+    }).finally(() => {
+      for (const cleanup of cleanupWaiters) cleanup();
+    });
+  }
   /** Drain current findings for delivery; pending, unavailable and empty reports stay silent. */
   async takeNotifications(cwd: string): Promise<DiagnosticNotification[]> {
     const notifications: DiagnosticNotification[] = [];
@@ -206,7 +252,12 @@ export class DiagnosticStore {
     if (JSON.stringify(state.results.get(source)) === JSON.stringify(result)) return;
     state.results.set(source, result);
     this.dirty.add(state);
-    for (const listener of this.changeListeners) listener(state.cwd);
+    const findings = [...state.results.values()].some(
+      (item) =>
+        item.status !== "pending" && item.status !== "unavailable" && item.diagnostics.length > 0,
+    );
+    if (!findings) this.sent.delete(this.key(state.filePath, state.cwd));
+    for (const listener of this.changeListeners) listener(state.cwd, findings);
   }
 
   private async check(state: FileState, source: IdeDiagnosticSource): Promise<void> {

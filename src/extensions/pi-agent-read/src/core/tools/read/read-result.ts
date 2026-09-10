@@ -42,6 +42,7 @@ export function createReadState(
 }
 
 export interface ReadProjectionOptions {
+  readonly audience?: "agent" | "script";
   /** Absolute 1-based line where an anchored read's window starts. */
   readonly originLine?: number;
 }
@@ -64,6 +65,9 @@ export function projectReadState(
     const projected = projectAgentContent(state.content);
 
     return {
+      ...(options?.audience === "script" && {
+        script: { kind: "native" as const, source: state.source, blocks: state.content },
+      }),
       content: projected.content,
       details: {
         ...readDetails(state),
@@ -100,6 +104,17 @@ export function projectReadState(
   ];
 
   return {
+    ...(options?.audience === "script" && {
+      script: {
+        kind: "text" as const,
+        source: state.source,
+        content: lines.map((line) => line.content + line.lineEnding).join(""),
+        lines,
+        startLine: lines[0]?.lineNumber ?? 0,
+        endLine: lines.at(-1)?.lineNumber ?? 0,
+        totalLines,
+      },
+    }),
     content,
     details: {
       ...readDetails(state),

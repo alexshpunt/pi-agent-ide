@@ -57,6 +57,7 @@ export function createSystemBrowserHtmlLoader(
         executablePath,
         headless: true,
         chromiumSandbox: false,
+        timeout: loadOptions.timeoutMs,
       });
       const closeOnAbort = (): void => {
         void browser.close();

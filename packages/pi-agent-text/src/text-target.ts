@@ -14,6 +14,8 @@ export interface TextSelectionRange {
 
 /** A source and optional ranges selected by a typed text anchor. */
 export interface TextTarget {
+  /** Reject an edit if this resolved selection no longer belongs to the same source text. */
+  readonly expectedContent?: string;
   readonly source: string;
   readonly ranges?: readonly TextSelectionRange[];
 }
@@ -78,6 +80,8 @@ export function isTextTargetResolutionAttempt(
     return (
       typeof source === "string" &&
       source.length > 0 &&
+      ((target as Record<string, unknown>).expectedContent === undefined ||
+        typeof (target as Record<string, unknown>).expectedContent === "string") &&
       (ranges === undefined || (Array.isArray(ranges) && ranges.every(isTextSelectionRange)))
     );
   });

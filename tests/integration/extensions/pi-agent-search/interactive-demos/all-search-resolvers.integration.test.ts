@@ -88,7 +88,7 @@ describe("interactive Search resolver demos", () => {
 
       for (const call of calls) {
         const execution = getToolExecution(result, call.id);
-        expect(execution.isError, call.id).toBe(false);
+        expect(execution.isError, `${call.id}: ${getToolResultText(result, call.id)}`).toBe(false);
         expect(
           (getToolExecutionDetails(execution) as { resolverId?: string }).resolverId,
           call.id,

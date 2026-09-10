@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { existsSync } from "node:fs";
 
+import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
+import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 import { hasConfiguredExecutable, loadLayeredToolConfig } from "pi-agent-ide/api/tool-config";
 
 import { buildLanguageLookup, type LanguageLookup } from "./language-map.js";
@@ -38,7 +40,7 @@ export class LspServerRegistry {
   */
   static async fromPackageDir(
     packageDir: string,
-    options: LayeredToolConfigOptions = {},
+    options: LayeredToolConfigOptions & { readonly recipes?: readonly ToolRecipe[] } = {},
   ): Promise<LspServerRegistry> {
     const effective = await loadLayeredToolConfig(
       packageDir,
@@ -55,9 +57,20 @@ export class LspServerRegistry {
           available: await hasConfiguredExecutable(entry.config, packageDir, environment),
         })),
     );
+    const evidence = options.requireBuiltInEvidence
+      ? await inspectRecipeEvidence(packageDir, options.recipes ?? [])
+      : undefined;
     return new LspServerRegistry(
       effective.entries,
-      new Set(available.filter((entry) => entry.available).map((entry) => entry.id)),
+      new Set(
+        available
+          .filter(
+            (entry) =>
+              entry.available &&
+              (evidence === undefined || (evidence.get(entry.id)?.score ?? 0) > 0),
+          )
+          .map((entry) => entry.id),
+      ),
       path.resolve(packageDir),
     );
   }

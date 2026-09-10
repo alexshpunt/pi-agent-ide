@@ -70,8 +70,6 @@ Core builds the mutation plan from that engine result. The plan contains each or
 
 Resource resolution, reads, anchor and target validation, change application, and guards all finish before persistence. Failures in those steps write nothing. If a write fails after another Resource was written, core attempts to restore the failed Resource and every earlier write from their saved snapshots. `WRITE_FAILED` states whether rollback completed and lists any Resources that could not be restored. Failures after all writes and final rereads may instead report that the effect was already applied.
 
-The bundled overwrite guard blocks a changed existing Resource when one applied change covers `[0, before.content.length)`. The check does not depend on the tool name. The first call asks the agent to repeat the same final mutation. A matching second call is allowed automatically and consumes the pending attempt.
-
 ## Ordering
 
 Initial plugin setups are serialized in accepted registration order. Handler order follows committed registration order.

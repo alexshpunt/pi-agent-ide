@@ -81,10 +81,11 @@ describe("built-in extension selection", () => {
     expect(selection.disabled.has("experimental.child")).toBe(true);
   });
 
-  test("rejects unknown configured IDs", () => {
-    expect(() => selectBuiltinExtensions(extensions, ["missing"], [])).toThrow(
-      "Unknown Pi Agent IDE extension ID in disabled: missing",
-    );
+  test("ignores obsolete disabled IDs but rejects unknown enabled IDs", () => {
+    const baseline = selectBuiltinExtensions(extensions, [], []);
+    const selection = selectBuiltinExtensions(extensions, ["missing"], []);
+    expect(selection.enabled).toEqual(baseline.enabled);
+    expect(selection.disabled).toEqual(baseline.disabled);
     expect(() => selectBuiltinExtensions(extensions, [], ["missing"])).toThrow(
       "Unknown Pi Agent IDE extension ID in enabled: missing",
     );

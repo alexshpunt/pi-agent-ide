@@ -8,7 +8,7 @@ test.each(["pending", "unavailable", "snapshot", "unversioned"] as const)(
   (status) => {
     const sources = [{ source: "lsp", status, diagnostics: [] }];
     const focused = createDiagnosticViewContent("example.ts", "line\n", sources);
-    expect(focused.text).toContain(`lsp: ${status}`);
+    expect(focused.diagnosticCheck).toEqual({ complete: false, count: 0, sources: ["lsp"] });
   },
 );
 
@@ -71,3 +71,26 @@ test("diagnostic reads keep provider labels when providers report the same line"
   expect(content.text).toContain("<!-- lsp: [ERROR] lsp:LSP2:");
   expect(content.text).toContain("<!-- lint: [ERROR] lint:LINT2:");
 });
+
+test("completed clean checks carry their sources and an explicit completion state", () => {
+  const content = createDiagnosticViewContent("sample.ts", "", [
+    { source: "typescript", status: "ready", diagnostics: [] },
+    { source: "oxlint", status: "ready", diagnostics: [] },
+  ]);
+  expect(content.diagnosticCheck).toEqual({
+    complete: true,
+    count: 0,
+    sources: ["typescript", "oxlint"],
+  });
+});
+
+test.each([undefined, "snapshot", "pending", "unavailable"] as const)(
+  "empty %s checks do not become completed clean reports",
+  (status) => {
+    const content = createDiagnosticViewContent("sample.ts", "", [
+      { source: "typescript", status, diagnostics: [] },
+    ]);
+    expect(content.diagnosticCheck.complete).toBe(false);
+    expect(createDiagnosticViewContent("sample.ts", "", []).diagnosticCheck.complete).toBe(false);
+  },
+);

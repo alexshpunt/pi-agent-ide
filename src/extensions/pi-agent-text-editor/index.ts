@@ -9,9 +9,7 @@ export default async function registerTextEditor(pi: ExtensionAPI): Promise<void
   const core = await registerTextEditorCore(pi);
   registerBuiltinEditFilter(pi);
 
-  if (!process.argv.includes("--old-tools")) {
-    registerTextEditorTools(pi, core);
-  }
+  registerTextEditorTools(pi, core);
 
   registerTextEditBatching(pi, core);
 }

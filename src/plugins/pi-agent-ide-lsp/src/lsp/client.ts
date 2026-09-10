@@ -127,6 +127,10 @@ export class LspClient {
     return provider === true || (typeof provider === "object" && provider !== null);
   }
 
+  /** Text last synchronized to the server, used to reject edits against stale open buffers. */
+  documentContent(uri: string): string | undefined {
+    return this._documentContents.get(uri);
+  }
   documentVersion(uri: string): number | undefined {
     return this._documentVersions.get(uri);
   }

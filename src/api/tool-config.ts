@@ -1,12 +1,14 @@
 import spawn from "cross-spawn";
 
+import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
+import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 import {
   isExecutableAvailable,
   normalizeProcessEnvironment,
   projectProcessEnvironment,
 } from "pi-agent-doctor/api/executable";
 import { requiredValue } from "pi-agent-invariant";
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,8 +151,39 @@ Optional environment inputs used to resolve global tool configuration.
 export interface LayeredToolConfigOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly homeDirectory?: string;
+
+  /** Exclude user-global overrides when resolving an external project. */
+  readonly includeGlobal?: boolean;
+
+  /** Require native project evidence before enabling a built-in recipe. */
+  readonly requireBuiltInEvidence?: boolean;
 }
 
+/**
+Resolves the nearest category-specific tooling root for a file outside the current project.
+Files inside the current project keep that project's existing tool context.
+*/
+export async function resolveExternalToolProjectRoot(
+  currentProjectRoot: string,
+  filePath: string,
+  configName: ToolConfigName,
+  recipes: readonly ToolRecipe[],
+): Promise<string | undefined> {
+  const current = path.resolve(currentProjectRoot);
+  const file = path.resolve(current, filePath);
+  const relevantRecipes = recipes.filter((recipe) => recipeMatchesFile(recipe, file));
+  if (isPathInside(current, file)) return current;
+
+  let directory = path.dirname(file);
+  for (;;) {
+    if (await fileExists(projectIdeConfigPath(directory, configName))) return directory;
+    const evidence = await inspectRecipeEvidence(directory, relevantRecipes);
+    if ([...evidence.values()].some((item) => item.score > 0)) return directory;
+    const parent = path.dirname(directory);
+    if (parent === directory) return undefined;
+    directory = parent;
+  }
+}
 /**
 Resolves the project-local Pi Agent IDE configuration directory.
 */
@@ -198,7 +231,9 @@ export async function loadLayeredToolConfig<T>(
   const paths = resolveToolConfigPaths(projectRoot, name, options);
   const layers = [
     { layer: "project", sourcePath: paths.project, optional: true },
-    { layer: "global", sourcePath: paths.global, optional: true },
+    ...(options.includeGlobal === false
+      ? []
+      : [{ layer: "global" as const, sourcePath: paths.global, optional: true }]),
     { layer: "built-in", sourcePath: paths.builtIn, optional: false },
   ] as const;
   const entries: EffectiveToolConfigEntry<T>[] = [];
@@ -602,4 +637,40 @@ function expandPlaceholders(
     .replaceAll("{fileDir}", path.dirname(context.filePath))
     .replaceAll("{relativeFile}", relativeFile)
     .replaceAll("{file}", context.filePath);
+}
+
+function recipeMatchesFile(recipe: ToolRecipe, file: string): boolean {
+  const extension = path.extname(file).toLowerCase();
+  const basename = path.basename(file);
+  const matches = (extensions: readonly string[], fileNames: readonly string[] = []): boolean =>
+    extensions.some((candidate) => normalizeExtension(candidate) === extension) ||
+    fileNames.some((candidate) => candidate === basename);
+
+  if (recipe.formatter) return matches(recipe.formatter.extensions, recipe.formatter.fileNames);
+  if (recipe.linter) return matches(recipe.linter.extensions, recipe.linter.fileNames);
+  if (recipe.lsp) {
+    return matches(
+      Object.values(recipe.lsp.languageIds).flat(),
+      Object.values(recipe.lsp.fileNames ?? {}).flat(),
+    );
+  }
+  return false;
+}
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isPathInside(directory: string, candidate: string): boolean {
+  const relative = path.relative(directory, candidate);
+  return (
+    relative === "" ||
+    // This checks containment; it does not construct a parent-relative path.
+    // eslint-disable-next-line repo/no-parent-paths
+    (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  );
 }

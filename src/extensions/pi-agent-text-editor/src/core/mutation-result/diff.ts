@@ -15,9 +15,12 @@ export function createUnifiedDiff(
   path: string,
   beforeContent: string,
   afterContent: string,
+  afterPath = path,
 ): UnifiedDiffResult {
-  const diff = createTwoFilesPatch(path, path, beforeContent, afterContent, "", "", { context: 3 })
-    .replace(/^Index: .*\n={3,}\n?/m, "")
+  const diff = createTwoFilesPatch(path, afterPath, beforeContent, afterContent, "", "", {
+    context: 3,
+  })
+    .replace(/^(?:Index: .*\n)?={3,}\n?/m, "")
     .trimEnd();
 
   return { diff, stats: computeStats(beforeContent, afterContent) };

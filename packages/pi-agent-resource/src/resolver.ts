@@ -3,6 +3,8 @@ import type { Resource } from "./resource.js";
 export interface ResourceResolverContext {
   readonly cwd: string;
   readonly signal?: AbortSignal;
+  /** Caller surface; script reads can request different data readiness. */
+  readonly audience?: "agent" | "script";
 }
 
 export type ResourceResolutionAttempt =

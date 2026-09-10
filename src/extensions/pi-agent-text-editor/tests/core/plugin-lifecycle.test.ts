@@ -81,7 +81,10 @@ function createExtensionEnvironment(): { createExtension(): TestExtension } {
   return {
     createExtension(): TestExtension {
       const shutdownHandlers: LifecycleHandler[] = [];
+      const registerTool: ExtensionAPI["registerTool"] = () => {};
       const pi = {
+        registerTool,
+        getFlag: (_name: string): boolean | string | undefined => undefined,
         events,
         on(event: string, handler: LifecycleHandler): void {
           if (event === "session_shutdown") {

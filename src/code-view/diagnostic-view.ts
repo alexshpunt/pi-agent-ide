@@ -15,6 +15,13 @@ export interface DiagnosticSource {
   readonly reason?: string;
 }
 
+/** Readiness and finding count from the actual diagnostic sources. */
+export interface DiagnosticCheck {
+  readonly complete: boolean;
+  readonly count: number;
+  readonly sources: readonly string[];
+}
+
 /** Controls the source context projected around diagnostic lines. */
 export interface DiagnosticViewOptions {
   readonly contextLines?: number;
@@ -50,14 +57,20 @@ export function createDiagnosticViewContent(
   text: string,
   sources: readonly DiagnosticSource[],
   options: DiagnosticViewOptions = {},
-): SourceMappedTextContent {
+): SourceMappedTextContent & { readonly diagnosticCheck: DiagnosticCheck } {
+  const diagnosticCheck: DiagnosticCheck = {
+    complete: sources.length > 0 && sources.every((source) => source.status === "ready"),
+    count: sources.reduce((count, source) => count + source.diagnostics.length, 0),
+    sources: sources.map((source) => source.source),
+  };
   const fileLines = text.split(/\r\n|\r|\n/u);
   const diagnosticsByLine = diagnosticsByValidLine(sources, fileLines.length);
 
   if (diagnosticsByLine.size === 0) {
     return {
       type: "text",
-      text: diagnosticStatus(sources) || "No diagnostics.",
+      diagnosticCheck,
+      text: diagnosticStatus(sources) || "No completed diagnostic checks are available.",
       sourceLines: {},
     };
   }
@@ -95,6 +108,7 @@ export function createDiagnosticViewContent(
 
   return {
     type: "text",
+    diagnosticCheck,
     text: renderedLines.join("\n"),
     sourceLines,
   };
@@ -137,8 +151,13 @@ export function addDiagnosticAnnotations(
   return { ...document, lines };
 }
 
-/** Describe incomplete or unverified sources without treating missing results as clean. */
+/** Report completed clean checks or explain why readiness is not established. */
 export function diagnosticStatus(sources: readonly DiagnosticSource[]): string {
+  if (
+    sources.length > 0 &&
+    sources.every((source) => source.status === "ready" && source.diagnostics.length === 0)
+  )
+    return `Checks completed (${sources.map((source) => source.source).join(", ")}); no diagnostics found at this point.`;
   return sources
     .filter((source) => source.status && source.status !== "ready")
     .map(

@@ -20,7 +20,7 @@ The editor derives affected resources from each mutation registration. The prima
 
 Plugin mutation tools participate automatically because batching and recovery use the same registration metadata and execution function.
 
-Recovered mutations use the normal editor path, including anchor resolution, normalized mutation planning, and mutation guards. An overwrite rejection is not applied, is never uncertain, and cannot be bypassed by recovery.
+Recovered mutations use the normal editor path, including anchor resolution, normalized mutation planning, and mutation guards.
 
 ## Results
 

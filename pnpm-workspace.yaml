@@ -4,6 +4,7 @@ packages:
   - "src/plugins/*"
 minimumReleaseAgeExclude:
   - "pi-coding-agent-test@0.1.1"
+  - run@2.1.4
 
 # node-fetch still depends on this deprecated compatibility shim.
 allowedDeprecatedVersions:

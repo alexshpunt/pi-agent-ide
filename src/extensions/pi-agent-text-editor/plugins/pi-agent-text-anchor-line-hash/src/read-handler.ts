@@ -32,6 +32,7 @@ export function createLineHashPresenter(): TextLinePresenter {
 
         return {
           ...line,
+          anchors: [...new Set([...(line.anchors ?? []), item.anchor.value])],
           presentation: {
             ...line.presentation,
             prefix: `${item.anchor.value.padStart(anchorWidth)}|${line.presentation?.prefix ?? ""}`,

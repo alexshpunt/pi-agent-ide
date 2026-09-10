@@ -6,6 +6,32 @@ import { LspManager } from "./manager.js";
 import { requestReferences } from "./navigation.js";
 import { type LspWorkspaceSymbol, requestWorkspaceSymbols } from "./symbols.js";
 
+/** Restrict symbol definitions and references before applying the result limit. */
+export interface SymbolSearchScope {
+  readonly path?: string;
+  readonly include?: string;
+  readonly exclude?: string;
+}
+
+function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boolean {
+  const relative = path.relative(path.resolve(cwd, scope.path ?? "."), file);
+  // oxlint-disable-next-line repo/no-parent-paths -- reject results outside the requested scope.
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+    return false;
+  const candidate = path.relative(cwd, file).split(path.sep).join("/");
+  const matches = (patterns: string) =>
+    patterns.split(",").some((value) => {
+      const glob = value.trim();
+      return (
+        glob.length > 0 &&
+        path.matchesGlob(glob.includes("/") ? candidate : path.basename(file), glob)
+      );
+    });
+  return (
+    (scope.include === undefined || matches(scope.include)) &&
+    (scope.exclude === undefined || !matches(scope.exclude))
+  );
+}
 export interface SymbolHit {
   filePath: string;
   lineNumber: number;
@@ -50,13 +76,14 @@ export async function searchSymbols(
   cwd: string,
   limit: number,
   signal?: AbortSignal,
+  scope: SymbolSearchScope = {},
+  manager = LspManager.getInstance(),
 ): Promise<SymbolHit[]> {
   if (signal?.aborted) {
     throw new Error("Operation aborted");
   }
 
-  const manager = LspManager.getInstance();
-  const clients = await manager.prepareWorkspaceSymbols(cwd);
+  const clients = await manager.prepareWorkspaceSymbols(cwd, scope.path ?? cwd);
   const definitions: LspWorkspaceSymbol[] = [];
 
   for (const client of clients) {
@@ -65,7 +92,7 @@ export async function searchSymbols(
     }
 
     try {
-      definitions.push(...(await requestWorkspaceSymbols(client, query, limit)));
+      definitions.push(...(await requestWorkspaceSymbols(client, query, Number.MAX_SAFE_INTEGER)));
     } catch {
       // A server without workspace/symbol support cannot contribute results.
     }
@@ -93,7 +120,7 @@ export async function searchSymbols(
     );
     const definitionKey = `${definitionHit.filePath}:${definitionHit.lineNumber}:${definitionHit.column}`;
 
-    if (!seen.has(definitionKey)) {
+    if (withinScope(uriToFilePath(definition.uri), cwd, scope) && !seen.has(definitionKey)) {
       seen.add(definitionKey);
       hits.push(definitionHit);
     }
@@ -125,7 +152,7 @@ export async function searchSymbols(
       );
       const key = `${hit.filePath}:${hit.lineNumber}:${hit.column}`;
 
-      if (!seen.has(key)) {
+      if (withinScope(uriToFilePath(reference.uri), cwd, scope) && !seen.has(key)) {
         seen.add(key);
         hits.push(hit);
       }

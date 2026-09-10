@@ -128,6 +128,8 @@ export interface ReadNativeState extends ReadStateBase {
 export type ReadState = ReadTextState | ReadNativeState;
 
 export interface ReadPipelineContext {
+  /** Data execution keeps full requested content; presentation handlers must not compact it. */
+  readonly audience?: "agent" | "script";
   readonly request: ReadRequest;
   readonly resolverContext: ResourceResolverContext;
   readonly state?: ReadState;
@@ -147,6 +149,17 @@ export interface UnsupportedContentDetails {
 }
 
 export interface ReadResultDetails extends UnsupportedContentDetails {
+  /** Explicit diagnostic checks; completed empty reports need no content panel. */
+  readonly diagnosticCheck?: {
+    readonly complete: boolean;
+    readonly count: number;
+    readonly sources: readonly string[];
+  };
+  readonly byteOffset?: number;
+  readonly byteLength?: number;
+  readonly totalBytes?: number;
+  /** Every selected target result for script reads spanning multiple resources or ranges. */
+  readonly resources?: readonly ReadToolResult[];
   readonly source?: string;
   readonly resolvedBy?: string;
   readonly startLine?: number;
@@ -160,7 +173,38 @@ export interface ReadResultDetails extends UnsupportedContentDetails {
   readonly failure?: ReadFailure;
 }
 
+/** Plain selected source data for computation, separate from formatted tool content. */
+export type ReadScriptData =
+  | {
+      readonly kind: "bytes";
+      readonly source: string;
+      readonly byteOffset: number;
+      readonly byteLength: number;
+      readonly totalBytes: number;
+      readonly bytes: readonly number[];
+    }
+  | {
+      readonly kind: "text";
+      readonly source: string;
+      readonly content: string;
+      readonly lines: readonly ReadTextLine[];
+      readonly startLine: number;
+      readonly endLine: number;
+      readonly totalLines: number;
+    }
+  | {
+      readonly kind: "native";
+      readonly source: string;
+      readonly blocks: readonly AgentContent[number][];
+    }
+  | {
+      readonly kind: "resources";
+      readonly source?: string;
+      readonly resources: readonly ReadScriptData[];
+    };
 export interface ReadToolResult {
+  /** Present only for script execution; never reconstructed from rendered text. */
+  readonly script?: ReadScriptData;
   readonly content: (TextContent | ImageContent)[];
   readonly details: ReadResultDetails;
   readonly isError?: boolean;
@@ -192,8 +236,34 @@ export type ReadHandlerRegistration =
 
 export type PromptDescriptionSource = string | (() => string | undefined);
 
+/** Remaining text budget for a format-aware view of already-read data. */
+export interface ReadOutputBudget {
+  readonly maxBytes: number;
+  readonly maxLines: number;
+}
+/** Reduces presentation without reading a newer snapshot or changing script data. */
+export type ReadOutputReducer = (
+  result: ReadToolResult,
+  context: ResourceResolverContext,
+  budget: ReadOutputBudget,
+) => Promise<ReadToolResult | undefined>;
 export interface ReadToolPluginApi {
-  read(request: ReadRequest, context: ResourceResolverContext): Promise<ReadToolResult>;
+  /** Registers a format-aware reducer shared by read and composed output. */
+  addOutputReducer(reducer: ReadOutputReducer): void;
+  /** Attempts a compact presentation from the recorded snapshot without rereading its source. */
+  reduceOutput(
+    result: ReadToolResult,
+    context: ResourceResolverContext,
+    budget: ReadOutputBudget,
+  ): Promise<ReadToolResult | undefined>;
+  /** Stores complete output for follow-up read access until this runtime is disposed. */
+  saveTemporary(text: string): Promise<string>;
+  /** Executes the shared pipeline; script results are not clipped to the agent output budget. */
+  read(
+    request: ReadRequest,
+    context: ResourceResolverContext,
+    audience?: "agent" | "script",
+  ): Promise<ReadToolResult>;
   addResolver(registration: ResourceResolverRegistration): void;
   addTargetResolver(registration: TextTargetResolverRegistration): void;
   addHandler(registration: ReadHandlerRegistration): void;
@@ -309,3 +379,5 @@ export function isReadFragmentResolution(value: unknown): value is ReadFragmentR
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
+
+export { readParameters } from "#src/api/read-parameters.js";

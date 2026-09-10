@@ -1,5 +1,24 @@
 # Configuration
 
+## Agent IDE settings
+
+Open `/agent-ide-settings` inside Pi and choose Project or Global. The Modules tab lists human-readable module names and descriptions. The Features tab lists registered boolean options. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
+
+Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload; declining leaves changes pending until reload or startup. The command stays available even when every optional module is disabled.
+
+Feature overrides are stored under `flags` in `extensions.json`, keyed by their CLI name. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
+
+The Features tab includes **Disable Apply** (`pi-agent-ide-no-apply`). Enable it and reload to remove only the `apply` tool; standalone tools remain available. It defaults to off. The obsolete `old-tools` switch has been removed.
+
+The UI tab contains animation preferences and **Apply presentation**. Mixed is the default: written helper calls are compacted while the script streams. Code shows the full script (`pi-agent-ide-apply-code: true`). Expanded display exposes the source in either mode. These previews never execute arguments and do not indicate successful edits; operation results are shown separately.
+After the call is complete, its display copy is formatted before Mixed substitutes the tool headers. Incomplete code uses the recoverable source preview. Headers keep supplied anchors and compact long argument expressions with their source size; those sizes are not counts of applied edits. `result(...)` stays visible as JavaScript. Expanded mode shows the full display copy. Execution always receives the original source.
+
+All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
+
+New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Features or UI tab; no separate menu entry is needed.
+
+Obsolete IDs in `disabled` are ignored. They do not stop IDE startup. Malformed configuration and unknown IDs in `enabled` still report configuration errors.
+
 Pi Agent IDE enables every built-in extension by default. Project and global config files can disable built-ins by their stable IDs and turn on built-ins that are off by default.
 
 ## Config files
@@ -19,11 +38,11 @@ Example:
 
 ```json
 {
-  "enabled": ["editor.argument-order"]
+  "disabled": ["ide.lsp"]
 }
 ```
 
-`editor.argument-order` is off by default, so this config turns it on.
+This config disables the LSP extension.
 
 An explicit `disabled` entry always beats an explicit `enabled` entry for the same ID.
 `enabled` matters only for built-ins marked as off by default; listing an always-on
@@ -37,6 +56,10 @@ Restart Pi or use `/reload` after changing extension selection. Search timeout s
 Built-in entry modules are imported only after selection. Disabled built-ins, including those disabled through a dependency, are not imported by the catalog. Selected built-ins still register in catalog order. Shared libraries used by a selected built-in may still load.
 
 ## Animations and post-edit processing
+
+Apply writes happen immediately, but configured formatting runs once per surviving changed file at the end of the call, including after a script error. Batch diagnostics start after every file has finished post-processing. Copied and moved UTF-8 text targets also receive configured post-processing; binary contents stay unchanged. Reads and Git staging inside Apply see the bytes written so far, before final formatting.
+
+Automatic diagnostic findings are grouped for five seconds from the first finding. The UI tab’s **Immediate diagnostic notices** option (`pi-agent-ide-no-diagnostic-buffer`) disables this delay. Combined notices keep each file and reporting tool identifiable. Empty completed diagnostic reads tell the agent that checks finished without findings, but do not draw an empty diagnostic panel. Pending, unavailable and incomplete checks are not reported as clean.
 
 Start Pi with either or both flags:
 
@@ -218,7 +241,7 @@ Edit tool diffs show every diff row by default. The panel keeps completed rows v
 - `disabled` and `enabled` must each be an array of unique, non-empty extension IDs.
 - The project and global lists are merged; a setting wins at either level.
 - Invalid JSON stops Pi Agent IDE from loading.
-- An unknown ID stops Pi Agent IDE from loading. This prevents a typo from silently leaving an extension enabled.
+- Unknown `disabled` IDs are ignored. Unknown `enabled` IDs remain configuration errors.
 - Disabling a core also disables built-ins that depend on it.
 - The config controls bundled extensions only. It does not disable external Pi extensions.
 
@@ -259,14 +282,12 @@ Edit tool diffs show every diff row by default. The panel keeps completed rows v
 
 ### Editing and anchors
 
-| ID                        | Contribution                                       |
-| ------------------------- | -------------------------------------------------- |
-| `editor.anchor.constant`  | `begin` and `end` anchors                          |
-| `editor.anchor.line-hash` | Snapshot-aware line anchors                        |
-| `editor.anchor.exact`     | Unique exact text spans and recovery               |
-| `editor.argument-order`   | Stable mutation argument ordering (off by default) |
-| `editor.overwrite`        | Full-file overwrite protection (off by default)    |
-| `editor.stale-anchor`     | Stale-anchor recovery behavior                     |
+| ID                        | Contribution                         |
+| ------------------------- | ------------------------------------ |
+| `editor.anchor.constant`  | `begin` and `end` anchors            |
+| `editor.anchor.line-hash` | Snapshot-aware line anchors          |
+| `editor.anchor.exact`     | Unique exact text spans and recovery |
+| `editor.stale-anchor`     | Stale-anchor recovery behavior       |
 
 ### Code intelligence and feedback
 

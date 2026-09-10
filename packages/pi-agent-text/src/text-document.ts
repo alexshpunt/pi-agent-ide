@@ -20,6 +20,8 @@ export interface TextLinePresentation {
 }
 
 export interface TextLine {
+  /** Complete edit selectors supplied by configured presenters, without display markup. */
+  readonly anchors?: readonly string[];
   readonly lineNumber: number;
   readonly content: string;
   readonly lineEnding: string;
@@ -35,6 +37,9 @@ export interface TextDocument {
 
 export interface TextPresentationContext {
   readonly purpose: "read" | "edit-diff";
+  /** Script data enrichment differs from explicitly requested views. */
+  readonly audience?: "agent" | "script";
+  readonly requestedViews?: readonly string[];
   readonly source: string;
   readonly cwd: string;
   readonly resolvedBy: string;

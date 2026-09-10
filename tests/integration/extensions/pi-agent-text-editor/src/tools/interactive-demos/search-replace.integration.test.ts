@@ -134,8 +134,8 @@ describe("interactive text editor demos", () => {
       expect(searchView).not.toContain("SEARCH#");
       expect(searchView).not.toContain("⟦");
 
-      expect(replaceHeader).toContain("all matches");
-      expect(replaceHeader).not.toContain("SEARCH#");
+      expect(replaceHeader).toContain("all:match");
+      expect(replaceHeader).toContain("SEARCH#");
       expect(rendered).toContain("queueName");
 
       expectHighlightedSearchBackgrounds(result.terminalOutput, "legacyQueue");

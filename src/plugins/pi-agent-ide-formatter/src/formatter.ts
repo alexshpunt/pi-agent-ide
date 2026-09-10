@@ -1,5 +1,11 @@
-import { configuredExecutableName, runConfiguredFormatter } from "pi-agent-ide/api/tool-config";
+import {
+  configuredExecutableName,
+  resolveExternalToolProjectRoot,
+  runConfiguredFormatter,
+} from "pi-agent-ide/api/tool-config";
+import path from "node:path";
 
+import { FORMATTER_RECIPES } from "./catalog.js";
 import { FormatterCommandRegistry } from "./registry.js";
 
 import type { Formatter } from "pi-agent-ide/api/toolchain";
@@ -20,8 +26,16 @@ export function createFormatter(): Formatter {
       return true;
     },
     async format({ filePath }, context) {
-      const registry = await loadRegistry(context.cwd);
-      const formatter = registry.resolve(filePath, context.cwd);
+      const projectRoot = await resolveExternalToolProjectRoot(
+        context.cwd,
+        filePath,
+        "formatters",
+        FORMATTER_RECIPES,
+      );
+      if (projectRoot === undefined) return { ok: true, edits: 0, formatter: null };
+      const external = projectRoot !== path.resolve(context.cwd);
+      const registry = await loadRegistry(projectRoot, external);
+      const formatter = registry.resolve(filePath, projectRoot);
 
       if (formatter === undefined) {
         return { ok: true, edits: 0, formatter: null };
@@ -30,7 +44,7 @@ export function createFormatter(): Formatter {
       const name = configuredExecutableName(formatter.run.command);
       try {
         const result = await runConfiguredFormatter(formatter, {
-          projectRoot: context.cwd,
+          projectRoot,
           filePath,
         });
         return { ok: result.ok, edits: result.changed ? 1 : 0, formatter: name };
@@ -41,12 +55,16 @@ export function createFormatter(): Formatter {
   };
 }
 
-async function loadRegistry(cwd: string): Promise<FormatterCommandRegistry> {
-  let registry = registries.get(cwd);
+async function loadRegistry(cwd: string, external = false): Promise<FormatterCommandRegistry> {
+  const key = JSON.stringify([cwd, external]);
+  let registry = registries.get(key);
 
   if (registry === undefined) {
-    registry = FormatterCommandRegistry.fromDirectory(cwd);
-    registries.set(cwd, registry);
+    registry = FormatterCommandRegistry.fromDirectory(cwd, {
+      includeGlobal: !external,
+      requireBuiltInEvidence: external,
+    });
+    registries.set(key, registry);
   }
 
   return registry;

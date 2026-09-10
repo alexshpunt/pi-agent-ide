@@ -100,7 +100,7 @@ test("shows read intent in one compact line and exact arguments when expanded", 
   expect(compact).toHaveLength(1);
   expect(visibleWidth(requiredValue(compact[0]))).toBeLessThanOrEqual(52);
   expect(compact[0]).toContain("read");
-  expect(compact[0]).toContain("extra-long-authentication-source.ts");
+  expect(compact[0]).toContain("authentication-source.ts:40-69");
 
   const expanded = renderCall(arguments_, plainTheme, {
     expanded: true,
@@ -114,9 +114,56 @@ test("shows read intent in one compact line and exact arguments when expanded", 
   expect(expandedText).toContain(
     "path=src/features/authentication/extra-long-authentication-source.ts",
   );
-  expect(expandedText).toContain("offset=40");
-  expect(expandedText).toContain("limit=30");
+  expect(compact.join("\n")).toContain(":40-69");
+  expect(expandedText).toContain("lines=40-69");
+  expect(expandedText).not.toContain("offset=40");
+  expect(expandedText).not.toContain("limit=30");
   expect(expandedText).toContain("views=anchors");
+});
+
+test.each([
+  {
+    name: "an anchor window",
+    arguments: { path: "notes.ts#12#ABCD", offset: 2, limit: 3 },
+    compact: "relative lines 2-4",
+    expanded: "relative lines=2-4",
+  },
+  {
+    name: "a search selection window",
+    arguments: { path: "SEARCH#ABCD:1:line", offset: 2, limit: 3 },
+    compact: "relative lines 2-4",
+    expanded: "relative lines=2-4",
+  },
+  {
+    name: "a tail window",
+    arguments: { path: "notes.ts", offset: -20, limit: 5 },
+    compact: "tail 20",
+    expanded: "tail=20",
+  },
+])("renders $name without claiming an absolute range", ({ arguments: args, compact, expanded }) => {
+  const renderCall = requiredValue(createReadTool().tool.renderCall);
+  const compactText = renderCall(args, plainTheme, {
+    expanded: false,
+    lastComponent: undefined,
+  } as never)
+    .render(100)
+    .map(stripTerminalSequences)
+    .join("\n");
+  const expandedText = renderCall(args, plainTheme, {
+    expanded: true,
+    lastComponent: undefined,
+  } as never)
+    .render(100)
+    .map(stripTerminalSequences)
+    .join("\n");
+
+  expect(compactText).toContain(compact);
+  expect(expandedText).toContain(expanded);
+  expect(compactText).not.toContain(":2-4");
+  if (args.offset === -20) {
+    expect(compactText).toContain("limit 5");
+    expect(expandedText).toContain("limit=5");
+  }
 });
 
 test("wraps long source rows without changing the saved line", () => {
@@ -145,3 +192,44 @@ test("wraps long source rows without changing the saved line", () => {
   expect(rendered.join("\n")).toContain("https://example.com/");
   expect(rendered.join("\n")).toContain("xxx");
 });
+
+test("compact reads bound wrapped terminal rows rather than source lines", () => {
+  const render = createReadResultRenderer({ kind: "source" });
+  const result = { content: [{ type: "text" as const, text: "x".repeat(4000) }], details: {} };
+  const context = { isError: false, lastComponent: undefined } as never;
+  const compact = render(result, { expanded: false, isPartial: false }, plainTheme, context).render(
+    40,
+  );
+  const expanded = render(result, { expanded: true, isPartial: false }, plainTheme, context).render(
+    40,
+  );
+  expect(compact.length).toBeLessThanOrEqual(16);
+  expect(expanded.length).toBeGreaterThan(100);
+  expect(compact.every((row) => visibleWidth(row) <= 40)).toBe(true);
+});
+
+test.each([false, true])(
+  "completed clean diagnostics render no empty panel (expanded=%s)",
+  (expanded) => {
+    const renderer = createReadResultRenderer({ kind: "code-view" });
+    const result: AgentToolResult<ReadResultDetails> = {
+      content: [{ type: "text", text: "completed" }],
+      details: { diagnosticCheck: { complete: true, count: 0, sources: ["typescript"] } },
+    };
+    const context = { isError: false, lastComponent: undefined } as never;
+    expect(
+      renderer(result, { expanded, isPartial: false }, plainTheme, context).render(80),
+    ).toEqual([]);
+    expect(
+      renderer(
+        {
+          ...result,
+          details: { diagnosticCheck: { complete: false, count: 0, sources: ["typescript"] } },
+        },
+        { expanded, isPartial: false },
+        plainTheme,
+        context,
+      ).render(80).length,
+    ).toBeGreaterThan(0);
+  },
+);

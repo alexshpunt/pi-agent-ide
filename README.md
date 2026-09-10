@@ -23,15 +23,19 @@ The current focus is measurement. The project is being compared with vanilla Pi 
 
 ## What it does
 
-Pi Agent IDE provides a small set of tools with more specialized behavior behind them:
+Pi Agent IDE gives the agent a focused set of tools that work together:
 
-- `read` handles files, web pages, images, PDFs, code views, and diagnostics;
-- `search` routes text and structural searches;
-- `write`, `replace`, `insert`, `delete`, `copy`, and `move` cover common text mutations; range-based edits can target snapshot and semantic anchors instead of reproducing the `oldText` block required by Pi's built-in `edit` tool;
-- optional plugins add AST, LSP, formatting, linting, and Git-aware behavior;
-- `/pi-agent-ide-doctor` detects project languages and lets each loaded plugin check or configure its own scope.
+- `read` handles text files, original bytes, web pages, images, PDFs, code views, and diagnostics;
+- `search` finds files, text, symbols, and syntax-tree patterns;
+- `write`, `replace`, `insert`, `delete`, `copy`, and `move` edit text with exact matches, line anchors, search results, AST matches, and language-server symbols;
+- `diff` compares readable sources, while `copy_file`, `move_file`, and `delete_file` handle whole files;
+- `apply` combines reads, searches, diffs, edits, whole-file operations, and Git change operations in one JavaScript call;
+- formatting and diagnostics run after edits and stay local to the project that owns each file;
+- `/pi-agent-ide-doctor` checks the languages and tools available in the current project.
 
-The public interface is intentionally small. Resources, resolvers, anchors, renderers, and toolchain integrations are connected through versioned plugin protocols. The npm package loads as one Pi extension, while its built-ins remain separate modules that can be replaced or extended.
+The tools share the same resources and safeguards. An `apply` script can reuse a search result or anchor from an earlier call, and completed edits remain visible if a later call fails. Formatting, diagnostics, previews, and safe undo work the same way for standalone tools and composed operations.
+
+The npm package loads as one Pi extension. Its built-in modules can be enabled, disabled, replaced, or extended through versioned plugin protocols.
 
 ## Installation
 
@@ -45,7 +49,7 @@ Pi packages run with your full system permissions. Review the package before ins
 
 ## Check project tools
 
-Pi Agent IDE includes formatter, linter, and LSP mappings. It runs their external commands through your current `PATH`, so projects work without copied IDE config files when those commands are installed.
+Pi Agent IDE includes formatter, linter, and LSP mappings. It finds each tool from the project that owns the file, including project-local binaries and commands on your `PATH`. Settings from one project do not leak into another.
 
 Start Pi in your project directory, then run:
 

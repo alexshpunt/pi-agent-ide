@@ -39,6 +39,57 @@ interface ReadCallArguments {
   readonly views?: unknown;
 }
 
+interface ReadWindowPresentation {
+  readonly pathSuffix: string;
+  readonly qualifiers: readonly { readonly text: string }[];
+  readonly details: readonly { readonly label: string; readonly value: string }[];
+}
+
+function readWindowPresentation(
+  path: string,
+  rawOffset: unknown,
+  rawLimit: unknown,
+): ReadWindowPresentation {
+  const offset = typeof rawOffset === "number" ? rawOffset : undefined;
+  const limit = typeof rawLimit === "number" ? rawLimit : undefined;
+  if (offset === undefined && limit === undefined) {
+    return { pathSuffix: "", qualifiers: [], details: [] };
+  }
+
+  const relative = path === "inherited source" || path.includes("#");
+  if (relative) {
+    const start = offset ?? 1;
+    const range = limit === undefined ? String(start) : `${start}-${start + limit - 1}`;
+    return {
+      pathSuffix: "",
+      qualifiers: [{ text: `relative lines ${range}` }],
+      details: [{ label: "relative lines", value: range }],
+    };
+  }
+
+  if (offset !== undefined && offset < 0) {
+    return {
+      pathSuffix: "",
+      qualifiers: [
+        { text: `tail ${Math.abs(offset)}` },
+        ...(limit === undefined ? [] : [{ text: `limit ${limit}` }]),
+      ],
+      details: [
+        { label: "tail", value: String(Math.abs(offset)) },
+        ...(limit === undefined ? [] : [{ label: "limit", value: String(limit) }]),
+      ],
+    };
+  }
+
+  const start = Math.max(1, offset ?? 1);
+  const range = limit === undefined ? String(start) : `${start}-${start + limit - 1}`;
+  return {
+    pathSuffix: `:${range}`,
+    qualifiers: [],
+    details: [{ label: "lines", value: range }],
+  };
+}
+
 /** Renders the requested read source and non-default options in the shared tool-card header. */
 export function renderReadCall(
   arguments_: ReadCallArguments,
@@ -54,26 +105,17 @@ export function renderReadCall(
     );
   }
   const path = typeof arguments_.path === "string" ? arguments_.path : "inherited source";
-  const offset = typeof arguments_.offset === "number" ? arguments_.offset : undefined;
-  const limit = typeof arguments_.limit === "number" ? arguments_.limit : undefined;
+  const window = readWindowPresentation(path, arguments_.offset, arguments_.limit);
   const views = Array.isArray(arguments_.views)
     ? arguments_.views.filter((view): view is string => typeof view === "string")
     : [];
   const qualifiers = [
-    ...(offset === undefined
-      ? []
-      : [
-          {
-            text: offset < 0 ? `tail ${String(Math.abs(offset))}` : `offset ${String(offset)}`,
-          },
-        ]),
-    ...(limit === undefined ? [] : [{ text: `limit ${String(limit)}` }]),
+    ...window.qualifiers,
     ...(views.length === 0 ? [] : [{ text: `views ${views.join(",")}` }]),
   ];
   const details = [
     ...(typeof arguments_.path === "string" ? [{ label: "path", value: arguments_.path }] : []),
-    ...(offset === undefined ? [] : [{ label: "offset", value: String(offset) }]),
-    ...(limit === undefined ? [] : [{ label: "limit", value: String(limit) }]),
+    ...window.details,
     ...(views.length === 0 ? [] : [{ label: "views", value: views.join(",") }]),
   ];
   return toolCallHeader(
@@ -81,7 +123,7 @@ export function renderReadCall(
     {
       tool: "read",
       primary: {
-        text: path,
+        text: `${path}${window.pathSuffix}`,
         color: typeof arguments_.path === "string" ? "accent" : "muted",
         underline: typeof arguments_.path === "string",
         truncate: "start",
@@ -121,6 +163,9 @@ export function createReadResultRenderer(options: ReadResultRendererOptions): Re
       const color = context.isError ? "error" : "dim";
       return new Text(theme.fg(color, text), 0, 0);
     }
+
+    const check = readDetails(result.details).diagnosticCheck;
+    if (check?.complete && check.count === 0) return new Container();
 
     if (!hasTextContent(result)) {
       return context.lastComponent instanceof Container ? context.lastComponent : new Container();
@@ -180,7 +225,9 @@ export class ReadResultPanel implements Component {
 
     const innerWidth = width - 2;
     const contentWidth = Math.max(1, innerWidth - 2);
-    const renderedRows = renderContentRows(this.state, contentWidth);
+    const renderedRows = renderContentRows(this.state, contentWidth).flatMap((row) =>
+      wrapTextWithAnsi(row, contentWidth),
+    );
     const rows = compactRows(renderedRows, this.state.expanded, this.state.theme);
     const lines = [renderTopBorder(this.state, innerWidth, this.state.theme)];
 

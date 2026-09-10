@@ -2,7 +2,7 @@ import type { LspClient } from "./client.js";
 import type { LspPosition, LspTextEdit } from "./types.js";
 
 export interface LspDocumentChange {
-  textDocument: { uri: string };
+  textDocument: { uri: string; version?: number | null };
   edits: LspTextEdit[];
 }
 

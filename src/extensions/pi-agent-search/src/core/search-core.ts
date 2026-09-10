@@ -3,6 +3,7 @@ import { withBlockedToolResult } from "pi-agent-tool-call-interception";
 import type { SearchPlugin } from "#src/api/plugin-protocol.js";
 import type {
   SearchActionRegistration,
+  SearchSelectionProvider,
   SearchContext,
   SearchDescriptionSource,
   SearchPluginApi,
@@ -10,6 +11,7 @@ import type {
   SearchResolutionAttempt,
   SearchResolverRegistration,
   SearchToolDetails,
+  SearchToolResult,
 } from "#src/api/search.js";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 
@@ -25,7 +27,8 @@ export interface SearchCore {
   execute(
     request: SearchRequest,
     context: SearchContext,
-  ): Promise<AgentToolResult<SearchToolDetails>>;
+    audience?: "agent" | "script",
+  ): Promise<SearchToolResult>;
   runAction(
     reference: string,
     capability: string,
@@ -41,6 +44,7 @@ export interface SearchCore {
 
 export function createSearchCore(): SearchCore {
   const resolvers: RegisteredResolver[] = [];
+  let selectionProvider: SearchSelectionProvider | undefined;
   const actions = new Map<string, SearchActionRegistration>();
   const promptGuidelines = new Map<string, SearchDescriptionSource[]>();
   const descriptions = new Map<string, SearchDescriptionSource>();
@@ -62,9 +66,22 @@ export function createSearchCore(): SearchCore {
       const ready = queue.then(async () => {
         const draftResolvers: SearchResolverRegistration[] = [];
         const draftActions: SearchActionRegistration[] = [];
+        let draftSelectionProvider: SearchSelectionProvider | undefined;
         let draftDescription: SearchDescriptionSource | undefined;
         const draftPromptGuidelines: SearchDescriptionSource[] = [];
         const api: SearchPluginApi = {
+          addSelectionProvider(provider) {
+            if (draftSelectionProvider !== undefined || selectionProvider !== undefined)
+              throw new Error("Search selection provider is already registered");
+            draftSelectionProvider = provider;
+          },
+          registerSelection(selection, context) {
+            if (selectionProvider === undefined)
+              throw new Error(
+                "Search selections are unavailable. Enable the shared search selection plugin.",
+              );
+            return selectionProvider(selection, context);
+          },
           addResolver(registration): void {
             assertResolver(registration);
             draftResolvers.push(registration);
@@ -83,7 +100,7 @@ export function createSearchCore(): SearchCore {
           addPromptGuideline(guideline): void {
             draftPromptGuidelines.push(normalizeDescriptionSource(guideline));
           },
-          search: (request, context) => core.execute(request, context),
+          search: (request, context, audience) => core.execute(request, context, audience),
           runAction(request, context): Promise<unknown> {
             return core.runAction(
               request.reference,
@@ -123,6 +140,7 @@ export function createSearchCore(): SearchCore {
         for (const registration of draftResolvers) {
           resolvers.push({ pluginId: plugin.id, registration, order: resolvers.length });
         }
+        if (draftSelectionProvider !== undefined) selectionProvider = draftSelectionProvider;
 
         for (const action of draftActions) {
           actions.set(actionKey(action.resolverId, action.capability), action);
@@ -145,7 +163,7 @@ export function createSearchCore(): SearchCore {
     async waitForPendingPlugins(): Promise<void> {
       await Promise.all(plugins.values());
     },
-    async execute(request, context): Promise<AgentToolResult<SearchToolDetails>> {
+    async execute(request, context, audience = "agent"): Promise<SearchToolResult> {
       if (request.query.trim().length === 0) {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
@@ -223,6 +241,13 @@ export function createSearchCore(): SearchCore {
                   ]
                 : formatted.content,
             details: { resolverId: resolver.id, payload: formatted.details },
+            ...(audience === "script" && {
+              script: {
+                resolverId: resolver.id,
+                data: attempt.payload,
+                details: formatted.details,
+              },
+            }),
             ...(formatted.usage !== undefined && { usage: formatted.usage }),
           };
         } catch (error) {

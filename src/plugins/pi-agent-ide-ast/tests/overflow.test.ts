@@ -23,6 +23,10 @@ function context(content = source, file = "sample.ts", displayed = content): Rea
   };
 }
 
+test("script data is never replaced with an overflow outline", async () => {
+  const input: ReadPipelineContext = { ...context(), audience: "script" };
+  expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
+});
 test("overflow returns the whole compact tree from the read snapshot", async () => {
   const result = await createAstOverflowHandler()(context());
   expect(result.kind).toBe("return");

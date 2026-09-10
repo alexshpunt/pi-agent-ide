@@ -15,6 +15,16 @@ export class LastTextTransactionStore {
 
   public observe(completion: TextEditCompletion): void {
     const key = sourceKey(completion.resourceSource, completion.cwd);
+    if (completion.postProcessing === "final") {
+      const previous = this.#transactions.get(key);
+      if (previous && previous.afterDigest === textDigest(completion.before.content))
+        this.#transactions.set(key, {
+          ...previous,
+          afterDigest: textDigest(completion.after.content),
+        });
+      else this.#transactions.delete(key);
+      return;
+    }
 
     if (
       completion.intent !== "edit" ||

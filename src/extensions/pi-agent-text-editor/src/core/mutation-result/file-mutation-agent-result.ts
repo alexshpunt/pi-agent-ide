@@ -312,6 +312,7 @@ export class FileMutationAgentResult {
       `Formatting: ${fmr.data.formatting?.status ?? "not-reported"}${fmr.data.formatting?.formatter === undefined ? "" : ` (${fmr.data.formatting.formatter})`}.`,
     ];
 
+    for (const status of fmr.data.diffStatuses ?? []) blocks.push(status.text);
     for (const diff of fmr.diffs) {
       const path = /^--- (.+)$/m.exec(diff)?.[1] ?? fmr.path ?? "<unknown file>";
       blocks.push(renderFinalStateFragment(fmr, path).join("\n"));
