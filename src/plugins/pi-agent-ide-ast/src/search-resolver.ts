@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
+import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 
@@ -8,13 +11,16 @@ interface AstGrepMatch {
   readonly lines: string;
   readonly language: string;
   readonly range: {
+    readonly byteOffset: { readonly start: number; readonly end: number };
     readonly start: { readonly line: number; readonly column: number };
     readonly end: { readonly line: number; readonly column: number };
   };
   readonly metaVariables?: unknown;
 }
 
-export function createAstSearchResolver(): SearchResolver {
+export function createAstSearchResolver(
+  registerSelection: SearchPluginApi["registerSelection"],
+): SearchResolver {
   return {
     id: "ast",
     async tryResolve(request, context) {
@@ -28,16 +34,41 @@ export function createAstSearchResolver(): SearchResolver {
         return { kind: "failed", error: new Error("ast: pattern must not be empty") };
       }
 
-      const matches = await runAstGrep(pattern, request, context.cwd, context.signal);
-      const limit = request.limit ?? 100;
+      const collect = async (signal?: AbortSignal) => {
+        const started = Date.now();
+        const found = await runAstGrep(pattern, request, context.cwd, signal);
+        found.sort(
+          (a, b) =>
+            path.resolve(context.cwd, a.file).localeCompare(path.resolve(context.cwd, b.file)) ||
+            a.range.byteOffset.start - b.range.byteOffset.start ||
+            a.range.byteOffset.end - b.range.byteOffset.end,
+        );
+        const raw = found.slice(0, request.limit ?? 100);
+        return {
+          raw,
+          matches: await selectionMatches(raw, context.cwd, started, signal),
+          complete: found.length <= (request.limit ?? 100),
+        };
+      };
+      const selected = await collect(context.signal);
+      const session = await registerSelection(
+        { request, matches: selected.matches, complete: selected.complete, refresh: collect },
+        context,
+      );
       return {
         kind: "resolved",
-        payload: { pattern, matches: matches.slice(0, limit), complete: matches.length <= limit },
+        payload: {
+          pattern,
+          matches: selected.raw,
+          complete: selected.complete,
+          sessionId: session.id,
+        },
       };
     },
     format(payload) {
       const result = payload as {
         readonly pattern: string;
+        readonly sessionId: string;
         readonly matches: readonly AstGrepMatch[];
         readonly complete: boolean;
       };
@@ -47,12 +78,14 @@ export function createAstSearchResolver(): SearchResolver {
       }
 
       const lines = result.matches.flatMap((match, index) => [
-        `${String(index + 1)}. ${match.file}:${String(match.range.start.line + 1)}:${String(
+        `SEARCH#${result.sessionId}:${String(index + 1)}:match ${match.file}:${String(match.range.start.line + 1)}:${String(
           match.range.start.column + 1,
         )} ${match.language}`,
         `   ${match.lines.trim()}`,
       ]);
 
+      if (result.complete)
+        lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact AST matches.`);
       if (!result.complete) {
         lines.push("Result limit reached.");
       }
@@ -62,6 +95,51 @@ export function createAstSearchResolver(): SearchResolver {
   };
 }
 
+async function selectionMatches(
+  matches: readonly AstGrepMatch[],
+  cwd: string,
+  started: number,
+  signal?: AbortSignal,
+): Promise<SearchSelectionMatch[]> {
+  const sources = new Map<string, Buffer>();
+  for (const match of matches) {
+    const source = path.resolve(cwd, match.file);
+    if (sources.has(source)) continue;
+    const before = await stat(source);
+    const bytes = await readFile(source, { signal });
+    const after = await stat(source);
+    if (before.mtimeMs > started || before.mtimeMs !== after.mtimeMs || before.size !== after.size)
+      throw new Error("AST source changed during search. Run the structural query again.");
+    sources.set(source, bytes);
+  }
+  return matches.map((match) => {
+    const source = path.resolve(cwd, match.file);
+    const bytes = sources.get(source);
+    if (bytes === undefined) throw new Error("Missing AST source snapshot");
+    const { start, end } = match.range.byteOffset;
+    if (
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 0 ||
+      end < start ||
+      end > bytes.length ||
+      bytes.subarray(start, end).toString("utf8") !== match.text
+    )
+      throw new Error("AST range does not match its source snapshot. Search again.");
+    const prefix = bytes.subarray(0, start).toString("utf8");
+    const throughEnd = bytes.subarray(0, end).toString("utf8");
+    const lineNumber = prefix.split("\n").length;
+    return {
+      source,
+      lineNumber,
+      endLineNumber: throughEnd.split("\n").length,
+      startColumn: prefix.length - prefix.lastIndexOf("\n") - 1,
+      endColumn: throughEnd.length - throughEnd.lastIndexOf("\n") - 1,
+      matchedText: match.text,
+      lineText: bytes.toString("utf8").split("\n")[lineNumber - 1]?.replace(/\r$/u, "") ?? "",
+    };
+  });
+}
 function runAstGrep(
   pattern: string,
   request: SearchRequest,

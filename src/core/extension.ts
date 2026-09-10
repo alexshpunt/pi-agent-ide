@@ -6,6 +6,7 @@ import {
   isIdePluginRegistrationRequest,
 } from "#src/api/plugin-protocol.js";
 import { createIdeCore } from "#src/core/ide-core.js";
+import { createDiagnosticDelivery } from "#src/core/diagnostic-delivery.js";
 import {
   diagnosticEntryData,
   DIAGNOSTIC_ENTRY_TYPE,
@@ -13,7 +14,10 @@ import {
 } from "#src/core/diagnostic-entry.js";
 import { runIdePostEditGate } from "#src/post-edit/gate.js";
 import { resetRegistry } from "#src/toolchain/registry.js";
-import { connectTextEditorPostEditHandler } from "pi-agent-text-editor/api/post-edit";
+import {
+  connectTextEditorPostEditHandler,
+  afterPostEditScope,
+} from "pi-agent-text-editor/api/post-edit";
 
 import path from "node:path";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
@@ -25,11 +29,6 @@ import {
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void> {
-  pi.registerFlag("old-tools", {
-    description: "Use the old IDE and text editor tools",
-    type: "boolean",
-    default: false,
-  });
   resetRegistry();
   const core = createIdeCore();
   registerDiagnosticEntryRenderer(pi);
@@ -63,42 +62,44 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
     id: "ide-diagnostics",
     setup(api) {
       api.onDidEdit((completion) => {
-        if (pi.getFlag("pi-agent-ide-no-post-processing") === true) return;
+        if (
+          pi.getFlag("pi-agent-ide-no-post-processing") === true ||
+          completion.postProcessing === "deferred"
+        )
+          return;
         if (path.isAbsolute(completion.resourceSource)) {
-          core.diagnostics.schedule(completion.resourceSource, completion.after.content, {
-            cwd: completion.cwd,
-          });
+          afterPostEditScope(() =>
+            core.diagnostics.schedule(completion.resourceSource, completion.after.content, {
+              cwd: completion.cwd,
+            }),
+          );
         }
       });
     },
   });
-  let delivery = Promise.resolve();
   let closed = false;
-  const isClosed = () => closed;
-  const unsubscribeDiagnostics = core.diagnostics.onDidChange((cwd) => {
-    delivery = delivery
-      .then(async () => {
-        if (closed) return;
-        const notifications = await core.diagnostics.takeNotifications(cwd);
-        if (isClosed() || notifications.length === 0) return;
-        pi.sendMessage(
-          {
-            customType: "ide-diagnostics",
-            display: false,
-            content: `File diagnostics:\n${notifications.map((item) => item.text).join("\n")}`,
-          },
-          { triggerTurn: true, deliverAs: "steer" },
-        );
-        for (const notification of notifications) {
-          pi.appendEntry(DIAGNOSTIC_ENTRY_TYPE, diagnosticEntryData(notification));
-        }
-      })
-      .catch((error: unknown) => {
-        console.error("Diagnostic delivery failed", error);
-      });
+  const delivery = createDiagnosticDelivery(
+    async (cwd) => {
+      const notifications = await core.diagnostics.takeNotifications(cwd);
+      if (closed || notifications.length === 0) return;
+      pi.sendMessage(
+        {
+          customType: "ide-diagnostics",
+          display: false,
+          content: `File diagnostics:\n${notifications.map((item) => item.text).join("\n")}`,
+        },
+        { triggerTurn: true, deliverAs: "steer" },
+      );
+      pi.appendEntry(DIAGNOSTIC_ENTRY_TYPE, { files: notifications.map(diagnosticEntryData) });
+    },
+    pi.getFlag("pi-agent-ide-no-diagnostic-buffer") === true ? 0 : 5000,
+  );
+  const unsubscribeDiagnostics = core.diagnostics.onDidChange((cwd, findings) => {
+    if (findings) delivery.schedule(cwd);
   });
   pi.on("session_shutdown", () => {
     closed = true;
+    delivery.dispose();
     unsubscribeDiagnostics();
   });
 

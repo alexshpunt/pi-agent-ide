@@ -5,10 +5,25 @@ import type { TextEditorToolId } from "#src/api/plugin-protocol.js";
 
 export type TextEditPipelineStage = "text-pre-edit" | "text-edit" | "text-post-edit";
 
+/** Host-plugin edit plan, checked against exact snapshots before any writes. */
+export interface TextEditPlan {
+  readonly files: readonly {
+    readonly source: string;
+    readonly expectedContent: string;
+    readonly changes: readonly {
+      readonly from: number;
+      readonly to: number;
+      readonly insert: string;
+    }[];
+  }[];
+}
 export interface TextPreEditState<Input = unknown> {
   readonly cwd: string;
   readonly input: Input;
+  /** Optional native semantic edits supplied by the owning plugin, not by tool arguments. */
+  readonly editPlan?: TextEditPlan;
   readonly signal?: AbortSignal;
+  /** A validated diffStatuses contribution is added to each completed file's presentation. */
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
 

@@ -13,6 +13,7 @@ import {
   type FragmentResolverRegistration,
   type PromptDescriptionSource,
   type ReadHandlerRegistration,
+  type ReadOutputReducer,
   type ReadViewRegistration,
   type ResourceResolverRegistration,
   type TextTargetResolverRegistration,
@@ -48,6 +49,7 @@ export interface ReadCore {
 }
 
 export function createReadCore(): ReadCore {
+  const outputReducers: ReadOutputReducer[] = [];
   const pendingPlugins = new Set<Promise<void>>();
   const plugins = new Map<string, RegisteredPlugin>();
   const read = createReadTool(
@@ -84,6 +86,7 @@ export function createReadCore(): ReadCore {
         read,
         promptGuidelines,
         promptContributions,
+        outputReducers,
       );
       const ready = registrationQueue.then(async () => {
         try {
@@ -157,7 +160,9 @@ function createPluginContributionController(
   read: ReadTool,
   promptGuidelines: PromptDescriptionSource[],
   promptContributions: PromptDescriptionSource[],
+  outputReducers: ReadOutputReducer[],
 ): PluginContributionController {
+  const setupOutputReducers: ReadOutputReducer[] = [];
   const setupPromptContributions: PromptDescriptionSource[] = [];
 
   const setupPromptGuidelines: PromptDescriptionSource[] = [];
@@ -173,9 +178,27 @@ function createPluginContributionController(
     }
   };
   const api: ReadPluginApi = {
-    read(request, context) {
+    addOutputReducer(reducer) {
       assertAvailable();
-      return read.execute(request, context);
+      if (typeof reducer !== "function") throw new TypeError("Expected an output reducer");
+      (state === "setup" ? setupOutputReducers : outputReducers).push(reducer);
+    },
+    async reduceOutput(result, context, budget) {
+      assertAvailable();
+      for (const reducer of outputReducers) {
+        context.signal?.throwIfAborted();
+        const reduced = await reducer(result, context, budget);
+        if (reduced !== undefined) return reduced;
+      }
+      return undefined;
+    },
+    saveTemporary(text) {
+      assertAvailable();
+      return read.saveTemporary(text);
+    },
+    read(request, context, audience) {
+      assertAvailable();
+      return read.execute(request, context, audience);
     },
     addResolver(registration): void {
       assertAvailable();
@@ -289,6 +312,7 @@ function createPluginContributionController(
         fragments: setupFragmentResolvers,
       });
       promptContributions.push(...setupPromptContributions);
+      outputReducers.push(...setupOutputReducers);
 
       promptGuidelines.push(...setupPromptGuidelines);
       state = "active";

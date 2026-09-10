@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { URI } from "vscode-uri";
@@ -191,35 +191,13 @@ export class LspManager {
     return startingClient;
   }
 
-  /**
-   * Start the native LSP clients that can search the current workspace.
-   *
-   * Workspace symbols are requested per language server, so a search with
-   * no file extension must query every configured language family.
-   */
-  async getWorkspaceClients(cwd: string, capability: "symbols" = "symbols"): Promise<LspClient[]> {
+  /** Start symbol servers only for language families with files in this workspace. */
+  async getWorkspaceClients(
+    cwd: string,
+    capability: "symbols" = "symbols",
+    scope = cwd,
+  ): Promise<LspClient[]> {
     const clients = new Set<LspClient>();
-
-    for (const extension of this._registry.knownExtensions) {
-      try {
-        const client = await this.getOrStart(extension, cwd, capability);
-
-        if (client) {
-          clients.add(client);
-        }
-      } catch {
-        // A workspace may list servers that are not installed locally.
-      }
-    }
-
-    return [...clients];
-  }
-
-  /**
-    Open one representative file for each configured language family.
-    */
-  async prepareWorkspaceSymbols(cwd: string): Promise<LspClient[]> {
-    const clients = await this.getWorkspaceClients(cwd);
     const remainingExtensions = new Set(this._registry.knownExtensions);
     const ignoredDirectories = new Set([".git", ".cache", "node_modules", "dist", "build"]);
 
@@ -260,16 +238,27 @@ export class LspManager {
         }
 
         const filePath = path.join(directory, entry.name);
-        const opened = await this.openFile(filePath, cwd, "symbols").catch(() => null);
+        const opened = await this.openFile(filePath, cwd, capability).catch(() => null);
 
         if (opened) {
+          clients.add(opened.client);
           remainingExtensions.delete(extension);
         }
       }
     };
 
-    await visit(cwd);
-    return clients;
+    const selected = path.resolve(cwd, scope);
+    if ((await stat(selected)).isFile()) {
+      const opened = await this.openFile(selected, cwd, capability);
+      return opened === null ? [] : [opened.client];
+    }
+    await visit(selected);
+    return [...clients];
+  }
+
+  /** Open representative source files before querying workspace symbols. */
+  async prepareWorkspaceSymbols(cwd: string, scope = cwd): Promise<LspClient[]> {
+    return this.getWorkspaceClients(cwd, "symbols", scope);
   }
 
   /**

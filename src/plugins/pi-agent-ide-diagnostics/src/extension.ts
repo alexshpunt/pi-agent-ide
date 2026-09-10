@@ -1,4 +1,5 @@
 import path from "node:path";
+import { hasDeferredPostEdit } from "pi-agent-text-editor/api/post-edit";
 
 import {
   addDiagnosticAnnotations,
@@ -14,6 +15,7 @@ import {
   IDE_PROTOCOL,
   type IdePlugin,
   type IdePluginApi,
+  type IdeDiagnosticReadContext,
 } from "pi-agent-ide/api/plugin-protocol";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
@@ -26,7 +28,7 @@ import { createReadResultRenderer } from "pi-agent-read/api/rendering";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ResourceResolutionAttempt, ResourceResolver } from "pi-agent-resource";
 import type { TextDocument, TextLinePresenter } from "pi-agent-text";
-import type { ReadRequest } from "pi-agent-read/api/tools/read";
+import type { ReadRequest, ReadResultDetails } from "pi-agent-read/api/tools/read";
 
 const DIAGNOSTIC_SCHEME = "diagnostics";
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "Diagnostics" });
@@ -35,12 +37,12 @@ type ReadDiagnostics = IdePluginApi["readDiagnostics"];
 
 export default async function registerDiagnostics(pi: ExtensionAPI): Promise<void> {
   let readDiagnostics: ReadDiagnostics | undefined;
-  const collect = (filePath: string, cwd: string) => {
+  const collect: CollectDiagnostics = (filePath, cwd, options) => {
     if (readDiagnostics === undefined) {
       throw new Error("IDE diagnostics are not connected");
     }
 
-    return readDiagnostics(filePath, { cwd });
+    return readDiagnostics(filePath, { cwd, ...options });
   };
   const idePlugin = {
     protocol: IDE_PROTOCOL,
@@ -51,6 +53,8 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
     },
   } satisfies IdePlugin;
   // Keep readiness outside source-line projection, including empty and ranged reads.
+  const checks = new WeakMap<ReadRequest, NonNullable<ReadResultDetails["diagnosticCheck"]>>();
+  const contents = new WeakMap<object, NonNullable<ReadResultDetails["diagnosticCheck"]>>();
   const documents = new WeakMap<ReadRequest, TextDocument>();
   const statuses = new WeakMap<TextDocument, string>();
   const readPlugin = {
@@ -59,7 +63,7 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
     id: "diagnostics",
     setup(api) {
       api.addResolver({
-        resolver: createDiagnosticResolver(collect),
+        resolver: createDiagnosticResolver(collect, contents),
         renderResult: renderReadResult,
       });
       const mapSource = createSourceMappedTextReadHandler();
@@ -72,7 +76,12 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
         stage: "read",
         when: { resolvedBy: "any", contentKind: "text" },
         handler(context) {
-          if (context.state?.resolvedBy === "diagnostics") return mapSource(context);
+          if (context.state?.resolvedBy === "diagnostics") {
+            const content = context.state.content[0];
+            const check = contents.get(content);
+            if (check) checks.set(context.request, check);
+            return mapSource(context);
+          }
           if (
             context.state?.contentKind === "text" &&
             context.request.views?.includes("diagnostics")
@@ -85,6 +94,19 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
       api.addHandler({
         stage: "post-read",
         handler(context) {
+          const check = checks.get(context.request);
+          if (check && context.result) {
+            return {
+              kind: "continue",
+              context: {
+                ...context,
+                result: {
+                  ...context.result,
+                  details: { ...context.result.details, diagnosticCheck: check },
+                },
+              },
+            };
+          }
           const document = documents.get(context.request);
           const status = document && statuses.get(document);
           const result = context.result;
@@ -106,7 +128,7 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
         },
       });
       api.describe(
-        'diagnostics:<path> — lint and language-server diagnostics. views: ["diagnostics"] — diagnostics alongside source text. Diagnostic sources name the actual reporting tools. Automatic notices include findings only and wake an idle agent as soon as results arrive; silence does not prove the file is clean. Use an explicit diagnostic read to check readiness. Pending results and snapshots are not completed checks; an empty snapshot does not prove the file is clean.',
+        'diagnostics:<path> — lint and language-server diagnostics. views: ["diagnostics"] — diagnostics alongside source text. Diagnostic sources name the actual reporting tools. Automatic notices include findings only and wake an idle agent after the notification buffer (five seconds by default); silence does not prove the file is clean. Use an explicit diagnostic read to check readiness. Pending results and snapshots are not completed checks; an empty snapshot does not prove the file is clean.',
       );
       api.addPromptGuideline(
         "Use read with `diagnostics:<path>` or the `diagnostics` view for per-file diagnostics instead of running equivalent checks through Bash. Project builds and tests remain separate verification.",
@@ -117,11 +139,19 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
   await Promise.all([connectIdePlugin(pi, idePlugin), connectReadPlugin(pi, readPlugin)]);
 }
 
-function createDiagnosticResolver(collect: CollectDiagnostics): ResourceResolver {
+function createDiagnosticResolver(
+  collect: CollectDiagnostics,
+  contents: WeakMap<object, NonNullable<ReadResultDetails["diagnosticCheck"]>>,
+): ResourceResolver {
   return {
     id: "diagnostics",
     tryResolve(source, context) {
-      return Promise.resolve(resolveDiagnosticSource(source, context.cwd, collect));
+      return Promise.resolve(
+        resolveDiagnosticSource(source, context.cwd, collect, contents, {
+          signal: context.signal,
+          ...(context.audience === "script" && { mode: "complete" }),
+        }),
+      );
     },
   };
 }
@@ -129,12 +159,15 @@ function createDiagnosticResolver(collect: CollectDiagnostics): ResourceResolver
 type CollectDiagnostics = (
   filePath: string,
   cwd: string,
+  options?: Omit<IdeDiagnosticReadContext, "cwd">,
 ) => ReturnType<IdePluginApi["readDiagnostics"]>;
 
 function resolveDiagnosticSource(
   source: string,
   cwd: string,
   collect: CollectDiagnostics,
+  contents: WeakMap<object, NonNullable<ReadResultDetails["diagnosticCheck"]>>,
+  options?: Omit<IdeDiagnosticReadContext, "cwd">,
 ): ResourceResolutionAttempt {
   let filePath: string | undefined;
 
@@ -153,8 +186,10 @@ function resolveDiagnosticSource(
     resource: {
       source: formatDiagnosticViewSource(DIAGNOSTIC_SCHEME, filePath),
       async read() {
-        const snapshot = await collect(filePath, cwd);
-        return [createDiagnosticViewContent(filePath, snapshot.content, snapshot.results)];
+        const snapshot = await collect(filePath, cwd, options);
+        const content = createDiagnosticViewContent(filePath, snapshot.content, snapshot.results);
+        contents.set(content, content.diagnosticCheck);
+        return [content];
       },
     },
   };
@@ -171,7 +206,23 @@ function createDiagnosticPresenter(
         return document;
       }
 
-      const snapshot = await collect(document.source, context.cwd);
+      const eager =
+        context.audience === "script" && !context.requestedViews?.includes("diagnostics");
+      if (eager && hasDeferredPostEdit(document.source)) return document;
+      const snapshot = await collect(document.source, context.cwd, {
+        signal: context.signal,
+        ...(context.audience === "script" && {
+          mode: eager ? "snapshot" : "complete",
+        }),
+      }).catch((error: unknown) => {
+        context.signal?.throwIfAborted();
+        if (eager) return undefined;
+        throw error;
+      });
+      // Listings and converted documents are not the file's diagnostic source text.
+      // Optional enrichment must not reject an otherwise successful read.
+      if (snapshot === undefined || (eager && snapshot.content !== document.content))
+        return document;
       if (snapshot.content !== document.content) {
         throw new Error(
           "File changed during diagnostic read; read it again for current source lines.",

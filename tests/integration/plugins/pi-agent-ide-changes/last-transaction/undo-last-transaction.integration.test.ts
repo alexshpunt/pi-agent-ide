@@ -21,9 +21,6 @@ import { createFixture, withTempWorkspace } from "#integration/support/pi-runtim
 
 const runFile = promisify(execFile);
 const extensions = createExtensionSet();
-const overwriteExtension = path.resolve(
-  "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/index.ts",
-);
 const undoExtension = path.resolve("src/plugins/pi-agent-ide-changes/index.ts");
 const staleAnchorExtension = path.resolve(
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.ts",
@@ -33,7 +30,6 @@ const outsideWriteExtension = path.resolve(
 );
 const runtimeExtensions = [
   ...extensions.paths,
-  overwriteExtension,
   undoExtension,
   staleAnchorExtension,
   outsideWriteExtension,

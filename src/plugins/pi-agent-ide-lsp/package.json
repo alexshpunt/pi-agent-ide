@@ -13,6 +13,7 @@
     "pi-agent-resource": "workspace:^",
     "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
+    "pi-agent-text-editor": "workspace:^",
     "vscode-jsonrpc": "^9.0.0",
     "vscode-uri": "^3.1.0"
   },

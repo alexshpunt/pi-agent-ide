@@ -1,3 +1,4 @@
+import { setTimeout } from "node:timers/promises";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -44,6 +45,7 @@ export default async function fixture(pi: ExtensionAPI): Promise<void> {
     parameters: Type.Object({}),
     async execute(_id, _args, _signal, _update, ctx) {
       for (const file of ["first.case", "second.case"]) await api.readDiagnostics(file, { cwd: ctx.cwd });
+      await setTimeout(5500);
       return { content: [{ type: "text", text: "Reports ready" }], details: {} };
     },
   });

@@ -83,6 +83,29 @@ test("orders project entries before global and built-in entries and replaces mat
   expect(registry.resolve("source.collision", project)?.run.command[0]).toBe("project-collision");
 });
 
+test("external-project mode excludes global overrides and unevidenced built-ins", async () => {
+  const project = await temporaryDirectory("formatter-external-layers-project-");
+  const agentDirectory = await temporaryDirectory("formatter-external-layers-agent-");
+  process.env.PI_CODING_AGENT_DIR = agentDirectory;
+  await writeConfig(path.join(agentDirectory, "extensions", "pi-agent-ide", "formatters.json"), {
+    version: 1,
+    formatters: { global: formatter(".external", "global-formatter") },
+  });
+  const bin = path.join(project, "node_modules", ".bin");
+  await mkdir(bin, { recursive: true });
+  await writeFile(path.join(bin, "oxfmt"), "#!/bin/sh\nexit 0\n");
+  await chmod(path.join(bin, "oxfmt"), 0o755);
+
+  const registry = await FormatterCommandRegistry.fromDirectory(project, {
+    environment: { PATH: "", PI_CODING_AGENT_DIR: agentDirectory },
+    includeGlobal: false,
+    requireBuiltInEvidence: true,
+  });
+
+  expect(registry.entries.some((entry) => entry.layer === "global")).toBe(false);
+  expect(registry.resolve("source.external", project)).toBeUndefined();
+  expect(registry.resolve("source.ts", project)).toBeUndefined();
+});
 test("an invalid global formatter file fails this configuration category", async () => {
   const project = await temporaryDirectory("formatter-invalid-project-");
   const agentDirectory = await temporaryDirectory("formatter-invalid-agent-");
@@ -116,6 +139,7 @@ test.each([
     await writeFile(path.join(project, name), content);
     const registry = await FormatterCommandRegistry.fromDirectory(project, {
       environment: { PATH: "", PI_CODING_AGENT_DIR: path.join(project, "agent") },
+      requireBuiltInEvidence: true,
     });
     expect(registry.resolveEntry(file, project)?.id).toBe(expected);
   },

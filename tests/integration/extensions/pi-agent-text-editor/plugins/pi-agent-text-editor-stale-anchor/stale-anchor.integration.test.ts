@@ -22,14 +22,6 @@ const staleAnchorExtension = path.join(
   process.cwd(),
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.ts",
 );
-const overwriteExtension = path.join(
-  process.cwd(),
-  "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/index.ts",
-);
-const argumentOrderExtension = path.join(
-  process.cwd(),
-  "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-argument-order/index.ts",
-);
 const rebindProviderExtension = path.join(
   process.cwd(),
   "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/rebind-provider-extension.ts",
@@ -46,7 +38,7 @@ async function runInsert(directory: string, callId: string, anchor: string) {
     artifactsDir: testArtifactsDir(expect.getState().testPath),
     testName: callId,
     cwd: directory,
-    extensions: [...extensions.paths, staleAnchorExtension, overwriteExtension],
+    extensions: [...extensions.paths, staleAnchorExtension],
     tools: ["insert"],
     conversation: [
       assistantMessage(
@@ -207,13 +199,7 @@ describe("pi-agent-text-editor stale anchor", () => {
         artifactsDir: testArtifactsDir(expect.getState().testPath),
         testName: largeCallId,
         cwd: directory,
-        extensions: [
-          ...extensions.paths,
-          staleAnchorExtension,
-          overwriteExtension,
-          argumentOrderExtension,
-          rebindProviderExtension,
-        ],
+        extensions: [...extensions.paths, staleAnchorExtension, rebindProviderExtension],
         tools: ["insert", "read"],
         conversation: [
           assistantMessage(

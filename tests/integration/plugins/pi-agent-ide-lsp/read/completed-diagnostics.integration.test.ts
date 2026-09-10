@@ -30,6 +30,11 @@ for (const mode of ["focused", "view", "combined", "javascript"]) {
     const call = (id: string, name: string, args: Record<string, unknown>) =>
       assistantMessage([toolCall({ id, name, arguments: args })], { stopReason: "toolUse" });
     try {
+      await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+      await writeFile(
+        path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+        JSON.stringify({ flags: { "pi-agent-ide-no-diagnostic-buffer": true } }),
+      );
       await writeFile(
         path.join(cwd, "tsconfig.json"),
         JSON.stringify({

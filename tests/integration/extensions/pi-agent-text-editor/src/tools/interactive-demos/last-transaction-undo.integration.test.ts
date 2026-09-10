@@ -21,9 +21,6 @@ const defaultTextEditorExtension = path.resolve(
 const rendererTestStand = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/register-extension.ts",
 );
-const overwriteExtension = path.resolve(
-  "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/index.ts",
-);
 const undoExtension = path.resolve("src/plugins/pi-agent-ide-changes/index.ts");
 const demoFileName = "scheduler-last-transaction-demo.ts";
 const marker = "const MAX_PARALLEL_JOBS = 8;";
@@ -50,7 +47,6 @@ describe("interactive text editor demos", () => {
           ...extensions.paths.map((extension) =>
             extension === defaultTextEditorExtension ? rendererTestStand : extension,
           ),
-          overwriteExtension,
           undoExtension,
         ],
         tools: ["replace", "undo"],

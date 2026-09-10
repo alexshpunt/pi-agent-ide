@@ -4,6 +4,8 @@ import {
   resolvePiAgentIdeExtensionsConfigPaths,
 } from "#src/composite/extensions-config.js";
 import { selectBuiltinExtensions } from "#src/composite/selection.js";
+import { registerModuleSettings } from "#src/composite/module-settings.js";
+import { createFeatureFlags } from "#src/composite/feature-flags.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -21,17 +23,49 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
   });
   const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
-  pi.registerFlag("pi-agent-ide-no-animations", {
-    description: "Show IDE mutation results without animated playback",
-    type: "boolean",
-    default: config.noAnimations ?? false,
+  const flags = createFeatureFlags(pi, {
+    "pi-agent-ide-no-animations": config.noAnimations ?? false,
+    "pi-agent-ide-no-post-processing": config.noPostProcessing ?? false,
+    ...config.flags,
   });
-  pi.registerFlag("pi-agent-ide-no-post-processing", {
+  flags.register({
+    id: "pi-agent-ide-no-animations",
+    name: "Static edit previews",
+    group: "ui",
+    description: "Show edit results immediately, without animated playback.",
+    default: false,
+  });
+  flags.register({
+    id: "pi-agent-ide-no-post-processing",
+    name: "Skip automatic post-processing",
     description:
-      "Skip automatic post-edit formatting and diagnostics; explicit reads remain available",
-    type: "boolean",
-    default: config.noPostProcessing ?? false,
+      "Skip automatic formatting and diagnostics after edits. Explicit diagnostic reads still work.",
+    default: false,
   });
+  flags.register({
+    id: "pi-agent-ide-no-apply",
+    name: "Disable Apply",
+    description: "Hide the Apply tool. Standalone read, search and editing tools remain available.",
+    default: false,
+  });
+  flags.register({
+    id: "pi-agent-ide-apply-code",
+    name: "Apply presentation",
+    description:
+      "Mixed compacts written tool calls during streaming. Code shows the full script. Expanded always exposes the source.",
+    group: "ui",
+    labels: { on: "Code", off: "Mixed" },
+    default: false,
+  });
+  flags.register({
+    id: "pi-agent-ide-no-diagnostic-buffer",
+    name: "Immediate diagnostic notices",
+    description:
+      "Send findings immediately instead of combining reports received over five seconds.",
+    group: "ui",
+    default: false,
+  });
+  registerModuleSettings(pi, flags.definitions);
   const { enabled } = selectBuiltinExtensions(BUILTIN_EXTENSIONS, config.disabled, config.enabled);
 
   for (const extension of enabled) {

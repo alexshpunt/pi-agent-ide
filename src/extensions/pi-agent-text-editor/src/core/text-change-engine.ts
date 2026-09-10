@@ -162,13 +162,21 @@ export class TextChangeDocument {
   }
 }
 
-export function applyTextChanges(source: string, changes: readonly TextChange[]): TextChangeResult {
+/** Apply validated ranges; creation may have empty text but still creates a resource. */
+export function applyTextChanges(
+  source: string,
+  changes: readonly TextChange[],
+  creating = false,
+): TextChangeResult {
   const ordered = changes
     .map((change, index) => ({ change, index }))
     .sort((left, right) => left.change.from - right.change.from || left.index - right.index)
     .map(({ change }) => change);
   validateChanges(source.length, ordered);
-  if (ordered.some((change) => source.slice(change.from, change.to) === change.insert)) {
+  if (
+    !(creating && source.length === 0) &&
+    ordered.some((change) => source.slice(change.from, change.to) === change.insert)
+  ) {
     throw new Error("Text changes must change the document.");
   }
   const document = Text.of([source]);

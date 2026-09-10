@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-chained-type-assertions -- Test fixtures implement only the API surface under test. */
 import { expect, test } from "vitest";
 
 import { connectIdePlugin } from "#src/api/connect-plugin.js";
@@ -91,7 +92,7 @@ function createExtensionEnvironment(): { createExtension(): TestExtension } {
   return {
     createExtension(): TestExtension {
       const shutdownHandlers: LifecycleHandler[] = [];
-      const pi: Partial<ExtensionAPI> = {
+      const pi = {
         events,
         on(event: string, handler: LifecycleHandler): void {
           if (event === "session_shutdown") {
@@ -99,11 +100,14 @@ function createExtensionEnvironment(): { createExtension(): TestExtension } {
           }
         },
         registerFlag(): void {},
+        getFlag(): boolean {
+          return false;
+        },
         registerEntryRenderer(): void {},
       };
 
       return {
-        pi: pi as ExtensionAPI,
+        pi: pi as unknown as ExtensionAPI,
         async shutdown(): Promise<void> {
           for (const handler of shutdownHandlers) {
             await handler({ reason: "reload" }, {});

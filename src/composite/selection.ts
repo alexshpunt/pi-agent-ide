@@ -5,6 +5,8 @@ One independently usable built-in extension composed into Pi Agent IDE.
 */
 export interface BuiltinExtension {
   readonly id: string;
+  readonly name?: string;
+  readonly description?: string;
   readonly dependencies: readonly string[];
   readonly register: (pi: ExtensionAPI) => void | Promise<void>;
   /**
@@ -44,11 +46,9 @@ export function selectBuiltinExtensions(
   const explicitDisabled = new Set<string>();
 
   for (const id of configuredDisabled) {
-    if (!byId.has(id)) {
-      throw new Error(`Unknown Pi Agent IDE extension ID in disabled: ${id}`);
+    if (byId.has(id)) {
+      explicitDisabled.add(id);
     }
-
-    explicitDisabled.add(id);
   }
 
   for (const id of configuredEnabled) {

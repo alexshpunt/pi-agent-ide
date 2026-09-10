@@ -7,6 +7,7 @@ import {
   type TextMutationToolRegistration,
 } from "#src/api/mutation-tool.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { TEXT_EDITOR_API_VERSION } from "#src/api/plugin-protocol.js";
 
 const schema = Type.Object(
   {
@@ -116,7 +117,7 @@ test("commits plugin mutation registrations through the same registry", async ()
   const core = createTextEditorCore();
   await core.registerPlugin({
     protocol: "pi-agent-text-editor",
-    apiVersion: 17,
+    apiVersion: TEXT_EDITOR_API_VERSION,
     id: "fixture-plugin",
     setup(api) {
       api.addMutationTool(registration("plugin-fixture"));
@@ -130,7 +131,7 @@ test("rejects a plugin draft with duplicate mutations without committing either"
   await expect(
     core.registerPlugin({
       protocol: "pi-agent-text-editor",
-      apiVersion: 17,
+      apiVersion: TEXT_EDITOR_API_VERSION,
       id: "invalid-plugin",
       setup(api) {
         api.addMutationTool(registration("duplicate"));
@@ -156,7 +157,7 @@ test("keeps explicit tool renderer slots over fallback slots", async () => {
 
   await core.registerPlugin({
     protocol: "pi-agent-text-editor",
-    apiVersion: 17,
+    apiVersion: TEXT_EDITOR_API_VERSION,
     id: "explicit-renderer",
     setup(api) {
       api.addToolRenderer({ tool: "external-mutation", renderCall: explicitCall });
@@ -164,7 +165,7 @@ test("keeps explicit tool renderer slots over fallback slots", async () => {
   });
   await core.registerPlugin({
     protocol: "pi-agent-text-editor",
-    apiVersion: 17,
+    apiVersion: TEXT_EDITOR_API_VERSION,
     id: "fallback-renderer",
     setup(api) {
       api.addToolRenderer({

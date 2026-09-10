@@ -22,9 +22,6 @@ const defaultTextEditorExtension = path.resolve(
 const rendererTestStand = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/register-extension.ts",
 );
-const overwriteGuardExtension = path.resolve(
-  "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/index.ts",
-);
 const demoFileName = "worker-catalog-write-demo.ts";
 const live = process.env.PI_INTEGRATION_TEST_LIVE === "1";
 const interactivePacing = live ? {} : { chunks: { kind: "fixed" as const, size: 512 }, delayMs: 0 };
@@ -61,11 +58,10 @@ const overwriteContent = buildWorkerCatalog({
 afterAll(() => extensions.dispose());
 
 describe("interactive text editor demos", () => {
-  test("streams a large file write and guarded overwrite", async () => {
+  test("streams a large file write and overwrite", async () => {
     await withTempWorkspace(async (directory) => {
       const createCallId = "demo-large-write-create";
-      const blockedOverwriteCallId = "demo-large-write-overwrite-blocked";
-      const confirmedOverwriteCallId = "demo-large-write-overwrite-confirmed";
+      const firstOverwriteCallId = "demo-large-write-overwrite-first";
       const result = await new PiIntegrationTest({
         testName: "interactive-demo-large-file-write",
         cwd: directory,
@@ -73,7 +69,6 @@ describe("interactive text editor demos", () => {
           ...extensions.paths.map((extension) =>
             extension === defaultTextEditorExtension ? rendererTestStand : extension,
           ),
-          overwriteGuardExtension,
         ],
         tools: ["write", "read"],
         rawMode: false,
@@ -97,53 +92,38 @@ describe("interactive text editor demos", () => {
           assistantMessage(
             [
               toolCall({
-                id: blockedOverwriteCallId,
+                id: firstOverwriteCallId,
                 name: "write",
-                arguments: { path: demoFileName, content: overwriteContent },
+                arguments: { content: overwriteContent, path: demoFileName },
                 ...interactivePacing,
               }),
             ],
             { stopReason: "toolUse" },
           ),
           assistantMessage(
-            [toolCall({ id: "read-blocked", name: "read", arguments: { path: demoFileName } })],
-            { stopReason: "toolUse" },
-          ),
-          assistantMessage(
-            [
-              toolCall({
-                id: confirmedOverwriteCallId,
-                name: "write",
-                arguments: { path: demoFileName, content: overwriteContent },
-                ...interactivePacing,
-              }),
-            ],
+            [toolCall({ id: "read-overwritten", name: "read", arguments: { path: demoFileName } })],
             { stopReason: "toolUse" },
           ),
           assistantMessage([
-            text("The large write and guarded overwrite demo is complete", { delayMs: 0 }),
+            text("The large write and overwrite demo is complete", { delayMs: 0 }),
           ]),
         ],
-      }).run("Write a large TypeScript file, then confirm its complete overwrite");
+      }).run("Write a large TypeScript file, then overwrite it");
 
       const createExecution = getToolExecution(result, createCallId);
-      const blockedOverwriteExecution = getToolExecution(result, blockedOverwriteCallId);
-      const confirmedOverwriteExecution = getToolExecution(result, confirmedOverwriteCallId);
+      const firstOverwriteExecution = getToolExecution(result, firstOverwriteCallId);
       expect(getToolCallNames(result).filter((name) => name === "write")).toEqual([
-        "write",
         "write",
         "write",
       ]);
       expect(createExecution.isError).toBe(false);
-      expect(blockedOverwriteExecution.isError).toBe(true);
-      expect(getToolResultText(result, blockedOverwriteCallId)).toContain(
-        "Reason: The file already exists",
-      );
-      expect(confirmedOverwriteExecution.isError).toBe(false);
+      expect(firstOverwriteExecution.isError).toBe(false);
 
-      for (const id of ["read-created", "read-blocked"]) {
+      for (const id of ["read-created", "read-overwritten"]) {
         expect(getToolExecution(result, id).isError).not.toBe(true);
-        expect(getToolResultText(result, id)).toBe(initialContent);
+        expect(getToolResultText(result, id)).toBe(
+          id === "read-created" ? initialContent : overwriteContent,
+        );
       }
       await expect(readFile(path.join(directory, demoFileName), "utf8")).resolves.toBe(
         overwriteContent,

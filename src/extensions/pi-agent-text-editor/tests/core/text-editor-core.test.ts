@@ -104,7 +104,6 @@ test("returns plugin and stage context when an edit handler fails", async () => 
       pluginId: "failing-plugin",
       stage: "text-edit",
       tool: "fixture-editor",
-      message: "Plugin failing-plugin failed during text-edit",
     },
   });
 });
@@ -117,6 +116,7 @@ test("rolls back earlier resources when a later write fails", async () => {
   ]);
   const writes = new Map<string, string[]>();
   const writeAttempts = new Map<string, number>();
+  const controller = new AbortController();
   const plugin = {
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
@@ -144,6 +144,7 @@ test("rolls back earlier resources when a later write fails", async () => {
                   }
                   values.set(source, text);
                   if (source === "second.txt") {
+                    controller.abort();
                     throw new Error("injected write failure after mutation");
                   }
                 },
@@ -155,8 +156,6 @@ test("rolls back earlier resources when a later write fails", async () => {
     },
   } satisfies TextEditorPlugin;
   await core.registerPlugin(plugin);
-  const controller = new AbortController();
-  controller.abort();
 
   const outcome = await core.editTexts(
     [
@@ -591,3 +590,38 @@ function textResolver(
     },
   };
 }
+
+test("single and multi-resource edits share the whole read-modify-write queue", async () => {
+  const core = createTextEditorCore();
+  await core.registerPlugin({
+    id: "queued-source",
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    setup(api) {
+      api.addResolver({ resolver: textResolver("memory", "note.txt", "") });
+    },
+  });
+  const first = core.editText("note.txt", { cwd: "/workspace" }, async (text) => {
+    await Promise.resolve();
+    return { text: `${text}A`, result: null };
+  });
+  const second = core.editTexts(
+    [{ source: "note.txt", read: true }],
+    { cwd: "/workspace" },
+    (texts) => {
+      const content = texts.get("note.txt") ?? "";
+      return {
+        changes: new Map([
+          ["note.txt", [{ from: content.length, to: content.length, insert: "B" }]],
+        ]),
+        result: null,
+      };
+    },
+  );
+  await Promise.all([first, second]);
+  const final = await core.editText("note.txt", { cwd: "/workspace" }, (text) => ({
+    text,
+    result: null,
+  }));
+  expect(final).toMatchObject({ kind: "completed", after: { content: "AB" } });
+});

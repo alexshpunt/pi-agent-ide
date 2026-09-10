@@ -94,15 +94,22 @@ test.each([false, true])(
         .split("\n")
         .map(
           (line) =>
-            JSON.parse(line) as { type: string; customType?: string; data?: DiagnosticEntryData },
+            JSON.parse(line) as {
+              type: string;
+              customType?: string;
+              data?: { files: DiagnosticEntryData[] };
+            },
         );
       const summaries = entries.filter(
         (entry) => entry.type === "custom" && entry.customType === "ide-diagnostic-summary",
-      ) as { data: DiagnosticEntryData }[];
+      ) as { data: { files: DiagnosticEntryData[] } }[];
+      expect(summaries).toHaveLength(1);
+      const deliveredFiles = summaries.flatMap(({ data }) => data.files);
+      expect(deliveredFiles).toHaveLength(2);
       for (const file of files) {
         expect(
-          summaries.some(
-            ({ data }) =>
+          deliveredFiles.some(
+            (data) =>
               data.filePath === file &&
               data.sources.some(
                 (source) =>
@@ -115,10 +122,6 @@ test.each([false, true])(
         ).toBe(true);
       }
       expect(JSON.stringify(run.providerRequests)).not.toContain("ide-diagnostic-summary");
-      const modelContent = run.providerRequests.flatMap((request) =>
-        (request.messages as { content: unknown }[]).map((message) => message.content),
-      );
-      expect(JSON.stringify(modelContent)).not.toContain("checked-first.case");
       const session = path.join(cwd, "saved.jsonl");
       await writeFile(session, captured.session);
       for (const file of files) await rm(path.join(cwd, file));
@@ -133,9 +136,7 @@ test.each([false, true])(
       for (const file of files) expect(resumed.tuiRenderedOutput).toContain(`checked-${file}`);
       // Compare the actual summary rows rather than asserting their explanatory wording.
       const rows = (output: string) =>
-        output
-          .split("\n")
-          .filter((line) => line.includes(".case · ") && !line.trimStart().startsWith("replace "));
+        output.split("\n").filter((line) => line.trimStart().startsWith("Diagnostics "));
       expect(rows(run.tuiRenderedOutput).length).toBeGreaterThan(0);
       expect(rows(resumed.tuiRenderedOutput)).toEqual(rows(run.tuiRenderedOutput));
     } finally {

@@ -702,6 +702,14 @@ function mutationCallDetails(
   });
 }
 
+/** Render a written call header without preparing previews or reading files. */
+export function renderWrittenMutationHeader(
+  registration: AnyTextMutationToolRegistration,
+  input: Readonly<Record<string, unknown>>,
+  theme: Theme,
+): string {
+  return renderHeader(registration, input, undefined, theme, undefined, false);
+}
 function renderHeader(
   registration: AnyTextMutationToolRegistration,
   input: Readonly<Record<string, unknown>>,
@@ -770,18 +778,19 @@ function renderAnchorRange(
     if (field === undefined) {
       return undefined;
     }
-    const state = anchorRenderPatch?.[field];
-    if (state?.kind === "resolved") {
-      return singleLine(expanded ? state.full : state.compact);
-    }
-    if (state?.kind === "failed") {
-      return "selected range";
-    }
     const raw = stringValue(input[field]);
-    if (raw === undefined) {
-      return undefined;
+    if (raw !== undefined) {
+      const displayed = singleLine(raw);
+      const structured =
+        /^(?:\d+#[0-9A-F]+|CHANGE#[0-9A-F]+|SEARCH#|scope-(?:begin|end)-|begin$|end$)/.test(raw);
+      return expanded || structured || displayed.length <= 100
+        ? displayed
+        : `${displayed.slice(0, 60)}…${displayed.slice(-30)} (${raw.length} chars)`;
     }
-    return expanded ? singleLine(raw) : "selected range";
+    const state = anchorRenderPatch?.[field];
+    return state?.kind === "resolved"
+      ? singleLine(expanded ? state.full : state.compact)
+      : undefined;
   };
   return range(renderField(fields.at(0)), renderField(fields.at(1)), theme);
 }

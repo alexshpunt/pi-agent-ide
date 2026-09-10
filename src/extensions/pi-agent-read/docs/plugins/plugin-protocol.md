@@ -12,7 +12,7 @@ The protocol is exported from `pi-agent-read/api/plugin-protocol`:
 
 ```ts
 const READ_PROTOCOL = "pi-agent-read";
-const READ_API_VERSION = 9;
+const READ_API_VERSION = 11;
 const READ_PLUGIN_REGISTER_EVENT = "pi-agent-read/plugin/register";
 const READ_CORE_READY_EVENT = "pi-agent-read/core/ready";
 
@@ -28,7 +28,18 @@ type ReadResultRenderer = NonNullable<ToolDefinition["renderResult"]>;
 type ReadPluginApi = ReadToolPluginApi;
 
 interface ReadToolPluginApi {
-  read(request: ReadRequest, context: ResourceResolverContext): Promise<ReadToolResult>;
+  read(
+    request: ReadRequest,
+    context: ResourceResolverContext,
+    audience?: "agent" | "script",
+  ): Promise<ReadToolResult>;
+  saveTemporary(text: string): Promise<string>;
+  addOutputReducer(reducer: ReadOutputReducer): void;
+  reduceOutput(
+    result: ReadToolResult,
+    context: ResourceResolverContext,
+    budget: ReadOutputBudget,
+  ): Promise<ReadToolResult | undefined>;
   addResolver(registration: ResourceResolverRegistration): void;
   addTargetResolver(registration: TextTargetResolverRegistration): void;
   addHandler(registration: ReadHandlerRegistration): void;
@@ -187,3 +198,11 @@ The exact resolver, validation, capability, pipeline, and failure behavior is de
 ## Testing contract
 
 Integration tests load real core and plugin entrypoints in both load orders. Core tests verify resolver registration, renderer routing through saved resolver IDs, lazy descriptions, and runtime Resource boundaries directly.
+
+## Script data execution
+
+`api.read(request, context, "script")` uses the same registered read pipeline without applying the model output budget. Explicit offset and limit still select a window. The ordinary two-argument call keeps existing agent presentation behavior.
+
+Pipeline handlers receive `context.audience`. Presentation-only overflow handlers must keep script data intact; failures still apply to both audiences. The AST overflow handler therefore leaves script reads unchanged. Multi-target script results retain every selected result in `details.resources`, rather than exposing only the first target's details.
+
+This is an execution seam for Apply, not a new parameter on the model-facing read tool. Resource, bridge and execution limits remain separate from presentation truncation.

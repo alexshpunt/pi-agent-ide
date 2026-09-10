@@ -1,4 +1,5 @@
 import type { BuiltinExtension } from "#src/composite/selection.js";
+import { moduleLabels } from "./module-labels.js";
 
 /**
  * Built-ins in their established registration order. Loading the catalog does not
@@ -96,20 +97,6 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     ["editor.core"],
   ),
   builtin(
-    "editor.argument-order",
-    () =>
-      import("#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-argument-order/index.js"),
-    ["editor.core"],
-    false,
-  ),
-  builtin(
-    "editor.overwrite",
-    () =>
-      import("#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/index.js"),
-    ["editor.core"],
-    false,
-  ),
-  builtin(
     "editor.stale-anchor",
     () =>
       import("#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.js"),
@@ -143,13 +130,15 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
 
 /** Defer module loading until the selected built-in is registered. */
 function builtin(
-  id: string,
+  id: keyof typeof moduleLabels,
   load: () => Promise<{ default: BuiltinExtension["register"] }>,
   dependencies: readonly string[] = [],
   defaultEnabled = true,
 ): BuiltinExtension {
   return {
     id,
+    name: moduleLabels[id][0],
+    description: moduleLabels[id][1],
     dependencies,
     async register(pi) {
       const extension = await load();

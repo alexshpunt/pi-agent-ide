@@ -78,7 +78,7 @@ Automatic truncation keeps complete lines, adds a continuation notice, and recor
 
 An explicit `limit` that stops before the end also reports the remaining line count and next `offset`. Mixed and non-text content is unchanged.
 
-A `temp:<id>` source supports `offset` and `limit`. Read returns the stored final text without handlers or text presenters. Reading it resets its five-minute inactivity period.
+A `temp:<id>` source supports `offset` and `limit`. Read returns the stored final text without handlers or text presenters. It remains available until its owning read runtime is disposed, with no idle timeout. References are isolated to that runtime and do not survive its disposal.
 
 ## Resolver registration
 

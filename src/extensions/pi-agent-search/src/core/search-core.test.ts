@@ -47,6 +47,17 @@ async function setup(attempt: SearchResolutionAttempt | Error) {
   return { core, specialized, fallback };
 }
 
+test("script search keeps resolver data and formatted reference data separately", async () => {
+  const { core } = await setup({ kind: "resolved", payload: [{ path: "a.ts", line: 4 }] });
+  const result = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() }, "script");
+  expect(result.script).toEqual({
+    resolverId: "special",
+    data: [{ path: "a.ts", line: 4 }],
+    details: {},
+  });
+  const ordinary = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() });
+  expect(ordinary.script).toBeUndefined();
+});
 describe("search fallback dispatch", () => {
   test.each(["symbols:", "ast:", "regex:", "files:", "custom:   "])(
     "routes empty %s straight to local text",

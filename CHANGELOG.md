@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0 — 2026-09-10
+
+### Composable IDE tools
+
+- Add `apply`, a JavaScript scratchpad for combining reads, searches, diffs, guarded text edits, whole-file operations, and Git change operations in one call. Calls run in order, return structured data, and keep completed changes when a later operation fails.
+- Add standalone `diff`, `copy_file`, `move_file`, and `delete_file` tools. The same operations are available inside `apply`.
+- Let `apply` reuse search selections, text anchors, AST matches, inherited sources, formatter hooks, and explicitly requested diagnostics from the existing IDE tools.
+- Add safe symbol operations backed by language servers. Tools can resolve declarations and rename a symbol with native reference updates when the server supports it.
+- Add `raw:` reads for inspecting original file bytes without text decoding or conversion.
+
+### Editing and post-processing
+
+- Keep formatter, linter, and language-server discovery local to the project that owns each edited file. Files outside the active project no longer inherit its toolchain.
+- Preserve successful effects, explicit results, preview arguments, and recovery details across mixed `apply` scripts. Keep empty-file creation and formatted results visible and reusable.
+- Run only explicitly requested diagnostics inline. Automatic post-edit checks remain asynchronous and no longer break otherwise successful reads or edits.
+- Reuse resolved search and AST selections across guarded operations, including exact replacements and multi-file scripts.
+
+### Interface and settings
+
+- Add incremental previews for mixed `apply` scripts, with syntax-coloured calls, results, diffs, formatting status, and grouped diagnostic feedback.
+- Add settings for enabling `apply`, choosing its preview style, and managing IDE modules and feature groups from named settings tabs.
+- Show ordinary read windows as line ranges, while keeping anchor-relative reads and tail reads explicit.
+- Show whole-file operation names as `copy file`, `move file`, and `delete file` in tool cards and results.
+- Tighten compact spacing and keep explicit output visible when reads, edits, and Git operations share one preview.
+
 ## 0.2.2 — 2026-09-08
 
 ### Agent guidance

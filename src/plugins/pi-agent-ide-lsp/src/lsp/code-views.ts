@@ -51,6 +51,46 @@ interface LspCodeDocument {
   readonly symbols: readonly LspCodeSymbol[];
 }
 
+/** Resolve a declaration's exact server range for guarded text operations. */
+export async function resolveLspDeclaration(
+  manager: LspManager,
+  filePath: string,
+  selector: readonly string[],
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
+  throwIfAborted(signal);
+  const before = await readFile(filePath, "utf8");
+  const document = await openCodeDocument(manager, filePath, cwd);
+  const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
+  const after = await readFile(document.filePath, "utf8");
+  throwIfAborted(signal);
+  if (before !== after)
+    throw new Error("The symbol source changed during resolution. Read it again before editing.");
+  return { source: document.filePath, range: symbol.range, content: after };
+}
+/** Resolve the native identifier position and client without guessing from declaration text. */
+export async function resolveLspRenameTarget(
+  manager: LspManager,
+  filePath: string,
+  selector: readonly string[],
+  cwd: string,
+  signal?: AbortSignal,
+) {
+  throwIfAborted(signal);
+  const content = await readFile(filePath, "utf8");
+  const document = await openCodeDocument(manager, filePath, cwd);
+  const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
+  if (content !== (await readFile(filePath, "utf8")))
+    throw new Error("The rename source changed during resolution.");
+  throwIfAborted(signal);
+  return {
+    client: document.client,
+    uri: document.uri,
+    position: symbol.selectionRange.start,
+    content,
+  };
+}
 interface SymbolRelations {
   readonly references: readonly LspLocation[];
   readonly calls: LspCallHierarchyResult;

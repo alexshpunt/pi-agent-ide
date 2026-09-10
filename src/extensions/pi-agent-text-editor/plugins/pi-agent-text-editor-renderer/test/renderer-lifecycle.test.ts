@@ -628,8 +628,7 @@ describe("mutation renderer lifecycle", () => {
     renderer.renderCall(args, theme, { ...context, lastComponent: panel });
 
     expect(panel.render(100)[0]).toBe(firstHeader);
-    expect(firstHeader).toContain("selected range");
-    expect(firstHeader).not.toContain("all matches");
+    expect(firstHeader).toContain(args.start);
     renderer.renderCall(args, theme, {
       ...context,
       lastComponent: panel,
@@ -638,7 +637,7 @@ describe("mutation renderer lifecycle", () => {
     });
   });
 
-  test("shows semantic anchors when compact and exact anchors when expanded", () => {
+  test("keeps exact supplied anchors in both compact and expanded views", () => {
     let renderer: TextEditorToolRendererRegistration | undefined;
     const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
       onMutationTool(listener: (registration: unknown) => void): void {
@@ -690,8 +689,7 @@ describe("mutation renderer lifecycle", () => {
     const compact = renderer.renderCall(args, theme, context);
     const compactText = compact.render(100).join("\n");
 
-    expect(compactText).toContain("all matches");
-    expect(compactText).not.toContain("SEARCH#");
+    expect(compactText).toContain(anchor);
 
     const expanded = renderer.renderCall(args, theme, {
       ...context,

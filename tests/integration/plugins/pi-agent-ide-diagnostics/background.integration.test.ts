@@ -152,7 +152,8 @@ test("real Pi receives immediate findings during edits while empty and stale rep
       expect(getToolResultText(result, id)).toContain("error detail only on explicit read");
       expect(getToolResultText(result, id)).toContain("warning detail only on explicit read");
     }
-    expect(getToolResultText(result, "clean")).toContain("No diagnostics.");
+    expect(getToolExecution(result, "clean").isError).toBe(false);
+    expect(getToolResultText(result, "clean")).not.toContain("detail only on explicit read");
     expect(await readFile(file, "utf8")).toBe("C\n");
     const captured = await PiRun.open(result.artifacts.run);
     if (!captured.session) throw new Error("Missing session capture");
@@ -161,10 +162,12 @@ test("real Pi receives immediate findings during edits while empty and stale rep
       .split("\n")
       .map((line) => JSON.parse(line) as { type: string; customType?: string; display?: boolean })
       .filter((entry) => entry.type === "custom_message" && entry.customType === "ide-diagnostics");
-    // Pending, unavailable, repeated and cleared reports add no automatic messages.
-    expect(notifications).toHaveLength(2);
+    // Buffered findings share one delivery; pending, unavailable, repeated and cleared reports stay silent.
+    expect(notifications).toHaveLength(1);
     expect(notifications.every((entry) => entry.display === false)).toBe(true);
-    const entries = captured.session
+    const lastMessages = result.providerRequests.at(-1)?.messages as { role: string }[];
+    expect(lastMessages.filter((message) => message.role === "user")).toHaveLength(2);
+    const summaries = captured.session
       .trim()
       .split("\n")
       .map(
@@ -172,35 +175,23 @@ test("real Pi receives immediate findings during edits while empty and stale rep
           JSON.parse(line) as {
             type: string;
             customType?: string;
-            message?: { toolCallId?: string };
+            data?: { files: DiagnosticEntryData[] };
           },
-      );
-    // The UI receives the finding while the control tool is still waiting, not at the next model call.
-    expect(
-      entries.findIndex((entry) => entry.customType === "ide-diagnostic-summary"),
-    ).toBeLessThan(entries.findIndex((entry) => entry.message?.toolCallId === "partial"));
-    const lastMessages = result.providerRequests.at(-1)?.messages as { role: string }[];
-    expect(lastMessages.filter((message) => message.role === "user")).toHaveLength(3);
-    const summaries = captured.session
-      .trim()
-      .split("\n")
-      .map(
-        (line) =>
-          JSON.parse(line) as { type: string; customType?: string; data?: DiagnosticEntryData },
       )
       .filter((entry) => entry.type === "custom" && entry.customType === "ide-diagnostic-summary");
     expect(summaries.map((entry) => entry.data)).toEqual([
       {
-        filePath: "example.ts",
-        sources: [
-          { source: "lint", status: "ready", counts: { error: 0, warning: 1, info: 0, hint: 0 } },
-        ],
-      },
-      {
-        filePath: "example.ts",
-        sources: [
-          { source: "lsp", status: "ready", counts: { error: 1, warning: 0, info: 0, hint: 0 } },
-          { source: "lint", status: "ready", counts: { error: 0, warning: 1, info: 0, hint: 0 } },
+        files: [
+          {
+            filePath: "example.ts",
+            sources: [
+              {
+                source: "lint",
+                status: "ready",
+                counts: { error: 0, warning: 1, info: 0, hint: 0 },
+              },
+            ],
+          },
         ],
       },
     ]);

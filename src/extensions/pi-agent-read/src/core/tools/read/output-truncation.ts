@@ -69,7 +69,7 @@ export async function limitReadOutput(
 }
 
 function appendTemporarySource(notice: string, source: string): string {
-  return `${notice.slice(0, -1)} Full output: ${source}. Expires after 5 minutes of inactivity.]`;
+  return `${notice.slice(0, -1)} Full output: ${source}. Available until this runtime is disposed.]`;
 }
 
 function oversizedFirstLineNotice(

@@ -32,7 +32,7 @@ test.each([
   ]);
   const result = await runIdePostEditGate(transaction());
   expect(result.formatting).toEqual({ status, formatter: "fixture" });
-  expect(result.diffStatuses?.map(({ tone }) => tone) ?? []).toEqual(ok ? ["success"] : []);
+  expect(result.diffStatuses?.map(({ tone }) => tone) ?? []).toEqual(ok ? ["success"] : ["error"]);
 });
 
 test.each(["oxfmt", null])("uses the resolved formatter identity %s", async (formatter) => {
@@ -65,9 +65,9 @@ test("reports formatter exceptions without undoing the edit", async () => {
       },
     },
   ]);
-  await expect(runIdePostEditGate(transaction())).resolves.toEqual({
-    formatting: { status: "failed", formatter: "fixture" },
-  });
+  const result = await runIdePostEditGate(transaction());
+  expect(result.formatting).toEqual({ status: "failed", formatter: "fixture" });
+  expect(result.diffStatuses).toEqual([expect.objectContaining({ tone: "error" })]);
 });
 
 test("formats without detecting or waiting for LSP and lint, and returns no diagnostic hints", async () => {

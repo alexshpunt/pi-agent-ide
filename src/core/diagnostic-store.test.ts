@@ -217,7 +217,7 @@ test("publication signals delivery without a read or model boundary and stops af
   await vi.waitFor(() => expect(lsp.calls).toHaveLength(1));
   expect(changed).not.toHaveBeenCalled();
   requiredValue(lsp.calls[0]).finish(broken);
-  await vi.waitFor(() => expect(changed).toHaveBeenCalledExactlyOnceWith(cwd));
+  await vi.waitFor(() => expect(changed).toHaveBeenCalledExactlyOnceWith(cwd, true));
   expect(await store.takeNotifications(cwd)).toHaveLength(1);
   unsubscribe();
   requiredValue(lsp.calls[0]).context.publish(clean);
@@ -229,4 +229,42 @@ test("publication signals delivery without a read or model boundary and stops af
   store.dispose();
   requiredValue(lsp.calls[0]).context.publish(broken);
   expect(changed).toHaveBeenCalledTimes(1);
+});
+
+test("complete reads wait for ready reports and reject unavailable sources", async () => {
+  const check = controlled("check");
+  const { store, cwd, file } = await fixture([check.source]);
+  const pending = store.read(file, { cwd, mode: "complete" });
+  await vi.waitFor(() => expect(check.calls).toHaveLength(1));
+  requiredValue(check.calls[0]).finish(clean);
+  expect((await pending).results).toEqual([{ source: "check", ...clean }]);
+  const unavailable = await fixture([]);
+  await expect(
+    unavailable.store.read(unavailable.file, { cwd: unavailable.cwd, mode: "complete" }),
+  ).rejects.toMatchObject({ code: "DIAGNOSTICS_UNAVAILABLE" });
+});
+
+test("complete reads time out on incomplete snapshots", async () => {
+  const { store, cwd, file } = await fixture(
+    [{ id: "check", diagnose: async () => ({ status: "snapshot", diagnostics: [] }) }],
+    { checkTimeoutMs: 20 },
+  );
+  await expect(store.read(file, { cwd, mode: "complete" })).rejects.toMatchObject({
+    code: "DIAGNOSTICS_TIMEOUT",
+  });
+});
+
+test("snapshot reads do not wait and cancelling a complete read keeps shared checks alive", async () => {
+  const check = controlled("check");
+  const { store, cwd, file } = await fixture([check.source], { readWaitMs: 30_000 });
+  const snapshot = await store.read(file, { cwd, mode: "snapshot" });
+  expect(snapshot.results[0]?.status).toBe("pending");
+  const controller = new AbortController();
+  const pending = store.read(file, { cwd, mode: "complete", signal: controller.signal });
+  const rejection = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  await vi.waitFor(() => expect(check.calls).toHaveLength(1));
+  controller.abort();
+  await rejection;
+  expect(requiredValue(check.calls[0]).context.signal.aborted).toBe(false);
+  requiredValue(check.calls[0]).finish(clean);
 });

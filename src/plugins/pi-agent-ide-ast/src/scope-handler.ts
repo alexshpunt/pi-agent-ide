@@ -9,6 +9,8 @@ import type { TextLinePresenter } from "pi-agent-text";
 const AST_SCOPE_METADATA = "pi-agent-ast";
 
 interface AstScopeBoundary {
+  readonly beginAnchor: string;
+  readonly endAnchor: string;
   readonly endLine: number;
 }
 
@@ -106,7 +108,11 @@ function addScopeMarkers(
     markersByLine.set(scope.startLine, begin);
 
     const boundaries = boundariesByLine.get(scope.startLine) ?? [];
-    boundaries.push({ endLine: scope.endLine });
+    boundaries.push({
+      endLine: scope.endLine,
+      beginAnchor: scope.beginAnchor.value,
+      endAnchor: scope.endScopeAnchor.value,
+    });
     boundariesByLine.set(scope.startLine, boundaries);
 
     const end = markersByLine.get(scope.endLine) ?? [];
@@ -125,6 +131,7 @@ function addScopeMarkers(
     return {
       ...line,
       ...(markers !== undefined && {
+        anchors: [...new Set([...(line.anchors ?? []), ...markers])],
         presentation: {
           ...line.presentation,
           suffix: `${line.presentation?.suffix ?? ""}${markers

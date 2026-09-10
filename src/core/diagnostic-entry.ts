@@ -68,11 +68,59 @@ export function renderDiagnosticEntry(
 
 /** Register durable UI-only entries; appending one never adds model context or starts a turn. */
 export function registerDiagnosticEntryRenderer(pi: ExtensionAPI): void {
-  pi.registerEntryRenderer<DiagnosticEntryData>(DIAGNOSTIC_ENTRY_TYPE, (entry, options, theme) =>
-    renderDiagnosticEntry(requiredValue(entry.data), theme, options.expanded),
-  );
+  pi.registerEntryRenderer<
+    DiagnosticEntryData | { readonly files: readonly DiagnosticEntryData[] }
+  >(DIAGNOSTIC_ENTRY_TYPE, (entry, options, theme) => {
+    const data = requiredValue(entry.data);
+    return "files" in data
+      ? renderDiagnosticBatch(data.files, theme, options.expanded)
+      : renderDiagnosticEntry(data, theme, options.expanded);
+  });
 }
 
+/** One stable summary per delivery; expansion retains each file and provider. */
+export function renderDiagnosticBatch(
+  files: readonly DiagnosticEntryData[],
+  theme: Theme,
+  expanded = false,
+): Component {
+  return {
+    render(width) {
+      const visible = files.filter((file) =>
+        file.sources.some(
+          (source) =>
+            source.status !== "pending" &&
+            source.status !== "unavailable" &&
+            Object.values(source.counts).some((count) => count > 0),
+        ),
+      );
+      if (visible.length === 1 && visible[0])
+        return renderDiagnosticEntry(visible[0], theme, expanded).render(width);
+      if (visible.length === 0) return [];
+      const counts = { error: 0, warning: 0, info: 0, hint: 0 };
+      const providers = new Set<string>();
+      for (const file of visible)
+        for (const source of file.sources) {
+          if (source.status === "pending" || source.status === "unavailable") continue;
+          providers.add(source.source);
+          for (const severity of ["error", "warning", "info", "hint"] as const)
+            counts[severity] += source.counts[severity];
+        }
+      const head = new Text(
+        `${theme.fg("accent", "Diagnostics")} · ${visible.length} files · ${renderCounts(counts, theme)} · ${providers.size} tools`,
+        0,
+        0,
+      ).render(width);
+      return expanded
+        ? [
+            ...head,
+            ...visible.flatMap((file) => renderDiagnosticEntry(file, theme, true).render(width)),
+          ]
+        : head;
+    },
+    invalidate() {},
+  };
+}
 function renderCounts(
   counts: DiagnosticEntryData["sources"][number]["counts"],
   theme: Theme,

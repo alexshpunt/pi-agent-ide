@@ -31,9 +31,9 @@ test("does not select an unavailable shipped LSP server", async () => {
   expect(registry.entries.some((entry) => entry.id === "typescript-language-server")).toBe(true);
 });
 
-test("selects an available project-local shipped LSP server", async () => {
-  const project = await temporaryDirectory("lsp-available-project-");
-  process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("lsp-available-agent-");
+test("external-project mode rejects an available unevidenced LSP server", async () => {
+  const project = await temporaryDirectory("lsp-external-unevidenced-");
+  process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("lsp-external-agent-");
   const bin = path.join(project, "node_modules", ".bin");
   const executable = path.join(bin, "typescript-language-server");
   await mkdir(bin, { recursive: true });
@@ -42,6 +42,27 @@ test("selects an available project-local shipped LSP server", async () => {
 
   const registry = await LspServerRegistry.fromPackageDir(project, {
     environment: { PATH: "" },
+    includeGlobal: false,
+    requireBuiltInEvidence: true,
+    recipes: [typescriptRecipe()],
+  });
+
+  expect(registry.resolve(".ts")).toEqual([]);
+});
+test("selects an available project-local shipped LSP server", async () => {
+  const project = await temporaryDirectory("lsp-available-project-");
+  process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("lsp-available-agent-");
+  const bin = path.join(project, "node_modules", ".bin");
+  const executable = path.join(bin, "typescript-language-server");
+  await mkdir(bin, { recursive: true });
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
+  await chmod(executable, 0o755);
+  await writeFile(path.join(project, "tsconfig.json"), "{}");
+
+  const registry = await LspServerRegistry.fromPackageDir(project, {
+    environment: { PATH: "" },
+    requireBuiltInEvidence: true,
+    recipes: [typescriptRecipe()],
   });
 
   expect(registry.resolve(".ts")[0]).toMatchObject({
@@ -157,6 +178,17 @@ test("validates native marker gates before loading a server", () => {
   expect(parseLspConfig(config(false, [])).servers.framework?.requireRootMarker).toBe(false);
 });
 
+function typescriptRecipe() {
+  return {
+    id: "typescript-language-server",
+    name: "typescript-language-server",
+    kind: "lsp" as const,
+    languages: ["typescript"],
+    executables: ["typescript-language-server"],
+    configFiles: ["tsconfig.json"],
+    documentation: "https://example.test",
+  };
+}
 function server(extension: string, executable: string): Record<string, unknown> {
   return {
     command: [executable],

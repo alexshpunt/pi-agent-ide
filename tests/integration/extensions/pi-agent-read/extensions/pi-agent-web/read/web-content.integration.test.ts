@@ -170,6 +170,8 @@ function runSource(
   return new PiIntegrationTest({
     artifactsDir: testArtifactsDir(expect.getState().testPath),
     testName,
+    // Allow both 30-second transport attempts and Pi startup and cleanup.
+    timeoutMs: 90_000,
     cwd,
     extensions: generatedExtensions.paths,
     tools: ["read"],

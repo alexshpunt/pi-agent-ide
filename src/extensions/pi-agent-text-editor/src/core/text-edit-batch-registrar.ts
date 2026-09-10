@@ -101,6 +101,23 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
         return;
       }
 
+      // Derived protocol targets need their owning execution pipeline, not snapshot batching.
+      const selectorFields = [
+        registration.source.field,
+        ...(registration.source.targets ?? []).map((target) => target.field),
+        ...(registration.anchors ?? []).map((anchor) => anchor.field),
+      ];
+      if (
+        selectorFields.some((field) => {
+          const value = call.arguments[field];
+          return (
+            typeof value === "string" &&
+            /^[a-z][a-z\d+.-]+:/iu.test(value) &&
+            !value.startsWith("file://")
+          );
+        })
+      )
+        return;
       const explicit = call.arguments[registration.source.field];
       const inheritedSource =
         !(typeof explicit === "string" && explicit.length > 0) && registration.source.inherited

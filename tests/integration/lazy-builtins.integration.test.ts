@@ -31,6 +31,11 @@ test("loads only selected built-ins and leaves disabled dependencies unevaluated
       "src/composite/builtin-extensions.ts",
       "src/composite/selection.ts",
       "src/composite/extensions-config.ts",
+      "src/composite/feature-flags.ts",
+      "src/composite/module-labels.ts",
+      "src/composite/module-settings.ts",
+      "src/composite/module-settings-store.ts",
+      "src/composite/settings-panel.ts",
     ]) {
       await copyFile(path.resolve(file), path.join(cwd, file));
     }

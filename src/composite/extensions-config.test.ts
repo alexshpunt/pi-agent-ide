@@ -55,13 +55,15 @@ describe("Pi Agent IDE extension config", () => {
       projectPath: path.join(directory, "project", "extensions.json"),
     };
 
-    await writeJson(paths.globalPath, { disabled: ["editor.overwrite", "editor.argument-order"] });
+    await writeJson(paths.globalPath, {
+      disabled: ["editor.anchor.exact", "editor.anchor.line-hash"],
+    });
     await writeJson(paths.projectPath, {
-      disabled: ["editor.argument-order", "editor.stale-anchor"],
+      disabled: ["editor.anchor.line-hash", "editor.stale-anchor"],
     });
 
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
-      disabled: ["editor.overwrite", "editor.argument-order", "editor.stale-anchor"],
+      disabled: ["editor.anchor.exact", "editor.anchor.line-hash", "editor.stale-anchor"],
       enabled: [],
       noAnimations: false,
       noPostProcessing: false,
@@ -75,12 +77,12 @@ describe("Pi Agent IDE extension config", () => {
       projectPath: path.join(directory, "project", "extensions.json"),
     };
 
-    await writeJson(paths.globalPath, { enabled: ["editor.argument-order"] });
-    await writeJson(paths.projectPath, { enabled: ["editor.argument-order", "ide.lsp"] });
+    await writeJson(paths.globalPath, { enabled: ["editor.anchor.line-hash"] });
+    await writeJson(paths.projectPath, { enabled: ["editor.anchor.line-hash", "ide.lsp"] });
 
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
       disabled: [],
-      enabled: ["editor.argument-order", "ide.lsp"],
+      enabled: ["editor.anchor.line-hash", "ide.lsp"],
       noAnimations: false,
       noPostProcessing: false,
     });

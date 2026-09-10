@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-ide",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "Agent-facing tools for reading, searching, and editing code in Pi.",
   "keywords": [
@@ -45,7 +45,6 @@
     "#pi-agent-text-anchor-line-hash/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/*",
     "#pi-agent-text-anchor-exact/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-exact/*",
     "#pi-agent-text-editor-renderer/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/*",
-    "#pi-agent-text-editor-overwrite/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-overwrite/*",
     "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*",
     "#test-fixtures/pdf": "./packages/pi-agent-pdf/test/pdf-fixture.ts",
     "#scripts/*": "./scripts/*"

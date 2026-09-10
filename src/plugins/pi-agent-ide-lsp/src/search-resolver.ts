@@ -20,8 +20,15 @@ export function createLspSearchResolver(
         return { kind: "failed", error: new Error("symbols: query must not be empty") };
       }
 
-      await managerFor(context.cwd);
-      const hits = await searchSymbols(query, context.cwd, request.limit ?? 100, context.signal);
+      const manager = await managerFor(context.cwd);
+      const hits = await searchSymbols(
+        query,
+        context.cwd,
+        request.limit ?? 100,
+        context.signal,
+        request,
+        manager,
+      );
       return { kind: "resolved", payload: { query, hits } };
     },
     format(payload) {

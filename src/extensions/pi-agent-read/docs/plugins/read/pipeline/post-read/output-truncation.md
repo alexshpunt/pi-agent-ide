@@ -49,7 +49,7 @@ When line metadata is present, `ReadResultDetails.lines` keeps only the retained
 
 A resolver may enable `preserveTruncatedOutput`. Core then saves the complete final text after all presenters and post-read handlers and adds its `temp:<id>` source to the notice and `ReadResultDetails.temporarySource`. Explicit `limit` requests do not create snapshots.
 
-The `temp` protocol returns the saved text without running handlers or presenters again. It supports normal line ranges and the same output limit. Each read resets a five-minute inactivity period. Core deletes all temporary resources on session shutdown.
+The `temp` protocol returns the saved text without running handlers or presenters again. It supports normal line ranges and the same output limit. All temporary resources remain available until their owning read runtime is disposed, with no idle timeout. Disposal removes that runtime's resources and private directory; references cannot be read by another runtime.
 
 ## Non-goals
 

@@ -49,7 +49,7 @@ Supplying both start and end fields selects whole containing lines inclusively. 
 
 A mutation may return `afterWrite` when it must update related state only after all Resource writes, post-edit handlers, and final rereads succeed. Direct and batched calls await it before reporting success. If it fails, the tool reports `POST_WRITE_FAILED` with an applied effect because the Resource writes have already completed. Mutation previews do not run it.
 
-The TypeBox property order is the accepted argument order. Primary source metadata controls sibling path inheritance and batch discovery. `api.onMutationTool()` receives every existing registration immediately and then receives later registrations, so extension load order does not change protection.
+Arguments are accepted regardless of their JSON property order. Primary source metadata controls sibling path inheritance and batch discovery. `api.onMutationTool()` receives every existing registration immediately and then receives later registrations, so extension load order does not change protection.
 
 A mutation registration may set `intent` to `restore`; otherwise it is an ordinary `edit`. A batch is `edit` or `restore` when all calls have that intent, and `mixed` when both appear. Guards and completion listeners receive the invocation intent without depending on a tool name.
 

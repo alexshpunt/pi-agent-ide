@@ -2,7 +2,7 @@ import type { Diagnostic, IdeTool, ToolContext } from "#src/toolchain/types.js";
 
 export const IDE_PROTOCOL = "pi-agent-ide" as const;
 
-export const IDE_API_VERSION = 3 as const;
+export const IDE_API_VERSION = 4 as const;
 
 export const IDE_CORE_READY_EVENT = "pi-agent-ide/core/ready" as const;
 
@@ -50,12 +50,20 @@ export interface IdeDiagnosticSource {
   diagnose(filePath: string, context: IdeDiagnosticContext): Promise<IdeDiagnosticReport>;
 }
 
+/** Choose immediate snapshots or bounded completed checks; omit mode for ordinary reads. */
+export interface IdeDiagnosticReadContext extends ToolContext {
+  readonly mode?: "snapshot" | "complete";
+  readonly signal?: AbortSignal;
+}
 export interface IdePluginApi {
   addTool(tool: IdeTool): void;
   /** Registers background diagnostics shared by notifications and diagnostic reads. */
   addDiagnosticSource(source: IdeDiagnosticSource): void;
   /** Reuses current results or starts checks, with bounded waiting and explicit readiness. */
-  readDiagnostics(filePath: string, context: ToolContext): Promise<IdeDiagnosticSnapshot>;
+  readDiagnostics(
+    filePath: string,
+    context: IdeDiagnosticReadContext,
+  ): Promise<IdeDiagnosticSnapshot>;
 }
 
 export interface IdePlugin {

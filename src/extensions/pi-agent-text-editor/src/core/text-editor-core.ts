@@ -1,3 +1,6 @@
+import { lstat, readFile } from "node:fs/promises";
+import path from "node:path";
+import { deferPostEdit, collectPostEditNotifications } from "#src/core/post-edit-scope.js";
 import { requiredValue } from "pi-agent-invariant";
 import {
   isAgentContent,
@@ -39,6 +42,7 @@ import {
   isTextAnchorResolverRegistration,
   isTextEditorToolId,
   type PromptDescriptionSource,
+  type ScriptIndexOperation,
   type ResourceResolverRegistration,
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
@@ -156,6 +160,7 @@ interface PluginContributionDraft {
   readonly editCompletionListeners?: TextEditCompletionListener[];
   readonly mutationGuards?: TextMutationGuardRegistration[];
   readonly toolRenderers?: TextEditorToolRendererRegistration[];
+  readonly scriptIndexOperations?: ScriptIndexOperation[];
 }
 
 interface PluginContributionController {
@@ -261,6 +266,10 @@ export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
 export interface TextEditorCore {
+  /** Finalize a surviving local text file after a whole-file operation; binary files are untouched. */
+  postProcessFile(source: string, context: ResourceResolverContext): Promise<void>;
+  /** Serialize whole-file effects with text edits; the action must not enqueue another edit. */
+  enqueueFileOperation<T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T>;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
   resolveTextAnchorResources(
@@ -305,6 +314,8 @@ export interface TextEditorCore {
   onMutationTool(listener: TextMutationToolListener): () => void;
   onDidEdit(listener: TextEditCompletionListener): () => void;
   getToolRenderer(tool: TextEditorToolId): TextEditorToolRendererRegistration | undefined;
+  /** Return a configured index operation for the Apply host. */
+  getScriptIndexOperation(name: string): ScriptIndexOperation | undefined;
   registerPlugin(plugin: TextEditorPlugin): Promise<void>;
   registerPostEditHandler(registration: TextPostEditHandlerRegistration): () => void;
   registerTool(tool: TextEditorToolId): void;
@@ -337,7 +348,22 @@ export function createTextEditorCore(
   const editCompletionListeners = new Set<TextEditCompletionListener>();
   const mutationGuards: TextMutationGuardRegistration[] = [];
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
+  const scriptIndexOperations = new Map<string, ScriptIndexOperation>();
   let registrationQueue = Promise.resolve();
+  // One core owns all IDE mutations, including ordinary tools and Apply. Queue the full
+  // read-modify-write window so aliases and multi-resource edits cannot lose updates.
+  let mutationTail: Promise<void> = Promise.resolve();
+  const enqueueMutation = <T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    const pending = mutationTail.then(() => {
+      signal?.throwIfAborted();
+      return action();
+    });
+    mutationTail = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
+  };
   const registerContributions = (draft: PluginContributionDraft): void => {
     validateContributionDraft(
       draft,
@@ -348,6 +374,17 @@ export function createTextEditorCore(
     );
 
     const incomingMutationNames = new Set<string>();
+    const incomingIndexNames = new Set<string>();
+    for (const operation of draft.scriptIndexOperations ?? []) {
+      if (
+        !["stage", "unstage"].includes(operation.name) ||
+        typeof operation.execute !== "function" ||
+        scriptIndexOperations.has(operation.name) ||
+        incomingIndexNames.has(operation.name)
+      )
+        throw new Error(`Invalid or duplicate script index operation ${operation.name}`);
+      incomingIndexNames.add(operation.name);
+    }
 
     for (const registration of draft.mutationTools ?? []) {
       assertTextMutationToolRegistration(registration);
@@ -400,6 +437,8 @@ export function createTextEditorCore(
     }
 
     handlers.push(...draft.handlers);
+    for (const operation of draft.scriptIndexOperations ?? [])
+      scriptIndexOperations.set(operation.name, operation);
     mutationGuards.push(...(draft.mutationGuards ?? []));
     promptContributions.push(...draft.promptContributions);
     writablePromptContributions.push(...draft.writablePromptContributions);
@@ -435,6 +474,36 @@ export function createTextEditorCore(
   };
 
   const core: TextEditorCore = {
+    async postProcessFile(source, context) {
+      await enqueueMutation(async () => {
+        const file = path.resolve(context.cwd, source);
+        const stat = await lstat(file).catch(() => undefined);
+        if (!stat?.isFile() || stat.isSymbolicLink()) return;
+        const bytes = await readFile(file);
+        const text = bytes.toString("utf8");
+        if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) return;
+        await finalizeTextResource({
+          requestedSource: file,
+          outcomeSource: file,
+          resource: {
+            source: file,
+            async read() {
+              return [{ type: "text", text: await readFile(file, "utf8") }];
+            },
+          },
+          resolvedBy: "filesystem",
+          existed: true,
+          before: createTextDocument(file, text),
+          requestedText: text,
+          context,
+          presenters: [...presenters],
+          postEditHandlers: [...postEditHandlers.values()],
+          editCompletionListeners: [...editCompletionListeners],
+          result: undefined,
+        });
+      }, context.signal);
+    },
+    enqueueFileOperation: enqueueMutation,
     addAnchorResolver(registration): void {
       if (!isTextAnchorResolverRegistration(registration)) {
         throw new TypeError("Invalid text anchor resolver");
@@ -463,6 +532,9 @@ export function createTextEditorCore(
     onDidEdit(listener): () => void {
       editCompletionListeners.add(listener);
       return () => editCompletionListeners.delete(listener);
+    },
+    getScriptIndexOperation(name) {
+      return scriptIndexOperations.get(name);
     },
     getToolRenderer(tool): TextEditorToolRendererRegistration | undefined {
       return toolRenderers.get(tool);
@@ -509,15 +581,19 @@ export function createTextEditorCore(
           (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
           left.order - right.order,
       );
-      return editTextResource(
-        source,
-        context,
-        resolverSnapshot,
-        anchorRegistry.snapshot(),
-        presenterSnapshot,
-        [...postEditHandlers.values()],
-        [...editCompletionListeners],
-        operation,
+      return enqueueMutation(
+        () =>
+          editTextResource(
+            source,
+            context,
+            resolverSnapshot,
+            anchorRegistry.snapshot(),
+            presenterSnapshot,
+            [...postEditHandlers.values()],
+            [...editCompletionListeners],
+            operation,
+          ),
+        context.signal,
       );
     },
     editTexts<Result>(
@@ -536,16 +612,20 @@ export function createTextEditorCore(
           (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
           left.order - right.order,
       );
-      return editTextResources(
-        sources,
-        context,
-        resolverSnapshot,
-        anchorRegistry.snapshot(),
-        presenterSnapshot,
-        [...postEditHandlers.values()],
-        [...editCompletionListeners],
-        [...mutationGuards],
-        operation,
+      return enqueueMutation(
+        () =>
+          editTextResources(
+            sources,
+            context,
+            resolverSnapshot,
+            anchorRegistry.snapshot(),
+            presenterSnapshot,
+            [...postEditHandlers.values()],
+            [...editCompletionListeners],
+            [...mutationGuards],
+            operation,
+          ),
+        context.signal,
       );
     },
     previewTexts(sources, context, operation): Promise<TextMutationPreviewOutcome> {
@@ -881,7 +961,7 @@ async function previewTextResources(
       const applied =
         changes === undefined
           ? { content: item.before.content, changes: [] }
-          : applyTextChanges(item.before.content, changes);
+          : applyTextChanges(item.before.content, changes, !item.existed);
       return {
         path: source,
         existed: item.existed,
@@ -986,7 +1066,7 @@ async function editTextResources<Result>(
 
   for (const [source, changes] of mutation.changes) {
     const item = requiredValue(prepared.get(source));
-    applied.set(source, applyTextChanges(item.before.content, changes));
+    applied.set(source, applyTextChanges(item.before.content, changes, !item.existed));
   }
 
   const plan: TextMutationPlan = {
@@ -994,7 +1074,7 @@ async function editTextResources<Result>(
       const item = requiredValue(prepared.get(source));
       const result = applied.get(source);
 
-      return result === undefined || result.content === item.before.content
+      return result === undefined || (item.existed && result.content === item.before.content)
         ? []
         : [
             {
@@ -1047,7 +1127,7 @@ async function editTextResources<Result>(
     const text = applied.get(source)?.content;
     const item = requiredValue(prepared.get(source));
 
-    if (text === undefined || text === item.before.content) {
+    if (text === undefined || (item.existed && text === item.before.content)) {
       continue;
     }
 
@@ -1103,27 +1183,28 @@ async function editTextResources<Result>(
     completed.push(source);
   }
 
-  for (const source of written) {
-    const text = requiredValue(applied.get(source)).content;
-    const item = requiredValue(prepared.get(source));
-    outcomes.push(
-      await finalizeTextResource({
-        requestedSource: item.requestedSource,
-        outcomeSource: item.requestedSource,
-        resource: item.resource,
-        resolvedBy: item.resolverId,
-        existed: item.existed,
-        before: item.before,
-        requestedText: text,
-        context,
-        presenters,
-        postEditHandlers,
-        editCompletionListeners,
-        result: mutation.result,
-      }),
-    );
-  }
-
+  await collectPostEditNotifications(async () => {
+    for (const source of written) {
+      const text = requiredValue(applied.get(source)).content;
+      const item = requiredValue(prepared.get(source));
+      outcomes.push(
+        await finalizeTextResource({
+          requestedSource: item.requestedSource,
+          outcomeSource: item.requestedSource,
+          resource: item.resource,
+          resolvedBy: item.resolverId,
+          existed: item.existed,
+          before: item.before,
+          requestedText: text,
+          context,
+          presenters,
+          postEditHandlers,
+          editCompletionListeners,
+          result: mutation.result,
+        }),
+      );
+    }
+  });
   return { kind: "completed", resources: outcomes, result: mutation.result };
 }
 
@@ -1253,6 +1334,7 @@ async function prepareTextResource(
 }
 
 interface FinalizeTextResourceRequest<Result> {
+  readonly postProcessingFinal?: boolean;
   readonly requestedSource: string;
   readonly outcomeSource: string;
   readonly resource: Resource;
@@ -1270,6 +1352,26 @@ interface FinalizeTextResourceRequest<Result> {
 async function finalizeTextResource<Result>(
   request: FinalizeTextResourceRequest<Result>,
 ): Promise<Exclude<TextResourceEditOutcome<Result>, { readonly kind: "failed" }>> {
+  if (request.postProcessingFinal && !request.context.signal?.aborted && request.resource.read) {
+    const current = await request.resource.read(
+      request.context.signal ? { signal: request.context.signal } : {},
+    );
+    if (
+      !isAgentContent(current) ||
+      current.length !== 1 ||
+      current[0].type !== "text" ||
+      current[0].text !== request.requestedText
+    )
+      throw Object.assign(
+        new Error(`Resource changed before final post-processing: ${request.resource.source}`),
+        { code: "POST_EDIT_STALE" },
+      );
+  }
+  const deferred =
+    !request.postProcessingFinal &&
+    deferPostEdit(request.resource.source, () =>
+      finalizeTextResource({ ...request, postProcessingFinal: true }),
+    );
   const requestedAfter = createTextDocument(request.resource.source, request.requestedText);
   const transaction: TextPostEditTransaction = {
     source: request.requestedSource,
@@ -1280,9 +1382,13 @@ async function finalizeTextResource<Result>(
     requestedAfter,
     ...(request.context.signal !== undefined && { signal: request.context.signal }),
   };
-  const postEditContributions: TextPostEditContribution[] = [];
+  const postEditContributions: TextPostEditContribution[] = deferred
+    ? [{ id: "post-edit-scope", data: { formatting: { status: "deferred" } } }]
+    : [];
 
-  for (const registration of request.postEditHandlers) {
+  for (const registration of deferred || request.context.signal?.aborted
+    ? []
+    : request.postEditHandlers) {
     try {
       const data = await registration.handler(transaction);
 
@@ -1317,9 +1423,10 @@ async function finalizeTextResource<Result>(
     resolvedBy: request.resolvedBy,
     cwd: request.context.cwd,
     existed: request.existed,
-    before: request.before,
+    before: request.postProcessingFinal ? requestedAfter : request.before,
     after: finalAfter,
     intent: request.context.intent ?? "edit",
+    postProcessing: deferred ? "deferred" : request.postProcessingFinal ? "final" : "complete",
   };
 
   for (const listener of request.editCompletionListeners) {
@@ -1339,7 +1446,7 @@ async function finalizeTextResource<Result>(
     ...(request.context.signal !== undefined && { signal: request.context.signal }),
   };
 
-  for (const { registration } of request.presenters) {
+  for (const { registration } of request.context.signal?.aborted ? [] : request.presenters) {
     after = await registration.presenter.present(after, presentationContext);
   }
 
@@ -1621,7 +1728,7 @@ function pluginFailure(
     pluginId,
     tool,
     stage,
-    message: `Plugin ${pluginId} failed during ${stage}`,
+    message: `Plugin ${pluginId} failed during ${stage}: ${cause instanceof Error ? cause.message : String(cause)}`,
     cause,
   };
 }
@@ -1670,6 +1777,7 @@ function createPluginContributionController(
     editCompletionListeners: [],
     mutationGuards: [],
     toolRenderers: [],
+    scriptIndexOperations: [],
   };
   let state: "active" | "closed" | "setup" = "setup";
   const assertAvailable = (): void => {
@@ -1744,6 +1852,22 @@ function createPluginContributionController(
         writablePromptContributions: [],
         tools: [],
         mutationTools: [registration],
+      });
+    },
+    addScriptIndexOperation(operation): void {
+      assertAvailable();
+      if (state === "setup") {
+        requiredValue(setupDraft.scriptIndexOperations).push(operation);
+        return;
+      }
+      registerContributions({
+        resolvers: [],
+        anchorResolvers: [],
+        handlers: [],
+        promptContributions: [],
+        writablePromptContributions: [],
+        tools: [],
+        scriptIndexOperations: [operation],
       });
     },
     addToolRenderer(registration): void {

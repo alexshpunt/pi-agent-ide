@@ -5,6 +5,34 @@ import type { LspPushDiagnosticsEvent } from "./lsp/manager.js";
 
 afterEach(() => vi.restoreAllMocks());
 
+test("uses the resolved external project for language-server diagnostics", async () => {
+  const getOrStart = vi.fn().mockResolvedValue(null);
+  const manager = {
+    getOrStart,
+    languageId: () => "typescript",
+    onPushDiagnostics: () => () => {},
+  };
+  const managerFor = vi.fn().mockResolvedValue(manager);
+  const source = createLspDiagnosticSource(managerFor, async () => ({
+    cwd: "/external/project",
+    external: true,
+  }));
+
+  await expect(
+    source.diagnose("/external/project/src/file.ts", {
+      cwd: "/current/project",
+      content: "bad",
+      signal: new AbortController().signal,
+      publish: vi.fn(),
+    }),
+  ).resolves.toMatchObject({ status: "unavailable" });
+  expect(managerFor).toHaveBeenCalledWith("/external/project", true);
+  expect(getOrStart).toHaveBeenCalledWith(
+    "/external/project/src/file.ts",
+    "/external/project",
+    "diagnostics",
+  );
+});
 test("late empty TypeScript pushes requery complete reports without resyncing the document", async () => {
   const client = new LspClient({
     serverId: "custom-name",

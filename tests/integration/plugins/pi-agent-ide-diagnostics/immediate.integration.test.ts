@@ -55,7 +55,7 @@ test("a late finding wakes idle Pi without user input and renders once", async (
             type: string;
             customType?: string;
             display?: boolean;
-            data?: { sources: unknown };
+            data?: { files: { sources: unknown }[] };
           },
       );
     const messages = entries.filter(
@@ -67,7 +67,7 @@ test("a late finding wakes idle Pi without user input and renders once", async (
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ display: false });
     expect(summaries).toHaveLength(1);
-    expect(summaries[0]?.data?.sources).toEqual([
+    expect(summaries[0]?.data?.files[0]?.sources).toEqual([
       {
         source: "late-checker",
         status: "ready",
@@ -75,11 +75,10 @@ test("a late finding wakes idle Pi without user input and renders once", async (
       },
     ]);
     expect(result.tuiRenderedOutput).toContain("(late-checker)");
-    expect(result.state.isIdle).toBe(true);
+    expect(result.state).toMatchObject({ isIdle: true, hasPendingMessages: false });
     expect(result.traceEvents.filter((event) => event.type === "agent_start")).toHaveLength(2);
     const modelMessages = result.providerRequests.at(-1)?.messages as { role: string }[];
     expect(modelMessages.filter((message) => message.role === "user")).toHaveLength(2);
-    expect(result.state.hasPendingMessages).toBe(false);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

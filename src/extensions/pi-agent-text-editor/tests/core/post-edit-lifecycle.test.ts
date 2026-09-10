@@ -7,6 +7,7 @@ import {
   type TextEditorPlugin,
 } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { createPostEditScope } from "#src/core/post-edit-scope.js";
 
 test("waits for post-edit work after writing and rereads the final text", async () => {
   const core = createTextEditorCore();
@@ -202,3 +203,84 @@ function mutableResolver(read: () => string, write: (text: string) => void): Res
     },
   };
 }
+
+test("a post-edit scope writes immediately and processes each final file once", async () => {
+  const core = createTextEditorCore();
+  let text = "before";
+  await core.registerPlugin(
+    resourcePlugin(
+      mutableResolver(
+        () => text,
+        (next) => {
+          text = next;
+        },
+      ),
+    ),
+  );
+  const processed: string[] = [];
+  core.registerPostEditHandler({
+    id: "formatter",
+    handler() {
+      processed.push(text);
+      text = text.toUpperCase();
+    },
+  });
+  const scope = createPostEditScope();
+  await scope.run(() =>
+    core.editText("notes.md", { cwd: "/workspace" }, () => ({ text: "first", result: null })),
+  );
+  expect(text).toBe("first");
+  await scope.run(() =>
+    core.editText("notes.md", { cwd: "/workspace" }, () => ({ text: "final", result: null })),
+  );
+  expect(processed).toEqual([]);
+  const outcomes = await scope.finish();
+  expect(processed).toEqual(["final"]);
+  expect(text).toBe("FINAL");
+  expect(outcomes).toHaveLength(1);
+  expect(outcomes[0]?.after.content).toBe("FINAL");
+  expect(await scope.finish()).toEqual([]);
+});
+
+test.each(["cancel", "external-write"])(
+  "final processing protects %s without undoing the requested write",
+  async (mode) => {
+    const core = createTextEditorCore();
+    let text = "before";
+    await core.registerPlugin(
+      resourcePlugin(
+        mutableResolver(
+          () => text,
+          (next) => {
+            text = next;
+          },
+        ),
+      ),
+    );
+    let formatted = 0;
+    core.registerPostEditHandler({
+      id: "formatter",
+      handler() {
+        formatted++;
+      },
+    });
+    const controller = new AbortController();
+    const scope = createPostEditScope();
+    await scope.run(() =>
+      core.editText("notes.md", { cwd: "/workspace", signal: controller.signal }, () => ({
+        text: "written",
+        result: null,
+      })),
+    );
+    if (mode === "cancel") {
+      controller.abort();
+      await scope.finish();
+      expect(text).toBe("written");
+    } else {
+      text = "external";
+      await expect(scope.finish()).rejects.toBeInstanceOf(AggregateError);
+      expect(text).toBe("external");
+    }
+    expect(formatted).toBe(0);
+  },
+);

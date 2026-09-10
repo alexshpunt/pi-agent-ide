@@ -5,7 +5,7 @@ import type { SearchPluginApi } from "#src/api/search.js";
 
 export const SEARCH_PROTOCOL = "pi-agent-search" as const;
 
-export const SEARCH_API_VERSION = 1 as const;
+export const SEARCH_API_VERSION = 3 as const;
 
 export const SEARCH_CORE_READY_EVENT = "pi-agent-search/core/ready" as const;
 

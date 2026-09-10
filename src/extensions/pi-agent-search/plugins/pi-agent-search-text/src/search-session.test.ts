@@ -1,8 +1,8 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { expect, test } from "vitest";
+import { expect, test, onTestFinished } from "vitest";
 
 import {
   allocateSearchSessionId,
@@ -263,4 +263,67 @@ test("resolves typed search targets with deduplicated whole-line ranges", async 
       },
     ],
   });
+});
+
+test("all selections refresh through the original backend while single selections stay stale", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-backend-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "source.txt");
+  await writeFile(source, "old\n");
+  const store = new SearchSessionStore();
+  let refreshes = 0;
+  const session = await store.register(
+    "ast:node",
+    [searchMatch(source, "old")],
+    true,
+    cwd,
+    undefined,
+    { query: "ast:node", regex: false },
+    async () => {
+      refreshes++;
+      return { matches: [searchMatch(source, "new")], complete: true };
+    },
+  );
+  await writeFile(source, "new\n");
+  await expect(
+    store.resourceResolver().tryResolve(`SEARCH#${session.id}:1:match`, { cwd }),
+  ).resolves.toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
+  await expect(
+    store.resourceResolver().tryResolve(`SEARCH#${session.id}:all:match`, { cwd }),
+  ).resolves.toMatchObject({ kind: "resolved", targets: [{ expectedContent: "new\n" }] });
+  expect(refreshes).toBe(1);
+  const observations = await store.observeAfterEdit([`SEARCH#${session.id}:all:match`]);
+  expect(observations).toMatchObject([{ matches: 1, complete: true }]);
+  expect(refreshes).toBe(2);
+});
+
+test("multiline all-line selections deduplicate overlapping containing lines", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-multiline-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "source.txt");
+  await writeFile(source, "call(\n x\n)\n");
+  const store = new SearchSessionStore();
+  const session = await store.register(
+    "nodes",
+    [
+      {
+        source,
+        lineNumber: 1,
+        endLineNumber: 3,
+        startColumn: 0,
+        endColumn: 1,
+        matchedText: "call(\n x\n)",
+        lineText: "call(",
+      },
+      { source, lineNumber: 2, startColumn: 1, endColumn: 2, matchedText: "x", lineText: " x" },
+    ],
+    true,
+    cwd,
+  );
+  const resolved = await store
+    .resourceResolver()
+    .tryResolve(`SEARCH#${session.id}:all:line`, { cwd });
+  expect(resolved.kind).toBe("resolved");
+  if (resolved.kind !== "resolved") throw new Error("Missing selection");
+  expect(resolved.targets[0]?.ranges?.map((range) => range.start.lineNumber)).toEqual([1, 2, 3]);
 });
