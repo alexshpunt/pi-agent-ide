@@ -6,7 +6,7 @@ The protocol lets independent extensions contribute editable Resource resolvers,
 
 ```ts
 const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
-const TEXT_EDITOR_API_VERSION = 17;
+const TEXT_EDITOR_API_VERSION = 21;
 
 interface TextEditorPluginApi {
   addResolver(registration: ResourceResolverRegistration): void;
@@ -63,7 +63,7 @@ The editor does not retain completions or provide history. Listener failures do 
 
 ## Tool renderers
 
-`api.addToolRenderer()` contributes `renderCall`, `renderResult`, and optionally `renderShell` for one text mutation tool. Renderers must be registered before that mutation tool is exposed to Pi. Missing renderer slots are omitted from the Pi tool definition, so Pi uses its built-in rendering for them. Normal registrations replace only the slots they provide. A registration with `fallback: true` fills only slots that do not already have a renderer, regardless of extension load order.
+`api.addToolRenderer()` contributes `renderCall`, `renderResult`, and optionally `renderShell` for one text mutation tool. Renderers must be registered before that mutation tool is exposed to Pi. Missing renderer slots are omitted from the Pi tool definition, so Pi uses its built-in rendering for them. Normal registrations replace only the slots they provide. A registration with `matches` applies only when its call arguments or result satisfy that predicate and delegates unmatched values to the previous renderer. A registration with `fallback: true` fills only slots that do not already have a renderer, regardless of extension load order.
 
 The bundled mutation renderer observes every mutation registration and contributes the standard diff as a fallback. It reads source and anchor field names from the mutation metadata, so external tools get the same diff without importing the renderer or being named inside it.
 

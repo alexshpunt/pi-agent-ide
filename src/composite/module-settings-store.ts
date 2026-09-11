@@ -11,6 +11,7 @@ export async function saveModuleChoices(
   configPath: string,
   choices: ReadonlyMap<string, ModuleChoice>,
   featureChoices: ReadonlyMap<string, boolean | undefined> = new Map(),
+  preferenceChoices: ReadonlyMap<string, string | undefined> = new Map(),
 ): Promise<void> {
   await withFileMutationQueue(configPath, async () => {
     const settings = await readExtensionSettingsScope(configPath);
@@ -28,6 +29,11 @@ export async function saveModuleChoices(
       if (choice === "disabled") disabled.add(id);
       if (choice === "enabled") enabled.add(id);
     }
+    const preferences = { ...settings.preferences };
+    for (const [id, value] of preferenceChoices) {
+      if (value === undefined) delete preferences[id];
+      else preferences[id] = value;
+    }
     const flags = { ...settings.flags };
     for (const [id, value] of featureChoices) {
       if (id === "pi-agent-ide-no-animations") delete original.noAnimations;
@@ -38,7 +44,17 @@ export async function saveModuleChoices(
     await mkdir(path.dirname(configPath), { recursive: true });
     await writeFile(
       configPath,
-      `${JSON.stringify({ ...original, disabled: [...disabled], enabled: [...enabled], ...(featureChoices.size > 0 ? { flags } : {}) }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          ...original,
+          disabled: [...disabled],
+          enabled: [...enabled],
+          ...(featureChoices.size > 0 ? { flags } : {}),
+          ...(preferenceChoices.size > 0 ? { preferences } : {}),
+        },
+        null,
+        2,
+      )}\n`,
     );
   });
 }

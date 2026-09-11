@@ -1352,7 +1352,13 @@ interface FinalizeTextResourceRequest<Result> {
 async function finalizeTextResource<Result>(
   request: FinalizeTextResourceRequest<Result>,
 ): Promise<Exclude<TextResourceEditOutcome<Result>, { readonly kind: "failed" }>> {
-  if (request.postProcessingFinal && !request.context.signal?.aborted && request.resource.read) {
+  const skipPostEdit = request.resource.skipPostEdit === true;
+  if (
+    !skipPostEdit &&
+    request.postProcessingFinal &&
+    !request.context.signal?.aborted &&
+    request.resource.read
+  ) {
     const current = await request.resource.read(
       request.context.signal ? { signal: request.context.signal } : {},
     );
@@ -1368,6 +1374,7 @@ async function finalizeTextResource<Result>(
       );
   }
   const deferred =
+    !skipPostEdit &&
     !request.postProcessingFinal &&
     deferPostEdit(request.resource.source, () =>
       finalizeTextResource({ ...request, postProcessingFinal: true }),
@@ -1386,7 +1393,7 @@ async function finalizeTextResource<Result>(
     ? [{ id: "post-edit-scope", data: { formatting: { status: "deferred" } } }]
     : [];
 
-  for (const registration of deferred || request.context.signal?.aborted
+  for (const registration of skipPostEdit || deferred || request.context.signal?.aborted
     ? []
     : request.postEditHandlers) {
     try {
@@ -1402,7 +1409,7 @@ async function finalizeTextResource<Result>(
 
   let finalText = request.requestedText;
 
-  if (request.resource.read !== undefined) {
+  if (!skipPostEdit && request.resource.read !== undefined) {
     try {
       const reread = await request.resource.read(
         request.context.signal === undefined ? {} : { signal: request.context.signal },
@@ -2296,11 +2303,41 @@ function mergeToolRenderer(
   current: TextEditorToolRendererRegistration | undefined,
   registration: TextEditorToolRendererRegistration,
 ): TextEditorToolRendererRegistration {
+  if (registration.matches !== undefined) {
+    const renderCall = registration.renderCall;
+    const renderResult = registration.renderResult;
+    const currentRenderCall = current?.renderCall;
+    const currentRenderResult = current?.renderResult;
+    return {
+      ...current,
+      tool: registration.tool,
+      ...(renderCall === undefined
+        ? {}
+        : currentRenderCall === undefined
+          ? { renderCall }
+          : {
+              renderCall: (...arguments_: Parameters<typeof renderCall>) =>
+                registration.matches?.(arguments_[0], "call") === true
+                  ? renderCall(...arguments_)
+                  : currentRenderCall(...arguments_),
+            }),
+      ...(renderResult === undefined
+        ? {}
+        : currentRenderResult === undefined
+          ? { renderResult }
+          : {
+              renderResult: (...arguments_: Parameters<typeof renderResult>) =>
+                registration.matches?.(arguments_[0], "result") === true
+                  ? renderResult(...arguments_)
+                  : currentRenderResult(...arguments_),
+            }),
+    };
+  }
   const merged =
     registration.fallback === true
       ? { ...registration, ...current, tool: registration.tool }
       : { ...current, ...registration, tool: registration.tool };
-  const { fallback: _fallback, ...renderer } = merged;
+  const { fallback: _fallback, matches: _matches, ...renderer } = merged;
   return renderer;
 }
 

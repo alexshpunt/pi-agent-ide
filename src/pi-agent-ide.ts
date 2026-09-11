@@ -3,6 +3,7 @@ import {
   readPiAgentIdeExtensionsConfig,
   resolvePiAgentIdeExtensionsConfigPaths,
 } from "#src/composite/extensions-config.js";
+import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.js";
 import { selectBuiltinExtensions } from "#src/composite/selection.js";
 import { registerModuleSettings } from "#src/composite/module-settings.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
@@ -65,7 +66,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     group: "ui",
     default: false,
   });
-  registerModuleSettings(pi, flags.definitions);
+  registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
   const { enabled } = selectBuiltinExtensions(BUILTIN_EXTENSIONS, config.disabled, config.enabled);
 
   for (const extension of enabled) {

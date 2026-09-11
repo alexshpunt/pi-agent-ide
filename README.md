@@ -26,6 +26,7 @@ The current focus is measurement. The project is being compared with vanilla Pi 
 Pi Agent IDE gives the agent a focused set of tools that work together:
 
 - `read` handles text files, original bytes, web pages, images, PDFs, code views, and diagnostics;
+- `run` starts synchronous or background commands in the user's configured shell; returned `shell:` sessions can be read, controlled, deleted, and viewed in `/terminals`;
 - `search` finds files, text, symbols, and syntax-tree patterns;
 - `write`, `replace`, `insert`, `delete`, `copy`, and `move` edit text with exact matches, line anchors, search results, AST matches, and language-server symbols;
 - `diff` compares readable sources, while `copy_file`, `move_file`, and `delete_file` handle whole files;

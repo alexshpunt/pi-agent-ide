@@ -171,7 +171,7 @@ describe("mutation renderer lifecycle", () => {
     if (renderer?.renderCall === undefined || renderer.renderResult === undefined) {
       throw new Error("Expected write renderer registration");
     }
-    expect(renderer.renderShell).toBe("self");
+    expect(renderer.renderShell).toBeUndefined();
 
     const state: Record<string, unknown> = {};
     let invalidations = 0;
@@ -200,7 +200,7 @@ describe("mutation renderer lifecycle", () => {
     expect(state.timer).toBeDefined();
     expect(panel.render(120).join("\n")).toContain("▌");
 
-    expect(background).toHaveBeenLastCalledWith("toolPendingBg", expect.any(String));
+    expect(background).not.toHaveBeenCalled();
     expect(state.timer).toBeDefined();
 
     await vi.advanceTimersByTimeAsync(2_000);
@@ -238,7 +238,7 @@ describe("mutation renderer lifecycle", () => {
     expect(finalModel).toHaveBeenCalledTimes(1);
     const finalPanel = panel.render(120).join("\n");
 
-    expect(background).toHaveBeenLastCalledWith("toolSuccessBg", expect.any(String));
+    expect(background).not.toHaveBeenCalled();
     expect(finalPanel).not.toContain("▌");
     expect(finalPanel).toContain("first line");
     expect(finalPanel).toContain("second line");

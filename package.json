@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-ide",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Agent-facing tools for reading, searching, and editing code in Pi.",
   "keywords": [
@@ -140,8 +140,11 @@
     "format:check": "oxfmt --check ."
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
+    "@xterm/headless": "^6.0.0",
     "cross-spawn": "^7.0.6",
     "fast-fuzzy": "1.12.0",
+    "node-pty": "^1.1.0",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-pdf": "workspace:^",
@@ -158,7 +161,6 @@
     "@oxlint/plugins": "^1.79.0",
     "@types/cross-spawn": "^6.0.6",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@xterm/headless": "^6.0.0",
     "diff": "^9.0.0",
     "esbuild": "0.25.12",
     "husky": "^8.0.3",

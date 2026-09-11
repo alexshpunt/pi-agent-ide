@@ -6,6 +6,7 @@ import {
   resolvePiAgentIdeExtensionsConfigPaths,
 } from "./extensions-config.js";
 import type { FeatureFlag } from "./feature-flags.js";
+import type { AgentIdePreference } from "./preferences.js";
 import { saveModuleChoices, type ModuleChoice } from "./module-settings-store.js";
 import { createSettingsPanel } from "./settings-panel.js";
 import { selectBuiltinExtensions } from "./selection.js";
@@ -14,6 +15,7 @@ import { selectBuiltinExtensions } from "./selection.js";
 export function registerModuleSettings(
   pi: Pick<ExtensionAPI, "registerCommand">,
   flags: readonly FeatureFlag[] = [],
+  preferences: readonly AgentIdePreference[] = [],
 ): void {
   pi.registerCommand("agent-ide-settings", {
     description: "Configure Agent IDE modules and features",
@@ -30,6 +32,7 @@ export function registerModuleSettings(
         );
         const choices = new Map<string, ModuleChoice>();
         const featureChoices = new Map<string, boolean | undefined>();
+        const preferenceChoices = new Map<string, string | undefined>();
         const saved = await ctx.ui.custom<boolean>((tui, theme, _keys, done) => {
           const panel = createSettingsPanel(
             theme,
@@ -62,7 +65,25 @@ export function registerModuleSettings(
                   values: ["default", "enabled", "disabled"],
                 })),
                 features: flagItems("features"),
-                ui: flagItems("ui"),
+                ui: [
+                  ...flagItems("ui"),
+                  ...preferences.map((preference) => {
+                    const configured = preferenceChoices.has(preference.id)
+                      ? preferenceChoices.get(preference.id)
+                      : current.preferences?.[preference.id];
+                    return {
+                      id: preference.id,
+                      label: preference.name,
+                      description: `${preference.description} Default: ${preference.values.find((item) => item.value === preference.default)?.label ?? preference.default}.`,
+                      currentValue:
+                        configured === undefined
+                          ? "default"
+                          : (preference.values.find((item) => item.value === configured)?.label ??
+                            configured),
+                      values: ["default", ...preference.values.map((item) => item.label)],
+                    };
+                  }),
+                ],
               };
               function flagItems(group: "features" | "ui") {
                 return flags
@@ -92,13 +113,22 @@ export function registerModuleSettings(
             },
             (tab, id, value) => {
               if (tab === "modules") choices.set(id, value as ModuleChoice);
-              else
+              else if (tab === "ui" && preferences.some((item) => item.id === id)) {
+                const preference = preferences.find((item) => item.id === id);
+                preferenceChoices.set(
+                  id,
+                  value === "default"
+                    ? undefined
+                    : preference?.values.find((item) => item.label === value)?.value,
+                );
+              } else {
                 featureChoices.set(
                   id,
                   value === "default"
                     ? undefined
                     : value === (flags.find((flag) => flag.id === id)?.labels?.on ?? "enabled"),
                 );
+              }
             },
             done,
             scope,
@@ -112,8 +142,8 @@ export function registerModuleSettings(
             },
           };
         });
-        if (!saved || choices.size + featureChoices.size === 0) return;
-        await saveModuleChoices(selectedPath, choices, featureChoices);
+        if (!saved || choices.size + featureChoices.size + preferenceChoices.size === 0) return;
+        await saveModuleChoices(selectedPath, choices, featureChoices, preferenceChoices);
         ctx.ui.notify(`Saved ${scope.toLowerCase()} Agent IDE settings. Reload required.`, "info");
         if (
           await ctx.ui.confirm(

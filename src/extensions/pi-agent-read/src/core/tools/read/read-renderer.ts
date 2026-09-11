@@ -104,6 +104,9 @@ export function renderReadCall(
       nativeReadContext(context, nativeArgs),
     );
   }
+  if (typeof arguments_.path === "string" && arguments_.path.startsWith("shell:")) {
+    return new Container();
+  }
   const path = typeof arguments_.path === "string" ? arguments_.path : "inherited source";
   const window = readWindowPresentation(path, arguments_.offset, arguments_.limit);
   const views = Array.isArray(arguments_.views)
