@@ -63,3 +63,16 @@ test("feature overrides preserve unrelated flags and default removes the old swi
     flags: { future: true },
   });
 });
+
+test("saves string preferences and preserves unrelated values", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-preferences-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const file = path.join(cwd, "extensions.json");
+  await writeFile(file, JSON.stringify({ preferences: { future: "keep" } }));
+
+  await saveModuleChoices(file, new Map(), new Map(), new Map([["terminal.activity", "compact"]]));
+
+  expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+    preferences: { future: "keep", "terminal.activity": "compact" },
+  });
+});

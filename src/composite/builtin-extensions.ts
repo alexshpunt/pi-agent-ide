@@ -122,6 +122,12 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     "read.core",
     "search.core",
   ]),
+  builtin("ide.terminal", () => import("#src/plugins/pi-agent-ide-terminal/index.js"), [
+    "read.core",
+    "search.core",
+    "editor.core",
+    "editor.anchor.constant",
+  ]),
   builtin("ide.diagnostics", () => import("#src/plugins/pi-agent-ide-diagnostics/index.js"), [
     "ide.core",
     "read.core",

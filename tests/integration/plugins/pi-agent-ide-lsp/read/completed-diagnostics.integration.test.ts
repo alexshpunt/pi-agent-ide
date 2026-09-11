@@ -94,12 +94,23 @@ test("clangd push reports remain usable snapshots without TypeScript commands", 
       tools: ["read"],
       conversation: [
         assistantMessage(
+          [
+            toolCall({
+              id: "start-cpp",
+              name: "read",
+              arguments: { path: "diagnostics:example.cpp" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
           [toolCall({ id: "cpp", name: "read", arguments: { path: "diagnostics:example.cpp" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage([text("Done")]),
       ],
     }).run("Read the latest C++ diagnostic snapshot without claiming a completed check.");
+    expect(getToolExecution(result, "start-cpp").isError).not.toBe(true);
     expect(getToolExecution(result, "cpp").isError).not.toBe(true);
     const output = getToolResultText(result, "cpp");
     expect(output).toContain("clangd: snapshot");

@@ -121,6 +121,17 @@ test("shows read intent in one compact line and exact arguments when expanded", 
   expect(expandedText).toContain("views=anchors");
 });
 
+test("lets shell resources render their own identity instead of exposing the address", () => {
+  const renderCall = createReadTool().tool.renderCall;
+  if (renderCall === undefined) throw new Error("Missing read call renderer");
+
+  const lines = renderCall({ path: "shell:abcdef123456", offset: -20, limit: 20 }, plainTheme, {
+    expanded: false,
+    lastComponent: undefined,
+  } as never).render(80);
+
+  expect(lines).toEqual([]);
+});
 test.each([
   {
     name: "an anchor window",

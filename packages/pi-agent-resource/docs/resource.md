@@ -28,6 +28,7 @@ export type ResourceWrite = (
 
 export interface ResourceBase {
   readonly source: string;
+  readonly skipPostEdit?: boolean;
 }
 
 export interface ReadableResource extends ResourceBase {
@@ -59,6 +60,8 @@ It is the canonical source reference chosen by the resolver. It may differ from 
 The resource contains no opaque ID or unrestricted metadata map.
 
 `link` is an optional navigation target for user interfaces. It does not identify or resolve the Resource. A consumer may show `source` without a link when this field is absent.
+
+`skipPostEdit` tells text-editing consumers that a stateful writable resource must not enter document formatting, diagnostics, final rereads, or stale-content checks. Use it for resources such as live terminals where a write is an input event rather than a replacement document.
 
 ## Capabilities
 
@@ -151,3 +154,4 @@ The contract provides no cross-call cache, shared identity, close method, or lon
 7. Cancellation rejects with `name === "AbortError"`.
 8. Write atomicity is not guaranteed by the common contract.
 9. A resource is not retained across separate tool calls.
+10. `skipPostEdit` resources perform writes without document post-edit processing.

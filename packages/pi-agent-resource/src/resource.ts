@@ -14,6 +14,8 @@ export type ResourceWrite = (
 export interface ResourceBase {
   readonly source: string;
   readonly link?: string;
+  /** Skip document post-edit processing for stateful resources such as terminals. */
+  readonly skipPostEdit?: boolean;
 }
 
 export interface ReadableResource extends ResourceBase {

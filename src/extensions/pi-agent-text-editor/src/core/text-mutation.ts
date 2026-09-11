@@ -84,6 +84,8 @@ export function createTextTool<TParameters extends TSchema>(
   getLastResolvedSource: () => string | undefined,
 ): ToolDefinition<TParameters, FileMutationBatchResult> {
   const renderer = core.getToolRenderer(definition.name);
+  const initialRenderCall = renderer?.renderCall;
+  const initialRenderResult = renderer?.renderResult;
 
   const tool = withToolCallInterceptionRendering<TParameters, FileMutationBatchResult, unknown>(
     defineTool<TParameters, FileMutationBatchResult, unknown>({
@@ -105,8 +107,16 @@ export function createTextTool<TParameters extends TSchema>(
           definition.anchors ?? [],
         ),
       ...(renderer?.renderShell !== undefined && { renderShell: renderer.renderShell }),
-      ...(renderer?.renderCall !== undefined && { renderCall: renderer.renderCall }),
-      ...(renderer?.renderResult !== undefined && { renderResult: renderer.renderResult }),
+      ...(initialRenderCall !== undefined && {
+        renderCall: (...arguments_: Parameters<typeof initialRenderCall>) =>
+          (core.getToolRenderer(definition.name)?.renderCall ?? initialRenderCall)(...arguments_),
+      }),
+      ...(initialRenderResult !== undefined && {
+        renderResult: (...arguments_: Parameters<typeof initialRenderResult>) =>
+          (core.getToolRenderer(definition.name)?.renderResult ?? initialRenderResult)(
+            ...arguments_,
+          ),
+      }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
         const directExecute = () =>
           executeTextMutation(

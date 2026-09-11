@@ -40,7 +40,7 @@ export interface ScriptIndexOperation {
 }
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 20;
+export const TEXT_EDITOR_API_VERSION = 21;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 

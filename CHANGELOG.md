@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 — 2026-09-11
+
+### Terminal sessions
+
+- Add a cross-platform `run` tool for synchronous and background commands. It uses Bash on Linux, PowerShell on Windows, and the system shell on macOS, with platform-specific guidance for the agent.
+- Keep every run as an addressable `shell:` resource. Agents can read its output, send text or key chords, search retained output, batch input through `apply`, stop it with `delete`, and request a terminal screenshot.
+- Let agents choose the virtual terminal width and height for full-screen and interactive programs.
+- Deliver background completion automatically and wake the agent. Short jobs produce one completed card; longer jobs keep an initial card and add one completion card when they finish.
+
+### Terminal interface
+
+- Show themed terminal cards with the shell, working directory, execution mode, command, output, elapsed time, and exit status without exposing internal session IDs.
+- Stream a bounded initial preview for background runs, then keep later output available through terminal reads.
+- Show compact text around the changed terminal region after input. Image-capable models also receive a cropped terminal image.
+- Add a `/terminals` overlay for active and recent sessions, plus detailed, compact, and hidden activity modes.
+
+### Settings
+
+- Add the terminal as an independently configurable feature that is enabled by default.
+- Rework Agent IDE settings into a bordered panel with separate Features, Behavior, and UI tabs.
+
 ## 0.3.0 — 2026-09-10
 
 ### Composable IDE tools

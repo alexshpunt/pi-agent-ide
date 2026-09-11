@@ -106,9 +106,8 @@ function createRenderer(
   return {
     tool,
     fallback: true,
-    ...(tool === "write" && { renderShell: "self" as const }),
     renderCall(arguments_, theme, context) {
-      const component = panel(context.lastComponent, theme, tool === "write");
+      const component = panel(context.lastComponent, theme, false);
       const input = asInput(arguments_);
       const state = context.state as RenderState;
       state.registration = registration;

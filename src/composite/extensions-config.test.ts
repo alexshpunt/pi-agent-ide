@@ -70,6 +70,20 @@ describe("Pi Agent IDE extension config", () => {
     });
   });
 
+  test("project preferences override global preferences", async () => {
+    const directory = await temporaryDirectory();
+    const paths = {
+      globalPath: path.join(directory, "global", "extensions.json"),
+      projectPath: path.join(directory, "project", "extensions.json"),
+    };
+    await writeJson(paths.globalPath, { preferences: { "terminal.activity": "compact" } });
+    await writeJson(paths.projectPath, { preferences: { "terminal.activity": "off" } });
+
+    await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toMatchObject({
+      preferences: { "terminal.activity": "off" },
+    });
+  });
+
   test("merges enabled IDs from global and project config without duplicates", async () => {
     const directory = await temporaryDirectory();
     const paths = {

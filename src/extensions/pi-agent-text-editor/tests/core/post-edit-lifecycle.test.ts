@@ -204,6 +204,51 @@ function mutableResolver(read: () => string, write: (text: string) => void): Res
   };
 }
 
+test("stateful resources can skip file post-edit processing inside a scope", async () => {
+  const core = createTextEditorCore();
+  let writes = 0;
+  await core.registerPlugin(
+    resourcePlugin({
+      id: "terminal",
+      async tryResolve() {
+        return {
+          kind: "resolved",
+          resource: {
+            source: "shell:fixture",
+            skipPostEdit: true,
+            async read() {
+              return [{ type: "text" as const, text: "terminal input" }];
+            },
+            async write() {
+              writes += 1;
+            },
+          },
+        };
+      },
+    }),
+  );
+  let postEdits = 0;
+  core.registerPostEditHandler({ id: "formatter", handler: () => void postEdits++ });
+  const scope = createPostEditScope();
+
+  await scope.run(() =>
+    core.editText("shell:fixture", { cwd: "/workspace" }, () => ({
+      text: "first input",
+      result: null,
+    })),
+  );
+  await scope.run(() =>
+    core.editText("shell:fixture", { cwd: "/workspace" }, () => ({
+      text: "second input",
+      result: null,
+    })),
+  );
+
+  expect(writes).toBe(2);
+  expect(postEdits).toBe(0);
+  await expect(scope.finish()).resolves.toEqual([]);
+});
+
 test("a post-edit scope writes immediately and processes each final file once", async () => {
   const core = createTextEditorCore();
   let text = "before";

@@ -58,6 +58,17 @@ LSP reads prefer standard pull reports. Servers that advertise a supported compl
 
 Other push-only servers return a `snapshot`: the latest publication, with no promise that every check has finished. This also applies to versioned pushes. An empty snapshot is not a completed clean report. For example, clangd publications remain usable C++ snapshots without invoking TypeScript commands. Later pushes from pull-capable or adapter-backed servers trigger a fresh completed request rather than replacing it with a partial publication.
 
+## Terminal sessions
+
+`run` starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.
+
+Every run returns a stable `shell:<session>` source. Synchronous runs wait for the real exit status. Background runs return immediately, remain visible below the editor, and send one completion message that wakes the agent; nearby completions are combined without losing individual results. `/terminals` opens the active and recent session overlay.
+The UI tab in `/agent-ide-settings` controls persistent active-terminal presentation: Detailed cards (default), Compact count, or Off. Detailed cards replace the separate active count instead of showing both. This setting does not hide ordinary run results or completion messages.
+
+Use `read` on the returned source for status and bounded output. Compact cards show the latest 12 output rows and count omitted earlier rows; expanded cards show all retained rows. Add `views: ["image"]` to receive a PNG of the ANSI-aware virtual terminal screen. Use `write` to send exact text without Enter. Use `insert` for named keys and chords such as `Enter`, `Ctrl+C`, `Ctrl+Shift+Left`, or Unix caret controls such as `^U`; separate multiple keys with spaces or commas. Batched `apply` calls can send several terminal inputs without file formatting or diagnostics. Use `search` with the `shell:<session>` path to search retained output, including rows outside the current screen. `delete` terminates the owned process tree when needed, disposes the virtual screen, and removes the session. `replace` does not apply to terminal sessions.
+
+Deleting an active session first requests graceful termination, then forcefully terminates its process tree after the grace period. Deletion does not undo file or network effects. Sessions are owned by the current Pi runtime and are cleaned up on shutdown or reload; they are not reattached after restart.
+
 ## Search
 
 `search` gives the agent one discovery interface. Built-in resolvers cover:

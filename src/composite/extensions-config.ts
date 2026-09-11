@@ -18,6 +18,8 @@ export interface PiAgentIdeExtensionsConfig {
   readonly enabled: readonly string[];
   /** Boolean flag overrides keyed by their registered flag IDs. */
   readonly flags?: Readonly<Record<string, boolean>>;
+  /** String preference overrides keyed by their registered IDs. */
+  readonly preferences?: Readonly<Record<string, string>>;
   /** Disable decorative mutation playback while keeping final results visible. */
   readonly noAnimations?: boolean;
   /** Skip automatic formatting and diagnostics triggered by edits. */
@@ -68,6 +70,9 @@ export async function readPiAgentIdeExtensionsConfig(
             ...configuredFeatureFlags(projectConfig),
           },
         }),
+    ...(globalConfig.preferences === undefined && projectConfig.preferences === undefined
+      ? {}
+      : { preferences: { ...globalConfig.preferences, ...projectConfig.preferences } }),
     noAnimations: projectConfig.noAnimations ?? globalConfig.noAnimations ?? false,
     noPostProcessing: projectConfig.noPostProcessing ?? globalConfig.noPostProcessing ?? false,
   };
@@ -128,6 +133,9 @@ async function readConfigExtensionIds(configPath: string): Promise<PiAgentIdeExt
     disabled: readIdField(value, "disabled", configPath),
     enabled: readIdField(value, "enabled", configPath),
     ...(value.flags === undefined ? {} : { flags: readFlags(value.flags, configPath) }),
+    ...(value.preferences === undefined
+      ? {}
+      : { preferences: readPreferences(value.preferences, configPath) }),
     ...(value.noAnimations === undefined
       ? {}
       : { noAnimations: readBoolean(value, "noAnimations", configPath) }),
@@ -137,6 +145,16 @@ async function readConfigExtensionIds(configPath: string): Promise<PiAgentIdeExt
   };
 }
 
+function readPreferences(value: unknown, configPath: string): Record<string, string> {
+  if (!isRecord(value)) throw new Error(`preferences in ${configPath} must be an object`);
+  const preferences: Record<string, string> = {};
+  for (const [id, setting] of Object.entries(value)) {
+    if (typeof setting !== "string" || setting.length === 0)
+      throw new Error(`Preference ${id} in ${configPath} must be a non-empty string`);
+    preferences[id] = setting;
+  }
+  return preferences;
+}
 function readFlags(value: unknown, configPath: string): Record<string, boolean> {
   if (!isRecord(value)) throw new Error(`flags in ${configPath} must be an object`);
   const flags: Record<string, boolean> = {};

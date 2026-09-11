@@ -7,6 +7,10 @@ export const moduleLabels = {
   "ide.tips": ["Getting started tips", "Show contextual guidance while setting up a project."],
   "ide.doctor": ["Setup doctor", "Check external tools and help configure project support."],
   "ide.languages": ["Language setup", "Discover languages and their recommended toolchains."],
+  "ide.terminal": [
+    "Terminal sessions",
+    "Run and manage local interactive and background terminal processes.",
+  ],
   "read.core": ["Read tools", "Read sources through the configured readers and views."],
   "read.filesystem": ["Local files", "Resolve files and folders from the local filesystem."],
   "read.filesystem.image": ["Local images", "Read local images as visual content."],
