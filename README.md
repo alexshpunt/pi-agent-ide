@@ -12,7 +12,7 @@
   <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Funit.json" alt="Unit test count"></a>
   <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Fintegration.json" alt="Integration test count"></a>
-  <a href="https://alexshpunt-benchmark-explorer.static.hf.space/?filter.harness=pi-agent-ide"><img src="https://img.shields.io/badge/Explicit%20Edit%20Benchmark-v0.5.1%20%E2%80%A2%20not%20tested-lightgrey?style=flat-square" alt="Explicit Edit Benchmark: pi-agent-ide v0.5.1 is not tested yet"></a>
+  <a href="https://alexshpunt-benchmark-explorer.static.hf.space/?filter.harness=pi-agent-ide"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Falexshpunt%2Fexplicit-edit-benchmark%2Fresolve%2Fmain%2Fbadges%2Fpi-agent-ide.json" alt="Explicit Edit Benchmark score"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/pi-agent-ide" alt="MIT license"></a>
 </p>
 
@@ -75,6 +75,10 @@ This is more than presentation. Observable behavior provides the evidence that d
 Daily use and judgement still matter, but features should not be built on vibes alone. Changes are measured on real tasks to find where agents fail, which model families work better or worse with the tools, and how Pi Agent IDE compares with other harnesses.
 
 The [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark) was created for this purpose. It measures how easily agents can use editing tools on exact, deterministic tasks. These tasks are especially useful for smaller models and models with limited reasoning, where tool design has a larger effect on reliability.
+
+Version 0.5.1 scores **93.8%** on `gpt-5.6-luna` with low reasoning: 224 of the 226 tasks solved
+in the end, 208 of them on the first attempt. The full observation, including the two tasks it
+did not solve, is in the [published data](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
 
 Agent results are stochastic and no benchmark captures everything. We publish the score we actually get and build broader statistics instead of selecting only favorable runs.
 
