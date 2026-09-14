@@ -58,10 +58,26 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  benchmark:
+    name: Benchmark release candidate
+    needs: validate
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/release-observation.yml@111a06f1809b74c3c24999f2712ae8e7befb04c6
+    with:
+      artifact_name: release-${{ needs.validate.outputs.version }}
+      harness_version: ${{ needs.validate.outputs.version }}
+      pi_version: "0.84.2"
+      model: gpt-5.6-luna
+      thinking: low
+      concurrency: 10
+      dataset_repository: alexshpunt/explicit-edit-benchmark
+    secrets:
+      pi_auth_json: ${{ secrets.PI_AUTH_JSON }}
+      hf_token: ${{ secrets.HF_TOKEN }}
+
   publish:
     name: Publish package
-    needs: validate
-    if: inputs.publish
+    needs: [validate, benchmark]
+    if: inputs.publish && always() && needs.validate.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: npm
