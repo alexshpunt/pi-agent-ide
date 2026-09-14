@@ -13,6 +13,8 @@ export interface AgentIdeProcess {
   renderSummary(theme: Theme): readonly string[];
   renderDetail(theme: Theme): Component;
   stop(): Promise<void>;
+  /** Forward raw keyboard input when this process has an interactive terminal. */
+  sendInput?(data: string): void;
 }
 
 /** Supplies one process kind to the shared Agent IDE process surface. */

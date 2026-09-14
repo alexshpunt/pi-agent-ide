@@ -26,14 +26,8 @@ jobs:
           node-version: "24.19.0"
           package-manager-cache: false
 
-      - name: Setup pnpm
-        run: npm install --global pnpm@11.22.0
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Gitleaks full history
-        run: pnpm security:scan -- history
+        run: node --experimental-strip-types scripts/security-scan.ts -- history
 
       - name: TruffleHog verified credentials
         uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0

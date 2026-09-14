@@ -98,7 +98,7 @@ function createMatchResolver(
       }
 
       const detailBudget = result.request.limit ?? 50;
-      const session = await sessions.register(
+      const session = await sessions.registerIfCurrent(
         result.request.query,
         result.matches,
         result.complete,
@@ -106,21 +106,27 @@ function createMatchResolver(
         context.signal,
         result.recipe,
       );
+      const display = session ?? {
+        query: result.request.query,
+        matches: result.matches,
+        complete: result.complete,
+      };
       return {
         content: [
           {
             type: "text",
-            text: [...result.notices, formatSearchSession(session, context.cwd, detailBudget)].join(
-              "\n",
-            ),
+            text: [
+              ...result.notices,
+              formatSearchSession(display, context.cwd, detailBudget, session !== undefined),
+            ].join("\n"),
           },
         ],
         details: createSearchToolDetails(
-          session.query,
-          session.matches,
-          session.complete,
+          display.query,
+          display.matches,
+          display.complete,
           context.cwd,
-          session.id,
+          session?.id,
           detailBudget,
         ),
       };
@@ -130,27 +136,25 @@ function createMatchResolver(
 }
 
 function formatSearchSession(
-  session: TextSearchSession,
+  session: Omit<TextSearchSession, "id"> & { readonly id?: string },
   cwd: string,
   detailBudget: number,
+  anchorsRegistered = true,
 ): string {
   const fileCount = new Set(session.matches.map((match) => match.source)).size;
   const count = session.matches.length;
-  const heading = session.complete
-    ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${String(count)} ${plural(count, "match", "matches")} in ${String(fileCount)} ${plural(
-        fileCount,
-        "file",
-        "files",
-      )}`
-    : `${String(count)}+ matches in ${String(fileCount)} ${plural(
-        fileCount,
-        "file",
-        "files",
-      )} (limit reached; no all anchors were registered)`;
-  const lines = [
-    "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)",
-    heading,
-  ];
+  const summary = `${String(count)}${session.complete ? "" : "+"} ${plural(count, "match", "matches")} in ${String(fileCount)} ${plural(fileCount, "file", "files")}`;
+  const heading = anchorsRegistered
+    ? session.complete
+      ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${summary}`
+      : `${summary} (limit reached; no all anchors were registered)`
+    : `${summary} (files changed during search; results shown without anchors)`;
+  const lines = anchorsRegistered
+    ? [
+        "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)",
+        heading,
+      ]
+    : [heading];
   const indices = new Map(session.matches.map((match, index) => [match, index + 1]));
   const presentation = planSearchPresentation(session.matches, detailBudget);
 
@@ -178,10 +182,11 @@ function formatSearchSession(
     for (const match of file.matches) {
       const index = indices.get(match);
       if (index === undefined) continue;
+      const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${String(match.endColumn + 1)}`;
       lines.push(
-        `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${String(
-          match.endColumn + 1,
-        )} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`,
+        anchorsRegistered
+          ? `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
+          : location,
         `  ${previewMatch(match)}`,
       );
     }

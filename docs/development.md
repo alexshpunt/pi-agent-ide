@@ -176,12 +176,6 @@ pi install git:github.com/alexshpunt/pi-agent-ide-dev@preview
 
 To build the runtime tree locally for inspection, run `pnpm package:git-preview`. The generated files are written to `.agents/tmp/git-preview/` and are not committed to the development branch.
 
-## Evaluate agent behavior
-
-Unit and integration tests enforce behavior contracts. They do not show whether a tool helps an agent complete a task with fewer tokens or fewer mistakes.
-
-The evaluator compares Pi Agent IDE and vanilla Pi under controlled profiles. The [evaluation guide](./evaluation.md) explains the measurements and their limits.
-
 ## Repository layout
 
 ```text

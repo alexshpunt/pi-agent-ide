@@ -75,7 +75,7 @@ export class TerminalUi {
       {
         customType: "terminal-wait-transition",
         display: false,
-        content: `Terminal wait aborted; ${snapshot.source} is still running in background. Read it to inspect output, then use write or insert to send input.`,
+        content: `Terminal wait ended; ${snapshot.source} is still running in background. Read it to inspect output, then use write or insert to send input.`,
         details: snapshot,
       },
       { triggerTurn: true, deliverAs: "steer" },

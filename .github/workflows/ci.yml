@@ -158,6 +158,8 @@ jobs:
       - name: Run integration tests
         id: integration-tests
         if: always()
+        env:
+          PI_DEBUGGER_CORE_EXCLUDE_ADAPTER: kotlin
         run: pnpm test:integration:report
 
       - name: Build and install reproducible release candidate
@@ -233,7 +235,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [swift, zig, julia, java, elixir, r]
+        language: [swift, zig, julia, java, kotlin, elixir, r]
 
     steps:
       - name: Checkout
@@ -314,7 +316,7 @@ jobs:
             echo "PI_ZIG_PATH=/opt/zig/zig" >> "$GITHUB_ENV"
             echo "PI_LLDB_DAP_PATH=$(command -v lldb-dap-18)" \
               >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.language }}" == "java" ]]; then
+          elif [[ "${{ matrix.language }}" == "java" || "${{ matrix.language }}" == "kotlin" ]]; then
             sudo apt-get install --yes unzip
             jdk_url="https://github.com/adoptium/temurin21-binaries/releases/download"
             jdk_url+="/jdk-21.0.8%2B9"
@@ -339,6 +341,14 @@ jobs:
             echo "PI_JAVAC_PATH=/opt/jdk/bin/javac" >> "$GITHUB_ENV"
             echo "PI_KOTLIN_DEBUG_ADAPTER_PATH=/opt/kotlin-debug-adapter/adapter/bin/kotlin-debug-adapter" \
               >> "$GITHUB_ENV"
+            if [[ "${{ matrix.language }}" == "kotlin" ]]; then
+              kotlin_url="https://github.com/JetBrains/kotlin/releases/download"
+              kotlin_url+="/v2.2.20/kotlin-compiler-2.2.20.zip"
+              curl --fail --location --silent --show-error \
+                "$kotlin_url" --output /tmp/kotlin-compiler.zip
+              sudo unzip -q /tmp/kotlin-compiler.zip -d /opt/kotlin
+              echo "/opt/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+            fi
           elif [[ "${{ matrix.language }}" == "elixir" ]]; then
             mix local.hex --force
             elixir_ls_url="https://github.com/elixir-lsp/elixir-ls/releases/download"
@@ -416,9 +426,11 @@ jobs:
           PI_DEBUGGER_NATIVE_LANGUAGE: ${{ matrix.language }}
           PI_DEBUGGER_MISC_LANGUAGE: ${{ matrix.language }}
           PI_DEBUGGER_JVM_LANGUAGE: ${{ matrix.language }}
+          PI_DEBUGGER_CORE_ADAPTER: ${{ matrix.language }}
         run: >-
           pnpm vitest run
           --config vitest.integration.config.mjs
           tests/integration/debugger-native-adapters.integration.test.ts
           tests/integration/debugger-misc-adapters.integration.test.ts
           tests/integration/debugger-jvm-adapters.integration.test.ts
+          tests/integration/debugger-adapters.integration.test.ts

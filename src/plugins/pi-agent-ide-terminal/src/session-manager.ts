@@ -13,7 +13,7 @@ import type {
   ShellProfile,
   TerminalSession,
   TerminalSessionSnapshot,
-  TerminalWaitReason,
+  TerminalWaitOutcomeReason,
 } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
 const require = createRequire(import.meta.url);
@@ -215,7 +215,7 @@ export class TerminalSessionManager {
       readonly timeoutMs: number;
       readonly interactiveDelayMs?: number;
     },
-  ): Promise<{ readonly session: TerminalSession; readonly reason?: TerminalWaitReason }> {
+  ): Promise<{ readonly session: TerminalSession; readonly reason?: TerminalWaitOutcomeReason }> {
     const session = this.required(sourceOrId);
     if (isTerminalStatus(session.status)) return { session };
     const interactiveDelayMs = options.interactiveDelayMs ?? 3_000;
@@ -223,7 +223,7 @@ export class TerminalSessionManager {
     return await new Promise((resolve) => {
       let settled = false;
       let interactiveSince: number | undefined;
-      const finish = (reason?: TerminalWaitReason): void => {
+      const finish = (reason?: TerminalWaitOutcomeReason): void => {
         if (settled) return;
         if (reason !== undefined && isTerminalStatus(session.status)) reason = undefined;
         settled = true;
@@ -232,7 +232,7 @@ export class TerminalSessionManager {
         options.signal?.removeEventListener("abort", onAbort);
         if (reason !== undefined) {
           session.background = true;
-          session.waitReason = reason;
+          if (reason !== "aborted") session.waitReason = reason;
           this.#emitChanged(session);
         }
         resolve({ session, ...(reason === undefined ? {} : { reason }) });

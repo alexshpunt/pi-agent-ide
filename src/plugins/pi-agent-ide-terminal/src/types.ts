@@ -1,7 +1,8 @@
 import type { IPty } from "node-pty";
 import type { Terminal } from "@xterm/headless";
 
-export type TerminalWaitReason = "timeout" | "interactive" | "aborted";
+export type TerminalWaitReason = "timeout" | "interactive";
+export type TerminalWaitOutcomeReason = TerminalWaitReason | "aborted";
 export type TerminalCompletionReason = "timeout";
 
 export type TerminalSessionStatus =

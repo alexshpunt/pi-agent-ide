@@ -140,6 +140,7 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
     const outcome = await waiting;
     expect(outcome.reason).toBe("aborted");
     expect(manager.snapshot(session)).toMatchObject({ status: "running", background: true });
+    expect(manager.snapshot(session)).not.toHaveProperty("waitReason");
     manager.write(session.source, "hello");
     manager.sendKeys(session.source, "Enter");
     await manager.wait(session.source);

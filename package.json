@@ -1,8 +1,8 @@
 {
   "name": "pi-agent-ide",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
-  "description": "Agent-facing tools for reading, searching, and editing code in Pi.",
+  "description": "IDE capabilities for coding agents in Pi.",
   "keywords": [
     "agent-tools",
     "code-editing",
@@ -190,6 +190,7 @@
   "pi": {
     "extensions": [
       "./src/pi-agent-ide.ts"
-    ]
+    ],
+    "image": "assets/banner.png"
   }
 }

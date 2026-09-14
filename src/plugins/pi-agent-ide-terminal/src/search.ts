@@ -7,6 +7,7 @@ import {
 import type { SearchRequest, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { Component } from "@earendil-works/pi-tui";
 
 import { renderTerminalAction } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
@@ -85,20 +86,49 @@ function terminalSearchResolver(manager: TerminalSessionManager) {
     },
     renderResult(
       result: { details: unknown },
-      _options: unknown,
+      options: { readonly expanded?: boolean },
       theme: Parameters<typeof renderTerminalAction>[4],
     ) {
       const details = result.details;
       const payload = isRecord(details) ? parsePayload(details.payload) : parsePayload(undefined);
-      return renderTerminalAction(
+      const content = renderTerminalAction(
         payload.snapshot,
         "search",
         JSON.stringify(payload.query),
         payload.matches.slice(-6).map((match) => `${match.lineNumber}: ${match.lineText}`),
         theme,
       );
+      return new TerminalSearchPanel(content, options.expanded === true, theme);
     },
   };
+}
+
+const COMPACT_TERMINAL_SEARCH_ROWS = 12;
+
+/** Keep terminal search readable without changing the complete agent-facing result. */
+export class TerminalSearchPanel implements Component {
+  public constructor(
+    private readonly content: Component,
+    private readonly expanded: boolean,
+    private readonly theme: Parameters<typeof renderTerminalAction>[4],
+  ) {}
+
+  public render(width: number): string[] {
+    const rows = this.content.render(width);
+    if (this.expanded || rows.length <= COMPACT_TERMINAL_SEARCH_ROWS) return rows;
+    const shown = COMPACT_TERMINAL_SEARCH_ROWS - 1;
+    return [
+      ...rows.slice(0, shown),
+      this.theme.fg(
+        "muted",
+        `… ${String(rows.length - shown)} visual rows omitted · ctrl+o to expand`,
+      ),
+    ];
+  }
+
+  public invalidate(): void {
+    this.content.invalidate();
+  }
 }
 
 export function findTerminalMatches(

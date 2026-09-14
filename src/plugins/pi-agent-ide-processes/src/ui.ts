@@ -105,7 +105,7 @@ export class AgentIdeProcessesUi {
         action = await context.ui.custom<{ readonly source: string } | null>(
           (tui, theme, _keys, done) => {
             let active = this.#active();
-            let page: "list" | "detail" | "confirm" = "list";
+            let page: "list" | "detail" | "input" | "confirm" = "list";
             let selected: AgentIdeProcess | undefined;
             const createList = (selectedSource?: string): SelectList => {
               const items: SelectItem[] = active.map((process) => ({
@@ -169,7 +169,11 @@ export class AgentIdeProcessesUi {
                         page === "confirm" ? "warning" : "dim",
                         page === "confirm"
                           ? "Stop this process? y confirm · n/esc cancel"
-                          : "esc back · d stop",
+                          : page === "input"
+                            ? "input mode · type to send · esc stop input"
+                            : selected.sendInput === undefined
+                              ? "esc back · d stop"
+                              : "i input · esc back · d stop",
                       ),
                       1,
                       0,
@@ -190,6 +194,10 @@ export class AgentIdeProcessesUi {
                 } else if (page === "detail") {
                   if (matchesKey(data, Key.escape)) page = "list";
                   else if (data === "d") page = "confirm";
+                  else if (data === "i" && selected?.sendInput !== undefined) page = "input";
+                } else if (page === "input") {
+                  if (matchesKey(data, Key.escape)) page = "detail";
+                  else selected?.sendInput?.(data);
                 } else if (data === "y" && selected !== undefined)
                   done({ source: selected.source });
                 else if (data === "n" || matchesKey(data, Key.escape)) page = "detail";

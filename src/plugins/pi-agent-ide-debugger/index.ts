@@ -396,7 +396,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
 
   pi.on("session_shutdown", (event) => {
     removeProcessProvider();
-    if (event.reason === "reload") {
+    if (event.reason !== "quit") {
       retainReloadResource("debugger", manager);
       return;
     }

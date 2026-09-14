@@ -30,7 +30,7 @@ export default async function registerTerminal(pi: ExtensionAPI): Promise<void> 
   pi.on("session_shutdown", async (event) => {
     ui.dispose();
     removeProcessProvider();
-    if (event.reason === "reload") {
+    if (event.reason !== "quit") {
       retainReloadResource("terminal", manager);
       return;
     }
