@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.1 — 2026-09-14
+
+### Sessions and processes
+
+- Keep active terminal and debugger resources alive across extension reloads, so agents can reconnect to the same `shell:` and `debug:` sessions.
+- Add terminal input mode to the process panel. Press `i` in a terminal detail view to send text and keys, and press Escape to return to the normal view.
+- Keep foreground terminal waits running in the background when an agent turn is interrupted instead of reporting them as aborted.
+- Bound terminal-search output in the TUI while keeping the complete search result available to the agent.
+
+### Reading and search
+
+- Return a bounded hex and ASCII preview for unsupported HTTP binary responses instead of downloading the full body or failing without useful content.
+- Preserve native image reads when a server reports a generic binary content type for a known image URL.
+- Keep search results when a file or terminal log changes during the search. Stale results remain visible, but unsafe anchors are omitted.
+
+### Reliability and documentation
+
+- Isolate Kotlin debugger verification from the main integration job to avoid resource contention in CI.
+- Rewrite the README around the project’s agent-facing tools, add a gallery, and document how to report problems and contribute.
+- Add a release-versioned Explicit Edit Benchmark badge.
+
 ## 0.5.0 — 2026-09-13
 
 ### Debugging
