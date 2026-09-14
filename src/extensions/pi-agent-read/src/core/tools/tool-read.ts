@@ -32,6 +32,7 @@ import {
   type ReadPipelineStage,
   type ReadResultDetails,
   type ReadResultRenderer,
+  type ReadResourceGuardRegistration,
   type ReadStageOutcome,
   type ReadState,
   type ReadToolResult,
@@ -57,8 +58,15 @@ import { readRaw } from "#src/core/tools/read/raw-read.js";
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
 
+interface RegisteredResourceGuard {
+  readonly pluginId: string;
+  readonly registration: ReadResourceGuardRegistration;
+}
+
 interface RegisteredResolver {
   readonly resolver: ResourceResolver;
+  readonly matchesCall?: (source: string) => boolean;
+  readonly renderCall?: NonNullable<ToolDefinition["renderCall"]>;
   readonly renderResult?: ReadResultRenderer;
   readonly preserveTruncatedOutput: boolean;
   readonly priority: number;
@@ -88,6 +96,7 @@ interface ViewContribution {
 }
 
 export interface ReadToolContributions {
+  readonly resourceGuards?: readonly ReadResourceGuardRegistration[];
   readonly resolvers?: readonly ResourceResolverRegistration[];
   readonly targetResolvers?: readonly TextTargetResolverRegistration[];
   readonly handlers?: readonly ReadHandlerRegistration[];
@@ -122,6 +131,7 @@ export function createReadTool(
       order: 0,
     },
   ];
+  const resourceGuards: RegisteredResourceGuard[] = [];
   const handlers: RegisteredHandler[] = [];
   const views: RegisteredView[] = [];
   const fragments: RegisteredFragment[] = [];
@@ -157,7 +167,14 @@ export function createReadTool(
         ];
       },
       parameters: readParameters,
-      renderCall: renderReadCall,
+      renderCall(arguments_, theme, context) {
+        const source = typeof arguments_.path === "string" ? arguments_.path : undefined;
+        const renderer =
+          source === undefined
+            ? undefined
+            : resolvers.find(({ matchesCall }) => matchesCall?.(source) === true)?.renderCall;
+        return (renderer ?? renderReadCall)(arguments_, theme, context);
+      },
       renderResult(result, options, theme, context) {
         const resolvedBy = result.details.resolvedBy;
         const renderer =
@@ -180,6 +197,7 @@ export function createReadTool(
           temporaryResources,
           fragments,
           targetResolvers,
+          resourceGuards,
         );
       },
     },
@@ -193,15 +211,25 @@ export function createReadTool(
         temporaryResources,
         fragments,
         targetResolvers,
+        resourceGuards,
         audience,
       );
     },
     registerContributions(pluginId, contributions): void {
+      const incomingResourceGuards = [...(contributions.resourceGuards ?? [])];
       const incomingResolvers = [...(contributions.resolvers ?? [])];
       const incomingTargetResolvers = [...(contributions.targetResolvers ?? [])];
       const incomingHandlers = [...(contributions.handlers ?? [])];
       const incomingViews = [...(contributions.views ?? [])];
       const incomingFragments = [...(contributions.fragments ?? [])];
+      const guardIds = new Set(resourceGuards.map(({ registration }) => registration.id));
+      for (const registration of incomingResourceGuards) {
+        if (registration.id.trim().length === 0 || typeof registration.guard !== "function")
+          throw new TypeError(`Plugin ${pluginId} provided an invalid Resource guard`);
+        if (guardIds.has(registration.id))
+          throw new Error(`Resource guard ${registration.id} is already registered`);
+        guardIds.add(registration.id);
+      }
       validateContributions(pluginId, incomingResolvers, incomingHandlers, resolvers, handlers);
       validateFragmentRegistrations(pluginId, incomingFragments, fragments);
       const targetResolverIds = new Set(targetResolvers.map(({ resolver }) => resolver.id));
@@ -236,9 +264,16 @@ export function createReadTool(
         presenterIds.add(key);
       }
 
+      for (const registration of incomingResourceGuards)
+        resourceGuards.push({ pluginId, registration });
+
       for (const registration of incomingResolvers) {
         resolvers.push({
           resolver: registration.resolver,
+          ...(registration.matchesCall !== undefined && {
+            matchesCall: registration.matchesCall,
+            renderCall: registration.renderCall,
+          }),
           ...(registration.renderResult !== undefined && {
             renderResult: registration.renderResult,
           }),
@@ -291,9 +326,11 @@ async function executeRead(
     readonly priority: number;
     readonly order: number;
   }[],
+  resourceGuards: readonly RegisteredResourceGuard[],
   audience: "agent" | "script" = "agent",
 ): Promise<ReadToolResult> {
-  if (request.path?.startsWith("raw:")) return readRaw(request, resolverContext, audience);
+  if (request.path?.startsWith("raw:"))
+    return readRaw(request, resolverContext, audience, resourceGuards);
   resolverContext = { ...resolverContext, audience };
   const limitOutput: typeof limitReadOutput =
     audience === "script" ? async (result) => result : limitReadOutput;
@@ -329,6 +366,7 @@ async function executeRead(
       requestedViews,
       ignoredViews,
       audience,
+      resourceGuards,
     );
     if (targeted !== undefined) return targeted;
   }
@@ -350,7 +388,12 @@ async function executeRead(
     return failureResult({ code: "INVALID_REQUEST", message: "No source was provided" });
   }
 
-  let resolved = await resolveSource(pipeline, resolverSnapshot);
+  let resolved = await resolveSource(
+    pipeline,
+    resolverSnapshot,
+    resourceGuards,
+    request.path ?? source,
+  );
   let anchoredFragment: string | undefined;
 
   // Resource-first rule: when reading the whole source fails, split off an anchor fragment
@@ -368,7 +411,12 @@ async function executeRead(
     if (split !== undefined) {
       const wholeSource = { result: resolved, pipeline };
       const barePipeline = { ...pipeline, request: { ...pipeline.request, path: split.source } };
-      const retried = await resolveSource(barePipeline, resolverSnapshot);
+      const retried = await resolveSource(
+        barePipeline,
+        resolverSnapshot,
+        resourceGuards,
+        request.path ?? source,
+      );
 
       if (retried.kind === "continue") {
         resolved = retried;
@@ -470,6 +518,7 @@ async function resolveTextTargets(
   requestedViews: ReadonlySet<string>,
   ignoredViews: readonly string[],
   audience: "agent" | "script",
+  resourceGuards: readonly RegisteredResourceGuard[],
 ): Promise<ReadToolResult | undefined> {
   const limitOutput: typeof limitReadOutput =
     audience === "script" ? async (result) => result : limitReadOutput;
@@ -545,7 +594,12 @@ async function resolveTextTargets(
           }
           rangePipeline = preRead.context;
         }
-        const resolved = await resolveSource(rangePipeline, resolvers);
+        const resolved = await resolveSource(
+          rangePipeline,
+          resolvers,
+          resourceGuards,
+          request.path ?? target.source,
+        );
         if (resolved.kind === "return") {
           return withIgnoredViews(resolved.result, ignoredViews);
         }
@@ -725,6 +779,8 @@ async function resolveAnchoredOrigin(
 async function resolveSource(
   initialContext: ReadPipelineContext,
   resolvers: readonly RegisteredResolver[],
+  resourceGuards: readonly RegisteredResourceGuard[],
+  requestedSource: string,
 ): Promise<ReadStageOutcome> {
   const source = requiredValue(initialContext.request.path);
   const resolverContext = initialContext.resolverContext;
@@ -790,6 +846,50 @@ async function resolveSource(
           message: `Resource ${resource.source} does not support reading`,
         }),
       };
+    }
+
+    for (const { registration } of resourceGuards) {
+      try {
+        const outcome = await registration.guard({
+          requestedSource,
+          resourceSource: resource.source,
+          resolvedBy: resolver.id,
+          cwd: resolverContext.cwd,
+          request: initialContext.request,
+          audience: initialContext.audience ?? "agent",
+          ...(resolverContext.signal !== undefined && { signal: resolverContext.signal }),
+        });
+        if (outcome.kind === "rejected")
+          return {
+            kind: "return",
+            result: withBlockedToolResult(
+              failureResult({
+                code: "READ_FAILED",
+                source: resource.source,
+                resolverId: resolver.id,
+                message: `Read blocked by hook ${registration.id}: ${outcome.reason}`,
+              }),
+              outcome.reason,
+            ),
+          };
+      } catch (error) {
+        return {
+          kind: "return",
+          result: withBlockedToolResult(
+            failureResult({
+              code: "READ_FAILED",
+              source: resource.source,
+              resolverId: resolver.id,
+              message: appendErrorMessage(
+                `Read blocked because hook ${registration.id} failed`,
+                error,
+              ),
+              cause: error,
+            }),
+            `Hook ${registration.id} failed`,
+          ),
+        };
+      }
     }
 
     let content: unknown;

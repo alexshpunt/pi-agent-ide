@@ -45,8 +45,82 @@ jobs:
       - name: Setup runtime tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes fd-find ripgrep clangd
+          sudo apt-get install --yes build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc
           sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
+          curl --fail --location --silent --show-error \
+            https://storage.googleapis.com/dart-archive/channels/stable/release/3.13.3/sdk/dartsdk-linux-x64-release.zip \
+            --output /tmp/dart-sdk.zip
+          sudo unzip -q /tmp/dart-sdk.zip -d /opt
+          echo "/opt/dart-sdk/bin" >> "$GITHUB_PATH"
+          echo "PI_DART_PATH=/opt/dart-sdk/bin/dart" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error \
+            https://github.com/microsoft/vscode-js-debug/releases/download/v1.117.0/js-debug-dap-v1.117.0.tar.gz \
+            --output /tmp/js-debug-dap.tar.gz
+          sudo mkdir --parents /opt/pi-debug-adapters
+          sudo tar --extract --gzip --file /tmp/js-debug-dap.tar.gz --directory /opt/pi-debug-adapters
+          js_debug_path="$(find /opt/pi-debug-adapters -path '*/js-debug/src/dapDebugServer.js' -print -quit)"
+          test -n "$js_debug_path"
+          echo "PI_JS_DEBUG_PATH=$js_debug_path" >> "$GITHUB_ENV"
+          echo "PI_LLDB_DAP_PATH=$(command -v lldb-dap-18)" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error \
+            https://github.com/fwcd/kotlin-debug-adapter/releases/download/0.4.4/adapter.zip \
+            --output /tmp/kotlin-debug-adapter.zip
+          sudo unzip -q /tmp/kotlin-debug-adapter.zip -d /opt/kotlin-debug-adapter
+          echo "/opt/kotlin-debug-adapter/adapter/bin" >> "$GITHUB_PATH"
+          echo "PI_KOTLIN_DEBUG_ADAPTER_PATH=/opt/kotlin-debug-adapter/adapter/bin/kotlin-debug-adapter" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error \
+            https://github.com/JetBrains/kotlin/releases/download/v2.2.20/kotlin-compiler-2.2.20.zip \
+            --output /tmp/kotlin-compiler.zip
+          sudo unzip -q /tmp/kotlin-compiler.zip -d /opt/kotlin
+          echo "/opt/kotlin/kotlinc/bin" >> "$GITHUB_PATH"
+          curl --fail --location --silent --show-error https://dot.net/v1/dotnet-install.sh \
+            --output /tmp/dotnet-install.sh
+          sudo bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /opt/dotnet
+          echo "/opt/dotnet" >> "$GITHUB_PATH"
+          curl --fail --location --silent --show-error \
+            https://github.com/Samsung/netcoredbg/releases/download/3.2.0-1092/netcoredbg-linux-amd64.tar.gz \
+            --output /tmp/netcoredbg.tar.gz
+          sudo mkdir --parents /opt/netcoredbg
+          sudo tar --extract --gzip --file /tmp/netcoredbg.tar.gz --directory /opt/netcoredbg
+          netcoredbg_path="$(find /opt/netcoredbg -type f -name netcoredbg -print -quit)"
+          test -n "$netcoredbg_path"
+          echo "PI_NETCOREDBG_PATH=$netcoredbg_path" >> "$GITHUB_ENV"
+          sudo gem install debug --version 1.11.1 --no-document
+          echo "PI_RUBY_DEBUG_PATH=$(command -v rdbg)" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error \
+            https://github.com/xdebug/vscode-php-debug/releases/download/v1.40.1/php-debug-1.40.1.vsix \
+            --output /tmp/php-debug.vsix
+          sudo mkdir --parents /opt/pi-debug-adapters/php-debug
+          sudo unzip -q /tmp/php-debug.vsix -d /opt/pi-debug-adapters/php-debug
+          echo "PI_PHP_DEBUG_PATH=/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error \
+            https://open-vsx.org/api/tomblind/local-lua-debugger-vscode/0.3.3/file/tomblind.local-lua-debugger-vscode-0.3.3.vsix \
+            --output /tmp/lua-debug.vsix
+          sudo mkdir --parents /opt/pi-debug-adapters/lua-debug
+          sudo unzip -q /tmp/lua-debug.vsix -d /opt/pi-debug-adapters/lua-debug
+          echo "PI_LUA_DEBUG_PATH=/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error \
+            https://open-vsx.org/api/rogalmic/bash-debug/0.3.9/file/rogalmic.bash-debug-0.3.9.vsix \
+            --output /tmp/bash-debug.vsix
+          sudo mkdir --parents /opt/pi-debug-adapters/bash-debug
+          sudo unzip -q /tmp/bash-debug.vsix -d /opt/pi-debug-adapters/bash-debug
+          echo "PI_BASH_DEBUG_ROOT=/opt/pi-debug-adapters/bash-debug/extension" >> "$GITHUB_ENV"
+          curl --fail --location --silent --show-error \
+            https://github.com/PowerShell/PowerShell/releases/download/v7.4.13/powershell-7.4.13-linux-x64.tar.gz \
+            --output /tmp/powershell.tar.gz
+          sudo mkdir --parents /opt/powershell
+          sudo tar --extract --gzip --file /tmp/powershell.tar.gz --directory /opt/powershell
+          sudo chmod +x /opt/powershell/pwsh
+          sudo ln --symbolic --force /opt/powershell/pwsh /usr/local/bin/pwsh
+          curl --fail --location --silent --show-error \
+            https://github.com/PowerShell/PowerShellEditorServices/releases/download/v4.7.0/PowerShellEditorServices.zip \
+            --output /tmp/powershell-editor-services.zip
+          sudo mkdir --parents /opt/pi-debug-adapters/powershell-editor-services
+          sudo unzip -q /tmp/powershell-editor-services.zip -d /opt/pi-debug-adapters/powershell-editor-services
+          echo "PI_POWERSHELL_EDITOR_SERVICES_PATH=/opt/pi-debug-adapters/powershell-editor-services" >> "$GITHUB_ENV"
+          mkdir --parents /tmp/pi-debug-tools
+          GOBIN=/tmp/pi-debug-tools go install github.com/go-delve/delve/cmd/dlv@v1.25.2
+          sudo install /tmp/pi-debug-tools/dlv /usr/local/bin/dlv
           npm install --global @ast-grep/cli@0.45.1 eslint_d@15.0.2 typescript-language-server@5.3.0 typescript@6.0.3
           typescript-language-server --version
 
@@ -151,3 +225,200 @@ jobs:
           message: ${{ steps.integration-report.outputs.passed }} passed · ${{ steps.integration-report.outputs.failed }} failed · ${{ steps.integration-report.outputs.skipped }} skipped
           color: ${{ steps.integration-report.outputs.failed == '0' && 'brightgreen' || 'red' }}
           isError: ${{ steps.integration-report.outputs.failed != '0' }}
+
+  debugger-matrix:
+    name: Debugger (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [swift, zig, julia, java, elixir, r]
+
+    steps:
+      - name: Checkout
+        # actions/checkout v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Setup Node
+        # actions/setup-node v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup pinned Erlang and Elixir
+        if: matrix.language == 'elixir'
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: "25.3.2.21"
+          elixir-version: "1.14.5"
+
+      - name: Setup pinned R
+        if: matrix.language == 'r'
+        uses: r-lib/actions/setup-r@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2
+        with:
+          r-version: "4.3.3"
+
+      - name: Setup npm and pnpm
+        run: |
+          npm install --global \
+            "npm@${NPM_VERSION}" \
+            "pnpm@${PNPM_VERSION}"
+
+      - name: Provision pinned debugger
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          if [[ "${{ matrix.language }}" == "swift" ]]; then
+            sudo apt-get install --yes \
+              binutils \
+              libcurl4-openssl-dev \
+              libedit2 \
+              libncurses-dev \
+              libpython3-dev \
+              libsqlite3-0 \
+              libxml2-dev \
+              libz3-dev \
+              zlib1g-dev
+            swift_url="https://download.swift.org/swift-6.3.3-release"
+            swift_url+="/ubuntu2404/swift-6.3.3-RELEASE"
+            swift_url+="/swift-6.3.3-RELEASE-ubuntu24.04.tar.gz"
+            curl --fail --location --silent --show-error \
+              "$swift_url" \
+              --output /tmp/swift.tar.gz
+            sudo mkdir --parents /opt/swift
+            sudo tar --extract --gzip \
+              --file /tmp/swift.tar.gz \
+              --directory /opt/swift \
+              --strip-components=1
+            echo "/opt/swift/usr/bin" >> "$GITHUB_PATH"
+            echo "PI_SWIFTC_PATH=/opt/swift/usr/bin/swiftc" \
+              >> "$GITHUB_ENV"
+            echo "PI_LLDB_DAP_PATH=/opt/swift/usr/bin/lldb-dap" \
+              >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.language }}" == "zig" ]]; then
+            sudo apt-get install --yes lldb-18 xz-utils
+            zig_url="https://ziglang.org/download/0.15.2"
+            zig_url+="/zig-x86_64-linux-0.15.2.tar.xz"
+            curl --fail --location --silent --show-error \
+              "$zig_url" \
+              --output /tmp/zig.tar.xz
+            sudo mkdir --parents /opt/zig
+            sudo tar --extract --xz \
+              --file /tmp/zig.tar.xz \
+              --directory /opt/zig \
+              --strip-components=1
+            echo "/opt/zig" >> "$GITHUB_PATH"
+            echo "PI_ZIG_PATH=/opt/zig/zig" >> "$GITHUB_ENV"
+            echo "PI_LLDB_DAP_PATH=$(command -v lldb-dap-18)" \
+              >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.language }}" == "java" ]]; then
+            sudo apt-get install --yes unzip
+            jdk_url="https://github.com/adoptium/temurin21-binaries/releases/download"
+            jdk_url+="/jdk-21.0.8%2B9"
+            jdk_url+="/OpenJDK21U-jdk_x64_linux_hotspot_21.0.8_9.tar.gz"
+            curl --fail --location --silent --show-error \
+              "$jdk_url" \
+              --output /tmp/jdk.tar.gz
+            sudo mkdir --parents /opt/jdk
+            sudo tar --extract --gzip \
+              --file /tmp/jdk.tar.gz \
+              --directory /opt/jdk \
+              --strip-components=1
+            curl --fail --location --silent --show-error \
+              https://github.com/fwcd/kotlin-debug-adapter/releases/download/0.4.4/adapter.zip \
+              --output /tmp/kotlin-debug-adapter.zip
+            sudo unzip -q \
+              /tmp/kotlin-debug-adapter.zip \
+              -d /opt/kotlin-debug-adapter
+            echo "/opt/jdk/bin" >> "$GITHUB_PATH"
+            echo "/opt/kotlin-debug-adapter/adapter/bin" >> "$GITHUB_PATH"
+            echo "JAVA_HOME=/opt/jdk" >> "$GITHUB_ENV"
+            echo "PI_JAVAC_PATH=/opt/jdk/bin/javac" >> "$GITHUB_ENV"
+            echo "PI_KOTLIN_DEBUG_ADAPTER_PATH=/opt/kotlin-debug-adapter/adapter/bin/kotlin-debug-adapter" \
+              >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.language }}" == "elixir" ]]; then
+            mix local.hex --force
+            elixir_ls_url="https://github.com/elixir-lsp/elixir-ls/releases/download"
+            elixir_ls_url+="/v0.29.3/elixir-ls-v0.29.3.zip"
+            curl --fail --location --silent --show-error \
+              "$elixir_ls_url" \
+              --output /tmp/elixir-ls.zip
+            echo "c07680593973ee9465e7361523b873baaacd258a4741342b1533bee5ac5c6c5e  /tmp/elixir-ls.zip" \
+              | sha256sum --check
+            sudo mkdir --parents /opt/pi-debug-adapters/elixir-ls
+            sudo unzip -q /tmp/elixir-ls.zip \
+              -d /opt/pi-debug-adapters/elixir-ls
+            sudo chmod +x /opt/pi-debug-adapters/elixir-ls/debug_adapter.sh
+            MIX_ENV=prod elixir \
+              /opt/pi-debug-adapters/elixir-ls/quiet_install.exs \
+              </dev/null >/dev/null
+            echo "PI_ELIXIR_LS_DEBUG_PATH=/opt/pi-debug-adapters/elixir-ls/debug_adapter.sh" \
+              >> "$GITHUB_ENV"
+          elif [[ "${{ matrix.language }}" == "r" ]]; then
+            sudo apt-get install --yes build-essential
+            curl --fail --location --silent --show-error \
+              https://cran.r-project.org/src/contrib/Archive/R6/R6_2.5.1.tar.gz \
+              --output /tmp/R6_2.5.1.tar.gz
+            curl --fail --location --silent --show-error \
+              https://cran.r-project.org/src/contrib/Archive/jsonlite/jsonlite_1.8.8.tar.gz \
+              --output /tmp/jsonlite_1.8.8.tar.gz
+            curl --fail --location --silent --show-error \
+              https://github.com/ManuelHentschel/vscDebugger/releases/download/v0.5.2/vscDebugger_0.5.2.tar.gz \
+              --output /tmp/vscDebugger_0.5.2.tar.gz
+            echo "8d92bd29c2ed7bf15f2778618ffe4a95556193d21d8431a7f75e7e5fc102bf48  /tmp/R6_2.5.1.tar.gz" \
+              | sha256sum --check
+            echo "7de21316984c3ba3d7423d12f43d1c30c716007c5e39bf07e11885e0ceb0caa4  /tmp/jsonlite_1.8.8.tar.gz" \
+              | sha256sum --check
+            echo "78a8f94f3f0e3ab267594b3fdc57be42f8e124d7737f4d61292e2a95642434dd  /tmp/vscDebugger_0.5.2.tar.gz" \
+              | sha256sum --check
+            sudo "$(command -v R)" CMD INSTALL /tmp/R6_2.5.1.tar.gz
+            sudo "$(command -v R)" CMD INSTALL /tmp/jsonlite_1.8.8.tar.gz
+            sudo "$(command -v R)" CMD INSTALL /tmp/vscDebugger_0.5.2.tar.gz
+            echo "PI_R_PATH=$(command -v R)" >> "$GITHUB_ENV"
+          else
+            julia_url="https://julialang-s3.julialang.org"
+            julia_url+="/bin/linux/x64/1.13"
+            julia_url+="/julia-1.13.0-linux-x86_64.tar.gz"
+            curl --fail --location --silent --show-error \
+              "$julia_url" \
+              --output /tmp/julia.tar.gz
+            sudo mkdir --parents \
+              /opt/julia \
+              /opt/pi-debug-adapters/julia
+            sudo tar --extract --gzip \
+              --file /tmp/julia.tar.gz \
+              --directory /opt/julia \
+              --strip-components=1
+            sudo chown -R "$USER" /opt/pi-debug-adapters/julia
+            julia_setup='using Pkg; '
+            julia_setup+='Pkg.add('
+            julia_setup+='PackageSpec(name="DebugAdapter", version="3.2.1")'
+            julia_setup+='); Pkg.precompile()'
+            /opt/julia/bin/julia \
+              --project=/opt/pi-debug-adapters/julia \
+              --startup-file=no \
+              -e "$julia_setup"
+            echo "/opt/julia/bin" >> "$GITHUB_PATH"
+            echo "PI_JULIA_PATH=/opt/julia/bin/julia" \
+              >> "$GITHUB_ENV"
+            echo "PI_JULIA_DEBUG_PROJECT=/opt/pi-debug-adapters/julia" \
+              >> "$GITHUB_ENV"
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify native debugger
+        env:
+          PI_DEBUGGER_NATIVE_LANGUAGE: ${{ matrix.language }}
+          PI_DEBUGGER_MISC_LANGUAGE: ${{ matrix.language }}
+          PI_DEBUGGER_JVM_LANGUAGE: ${{ matrix.language }}
+        run: >-
+          pnpm vitest run
+          --config vitest.integration.config.mjs
+          tests/integration/debugger-native-adapters.integration.test.ts
+          tests/integration/debugger-misc-adapters.integration.test.ts
+          tests/integration/debugger-jvm-adapters.integration.test.ts

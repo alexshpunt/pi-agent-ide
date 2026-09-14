@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.5.0 — 2026-09-13
+
+### Debugging
+
+- Add agent-native debugger sessions backed by the Debug Adapter Protocol. Agents can launch programs, set and remove breakpoints, continue execution, step through code, inspect stopped source, and terminate sessions through addressable `debug:` resources.
+- Add verified Linux adapters and project checks for JavaScript, TypeScript source maps, shell scripts, C, C++, Rust, Swift, Zig, Java, Kotlin, C#, Python, Go, Dart, PHP, Ruby, Lua, PowerShell, R, Julia, and Elixir.
+- Bring terminal and debugger activity into one `/agent-ide-processes` panel with live state, elapsed time, source context, and session controls.
+- Keep active debugger sessions attached across extension reloads, preserving their `debug:` resources and stopped state.
+
+### Transactional Apply
+
+- Replace full-file rewrites inside `apply` with a snapshot-guarded editor API. Scripts open immutable file snapshots, stage exact text and whole-file changes, and commit them together with an explicit `apply()` call.
+- Validate every staged operation before writing. If a multi-file commit fails after writing starts, Apply attempts to restore the original files and reports whether rollback completed.
+- Return a session-scoped `APPLY#` receipt to the agent after a successful commit. `undo` can use it once to restore every touched path together, refuses stale receipts before changing files, and reports any restore or compensating-rollback failure.
+- Keep the undo receipt out of the user-facing Apply result. Undo itself uses a compact success or failure status with the number of restored files.
+- Compact long Apply source previews to a useful head and tail, and render explicit `result()` values as first-class result blocks.
+
+### Terminal reliability
+
+- Replace the generic `run` tool with `bash` on Unix-like systems and `powershell` on Windows. Commands still run in the user’s configured system shell, whose syntax is included in the agent guidance.
+- Preserve foreground commands when the agent turn times out or is interrupted. They continue as background sessions instead of being terminated, and interactive prompts return control without losing the process.
+- Add configurable foreground wait timeouts and report process timeouts, signals, failures, and successful exits as soon as they happen.
+- Wake an idle agent when a running background session produces no output for two minutes. Repeat the notice every two silent minutes until the session changes or finishes.
+- Bound terminal output in both command results and `shell:` reads. Keep the useful tail in context and save the complete output to a readable log file.
+- Keep process panels live while terminal and debugger sessions change state.
+- Keep live terminal sessions attached across extension reloads with the same `shell:` resource and process.
+
+### Reading, search, and language support
+
+- Expand AST parsing and structural search across the supported language catalog, including native parsers for Go and other non-TypeScript languages.
+- Apply syntax highlighting before AST scope and anchor annotations, so structural reads keep both code colours and stable line markers.
+- Promote semantic code views in agent guidance: workspace symbols for discovery, file graphs for relationships, and declaration reads for focused implementation work.
+- Compact large text-search results before they consume the agent context while preserving reusable search selections.
+
+### File operations and hooks
+
+- Unify whole-file and selected-text operations under `copy`, `move`, and `delete`. Supplying only source and target paths performs a whole-file operation; selectors continue to operate on text.
+- Show whole-file copy, move, and delete results as compact success or failure cards without repeating paths already present in the header.
+- Add project and global file hooks for reads and text edits. Extensions can deny reads, reject resolved text edits and file creation before their first write, or attach feedback after a saved text edit.
+- Run before-edit hooks once against the complete set of staged text edits in an Apply commit. Whole-file copy, move, and delete operations remain outside the edit-hook contract.
+
 ## 0.4.0 — 2026-09-11
 
 ### Terminal sessions

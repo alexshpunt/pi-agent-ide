@@ -70,9 +70,9 @@ test("saves string preferences and preserves unrelated values", async () => {
   const file = path.join(cwd, "extensions.json");
   await writeFile(file, JSON.stringify({ preferences: { future: "keep" } }));
 
-  await saveModuleChoices(file, new Map(), new Map(), new Map([["terminal.activity", "compact"]]));
+  await saveModuleChoices(file, new Map(), new Map(), new Map([["processes.activity", "compact"]]));
 
   expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
-    preferences: { future: "keep", "terminal.activity": "compact" },
+    preferences: { future: "keep", "processes.activity": "compact" },
   });
 });

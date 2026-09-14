@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -32,7 +31,7 @@ test("Apply composes the configured IDE read and mutation pipelines", async () =
               name: "apply",
               arguments: {
                 source:
-                  'write({path: "note.txt", content: "alpha\\nbeta\\n"}); const doc = read({path: "note.txt"}); if (typeof doc.content !== "string") throw new Error("Expected raw text"); const line = doc.lines.find(line => line.content === "beta"); replace({path: doc.source, start: line.anchors[0], text: line.content.toUpperCase()});',
+                  'createFile("note.txt", "alpha\\nbeta\\n"); createFile("other.txt", "one\\ntwo\\n"); apply(); const note = open("note.txt"); const other = open("other.txt"); note.replace(note.find("beta"), "BETA"); other.replaceAll("one", "ONE"); other.replaceAll("two", "TWO"); apply();',
               },
             }),
           ],
@@ -44,13 +43,64 @@ test("Apply composes the configured IDE read and mutation pipelines", async () =
     const execution = getToolExecution(run, "apply-edit");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\n");
+    expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("ONE\nTWO\n");
+    expect(JSON.stringify(getToolExecutionDetails(execution))).toMatch(/APPLY#[0-9A-F]{12}/u);
     expect(getToolExecutionDetails(execution)).toMatchObject({
       failed: false,
-      files: [expect.stringContaining("note.txt")],
+      files: [expect.stringContaining("note.txt"), expect.stringContaining("other.txt")],
     });
   });
 });
 
+test("Apply hides precise text and Git helpers by default without hiding standalone tools", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha\n");
+    const hidden = [
+      "replace",
+      "insert",
+      "remove",
+      "copy",
+      "move",
+      "editBatch",
+      "undo",
+      "stage",
+      "unstage",
+      "write",
+      "delete_file",
+      "copy_file",
+      "move_file",
+    ];
+    const source = `for (const name of ${JSON.stringify(hidden)}) if (typeof globalThis[name] !== "undefined") throw new Error(name + " should be hidden");`;
+    const run = await new PiIntegrationTest({
+      testName: "apply-default-capabilities",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply", "replace"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "default-capabilities", name: "apply", arguments: { source } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "standalone-replace",
+              name: "replace",
+              arguments: { path: "note.txt", start: "alpha", text: "beta" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Check default Apply capabilities and use standalone replace");
+    expect(getToolExecution(run, "default-capabilities").isError).toBe(false);
+    expect(getToolExecution(run, "standalone-replace").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("beta\n");
+  });
+});
 test("Apply reduces combined source reads and keeps the full output readable", async () => {
   await withTempWorkspace(async (cwd) => {
     const source = `export function example() {\n${"  console.log(1);\n".repeat(1400)}}\n`;
@@ -110,7 +160,7 @@ test("Apply search keeps raw matches and registers references for editing", asyn
               name: "apply",
               arguments: {
                 source:
-                  'const found = await search({query: "beta", path: "note.txt", caseSensitive: true}); if (found.data.matches.length !== 1) throw new Error("Expected one raw match"); const edited = await replace({path: `SEARCH#${found.details.sessionId}:all:match`, text: "BETA"}); if(edited.metadata.searchObservations[0].matches !== 0) throw new Error("Expected refreshed search observation");',
+                  'const found = search({query: "beta", path: "note.txt", caseSensitive: true}); if (found.data.matches.length !== 1) throw new Error("Expected one raw match"); const doc = open("note.txt"); doc.replace(doc.find("beta"), "BETA"); apply();',
               },
             }),
           ],
@@ -172,7 +222,7 @@ test("Apply creates an empty file rather than treating it as an unchanged file",
             toolCall({
               id: "empty",
               name: "apply",
-              arguments: { source: 'await write({path:"empty.txt",content:""});' },
+              arguments: { source: 'createFile("empty.txt", ""); apply();' },
             }),
           ],
           { stopReason: "toolUse" },
@@ -204,7 +254,7 @@ test("Apply returns structured candidates after ambiguous text selection", async
               name: "apply",
               arguments: {
                 source:
-                  'let recovered = false; try { await replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { const recovery = error.details.recoveries[0]; if(recovery.candidates.length !== 2) throw new Error("Expected two candidates"); const doc = await read({path:recovery.path,offset:recovery.candidates[0].range.start.lineNumber,limit:1}); await replace({path:doc.source,start:doc.lines[0].anchors[0],text:"BETA"}); recovered = true; } if(!recovered) throw new Error("Expected ambiguity");',
+                  'const doc = open("note.txt"); let ambiguous = false; try { doc.find("beta"); } catch(error) { ambiguous = error.code === "AMBIGUOUS_MATCH"; } if(!ambiguous) throw new Error("Expected ambiguity"); doc.replace(doc.line(1), "BETA\\n"); apply();',
               },
             }),
           ],
@@ -241,7 +291,7 @@ test("Apply and standalone edits share the last read source", async () => {
               name: "apply",
               arguments: {
                 source:
-                  'await replace({start:"alpha",text:"beta"}); await write({path:"second.txt",content:"beta\\n"}); await read({path:"second.txt"});',
+                  'const note = open("note.txt"); note.replace(note.find("alpha"), "beta"); createFile("second.txt", "beta\\n"); apply(); read({path:"second.txt"});',
               },
             }),
           ],
@@ -269,7 +319,7 @@ test("Apply and standalone edits share the last read source", async () => {
   });
 });
 
-test("Apply composes copy move remove and insert with standalone undo", async () => {
+test("Apply composes guarded text selections with standalone undo", async () => {
   await withTempWorkspace(async (cwd) => {
     const run = await new PiIntegrationTest({
       testName: "apply-all-mutations",
@@ -286,7 +336,7 @@ test("Apply composes copy move remove and insert with standalone undo", async ()
               name: "apply",
               arguments: {
                 source:
-                  'await write({path:"source.txt",content:"a\\nb\\nc\\n"}); await write({path:"target.txt",content:"x\\n"}); await copy({path:"source.txt",start:"a",target:"target.txt",targetStart:"x"}); await move({path:"source.txt",start:"b",target:"target.txt",targetStart:"a"}); await remove({path:"source.txt",start:"a"}); await insert({path:"source.txt",anchor:"c",text:"d"});',
+                  'createFile("source.txt", "a\\nb\\nc\\n"); createFile("target.txt", "x\\n"); apply(); const source = open("source.txt"); const target = open("target.txt"); const a = source.line(1); const b = source.line(2); source.remove(a); source.remove(b); source.insertAfter(source.find("c"), "\\nd"); target.insertAfter(target.find("x"), "\\n" + a.text.trim() + "\\n" + b.text.trim()); apply();',
               },
             }),
           ],
@@ -309,7 +359,7 @@ test("Apply composes copy move remove and insert with standalone undo", async ()
       const execution = getToolExecution(run, id);
       expect(execution.isError, JSON.stringify(execution)).toBe(false);
     }
-    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("c\n");
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("a\nb\nc\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("x\na\nb\n");
   });
 });
@@ -402,7 +452,7 @@ test("Apply optional diagnostics do not reject directory listings", async () => 
   });
 });
 
-test("whole-file tools and Apply share file effects and overwrite refusals", async () => {
+test("copy, move, and delete handle whole files without separate tools", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "original.bin"), Buffer.from([0, 255, 10]));
     const run = await new PiIntegrationTest({
@@ -411,14 +461,14 @@ test("whole-file tools and Apply share file effects and overwrite refusals", asy
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply", "copy_file", "move_file", "delete_file"],
+      tools: ["apply", "copy", "move", "delete"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "file-copy",
-              name: "copy_file",
+              name: "copy",
               arguments: { path: "original.bin", target: "copy.bin" },
             }),
           ],
@@ -431,7 +481,7 @@ test("whole-file tools and Apply share file effects and overwrite refusals", asy
               name: "apply",
               arguments: {
                 source:
-                  'let refused=false; try { copy_file({path:"original.bin",target:"copy.bin"}); } catch(e) { refused=e.code==="EEXIST"; } if(!refused) throw new Error("Expected refusal"); move_file({path:"copy.bin",target:"moved.bin"}); copy_file({path:"moved.bin",target:"last.bin"}); delete_file({path:"moved.bin"});',
+                  'moveFile("copy.bin", "moved.bin"); copyFile("moved.bin", "last.bin"); deleteFile("moved.bin"); apply();',
               },
             }),
           ],
@@ -441,7 +491,7 @@ test("whole-file tools and Apply share file effects and overwrite refusals", asy
           [
             toolCall({
               id: "file-move",
-              name: "move_file",
+              name: "move",
               arguments: { path: "last.bin", target: "final.bin" },
             }),
           ],
@@ -451,7 +501,7 @@ test("whole-file tools and Apply share file effects and overwrite refusals", asy
           [
             toolCall({
               id: "file-delete",
-              name: "delete_file",
+              name: "delete",
               arguments: { path: "original.bin" },
             }),
           ],
@@ -460,14 +510,85 @@ test("whole-file tools and Apply share file effects and overwrite refusals", asy
         assistantMessage([text("Done")]),
       ],
     }).run("Copy, move and delete files through both interfaces");
-    for (const id of ["file-copy", "file-apply", "file-move", "file-delete"])
-      expect(getToolExecution(run, id).isError).toBe(false);
+    for (const id of ["file-copy", "file-apply", "file-move", "file-delete"]) {
+      const execution = getToolExecution(run, id);
+      expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    }
     expect(await readFile(path.join(cwd, "final.bin"))).toEqual(Buffer.from([0, 255, 10]));
     for (const file of ["original.bin", "copy.bin", "moved.bin", "last.bin"])
       await expect(readFile(path.join(cwd, file))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
+test("Apply rejects overlapping selections without changing the file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha beta\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-overlap-preflight",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "overlap",
+              name: "apply",
+              arguments: {
+                source:
+                  'const doc = open("note.txt"); doc.replace(doc.line(1), "line\\n"); doc.replace(doc.find("beta"), "BETA"); let refused = false; try { apply(); } catch (error) { refused = error.code === "INVALID_TRANSACTION"; } if (!refused) throw new Error("Overlap accepted");',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Reject overlapping snapshot selections before writing");
+    const execution = getToolExecution(run, "overlap");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha beta\n");
+  });
+});
+test("Apply restores earlier file effects when a later operation fails", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "first.bin"), Buffer.from([1, 2, 3]));
+    await writeFile(path.join(cwd, "second.bin"), Buffer.from([4, 5, 6]));
+    await writeFile(path.join(cwd, "note.txt"), "before\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-file-rollback",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "rollback",
+              name: "apply",
+              arguments: {
+                source:
+                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); copyFile("first.bin", "blocker"); moveFile("second.bin", "blocker/child"); try { apply(); } catch (error) { if (error.code !== "TRANSACTION_FAILED" || error.details.effect !== "rolled-back") throw error; result(error.details); }',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Rollback a transaction after a later filesystem operation fails");
+    const execution = getToolExecution(run, "rollback");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "first.bin"))).toEqual(Buffer.from([1, 2, 3]));
+    expect(await readFile(path.join(cwd, "second.bin"))).toEqual(Buffer.from([4, 5, 6]));
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("before\n");
+    await expect(readFile(path.join(cwd, "blocker"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
 test("diff compares read sources and windows without editing either side", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "before.txt"), "alpha\nbeta\n");
@@ -633,82 +754,5 @@ test("raw reads expose original bytes in standalone and Apply without text conve
       totalBytes: 8,
     });
     expect(await readFile(path.join(cwd, "binary.bin"))).toEqual(bytes);
-  });
-});
-
-test("Apply shares stage unstage and undo with the Git changes module", async () => {
-  await withTempWorkspace(async (cwd) => {
-    const git = (...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
-    git("init", "-q");
-    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
-    git("add", "note.txt");
-    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture");
-    const source = `replace({path:"note.txt",start:"beta",text:"BETA"});
-      const doc = read({path:"note.txt",views:["changes"]});
-      const anchor = JSON.stringify(doc).match(/CHANGE#[0-9A-F]+/)[0];
-      const staged = stage({file:"note.txt",change:anchor});
-      if(staged.state !== "staged") throw new Error("not staged");
-      const unstaged = unstage({file:"note.txt",change:anchor});
-      if(unstaged.state !== "unstaged") throw new Error("not unstaged");
-      undo({file:"note.txt",change:"last"});
-      if(read({path:"note.txt"}).content !== ${JSON.stringify("alpha\nbeta\n")}) throw new Error("undo failed");
-      result({staged:staged.state,unstaged:unstaged.state});`;
-    const run = await new PiIntegrationTest({
-      testName: "apply-git-operations",
-      rawMode: false,
-      artifactsDir: testArtifactsDir(import.meta.filename),
-      cwd,
-      environment: { IDE_HISTORY_EXPANDED: "0" },
-      extensions: [
-        path.resolve("src/pi-agent-ide.ts"),
-        path.resolve("tests/integration/fixtures/restore-tool-history.ts"),
-      ],
-      tools: ["apply"],
-      timeoutMs: 120_000,
-      conversation: [
-        assistantMessage([toolCall({ id: "git-ops", name: "apply", arguments: { source } })], {
-          stopReason: "toolUse",
-        }),
-        assistantMessage([text("Done")]),
-      ],
-    }).run("Edit, stage, unstage and undo through Apply");
-    const execution = getToolExecution(run, "git-ops");
-    expect(execution.isError, JSON.stringify(execution)).toBe(false);
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\n");
-    expect(git("diff", "--cached")).toBe("");
-    expect(git("diff")).toBe("");
-  });
-});
-
-test("Apply keeps an index change when later script code fails", async () => {
-  await withTempWorkspace(async (cwd) => {
-    const git = (...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });
-    git("init", "-q");
-    await writeFile(path.join(cwd, "note.txt"), "base\n");
-    git("add", "note.txt");
-    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture");
-    const source = `replace({path:"note.txt",start:"base",text:"changed"});
-      const doc=read({path:"note.txt",views:["changes"]});
-      const change=JSON.stringify(doc).match(/CHANGE#[0-9A-F]+/)[0];
-      let caught=false; try { stage({file:"note.txt",change:"wrong"}); } catch(e) {caught=e.code==="INVALID_ARGUMENTS";}
-      if(!caught) throw new Error("expected validation");
-      stage({file:"note.txt",change});
-      throw new Error("later script failure");`;
-    const run = await new PiIntegrationTest({
-      testName: "apply-index-retained",
-      artifactsDir: testArtifactsDir(import.meta.filename),
-      cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply"],
-      conversation: [
-        assistantMessage([toolCall({ id: "retained", name: "apply", arguments: { source } })], {
-          stopReason: "toolUse",
-        }),
-        assistantMessage([text("Done")]),
-      ],
-    }).run("Keep a completed stage when later code fails");
-    expect(getToolExecution(run, "retained").isError).toBe(true);
-    expect(git("show", ":note.txt")).toBe("changed\n");
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("changed\n");
   });
 });

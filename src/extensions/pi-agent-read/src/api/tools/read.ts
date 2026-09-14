@@ -53,9 +53,14 @@ export interface ReadFailure {
 }
 
 export type ReadResultRenderer = NonNullable<ToolDefinition["renderResult"]>;
+export type ReadCallRenderer = NonNullable<ToolDefinition["renderCall"]>;
 
 export interface ResourceResolverRegistration {
   readonly resolver: ResourceResolver;
+  /** Selects a resolver-specific call header before resource resolution. */
+  readonly matchesCall?: (source: string) => boolean;
+  /** Renders only the read call header; result rendering remains independent. */
+  readonly renderCall?: ReadCallRenderer;
   readonly priority?: number;
   readonly renderResult?: ReadResultRenderer;
   readonly preserveTruncatedOutput?: boolean;
@@ -247,6 +252,26 @@ export type ReadOutputReducer = (
   context: ResourceResolverContext,
   budget: ReadOutputBudget,
 ) => Promise<ReadToolResult | undefined>;
+/** A resolved Resource access check that runs before Resource.read(). */
+export interface ReadResourceGuardEvent {
+  readonly requestedSource: string;
+  readonly resourceSource: string;
+  readonly resolvedBy: string;
+  readonly cwd: string;
+  readonly request: ReadRequest;
+  readonly audience: "agent" | "script";
+  readonly signal?: AbortSignal;
+}
+export type ReadResourceGuardOutcome =
+  | { readonly kind: "accepted" }
+  | { readonly kind: "rejected"; readonly reason: string };
+export interface ReadResourceGuardRegistration {
+  readonly id: string;
+  readonly guard: (
+    event: ReadResourceGuardEvent,
+  ) => ReadResourceGuardOutcome | Promise<ReadResourceGuardOutcome>;
+}
+
 export interface ReadToolPluginApi {
   /** Registers a format-aware reducer shared by read and composed output. */
   addOutputReducer(reducer: ReadOutputReducer): void;
@@ -267,6 +292,8 @@ export interface ReadToolPluginApi {
   addResolver(registration: ResourceResolverRegistration): void;
   addTargetResolver(registration: TextTargetResolverRegistration): void;
   addHandler(registration: ReadHandlerRegistration): void;
+  /** Registers a fail-closed check over resolved Resources before their content is read. */
+  addResourceGuard(registration: ReadResourceGuardRegistration): void;
   /** Registers a named view whose presenter runs when a request lists the view. */
   addView(registration: ReadViewRegistration): void;
   addFragmentResolver(registration: FragmentResolverRegistration): void;
@@ -279,6 +306,8 @@ export interface ReadToolPluginApi {
 const functionSchema = Type.Function([], Type.Unknown());
 const resourceResolverRegistrationSchema = Type.Object({
   resolver: Type.Unknown(),
+  matchesCall: Type.Optional(functionSchema),
+  renderCall: Type.Optional(functionSchema),
   priority: Type.Optional(Type.Number()),
   renderResult: Type.Optional(functionSchema),
   preserveTruncatedOutput: Type.Optional(Type.Boolean()),
@@ -342,6 +371,9 @@ export function isResourceResolverRegistration(
   return (
     registration.resolver.id !== "any" &&
     (!("priority" in registration) || typeof registration.priority === "number") &&
+    (!("matchesCall" in registration) || typeof registration.matchesCall === "function") &&
+    (!("renderCall" in registration) || typeof registration.renderCall === "function") &&
+    "matchesCall" in registration === "renderCall" in registration &&
     (!("renderResult" in registration) || typeof registration.renderResult === "function")
   );
 }

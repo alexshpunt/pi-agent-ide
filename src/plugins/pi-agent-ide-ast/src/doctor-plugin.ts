@@ -9,9 +9,38 @@ import { parseDocument } from "./ast/manager.js";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
 
+const unsupportedReasons: Readonly<Record<string, string>> = {
+  cmake: "no compatible Tree-sitter parser is packaged",
+  dockerfile: "no compatible Tree-sitter parser is packaged",
+  julia: "no compatible Tree-sitter parser is packaged",
+  powershell: "no compatible Tree-sitter parser is packaged",
+  r: "no compatible Tree-sitter parser is packaged",
+  svelte: "the container grammar is not available as an ast-grep language package",
+  terraform: "the HCL grammar is not available as an ast-grep language package",
+  vue: "the container grammar is not available as an ast-grep language package",
+  xml: "no compatible Tree-sitter parser is packaged",
+  zig: "no compatible Tree-sitter parser is packaged",
+};
+
 const supported = new Set([
   "c",
   "cpp",
+  "csharp",
+  "css",
+  "dart",
+  "elixir",
+  "go",
+  "html",
+  "java",
+  "kotlin",
+  "lua",
+  "markdown",
+  "php",
+  "ruby",
+  "scala",
+  "shell",
+  "sql",
+  "swift",
   "javascript",
   "typescript",
   "python",
@@ -59,9 +88,15 @@ export const astDoctorPlugin: DoctorPlugin = {
         const findings = [];
 
         for (const language of context.detectedLanguageIds) {
-          if (!supported.has(language)) {
+          const unsupportedReason = unsupportedReasons[language];
+          if (unsupportedReason !== undefined) {
+            findings.push({
+              status: "skip" as const,
+              message: `${language} AST is unavailable: ${unsupportedReason}`,
+            });
             continue;
           }
+          if (!supported.has(language)) continue;
 
           const file = context.files.find((candidate) => matchesLanguage(candidate, language));
 
@@ -118,6 +153,22 @@ function matchesLanguage(file: string, language: string): boolean {
   const extensions: Record<string, readonly string[]> = {
     c: [".c", ".h"],
     cpp: [".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"],
+    csharp: [".cs"],
+    css: [".css", ".scss", ".less"],
+    dart: [".dart"],
+    elixir: [".ex", ".exs"],
+    go: [".go"],
+    html: [".html", ".htm"],
+    java: [".java"],
+    kotlin: [".kt", ".kts"],
+    lua: [".lua"],
+    markdown: [".md", ".mdx"],
+    php: [".php"],
+    ruby: [".rb", ".rake"],
+    scala: [".scala", ".sc"],
+    shell: [".sh", ".bash"],
+    sql: [".sql"],
+    swift: [".swift"],
     javascript: [".js", ".jsx", ".mjs", ".cjs"],
     typescript: [".ts", ".tsx", ".mts", ".cts"],
     python: [".py", ".pyi"],

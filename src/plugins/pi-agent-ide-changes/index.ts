@@ -57,7 +57,9 @@ export default async function registerGitChanges(pi: ExtensionAPI): Promise<void
       api.onDidEdit((completion) => {
         transactions.observe(completion);
       });
-      api.addMutationTool(createUndoMutationTool(executor, transactions, indexQueue));
+      api.addMutationTool(
+        createUndoMutationTool(executor, transactions, indexQueue, api.restoreApplyUndo),
+      );
       for (const action of ["stage", "unstage"] as const) {
         const tool = createIndexChangeTool(action, executor, indexQueue);
         api.addScriptIndexOperation({

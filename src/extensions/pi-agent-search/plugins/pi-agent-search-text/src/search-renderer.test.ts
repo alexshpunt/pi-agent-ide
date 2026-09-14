@@ -58,6 +58,32 @@ test("wraps a full search match line with one aligned line-number gutter", () =>
   expect(plain.join("\n")).toContain("suffix");
 });
 
+test("keeps expanded compacted search results bounded", () => {
+  const details: SearchToolDetails = {
+    query: "needle",
+    matchCount: 100,
+    fileCount: 1,
+    complete: true,
+    files: [
+      {
+        path: "large.txt",
+        link: "file:///workspace/large.txt",
+        matchCount: 100,
+        uniqueLineCount: 2,
+        groups: [
+          { text: "same needle", matchCount: 80 },
+          { text: "other needle", matchCount: 20 },
+        ],
+        lines: [],
+      },
+    ],
+  };
+
+  const rendered = new SearchResultPanel(details, plainTheme, true).render(80);
+
+  expect(rendered).toHaveLength(6);
+  expect(rendered.every((line) => visibleWidth(line) === 80)).toBe(true);
+});
 test("caps compact search results by rendered height while preserving wrapping", () => {
   const text = `start ${"middle ".repeat(100)}END`;
   const details: SearchToolDetails = {

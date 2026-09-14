@@ -145,7 +145,39 @@ function isFailure(value: unknown): boolean {
 }
 function formatError(error: unknown): string {
   const failure = serializeApplyError(error);
-  return `${failure.code}: ${failure.message}`;
+  return formatApplyFailure(failure.code, failure.message);
+}
+
+function formatApplyFailure(code: string, message: string): string {
+  const guidance: Readonly<Record<string, string>> = {
+    NOT_FOUND:
+      "The requested text or selection was not found. Read the current file and select existing text.",
+    AMBIGUOUS_MATCH:
+      "The selection matched more than once. Use a larger unique fragment or findAll().",
+    STALE_EDITOR:
+      "This editor handle was already committed. Open the file again before staging more changes.",
+    STALE_SELECTION:
+      "The search selection no longer matches the file. Search again and use the fresh match.",
+    INVALID_SELECTION:
+      "The selected line or range is invalid. Read the file and select a range inside its current bounds.",
+    STALE_SNAPSHOT:
+      "A touched file changed after it was opened. Open it again and rebuild the transaction.",
+    INVALID_TRANSACTION:
+      "The staged operations conflict or overlap. Build non-overlapping selections from the original snapshots.",
+    TRANSACTION_FAILED:
+      "The commit failed after it started. Check the reported rollback state before retrying.",
+    EEXIST: "The destination already exists. Choose another path or explicitly enable overwrite.",
+    ENOENT: "A source path does not exist. Check the path and retry.",
+    RUN_PARSE_ERROR:
+      "The Apply JavaScript could not be parsed. Fix the reported syntax and run it again.",
+    RUN_RUNTIME_ERROR:
+      "The Apply JavaScript failed. Fix the reported operation or API usage and run it again.",
+  };
+  const hint = guidance[code];
+  return hint === undefined
+    ? `${code}: ${message}`
+    : `${code}: ${message}
+${hint}`;
 }
 
 function renderValue(value: unknown): Content {
@@ -206,11 +238,8 @@ function asReadResult(value: unknown): ReadToolResult | undefined {
 
 function formatReceiptError(value: unknown): string {
   if (value === null || typeof value !== "object") return String(value);
-  return [
-    "source" in value ? String(value.source) : undefined,
-    "code" in value ? String(value.code) : undefined,
-    "message" in value ? String(value.message) : undefined,
-  ]
-    .filter(Boolean)
-    .join(": ");
+  const source = "source" in value ? String(value.source) : undefined;
+  const code = "code" in value ? String(value.code) : "OPERATION_FAILED";
+  const message = "message" in value ? String(value.message) : "The operation failed.";
+  return [source, formatApplyFailure(code, message)].filter(Boolean).join(": ");
 }

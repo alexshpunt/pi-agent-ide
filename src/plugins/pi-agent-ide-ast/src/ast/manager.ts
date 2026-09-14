@@ -5,6 +5,9 @@ import path from "node:path";
 import { TextAnchor } from "pi-agent-text";
 import * as WTS from "web-tree-sitter";
 
+import { parseNativeDocument } from "./native-parser.js";
+import type { SyntaxNode, SyntaxTree } from "./syntax-tree.js";
+
 export interface ScopeEntry {
   readonly name: string;
   readonly kind: string;
@@ -45,7 +48,9 @@ const loadedLanguages = new Map<string, Promise<WTS.Language>>();
 function grammarWasmPath(extension: string): string | undefined {
   switch (extension) {
     case ".ts":
-    case ".tsx": {
+    case ".tsx":
+    case ".mts":
+    case ".cts": {
       return "tree-sitter-typescript/tree-sitter-typescript.wasm";
     }
 
@@ -56,7 +61,8 @@ function grammarWasmPath(extension: string): string | undefined {
       return "tree-sitter-javascript/tree-sitter-javascript.wasm";
     }
 
-    case ".py": {
+    case ".py":
+    case ".pyi": {
       return "tree-sitter-python/tree-sitter-python.wasm";
     }
 
@@ -123,19 +129,21 @@ export async function parseDocument(
   filePath: string,
   cwd: string,
   lines: readonly string[],
-): Promise<WTS.Tree | undefined> {
+): Promise<SyntaxTree | undefined> {
   if (lines.length === 0) {
     return undefined;
   }
 
   const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
-  const parser = await ensureParser(path.extname(absolutePath).toLowerCase());
+  const extension = path.extname(absolutePath).toLowerCase();
+  const source = lines.join("\n");
+  const parser = await ensureParser(extension);
 
-  if (!parser) {
-    return undefined;
+  if (parser) {
+    return parser.parse(source) ?? undefined;
   }
 
-  return parser.parse(lines.join("\n")) ?? undefined;
+  return parseNativeDocument(extension, source);
 }
 
 function hashScope(lines: readonly string[], startLine: number, endLine: number): string {
@@ -192,7 +200,7 @@ export class AstScopeManager {
   }
 
   private collectCandidates(
-    node: WTS.Node,
+    node: SyntaxNode,
     candidates: ScopeCandidate[],
     depth = 0,
     isBodyChild = false,

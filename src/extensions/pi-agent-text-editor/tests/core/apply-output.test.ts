@@ -16,6 +16,28 @@ test("small native results stay inline without creating a temporary resource", a
   expect(output.content).toContainEqual(image);
 });
 
+test("Apply errors explain how to recover without hiding the structured code", async () => {
+  const results = new ApplyResults();
+  const error = Object.assign(new Error("Expected exactly one match, found 2"), {
+    code: "AMBIGUOUS_MATCH",
+  });
+  const output = await renderApplyOutput(
+    results,
+    {
+      async saveTemporary() {
+        throw new Error("Unexpected overflow");
+      },
+    },
+    error,
+  );
+  const shown = output.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n");
+  expect(shown).toContain("AMBIGUOUS_MATCH: Expected exactly one match, found 2");
+  expect(shown).toContain("Use a larger unique fragment or findAll()");
+});
+
 test("overflow returns a bounded summary and preserves complete output", async () => {
   const results = new ApplyResults();
   const text = "row\n".repeat(DEFAULT_MAX_LINES + 10);

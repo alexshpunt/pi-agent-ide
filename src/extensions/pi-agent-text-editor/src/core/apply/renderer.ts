@@ -1,7 +1,7 @@
 import { isDiffOutcome, diffPresentation } from "#src/core/diff-tool.js";
 import { createApplySourceProjection, type ApplyCallPreview } from "./mixed-source.js";
 import { isFileOperationResult, formatFileOperation } from "#src/core/file-operations.js";
-import { createReadResultRenderer } from "pi-agent-read/api/rendering";
+import { COMPACT_READ_ROWS, createReadResultRenderer } from "pi-agent-read/api/rendering";
 import type { ReadToolResult } from "pi-agent-read/api/tools/read";
 import { Text, type Component } from "@earendil-works/pi-tui";
 import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
@@ -46,18 +46,20 @@ export function createApplyDisplay(
     return {
       comparisons,
       cwd,
-      blocks: output.content
-        .filter((block) => !diffBlocks.has(block))
-        .flatMap((block) =>
-          block.type === "text"
-            ? [
-                {
-                  text: block.text,
-                  read: reads.find((read) => read.content.includes(block)),
-                },
-              ]
-            : [],
-        ),
+      blocks: [
+        ...output.content
+          .filter((block) => !diffBlocks.has(block))
+          .flatMap((block) =>
+            block.type === "text"
+              ? [
+                  {
+                    text: redactApplyReceipts(block.text),
+                    read: reads.find((read) => read.content.includes(block)),
+                  },
+                ]
+              : [],
+          ),
+      ],
     };
   }
   const mutations = finalApplyMutations(results);
@@ -78,12 +80,13 @@ export function createApplyDisplay(
           );
         return [
           {
-            text:
+            text: redactApplyReceipts(
               typeof entry.value === "string"
                 ? entry.value
                 : entry.value === undefined
                   ? "undefined"
                   : JSON.stringify(entry.value, null, 2),
+            ),
           },
         ];
       }),
@@ -202,7 +205,7 @@ export function createApplyCallRenderer(
         return applyFrameRows(
           state.codeView || context.expanded
             ? (state.displaySource ?? source)
-            : projectSource(state.displaySource ?? source),
+            : compactApplyPreview(projectSource(state.displaySource ?? source)),
           theme,
           width,
           "call",
@@ -212,6 +215,19 @@ export function createApplyCallRenderer(
       },
     };
   };
+}
+
+/** Keep a useful source head and tail within the compact read row budget. */
+export function compactApplyPreview(source: string, limit = COMPACT_READ_ROWS): string {
+  const lines = source.split("\n");
+  if (lines.length <= limit) return source;
+  const visible = Math.max(2, limit - 1);
+  const head = Math.ceil(visible / 2);
+  const tail = Math.floor(visible / 2);
+  const omitted = lines.length - head - tail;
+  return [...lines.slice(0, head), `… ${omitted} lines omitted …`, ...lines.slice(-tail)].join(
+    "\n",
+  );
 }
 
 export const renderApplyCall = createApplyCallRenderer();
@@ -311,6 +327,26 @@ export function createApplyResultRenderer(
       },
     };
   };
+}
+
+function redactApplyReceipts(text: string): string {
+  if (/^(?:Undo transaction:|Undo available)/u.test(text.trim())) return "";
+  try {
+    const value: unknown = JSON.parse(text);
+    return JSON.stringify(redactTransactionKeys(value), null, 2);
+  } catch {
+    return text.replace(/APPLY#[0-9A-F]{12}/gu, "Apply transaction");
+  }
+}
+
+function redactTransactionKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactTransactionKeys);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "transaction")
+      .map(([key, item]) => [key, redactTransactionKeys(item)]),
+  );
 }
 
 function jsonDetails(text: string): { source?: string } {

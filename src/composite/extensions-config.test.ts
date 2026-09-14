@@ -76,11 +76,11 @@ describe("Pi Agent IDE extension config", () => {
       globalPath: path.join(directory, "global", "extensions.json"),
       projectPath: path.join(directory, "project", "extensions.json"),
     };
-    await writeJson(paths.globalPath, { preferences: { "terminal.activity": "compact" } });
-    await writeJson(paths.projectPath, { preferences: { "terminal.activity": "off" } });
+    await writeJson(paths.globalPath, { preferences: { "processes.activity": "compact" } });
+    await writeJson(paths.projectPath, { preferences: { "processes.activity": "off" } });
 
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toMatchObject({
-      preferences: { "terminal.activity": "off" },
+      preferences: { "processes.activity": "off" },
     });
   });
 

@@ -25,16 +25,16 @@ The current focus is measurement. The project is being compared with vanilla Pi 
 
 Pi Agent IDE gives the agent a focused set of tools that work together:
 
-- `read` handles text files, original bytes, web pages, images, PDFs, code views, and diagnostics;
-- `run` starts synchronous or background commands in the user's configured shell; returned `shell:` sessions can be read, controlled, deleted, and viewed in `/terminals`;
+- `read` handles text files, original bytes, web pages, images, PDFs, code views, diagnostics, terminal output, and debugger state;
+- `bash` on Unix-like systems and `powershell` on Windows run commands in the user's configured shell. Long-running and interactive commands remain available through `shell:` resources, including across extension reloads;
 - `search` finds files, text, symbols, and syntax-tree patterns;
-- `write`, `replace`, `insert`, `delete`, `copy`, and `move` edit text with exact matches, line anchors, search results, AST matches, and language-server symbols;
-- `diff` compares readable sources, while `copy_file`, `move_file`, and `delete_file` handle whole files;
-- `apply` combines reads, searches, diffs, edits, whole-file operations, and Git change operations in one JavaScript call;
+- `write`, `replace`, `insert`, `delete`, `copy`, and `move` edit text with exact matches, line anchors, search results, AST matches, and language-server symbols. `copy`, `move`, and `delete` also handle whole files;
+- `apply` opens immutable file snapshots, stages several text and whole-file changes in JavaScript, validates them together, and commits them as one guarded transaction. A successful transaction returns a short-lived receipt that the agent can pass to `undo`;
+- `debug` creates addressable Debug Adapter Protocol sessions. Agents can set breakpoints, inspect stopped source, step through code, and keep active `debug:` sessions across extension reloads;
 - formatting and diagnostics run after edits and stay local to the project that owns each file;
-- `/pi-agent-ide-doctor` checks the languages and tools available in the current project.
+- `/agent-ide-processes` shows terminal and debugger activity, while `/pi-agent-ide-doctor` checks the languages and tools available in the current project.
 
-The tools share the same resources and safeguards. An `apply` script can reuse a search result or anchor from an earlier call, and completed edits remain visible if a later call fails. Formatting, diagnostics, previews, and safe undo work the same way for standalone tools and composed operations.
+The tools share resources and safeguards. Reads and searches produce references that editing tools can reuse. Apply validates staged changes before its first write, attempts rollback if a later write fails, and reports whether recovery completed. Formatting, diagnostics, previews, and undo use the same underlying editing pipeline.
 
 The npm package loads as one Pi extension. Its built-in modules can be enabled, disabled, replaced, or extended through versioned plugin protocols.
 

@@ -9,6 +9,8 @@ export interface TextMutationEdit {
 }
 
 export interface TextMutation {
+  /** Non-file action completed through this mutation invocation. */
+  readonly semanticAction?: TextSemanticMutationResult;
   readonly edits: ReadonlyMap<string, TextMutationEdit>;
   readonly afterWrite?: () => void | Promise<void>;
 }
@@ -56,6 +58,40 @@ export function isMutationAnchorValue(
   );
 }
 
+/** A non-file effect performed through an existing text mutation tool. */
+export interface TextSemanticMutationResult {
+  /** Addressable resource created or changed by the action. */
+  readonly source: string;
+  /** Compact agent-facing outcome. */
+  readonly summary: string;
+  /** Structured receipt shared by standalone tools and Apply. */
+  readonly data: Readonly<Record<string, unknown>>;
+}
+
+/** Handles one tool invocation after its current source and anchors are available. */
+export interface TextSemanticMutationHandler {
+  /** Select invocations owned by this handler without performing side effects. */
+  readonly matches: (input: unknown) => boolean;
+  /** Perform the non-file effect against the fresh source snapshot. */
+  readonly execute: (
+    context: TextMutationContext,
+    input: unknown,
+  ) => TextSemanticMutationResult | Promise<TextSemanticMutationResult>;
+}
+export interface DirectTextMutationContext {
+  readonly cwd: string;
+  readonly signal?: AbortSignal;
+}
+
+/** A mutation mode that owns its complete multi-resource transaction. */
+export interface DirectTextMutationHandler {
+  readonly matches: (input: unknown) => boolean;
+  readonly execute: (
+    context: DirectTextMutationContext,
+    input: unknown,
+  ) => TextSemanticMutationResult | Promise<TextSemanticMutationResult>;
+}
+
 export type TextMutationIntent = Exclude<TextEditIntent, "mixed">;
 
 export interface TextMutationToolRegistration<TParameters extends TSchema = TSchema> {
@@ -71,6 +107,10 @@ export interface TextMutationToolRegistration<TParameters extends TSchema = TSch
   readonly source: TextMutationSourceDescriptor;
   readonly anchors?: readonly TextMutationAnchorField[];
   readonly pair?: readonly [string, string];
+  /** Execute a host transaction without opening one primary text resource. */
+  readonly direct?: DirectTextMutationHandler;
+  /** Whole-file operation used when the invocation contains no text selectors. */
+  readonly wholeFileOperation?: "copy" | "move" | "delete";
   readonly mutate: (
     context: TextMutationContext,
     parameters: Static<TParameters>,
@@ -88,6 +128,13 @@ export function assertTextMutationToolRegistration(value: AnyTextMutationToolReg
 
   if (typeof value.description !== "string" || typeof value.mutate !== "function") {
     throw new TypeError(`Mutation tool ${value.name} has an invalid description or operation`);
+  }
+
+  if (
+    value.direct !== undefined &&
+    (typeof value.direct.matches !== "function" || typeof value.direct.execute !== "function")
+  ) {
+    throw new TypeError(`Mutation tool ${value.name} has an invalid direct operation`);
   }
 
   const intent: unknown = (value as { readonly intent?: unknown }).intent;

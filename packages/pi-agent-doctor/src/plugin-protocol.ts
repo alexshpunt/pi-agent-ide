@@ -56,6 +56,11 @@ export interface DoctorToolSelection {
 /** One concrete setup problem that warrants user attention. */
 export interface DoctorSetupAction {
   readonly id: string;
+  readonly category?:
+    | "adapter-startup"
+    | "missing-adapter"
+    | "missing-runtime"
+    | "unsupported-platform";
   readonly message: string;
 }
 

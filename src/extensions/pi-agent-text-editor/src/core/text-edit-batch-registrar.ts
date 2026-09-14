@@ -222,6 +222,16 @@ export async function executeRegisteredTextBatch(
         const mutations: PlannedTextBatch["mutations"][number][] = [];
         const failures: PlannedTextBatch["failures"][number][] = [];
         const changes = new Map<string, TextChange[]>();
+        if (parameters.expectedContent !== undefined) {
+          for (const [source, expected] of parameters.expectedContent) {
+            if (!texts.has(source)) {
+              throw new Error(`Snapshot source ${source} is not part of this edit batch.`);
+            }
+            if (texts.get(source) !== expected) {
+              throw new Error(`Snapshot source ${source} changed before the edit batch.`);
+            }
+          }
+        }
 
         for (const item of prepared) {
           const sourceFor = (field: string): string => {
@@ -336,6 +346,7 @@ export async function executeRegisteredTextBatch(
               changes.set(source, [...(changes.get(source) ?? []), ...edit.changes]);
             }
           } catch (error) {
+            if (parameters.failureMode === "abort") throw error;
             failures.push({
               callId: item.callId,
               source: item.sources.get(item.registration.source.field) ?? "",

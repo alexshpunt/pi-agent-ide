@@ -75,6 +75,7 @@ import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
 import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception";
 import type { Static, TSchema } from "typebox";
 import type { ScriptMutationOutcome } from "#src/core/apply/mutation-outcome.js";
+import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
 
 export function createTextTool<TParameters extends TSchema>(
   core: TextEditorCore,
@@ -105,6 +106,7 @@ export function createTextTool<TParameters extends TSchema>(
           definition.source.inherited ? definition.source.field : undefined,
           getLastResolvedSource(),
           definition.anchors ?? [],
+          definition.wholeFileOperation !== undefined,
         ),
       ...(renderer?.renderShell !== undefined && { renderShell: renderer.renderShell }),
       ...(initialRenderCall !== undefined && {
@@ -118,11 +120,41 @@ export function createTextTool<TParameters extends TSchema>(
           ),
       }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
+        const input = asMutationParameters<TParameters>(parameters);
+        if (definition.direct?.matches(input) === true) {
+          try {
+            const action = await definition.direct.execute(
+              { cwd: context.cwd, ...(signal !== undefined && { signal }) },
+              input,
+            );
+            return {
+              content: [{ type: "text", text: action.summary }],
+              details: {
+                results: [],
+                metadata: { semanticAction: { ...action.data, source: action.source } },
+              },
+            };
+          } catch (error) {
+            const code =
+              error !== null && typeof error === "object" && "code" in error
+                ? String(error.code)
+                : "DIRECT_MUTATION_FAILED";
+            return failureToolResult(
+              "transaction" in input ? String(input.transaction) : "",
+              code,
+              error instanceof Error ? error.message : String(error),
+              "not-applied",
+            );
+          }
+        }
+        if (isWholeFileInvocation(definition.wholeFileOperation, input)) {
+          return executeWholeFileTool(core, definition.wholeFileOperation, input, signal, context);
+        }
         const directExecute = () =>
           executeTextMutation(
             core,
             definition,
-            asMutationParameters<TParameters>(parameters),
+            input,
             signal,
             context,
             (field, state) =>
@@ -142,7 +174,9 @@ export function createTextTool<TParameters extends TSchema>(
       return [
         definition.description,
         definition.source.inherited
-          ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
+          ? definition.wholeFileOperation === undefined
+            ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
+            : `When ${definition.source.field} is omitted, the tool can reuse the file identified by a supplied text anchor.`
           : "",
         pluginPromptGuideline() ?? "",
       ]
@@ -159,6 +193,7 @@ function prepareGuardedArguments<TParameters extends TSchema>(
   sourceField: string | undefined,
   lastResolvedSource: string | undefined,
   anchorFields: NonNullable<TextMutationToolRegistration["anchors"]>,
+  hasWholeFileMode: boolean,
 ): ReturnType<
   NonNullable<ToolDefinition<TParameters, FileMutationBatchResult>["prepareArguments"]>
 > {
@@ -177,7 +212,8 @@ function prepareGuardedArguments<TParameters extends TSchema>(
     sourceField !== undefined &&
     !(sourceField in prepared) &&
     lastResolvedSource !== undefined &&
-    !hasExplicitAnchor
+    !hasExplicitAnchor &&
+    !hasWholeFileMode
   ) {
     prepared[sourceField] = lastResolvedSource;
   }
@@ -696,11 +732,14 @@ export async function previewTextMutation(
 
   try {
     const sources = await resolveMutationSources(core, definition, request.input, request);
+    const semanticHandler = core.getSemanticMutationHandler(definition.name, request.input);
     return await core.previewTexts(
       sources.resources.map((source) => ({
         source,
         read: true,
-        ...(definition.name === "write" && { allowReadFailure: true }),
+        ...(semanticHandler === undefined
+          ? definition.name === "write" && { allowReadFailure: true }
+          : { requireWrite: false }),
       })),
       { cwd: request.cwd, ...(request.signal !== undefined && { signal: request.signal }) },
       async (texts, resolveAnchor) => {
@@ -713,6 +752,9 @@ export async function previewTextMutation(
           resolveAnchor,
         );
         await preflightMutationAnchors(definition, request.input, mutationContext);
+        if (semanticHandler !== undefined) {
+          return { changes: new Map(), result: { edits: new Map() } };
+        }
         const mutation = await definition.mutate(mutationContext, request.input);
 
         return {
@@ -824,6 +866,52 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
           state,
           lastResolvedSource,
         );
+        const semanticHandler = core.getSemanticMutationHandler(definition.name, state.input);
+        if (semanticHandler !== undefined) {
+          return await core.editTexts(
+            sources.resources.map((resourceSource) => ({
+              source: resourceSource,
+              read: true,
+              requireWrite: false,
+            })),
+            {
+              cwd: state.cwd,
+              intent: definition.intent ?? "edit",
+              ...(state.signal !== undefined && { signal: state.signal }),
+            },
+            async (texts, resolveAnchor) => {
+              for (const target of sources.targets) {
+                if (
+                  target.expectedContent !== undefined &&
+                  texts.get(target.source) !== target.expectedContent
+                ) {
+                  throw new Error(
+                    "The selected source changed before the semantic action. Resolve it again.",
+                  );
+                }
+              }
+              const mutationContext = createMutationContext(
+                definition,
+                state.input,
+                state,
+                sources,
+                texts,
+                resolveAnchor,
+                publishAnchorRenderState,
+              );
+              await preflightMutationAnchors(definition, state.input, mutationContext);
+              const semanticAction = await semanticHandler.execute(mutationContext, state.input);
+              return {
+                changes: new Map(),
+                result: withResultPresentations(
+                  { edits: new Map(), semanticAction },
+                  mutationContext,
+                ),
+                resourceEffect: true,
+              };
+            },
+          );
+        }
         const outcome = await core.editTexts(
           sources.resources.map((resourceSource) => ({
             source: resourceSource,
@@ -915,6 +1003,7 @@ export async function executeScriptMutation<TParameters extends TSchema>(
     definition.source.inherited ? definition.source.field : undefined,
     lastResolvedSource,
     definition.anchors ?? [],
+    definition.wholeFileOperation !== undefined,
   );
   if (!Value.Check(definition.parameters, parameters)) {
     throw Object.assign(new Error(`Invalid arguments for ${definition.name}`), {
@@ -978,6 +1067,22 @@ export async function executeScriptMutation<TParameters extends TSchema>(
       recoveries: await scriptAnchorRecoveries(outcome.failure.cause),
     };
   const mutation = outcome.result as ExecutedTextMutation;
+  if (mutation.semanticAction !== undefined) {
+    return {
+      operation: definition.name,
+      ok: true,
+      effect: "applied",
+      files: [],
+      completed: [mutation.semanticAction.source],
+      metadata: {
+        semanticAction: {
+          ...mutation.semanticAction.data,
+          source: mutation.semanticAction.source,
+        },
+      },
+      errors: [],
+    };
+  }
   const files = outcome.resources.flatMap((resource) => {
     const edit = mutation.edits.get(resource.source);
     if (edit === undefined) return [];
@@ -1175,6 +1280,20 @@ async function buildToolResult(
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
+  if (mutation.semanticAction !== undefined) {
+    return {
+      content: [{ type: "text", text: mutation.semanticAction.summary }],
+      details: {
+        results: [],
+        metadata: {
+          semanticAction: {
+            ...mutation.semanticAction.data,
+            source: mutation.semanticAction.source,
+          },
+        },
+      },
+    };
+  }
   const results = outcome.resources.flatMap((resource) => {
     const resultSource = resource.source;
     const edit = mutation.edits.get(resultSource);

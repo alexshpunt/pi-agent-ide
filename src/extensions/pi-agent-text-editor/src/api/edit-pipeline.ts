@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 
 import type { TextEditorToolId } from "#src/api/plugin-protocol.js";
+import type { TextSemanticMutationHandler } from "#src/api/mutation-tool.js";
 
 export type TextEditPipelineStage = "text-pre-edit" | "text-edit" | "text-post-edit";
 
@@ -43,6 +44,8 @@ export type TextEditHandlerRegistration =
   | { readonly stage: "text-post-edit"; readonly handler: TextEditHandler };
 
 export interface TextEditorToolPluginApi {
+  /** Handle selected invocations as anchored non-file effects before document writes. */
+  addSemanticHandler(handler: TextSemanticMutationHandler): void;
   addHandler(registration: TextEditHandlerRegistration): void;
   describe(description: string): void;
 }

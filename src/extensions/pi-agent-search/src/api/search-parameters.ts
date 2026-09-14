@@ -18,7 +18,11 @@ export const searchSchema = Type.Object(
     ),
     wholeWord: Type.Optional(Type.Boolean({ description: "Match complete words in local search" })),
     limit: Type.Optional(
-      Type.Integer({ minimum: 1, maximum: 1000, description: "Maximum results (default 100)" }),
+      Type.Integer({
+        minimum: 1,
+        maximum: 1000,
+        description: "Maximum detailed results returned to the agent (default 50)",
+      }),
     ),
   },
   { additionalProperties: false },

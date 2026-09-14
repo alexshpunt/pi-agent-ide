@@ -1,8 +1,12 @@
-import { open, stat } from "node:fs/promises";
+import { open, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { ReadRequest, ReadToolResult } from "#src/api/tools/read.js";
+import type {
+  ReadRequest,
+  ReadResourceGuardRegistration,
+  ReadToolResult,
+} from "#src/api/tools/read.js";
 import { failureResult } from "#src/core/tools/read/read-result.js";
 import {
   READ_OUTPUT_MAX_BYTES,
@@ -14,6 +18,7 @@ export async function readRaw(
   request: ReadRequest,
   context: { cwd: string; signal?: AbortSignal },
   audience: "agent" | "script",
+  guards: readonly { readonly registration: ReadResourceGuardRegistration }[] = [],
 ): Promise<ReadToolResult> {
   const requested = request.path ?? "";
   try {
@@ -28,9 +33,39 @@ export async function readRaw(
       throw new Error("Use an integer byte offset and a non-negative integer byte limit");
     const input = requested.slice(4);
     if (input.length === 0) throw new Error("Supply a local file after raw:");
-    const file = input.startsWith("file://")
+    const requestedFile = input.startsWith("file://")
       ? fileURLToPath(input)
       : path.resolve(context.cwd, input);
+    const file = await realpath(requestedFile);
+    const source = `raw:${file}`;
+    for (const { registration } of guards) {
+      try {
+        const outcome = await registration.guard({
+          requestedSource: requested,
+          resourceSource: source,
+          resolvedBy: "raw",
+          cwd: context.cwd,
+          request,
+          audience,
+          ...(context.signal !== undefined && { signal: context.signal }),
+        });
+        if (outcome.kind === "rejected")
+          return failureResult({
+            code: "READ_FAILED",
+            source,
+            resolverId: "raw",
+            message: `Read blocked by hook ${registration.id}: ${outcome.reason}`,
+          });
+      } catch (error) {
+        return failureResult({
+          code: "READ_FAILED",
+          source,
+          resolverId: "raw",
+          message: `Read blocked because hook ${registration.id} failed: ${error instanceof Error ? error.message : String(error)}`,
+          cause: error,
+        });
+      }
+    }
     context.signal?.throwIfAborted();
     if (!(await stat(file)).isFile()) throw new Error("Raw reads require a regular file");
     const handle = await open(file, "r");
@@ -58,7 +93,6 @@ export async function readRaw(
       }
       context.signal?.throwIfAborted();
       const bytes = buffer.subarray(0, count);
-      const source = `raw:${file}`;
       const nextOffset = start + count;
       const hasMore = nextOffset < stat.size;
       const header = `${source}\nBytes ${start}..${nextOffset} (end exclusive), ${stat.size} bytes total`;

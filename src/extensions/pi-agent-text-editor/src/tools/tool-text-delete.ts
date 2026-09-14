@@ -42,10 +42,11 @@ interface DeleteParameters {
 
 export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchema> = {
   name: "delete",
+  wholeFileOperation: "delete",
   description:
-    "Use delete to remove an existing text fragment or an inclusive range of whole lines. Select only the content to remove; surrounding text is kept.",
+    "Use delete to permanently delete one regular file when path is supplied without text selectors, or to remove selected text. Whole-file deletion rejects directories and symlinks.",
 
-  promptSnippet: "Make precise file edits by deleting text using exact matches or anchors",
+  promptSnippet: "Delete regular files, or delete selected text using exact matches or anchors",
   parameters: deleteSchema,
   source: { field: "path", inherited: true },
   anchors: [

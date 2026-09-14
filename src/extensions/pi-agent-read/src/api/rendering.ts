@@ -8,6 +8,6 @@ export interface ReadResultRendererOptions {
   readonly nativeResources?: boolean;
 }
 
-export { createReadResultRenderer } from "#src/core/tools/read/read-renderer.js";
+export { COMPACT_READ_ROWS, createReadResultRenderer } from "#src/core/tools/read/read-renderer.js";
 
 export type { ReadResultRenderer } from "#src/api/tools/read.js";

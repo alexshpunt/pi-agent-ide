@@ -5,6 +5,7 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.js";
+import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
 import { renderRunCall, renderRunResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 
 import { shellSyntaxGuidance } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
@@ -24,6 +25,14 @@ const runParameters = Type.Object(
     background: Type.Optional(
       Type.Boolean({
         description: "Return immediately while the terminal session continues. Defaults to false.",
+      }),
+    ),
+    timeoutSeconds: Type.Optional(
+      Type.Number({
+        minimum: 0.1,
+        maximum: 86_400,
+        description:
+          "Maximum foreground wait in seconds before returning the live session as background. Defaults to 60.",
       }),
     ),
     cwd: Type.Optional(
@@ -46,18 +55,19 @@ export function registerTerminalTools(
   pi: ExtensionAPI,
   manager: TerminalSessionManager,
   profile: ShellProfile,
-  ui: Pick<TerminalUi, "bind">,
+  ui: Pick<TerminalUi, "bind" | "notifyWaitTransition">,
 ): void {
+  const toolName = process.platform === "win32" ? "powershell" : "bash";
   pi.registerTool(
     defineTool<typeof runParameters, TerminalSessionSnapshot>({
-      name: "run",
-      label: `${profile.displayName} run`,
-      promptSnippet: `Run ${profile.displayName} commands in synchronous or background terminal sessions`,
+      name: toolName,
+      label: profile.displayName,
+      promptSnippet: `Execute ${profile.displayName} commands in synchronous or background terminal sessions`,
       promptGuidelines: [
         `Write commands for ${profile.displayName}; commands are not translated between shell languages.`,
-        "Use background for servers, watchers, long builds, and work that can finish while you continue. Use the returned shell: source with read, write, insert, and delete.",
+        `Use ${toolName} with background for servers, watchers, and long builds. Foreground waits become background after timeoutSeconds (60 by default), on a stable interactive prompt, or when the turn is aborted. A background session with no output for two minutes wakes an idle agent so it can be inspected. Sessions survive extension reloads and keep the same shell: source. Large output returns a bounded tail and a fullOutput file path. Use the returned shell: source with read, write, insert, and delete.`,
       ],
-      description: `Use run to execute a command in the user's configured ${profile.displayName} shell (${profile.executable}). Every call creates an addressable terminal session. Set background to true to continue without waiting; completion is delivered automatically and wakes the agent. ${shellSyntaxGuidance(profile)}`,
+      description: `Use ${toolName} to execute a command in the user's configured ${profile.displayName} shell (${profile.executable}). Every call creates an addressable terminal session. Set background to true to continue without waiting. A foreground wait automatically returns the live session as background on timeout, a stable interactive prompt, or turn abort; completion is delivered automatically and wakes the agent. Sessions survive extension reloads and keep the same shell: source. Output uses the shared Read limits, keeps the tail, and links a complete log file when truncated. ${shellSyntaxGuidance(profile)}`,
       parameters: runParameters,
       async execute(_toolCallId, input, signal, onUpdate, context) {
         ui.bind(context);
@@ -76,8 +86,12 @@ export function registerTerminalTools(
           return terminalResult(manager.snapshot(session));
         }
         if (session.status === "failed") return terminalResult(manager.snapshot(session));
-        const completed = await manager.wait(session.source, signal);
-        return terminalResult(manager.snapshot(completed));
+        const outcome = await manager.waitForForeground(session.source, {
+          signal,
+          timeoutMs: (input.timeoutSeconds ?? 60) * 1_000,
+        });
+        if (outcome.reason === "aborted") ui.notifyWaitTransition(outcome.session);
+        return terminalResult(manager.snapshot(outcome.session));
       },
       renderCall(args, theme) {
         const command = typeof args.command === "string" ? args.command : "";
@@ -97,32 +111,12 @@ export function registerTerminalTools(
 }
 
 function terminalResult(snapshot: TerminalSessionSnapshot) {
-  const excerpt = outputExcerpt(snapshot.output);
-  const lines = [
-    `session: ${snapshot.source}`,
-    `status: ${snapshot.status}`,
-    `shell: ${snapshot.shell}`,
-    `cwd: ${snapshot.cwd}`,
-    `elapsedMs: ${snapshot.elapsedMs}`,
-    snapshot.exitCode === undefined ? undefined : `exitCode: ${snapshot.exitCode}`,
-    snapshot.signal === undefined ? undefined : `signal: ${snapshot.signal}`,
-    snapshot.error === undefined ? undefined : `error: ${snapshot.error}`,
-    `outputRange: ${snapshot.outputStart}-${snapshot.outputEnd}`,
-    snapshot.truncated ? "output: truncated; use read for the retained log" : undefined,
-    excerpt.length === 0 ? "output: (empty)" : `output:\n${excerpt}`,
-  ].filter((line): line is string => line !== undefined);
   return {
-    content: [{ type: "text" as const, text: lines.join("\n") }],
+    content: [{ type: "text" as const, text: formatAgentTerminalSnapshot(snapshot) }],
     details: snapshot,
     isError: snapshot.status === "failed" || snapshot.status === "lost",
   };
 }
-
-function outputExcerpt(output: string): string {
-  const plain = stripVTControlCharacters(output).trimEnd();
-  return plain.length <= 8_000 ? plain : `[earlier output omitted]\n${plain.slice(-8_000)}`;
-}
-
 async function captureInitialBackgroundPreview(
   manager: TerminalSessionManager,
   session: ReturnType<TerminalSessionManager["start"]>,

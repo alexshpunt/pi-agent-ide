@@ -106,7 +106,7 @@ test.each([
               id: "format",
               name: "apply",
               arguments: {
-                source: 'write({path:"note.fixture",content:"value=2\\n"});',
+                source: 'createFile("note.fixture", "value=2\\n"); apply();',
               },
             }),
           ],
@@ -137,7 +137,8 @@ test.each([true, false])("Apply can be disabled independently: %s", async (disab
 export default function(pi) { pi.on("session_start", async () => {
   const names = pi.getAllTools().map(tool => tool.name);
   if (names.includes("apply") !== ${!disabled}) throw new Error("Wrong Apply registration");
-  for (const name of ["read", "search", "replace", "copy_file", "diff"]) if (!names.includes(name)) throw new Error("Missing standalone tool: " + name);
+  for (const name of ["read", "search", "replace", "copy", "move", "delete", "diff"]) if (!names.includes(name)) throw new Error("Missing standalone tool: " + name);
+  for (const name of ["copy_file", "move_file", "delete_file"]) if (names.includes(name)) throw new Error("Obsolete standalone tool: " + name);
   await writeFile(${JSON.stringify(path.join(cwd, "verified.txt"))}, "verified");
 }); }`,
     );

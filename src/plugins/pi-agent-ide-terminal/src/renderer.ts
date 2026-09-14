@@ -1,10 +1,12 @@
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 
+import { truncateLine } from "@earendil-works/pi-coding-agent";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { Text, type Component } from "@earendil-works/pi-tui";
 
 import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.js";
+import { terminalOutputTail } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
 import type {
   ShellProfile,
   TerminalSessionSnapshot,
@@ -12,6 +14,7 @@ import type {
 } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
 type TerminalTheme = Pick<Theme, "fg">;
+const TERMINAL_MAX_LINE_LENGTH = 500;
 
 /** Render a stable shell prompt for a run tool call. */
 export function renderRunCall(
@@ -54,18 +57,14 @@ export function renderTerminalAction(
     lines.push(...changedLines.map((line) => `  ${theme.fg("dim", line)}`));
   return new Text(lines.join("\n"), 0, 0);
 }
-/** Render a terminal result as a compact or expanded pseudo-terminal card. */
+/** Render a bounded pseudo-terminal card; complete output stays available through its log file. */
 export function renderTerminalResult(
   snapshot: Partial<TerminalSessionSnapshot>,
-  expanded: boolean,
+  _expanded: boolean,
   theme: TerminalTheme,
   action?: string,
 ): Component {
-  const lines = terminalCardLines(
-    snapshot,
-    expanded ? Number.POSITIVE_INFINITY : COMPACT_READ_ROWS,
-    theme,
-  );
+  const lines = terminalCardLines(snapshot, COMPACT_READ_ROWS, theme);
   if (action !== undefined) lines.splice(1, 1, theme.fg("accent", action));
   return new Text(lines.join("\n"), 0, 0);
 }
@@ -79,7 +78,7 @@ export function renderRunResult(
   if (expanded) return renderTerminalResult(snapshot, true, theme);
   const window = outputWindow(snapshot.output ?? "", COMPACT_READ_ROWS);
   const lines = [
-    ...(window.omitted > 0 ? [`  ${theme.fg("muted", `… ${window.omitted} earlier lines`)}`] : []),
+    ...(window.omission === undefined ? [] : [`  ${theme.fg("muted", window.omission)}`]),
     ...window.lines.map((line) => `  ${theme.fg("dim", line)}`),
   ];
   lines.push(statusLine(snapshot, (name, text) => theme.fg(name, text)));
@@ -117,55 +116,13 @@ export function terminalCardLines(
     `${theme.fg("accent", promptMarker(family))} ${snapshot.command ?? ""}`,
   ];
   const window = outputWindow(snapshot.output ?? "", outputLines);
-  if (window.omitted > 0) lines.push(`  ${theme.fg("muted", `… ${window.omitted} earlier lines`)}`);
+  if (window.omission !== undefined) lines.push(`  ${theme.fg("muted", window.omission)}`);
   if (window.lines.length > 0)
     lines.push(...window.lines.map((line) => `  ${theme.fg("dim", line)}`));
   lines.push(statusLine(snapshot, (name, text) => theme.fg(name, text)));
   return lines;
 }
 
-/** Render bordered mini-cards modeled after the Herdr subagent activity widget. */
-export function renderTerminalWidgetLines(
-  snapshots: readonly TerminalSessionSnapshot[],
-  width: number,
-  theme: TerminalTheme,
-): string[] {
-  if (snapshots.length === 0) return [];
-  const accent = (text: string): string => theme.fg("accent", text);
-  const lines = [borderTop("Terminals", `${snapshots.length} active`, width, accent)];
-  for (const snapshot of snapshots) {
-    const card = renderActiveTerminal(snapshot, theme).split("\n");
-    for (const line of card) lines.push(borderLine(` ${line} `, width, accent));
-    if (snapshot !== snapshots.at(-1)) lines.push(borderLine("", width, accent));
-  }
-  lines.push(borderBottom(width, accent));
-  return lines;
-}
-
-function borderTop(
-  title: string,
-  info: string,
-  width: number,
-  accent: (text: string) => string,
-): string {
-  if (width <= 1) return accent("╭");
-  const inner = width - 2;
-  const left = `─ ${title} `;
-  const right = ` ${info} ─`;
-  const fill = "─".repeat(Math.max(0, inner - visibleWidth(left) - visibleWidth(right)));
-  return accent(`╭${truncateToWidth(`${left}${fill}${right}`, inner).padEnd(inner, "─")}╮`);
-}
-
-function borderLine(line: string, width: number, accent: (text: string) => string): string {
-  if (width <= 1) return accent("│");
-  const inner = width - 2;
-  const clipped = truncateToWidth(line, inner);
-  return `${accent("│")}${clipped}${" ".repeat(Math.max(0, inner - visibleWidth(clipped)))}${accent("│")}`;
-}
-
-function borderBottom(width: number, accent: (text: string) => string): string {
-  return accent(width <= 1 ? "╰" : `╰${"─".repeat(width - 2)}╯`);
-}
 export function outputTail(output: string, count: number): readonly string[] {
   return outputWindow(output, count).lines;
 }
@@ -173,15 +130,22 @@ export function outputTail(output: string, count: number): readonly string[] {
 function outputWindow(
   output: string,
   count: number,
-): { readonly lines: readonly string[]; readonly omitted: number } {
-  const lines = stripVTControlCharacters(output)
-    .replaceAll("\r", "")
+): { readonly lines: readonly string[]; readonly omission?: string } {
+  const truncation = terminalOutputTail(stripVTControlCharacters(output).replaceAll("\r", ""));
+  const lines = truncation.content
     .split("\n")
-    .map((line) => line.trimEnd());
+    .map((line) => truncateLine(line.trimEnd(), TERMINAL_MAX_LINE_LENGTH).text);
   if (lines.at(-1) === "") lines.pop();
   const limit = Number.isFinite(count) ? Math.max(0, count) : lines.length;
-  const omitted = Math.max(0, lines.length - limit);
-  return { lines: lines.slice(omitted), omitted };
+  const omittedLines = Math.max(0, lines.length - limit);
+  const budgetOmittedLines = Math.max(0, truncation.totalLines - truncation.outputLines);
+  const omitted = omittedLines + budgetOmittedLines;
+  return {
+    lines: lines.slice(omittedLines),
+    ...(truncation.truncated || omitted > 0
+      ? { omission: omitted > 0 ? `… ${omitted} earlier lines` : "… earlier output omitted" }
+      : {}),
+  };
 }
 
 function statusLine(
@@ -193,6 +157,8 @@ function statusLine(
   const tone: ThemeColor =
     status === "completed" ? "success" : status === "running" ? "accent" : "error";
   const parts = [`${icon} ${status}`, formatElapsed(snapshot.elapsedMs ?? 0)];
+  if (snapshot.waitReason !== undefined) parts.push(`background · ${snapshot.waitReason}`);
+  if (snapshot.completionReason !== undefined) parts.push(`reason ${snapshot.completionReason}`);
   if (snapshot.exitCode !== undefined) parts.push(`exit ${snapshot.exitCode}`);
   else if (snapshot.signal !== undefined) parts.push(`signal ${snapshot.signal}`);
   return color(tone, parts.join(" · "));

@@ -92,9 +92,12 @@ export function createSearchSessionIdentity(
       match.matchedText,
       match.lineText,
     ]);
-  const normalizedRecipe = normalizeRecipe(recipe ?? { query, regex: true }, root);
+  const { limit: _detailBudget, ...selectionRecipe } = normalizeRecipe(
+    recipe ?? { query, regex: true },
+    root,
+  );
   return createHash("sha256")
-    .update(JSON.stringify([query, root, normalizedRecipe, identity]))
+    .update(JSON.stringify([query, root, selectionRecipe, identity]))
     .digest("hex")
     .toUpperCase();
 }
@@ -124,7 +127,7 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
     exclude: recipe.exclude ?? "",
     caseSensitive: recipe.caseSensitive === true,
     wholeWord: recipe.wholeWord === true,
-    limit: recipe.limit ?? 100,
+    limit: recipe.limit ?? 50,
     regex: recipe.regex === true,
     fallbacks: recipe.fallbacks ?? [],
   };

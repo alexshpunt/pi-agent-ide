@@ -69,7 +69,7 @@ test("search session id allocation fails instead of reusing an occupied identity
   );
 });
 
-test("search session ids include the complete recipe and cwd", async () => {
+test("search session ids ignore the presentation budget", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-session-"));
   const source = path.join(cwd, "source.txt");
   await writeFile(source, "needle\n", "utf8");
@@ -95,7 +95,7 @@ test("search session ids include the complete recipe and cwd", async () => {
     path: ".",
     limit: 10,
   });
-  expect(first).not.toBe(second);
+  expect(first).toBe(second);
 
   const store = new SearchSessionStore();
   await store.register("needle", matches, true, cwd, undefined, {
@@ -114,12 +114,9 @@ test("search session ids include the complete recipe and cwd", async () => {
   await expect(resolver.tryResolve(`SEARCH#${first}:1:match`, { cwd })).resolves.toMatchObject({
     kind: "resolved",
   });
-  await expect(resolver.tryResolve(`SEARCH#${second}:1:match`, { cwd })).resolves.toMatchObject({
-    kind: "resolved",
-  });
 });
 
-test("does not reuse an incomplete refreshed all snapshot after retry", async () => {
+test("refreshes all matches beyond the presentation budget", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-refresh-"));
   const first = path.join(cwd, "first.txt");
   const second = path.join(cwd, "second.txt");
@@ -144,11 +141,11 @@ test("does not reuse an incomplete refreshed all snapshot after retry", async ()
 
   const resolver = store.resourceResolver();
   const firstAttempt = await resolver.tryResolve(`SEARCH#${session.id}:all:match`, { cwd });
-  expect(firstAttempt).toMatchObject({ kind: "rejected", rejection: { code: "missing" } });
+  expect(firstAttempt).toMatchObject({ kind: "resolved" });
 
   await writeFile(first, "needle first\n", "utf8");
   const retry = await resolver.tryResolve(`SEARCH#${session.id}:all:match`, { cwd });
-  expect(retry).toMatchObject({ kind: "rejected", rejection: { code: "missing" } });
+  expect(retry).toMatchObject({ kind: "resolved" });
 });
 
 test("refreshes a fallback search with literal-first semantics", async () => {

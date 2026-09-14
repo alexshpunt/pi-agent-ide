@@ -23,6 +23,7 @@ interface PackageManifest extends Record<string, unknown> {
   private?: boolean;
   dependencies?: StringRecord;
   peerDependencies?: StringRecord;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
   devDependencies?: StringRecord;
   scripts?: StringRecord;
   files?: string[];
@@ -327,6 +328,12 @@ function sanitizeInternalManifest(source: PackageManifest): PackageManifest {
   if (Object.keys(peerDependencies).length > 0)
     manifest.peerDependencies = sortRecord(peerDependencies);
   else delete manifest.peerDependencies;
+  if (sourceManifest.name in peerDependencies) {
+    manifest.peerDependenciesMeta = {
+      ...manifest.peerDependenciesMeta,
+      [sourceManifest.name]: { optional: true },
+    };
+  }
 
   manifest.imports = filterPathMap(manifest.imports);
   manifest.exports = filterPathMap(manifest.exports);

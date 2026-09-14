@@ -39,10 +39,13 @@ test.each([false, true])(
                 name: "apply",
                 arguments: {
                   source: `
-write({path:"a.note",content:"first"});
+createFile("a.note", "first");
+createFile("b.note", "second");
+apply();
 if(read({path:"a.note"}).content!=="first") throw new Error("formatted too early");
-replace({path:"a.note",start:"first",text:"final"});
-write({path:"b.note",content:"second"});
+const a = open("a.note");
+a.replace(a.find("first"), "final");
+apply();
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,
                 },
@@ -115,11 +118,12 @@ test("whole-file operations finalize only surviving text targets and preserve bi
               name: "apply",
               arguments: {
                 source: `
-copy_file({path:"source.note",target:"temporary.note"});
-move_file({path:"temporary.note",target:"final.note"});
-copy_file({path:"source.note",target:"discard.note"});
-delete_file({path:"discard.note"});
-copy_file({path:"binary.note",target:"binary-copy.note"});
+copyFile("source.note", "temporary.note");
+moveFile("temporary.note", "final.note");
+copyFile("source.note", "discard.note");
+deleteFile("discard.note");
+copyFile("binary.note", "binary-copy.note");
+apply();
 `,
               },
             }),

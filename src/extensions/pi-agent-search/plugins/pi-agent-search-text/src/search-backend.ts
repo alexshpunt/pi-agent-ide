@@ -48,7 +48,6 @@ export async function searchText(
     throw new Error("Search supports one-line patterns only.");
   }
 
-  const limit = request.limit ?? 100;
   const target = path.resolve(cwd, stripFilePrefix(request.path ?? "."));
   const commonArguments = [
     "--json",
@@ -67,23 +66,22 @@ export async function searchText(
   ];
 
   if (request.regex !== true) {
-    return runRipgrep(["--fixed-strings", ...commonArguments], limit, signal);
+    return runRipgrep(["--fixed-strings", ...commonArguments], signal);
   }
 
   try {
-    return await runRipgrep(["--engine", "auto", ...commonArguments], limit, signal);
+    return await runRipgrep(["--engine", "auto", ...commonArguments], signal);
   } catch (error) {
     if (!isPcre2MatchLimitError(error)) {
       throw error;
     }
 
-    return runRipgrep(["--engine", "default", ...commonArguments], limit, signal);
+    return runRipgrep(["--engine", "default", ...commonArguments], signal);
   }
 }
 
 function runRipgrep(
   arguments_: readonly string[],
-  limit: number,
   signal?: AbortSignal,
 ): Promise<TextSearchBackendResult> {
   return new Promise((resolve, reject) => {
@@ -93,7 +91,6 @@ function runRipgrep(
     const output = createInterface({ input: child.stdout });
     const matches: TextSearchMatch[] = [];
     let stderr = "";
-    let isStoppedAtLimit = false;
     let parseError: unknown;
 
     const abort = (): void => {
@@ -109,7 +106,7 @@ function runRipgrep(
       stderr += chunk;
     });
     output.on("line", (line) => {
-      if (isStoppedAtLimit || parseError !== undefined || line.length === 0) {
+      if (parseError !== undefined || line.length === 0) {
         return;
       }
 
@@ -121,12 +118,6 @@ function runRipgrep(
         }
 
         for (const match of matchesFromEvent(event as RipgrepMatchEvent)) {
-          if (matches.length === limit) {
-            isStoppedAtLimit = true;
-            child.kill();
-            return;
-          }
-
           matches.push(match);
         }
       } catch (error) {
@@ -153,13 +144,13 @@ function runRipgrep(
         return;
       }
 
-      if (!isStoppedAtLimit && code !== 0 && code !== 1) {
+      if (code !== 0 && code !== 1) {
         reject(new Error(stderr.trim() || `ripgrep exited with code ${String(code)}.`));
         return;
       }
 
       matches.sort(compareMatches);
-      resolve({ matches, complete: !isStoppedAtLimit });
+      resolve({ matches, complete: true });
     });
 
     signal?.addEventListener("abort", abort, { once: true });

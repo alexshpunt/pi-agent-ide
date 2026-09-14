@@ -32,7 +32,7 @@ test("repeats saved scope once per session and retains incomplete and failed obs
     await writeFile(source, "old\nold\n");
     const remaining = await store.observeAfterEdit(anchors);
     expect(remaining).toHaveLength(1);
-    expect(remaining[0]).toMatchObject({ matches: 1, complete: false });
+    expect(remaining[0]).toMatchObject({ matches: 2, complete: true });
     await writeFile(source, "new\n");
     expect(await store.observeAfterEdit(anchors)).toMatchObject([{ matches: 0, complete: true }]);
     await rm(source);

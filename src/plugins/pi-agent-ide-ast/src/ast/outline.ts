@@ -11,18 +11,23 @@ import {
 
 import { collectFiles } from "./collect-files.js";
 import { AstScopeManager, parseDocument, type ScopeEntry } from "./manager.js";
+import { EXTENSION_LANGUAGES } from "./native-parser.js";
 import { readTextFile } from "./read-text.js";
 
-import type * as WTS from "web-tree-sitter";
+import type { SyntaxNode } from "./syntax-tree.js";
 
 const SUPPORTED_EXTENSIONS = new Set([
+  ...Object.keys(EXTENSION_LANGUAGES),
   ".ts",
   ".tsx",
+  ".mts",
+  ".cts",
   ".js",
   ".jsx",
   ".mjs",
   ".cjs",
   ".py",
+  ".pyi",
   ".rs",
   ".c",
   ".cc",
@@ -271,7 +276,7 @@ export class AstOutlineManager {
   }
 
   private async createSourceViewBlock(
-    node: WTS.Node,
+    node: SyntaxNode,
     filePath: string,
     displayPath: string,
     cwd: string,
@@ -387,10 +392,10 @@ function resolvePath(filePath: string, cwd: string): string {
   return path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
 }
 
-function findSymbol(root: WTS.Node, symbol: string): WTS.Node | undefined {
-  let result: WTS.Node | undefined;
+function findSymbol(root: SyntaxNode, symbol: string): SyntaxNode | undefined {
+  let result: SyntaxNode | undefined;
 
-  const visit = (node: WTS.Node): void => {
+  const visit = (node: SyntaxNode): void => {
     if (result) {
       return;
     }
@@ -409,7 +414,7 @@ function findSymbol(root: WTS.Node, symbol: string): WTS.Node | undefined {
   return result;
 }
 
-function getNodeName(node: WTS.Node): string | undefined {
+function getNodeName(node: SyntaxNode): string | undefined {
   const nameField = node.childForFieldName("name");
 
   if (nameField && NAME_TYPES.has(nameField.type)) {
@@ -436,7 +441,7 @@ function getNodeName(node: WTS.Node): string | undefined {
   return undefined;
 }
 
-function findNestedName(node: WTS.Node): string | undefined {
+function findNestedName(node: SyntaxNode): string | undefined {
   if (NAME_TYPES.has(node.type)) {
     return node.text;
   }
@@ -452,7 +457,7 @@ function findNestedName(node: WTS.Node): string | undefined {
   return undefined;
 }
 
-function unwrapDeclaration(node: WTS.Node): WTS.Node {
+function unwrapDeclaration(node: SyntaxNode): SyntaxNode {
   const parent = node.parent;
 
   if (
@@ -473,7 +478,7 @@ interface MappedCharacter {
 }
 
 function renderNodeLines(
-  node: WTS.Node,
+  node: SyntaxNode,
   source: string,
   extension: string,
   maxDepth: number,
@@ -573,7 +578,7 @@ function mapReplacement(replacement: Replacement): MappedCharacter[] {
 }
 
 function collapseDeepNode(
-  node: WTS.Node,
+  node: SyntaxNode,
   replacements: Replacement[],
   depth: number,
   maxDepth: number,
@@ -588,7 +593,7 @@ function collapseDeepNode(
   return true;
 }
 function collectDataReplacements(
-  node: WTS.Node,
+  node: SyntaxNode,
   extension: string,
   replacements: Replacement[],
   maxDepth: number,
@@ -613,7 +618,7 @@ function collectDataReplacements(
   }
 }
 
-function isDataScalar(node: WTS.Node, extension: string): boolean {
+function isDataScalar(node: SyntaxNode, extension: string): boolean {
   const scalarTypes =
     extension === ".json" || extension === ".jsonc"
       ? ["string", "number", "true", "false", "null"]
@@ -641,7 +646,7 @@ function isDataScalar(node: WTS.Node, extension: string): boolean {
   return scalarTypes.includes(node.type);
 }
 
-function isDataKey(node: WTS.Node): boolean {
+function isDataKey(node: SyntaxNode): boolean {
   let ancestor = node.parent;
 
   while (
@@ -658,7 +663,7 @@ function isDataKey(node: WTS.Node): boolean {
 }
 
 function collectReplacements(
-  node: WTS.Node,
+  node: SyntaxNode,
   extension: string,
   replacements: Replacement[],
   topLevel: boolean,
@@ -718,7 +723,7 @@ function collectReplacements(
   }
 }
 
-function isTopLevelInterfaceNode(node: WTS.Node): boolean {
+function isTopLevelInterfaceNode(node: SyntaxNode): boolean {
   return (
     DECLARATION_TYPES.has(node.type) ||
     IMPORT_TYPES.has(node.type) ||
@@ -727,7 +732,7 @@ function isTopLevelInterfaceNode(node: WTS.Node): boolean {
   );
 }
 
-function findBody(node: WTS.Node): WTS.Node | undefined {
+function findBody(node: SyntaxNode): SyntaxNode | undefined {
   const fieldBody = node.childForFieldName("body");
 
   if (fieldBody) {
@@ -747,7 +752,7 @@ interface BodyPlaceholder {
   readonly lineSourceLines: readonly (number | undefined)[];
 }
 
-function renderBodyPlaceholder(body: WTS.Node, extension: string): BodyPlaceholder {
+function renderBodyPlaceholder(body: SyntaxNode, extension: string): BodyPlaceholder {
   const startLine = body.startPosition.row + 1;
   const endLine = body.endPosition.row + 1;
 

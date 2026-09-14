@@ -1,3 +1,4 @@
+import { access, readFile } from "node:fs/promises";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { renderTerminalScreen } from "#src/plugins/pi-agent-ide-terminal/src/screen-image.js";
@@ -10,7 +11,12 @@ import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shel
 const managers: TerminalSessionManager[] = [];
 
 afterEach(async () => {
-  await Promise.all(managers.splice(0).map((manager) => manager.dispose()));
+  await Promise.all(
+    managers.splice(0).map(async (manager) => {
+      await Promise.all(manager.list().map((session) => manager.delete(session.source)));
+      await manager.dispose();
+    }),
+  );
 });
 
 test("encodes named modifier chords and Unix caret controls", () => {
@@ -37,6 +43,131 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
     });
   });
 
+  test("preserves complete output in a real log until the session is deleted", async () => {
+    const manager = createManager();
+    const session = manager.start({
+      command: 'node -e \'process.stdout.write("x".repeat(1100000) + "THE-END")\'',
+      background: false,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+
+    await manager.wait(session.source);
+    const snapshot = manager.snapshot(session);
+    expect(snapshot.truncated).toBe(true);
+    expect(snapshot.output).toHaveLength(1_000_000);
+    expect(await readFile(snapshot.fullOutputPath, "utf8")).toHaveLength(1_100_007);
+    expect(await readFile(snapshot.fullOutputPath, "utf8")).toMatch(/THE-END$/u);
+
+    await manager.delete(session.source);
+    await expect(access(snapshot.fullOutputPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  test("classifies a command timeout exit", async () => {
+    const manager = createManager();
+    const session = manager.start({
+      command: "timeout 0.05 sleep 5",
+      background: true,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+
+    await manager.wait(session.source);
+
+    expect(manager.snapshot(session)).toMatchObject({
+      status: "failed",
+      exitCode: 124,
+      completionReason: "timeout",
+    });
+  });
+
+  test("returns a timed out wait as a live background session", async () => {
+    const manager = createManager();
+    const session = manager.start({
+      command: "sleep 30",
+      background: false,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+
+    const outcome = await manager.waitForForeground(session.source, { timeoutMs: 30 });
+
+    expect(outcome.reason).toBe("timeout");
+    expect(manager.snapshot(session)).toMatchObject({
+      status: "running",
+      background: true,
+      waitReason: "timeout",
+    });
+  });
+
+  test("does not mistake a silent command for an interactive wait", async () => {
+    const manager = createManager();
+    const session = manager.start({
+      command: "sleep 0.08; printf done",
+      background: false,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+
+    const outcome = await manager.waitForForeground(session.source, {
+      timeoutMs: 1_000,
+      interactiveDelayMs: 20,
+    });
+
+    expect(outcome.reason).toBeUndefined();
+    expect(manager.snapshot(session)).toMatchObject({ status: "completed", background: false });
+  });
+
+  test("keeps a foreground process alive when its wait is aborted", async () => {
+    const manager = createManager();
+    const controller = new AbortController();
+    let completions = 0;
+    manager.onDidComplete(() => {
+      completions += 1;
+    });
+    const session = manager.start({
+      command: "IFS= read -r answer; printf 'received:%s' \"$answer\"",
+      background: false,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+    const waiting = manager.waitForForeground(session.source, {
+      signal: controller.signal,
+      timeoutMs: 30_000,
+    });
+    controller.abort();
+
+    const outcome = await waiting;
+    expect(outcome.reason).toBe("aborted");
+    expect(manager.snapshot(session)).toMatchObject({ status: "running", background: true });
+    manager.write(session.source, "hello");
+    manager.sendKeys(session.source, "Enter");
+    await manager.wait(session.source);
+    expect(manager.snapshot(session).output).toContain("received:hello");
+    expect(completions).toBe(1);
+  });
+
+  test("recognizes a stable interactive prompt before the wait timeout", async () => {
+    const manager = createManager();
+    const session = manager.start({
+      command: "printf 'Choose [y/N]: '; IFS= read -r answer; printf 'choice:%s' \"$answer\"",
+      background: false,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+
+    const outcome = await manager.waitForForeground(session.source, {
+      timeoutMs: 30_000,
+      interactiveDelayMs: 40,
+    });
+
+    expect(outcome.reason).toBe("interactive");
+    expect(manager.snapshot(session)).toMatchObject({ status: "running", background: true });
+    manager.write(session.source, "y");
+    manager.sendKeys(session.source, "Enter");
+    await manager.wait(session.source);
+    expect(manager.snapshot(session).output).toContain("choice:y");
+  });
   test("sends text and named keys to an interactive command", async () => {
     const manager = createManager();
     const session = manager.start({

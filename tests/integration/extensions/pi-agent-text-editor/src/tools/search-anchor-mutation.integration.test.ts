@@ -790,7 +790,7 @@ test("rejects a mutation without a typed target or source anchor", async () => {
   });
 }, 180_000);
 
-test("rejects an incomplete all-result mutation anchor without writing", async () => {
+test("mutates the complete selection retained by compacted search results", async () => {
   await withTempWorkspace(async (directory) => {
     const source = path.join(directory, "limited.txt");
     const sourceText = "needle one\nneedle two\n";
@@ -826,10 +826,9 @@ test("rejects an incomplete all-result mutation anchor without writing", async (
         ),
         assistantMessage([text("done")]),
       ],
-    }).run("Run a limited search, then reject its complete replacement anchor");
+    }).run("Run a compacted search, then replace its complete selection");
 
-    expect(getToolExecution(result, "replace-incomplete").isError).toBe(true);
-    expect(getToolResultText(result, "replace-incomplete")).toContain("all anchor");
-    await expect(readFile(source, "utf8")).resolves.toBe(sourceText);
+    expect(getToolExecution(result, "replace-incomplete").isError).toBe(false);
+    await expect(readFile(source, "utf8")).resolves.toBe("changed one\nchanged two\n");
   });
 }, 180_000);

@@ -3,9 +3,12 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 import {
   applyFrameRows,
+  compactApplyPreview,
   renderApplyResult,
   createApplyCallRenderer,
+  createApplyDisplay,
 } from "#src/core/apply/renderer.js";
+import { ApplyResults } from "#src/core/apply/results.js";
 
 initTheme("dark", false);
 const theme = Object.assign(Object.create(null) as Theme, {
@@ -95,18 +98,35 @@ test("Apply does not leave blank rows after its last read panel", () => {
   expect(rows.at(-1)).toContain("╰");
 });
 
+test("Apply keeps transaction receipts agent-only", () => {
+  const results = new ApplyResults();
+  results.addValue({ verified: true, transaction: "APPLY#123456789ABC" });
+  const display = createApplyDisplay(results, {
+    content: [
+      { type: "text", text: '{"verified":true,"transaction":"APPLY#123456789ABC"}' },
+      { type: "text", text: "Undo transaction: APPLY#123456789ABC" },
+    ],
+    level: "full",
+  });
+  const visible = display.blocks.map(({ text }) => text).join("\n");
+  expect(visible).toContain("verified");
+  expect(visible).not.toContain("APPLY#");
+  expect(visible).not.toContain("transaction");
+  expect(visible).not.toContain("Undo");
+});
+
 test("mixed preview stays short while a large argument streams and expansion keeps source", () => {
   const renderCall = createApplyCallRenderer((call) => `write ${call.path?.text ?? "…"}`);
   const context = { state: {}, expanded: false } as Parameters<typeof renderCall>[2];
-  const prefix = 'write({path:"a.txt", content:"';
-  const source = prefix + "z".repeat(4000) + 'SENTINEL"});';
+  const prefix = 'createFile("a.txt", "';
+  const source = prefix + "z".repeat(4000) + 'SENTINEL");';
   const first = renderCall({ source: prefix }, theme, context).render(60);
   const pending = renderCall({ source: source.slice(0, -4) }, theme, context).render(60);
   expect(pending).toEqual(first);
   expect(renderCall({ source }, theme, context).render(60).length).toBeLessThan(8);
   const expanded = renderCall({ source }, theme, { ...context, expanded: true }).render(60);
   expect(expanded.join("\n")).toContain("SENTINEL");
-  expect(source.endsWith('SENTINEL"});')).toBe(true);
+  expect(source.endsWith('SENTINEL");')).toBe(true);
 });
 
 test("mixed substitution uses the formatted display copy before splitting calls", () => {
@@ -123,4 +143,30 @@ test("mixed substitution uses the formatted display copy before splitting calls"
   expect(rows.findIndex((row) => row.includes("replace"))).toBeLessThan(
     rows.findIndex((row) => row.includes("insert")),
   );
+});
+
+test("compact Apply source keeps its head and tail within the read row budget", () => {
+  const source = Array.from({ length: 30 }, (_, index) => `line-${index + 1}`).join("\n");
+  const compact = compactApplyPreview(source, 12);
+  const lines = compact.split("\n");
+
+  expect(lines).toHaveLength(12);
+  expect(lines.slice(0, 3)).toEqual(["line-1", "line-2", "line-3"]);
+  expect(lines).toContain("… 19 lines omitted …");
+  expect(lines.slice(-3)).toEqual(["line-28", "line-29", "line-30"]);
+});
+
+test("compact Apply call renders the source head, omission, and tail", () => {
+  const renderCall = createApplyCallRenderer((call) => `[${call.name}]`);
+  const source = Array.from({ length: 30 }, (_, index) =>
+    index === 28 ? "result(summary);" : `const line${index + 1} = ${index + 1};`,
+  ).join("\n");
+  const context = { state: {}, expanded: false } as Parameters<typeof renderCall>[2];
+  const rows = renderCall({ source }, theme, context).render(80).join("\n");
+
+  expect(rows).toContain("line1");
+  expect(rows).toContain("lines omitted");
+  expect(rows).toContain("[result]");
+  expect(rows).toContain("line30");
+  expect(rows).not.toContain("line15");
 });

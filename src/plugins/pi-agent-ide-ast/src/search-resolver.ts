@@ -59,7 +59,10 @@ export function createAstSearchResolver(
         kind: "resolved",
         payload: {
           pattern,
-          matches: selected.raw,
+          matches: selected.raw.map((match, index) => ({
+            ...match,
+            selection: selected.matches[index],
+          })),
           complete: selected.complete,
           sessionId: session.id,
         },

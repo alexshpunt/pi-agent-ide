@@ -5,36 +5,35 @@ import {
   compactApplySource,
 } from "#src/core/apply/mixed-source.js";
 
-test("recognizes unfinished helper arguments without exposing large text bodies", () => {
-  const source = 'replace({path: "src/a.ts", text: "' + "x".repeat(10000);
+test("recognizes unfinished create arguments without exposing large text bodies", () => {
+  const source = 'createFile("src/a.ts", "' + "x".repeat(10_000);
   const calls = parseApplyCalls(source);
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({
-    name: "replace",
-    from: 0,
-    to: source.length,
-    path: { text: '"src/a.ts"', literal: true },
-  });
+  expect(calls[0]).toMatchObject({ name: "createFile", from: 0, to: source.length });
   expect(JSON.stringify(calls).length).toBeLessThan(500);
 });
 
-test("distinguishes expressions from literals and excludes comments, strings and members", () => {
-  const source =
-    '// replace(\nconst text = "read("; obj.read({}); replace({path: doc.source, text: value';
+test("recognizes transactional editor helpers", () => {
+  const source = 'open("a.ts"); copyFile("a.ts", "b.ts"); apply();';
+  expect(parseApplyCalls(source).map(({ name }) => name)).toEqual(["open", "copyFile", "apply"]);
+  expect(compactApplySource(source)).toContain("apply(");
+});
+
+test("excludes comments strings and member methods", () => {
+  const source = '// open(\nconst text = "apply("; file.replace(selection, value); open(path);';
   const calls = parseApplyCalls(source);
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ name: "replace", path: { text: "doc.source", literal: false } });
+  expect(calls[0]).toMatchObject({ name: "open" });
 });
 
 test("does not identify locally shadowed helper names as IDE calls", () => {
-  expect(parseApplyCalls('function f(replace) { replace({path: "a"}); }')).toEqual([]);
+  expect(parseApplyCalls('function f(open) { open("a"); }')).toEqual([]);
 });
 
 test("a parameter shadows calls only inside its function", () => {
-  const source = 'function f(replace) { replace({path:"local"}); } replace({path:"real"});';
-  const calls = parseApplyCalls(source);
+  const calls = parseApplyCalls('function f(open) { open("local"); } open("real");');
   expect(calls).toHaveLength(1);
-  expect(calls[0]?.path?.text).toBe('"real"');
+  expect(calls[0]?.name).toBe("open");
 });
 
 test("unterminated path literals are not advertised as complete values", () => {
@@ -48,24 +47,19 @@ test("long paths stay visibly incomplete rather than looking like exact values",
   expect(path?.text.length).toBeLessThan(200);
 });
 
-test("preserves query and target identity without exposing mutation text", () => {
-  expect(
-    parseApplyCalls(
-      'search({query: "needle", path: base}); copy({path:"a", target: dest, targetStart:"end"})',
-    ),
-  ).toMatchObject([
+test("preserves search identity", () => {
+  expect(parseApplyCalls('search({query: "needle", path: base})')).toMatchObject([
     { query: { text: '"needle"', literal: true }, path: { text: "base", literal: false } },
-    { path: { text: '"a"' }, target: { text: "dest", literal: false } },
   ]);
 });
 
-test("every prefix of a long argument stays compact and repeated paints are stable", () => {
+test("every prefix of a long create stays compact and stable", () => {
   const project = createApplySourceProjection();
-  const source = 'if (ready) { replace({path:"a", text:"' + "x".repeat(2048) + '"}); }';
+  const source = 'if (ready) { createFile("a", "' + "x".repeat(2048) + '"); }';
   for (let end = 1; end <= source.length; end++) {
     const prefix = source.slice(0, end);
     const output = project(prefix);
-    expect(output.length).toBeLessThan(200);
+    expect(output.length).toBeLessThan(300);
     expect(project(prefix)).toBe(output);
   }
 });
@@ -81,23 +75,36 @@ test("var hoisting and helper reassignment are not mistaken for IDE calls", () =
   expect(
     parseApplyCalls('function f() { if (ok) { var read = local; } read({path:"x"}); }'),
   ).toEqual([]);
-  expect(parseApplyCalls('replace = custom; replace({path:"x"});')).toEqual([]);
+  expect(parseApplyCalls("apply = custom; apply();")).toEqual([]);
 });
 
-test("explicit result values remain visible as source instead of a collapsed tool header", () => {
+test("explicit result values use a compact helper preview", () => {
   const source = "result({verified: true, count: 42});";
-  expect(parseApplyCalls(source)).toEqual([]);
-  expect(compactApplySource(source)).toBe(source);
+  const calls = parseApplyCalls(source);
+  expect(calls).toMatchObject([
+    { name: "result", arguments: { verified: { text: "true" }, count: { text: "42" } } },
+  ]);
+  expect(compactApplySource(source, calls, () => "result verified: true · count: 42")).toBe(
+    "result verified: true · count: 42;",
+  );
 });
 
-test("retains anchors and all argument expressions while bounding replacement text", () => {
+test("bounds long object arguments", () => {
   const call = parseApplyCalls(
-    'replace({path:"a",start:"12#ABCD",end:"18#1234",text:"' +
-      "x".repeat(2000) +
-      '", custom: options})',
+    'search({path:"a",query:"' + "x".repeat(2000) + '", custom: options})',
   )[0];
-  expect(call?.arguments.start?.text).toBe('"12#ABCD"');
-  expect(call?.arguments.end?.text).toBe('"18#1234"');
-  expect(call?.arguments.text?.text.length).toBeLessThan(200);
+  expect(call?.arguments.query?.text.length).toBeLessThan(200);
   expect(call?.arguments.custom).toEqual({ text: "options", literal: false });
+});
+
+test("recognizes result as a compact Apply helper", () => {
+  const source = "const value = compute();\nresult({ value, count: 42 });";
+  const calls = parseApplyCalls(source);
+  expect(calls).toMatchObject([
+    {
+      name: "result",
+      arguments: { value: { text: "value", literal: false }, count: { text: "42" } },
+    },
+  ]);
+  expect(compactApplySource(source, calls, (call) => `[${call.name}]`)).toContain("[result]");
 });

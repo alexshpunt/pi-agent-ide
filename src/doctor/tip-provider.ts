@@ -72,6 +72,7 @@ function setupItems(result: DoctorSetupRun): readonly SetupItem[] {
       .filter((language) => result.detectedLanguages.has(language))
       .join(", ");
     const capability = {
+      debugger: "debugging",
       formatter: "formatting",
       linter: "linting",
       lsp: "language support",

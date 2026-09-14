@@ -2,10 +2,16 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 import { TEXT_EDITOR_PROTOCOL, TEXT_EDITOR_API_VERSION } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { executeScriptMutation } from "#src/core/text-mutation.js";
+import {
+  executeScriptMutation,
+  executeTextMutation,
+  previewTextMutation,
+} from "#src/core/text-mutation.js";
 import { writeMutationTool } from "#src/tools/tool-text-write.js";
 import { replaceMutationTool } from "#src/tools/tool-text-replace.js";
 import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
+import { insertMutationTool } from "#src/tools/tool-text-insert.js";
+import { createExactTextAnchorResolver } from "pi-agent-text-anchor-exact/api/anchor";
 
 test("script mutations use post-edit processing and return plain final content", async () => {
   const core = createTextEditorCore();
@@ -88,6 +94,155 @@ test("script mutations use post-edit processing and return plain final content",
   expect(text).toBe("THIRD\n");
 });
 
+test("semantic insert resolves an anchor without writing source text", async () => {
+  const core = createTextEditorCore();
+  const source = "first line\nbreak here\nlast line\n";
+  core.addMutationTool(insertMutationTool);
+  let writes = 0;
+  let completions = 0;
+  let semanticEffects = 0;
+  await core.registerPlugin({
+    id: "semantic-insert",
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "debug-source",
+          tryResolve: async (requested) => ({
+            kind: "resolved",
+            resource: {
+              source: requested,
+              read: async () => [{ type: "text", text: source }],
+            },
+          }),
+        },
+      });
+      api.addAnchorResolver({
+        kind: TEXT_SEARCH_ANCHOR_KIND,
+        type: "major",
+        resolver: createExactTextAnchorResolver({
+          fuzzyEnabled: false,
+          threshold: 0.8,
+          exactCandidateLimit: 20,
+          fuzzyCandidateLimit: 5,
+          maxFileSizeMiB: 20,
+          maxQuerySizeKiB: 1024,
+          seedLimit: 3,
+          blockLineVariance: 2,
+          contextLines: 5,
+          timeoutMs: 2000,
+        }),
+      });
+      api.tool("insert").addSemanticHandler({
+        matches(input) {
+          return (
+            typeof input === "object" &&
+            input !== null &&
+            (input as { path?: unknown }).path === "debug:session/source/example.py"
+          );
+        },
+        async execute(context, input) {
+          semanticEffects++;
+          const parameters = input as { anchor?: string; text?: string };
+          if (parameters.text !== "breakpoint" || parameters.anchor === undefined) {
+            throw new Error("Expected one breakpoint command and anchor");
+          }
+          const anchor = await context.resolveAnchor("anchor");
+          return {
+            source: "debug:session/breakpoint/1",
+            summary: "Breakpoint created at example.py:2",
+            data: {
+              kind: "debug-breakpoint",
+              line: anchor.lineNumber,
+            },
+          };
+        },
+      });
+      api.onDidEdit(() => {
+        completions++;
+      });
+    },
+  });
+
+  const result = await executeScriptMutation(
+    core,
+    insertMutationTool,
+    {
+      path: "debug:session/source/example.py",
+      anchor: "break here",
+      text: "breakpoint",
+    },
+    undefined,
+    { cwd: process.cwd() } as ExtensionContext,
+  );
+
+  expect(result).toMatchObject({
+    operation: "insert",
+    ok: true,
+    effect: "applied",
+    files: [],
+    completed: ["debug:session/breakpoint/1"],
+    metadata: {
+      semanticAction: { kind: "debug-breakpoint", line: 2 },
+    },
+    errors: [],
+  });
+  const standalone = await executeTextMutation(
+    core,
+    insertMutationTool,
+    {
+      path: "debug:session/source/example.py",
+      anchor: "break here",
+      text: "breakpoint",
+    },
+    undefined,
+    { cwd: process.cwd() } as ExtensionContext,
+  );
+  expect(standalone.content).toEqual([
+    { type: "text", text: "Breakpoint created at example.py:2" },
+  ]);
+  expect(standalone.details).toMatchObject({
+    results: [],
+    metadata: {
+      semanticAction: {
+        kind: "debug-breakpoint",
+        line: 2,
+        source: "debug:session/breakpoint/1",
+      },
+    },
+  });
+  const preview = await previewTextMutation(core, {
+    tool: "insert",
+    input: {
+      path: "debug:session/source/example.py",
+      anchor: "break here",
+      text: "breakpoint",
+    },
+    cwd: process.cwd(),
+  });
+  expect(preview).toMatchObject({
+    kind: "completed",
+    resources: [{ beforeContent: source, afterContent: source, ranges: [] }],
+  });
+  expect(semanticEffects).toBe(2);
+
+  const stale = await executeTextMutation(
+    core,
+    insertMutationTool,
+    {
+      path: "debug:session/source/example.py",
+      anchor: "no longer present",
+      text: "breakpoint",
+    },
+    undefined,
+    { cwd: process.cwd() } as ExtensionContext,
+  );
+  expect(stale.details.results?.[0]?.data.ok).toBe(false);
+  expect(semanticEffects).toBe(2);
+  expect(writes).toBe(0);
+  expect(completions).toBe(0);
+});
 test("script mutation arguments are validated before any resolver runs", async () => {
   const core = createTextEditorCore();
   await expect(

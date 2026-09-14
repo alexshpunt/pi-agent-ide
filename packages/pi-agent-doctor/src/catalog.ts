@@ -13,7 +13,7 @@ export interface LanguageDefinition {
 /**
 Supported setup recipe categories.
 */
-export type ToolRecipeKind = "formatter" | "linter" | "lsp";
+export type ToolRecipeKind = "debugger" | "formatter" | "linter" | "lsp";
 
 /**
 Safe direct process command used inside a tool recipe.
@@ -38,6 +38,14 @@ export interface ToolRecipe {
   readonly configSections?: Readonly<Record<string, readonly string[]>>;
   readonly dependencies?: readonly string[];
   readonly documentation: string;
+
+  /** Runtime and adapter prerequisites for an agent-native debug recipe. */
+  readonly debugger?: {
+    readonly runtimeExecutables: readonly string[];
+    readonly adapterExecutables: readonly string[];
+    readonly platforms: readonly ("linux" | "darwin" | "win32")[];
+    readonly install: string;
+  };
   readonly conflicts?: readonly string[];
   readonly formatter?: {
     readonly extensions: readonly string[];
