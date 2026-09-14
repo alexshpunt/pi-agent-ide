@@ -133,6 +133,14 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
   };
 }
 
+/** Indicates that search output is still displayable, but no stable anchors can be registered. */
+export class SearchSnapshotChangedError extends Error {
+  public constructor(source: string) {
+    super(`Search result in ${source} changed before its anchors were registered.`);
+    this.name = "SearchSnapshotChangedError";
+  }
+}
+
 /** Stores search snapshots and resolves the stable anchors emitted for them. */
 export class SearchSessionStore {
   readonly #sessions = new Map<string, StoredSearchSession>();
@@ -174,6 +182,24 @@ export class SearchSessionStore {
     this.#idsByIdentity.set(identity, id);
     this.#sessions.set(id, session);
     return session;
+  }
+
+  /** Registers anchors when every match still describes the current files. */
+  public async registerIfCurrent(
+    query: string,
+    sourceMatches: readonly TextSearchMatch[],
+    complete: boolean,
+    cwd: string,
+    signal?: AbortSignal,
+    recipe?: SearchRecipe,
+    refresh?: SearchSelectionRegistration["refresh"],
+  ): Promise<TextSearchSession | undefined> {
+    try {
+      return await this.register(query, sourceMatches, complete, cwd, signal, recipe, refresh);
+    } catch (error) {
+      if (error instanceof SearchSnapshotChangedError) return undefined;
+      throw error;
+    }
   }
 
   /** Repeats each referenced search once, keeping its original scope, limits and fallback rules. */
@@ -506,7 +532,7 @@ async function snapshotContents(
     for (const match of matches.filter((candidate) => candidate.source === source)) {
       const line = document.lines[match.lineNumber - 1]?.content;
       if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText) {
-        throw new Error(`Search result in ${source} changed before its anchors were registered.`);
+        throw new SearchSnapshotChangedError(source);
       }
     }
     contentBySource.set(source, content);

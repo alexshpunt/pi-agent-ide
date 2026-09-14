@@ -22,6 +22,8 @@ import {
 } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 
 const execute = promisify(execFile);
+const selectedAdapter = process.env.PI_DEBUGGER_CORE_ADAPTER;
+const excludedAdapter = process.env.PI_DEBUGGER_CORE_EXCLUDE_ADAPTER;
 const matrixProvisioned = spawnSync("kotlinc", ["-version"], { stdio: "ignore" }).status === 0;
 let workspace = "";
 
@@ -38,7 +40,7 @@ interface AdapterCase {
 beforeAll(async () => {
   if (!matrixProvisioned) return;
   workspace = await mkdtemp(path.join(tmpdir(), "pi-debugger-matrix-"));
-  await prepareFixtures(workspace);
+  await prepareFixtures(workspace, selectedAdapter, excludedAdapter);
 }, 60_000);
 
 afterAll(async () => {
@@ -170,7 +172,11 @@ const cases: readonly AdapterCase[] = [
 ];
 
 for (const item of cases) {
-  test.runIf(matrixProvisioned)(
+  test.runIf(
+    matrixProvisioned &&
+      (selectedAdapter === undefined || item.adapter === selectedAdapter) &&
+      item.adapter !== excludedAdapter,
+  )(
     `provisioned Linux debugger stops in ${item.name} and exposes locals`,
     async () => {
       const manager = new DebugSessionManager();
@@ -214,7 +220,7 @@ for (const item of cases) {
   );
 }
 
-test.runIf(matrixProvisioned)(
+test.runIf(matrixProvisioned && selectedAdapter === undefined)(
   "Doctor selects and probes every provisioned scripting debugger",
   async () => {
     const cwd = await mkdtemp(path.join(tmpdir(), "pi-debugger-doctor-"));
@@ -266,7 +272,11 @@ test.runIf(matrixProvisioned)(
   },
 );
 
-async function prepareFixtures(cwd: string): Promise<void> {
+async function prepareFixtures(
+  cwd: string,
+  selected: string | undefined,
+  excluded: string | undefined,
+): Promise<void> {
   await mkdir(cwd, { recursive: true });
   await Promise.all([mkdir(path.join(cwd, "src")), mkdir(path.join(cwd, "dist"))]);
   const python =
@@ -279,6 +289,15 @@ async function prepareFixtures(cwd: string): Promise<void> {
     "void main() {\n  final items = [12, 30];\n  final subtotal = items[0] + items[1];\n  final result = subtotal + 1;\n  print(result);\n}\n";
   const kotlin =
     "fun main() {\n    val items = listOf(12, 30)\n    val subtotal = items.sum()\n    val result = subtotal + 1\n    println(result)\n}\n";
+  if (selected === "kotlin") {
+    await mkdir(path.join(cwd, "src", "main", "kotlin"), { recursive: true });
+    await writeFile(path.join(cwd, "src", "main", "kotlin", "Main.kt"), kotlin);
+    await mkdir(path.join(cwd, "build", "classes", "kotlin", "main"), { recursive: true });
+    await execute("kotlinc", ["src/main/kotlin/Main.kt", "-d", "build/classes/kotlin/main"], {
+      cwd,
+    });
+    return;
+  }
   const csharp =
     "using System;\ninternal static class Program\n{\n    private static void Main()\n    {\n        int subtotal = 12 + 30;\n        int result = subtotal + 1;\n        Console.WriteLine(result);\n    }\n}\n";
   const cpp =
@@ -305,9 +324,13 @@ async function prepareFixtures(cwd: string): Promise<void> {
     writeFile(path.join(cwd, "src/main.ts"), typescript),
     writeFile(path.join(cwd, "main.cpp"), cpp),
     writeFile(path.join(cwd, "main.rs"), rust),
-    mkdir(path.join(cwd, "src", "main", "kotlin"), { recursive: true }).then(() =>
-      writeFile(path.join(cwd, "src", "main", "kotlin", "Main.kt"), kotlin),
-    ),
+    ...(excluded === "kotlin"
+      ? []
+      : [
+          mkdir(path.join(cwd, "src", "main", "kotlin"), { recursive: true }).then(() =>
+            writeFile(path.join(cwd, "src", "main", "kotlin", "Main.kt"), kotlin),
+          ),
+        ]),
     mkdir(path.join(cwd, "csharp"), { recursive: true }).then(async () => {
       await Promise.all([
         writeFile(path.join(cwd, "csharp", "Program.cs"), csharp),
@@ -330,8 +353,12 @@ async function prepareFixtures(cwd: string): Promise<void> {
   );
   await execute("clang++", ["-g", "-O0", "main.cpp", "-o", "main-cpp"], { cwd });
   await execute("rustc", ["-g", "-C", "opt-level=0", "main.rs", "-o", "main-rust"], { cwd });
-  await mkdir(path.join(cwd, "build", "classes", "kotlin", "main"), { recursive: true });
-  await execute("kotlinc", ["src/main/kotlin/Main.kt", "-d", "build/classes/kotlin/main"], { cwd });
+  if (excluded !== "kotlin") {
+    await mkdir(path.join(cwd, "build", "classes", "kotlin", "main"), { recursive: true });
+    await execute("kotlinc", ["src/main/kotlin/Main.kt", "-d", "build/classes/kotlin/main"], {
+      cwd,
+    });
+  }
   await execute("dotnet", ["build", "--configuration", "Debug", "--nologo"], {
     cwd: path.join(cwd, "csharp"),
   });

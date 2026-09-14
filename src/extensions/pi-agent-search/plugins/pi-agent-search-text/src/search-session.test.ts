@@ -22,6 +22,22 @@ function searchMatch(source: string, matchedText: string): TextSearchMatch {
   };
 }
 
+test("keeps changed search results displayable without registering anchors", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-changing-snapshot-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "output.log");
+  await writeFile(source, "new output\n", "utf8");
+
+  const session = await new SearchSessionStore().registerIfCurrent(
+    "old",
+    [searchMatch(source, "old output")],
+    true,
+    cwd,
+  );
+
+  expect(session).toBeUndefined();
+});
+
 test("search session ids start at four characters and grow on collision", () => {
   const firstIdentity = `ABCD0${"0".repeat(59)}`;
   const secondIdentity = `ABCD1${"0".repeat(59)}`;

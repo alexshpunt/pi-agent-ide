@@ -137,13 +137,20 @@ test("returns PNG and GIF as native image content", async () => {
 
 test.each([
   ["/malformed", "web-malformed"],
-  ["/binary", "web-unsupported-binary"],
   ["/status", "web-http-status"],
 ] as const)("reports %s failures with the web resolver identity", async (pathname, testName) => {
   const result = getToolResultMessage(await runRead(pathname, testName), "read");
   expect(result).toMatchObject({
     details: { failure: { code: "READ_FAILED", resolverId: "web" } },
   });
+});
+
+test("returns a bounded preview for unsupported binary content", async () => {
+  const run = await runRead("/binary", "web-unsupported-binary");
+  const result = getToolResultMessage(run, "read");
+  expect(result.isError).toBe(false);
+  expect(result).toMatchObject({ details: { resolvedBy: "web" } });
+  expect(getToolResultText(run)).toContain("the remaining body was not downloaded");
 });
 
 test("recovers HTTP 403 through real Chromium within one read call", async () => {

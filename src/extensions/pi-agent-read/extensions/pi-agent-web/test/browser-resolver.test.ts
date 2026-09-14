@@ -73,6 +73,48 @@ test("preserves empty plain text and non-HTML conversion errors", async () => {
   expect(f.browser.load).not.toHaveBeenCalled();
 });
 
+test("returns bounded metadata and preview without downloading an unsupported attachment", async () => {
+  let cancelled = false;
+  let pulls = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulls += 1;
+      controller.enqueue(new Uint8Array(4096).fill(pulls));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const response = new Response(body, {
+    headers: {
+      "content-disposition": 'attachment; filename="tool.AppImage"',
+      "content-length": "178163117",
+      "content-type": "application/octet-stream",
+      "x-release-id": "42",
+    },
+  });
+  Object.defineProperty(response, "url", {
+    value: "https://release-assets.example.test/asset?signature=secret",
+  });
+  const f = fixture(vi.fn(async () => response));
+
+  const result = await read(f);
+  const text = result.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+
+  expect(text).toContain("Binary response");
+  expect(text).toContain(source);
+  expect(text).toContain("tool.AppImage");
+  expect(text).toContain("application/octet-stream");
+  expect(text).toContain("178163117");
+  expect(text).toContain("x-release-id: 42");
+  expect(text).toContain("Preview");
+  expect(text).not.toContain("signature=secret");
+  expect(cancelled).toBe(true);
+  expect(pulls).toBeLessThan(10);
+  expect(f.host.convert).not.toHaveBeenCalled();
+  expect(f.browser.load).not.toHaveBeenCalled();
+});
+
 test.each(["status", "empty"])(
   "reports both failures when browser is missing after %s",
   async (mode) => {

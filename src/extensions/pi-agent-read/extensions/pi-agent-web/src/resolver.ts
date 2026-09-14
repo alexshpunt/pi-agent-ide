@@ -9,6 +9,8 @@ import { type BrowserHtmlLoader, createSystemBrowserHtmlLoader } from "./browser
 
 type WebContentHost = Pick<ContentHost, "convert">;
 
+const BINARY_PREVIEW_BYTES = 4096;
+
 /** HTTP timeout, transport, and internal browser fallback settings. */
 export interface WebResolverOptions {
   readonly timeoutMs?: number;
@@ -115,10 +117,20 @@ async function readWebContent(
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
+    const mediaType = response.headers.get("content-type") ?? undefined;
+    if (isUnsupportedBinaryMediaType(mediaType) && !hasSupportedDocumentExtension(url)) {
+      const preview = await readBoundedBody(response, BINARY_PREVIEW_BYTES, operation.signal);
+      return [
+        {
+          type: "text",
+          text: formatUnsupportedBinaryResponse(url, response, mediaType, preview),
+        },
+      ];
+    }
+
     const bytes = new Uint8Array(await response.arrayBuffer());
     operation.signal.throwIfAborted();
     const source = response.url.length === 0 ? url.href : response.url;
-    const mediaType = response.headers.get("content-type") ?? undefined;
     const input = {
       source,
       bytes,
@@ -189,6 +201,121 @@ async function loadAndConvertBrowser(
     },
     { signal },
   );
+}
+
+function isUnsupportedBinaryMediaType(mediaType: string | undefined): boolean {
+  if (mediaType === undefined) return false;
+  const type = mediaType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return !(
+    type.startsWith("text/") ||
+    type.startsWith("image/") ||
+    type === "application/json" ||
+    type.endsWith("+json") ||
+    type === "application/xml" ||
+    type.endsWith("+xml") ||
+    type === "application/xhtml+xml" ||
+    type === "application/pdf"
+  );
+}
+
+function hasSupportedDocumentExtension(url: URL): boolean {
+  return /\.(?:avif|bmp|gif|jpe?g|pdf|png|webp)$/iu.test(url.pathname);
+}
+
+async function readBoundedBody(
+  response: Response,
+  limit: number,
+  signal: AbortSignal,
+): Promise<Uint8Array> {
+  if (response.body === null) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (length < limit) {
+      signal.throwIfAborted();
+      const part = await reader.read();
+      if (part.done) break;
+      const remaining = limit - length;
+      const chunk = part.value.subarray(0, remaining);
+      chunks.push(chunk);
+      length += chunk.length;
+      if (part.value.length > remaining) break;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const preview = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    preview.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return preview;
+}
+
+function formatUnsupportedBinaryResponse(
+  requestedUrl: URL,
+  response: Response,
+  mediaType: string | undefined,
+  preview: Uint8Array,
+): string {
+  const lines = [
+    "Binary response",
+    `URL: ${requestedUrl.href}`,
+    `HTTP: ${response.status} ${response.statusText}`.trimEnd(),
+    `Content-Type: ${mediaType ?? "unknown"}`,
+  ];
+  const disposition = response.headers.get("content-disposition");
+  const filename = disposition === null ? undefined : attachmentFilename(disposition);
+  if (filename !== undefined) lines.push(`Filename: ${filename}`);
+  const length = response.headers.get("content-length");
+  if (length !== null) lines.push(`Content-Length: ${length}`);
+  lines.push("", "Headers:");
+  for (const [name, value] of [...response.headers].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (isSensitiveRedirectHeader(name)) continue;
+    lines.push(`${name}: ${value}`);
+  }
+  lines.push(
+    "",
+    `Preview: first ${preview.length} bytes (hex); the remaining body was not downloaded`,
+    formatHexPreview(preview),
+  );
+  return lines.join("\n");
+}
+
+function attachmentFilename(disposition: string): string | undefined {
+  const encoded = /filename\*=UTF-8''([^;]+)/iu.exec(disposition)?.[1];
+  if (encoded !== undefined) {
+    try {
+      return decodeURIComponent(encoded).replaceAll(/[\r\n]/gu, "");
+    } catch {
+      return encoded.replaceAll(/[\r\n]/gu, "");
+    }
+  }
+  return /filename=(?:"([^"]+)"|([^;]+))/iu.exec(disposition)?.slice(1).find(Boolean)?.trim();
+}
+
+function isSensitiveRedirectHeader(name: string): boolean {
+  return ["content-location", "link", "location", "refresh", "set-cookie"].includes(
+    name.toLowerCase(),
+  );
+}
+
+function formatHexPreview(bytes: Uint8Array): string {
+  if (bytes.length === 0) return "(empty body)";
+  const rows: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    const chunk = bytes.subarray(offset, offset + 16);
+    const hex = [...chunk].map((byte) => byte.toString(16).padStart(2, "0")).join(" ");
+    const text = [...chunk]
+      .map((byte) => (byte >= 32 && byte <= 126 ? String.fromCodePoint(byte) : "."))
+      .join("");
+    rows.push(`${offset.toString(16).padStart(8, "0")}  ${hex.padEnd(47)}  |${text}|`);
+  }
+  return rows.join("\n");
 }
 
 function isHtml(bytes: Uint8Array, mediaType: string | undefined): boolean {

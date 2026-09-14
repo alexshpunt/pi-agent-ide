@@ -37,8 +37,22 @@ jobs:
       - name: Setup npm and pnpm
         run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
 
+      - name: Select public integration-test package
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, rmSync, writeFileSync } from "node:fs";
+          const workspace = "pnpm-workspace.yaml";
+          const source = readFileSync(workspace, "utf8");
+          const privateOverride = /^  pi-coding-agent-test: npm:@alexshp\/pi-coding-agent-test@[^\n]+\n/mu;
+          if (!privateOverride.test(source)) throw new Error("Private test-package override not found");
+          writeFileSync(workspace, source.replace(privateOverride, ""));
+          rmSync("pnpm-lock.yaml");
+          NODE
+
       - name: Install build dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build runtime tree
         run: node --experimental-strip-types scripts/build-public-package.ts --git-runtime .agents/tmp/git-preview

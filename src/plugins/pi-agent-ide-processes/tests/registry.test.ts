@@ -45,6 +45,7 @@ describe("Agent IDE process registry", () => {
     let providerListener: () => void = () => undefined;
     let detail = "old output";
     const requestRender = vi.fn();
+    const sendInput = vi.fn();
     let component:
       | {
           render(width: number): string[];
@@ -55,7 +56,7 @@ describe("Agent IDE process registry", () => {
     const registry = new AgentIdeProcessRegistry();
     registry.add({
       id: "terminal",
-      list: () => [processWithDetail("shell:one", detail)],
+      list: () => [{ ...processWithDetail("shell:one", detail), sendInput }],
       onDidChange(listener) {
         providerListener = listener;
         return () => {
@@ -99,6 +100,13 @@ describe("Agent IDE process registry", () => {
     const running = commandHandler?.("", context as never);
     component?.handleInput?.("\r");
     expect(component?.render(80).join("\n")).toContain("old output");
+    expect(component?.render(80).join("\n")).toContain("i input");
+    component?.handleInput?.("i");
+    expect(component?.render(80).join("\n")).toContain("input mode");
+    component?.handleInput?.("typed text");
+    expect(sendInput).toHaveBeenCalledWith("typed text");
+    component?.handleInput?.("\u001b");
+    expect(component?.render(80).join("\n")).toContain("i input");
     requestRender.mockClear();
 
     detail = "new output";

@@ -4,7 +4,7 @@
 
 <h1 align="center">Pi Agent IDE</h1>
 
-<p align="center">Agent-facing tools for reading, searching, and editing code in <a href="https://pi.dev/">Pi</a>.</p>
+<p align="center">IDE capabilities for coding agents in <a href="https://pi.dev/">Pi</a>.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/pi-agent-ide"><img src="https://img.shields.io/npm/v/pi-agent-ide" alt="npm version"></a>
@@ -12,31 +12,81 @@
   <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Funit.json" alt="Unit test count"></a>
   <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Fintegration.json" alt="Integration test count"></a>
+  <a href="https://alexshpunt-benchmark-explorer.static.hf.space/?filter.harness=pi-agent-ide"><img src="https://img.shields.io/badge/Explicit%20Edit%20Benchmark-v0.5.1%20%E2%80%A2%20not%20tested-lightgrey?style=flat-square" alt="Explicit Edit Benchmark: pi-agent-ide v0.5.1 is not tested yet"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/pi-agent-ide" alt="MIT license"></a>
 </p>
 
-## Status
+## Summary
 
-Pi Agent IDE is experimental and under active development. It is used in real work, but bugs and rough edges are still being found and fixed. Interfaces and behavior may change.
+Pi Agent IDE is a set of agent-facing tools built to give a coding agent the same practical capabilities that a programmer expects from an IDE.
 
-The current focus is measurement. The project is being compared with vanilla Pi on evals and editing gyms to understand where its tools improve results or reduce tool use and token use. Some workflows already benefit from the tools; others become harder. Until the data is stronger, treat performance claims as unproven and use the package at your own risk.
+There are two common views of coding agents. One says that an agent only needs a shell and can build everything else for itself. The other says that useful tooling makes an agent more effective. Both are partly right. Stronger models can often make precise edits and recover with little help. Smaller models are more likely to lose context, choose an unsafe edit, or fail on the mechanics of the task. Pi Agent IDE gives models direct tools without taking the shell away.
 
-## What it does
+The project started as another take on hash-based editing. It later brought back edits by exact string occurrence, with every occurrence checked before a change is applied. The result is a hybrid approach rather than one required selection method.
 
-Pi Agent IDE gives the agent a focused set of tools that work together:
+## Gallery
 
-- `read` handles text files, original bytes, web pages, images, PDFs, code views, diagnostics, terminal output, and debugger state;
-- `bash` on Unix-like systems and `powershell` on Windows run commands in the user's configured shell. Long-running and interactive commands remain available through `shell:` resources, including across extension reloads;
-- `search` finds files, text, symbols, and syntax-tree patterns;
-- `write`, `replace`, `insert`, `delete`, `copy`, and `move` edit text with exact matches, line anchors, search results, AST matches, and language-server symbols. `copy`, `move`, and `delete` also handle whole files;
-- `apply` opens immutable file snapshots, stages several text and whole-file changes in JavaScript, validates them together, and commits them as one guarded transaction. A successful transaction returns a short-lived receipt that the agent can pass to `undo`;
-- `debug` creates addressable Debug Adapter Protocol sessions. Agents can set breakpoints, inspect stopped source, step through code, and keep active `debug:` sessions across extension reloads;
-- formatting and diagnostics run after edits and stay local to the project that owns each file;
-- `/agent-ide-processes` shows terminal and debugger activity, while `/pi-agent-ide-doctor` checks the languages and tools available in the current project.
+| Read and guarded tool editing                                                                                               | Transactional Apply                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| ![Reading source with anchors, then replacing, inserting, and deleting guarded selections](assets/gallery/tool-editing.png) | ![A multi-step file edit staged and committed through Apply](assets/gallery/apply-editing.png)                        |
+| Web reading                                                                                                                 | Search and replace                                                                                                    |
+| ![Reading a web page through the unified read interface](assets/gallery/read-web.png)                                       | ![Searching local code and reusing the returned match in replace](assets/gallery/search-replace.png)                  |
+| Background processes                                                                                                        | Source-level debugging                                                                                                |
+| ![A long-running terminal command continuing in the background process view](assets/gallery/terminal.png)                   | ![Setting a breakpoint, inspecting locals, stepping, and continuing a debugger session](assets/gallery/debugging.png) |
 
-The tools share resources and safeguards. Reads and searches produce references that editing tools can reuse. Apply validates staged changes before its first write, attempts rollback if a later write fails, and reports whether recovery completed. Formatting, diagnostics, previews, and undo use the same underlying editing pipeline.
+## Core principles
 
-The npm package loads as one Pi extension. Its built-in modules can be enabled, disabled, replaced, or extended through versioned plugin protocols.
+### One interface for each intent
+
+The agent should express what it wants to do without choosing a different tool for every implementation behind it.
+
+`read` is the main interface to the environment. It reads text, source code, raw bytes, web pages, images, PDFs, terminal sessions, debugger sessions, and diagnostics. The same interface can ask for AST structure, language-server information, anchors, or other views. The agent chooses the information it needs while the parsing, conversion, and resource handling stay behind one facade.
+
+`search` follows the same rule. It searches files, text, symbols, syntax trees, and supported live resources through one interface.
+
+Editing tools state concrete intentions such as `write`, `replace`, `insert`, `delete`, `copy`, and `move`. Simple edits use guarded operations that verify the selected text or resource. Independent edits can be submitted together as a tool-call batch. For conditional or multi-file work, `apply` gives the agent isolated JavaScript over immutable file snapshots and the same guarded editing model, then validates and commits the staged changes as one transaction. This lets models use scripts for complex work without reducing an edit to an unchecked rewrite.
+
+### IDE tools
+
+The shell remains available, but it behaves like part of an IDE. The agent can start long-running and interactive processes, leave them in the background, reconnect after an extension reload, and receive completion or stale-process notifications. Aborting an agent turn does not kill the process.
+
+Debugger sessions are also addressable resources. The agent can set breakpoints, inspect source and variables, step through a program, and reconnect after a reload. Formatting, diagnostics, AST views, language-server views, terminal output, and debugger state work through the same resource model. This support is currently focused on Linux and WSL.
+
+### Extensible by protocol
+
+The visible tools stay small because their internals are protocols. HTTP reads, filesystem reads, terminal and debugger resources, file formats, AST views, language-server views, converters, search backends, anchors, formatters, and diagnostics can be added or replaced independently.
+
+The goal is simple primitives on the outside and composable complexity on the inside. New capabilities should extend an existing intent-shaped interface instead of adding another one-off tool.
+
+### Make recovery cheap
+
+Agents can edit through exact strings, hash anchors, search results, AST matches, and language-server symbols. If one method fails, the tool explains why, shows the available alternatives, and points the agent to a more precise method. The goal is not to punish a bad selection with stricter guardrails. Smaller models will make mistakes. Recovery should cost as little time and context as possible.
+
+The tools are designed to combine. A common flow is `search` followed by `replace`: the agent finds the intended occurrences, then edits all selected matches in one guarded operation. The same model supports structural changes and renames through search, AST, and LSP without requiring a separate workflow for each one.
+
+### Observability
+
+Powerful agents still need to be observable. A person should be able to see whether the harness is efficient, whether the agent is solving the real task, which tools fit its work, and where weak points or corner cases appear.
+
+This is more than presentation. Observable behavior provides the evidence that drives tool design, regression fixes, and benchmark work.
+
+### Data-driven development
+
+Daily use and judgement still matter, but features should not be built on vibes alone. Changes are measured on real tasks to find where agents fail, which model families work better or worse with the tools, and how Pi Agent IDE compares with other harnesses.
+
+The [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark) was created for this purpose. It measures how easily agents can use editing tools on exact, deterministic tasks. These tasks are especially useful for smaller models and models with limited reasoning, where tool design has a larger effect on reliability.
+
+Agent results are stochastic and no benchmark captures everything. We publish the score we actually get and build broader statistics instead of selecting only favorable runs.
+
+Pi Agent IDE is experimental and under active development. Interfaces and behavior may change.
+
+## Customization
+
+Pi Agent IDE follows Pi's permissive, YOLO-style default: the agent can use the tools without asking for approval at every step. You can make it as strict as your work requires.
+
+- [Settings](./docs/configuration.md) control built-in tools, project mappings, search, and presentation.
+- [File hooks](./docs/user-hooks.md) can inspect, change, or deny reads and edits.
+- [Extensions](./docs/extensions.md) can add or replace protocols, resolvers, anchors, search backends, and other behavior.
 
 ## Installation
 
@@ -50,7 +100,7 @@ Pi packages run with your full system permissions. Review the package before ins
 
 ## Check project tools
 
-Pi Agent IDE includes formatter, linter, and LSP mappings. It finds each tool from the project that owns the file, including project-local binaries and commands on your `PATH`. Settings from one project do not leak into another.
+Pi Agent IDE includes formatter, linter, LSP, and debugger mappings. It finds each tool from the project that owns the file, including project-local binaries and commands on your `PATH`. Settings from one project do not leak into another.
 
 Start Pi in your project directory, then run:
 
@@ -66,6 +116,12 @@ Doctor also reports optional system Chrome/Chromium support for browser-rendered
 
 Run doctor again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
 
+## Feedback and contributions
+
+Pi Agent IDE is used actively in real development, but I can only reproduce the models, tools, environments, and workflows available to me. Everyone works differently, and I cannot find or cover every case on my own. I can fix problems when I encounter them or when someone reports them.
+
+If something breaks, behaves badly, or does not fit your workflow, please [open an issue](https://github.com/alexshpunt/pi-agent-ide/issues). Bug reports, ideas, and questions are welcome. Pull requests are welcome too. Every contribution will be considered, and I am fully open to making the project much better with help from its users.
+
 ## Documentation
 
 | Document                                   | Contents                                                             |
@@ -73,13 +129,9 @@ Run doctor again after installing or changing project tools. For configuration p
 | [Tools and workflow](./docs/tools.md)      | Read, search, editing, anchors, and feedback                         |
 | [Architecture](./docs/architecture.md)     | Module boundaries, protocols, and the umbrella extension             |
 | [Configuration](./docs/configuration.md)   | Run doctor, configure project tools and search, or disable built-ins |
+| [File hooks](./docs/user-hooks.md)         | Inspect, change, or deny reads and edits                             |
 | [Writing extensions](./docs/extensions.md) | Add resolvers, anchors, search backends, and IDE plugins             |
 | [Development](./docs/development.md)       | Work from a checkout, test, and run modular mode                     |
-| [Evaluation](./docs/evaluation.md)         | Compare Pi Agent IDE with vanilla Pi on repeatable tasks             |
-
-## Repository
-
-Executable behavior is defined by the source and tests. The documents above explain the intended boundaries, extension contracts, and development workflows.
 
 ## License
 

@@ -23,6 +23,7 @@ export function terminalProcessProvider(manager: TerminalSessionManager): AgentI
             status: snapshot.status === "stopping" ? ("stopping" as const) : ("running" as const),
             renderSummary: (theme) => renderActiveTerminal(snapshot, theme).split("\n"),
             renderDetail: (theme) => renderTerminalResult(snapshot, true, theme),
+            sendInput: (data) => manager.write(snapshot.source, data),
             stop: () => manager.delete(snapshot.source),
           };
         }),
