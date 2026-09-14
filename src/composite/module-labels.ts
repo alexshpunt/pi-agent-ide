@@ -7,6 +7,14 @@ export const moduleLabels = {
   "ide.tips": ["Getting started tips", "Show contextual guidance while setting up a project."],
   "ide.doctor": ["Setup doctor", "Check external tools and help configure project support."],
   "ide.languages": ["Language setup", "Discover languages and their recommended toolchains."],
+  "ide.processes": [
+    "Agent IDE processes",
+    "Show active terminal and debugger sessions in one shared process surface.",
+  ],
+  "ide.debugger": [
+    "Debugger sessions",
+    "Debug local programs through addressable DAP sessions and anchored breakpoints.",
+  ],
   "ide.terminal": [
     "Terminal sessions",
     "Run and manage local interactive and background terminal processes.",

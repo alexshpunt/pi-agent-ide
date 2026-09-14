@@ -15,4 +15,10 @@ export interface TextEditCompletion {
   readonly intent: TextEditIntent;
 }
 
-export type TextEditCompletionListener = (completion: TextEditCompletion) => void | Promise<void>;
+export interface TextEditCompletionFeedback {
+  readonly feedback: string;
+  readonly tone?: "info" | "warning" | "error";
+}
+export type TextEditCompletionListener = (
+  completion: TextEditCompletion,
+) => void | TextEditCompletionFeedback | Promise<void | TextEditCompletionFeedback>;

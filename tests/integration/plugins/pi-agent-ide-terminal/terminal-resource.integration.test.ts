@@ -45,13 +45,13 @@ test.runIf(process.platform !== "win32")(
       ),
       cwd: workspace,
       extensions,
-      tools: ["run", "write", "insert", "replace", "delete", "read"],
+      tools: ["bash", "write", "insert", "replace", "delete", "read"],
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "run-interactive",
-              name: "run",
+              name: "bash",
               arguments: {
                 command: "IFS= read -r answer; printf 'resource:%s' \"$answer\"",
                 background: true,

@@ -40,7 +40,7 @@ export interface ScriptIndexOperation {
 }
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 21;
+export const TEXT_EDITOR_API_VERSION = 22;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 
@@ -92,6 +92,11 @@ export interface TextEditorRecoveryConfigSection {
   readonly settings: unknown;
 }
 export interface TextEditorPluginApi {
+  /** Restore a session-scoped Apply transaction receipt atomically. */
+  restoreApplyUndo(
+    transaction: string,
+    signal?: AbortSignal,
+  ): Promise<{ readonly transaction: string; readonly restored: readonly string[] }>;
   addResolver(registration: ResourceResolverRegistration): void;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;

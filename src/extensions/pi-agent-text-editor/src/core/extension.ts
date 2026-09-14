@@ -29,7 +29,6 @@ import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js"
 import { createTextTool } from "#src/core/text-mutation.js";
 import { registerApply } from "#src/core/apply/tool.js";
 import { registerDiff } from "#src/core/diff-tool.js";
-import { registerFileOperationTools } from "#src/core/file-operation-tools.js";
 import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
 
@@ -128,7 +127,6 @@ export default async function registerTextEditorCore(
 
   await core.waitForPendingPlugins();
   if (pi.getFlag("pi-agent-ide-no-apply") !== true) await registerApply(pi, core);
-  registerFileOperationTools(pi, core);
   registerDiff(pi, core, () => readApi);
   return core;
 }
@@ -143,6 +141,9 @@ function isFailedTextMutationResult(details: unknown): boolean {
   if (isRecord(recovery) && typeof recovery.state === "string" && recovery.state !== "completed") {
     return true;
   }
+
+  const semanticAction = isRecord(details.metadata) ? details.metadata.semanticAction : undefined;
+  if (isRecord(semanticAction) && semanticAction.ok === false) return true;
 
   const results = details.results;
   return (

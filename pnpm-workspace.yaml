@@ -11,6 +11,21 @@ allowedDeprecatedVersions:
   node-domexception: "1.0.0"
 
 allowBuilds:
+  "@ast-grep/lang-bash": true
+  "@ast-grep/lang-csharp": true
+  "@ast-grep/lang-dart": true
+  "@ast-grep/lang-elixir": true
+  "@ast-grep/lang-go": true
+  "@ast-grep/lang-html": true
+  "@ast-grep/lang-java": true
+  "@ast-grep/lang-kotlin": true
+  "@ast-grep/lang-lua": true
+  "@ast-grep/lang-markdown": true
+  "@ast-grep/lang-php": true
+  "@ast-grep/lang-ruby": true
+  "@ast-grep/lang-scala": true
+  "@ast-grep/lang-sql": true
+  "@ast-grep/lang-swift": true
   "@google/genai": true
   "@tree-sitter-grammars/tree-sitter-toml": true
   "@tree-sitter-grammars/tree-sitter-yaml": true

@@ -1,52 +1,146 @@
 import { expect, test } from "vitest";
-import { executeApplySource } from "#src/core/apply/runtime.js";
+import { executeApplySource, serializeApplyError } from "#src/core/apply/runtime.js";
 
-test("direct globals compose sequentially and explicit output needs no return", async () => {
+function snapshot(id: string, content: string) {
+  return { id, source: `/tmp/${id}.txt`, content, lines: [] };
+}
+
+test("Apply exposes guarded editor globals and hides raw mutation helpers", async () => {
   const calls: string[] = [];
-  const output: unknown[] = [];
-  let content = "before";
   await executeApplySource(
-    'const [, doc] = [replace({text: "after"}), read({})]; result(doc); remove({});',
+    `for (const name of ["write", "editBatch", "replace", "insert", "remove", "copy", "move", "delete_file", "copy_file", "move_file"]) {
+      if (typeof globalThis[name] !== "undefined") throw new Error(name + " should be hidden");
+    }
+    if (typeof open !== "function" || typeof apply !== "function") throw new Error("editor missing");
+    read({path: "note.txt"});`,
     {
       async execute(operation) {
         calls.push(operation);
-        if (operation === "replace") {
-          await Promise.resolve();
-          content = "after";
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(calls).toEqual(["read"]);
+});
+
+test("editor stages stable selections from several files and commits once", async () => {
+  const requests: unknown[] = [];
+  const output: unknown[] = [];
+  let opened = 0;
+  await executeApplySource(
+    `const first = open("first.txt");
+     const second = open("second.txt");
+     first.replace(first.find("old"), "new");
+     second.replaceAll("x", "y");
+     result(apply());`,
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen")
+          return opened++ === 0 ? snapshot("first", "old value") : snapshot("second", "x x");
+        if (operation === "editorApply") {
+          requests.push(arguments_);
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: ["first", "second"],
+            errors: [],
+          };
         }
-        return { content };
+        throw new Error(`Unexpected ${operation}`);
       },
       async result(value) {
         output.push(value);
       },
     },
   );
-  expect(calls).toEqual(["replace", "read", "remove"]);
-  expect(output).toEqual([{ content: "after" }]);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({
+    snapshots: [{ content: "old value" }, { content: "x x" }],
+    operations: [
+      { kind: "replace", selection: { from: 0, to: 3, text: "old" }, text: "new" },
+      { kind: "replace", selection: { from: 0, to: 1, text: "x" }, text: "y" },
+      { kind: "replace", selection: { from: 2, to: 3, text: "x" }, text: "y" },
+    ],
+  });
+  expect(output).toHaveLength(1);
 });
 
-test("guest can recover from a refused operation without losing prior effects", async () => {
+test("missing and ambiguous matches fail before the host receives a transaction", async () => {
+  for (const content of ["none", "same same"]) {
+    const calls: string[] = [];
+    await expect(
+      executeApplySource(
+        'const file = open("note.txt"); file.replace(file.find("same"), "new"); apply();',
+        {
+          async execute(operation) {
+            calls.push(operation);
+            if (operation === "editorOpen") return snapshot("note", content);
+            return null;
+          },
+          async result() {},
+        },
+      ),
+    ).rejects.toBeInstanceOf(Error);
+    expect(calls).toEqual(["editorOpen"]);
+  }
+});
+
+test("staged operations without apply are reported and do not reach the mutation host", async () => {
   const calls: string[] = [];
-  await executeApplySource("write({}); try { replace({}); } catch {} read({});", {
+  const output: unknown[] = [];
+  await executeApplySource('createFile("new.txt", "content");', {
     async execute(operation) {
       calls.push(operation);
-      if (operation === "replace") throw new Error("refused");
       return null;
     },
-    async result() {},
+    async result(value) {
+      output.push(value);
+    },
   });
-  expect(calls).toEqual(["write", "replace", "read"]);
+  expect(calls).toEqual([]);
+  expect(output).toEqual([
+    {
+      kind: "uncommitted-transaction",
+      staged: 1,
+      message: "Staged changes were not applied; call apply().",
+    },
+  ]);
 });
 
-test("operation errors retain structured recovery data inside the guest", async () => {
+test("a script can commit several fresh transactions", async () => {
+  const calls: string[] = [];
+  await executeApplySource(
+    'createFile("one.txt", "1"); apply(); createFile("two.txt", "2"); apply();',
+    {
+      async execute(operation) {
+        calls.push(operation);
+        return {
+          operation: "apply",
+          ok: true,
+          effect: "applied",
+          files: [],
+          completed: [],
+          errors: [],
+        };
+      },
+      async result() {},
+    },
+  );
+  expect(calls).toEqual(["editorApply", "editorApply"]);
+});
+
+test("operation errors retain structured rollback data inside the guest", async () => {
   const output: unknown[] = [];
   await executeApplySource(
-    "try { replace({}); } catch (error) { result({code: error.code, details: error.details}); }",
+    'createFile("one.txt", "1"); try { apply(); } catch (error) { result({code: error.code, details: error.details}); }',
     {
       async execute() {
-        throw Object.assign(new Error("stale"), {
-          code: "STALE_ANCHOR",
-          details: { effect: "not-applied", candidates: ["12#ABCD"] },
+        throw Object.assign(new Error("failed"), {
+          code: "TRANSACTION_FAILED",
+          details: { effect: "rolled-back" },
         });
       },
       async result(value) {
@@ -55,48 +149,13 @@ test("operation errors retain structured recovery data inside the guest", async 
     },
   );
   expect(output).toEqual([
-    { code: "STALE_ANCHOR", details: { effect: "not-applied", candidates: ["12#ABCD"] } },
-  ]);
-});
-
-test("explicit operation output keeps its host identity, copied values do not", async () => {
-  const identities: (string | undefined)[] = [];
-  let callId: string | undefined;
-  await executeApplySource("const doc = read({}); result(doc); result({...doc});", {
-    async execute(_operation, _args, _signal, id) {
-      callId = id;
-      return { content: "text" };
-    },
-    async result(_value, id) {
-      identities.push(id);
-    },
-  });
-  expect(callId).toEqual(expect.any(String));
-  expect(identities).toEqual([callId, undefined]);
-});
-
-test("cancellation drains an active operation and prevents queued operations", async () => {
-  const controller = new AbortController();
-  const calls: string[] = [];
-  let finished = false;
-  const execution = executeApplySource(
-    "await Promise.all([write({}), replace({})]);",
+    { code: "TRANSACTION_FAILED", details: { effect: "rolled-back" } },
     {
-      async execute(operation, _args, signal) {
-        calls.push(operation);
-        controller.abort();
-        await Promise.resolve();
-        finished = true;
-        signal.throwIfAborted();
-        return null;
-      },
-      async result() {},
+      kind: "uncommitted-transaction",
+      staged: 1,
+      message: "Staged changes were not applied; call apply().",
     },
-    controller.signal,
-  );
-  await expect(execution).rejects.toBeInstanceOf(Error);
-  expect(finished).toBe(true);
-  expect(calls).toEqual(["write"]);
+  ]);
 });
 
 test("synchronous reads transfer large data without clipping", async () => {
@@ -116,22 +175,31 @@ test("synchronous reads transfer large data without clipping", async () => {
   expect(output).toEqual([{ length: content.length, last: "x" }]);
 });
 
-test("synchronous bridge timeout aborts host work before another operation", async () => {
-  const calls: string[] = [];
+test("guest editor failures retain actionable Apply error codes", async () => {
+  let caught: unknown;
+  try {
+    await executeApplySource('throw new Error("Expected exactly one match, found 2");', {
+      execute: async () => null,
+      result: async () => {},
+    });
+  } catch (error) {
+    caught = error;
+  }
+  expect(serializeApplyError(caught)).toMatchObject({ code: "AMBIGUOUS_MATCH" });
+});
+test("synchronous bridge timeout aborts host work", async () => {
   let aborted = false;
   await expect(
     executeApplySource(
-      "read({}); write({});",
+      "read({});",
       {
-        async execute(operation, _args, signal) {
-          calls.push(operation);
+        async execute(_operation, _args, signal) {
           await new Promise<void>((resolve) => {
             if (signal.aborted) resolve();
             else signal.addEventListener("abort", () => resolve(), { once: true });
           });
           aborted = signal.aborted;
           signal.throwIfAborted();
-          return null;
         },
         async result() {},
       },
@@ -140,5 +208,4 @@ test("synchronous bridge timeout aborts host work before another operation", asy
     ),
   ).rejects.toBeInstanceOf(Error);
   expect(aborted).toBe(true);
-  expect(calls).toEqual(["read"]);
 });

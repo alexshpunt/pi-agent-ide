@@ -1,6 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import { type AgentToolResult, initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { withTextSourceLine } from "pi-agent-text";
 import { expect, test } from "vitest";
 
 import { createReadResultRenderer } from "#src/core/tools/read/read-renderer.js";
@@ -76,6 +77,54 @@ test("renders projected view content and expands the complete saved result", () 
   expect(expandedText).not.toContain("more rows");
 });
 
+test("code views highlight source before adding line and scope annotations", () => {
+  const line = withTextSourceLine(
+    {
+      lineNumber: 1,
+      content: "export const answer = 42;",
+      lineEnding: "\n",
+      presentation: {
+        prefix: "7#ABCD|",
+        suffix: "  <!-- scope-begin-C0DE -->",
+      },
+    },
+    {
+      source: "/workspace/example.ts",
+      lineNumber: 7,
+      content: "export const answer = 42;",
+    },
+  );
+  const result: AgentToolResult<ReadResultDetails> = {
+    content: [
+      {
+        type: "text",
+        text: "7#ABCD|export const answer = 42;  <!-- scope-begin-C0DE -->\n",
+      },
+    ],
+    details: {
+      source: "ast:/workspace/example.ts",
+      resolvedBy: "ast",
+      startLine: 1,
+      endLine: 1,
+      totalLines: 1,
+      lines: [line],
+    },
+  };
+  const renderer = createReadResultRenderer({ kind: "code-view" });
+  const rendered = renderer(result, { expanded: true, isPartial: false }, plainTheme, {
+    isError: false,
+    lastComponent: undefined,
+  } as never)
+    .render(100)
+    .join("\n");
+
+  expect(rendered).toContain("7#ABCD|");
+  expect(rendered).toContain("scope-begin-C0DE");
+  expect(rendered).toContain("\u001b[");
+  expect(stripTerminalSequences(rendered)).toContain(
+    "7#ABCD|export const answer = 42;  <!-- scope-begin-C0DE -->",
+  );
+});
 test("shows read intent in one compact line and exact arguments when expanded", () => {
   const renderCall = createReadTool().tool.renderCall;
 
@@ -177,6 +226,72 @@ test.each([
   }
 });
 
+test("syntax-highlights source content when views add prefixes and suffixes", () => {
+  const line: ReadTextLine = {
+    lineNumber: 1,
+    content: "def total(items):",
+    lineEnding: "",
+    presentation: {
+      prefix: "1#HASH|",
+      suffix: "  ○ breakpoint",
+      compactSuffix: "  ○ breakpoint",
+    },
+    metadata: {
+      "pi-agent-text/source-line": {
+        source: "/workspace/order_pipeline.py",
+        lineNumber: 1,
+        content: "def total(items):",
+      },
+    },
+  };
+  const result: AgentToolResult<ReadResultDetails> = {
+    content: [{ type: "text", text: "1#HASH|def total(items):  ○ breakpoint" }],
+    details: {
+      source: "debug:abcdef/source",
+      resolvedBy: "debugger-source",
+      startLine: 1,
+      endLine: 1,
+      totalLines: 1,
+      lines: [line],
+    },
+  };
+  const rendered = createReadResultRenderer({ kind: "source" })(
+    result,
+    { expanded: true, isPartial: false },
+    plainTheme,
+    { isError: false, lastComponent: undefined } as never,
+  )
+    .render(100)
+    .join("\n");
+
+  expect(stripTerminalSequences(rendered)).toContain("1#HASH|def total(items):  ○ breakpoint");
+  expect(rendered).toContain("\u001B[");
+});
+test("resolver plugins can replace only the read call header", () => {
+  const read = createReadTool();
+  read.registerContributions("debugger", {
+    resolvers: [
+      {
+        resolver: {
+          id: "debugger-source",
+          tryResolve: () => Promise.resolve({ kind: "not-handled" as const }),
+        },
+        matchesCall: (source) => source.startsWith("debug:"),
+        renderCall: () => ({ invalidate() {}, render: () => ["debug file · pricing.py"] }),
+      },
+    ],
+  });
+  const renderCall = requiredValue(read.tool.renderCall);
+  const custom = renderCall({ path: "debug:abcdef/source" }, plainTheme, {
+    lastComponent: undefined,
+  } as never);
+  const regular = renderCall({ path: "src/pricing.py" }, plainTheme, {
+    lastComponent: undefined,
+  } as never);
+
+  expect(custom.render(80)).toEqual(["debug file · pricing.py"]);
+  expect(regular.render(80).join("\n")).toContain("read");
+});
 test("wraps long source rows without changing the saved line", () => {
   const longLine = `const link = "${"alpha beta ".repeat(10)}https://example.com/${"x".repeat(80)}";`;
   const result: AgentToolResult<ReadResultDetails> = {

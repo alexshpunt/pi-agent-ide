@@ -11,10 +11,10 @@ export interface AgentIdePreference {
 /** Registered presentation preferences. */
 export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
   {
-    id: "terminal.activity",
-    name: "Active terminal display",
+    id: "processes.activity",
+    name: "Active Agent IDE processes",
     description:
-      "Choose detailed terminal cards, a compact active count, or no persistent terminal activity UI.",
+      "Choose detailed process cards, a compact active count, or no persistent Agent IDE process UI.",
     default: "detailed",
     group: "ui",
     values: [

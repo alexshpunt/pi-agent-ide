@@ -2,6 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import type { TextSearchMatch } from "#src/search-session.js";
+import { planSearchPresentation } from "#src/search-presentation.js";
 
 export interface SearchResultRange {
   readonly from: number;
@@ -15,10 +16,17 @@ export interface SearchResultLine {
   readonly ranges: readonly SearchResultRange[];
 }
 
+export interface SearchResultGroup {
+  readonly text: string;
+  readonly matchCount: number;
+}
+
 export interface SearchResultFile {
   readonly path: string;
   readonly link: string;
   readonly matchCount: number;
+  readonly uniqueLineCount?: number;
+  readonly groups?: readonly SearchResultGroup[];
   readonly lines: readonly SearchResultLine[];
 }
 
@@ -43,17 +51,21 @@ export function createSearchToolDetails(
   complete: boolean,
   cwd: string,
   sessionId?: string,
+  detailBudget = 50,
 ): SearchToolDetails {
-  const matchesBySource = new Map<string, TextSearchMatch[]>();
-
-  for (const match of matches) {
-    const source = path.resolve(match.source);
-    matchesBySource.set(source, [...(matchesBySource.get(source) ?? []), match]);
-  }
-
-  const files = [...matchesBySource]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([source, sourceMatches]) => createSearchResultFile(source, sourceMatches, cwd));
+  const presentation = planSearchPresentation(matches, detailBudget);
+  const files = presentation.files.map((file): SearchResultFile =>
+    file.kind === "detailed"
+      ? createSearchResultFile(file.source, file.matches, cwd)
+      : {
+          path: displaySource(file.source, cwd),
+          link: pathToFileURL(file.source).href,
+          matchCount: file.matchCount,
+          uniqueLineCount: file.uniqueLineCount,
+          groups: file.groups,
+          lines: [],
+        },
+  );
 
   return {
     ...(sessionId !== undefined && { sessionId }),
@@ -141,9 +153,17 @@ function isSearchResultFile(value: unknown): value is SearchResultFile {
     return false;
   }
 
+  const lines = value.lines as readonly SearchResultLine[];
+  const groups = value.groups;
   return (
-    value.matchCount ===
-    (value.lines as readonly SearchResultLine[]).reduce((count, line) => count + line.matchCount, 0)
+    (groups === undefined ||
+      (Array.isArray(groups) &&
+        groups.every(
+          (group) => isRecord(group) && typeof group.text === "string" && isCount(group.matchCount),
+        ))) &&
+    (value.uniqueLineCount === undefined || isCount(value.uniqueLineCount)) &&
+    (lines.length === 0 ||
+      value.matchCount === lines.reduce((count, line) => count + line.matchCount, 0))
   );
 }
 

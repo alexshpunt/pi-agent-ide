@@ -37,7 +37,7 @@ test("Apply copies and removes an exact LSP declaration without matching unrelat
               name: "apply",
               arguments: {
                 source:
-                  'const copied = copy({path:"symbol:source.ts#Example",target:"destination.ts",targetStart:"end"}); if (copied.metadata.semanticEdit.mode !== "declaration-text" || copied.metadata.semanticEdit.referencesUpdated !== false) throw new Error("Missing fallback receipt"); remove({path:"symbol:source.ts#Example"});',
+                  'const source = open("source.ts"); const destination = open("destination.ts"); const declaration = source.find("export class Example {\\n  value() { return 1; }\\n}\\n"); destination.insertAfter(destination.find("// destination"), "\\n" + declaration.text); source.remove(declaration); apply();',
               },
             }),
           ],
@@ -108,7 +108,7 @@ test("standalone declaration edits and Apply reject semantic insert without losi
               name: "apply",
               arguments: {
                 source:
-                  'let blocked = false; try { insert({path:"symbol:source.ts#first",text:"invalid"}); } catch (error) { blocked = true; } if (!blocked) throw new Error("Semantic insert was allowed");',
+                  'if (typeof insert !== "undefined" || typeof replace !== "undefined") throw new Error("Legacy mutation helper was exposed");',
               },
             }),
           ],
@@ -127,55 +127,48 @@ test("standalone declaration edits and Apply reject semantic insert without losi
   });
 });
 
-test.each(["apply", "replace"])(
-  "%s renames cross-file references without replacing unrelated names",
-  async (tool) => {
-    await withTempWorkspace(async (cwd) => {
-      await writeFile(
-        path.join(cwd, "tsconfig.json"),
-        JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
-      );
-      await writeFile(path.join(cwd, "source.ts"), 'export function greet() { return "greet"; }\n');
-      await writeFile(
-        path.join(cwd, "usage.ts"),
-        'import { greet } from "./source";\nexport const answer = greet();\nfunction unrelated() { const greet = "local"; return greet; }\n',
-      );
-      const run = await new PiIntegrationTest({
-        testName: `semantic-native-rename-${tool}`,
-        artifactsDir: testArtifactsDir(import.meta.filename),
-        cwd,
-        extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: [tool],
-        timeoutMs: 120_000,
-        conversation: [
-          assistantMessage(
-            [
-              toolCall({
-                id: "rename",
-                name: tool,
-                arguments:
-                  tool === "apply"
-                    ? { source: 'replace({path:"symbol:source.ts#greet#name",text:"welcome"});' }
-                    : { path: "symbol:source.ts#greet#name", text: "welcome" },
-              }),
-            ],
-            { stopReason: "toolUse" },
-          ),
-          assistantMessage([text("Done")]),
-        ],
-      }).run("Rename greet through the language server, keeping unrelated names intact");
-      const execution = getToolExecution(run, "rename");
-      expect(execution.isError, JSON.stringify(execution)).toBe(false);
-      expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toContain(
-        'function welcome() { return "greet"; }',
-      );
-      const usage = await readFile(path.join(cwd, "usage.ts"), "utf8");
-      expect(usage).toContain("import { welcome }");
-      expect(usage).toContain("answer = welcome()");
-      expect(usage).toContain('const greet = "local"; return greet;');
-    });
-  },
-);
+test("standalone replace renames cross-file references without replacing unrelated names", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(
+      path.join(cwd, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
+    );
+    await writeFile(path.join(cwd, "source.ts"), 'export function greet() { return "greet"; }\n');
+    await writeFile(
+      path.join(cwd, "usage.ts"),
+      'import { greet } from "./source";\nexport const answer = greet();\nfunction unrelated() { const greet = "local"; return greet; }\n',
+    );
+    const run = await new PiIntegrationTest({
+      testName: "semantic-native-rename-replace",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["replace"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "rename",
+              name: "replace",
+              arguments: { path: "symbol:source.ts#greet#name", text: "welcome" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Rename greet through the language server, keeping unrelated names intact");
+    expect(getToolExecution(run, "rename").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toContain(
+      'function welcome() { return "greet"; }',
+    );
+    const usage = await readFile(path.join(cwd, "usage.ts"), "utf8");
+    expect(usage).toContain("import { welcome }");
+    expect(usage).toContain("answer = welcome()");
+    expect(usage).toContain('const greet = "local"; return greet;');
+  });
+});
 
 test("Apply symbol search honors its file scope before applying the result limit", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -232,7 +225,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
               name: "apply",
               arguments: {
                 source:
-                  'const found = search({query:"ast:console.log($ARG)",path:"nodes.ts"}); if(found.data.matches.length!==2 || !found.details.sessionId) throw new Error("Missing AST selections"); replace({path:`SEARCH#${found.details.sessionId}:2:match`,text:"logger.info(42)"});',
+                  'const found = search({query:"ast:console.log($ARG)",path:"nodes.ts"}); if(found.data.matches.length!==2) throw new Error("Missing AST selections"); const doc = open("nodes.ts"); doc.replace(doc.select(found.data.matches[1]), "logger.info(42)"); apply();',
               },
             }),
           ],
@@ -267,14 +260,17 @@ test("Apply refreshes AST all selections without matching strings or stale nodes
               name: "apply",
               arguments: {
                 source: `
-const found = search({query: "ast:console.log($ARG)", path: "nodes.ts"});
-const id = found.details.sessionId;
-replace({path: \`SEARCH#\${id}:1:match\`, text: 'logger.info("same")'});
-write({path: "nodes.ts", content: 'const text = \\"console.log(42)\\"; console.log(42);\\n'});
+const firstSearch = search({query: "ast:console.log($ARG)", path: "nodes.ts"});
+const first = open("nodes.ts");
+first.replace(first.select(firstSearch.data.matches[0]), 'logger.info("same")');
+apply();
 let refused = false;
-try { replace({path: \`SEARCH#\${id}:1:match\`, text: "wrong()"}); } catch { refused = true; }
-if (!refused) throw new Error("Stale AST selection accepted");
-replace({path: \`SEARCH#\${id}:all:match\`, text: "done()"});
+try { first.replace(first.find("emoji"), "wrong"); } catch (error) { refused = error.code === "STALE_EDITOR"; }
+if (!refused) throw new Error("Committed editor handle accepted");
+const secondSearch = search({query: "ast:logger.info($ARG)", path: "nodes.ts"});
+const second = open("nodes.ts");
+second.replace(second.select(secondSearch.data.matches[0]), "done()");
+apply();
 `,
               },
             }),
@@ -287,7 +283,7 @@ replace({path: \`SEARCH#\${id}:all:match\`, text: "done()"});
     const execution = getToolExecution(run, "refresh");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "nodes.ts"), "utf8")).toBe(
-      'const text = "console.log(42)"; done();\n',
+      'const emoji = "😀"; done();\n',
     );
   });
 });

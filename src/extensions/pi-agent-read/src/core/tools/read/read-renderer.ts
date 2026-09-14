@@ -271,24 +271,83 @@ function renderContentRows(state: ReadPanelState, width: number): string[] {
 
   if (state.options.kind === "code-view") {
     const rows =
-      lines === undefined || hasPresentation(lines)
+      lines === undefined
         ? splitTextRows(text).map((line) => renderCodeViewLabel(line, state.theme, false))
-        : renderCodeViewLines(lines, state.theme);
+        : hasPresentation(lines)
+          ? renderPresentedCodeViewLines(lines, !state.expanded, state.theme)
+          : renderCodeViewLines(lines, state.theme);
     return nonEmptyRows(rows, state.theme);
   }
 
+  const presented = lines !== undefined && hasPresentation(lines);
   const sourceLines =
-    lines === undefined || hasPresentation(lines)
+    lines === undefined || presented
       ? splitTextRows(text).map(normalizeText)
       : lines.map(({ content }) => normalizeText(content));
   const language = languageFor(state.details, lines);
   const rows =
     language === undefined
       ? sourceLines.map((line) => state.theme.fg("toolOutput", line))
-      : highlightCode(sourceLines.join("\n"), language);
+      : presented
+        ? renderHighlightedPresentedLines(lines, language, !state.expanded, state.theme)
+        : highlightCode(sourceLines.join("\n"), language);
   return nonEmptyRows(rows, state.theme);
 }
 
+function renderHighlightedPresentedLines(
+  lines: readonly ReadTextLine[],
+  language: string,
+  compact: boolean,
+  theme: Theme,
+): string[] {
+  return lines.flatMap((line) => {
+    const content = normalizeText(line.content);
+    const highlighted = highlightCode(content, language)[0] ?? theme.fg("toolOutput", content);
+    let sourceRowRendered = false;
+    const presented = renderPresentedTextDocument(
+      { source: "", content: line.content, lines: [line] },
+      { compact },
+    );
+    return splitTextRows(presented).map((row) => {
+      if (!sourceRowRendered && content.length > 0) {
+        const offset = row.indexOf(content);
+        if (offset >= 0) {
+          sourceRowRendered = true;
+          return `${theme.fg("toolOutput", row.slice(0, offset))}${highlighted}${theme.fg(
+            "toolOutput",
+            row.slice(offset + content.length),
+          )}`;
+        }
+      }
+      return theme.fg("toolOutput", row);
+    });
+  });
+}
+function renderPresentedCodeViewLines(
+  lines: readonly ReadTextLine[],
+  compact: boolean,
+  theme: Theme,
+): string[] {
+  return lines.flatMap((line) => {
+    const sourceLine = getTextSourceLine(line);
+    if (sourceLine === undefined) {
+      const presented = renderPresentedTextDocument(
+        { source: "", content: line.content, lines: [line] },
+        { compact },
+      );
+      return splitTextRows(presented).map((row) => renderCodeViewLabel(row, theme, false));
+    }
+    const language = getLanguageFromPath(sourceLine.source);
+    if (language === undefined) {
+      const presented = renderPresentedTextDocument(
+        { source: "", content: line.content, lines: [line] },
+        { compact },
+      );
+      return splitTextRows(presented).map((row) => theme.fg("toolOutput", row));
+    }
+    return renderHighlightedPresentedLines([line], language, compact, theme);
+  });
+}
 function renderCodeViewLines(lines: readonly ReadTextLine[], theme: Theme): string[] {
   return lines.map((line) => {
     const sourceLine = getTextSourceLine(line);

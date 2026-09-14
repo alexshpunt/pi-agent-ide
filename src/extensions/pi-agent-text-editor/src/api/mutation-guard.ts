@@ -1,5 +1,6 @@
 import type { TextEditIntent } from "#src/api/edit-completion.js";
 import type { AppliedTextChange } from "#src/core/text-change-engine.js";
+export type { AppliedTextChange } from "#src/core/text-change-engine.js";
 import type { TextDocument } from "pi-agent-text";
 
 export interface TextMutationPlanResource {

@@ -1,6 +1,9 @@
 import type { IPty } from "node-pty";
 import type { Terminal } from "@xterm/headless";
 
+export type TerminalWaitReason = "timeout" | "interactive" | "aborted";
+export type TerminalCompletionReason = "timeout";
+
 export type TerminalSessionStatus =
   | "running"
   | "completed"
@@ -21,12 +24,13 @@ export interface TerminalSession {
   readonly id: string;
   readonly source: string;
   readonly command: string;
-  readonly background: boolean;
+  background: boolean;
   readonly cwd: string;
   readonly shell: ShellProfile;
   readonly startedAt: number;
   readonly cols: number;
   readonly rows: number;
+  readonly fullOutputPath: string;
   readonly process?: IPty;
   readonly screen: Terminal;
   status: TerminalSessionStatus;
@@ -40,6 +44,9 @@ export interface TerminalSession {
   completion: Promise<TerminalSession>;
   resolveCompletion: (session: TerminalSession) => void;
   completionDelivered: boolean;
+  waitReason?: TerminalWaitReason;
+  completionReason?: TerminalCompletionReason;
+  lastActivityAt: number;
 }
 
 export interface TerminalSessionSnapshot {
@@ -51,6 +58,10 @@ export interface TerminalSessionSnapshot {
   readonly shellFamily: ShellProfile["family"];
   readonly background: boolean;
   readonly status: TerminalSessionStatus;
+  readonly waitReason?: TerminalWaitReason;
+  readonly completionReason?: TerminalCompletionReason;
+  readonly lastActivityAt: number;
+  readonly idleMs: number;
   readonly startedAt: number;
   readonly endedAt?: number;
   readonly elapsedMs: number;
@@ -61,6 +72,7 @@ export interface TerminalSessionSnapshot {
   readonly outputStart: number;
   readonly outputEnd: number;
   readonly truncated: boolean;
+  readonly fullOutputPath: string;
   readonly cols: number;
   readonly rows: number;
 }

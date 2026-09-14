@@ -1,12 +1,13 @@
-import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
+
+import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
 
 import {
   outputTail,
   renderActiveTerminal,
   renderRunResult,
   renderTerminalActionResult,
-  renderTerminalWidgetLines,
   terminalCardLines,
 } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
@@ -23,12 +24,15 @@ function snapshot(overrides: Partial<TerminalSessionSnapshot> = {}): TerminalSes
     shellFamily: "posix",
     background: true,
     status: "running",
+    lastActivityAt: 1_000,
+    idleMs: 12_000,
     startedAt: 1_000,
     elapsedMs: 12_000,
     output: "booting\r\nready\r\nlatest\r\n",
     outputStart: 0,
     outputEnd: 24,
     truncated: false,
+    fullOutputPath: "/tmp/pi-agent-ide-terminal/session.log",
     cols: 100,
     rows: 30,
     ...overrides,
@@ -71,13 +75,40 @@ describe("terminal renderer", () => {
     expect(lines[13]).toContain("running");
   });
 
-  test("expanded terminal result includes the complete retained output", () => {
+  test("expanded terminal result keeps a bounded tail", () => {
     const output = Array.from({ length: 30 }, (_, index) => `line-${index + 1}`).join("\n");
     const lines = renderRunResult(snapshot({ output }), true, theme).render(100);
 
-    expect(lines.some((line) => line.includes("line-1"))).toBe(true);
+    expect(lines.some((line) => line.trim() === "line-1")).toBe(false);
     expect(lines.some((line) => line.includes("line-30"))).toBe(true);
-    expect(lines.some((line) => line.includes("earlier lines"))).toBe(false);
+    expect(lines.some((line) => line.includes("earlier lines"))).toBe(true);
+    expect(lines).toHaveLength(16);
+  });
+
+  test("bounds one extremely long output line", () => {
+    const lines = renderRunResult(
+      snapshot({ output: "x".repeat(100_000) + "THE-END" }),
+      true,
+      theme,
+    ).render(100);
+
+    expect(lines.length).toBeLessThan(12);
+    expect(lines.join("\n")).toContain("[truncated]");
+  });
+
+  test("formats large agent output as a recoverable tail", () => {
+    const text = formatAgentTerminalSnapshot(
+      snapshot({
+        output: Array.from({ length: 2_100 }, (_, index) => `line-${index + 1}`).join("\n"),
+      }),
+    );
+
+    expect(text).not.toContain("line-1\n");
+    expect(text).toContain("line-2100");
+    expect(text).toContain("Earlier output omitted");
+    expect(text).toContain("fullOutput: /tmp/pi-agent-ide-terminal/session.log");
+    expect(text.split("\n").length).toBeLessThanOrEqual(DEFAULT_MAX_LINES);
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(DEFAULT_MAX_BYTES);
   });
 
   test("renders PowerShell with its native prompt marker", () => {
@@ -88,18 +119,6 @@ describe("terminal renderer", () => {
     );
 
     expect(lines[1]).toBe("PS> pnpm dev");
-  });
-
-  test("bounds every widget row and keeps the border intact", () => {
-    const lines = renderTerminalWidgetLines(
-      [snapshot({ command: "a very long command ".repeat(10) })],
-      48,
-      theme,
-    );
-
-    expect(lines[0]).toContain("Terminals");
-    expect(lines.at(-1)).toContain("╰");
-    expect(lines.every((line) => visibleWidth(stripTerminalSequences(line)) <= 48)).toBe(true);
   });
 
   test("returns only meaningful final output rows", () => {

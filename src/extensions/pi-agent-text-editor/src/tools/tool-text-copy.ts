@@ -31,7 +31,7 @@ export const copySchema = Type.Object(
     target: Type.Optional(
       Type.String({
         description:
-          "Target resource reference or file path; a returned SEARCH# reference may select the destination; defaults to the source",
+          "Target resource reference or file path. Required for a whole-file operation; defaults to the source for selected text.",
       }),
     ),
     targetStart: Type.Optional(
@@ -44,6 +44,11 @@ export const copySchema = Type.Object(
       Type.String({
         description:
           "Optional inclusive destination end. Replaces whole lines through the last line containing this anchor, including SEARCH :match. May differ in type from targetStart; both must resolve uniquely in the target file and in forward order. Omit to insert after targetStart instead.",
+      }),
+    ),
+    overwrite: Type.Optional(
+      Type.Boolean({
+        description: "Allow replacing an existing regular target file. Defaults to false.",
       }),
     ),
   },
@@ -61,11 +66,11 @@ interface CopyParameters {
 
 export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> = {
   name: "copy",
+  wholeFileOperation: "copy",
   description:
-    "Use copy to duplicate existing text within or between files while keeping the source. Select the source and destination without reproducing the text in your call. The copy is inserted at the destination or replaces a destination range.",
+    "Use copy to copy one regular file when path and target are supplied without text selectors, or to duplicate selected text within or between files. Whole-file targets require overwrite: true when they already exist.",
 
-  promptSnippet:
-    "Make precise file edits by copying text within or between files using exact matches or anchors",
+  promptSnippet: "Copy regular files, or copy selected text within or between files",
   parameters: copySchema,
   source: { field: "path", inherited: true, targets: [{ field: "target", fallbackTo: "path" }] },
   anchors: [

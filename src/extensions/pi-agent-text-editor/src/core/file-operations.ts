@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 
 /** Whole-file operations, distinct from text-selection copy/move/remove. */
-export const fileOperations = ["delete_file", "move_file", "copy_file"] as const;
+export const fileOperations = ["delete", "move", "copy"] as const;
 export type FileOperation = (typeof fileOperations)[number];
 const filePath = Type.String({
   minLength: 1,
@@ -71,7 +71,7 @@ export async function executeFileOperation(
   let source: string | undefined;
   let target: string | undefined;
   try {
-    const schema = operation === "delete_file" ? deleteFileParameters : transferFileParameters;
+    const schema = operation === "delete" ? deleteFileParameters : transferFileParameters;
     if (!Value.Check(schema, input))
       throw Object.assign(new Error("Invalid file operation arguments"), {
         code: "INVALID_ARGUMENTS",
@@ -103,9 +103,9 @@ export async function executeFileOperation(
     }
     signal?.throwIfAborted();
     started = true;
-    if (operation === "delete_file") await unlink(source);
+    if (operation === "delete") await unlink(source);
     else if (target !== undefined) {
-      if (operation === "copy_file")
+      if (operation === "copy")
         await fs.copy(source, target, { overwrite: args.overwrite === true, errorOnExist: true });
       else await fs.move(source, target, { overwrite: args.overwrite === true });
     }

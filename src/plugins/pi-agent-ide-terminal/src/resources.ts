@@ -14,6 +14,7 @@ import type { AgentContent, ResourceResolver } from "pi-agent-resource";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
 import { renderTerminalScreen } from "#src/plugins/pi-agent-ide-terminal/src/screen-image.js";
 import {
   renderTerminalAction,
@@ -85,6 +86,7 @@ export async function registerTerminalResources(
             };
           }
           try {
+            manager.markInspected(source);
             const data = await renderTerminalScreen(manager, source);
             return {
               kind: "return",
@@ -102,7 +104,7 @@ export async function registerTerminalResources(
         },
       });
       api.describe(
-        'shell:<session> — terminal session status and bounded output. Use views: ["image"] to read the current virtual terminal screen as a PNG.',
+        'shell:<session> — terminal session status and a bounded output tail with a full-log path when truncated. Use views: ["image"] to read the current virtual terminal screen as a PNG.',
       );
       api.addPromptGuideline(
         "Use read with a returned shell:<session> source to inspect terminal status and output. Add the image view when cursor movement, ANSI layout, or a full-screen terminal interface matters.",
@@ -281,6 +283,7 @@ function createReadResolver(manager: TerminalSessionManager): ResourceResolver {
         resource: {
           source: session.source,
           async read() {
+            manager.markInspected(session.source);
             const snapshot = manager.snapshot(session);
             return [{ type: "text", text: formatSnapshot(snapshot) }];
           },
@@ -356,20 +359,8 @@ function transformInsertInput<State extends { readonly input: unknown }>(state: 
 }
 
 function formatSnapshot(snapshot: ReturnType<TerminalSessionManager["snapshot"]>): string {
-  const metadata = [
-    `session: ${snapshot.source}`,
-    `status: ${snapshot.status}`,
-    `shell: ${snapshot.shell}`,
-    `cwd: ${snapshot.cwd}`,
-    `elapsedMs: ${snapshot.elapsedMs}`,
-    snapshot.exitCode === undefined ? undefined : `exitCode: ${snapshot.exitCode}`,
-    snapshot.signal === undefined ? undefined : `signal: ${snapshot.signal}`,
-    `outputRange: ${snapshot.outputStart}-${snapshot.outputEnd}`,
-    `truncated: ${String(snapshot.truncated)}`,
-  ].filter((line): line is string => line !== undefined);
-  return `${metadata.join("\n")}\n\n${snapshot.output}`;
+  return formatAgentTerminalSnapshot(snapshot);
 }
-
 function singleText(content: AgentContent): string {
   if (content.length !== 1 || content[0].type !== "text") {
     throw new Error("Terminal input must contain one text block");

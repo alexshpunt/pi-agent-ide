@@ -181,6 +181,43 @@ test("range projection keeps only selected source lines and their visible marker
   });
 }, 60_000);
 
+test("ast source outlines a language shared with LSP and debugger", async () => {
+  await withTempDirectory(async (directory) => {
+    const fileName = "main.go";
+    await writeFile(
+      path.join(directory, fileName),
+      ["package main", "", "func greet() {", '    println("hello")', "}", ""].join("\n"),
+      "utf8",
+    );
+
+    const result = await new PiIntegrationTest({
+      artifactsDir: testArtifactsDir(expect.getState().testPath),
+      testName: "read-native-ast-outline-source",
+      cwd: directory,
+      extensions: generatedExtensions.paths,
+      tools: ["read"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "read-native-ast-outline-source",
+              name: "read",
+              arguments: { path: `ast:${fileName}`, views: ["anchors", "ast"] },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("The Go AST outline read finished")]),
+      ],
+    }).run("Read the Go AST outline");
+
+    const rendered = getToolResultText(result, "read-native-ast-outline-source");
+    expect(rendered).toContain("## file: main.go");
+    expect(rendered).toContain("func greet()");
+    expect(rendered).toMatch(/3#[A-Z0-9]{4}\|func greet\(\)/u);
+    expect(rendered).toContain("<!-- scope-begin-");
+  });
+}, 60_000);
 async function withTempDirectory(callback: (directory: string) => Promise<void>): Promise<void> {
   await mkdir(tempRoot, { recursive: true });
   const directory = await mkdtemp(path.join(tempRoot, "project-"));

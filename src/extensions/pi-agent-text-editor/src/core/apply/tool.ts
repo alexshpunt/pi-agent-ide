@@ -17,7 +17,7 @@ import {
 } from "#src/api/last-resolved-resource.js";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import { createApplyExecution } from "#src/core/apply/execution.js";
-import { executeApplySource } from "#src/core/apply/runtime.js";
+import { executeApplySource, getApplyOperations } from "#src/core/apply/runtime.js";
 import { renderApplyOutput } from "#src/core/apply/output.js";
 import {
   createApplyDisplay,
@@ -45,6 +45,7 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
       search = api;
     },
   });
+  const operations = getApplyOperations();
   pi.registerTool({
     name: "apply",
     label: "Apply",
@@ -60,12 +61,13 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
         renderApplyResult) as typeof renderApplyResult;
       return render(...args);
     },
-    promptSnippet: "Compose dependent IDE reads and edits in one JavaScript call",
+    promptSnippet: "Compose guarded multi-file editor transactions with JavaScript",
     description:
-      "Use apply to combine IDE operations with JavaScript loops and conditions. Direct synchronous functions (no await): read, search, diff, write, replace, insert, remove (delete), copy, move, delete_file, copy_file, move_file, undo, stage, unstage. Pass the same argument objects as standalone tools. Calls execute sequentially, including Promise.all. Text reads return source, raw content and lines with anchors and view metadata. Multi-resource reads return resources; native reads return blocks. Search returns resolverId, raw data and registered selection details. Ordinary reads do not wait for diagnostics; explicit diagnostics requests wait for completed checks and throw if unavailable or timed out. Mutations return final file data. Use result(value) to select extra output; return is not required. Mutations suppress automatic read output. Final per-file changes use the same result format as standalone edits. Applied changes survive errors; catch operation errors by code/details. Output has one 2000-line/50KB budget. Overflow uses compact source views or a summary with a full temp reference. No shell, imports or resume. Undo restores one selected file transaction or Git change, never the whole Apply call." +
-      applyHelperGuide,
+      `Use apply to compose read-only IDE operations and snapshot-guarded editor transactions in JavaScript. Read-only functions: read, search, diff, result. Editor functions: open, createFile, deleteFile, copyFile, moveFile, apply. Mutations are staged until apply() commits them. Calls execute sequentially. Output has one 2000-line/50KB budget. No shell, imports or resume.` +
+      applyHelperGuide(),
     promptGuidelines: [
-      "Use apply for dependent combinations of IDE operations. Use standalone tools for a single operation. Check reported effects before retrying a failed apply; earlier edits are not rolled back.",
+      "Use Apply for complex, multi-file changes. Open immutable file snapshots, select exact text or lines, stage guarded operations, then call apply() explicitly. Use standalone editor tools for small precise edits.",
+      "Do not call result() merely to display reads or committed file changes; Apply reports them automatically. Use result(value) only for additional calculated data.",
     ],
     parameters: Type.Object({
       source: Type.String({
@@ -90,7 +92,7 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
       let failed = false;
       let error: unknown;
       try {
-        await executeApplySource(source, execution.host, signal);
+        await executeApplySource(source, execution.host, signal, undefined, operations);
       } catch (cause) {
         failed = true;
         error = cause;
@@ -105,8 +107,26 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
         cwd: context.cwd,
         signal,
       });
+      const transactions = execution.results
+        .mutationValues()
+        .flatMap((value) =>
+          value !== null &&
+          typeof value === "object" &&
+          "transaction" in value &&
+          typeof value.transaction === "string" &&
+          editor.hasApplyUndo(value.transaction)
+            ? [value.transaction]
+            : [],
+        );
+      const content = [
+        ...output.content,
+        ...transactions.map((transaction) => ({
+          type: "text" as const,
+          text: `Undo transaction: ${transaction}`,
+        })),
+      ];
       return {
-        content: output.content,
+        content,
         details: {
           failed,
           displaySource: await displaySource,
@@ -114,6 +134,7 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
           display: createApplyDisplay(execution.results, output, error, context.cwd),
           temporarySource: output.temporarySource,
           files: execution.results.select().files.map(({ source: file }) => file),
+          transactions,
         },
       };
     },

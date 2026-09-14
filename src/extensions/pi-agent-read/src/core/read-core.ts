@@ -14,6 +14,7 @@ import {
   type PromptDescriptionSource,
   type ReadHandlerRegistration,
   type ReadOutputReducer,
+  type ReadResourceGuardRegistration,
   type ReadViewRegistration,
   type ResourceResolverRegistration,
   type TextTargetResolverRegistration,
@@ -166,6 +167,7 @@ function createPluginContributionController(
   const setupPromptContributions: PromptDescriptionSource[] = [];
 
   const setupPromptGuidelines: PromptDescriptionSource[] = [];
+  const setupResourceGuards: ReadResourceGuardRegistration[] = [];
   const setupResolvers: ResourceResolverRegistration[] = [];
   const setupTargetResolvers: TextTargetResolverRegistration[] = [];
   const setupReadHandlers: ReadHandlerRegistration[] = [];
@@ -199,6 +201,11 @@ function createPluginContributionController(
     read(request, context, audience) {
       assertAvailable();
       return read.execute(request, context, audience);
+    },
+    addResourceGuard(registration): void {
+      assertAvailable();
+      if (state === "setup") setupResourceGuards.push(registration);
+      else read.registerContributions(pluginId, { resourceGuards: [registration] });
     },
     addResolver(registration): void {
       assertAvailable();
@@ -305,6 +312,7 @@ function createPluginContributionController(
       }
 
       read.registerContributions(pluginId, {
+        resourceGuards: setupResourceGuards,
         resolvers: setupResolvers,
         targetResolvers: setupTargetResolvers,
         handlers: setupReadHandlers,

@@ -8,14 +8,9 @@ import { readParameters, type ReadToolResult } from "pi-agent-read/api/tools/rea
 import { searchSchema, type SearchPluginApi, type SearchRequest } from "pi-agent-search/api/search";
 import { Value } from "typebox/value";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
-import { executeScriptMutation } from "#src/core/text-mutation.js";
 import { ApplyResults } from "#src/core/apply/results.js";
-import {
-  executeFileOperation,
-  fileOperations,
-  type FileOperation,
-} from "#src/core/file-operations.js";
 import { serializeApplyError, type ApplyRuntimeHost } from "#src/core/apply/runtime.js";
+import { executeEditorTransaction } from "#src/core/apply/transaction.js";
 
 /** Configured IDE services and ordinary tool schemas, shared with the standalone tools. */
 export interface ApplyServices {
@@ -40,87 +35,71 @@ export function createApplyExecution(
   let lastSource = services.lastResolvedSource;
   const host: ApplyRuntimeHost = {
     async execute(operation, arguments_, signal, id) {
-      const tool = operation === "remove" ? "delete" : operation;
-      const kind = tool === "read" || tool === "search" || tool === "diff" ? "read" : "mutation";
+      const tool = operation;
+      const kind =
+        tool === "read" || tool === "search" || tool === "diff" || tool === "editorOpen"
+          ? "read"
+          : "mutation";
       let recorded = false;
       try {
-        if (tool === "stage" || tool === "unstage") {
-          const operation = services.editor.getScriptIndexOperation(tool);
-          if (!operation)
-            throw failure("OPERATION_UNAVAILABLE", `${tool} requires the Git changes module`);
-          if (!Value.Check(operation.parameters, arguments_))
-            throw failure("INVALID_ARGUMENTS", `Invalid ${tool} arguments`);
-          const outcome = await operation.execute(arguments_, signal, context);
-          const value = {
-            operation: tool,
-            ok: true,
-            effect: "index-only",
-            kind: "index-operation",
-            ...(outcome.details as object),
-          };
-          results.record(id, "mutation", value, { content: outcome.content, details: {} });
-          recorded = true;
-          return value;
-        }
-        if (tool === "diff") {
-          const value = await executeDiff(services.read, arguments_, { cwd: context.cwd, signal });
-          results.record(id, "read", value, diffReadResult(value));
-          return value;
-        }
-        if ((fileOperations as readonly string[]).includes(operation)) {
-          const value = await services.editor.enqueueFileOperation(
-            () => executeFileOperation(operation as FileOperation, arguments_, context.cwd, signal),
-            signal,
-          );
-          results.record(id, "mutation", value);
-          recorded = true;
-          if (value.effect !== "not-applied") {
-            if (value.path !== undefined && operation !== "copy_file") {
-              results.forgetFile(value.path);
-              scope.forget(value.path);
-            }
-            if (value.target !== undefined) {
-              results.forgetFile(value.target);
-              scope.forget(value.target);
-            }
+        if (tool === "editorApply") {
+          let value;
+          try {
+            value = await executeEditorTransaction(services.editor, arguments_, signal, context);
+          } catch (error) {
+            const details =
+              error !== null && typeof error === "object" && "details" in error
+                ? error.details
+                : undefined;
+            if (
+              details !== null &&
+              typeof details === "object" &&
+              "files" in details &&
+              Array.isArray(details.files)
+            )
+              for (const source of details.files)
+                if (typeof source === "string") scope.forget(source);
+            throw error;
           }
-          if (value.ok && value.target !== undefined)
-            await services.editor.postProcessFile(value.target, { cwd: context.cwd, signal });
-          if (!value.ok)
-            throw failure(
-              value.error?.code ?? "FILE_OPERATION_FAILED",
-              value.error?.message ?? "File operation failed",
-              value,
-            );
-          return value;
-        }
-        if (kind === "mutation") {
-          const definition = services.editor
-            .getMutationTools()
-            .find((candidate) => candidate.name === tool);
-          if (definition === undefined)
-            throw failure("UNAVAILABLE_OPERATION", `IDE operation ${tool} is unavailable`);
-          const value = await executeScriptMutation(
-            services.editor,
-            definition,
-            arguments_,
-            signal,
-            context,
-            lastSource,
-            (source, presentation) => results.rememberMutation(source, presentation),
-          );
-          results.record(id, kind, value);
+          results.record(id, "mutation", value);
           recorded = true;
           for (const file of value.files) {
             results.updateFile(file.source, file.before, file.after);
             lastSource = file.source;
           }
-          if (!value.ok)
-            throw failure(
-              value.errors[0]?.code ?? "OPERATION_FAILED",
-              value.errors[0]?.message ?? "Mutation failed",
-              value,
-            );
+          return value;
+        }
+        if (tool === "editorOpen") {
+          if (!Value.Check(readParameters, arguments_))
+            throw failure("INVALID_ARGUMENTS", "Invalid arguments for open");
+          const outcome = await services.read.read(
+            arguments_,
+            { cwd: context.cwd, signal },
+            "script",
+          );
+          const value = outcome.script;
+          if (
+            outcome.isError ||
+            outcome.details.resolvedBy !== "filesystem" ||
+            value?.kind !== "text" ||
+            typeof value.content !== "string"
+          )
+            throw failure("NOT_EDITABLE_TEXT", "open() requires one local text file");
+          const snapshot = {
+            id,
+            source: outcome.details.source ?? value.source,
+            content: value.content,
+            lines: value.lines,
+          };
+          results.record(id, "read", snapshot, outcome);
+          recorded = true;
+          lastSource = snapshot.source;
+          services.rememberRead?.(outcome);
+          return snapshot;
+        }
+        if (tool === "diff") {
+          const value = await executeDiff(services.read, arguments_, { cwd: context.cwd, signal });
+          results.record(id, "read", value, diffReadResult(value));
           return value;
         }
         const schema = tool === "read" ? readParameters : searchSchema;

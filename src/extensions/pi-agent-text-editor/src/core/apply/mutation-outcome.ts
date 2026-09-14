@@ -28,6 +28,8 @@ export interface ScriptMutationOutcome {
   readonly effect: "not-applied" | "applied" | "unknown";
   readonly files: readonly ScriptMutationFile[];
   readonly completed: readonly string[];
+  /** Session-scoped receipt accepted by undo. */
+  readonly transaction?: string;
   readonly recoveries?: readonly ScriptAnchorRecovery[];
   /** Structured contributions from configured IDE mutation handlers. */
   readonly metadata?: Readonly<Record<string, unknown>>;

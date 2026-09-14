@@ -8,6 +8,10 @@ import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 
 export interface TextBatchParams {
   readonly edits: readonly TextBatchEntry[];
+  /** Optional whole-file revisions that every affected source must still match. */
+  readonly expectedContent?: ReadonlyMap<string, string>;
+  /** Abort the complete plan when any entry is invalid instead of applying valid peers. */
+  readonly failureMode?: "continue" | "abort";
 }
 
 export interface TextBatchEntry extends Record<string, unknown> {

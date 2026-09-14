@@ -88,7 +88,7 @@ describe("hybrid search through ripgrep", () => {
     expect((await search("missing AND package", "package alone\n")).matches).toEqual([]);
     expect((await search('"missing package"', "package alone\n")).matches).toEqual([]);
   });
-  test("preserves filters and marks incomplete fallback results", async () => {
+  test("uses limit as a presentation budget without stopping the search", async () => {
     const cwd = await fixture("Foo1\nfoo2\nfoo3\n");
     await writeFile(path.join(cwd, "ignored.txt"), "foo9\n");
     const result = await runSearchRecipe(
@@ -102,8 +102,8 @@ describe("hybrid search through ripgrep", () => {
       }),
       cwd,
     );
-    expect(result.matches.map((m) => m.matchedText)).toEqual(["foo2"]);
-    expect(result.complete).toBe(false);
+    expect(result.matches.map((m) => m.matchedText)).toEqual(["foo2", "foo3"]);
+    expect(result.complete).toBe(true);
   });
   test("propagates I/O errors, cancellation, and explicit regex syntax errors", async () => {
     const cwd = await fixture("nothing\n");

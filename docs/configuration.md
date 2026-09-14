@@ -57,7 +57,7 @@ Built-in entry modules are imported only after selection. Disabled built-ins, in
 
 ## Animations and post-edit processing
 
-Apply writes happen immediately, but configured formatting runs once per surviving changed file at the end of the call, including after a script error. Batch diagnostics start after every file has finished post-processing. Copied and moved UTF-8 text targets also receive configured post-processing; binary contents stay unchanged. Reads and Git staging inside Apply see the bytes written so far, before final formatting.
+Apply stages guarded text and file operations against immutable snapshots. An explicit `apply()` validates and commits the current multi-file transaction. Invalid, stale, ambiguous, or overlapping changes fail before writing. A later execution failure triggers rollback and reports whether restoration completed. A script may commit several transactions; reads after a commit see its changes. Configured formatting runs once per surviving changed file at the end of the outer Apply call, and diagnostics start after post-processing. Copied and moved UTF-8 text targets also receive configured post-processing; binary contents stay unchanged.
 
 Automatic diagnostic findings are grouped for five seconds from the first finding. The UI tab’s **Immediate diagnostic notices** option (`pi-agent-ide-no-diagnostic-buffer`) disables this delay. Combined notices keep each file and reporting tool identifiable. Empty completed diagnostic reads tell the agent that checks finished without findings, but do not draw an empty diagnostic panel. Pending, unavailable and incomplete checks are not reported as clean.
 

@@ -50,6 +50,7 @@ interface SearchRenderContext {
 type SearchPanelRow =
   | { readonly kind: "file"; readonly file: SearchResultFile }
   | { readonly kind: "line"; readonly file: SearchResultFile; readonly line: SearchResultLine }
+  | { readonly kind: "summary"; readonly text: string }
   | { readonly kind: "omitted"; readonly matches: number }
   | { readonly kind: "empty" };
 
@@ -141,7 +142,18 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
       ? [{ kind: "empty" } satisfies SearchPanelRow]
       : details.files.flatMap((file): SearchPanelRow[] => [
           { kind: "file", file },
-          ...file.lines.map((line): SearchPanelRow => ({ kind: "line", file, line })),
+          ...(file.uniqueLineCount === undefined
+            ? file.lines.map((line): SearchPanelRow => ({ kind: "line", file, line }))
+            : [
+                {
+                  kind: "summary",
+                  text: `${String(file.uniqueLineCount)} unique line texts · search this path with a narrower query`,
+                } satisfies SearchPanelRow,
+                ...(file.groups ?? []).map((group): SearchPanelRow => ({
+                  kind: "summary",
+                  text: `×${String(group.matchCount)} ${group.text}`,
+                })),
+              ]),
         ]);
 
   if (expanded || rows.length <= COMPACT_SEARCH_ROWS) {
@@ -188,6 +200,10 @@ function renderPanelRow(
 
   if (row.kind === "line") {
     return renderMatchLine(row.line, width, gutterWidth, theme);
+  }
+
+  if (row.kind === "summary") {
+    return [framed(theme.fg("dim", `  ${safeText(row.text)}`), width, theme)];
   }
 
   if (row.kind === "omitted") {

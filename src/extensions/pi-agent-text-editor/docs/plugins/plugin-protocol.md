@@ -6,7 +6,7 @@ The protocol lets independent extensions contribute editable Resource resolvers,
 
 ```ts
 const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
-const TEXT_EDITOR_API_VERSION = 21;
+const TEXT_EDITOR_API_VERSION = 22;
 
 interface TextEditorPluginApi {
   addResolver(registration: ResourceResolverRegistration): void;
@@ -22,6 +22,12 @@ interface TextEditorPluginApi {
   previewMutation(request: TextMutationPreviewRequest): Promise<TextMutationPreviewOutcome>;
   describe(description: PromptDescriptionSource): void;
   tool(tool: TextEditorToolId): TextEditorToolPluginApi;
+}
+
+interface TextEditorToolPluginApi {
+  addHandler(registration: TextEditHandlerRegistration): void;
+  addSemanticHandler(handler: TextSemanticMutationHandler): void;
+  describe(description: string): void;
 }
 
 interface TextEditorRecoveryConfigSection {
@@ -48,6 +54,8 @@ For built-in span mutations, a plain source path only scopes anchor resolution. 
 Supplying both start and end fields selects whole containing lines inclusively. Endpoint types may differ, but each must resolve uniquely in the same Resource. Reversed endpoints are rejected before writes, not reordered. Without an end field, exact selections keep their fragment extent; supported selection operations may apply independently to several ranges and Resources. Insert uses containing-line boundaries, including for SEARCH match selections, and inserts once per distinct insertion line.
 
 A mutation may return `afterWrite` when it must update related state only after all Resource writes, post-edit handlers, and final rereads succeed. Direct and batched calls await it before reporting success. If it fails, the tool reports `POST_WRITE_FAILED` with an applied effect because the Resource writes have already completed. Mutation previews do not run it.
+
+A plugin may use `api.tool(name).addSemanticHandler()` when an existing mutation syntax should perform an anchored Resource action instead of changing text. Core reads the current Resource, resolves and checks every supplied anchor, then calls the handler without requiring a writable Resource. A successful action returns an addressable source and structured receipt. It produces no file diff, mutation guard, post-edit work, or edit completion. More than one matching handler is rejected before any action runs.
 
 Arguments are accepted regardless of their JSON property order. Primary source metadata controls sibling path inheritance and batch discovery. `api.onMutationTool()` receives every existing registration immediately and then receives later registrations, so extension load order does not change protection.
 

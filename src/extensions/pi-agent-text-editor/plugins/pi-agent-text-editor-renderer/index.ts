@@ -72,6 +72,11 @@ export default async function registerTextEditorRenderer(pi: ExtensionAPI): Prom
             .map(([key, value]) => `${key}: ${display(value)}`)
             .join(" · ");
           const suffix = parameters ? ` ${theme.fg("dim", parameters)}` : "";
+          if (call.name === "result")
+            return `${theme.fg("toolTitle", theme.bold("result"))} ${theme.fg(
+              "accent",
+              call.arguments.arguments ? display(call.arguments.arguments) : parameters,
+            )}`;
           if (registration)
             return (
               renderWrittenMutationHeader(

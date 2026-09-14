@@ -1,4 +1,7 @@
 import { spawn as spawnProcess } from "node:child_process";
+import { closeSync, mkdirSync, openSync, rmSync, writeSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { stripVTControlCharacters } from "node:util";
@@ -10,6 +13,7 @@ import type {
   ShellProfile,
   TerminalSession,
   TerminalSessionSnapshot,
+  TerminalWaitReason,
 } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
 const require = createRequire(import.meta.url);
@@ -26,6 +30,7 @@ export class TerminalSessionManager {
   readonly #sessions = new Map<string, TerminalSession>();
   readonly #changeListeners = new Set<SessionListener>();
   readonly #completionListeners = new Set<SessionListener>();
+  readonly #outputLogs = new Map<string, number>();
   #disposed = false;
 
   public constructor(createId: () => string = defaultSessionId) {
@@ -62,6 +67,12 @@ export class TerminalSessionManager {
       shellFamily: session.shell.family,
       background: session.background,
       status: session.status,
+      ...(session.waitReason === undefined ? {} : { waitReason: session.waitReason }),
+      ...(session.completionReason === undefined
+        ? {}
+        : { completionReason: session.completionReason }),
+      lastActivityAt: session.lastActivityAt,
+      idleMs: Math.max(0, now - session.lastActivityAt),
       startedAt: session.startedAt,
       ...(session.endedAt === undefined ? {} : { endedAt: session.endedAt }),
       elapsedMs: (session.endedAt ?? now) - session.startedAt,
@@ -72,6 +83,7 @@ export class TerminalSessionManager {
       outputStart: session.outputStart,
       outputEnd: session.outputStart + session.output.length,
       truncated: session.outputStart > 0,
+      fullOutputPath: session.fullOutputPath,
       cols: session.cols,
       rows: session.rows,
     };
@@ -90,6 +102,8 @@ export class TerminalSessionManager {
     if (!/^[a-f\d]{12}$/u.test(id) || this.#sessions.has(id)) {
       throw new Error("Terminal session IDs must be unique 12-character hexadecimal values");
     }
+    const fullOutputPath = createOutputLog(id);
+    this.#outputLogs.set(id, openSync(fullOutputPath, "a", 0o600));
     const cols = options.cols ?? DEFAULT_COLS;
     const rows = options.rows ?? DEFAULT_ROWS;
     const screen = createScreen(cols, rows);
@@ -105,8 +119,10 @@ export class TerminalSessionManager {
       cwd: options.cwd,
       shell: options.shell,
       startedAt: Date.now(),
+      lastActivityAt: Date.now(),
       cols,
       rows,
+      fullOutputPath,
       screen,
       status: "running" as const,
       output: "",
@@ -146,6 +162,7 @@ export class TerminalSessionManager {
         error: errorMessage(error),
       };
       this.#sessions.set(id, session);
+      this.#closeOutputLog(id);
       resolveCompletion(session);
       queueMicrotask(() => this.#emitCompleted(session));
       return session;
@@ -161,6 +178,8 @@ export class TerminalSessionManager {
       if (signal !== 0) session.signal = signal;
       session.status =
         session.status === "stopping" ? "stopped" : exitCode === 0 ? "completed" : "failed";
+      if (exitCode === 124 || exitCode === 137) session.completionReason = "timeout";
+      this.#closeOutputLog(session.id);
       session.resolveCompletion(session);
       this.#emitChanged(session);
       this.#emitCompleted(session);
@@ -185,6 +204,55 @@ export class TerminalSessionManager {
         signal?.removeEventListener("abort", onAbort);
         resolve(completed);
       }, reject);
+    });
+  }
+
+  /** Wait for foreground completion, preserving a live PTY when the wait must return early. */
+  public async waitForForeground(
+    sourceOrId: string,
+    options: {
+      readonly signal?: AbortSignal;
+      readonly timeoutMs: number;
+      readonly interactiveDelayMs?: number;
+    },
+  ): Promise<{ readonly session: TerminalSession; readonly reason?: TerminalWaitReason }> {
+    const session = this.required(sourceOrId);
+    if (isTerminalStatus(session.status)) return { session };
+    const interactiveDelayMs = options.interactiveDelayMs ?? 3_000;
+
+    return await new Promise((resolve) => {
+      let settled = false;
+      let interactiveSince: number | undefined;
+      const finish = (reason?: TerminalWaitReason): void => {
+        if (settled) return;
+        if (reason !== undefined && isTerminalStatus(session.status)) reason = undefined;
+        settled = true;
+        clearTimeout(timeout);
+        clearInterval(interactive);
+        options.signal?.removeEventListener("abort", onAbort);
+        if (reason !== undefined) {
+          session.background = true;
+          session.waitReason = reason;
+          this.#emitChanged(session);
+        }
+        resolve({ session, ...(reason === undefined ? {} : { reason }) });
+      };
+      const onAbort = (): void => finish("aborted");
+      const timeout = setTimeout(() => finish("timeout"), options.timeoutMs);
+      const interactive = setInterval(
+        () => {
+          if (!looksInteractive(session)) {
+            interactiveSince = undefined;
+            return;
+          }
+          interactiveSince ??= Date.now();
+          if (Date.now() - interactiveSince >= interactiveDelayMs) finish("interactive");
+        },
+        Math.min(100, Math.max(10, interactiveDelayMs / 2)),
+      );
+      options.signal?.addEventListener("abort", onAbort, { once: true });
+      if (options.signal?.aborted === true) onAbort();
+      void session.completion.then(() => finish());
     });
   }
 
@@ -269,6 +337,14 @@ export class TerminalSessionManager {
     }
     return lines.slice(-Math.max(0, count));
   }
+  /** Record that the agent inspected a live terminal session. */
+  public markInspected(sourceOrId: string): void {
+    const session = this.required(sourceOrId);
+    if (session.status !== "running") return;
+    session.lastActivityAt = Date.now();
+    this.#emitChanged(session);
+  }
+
   public write(sourceOrId: string, data: string): void {
     const session = this.requiredRunning(sourceOrId);
     session.process?.write(data);
@@ -299,6 +375,7 @@ export class TerminalSessionManager {
     if (!isTerminalStatus(session.status)) {
       session.status = finalStatus;
       session.endedAt = Date.now();
+      this.#closeOutputLog(session.id);
       session.resolveCompletion(session);
       this.#emitCompleted(session);
     }
@@ -313,6 +390,8 @@ export class TerminalSessionManager {
     session.completionDelivered = true;
     await this.stop(session.source);
     session.screen.dispose();
+    this.#closeOutputLog(session.id);
+    rmSync(session.fullOutputPath, { force: true });
     this.#sessions.delete(session.id);
     this.#emitChanged(session);
   }
@@ -341,7 +420,10 @@ export class TerminalSessionManager {
         .filter((session) => !isTerminalStatus(session.status))
         .map((session) => this.stop(session.source)),
     );
-    for (const session of this.#sessions.values()) session.screen.dispose();
+    for (const session of this.#sessions.values()) {
+      session.screen.dispose();
+      this.#closeOutputLog(session.id);
+    }
     this.#changeListeners.clear();
     this.#completionListeners.clear();
   }
@@ -363,7 +445,10 @@ export class TerminalSessionManager {
   }
 
   #appendOutput(session: TerminalSession, data: string): void {
+    session.lastActivityAt = Date.now();
     const plain = stripVTControlCharacters(data);
+    const descriptor = this.#outputLogs.get(session.id);
+    if (descriptor !== undefined) writeSync(descriptor, plain);
     session.output += plain;
     if (session.output.length > MAX_OUTPUT_CHARS) {
       const removed = session.output.length - MAX_OUTPUT_CHARS;
@@ -379,6 +464,13 @@ export class TerminalSessionManager {
     this.#emitChanged(session);
   }
 
+  #closeOutputLog(id: string): void {
+    const descriptor = this.#outputLogs.get(id);
+    if (descriptor === undefined) return;
+    closeSync(descriptor);
+    this.#outputLogs.delete(id);
+  }
+
   #emitChanged(session: TerminalSession): void {
     for (const listener of this.#changeListeners) listener(session);
   }
@@ -386,6 +478,21 @@ export class TerminalSessionManager {
   #emitCompleted(session: TerminalSession): void {
     for (const listener of this.#completionListeners) listener(session);
   }
+}
+
+function looksInteractive(session: TerminalSession): boolean {
+  if (session.status !== "running") return false;
+  const buffer = session.screen.buffer.active;
+  const line =
+    buffer
+      .getLine(buffer.baseY + buffer.cursorY)
+      ?.translateToString(true)
+      .trimEnd() ?? "";
+  return (
+    /\[[^\]\n]{1,20}(?:\/[^\]\n]{1,20})+\]\s*[:?>]?\s*$/iu.test(line) ||
+    /(?:choose|select|enter|password|confirm|continue|proceed)[^\n]{0,60}[:?]\s*$/iu.test(line) ||
+    /^(?:❯|›)\s+\S/u.test(line)
+  );
 }
 
 function createScreen(cols: number, rows: number): XtermTerminal {
@@ -526,4 +633,10 @@ function delay(milliseconds: number): Promise<void> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createOutputLog(id: string): string {
+  const directory = path.join(os.tmpdir(), `pi-agent-ide-terminal-${process.pid}`);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  return path.join(directory, `${id}.log`);
 }

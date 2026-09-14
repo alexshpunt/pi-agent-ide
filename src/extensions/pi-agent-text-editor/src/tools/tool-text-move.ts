@@ -33,7 +33,7 @@ export const moveSchema = Type.Object(
     target: Type.Optional(
       Type.String({
         description:
-          "Target resource reference or file path; a returned SEARCH# reference may select the destination; defaults to the source",
+          "Target resource reference or file path. Required for a whole-file operation; defaults to the source for selected text.",
       }),
     ),
     targetStart: Type.Optional(
@@ -46,6 +46,11 @@ export const moveSchema = Type.Object(
       Type.String({
         description:
           "Optional inclusive destination end. Replaces whole lines through the last line containing this anchor, including SEARCH :match. May differ in type from targetStart; both must resolve uniquely in the target file and in forward order. Omit to insert after targetStart instead.",
+      }),
+    ),
+    overwrite: Type.Optional(
+      Type.Boolean({
+        description: "Allow replacing an existing regular target file. Defaults to false.",
       }),
     ),
   },
@@ -63,11 +68,11 @@ interface MoveParameters {
 
 export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> = {
   name: "move",
+  wholeFileOperation: "move",
   description:
-    "Use move to relocate existing text within or between files. Select the source and destination without reproducing the text in your call. The selected text is removed from the source and inserted at the destination, or replaces a destination range.",
+    "Use move to move or rename one regular file when path and target are supplied without text selectors, or to relocate selected text within or between files. Whole-file targets require overwrite: true when they already exist.",
 
-  promptSnippet:
-    "Make precise file edits by moving text within or between files using exact matches or anchors",
+  promptSnippet: "Move or rename regular files, or move selected text within or between files",
   parameters: moveSchema,
   source: { field: "path", inherited: true, targets: [{ field: "target", fallbackTo: "path" }] },
   anchors: [

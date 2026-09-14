@@ -4,6 +4,7 @@ import { searchFiles } from "#src/file-search.js";
 import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.js";
 import { renderSearchResult } from "#src/search-renderer.js";
 import { createSearchToolDetails } from "#src/search-result.js";
+import { planSearchPresentation } from "#src/search-presentation.js";
 
 import type {
   SearchSessionStore,
@@ -96,6 +97,7 @@ function createMatchResolver(
         };
       }
 
+      const detailBudget = result.request.limit ?? 50;
       const session = await sessions.register(
         result.request.query,
         result.matches,
@@ -108,7 +110,9 @@ function createMatchResolver(
         content: [
           {
             type: "text",
-            text: [...result.notices, formatSearchSession(session, context.cwd)].join("\n"),
+            text: [...result.notices, formatSearchSession(session, context.cwd, detailBudget)].join(
+              "\n",
+            ),
           },
         ],
         details: createSearchToolDetails(
@@ -117,6 +121,7 @@ function createMatchResolver(
           session.complete,
           context.cwd,
           session.id,
+          detailBudget,
         ),
       };
     },
@@ -124,7 +129,11 @@ function createMatchResolver(
   };
 }
 
-function formatSearchSession(session: TextSearchSession, cwd: string): string {
+function formatSearchSession(
+  session: TextSearchSession,
+  cwd: string,
+  detailBudget: number,
+): string {
   const fileCount = new Set(session.matches.map((match) => match.source)).size;
   const count = session.matches.length;
   const heading = session.complete
@@ -138,29 +147,44 @@ function formatSearchSession(session: TextSearchSession, cwd: string): string {
         "file",
         "files",
       )} (limit reached; no all anchors were registered)`;
-  let previousSource: string | undefined;
   const lines = [
     "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)",
     heading,
   ];
+  const indices = new Map(session.matches.map((match, index) => [match, index + 1]));
+  const presentation = planSearchPresentation(session.matches, detailBudget);
 
-  for (const [index, match] of session.matches.entries()) {
-    if (previousSource !== undefined && previousSource !== match.source) {
-      lines.push("");
+  for (const [fileIndex, file] of presentation.files.entries()) {
+    if (fileIndex > 0) lines.push("");
+    const source = displaySource(file.source, cwd);
+    if (file.kind === "compacted") {
+      lines.push(
+        `${source}: ${String(file.matchCount)} matches across ${String(file.uniqueLineCount)} unique line texts (compacted)`,
+      );
+      for (const group of file.groups) {
+        lines.push(`  ×${String(group.matchCount)} ${previewLine(group.text)}`);
+      }
+      if (file.groups.length < file.uniqueLineCount) {
+        lines.push(
+          `  … ${String(file.uniqueLineCount - file.groups.length)} more unique line texts`,
+        );
+      }
+      lines.push(
+        `  Search again with path: ${JSON.stringify(source)} and a narrower query to see individual matches.`,
+      );
+      continue;
     }
 
-    const source = displaySource(match.source, cwd);
-    lines.push(
-      `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${String(
-        match.endColumn + 1,
-      )} SEARCH#${session.id}:${String(index + 1)}:line SEARCH#${session.id}:${String(index + 1)}:match`,
-      `  ${previewMatch(match)}`,
-    );
-    previousSource = match.source;
-  }
-
-  if (!session.complete) {
-    lines.push("", "Increase limit and search again before applying a complete replacement.");
+    for (const match of file.matches) {
+      const index = indices.get(match);
+      if (index === undefined) continue;
+      lines.push(
+        `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${String(
+          match.endColumn + 1,
+        )} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`,
+        `  ${previewMatch(match)}`,
+      );
+    }
   }
 
   return lines.join("\n");
@@ -176,6 +200,10 @@ function previewMatch(match: TextSearchMatch): string {
   )}⟧${match.lineText.slice(match.endColumn, to)}${to < match.lineText.length ? "…" : ""}`;
 }
 
+function previewLine(text: string): string {
+  const context = 129;
+  return `${text.slice(0, context)}${text.length > context ? "…" : ""}`;
+}
 function displaySource(source: string, cwd: string): string {
   const relative = path.relative(cwd, source);
   // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal

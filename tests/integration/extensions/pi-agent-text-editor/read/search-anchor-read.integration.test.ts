@@ -165,7 +165,7 @@ test("keeps a per-result search read anchor snapshot-only after a matched file c
   });
 }, 180_000);
 
-test("does not expose all selectors for an incomplete search", async () => {
+test("keeps complete all selectors when compacting search details", async () => {
   await withTempWorkspace(async (directory) => {
     const source = path.join(directory, "limited.txt");
     const sourceText = "needle one\nneedle two\n";
@@ -198,8 +198,10 @@ test("does not expose all selectors for an incomplete search", async () => {
         ),
         assistantMessage([text("done")]),
       ],
-    }).run("Run a limited search, then reject its complete anchor");
+    }).run("Run a compacted search, then read its complete anchor");
 
-    expect(getToolExecution(result, "read-all").isError).toBe(true);
+    expect(getToolExecution(result, "read-all").isError).toBe(false);
+    expect(getToolResultText(result, "read-all")).toContain("needle one");
+    expect(getToolResultText(result, "read-all")).toContain("needle two");
   });
 }, 180_000);

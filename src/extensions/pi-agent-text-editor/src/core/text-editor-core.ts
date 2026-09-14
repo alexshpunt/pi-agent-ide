@@ -8,7 +8,6 @@ import {
   type Resource,
   type ResourceResolver,
   type ResourceResolverContext,
-  type ResourceWrite,
 } from "pi-agent-resource";
 import {
   createTextDocument,
@@ -36,6 +35,7 @@ import {
   type AnyTextMutationToolRegistration,
   assertTextMutationToolRegistration,
   type TextMutationToolListener,
+  type TextSemanticMutationHandler,
 } from "#src/api/mutation-tool.js";
 import {
   isResourceResolverRegistration,
@@ -74,6 +74,11 @@ import {
 } from "#src/core/text-change-engine.js";
 import { previewTextMutation } from "#src/core/text-mutation.js";
 import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.js";
+import {
+  ApplyUndoStore,
+  type ApplyUndoBeforeState,
+  type ApplyUndoResult,
+} from "#src/core/apply/apply-undo-store.js";
 
 import type {
   TextAnchorInspectionOutcome,
@@ -106,6 +111,11 @@ interface RegisteredPlugin {
   readonly ready: Promise<void>;
 }
 
+interface RegisteredSemanticHandler {
+  readonly pluginId: string;
+  readonly handler: TextSemanticMutationHandler;
+  readonly tool: TextEditorToolId;
+}
 interface RegisteredHandler {
   readonly pluginId: string;
   readonly registration: TextEditHandlerRegistration;
@@ -152,6 +162,7 @@ interface PluginContributionDraft {
   readonly anchorResolvers: TextAnchorResolverContribution[];
   readonly presenters?: TextPresenterContribution[];
   readonly handlers: RegisteredHandler[];
+  readonly semanticHandlers?: RegisteredSemanticHandler[];
   readonly promptContributions: PromptContribution[];
   readonly writablePromptContributions: WritablePromptContribution[];
   readonly tools: TextEditorToolId[];
@@ -223,11 +234,15 @@ export interface TextResourceEditRequest {
   readonly source: string;
   readonly read: boolean;
   readonly allowReadFailure?: boolean;
+  /** Allow an anchored semantic action to use a read-only resource. */
+  readonly requireWrite?: boolean;
 }
 
 export interface TextResourcesMutationResult<Result> {
   readonly changes: ReadonlyMap<string, readonly TextChange[]>;
   readonly result: Result;
+  /** Complete without document writes, mutation guards, post-edit work, or edit completions. */
+  readonly resourceEffect?: boolean;
 }
 
 export type TextResourcesEditOutcome<Result> =
@@ -266,6 +281,12 @@ export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
 export interface TextEditorCore {
+  /** Record the complete pre-Apply state and return a session-scoped undo receipt. */
+  recordApplyUndo(before: readonly ApplyUndoBeforeState[]): Promise<string>;
+  /** Atomically restore one Apply receipt. */
+  restoreApplyUndo(transaction: string, signal?: AbortSignal): Promise<ApplyUndoResult>;
+  /** Return whether an Apply receipt is still active in this session. */
+  hasApplyUndo(transaction: string): boolean;
   /** Finalize a surviving local text file after a whole-file operation; binary files are untouched. */
   postProcessFile(source: string, context: ResourceResolverContext): Promise<void>;
   /** Serialize whole-file effects with text edits; the action must not enqueue another edit. */
@@ -304,6 +325,10 @@ export interface TextEditorCore {
       resolveAnchor: ResolveResourceTextAnchor,
     ) => TextResourcesMutationResult<unknown> | Promise<TextResourcesMutationResult<unknown>>,
   ): Promise<TextMutationPreviewOutcome>;
+  getSemanticMutationHandler(
+    tool: TextEditorToolId,
+    input: unknown,
+  ): TextSemanticMutationHandler | undefined;
   executeEdit<Input, Result>(
     tool: TextEditorToolId,
     initialState: TextPreEditState<Input>,
@@ -336,6 +361,7 @@ export function createTextEditorCore(
   const resolvers: RegisteredResolver[] = [];
   const anchorRegistry = new TextAnchorRegistry();
   const handlers: RegisteredHandler[] = [];
+  const semanticHandlers: RegisteredSemanticHandler[] = [];
   const presenters: RegisteredPresenter[] = [];
   const postEditHandlers = new Map<string, TextPostEditHandlerRegistration>();
   const pendingPlugins = new Set<Promise<void>>();
@@ -346,6 +372,15 @@ export function createTextEditorCore(
   const mutationTools = new Map<string, AnyTextMutationToolRegistration>();
   const mutationListeners = new Set<TextMutationToolListener>();
   const editCompletionListeners = new Set<TextEditCompletionListener>();
+  const applyUndoStore = new ApplyUndoStore();
+  editCompletionListeners.add((completion) => {
+    applyUndoStore.observeTextChange(
+      path.resolve(completion.cwd, completion.resourceSource),
+      completion.before.content,
+      completion.after.content,
+      completion.postProcessing ?? "complete",
+    );
+  });
   const mutationGuards: TextMutationGuardRegistration[] = [];
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
   const scriptIndexOperations = new Map<string, ScriptIndexOperation>();
@@ -369,6 +404,7 @@ export function createTextEditorCore(
       draft,
       resolvers,
       handlers,
+      semanticHandlers,
       promptContributions,
       writablePromptContributions,
     );
@@ -437,6 +473,7 @@ export function createTextEditorCore(
     }
 
     handlers.push(...draft.handlers);
+    semanticHandlers.push(...(draft.semanticHandlers ?? []));
     for (const operation of draft.scriptIndexOperations ?? [])
       scriptIndexOperations.set(operation.name, operation);
     mutationGuards.push(...(draft.mutationGuards ?? []));
@@ -474,6 +511,15 @@ export function createTextEditorCore(
   };
 
   const core: TextEditorCore = {
+    recordApplyUndo(before) {
+      return applyUndoStore.record(before);
+    },
+    restoreApplyUndo(transaction, signal) {
+      return enqueueMutation(() => applyUndoStore.restore(transaction), signal);
+    },
+    hasApplyUndo(transaction) {
+      return applyUndoStore.has(transaction);
+    },
     async postProcessFile(source, context) {
       await enqueueMutation(async () => {
         const file = path.resolve(context.cwd, source);
@@ -535,6 +581,15 @@ export function createTextEditorCore(
     },
     getScriptIndexOperation(name) {
       return scriptIndexOperations.get(name);
+    },
+    getSemanticMutationHandler(tool, input): TextSemanticMutationHandler | undefined {
+      const matches = semanticHandlers.filter(
+        (registered) => registered.tool === tool && registered.handler.matches(input),
+      );
+      if (matches.length > 1) {
+        throw new Error(`More than one semantic handler accepted ${tool}`);
+      }
+      return matches[0]?.handler;
     },
     getToolRenderer(tool): TextEditorToolRendererRegistration | undefined {
       return toolRenderers.get(tool);
@@ -729,6 +784,7 @@ export function createTextEditorCore(
         (listener) => core.onDidEdit(listener),
         (request) => previewTextMutation(core, request),
         (section) => recoverySection(projectConfig, section),
+        (transaction, signal) => core.restoreApplyUndo(transaction, signal),
       );
       const ready = registrationQueue.then(async () => {
         try {
@@ -930,6 +986,7 @@ async function previewTextResources(
         source,
         request.read,
         request.allowReadFailure ?? false,
+        request.requireWrite ?? true,
         context,
         resolvers,
       );
@@ -981,7 +1038,7 @@ async function previewTextResources(
 
 interface PreparedTextResource {
   readonly requestedSource: string;
-  readonly resource: Resource & { readonly write: ResourceWrite };
+  readonly resource: Resource;
   readonly resolverId: string;
   readonly existed: boolean;
   readonly before: TextDocument;
@@ -1022,6 +1079,7 @@ async function editTextResources<Result>(
       source,
       request.read,
       request.allowReadFailure ?? false,
+      request.requireWrite ?? true,
       context,
       resolvers,
     );
@@ -1048,6 +1106,20 @@ async function editTextResources<Result>(
     );
   });
 
+  if (mutation.resourceEffect === true) {
+    if (mutation.changes.size !== 0) {
+      return {
+        kind: "failed",
+        failure: {
+          code: "INVALID_WRITE_CONTENT",
+          source: sources[0] ?? "",
+          message: "A resource effect cannot also contain document changes",
+        },
+        completed: [],
+      };
+    }
+    return { kind: "completed", resources: [], result: mutation.result };
+  }
   for (const source of mutation.changes.keys()) {
     if (!prepared.has(source)) {
       return {
@@ -1146,7 +1218,7 @@ async function editTextResources<Result>(
     }
 
     try {
-      await item.resource.write(
+      await requiredValue(item.resource.write)(
         finalContent,
         context.signal === undefined ? {} : { signal: context.signal },
       );
@@ -1155,7 +1227,7 @@ async function editTextResources<Result>(
       for (const writtenSource of [source, ...written].reverse()) {
         const writtenItem = requiredValue(prepared.get(writtenSource));
         try {
-          await writtenItem.resource.write(
+          await requiredValue(writtenItem.resource.write)(
             [{ type: "text", text: writtenItem.before.content }],
             {},
           );
@@ -1212,6 +1284,7 @@ async function prepareTextResource(
   source: string,
   read: boolean,
   allowReadFailure: boolean,
+  requireWrite: boolean,
   context: ResourceResolverContext,
   resolvers: readonly RegisteredResolver[],
 ): Promise<PreparedTextResource | { readonly failure: TextResourceEditFailure }> {
@@ -1260,7 +1333,10 @@ async function prepareTextResource(
       };
     }
 
-    if (attempt.resource.write === undefined || (read && attempt.resource.read === undefined)) {
+    if (
+      (requireWrite && attempt.resource.write === undefined) ||
+      (read && attempt.resource.read === undefined)
+    ) {
       return {
         failure: {
           code: "UNSUPPORTED_CAPABILITY",
@@ -1438,7 +1514,20 @@ async function finalizeTextResource<Result>(
 
   for (const listener of request.editCompletionListeners) {
     try {
-      await listener(completion);
+      const feedback = await listener(completion);
+      if (feedback !== undefined && feedback.feedback.trim().length > 0) {
+        postEditContributions.push({
+          id: "after-edit",
+          data: {
+            diffStatuses: [
+              {
+                text: feedback.feedback,
+                tone: feedback.tone === "info" ? "muted" : feedback.tone,
+              },
+            ],
+          },
+        });
+      }
     } catch {
       // Completion observers cannot turn a successful write into a failure.
     }
@@ -1770,12 +1859,14 @@ function createPluginContributionController(
   onDidEdit: (listener: TextEditCompletionListener) => () => void,
   previewMutation: (request: TextMutationPreviewRequest) => Promise<TextMutationPreviewOutcome>,
   recoveryConfig: (section: string) => TextEditorRecoveryConfigSection,
+  restoreApplyUndo: TextEditorPluginApi["restoreApplyUndo"],
 ): PluginContributionController {
   const setupDraft: PluginContributionDraft = {
     resolvers: [],
     anchorResolvers: [],
     presenters: [],
     handlers: [],
+    semanticHandlers: [],
     promptContributions: [],
     writablePromptContributions: [],
     tools: [],
@@ -1793,6 +1884,30 @@ function createPluginContributionController(
     }
   };
   const createToolApi = (tool: TextEditorToolId): TextEditorToolPluginApi => ({
+    addSemanticHandler(handler): void {
+      assertAvailable();
+      if (typeof handler.matches !== "function" || typeof handler.execute !== "function") {
+        throw new TypeError(`Plugin ${pluginId} provided an invalid semantic handler for ${tool}`);
+      }
+      const contribution: RegisteredSemanticHandler = { pluginId, handler, tool };
+      if (state === "setup") {
+        const existing = requiredValue(setupDraft.semanticHandlers);
+        if (existing.some((item) => item.pluginId === pluginId && item.tool === tool)) {
+          throw new Error(`Plugin ${pluginId} already provides a semantic handler for ${tool}`);
+        }
+        existing.push(contribution);
+        return;
+      }
+      registerContributions({
+        resolvers: [],
+        anchorResolvers: [],
+        handlers: [],
+        semanticHandlers: [contribution],
+        promptContributions: [],
+        writablePromptContributions: [],
+        tools: [],
+      });
+    },
     addHandler(registration): void {
       assertAvailable();
 
@@ -1842,6 +1957,7 @@ function createPluginContributionController(
     },
   });
   const api: TextEditorPluginApi = {
+    restoreApplyUndo,
     addMutationTool(registration): void {
       assertAvailable();
       assertTextMutationToolRegistration(registration);
@@ -2112,6 +2228,7 @@ function validateContributionDraft(
   draft: PluginContributionDraft,
   registeredResolvers: readonly RegisteredResolver[],
   registeredHandlers: readonly RegisteredHandler[],
+  semanticHandlers: readonly RegisteredSemanticHandler[],
   registeredPromptContributions: readonly PromptContribution[],
   registeredWritablePromptContributions: readonly WritablePromptContribution[],
 ): void {
@@ -2131,6 +2248,24 @@ function validateContributionDraft(
     resolverIds.add(resolverId);
   }
 
+  const semanticKeys = new Set(
+    semanticHandlers.map((handler) => `${handler.pluginId}\0${handler.tool}`),
+  );
+  for (const handler of draft.semanticHandlers ?? []) {
+    if (
+      typeof handler.handler.matches !== "function" ||
+      typeof handler.handler.execute !== "function"
+    ) {
+      throw new TypeError(`Plugin ${handler.pluginId} provided an invalid semantic handler`);
+    }
+    const key = `${handler.pluginId}\0${handler.tool}`;
+    if (semanticKeys.has(key)) {
+      throw new Error(
+        `Plugin ${handler.pluginId} already provides a semantic handler for ${handler.tool}`,
+      );
+    }
+    semanticKeys.add(key);
+  }
   const handlerKeys = new Set(registeredHandlers.map(handlerKey));
 
   for (const handler of draft.handlers) {
