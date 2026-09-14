@@ -1,0 +1,16 @@
+{
+  "name": "pi-agent-ide-languages",
+  "version": "0.5.0",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-doctor": "0.5.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-31.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

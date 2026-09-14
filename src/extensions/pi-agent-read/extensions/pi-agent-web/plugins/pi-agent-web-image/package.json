@@ -1,0 +1,17 @@
+{
+  "name": "pi-agent-web-image",
+  "version": "0.5.0",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-image": "0.5.0",
+    "pi-agent-resource": "0.5.0"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-78.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
