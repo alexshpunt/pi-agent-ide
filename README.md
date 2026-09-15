@@ -4,7 +4,7 @@
 
 <h1 align="center">Pi Agent IDE</h1>
 
-<p align="center">IDE capabilities for coding agents in <a href="https://pi.dev/">Pi</a>.</p>
+<p align="center">Pi Agent IDE is an agent-native IDE extension for the <a href="https://pi.dev/">Pi coding agent</a>. It adds guarded editing, code search, AST/LSP navigation, persistent terminals, debugging, transactional changes, and observability tools.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/pi-agent-ide"><img src="https://img.shields.io/npm/v/pi-agent-ide" alt="npm version"></a>
