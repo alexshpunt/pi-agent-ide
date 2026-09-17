@@ -62,7 +62,7 @@ async function loadRegistry(cwd: string, external = false): Promise<FormatterCom
   if (registry === undefined) {
     registry = FormatterCommandRegistry.fromDirectory(cwd, {
       includeGlobal: !external,
-      requireBuiltInEvidence: external,
+      requireBuiltInEvidence: true,
     });
     registries.set(key, registry);
   }

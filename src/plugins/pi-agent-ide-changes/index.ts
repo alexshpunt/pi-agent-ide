@@ -1,5 +1,6 @@
 import { Value } from "typebox/value";
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
@@ -28,6 +29,13 @@ import {
 import { createUndoMutationTool } from "#src/tool-text-undo.js";
 
 export default async function registerGitChanges(pi: ExtensionAPI): Promise<void> {
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "git-changes",
+      description: "Git change anchors, staging, and safe undo",
+      triggers: ["stage", "unstage", "undo"].map((tool) => ({ tool })),
+    }),
+  ]);
   const executor = extensionGitExecutor(pi);
   const transactions = new LastTextTransactionStore();
   const indexQueue = new IndexMutationQueue();

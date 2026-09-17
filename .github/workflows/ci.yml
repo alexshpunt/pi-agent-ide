@@ -1,3 +1,4 @@
+# yamllint disable rule:line-length rule:comments rule:document-start rule:truthy
 name: CI
 
 on:
@@ -168,7 +169,7 @@ jobs:
 
       - name: Retain release candidate
         if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: release-candidate
           path: .agents/tmp/release-candidate/*
@@ -178,7 +179,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: test-results
           path: .agents/tmp/test-results/*.xml
@@ -187,7 +188,7 @@ jobs:
       - name: Report unit tests
         id: unit-report
         if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
-        uses: dorny/test-reporter@4a2e97665d5fa767581ef38eca97b9694bd4eef4 # v2
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Unit tests
           path: .agents/tmp/test-results/unit.xml
@@ -197,7 +198,7 @@ jobs:
       - name: Report integration tests
         id: integration-report
         if: always() && hashFiles('.agents/tmp/test-results/integration.xml') != ''
-        uses: dorny/test-reporter@4a2e97665d5fa767581ef38eca97b9694bd4eef4 # v2
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Integration tests
           path: .agents/tmp/test-results/integration.xml
@@ -206,7 +207,7 @@ jobs:
 
       - name: Update unit badge
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && env.BADGE_TOKEN != '' && steps.unit-report.outcome == 'success'
-        uses: Schneegans/dynamic-badges-action@e9a478b16159b4d31420099ba146cdc50f134483 # v1.7.0
+        uses: Schneegans/dynamic-badges-action@28b0fa8bdeb46170ac397105ece0c1fe58f68910 # v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ${{ env.BADGE_GIST_ID }}
@@ -218,7 +219,7 @@ jobs:
 
       - name: Update integration badge
         if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && env.BADGE_TOKEN != '' && steps.integration-report.outcome == 'success'
-        uses: Schneegans/dynamic-badges-action@e9a478b16159b4d31420099ba146cdc50f134483 # v1.7.0
+        uses: Schneegans/dynamic-badges-action@28b0fa8bdeb46170ac397105ece0c1fe58f68910 # v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ${{ env.BADGE_GIST_ID }}

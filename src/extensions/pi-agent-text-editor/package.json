@@ -84,6 +84,7 @@
     "fs-extra": "^11.4.0",
     "oxfmt": "0.64.0",
     "partial-json": "^0.1.7",
+    "pi-agent-documentation": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",

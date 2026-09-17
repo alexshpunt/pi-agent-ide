@@ -179,7 +179,11 @@ export class PiIntegrationTest extends BasePiIntegrationTest {
       ),
       artifactsDir: options.artifactsDir ?? testArtifactsDir(testPath),
       isolateUserResources: options.isolateUserResources ?? true,
-      environment: { PI_SKIP_VERSION_CHECK: "1", ...options.environment },
+      environment: {
+        PI_SKIP_VERSION_CHECK: "1",
+        PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE: "1",
+        ...options.environment,
+      },
     });
   }
 }

@@ -53,6 +53,171 @@ test("Apply composes the configured IDE read and mutation pipelines", async () =
   });
 });
 
+test("Apply completes 1,000 replacements in one large file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const source = Array.from(
+      { length: 11_000 },
+      (_, index) => `const case_${String(index).padStart(5, "0")} = "legacyCheckout";\n`,
+    ).join("");
+    await writeFile(path.join(cwd, "cases.test.ts"), source);
+    const run = await new PiIntegrationTest({
+      testName: "apply-large-replacement-batch",
+      rawMode: false,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "large-apply",
+              name: "apply",
+              arguments: {
+                source:
+                  'const file = open("cases.test.ts"); file.replace(file.slice(file.find("legacyCheckout"), 0, 1000), "stableCheckout");',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Replace the first 1,000 legacy names");
+    const execution = getToolExecution(run, "large-apply");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    const final = await readFile(path.join(cwd, "cases.test.ts"), "utf8");
+    expect(final.match(/stableCheckout/gu)).toHaveLength(1_000);
+    expect(final.match(/legacyCheckout/gu)).toHaveLength(10_000);
+    expect(Buffer.byteLength(JSON.stringify(execution.result.content))).toBeLessThanOrEqual(
+      55 * 1024,
+    );
+  });
+});
+
+test("Apply moves a complete line block to a positional file end", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const source =
+      "keep-before\n// BEGIN serializes checkout-payload 0042\nblock line\n// END serializes checkout-payload 0042\nkeep-after\n";
+    await writeFile(path.join(cwd, "source.test.ts"), source);
+    await writeFile(path.join(cwd, "target.test.ts"), "target-one\ntarget-last");
+    const run = await new PiIntegrationTest({
+      testName: "apply-move-to-end",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "move-to-end",
+              name: "apply",
+              arguments: {
+                source: `const source=open("source.test.ts");
+const target=open("target.test.ts");
+const block=source.between(
+  "// BEGIN serializes checkout-payload 0042",
+  "// END serializes checkout-payload 0042",
+  {lines:true},
+);
+move(block,target.end());`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Move the marked test block to the end of the target file");
+    const execution = getToolExecution(run, "move-to-end");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "source.test.ts"), "utf8")).toBe(
+      "keep-before\nkeep-after\n",
+    );
+    expect(await readFile(path.join(cwd, "target.test.ts"), "utf8")).toBe(
+      "target-one\ntarget-last\n// BEGIN serializes checkout-payload 0042\nblock line\n// END serializes checkout-payload 0042\n",
+    );
+  });
+});
+test("Apply supports symmetric text mutations and document flush", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(
+      path.join(cwd, "cases.test.ts"),
+      "keep-1\ndelete-1\nkeep-2\ndelete-2\nkeep-3\ndelete-3\n",
+    );
+    const run = await new PiIntegrationTest({
+      testName: "apply-document-symmetry",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "symmetric-remove",
+              name: "apply",
+              arguments: {
+                source: `const file=open("cases.test.ts");
+remove(file.line(2));
+file.remove(file.line(4));
+remove(file.line(6));
+file.flush();`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Delete exactly three isolated test lines with Apply");
+    const execution = getToolExecution(run, "symmetric-remove");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "cases.test.ts"), "utf8")).toBe(
+      "keep-1\nkeep-2\nkeep-3\n",
+    );
+  });
+});
+
+test("Apply document delete runs staged edits before deleting the file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "obsolete.txt"), "before\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-document-delete",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "document-delete",
+              name: "apply",
+              arguments: {
+                source: `const file=open("obsolete.txt");
+replace(file.find("before"), "after");
+file.delete();`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Edit and delete an opened file with Apply");
+    const execution = getToolExecution(run, "document-delete");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    await expect(readFile(path.join(cwd, "obsolete.txt"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+});
 test("Apply rejects an anchor-shaped literal when the structured resolver rejects it", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "anchor.txt"), "1#ABCD\n");
@@ -549,7 +714,7 @@ test("Apply and standalone edits share the last read source", async () => {
   });
 });
 
-test("Apply composes guarded text selections with standalone undo", async () => {
+test("Apply restores the latest composed file edit with standalone undo", async () => {
   await withTempWorkspace(async (cwd) => {
     const run = await new PiIntegrationTest({
       testName: "apply-all-mutations",
@@ -584,12 +749,12 @@ test("Apply composes guarded text selections with standalone undo", async () => 
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Compose section edits then undo only the final insertion");
+    }).run("Compose section edits then undo the latest source-file edit");
     for (const id of ["compose", "undo-last"]) {
       const execution = getToolExecution(run, id);
       expect(execution.isError, JSON.stringify(execution)).toBe(false);
     }
-    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("c\n");
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("a\nb\nc\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("x\na\nb\n");
   });
 });
@@ -636,7 +801,7 @@ test("Apply presents long explicit and automatic reads through compact read pane
               id: "wide-read",
               name: "apply",
               arguments: {
-                source: 'const doc = await read({path: "wide.txt"}); await result(doc.content);',
+                source: 'read({path: "wide.txt"});',
               },
             }),
           ],
@@ -768,7 +933,7 @@ test("Apply keeps independent edits when a create fails", async () => {
               name: "apply",
               arguments: {
                 source:
-                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); createFile("exists.txt", "wrong\\n"); const outcome = flush(); if (outcome.operations[0].status !== "applied" || outcome.operations[1].status !== "failed") throw new Error("Wrong partial outcomes"); result(outcome);',
+                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); createFile("exists.txt", "wrong\\n"); const outcome = flush(); if (outcome.operations[0].status !== "applied" || outcome.operations[1].status !== "failed") throw new Error("Wrong partial outcomes");',
               },
             }),
           ],
@@ -802,7 +967,7 @@ test("Apply rejects only the later overlapping edit and keeps snapshot offsets s
               name: "apply",
               arguments: {
                 source:
-                  'const doc = open("note.txt"); doc.replace(doc.find("one"), "ONE-LONG"); doc.replace(doc.line(1), "rejected\\n"); doc.replace(doc.find("three"), "THREE"); const outcome = flush(); if (outcome.operations.map(({status}) => status).join(",") !== "applied,failed,applied") throw new Error("Wrong overlap outcomes"); result(outcome);',
+                  'const doc = open("note.txt"); doc.replace(doc.find("one"), "ONE-LONG"); doc.replace(doc.line(1), "rejected\\n"); doc.replace(doc.find("three"), "THREE"); const outcome = flush(); if (outcome.operations.map(({status}) => status).join(",") !== "applied,failed,applied") throw new Error("Wrong overlap outcomes");',
               },
             }),
           ],
@@ -821,7 +986,7 @@ test("Apply keeps the first overlapping selection and rejects the later one", as
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha beta\n");
     const run = await new PiIntegrationTest({
-      testName: "apply-overlap-preflight",
+      testName: "apply-overlap-selection",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
@@ -831,7 +996,7 @@ test("Apply keeps the first overlapping selection and rejects the later one", as
         assistantMessage(
           [
             toolCall({
-              id: "overlap",
+              id: "overlap-preflight",
               name: "apply",
               arguments: {
                 source:
@@ -844,7 +1009,7 @@ test("Apply keeps the first overlapping selection and rejects the later one", as
         assistantMessage([text("Done")]),
       ],
     }).run("Reject overlapping snapshot selections before writing");
-    const execution = getToolExecution(run, "overlap");
+    const execution = getToolExecution(run, "overlap-preflight");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("line\n");
   });
@@ -869,7 +1034,7 @@ test("Apply preserves earlier file effects when a later operation fails", async 
               name: "apply",
               arguments: {
                 source:
-                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); copyFile("first.bin", "blocker"); moveFile("second.bin", "blocker/child"); const outcome = flush(); if (outcome.operations[2].status !== "failed") throw new Error("Expected failed move"); result(outcome);',
+                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); copyFile("first.bin", "blocker"); moveFile("second.bin", "blocker/child"); const outcome = flush(); if (outcome.operations[2].status !== "failed") throw new Error("Expected failed move");',
               },
             }),
           ],
@@ -916,7 +1081,7 @@ test("diff compares read sources and windows without editing either side", async
               name: "apply",
               arguments: {
                 source:
-                  'const comparison=diff({before:{path:"before.txt",offset:2,limit:1},after:{path:"after.txt",offset:2,limit:1}}); if(comparison.equal || comparison.stats.added!==1 || comparison.stats.removed!==1) throw new Error("Wrong comparison"); result(comparison); const same=diff({before:"before.txt",after:"before.txt"}); if(!same.equal) throw new Error("Expected equality");',
+                  'const comparison=diff({before:{path:"before.txt",offset:2,limit:1},after:{path:"after.txt",offset:2,limit:1}}); if(comparison.equal || comparison.stats.added!==1 || comparison.stats.removed!==1) throw new Error("Wrong comparison"); const same=diff({before:"before.txt",after:"before.txt"}); if(!same.equal) throw new Error("Expected equality");',
               },
             }),
           ],
@@ -1032,7 +1197,7 @@ test("raw reads expose original bytes in standalone and Apply without text conve
               name: "apply",
               arguments: {
                 source:
-                  'const doc = read({path: "raw:binary.bin"}); if (doc.kind !== "bytes" || JSON.stringify(doc.bytes) !== "[239,187,191,65,13,10,0,255]") throw new Error("Byte corruption"); result(doc); const tail = read({path: doc.source, offset: -2}); if (JSON.stringify(tail.bytes) !== "[0,255]") throw new Error("Bad byte offset");',
+                  'const doc = read({path: "raw:binary.bin"}); if (doc.kind !== "bytes" || JSON.stringify(doc.bytes) !== "[239,187,191,65,13,10,0,255]") throw new Error("Byte corruption"); const tail = read({path: doc.source, offset: -2}); if (JSON.stringify(tail.bytes) !== "[0,255]") throw new Error("Bad byte offset");',
               },
             }),
           ],

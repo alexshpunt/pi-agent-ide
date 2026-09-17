@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { sameFilePath } from "pi-agent-ide/api/path-identity";
@@ -31,7 +32,22 @@ export async function runConfiguredLinter(
   let result: ProcessResult;
 
   try {
-    result = await runConfiguredProcess(config.check, context);
+    const executable = path.basename(config.check.command[0] ?? "").toLocaleLowerCase();
+    const isRuff = executable === "ruff" || executable === "ruff.exe";
+    const inheritedEnvironment = context.env ?? process.env;
+    result = await runConfiguredProcess(config.check, {
+      ...context,
+      ...(isRuff
+        ? {
+            env: {
+              ...inheritedEnvironment,
+              RUFF_CACHE_DIR:
+                inheritedEnvironment.RUFF_CACHE_DIR ??
+                path.join(os.tmpdir(), "pi-agent-ide", "ruff-cache"),
+            },
+          }
+        : {}),
+    });
   } catch (error) {
     return {
       ok: false,

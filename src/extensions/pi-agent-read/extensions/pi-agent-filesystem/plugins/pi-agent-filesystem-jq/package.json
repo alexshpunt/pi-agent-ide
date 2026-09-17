@@ -1,0 +1,24 @@
+{
+  "name": "pi-agent-filesystem-jq",
+  "version": "0.1.0",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "cross-spawn": "^7.0.6",
+    "pi-agent-doctor": "workspace:^",
+    "pi-agent-documentation": "workspace:^",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-text": "workspace:^"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -14,8 +14,45 @@ export type AgentIdePreference =
     })
   | (AgentIdePreferenceBase & { readonly kind: "text"; readonly placeholder?: string });
 
+function presentationPreference(id: string, name: string, description: string): AgentIdePreference {
+  return {
+    kind: "choice",
+    id,
+    name,
+    description,
+    default: "compact",
+    group: "ui",
+    values: [
+      { value: "full", label: "Full" },
+      { value: "compact", label: "Compact" },
+      { value: "disabled", label: "Disabled" },
+    ],
+  };
+}
+
 /** Registered presentation preferences. */
 export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
+  presentationPreference(
+    "ui.applyPreview",
+    "Apply preview",
+    "Choose how Apply source previews are displayed.",
+  ),
+  presentationPreference(
+    "ui.diffs",
+    "Diffs",
+    "Choose how mutation and comparison diffs are displayed.",
+  ),
+  presentationPreference("ui.read", "Read", "Choose how Read calls and results are displayed."),
+  presentationPreference(
+    "ui.search",
+    "Search",
+    "Choose how Search calls and results are displayed.",
+  ),
+  presentationPreference(
+    "ui.terminal",
+    "Terminal",
+    "Choose how shell commands and terminal output are displayed.",
+  ),
   {
     kind: "choice",
     id: "processes.activity",

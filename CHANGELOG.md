@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.1 — 2026-09-17
+
+### Progressive guidance
+
+- Add addressable `docs:` resources for focused debugger, diagnostics, editing, Git, JSON, reading, search, terminal, and vision guidance.
+- Stop the first matching tool call before execution, return its complete guide, and let the agent retry with the required instructions in context. Explicitly reading the guide first skips this gate.
+- Keep shell commands for execution and direct agents to guarded editing tools instead of shell-based file edits.
+
+### JSON reading
+
+- Add parameterized `jq:` views for filtering and transforming filesystem JSON with the real `jq` executable.
+- Apply normal Read pagination to transformed JSON output and return clear parser and execution failures.
+
+### Apply
+
+- Add composable selection sets for slicing occurrences, combining non-overlapping ranges, limiting candidates to scopes, and expanding matches to complete lines.
+- Add zero-width start, end, before, and after destinations for inserting copied or moved text without replacing existing content.
+- Add symmetric global and document mutation forms, document-scoped flush checkpoints, and deletion through opened document handles.
+- Separate the complete Apply scripting reference from the lighter standalone editing guide and prefer content boundaries over unverified line ranges.
+- Make batched standalone edits the default for independent, predetermined changes in one or several files; reserve Apply scripts for computed, conditional, or transactional workflows.
+- Speed up large Apply transactions by batching text operations while preserving snapshot guards and per-operation outcomes.
+
+### Tool behavior and presentation
+
+- Require project evidence before running built-in formatters, so an installed formatter no longer changes files in an otherwise unconfigured workspace.
+- Add Full IDE and Text Editor capability presets, with explicit module choices layered on top.
+- Add Full, Compact, and Disabled presentation modes for Apply previews, diffs, Read, Search, and terminal output.
+- Bound compact Read rendering for large results so the terminal stays responsive without reducing the content available to the agent.
+
 ## 0.6.0 — 2026-09-16
 
 ### Agent vision

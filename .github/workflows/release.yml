@@ -1,3 +1,4 @@
+# yamllint disable rule:line-length rule:comments rule:document-start rule:truthy
 name: Publish to npm
 
 on:
@@ -51,7 +52,7 @@ jobs:
           CANDIDATE_RUN: ${{ inputs.candidate_run }}
         run: node --experimental-strip-types scripts/promote-release.ts
       - name: Retain verified artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: release-${{ steps.candidate.outputs.version }}
           path: .agents/tmp/promoted-release/*
@@ -80,7 +81,7 @@ jobs:
       - name: Install pinned npm
         run: npm install --global "npm@${NPM_VERSION}"
       - name: Download verified artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: release-${{ needs.validate.outputs.version }}
           path: .agents/tmp/promoted-release
@@ -90,20 +91,49 @@ jobs:
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
           RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
         run: node --experimental-strip-types scripts/publish-candidate.ts
+      - name: Create matching GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          tag="v${RELEASE_VERSION}"
+          archive=".agents/tmp/promoted-release/pi-agent-ide-${RELEASE_VERSION}.tgz"
+          gh release view "$tag" >/dev/null 2>&1 ||
+            gh release create "$tag" "$archive" --verify-tag --generate-notes --title "Pi Agent IDE ${RELEASE_VERSION}"
 
   benchmark:
     name: Benchmark published package
     needs: [validate, publish]
     if: inputs.publish && needs.publish.result == 'success'
-    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/release-observation.yml@e2be4797232c5c678992e97cfd339bcca3a7b672
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@be568216c66a22149a1d869724ee3f2891b70988
     with:
-      artifact_name: release-${{ needs.validate.outputs.version }}
+      adapter: pi-agent-ide
+      agent_version: "0.84.2"
       harness_version: ${{ needs.validate.outputs.version }}
-      pi_version: "0.84.2"
       model: gpt-5.6-luna
       thinking: low
-      concurrency: 10
-      dataset_repository: alexshpunt/explicit-edit-benchmark
+      concurrency: "10"
     secrets:
       pi_auth_json: ${{ secrets.PI_AUTH_JSON }}
+
+  benchmark-submit:
+    name: Submit official benchmark result
+    needs: benchmark
+    permissions:
+      actions: read
+      contents: read
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-submit.yml@0136a4d4e32b9cdf7f2924f18f9ffbab6c1839f8
+    with:
+      producer_run_id: ${{ github.run_id }}
+      producer_attempt: ${{ github.run_attempt }}
+      signer_sha: be568216c66a22149a1d869724ee3f2891b70988
+      policy_sha: 0136a4d4e32b9cdf7f2924f18f9ffbab6c1839f8
+      dataset_repository: alexshpunt/explicit-edit-benchmark
+    secrets:
       hf_token: ${{ secrets.HF_TOKEN }}

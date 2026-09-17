@@ -1,3 +1,5 @@
+import type { AgentIdePreset } from "./presets.js";
+import { readAgentIdePreset } from "./presets.js";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -20,6 +22,8 @@ export interface PiAgentIdeExtensionsConfig {
   readonly flags?: Readonly<Record<string, boolean>>;
   /** String preference overrides keyed by their registered IDs. */
   readonly preferences?: Readonly<Record<string, string>>;
+  /** Built-in capability preset. */
+  readonly preset?: AgentIdePreset;
   /** Disable decorative mutation playback while keeping final results visible. */
   readonly noAnimations?: boolean;
   /** Skip automatic formatting and diagnostics triggered by edits. */
@@ -73,6 +77,7 @@ export async function readPiAgentIdeExtensionsConfig(
     ...(globalConfig.preferences === undefined && projectConfig.preferences === undefined
       ? {}
       : { preferences: { ...globalConfig.preferences, ...projectConfig.preferences } }),
+    preset: projectConfig.preset ?? globalConfig.preset ?? "full",
     noAnimations: projectConfig.noAnimations ?? globalConfig.noAnimations ?? false,
     noPostProcessing: projectConfig.noPostProcessing ?? globalConfig.noPostProcessing ?? false,
   };
@@ -136,6 +141,7 @@ async function readConfigExtensionIds(configPath: string): Promise<PiAgentIdeExt
     ...(value.preferences === undefined
       ? {}
       : { preferences: readPreferences(value.preferences, configPath) }),
+    ...(value.preset === undefined ? {} : { preset: readAgentIdePreset(value.preset, configPath) }),
     ...(value.noAnimations === undefined
       ? {}
       : { noAnimations: readBoolean(value, "noAnimations", configPath) }),

@@ -29,12 +29,9 @@ test("leaves a disabled plugin section untouched", async () => {
   expect(loadTextEditorConfig(directory)).toBeDefined();
 });
 
-test("accepts the renderer section next to recovery", async () => {
-  const directory = await project({
-    recovery: { contextLines: 2 },
-    renderer: { diffView: "compact" },
-  });
-  expect(recoverySection(loadTextEditorConfig(directory), "exactText").contextLines).toBe(2);
+test("rejects the removed renderer section", async () => {
+  const directory = await project({ renderer: { diffView: "compact" } });
+  expect(() => loadTextEditorConfig(directory)).toThrow("unknown key renderer");
 });
 
 async function project(config: unknown): Promise<string> {

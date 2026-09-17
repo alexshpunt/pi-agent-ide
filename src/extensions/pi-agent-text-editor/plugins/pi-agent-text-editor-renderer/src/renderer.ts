@@ -7,7 +7,7 @@ import {
 } from "pi-agent-tool-call-interception";
 import { singleLine, type ToolCallHeaderDetail } from "pi-agent-tool-ui";
 import { NEXT_TOOL_CALL_DRAIN_MS, type MutationAnimationPressure } from "./animation-pressure.js";
-import { loadRendererConfig } from "./config.js";
+
 import { freezeMutationViewports, type FrozenMutationViewports } from "./frozen-viewport.js";
 import { MutationPanel } from "./mutation-panel.js";
 import {
@@ -21,11 +21,14 @@ import { TYPING_FRAME_INTERVAL_MS, TypingInterpolation } from "./typing-interpol
 
 import type { MutationRenderResource } from "./render-resource.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
+
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
 import type { AnyTextMutationToolRegistration } from "pi-agent-text-editor/api/mutation-tool";
 import type { TextEditorPluginApi } from "pi-agent-text-editor/api/plugin-protocol";
 import type { TextEditorToolRendererRegistration } from "pi-agent-text-editor/api/tool-renderer";
+
+type ToolPresentation = "full" | "compact" | "disabled";
 
 type MutationRenderOutcome =
   | { readonly kind: "completed"; readonly resources: readonly MutationRenderResource[] }
@@ -68,6 +71,7 @@ interface RenderState {
   theme?: Theme;
   cwd?: string;
   expanded?: boolean;
+  presentation?: ToolPresentation;
   invalidate?: () => void;
   latestGenerated?: string;
   typing?: TypingInterpolation;
@@ -89,9 +93,12 @@ export function registerMutationRenderers(
   api: TextEditorPluginApi,
   animationPressure?: MutationAnimationPressure,
   animationsEnabled: () => boolean = () => true,
+  presentation: ToolPresentation = "compact",
 ): void {
   api.onMutationTool((registration) => {
-    api.addToolRenderer(createRenderer(api, registration, animationPressure, animationsEnabled));
+    api.addToolRenderer(
+      createRenderer(api, registration, animationPressure, animationsEnabled, presentation),
+    );
   });
 }
 
@@ -100,6 +107,7 @@ function createRenderer(
   registration: AnyTextMutationToolRegistration,
   animationPressure: MutationAnimationPressure | undefined,
   animationsEnabled: () => boolean,
+  presentation: ToolPresentation,
 ): TextEditorToolRendererRegistration {
   const tool = registration.name;
 
@@ -118,7 +126,10 @@ function createRenderer(
       state.invalidate = context.invalidate;
       // renderCall runs on every frame, so reapply the project's viewport policy each time.
       state.cwd = context.cwd;
-      component.setExpanded(context.expanded || preferFullDiff(context.cwd));
+      const mode = context.expanded ? "full" : presentation;
+      state.presentation = presentation;
+      component.setExpanded(mode === "full");
+      component.setDiffsVisible(mode !== "disabled");
       state.expanded = context.expanded;
 
       component.setResourceLabelsVisible(
@@ -208,6 +219,10 @@ function createRenderer(
       state.invalidate = context.invalidate;
 
       state.expanded = options.expanded;
+      state.presentation = presentation;
+      const mode = options.expanded ? "full" : presentation;
+      state.panel?.setExpanded(mode === "full");
+      state.panel?.setDiffsVisible(mode !== "disabled");
 
       state.panel?.setBackground(context.isError ? "toolErrorBg" : "toolSuccessBg");
       cancelPreviewWorker(state);
@@ -299,18 +314,6 @@ function createRenderer(
       );
     },
   };
-}
-
-const diffViewCache = new Map<string, boolean>();
-
-/** Returns whether diffs should render fully by default for the given project. */
-function preferFullDiff(cwd: string): boolean {
-  let preferFull = diffViewCache.get(cwd);
-  if (preferFull === undefined) {
-    preferFull = loadRendererConfig(cwd).diffView === "full";
-    diffViewCache.set(cwd, preferFull);
-  }
-  return preferFull;
 }
 
 function panel(previous: unknown, theme: Theme, ownsShell: boolean): MutationPanel {
@@ -626,7 +629,9 @@ function applyResultResources(
     expanded,
   );
   state.panel?.setResultResources(stableResources);
-  state.panel?.setExpanded(expanded || preferFullDiff(state.cwd ?? process.cwd()));
+  const mode = expanded ? "full" : (state.presentation ?? "compact");
+  state.panel?.setExpanded(mode === "full");
+  state.panel?.setDiffsVisible(mode !== "disabled");
   clearTypingRuntime(state);
 }
 

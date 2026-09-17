@@ -28,11 +28,13 @@ export class MutationPanel implements Component {
   private headerExpanded = false;
   private background: ToolBackground = "toolPendingBg";
   private expanded = false;
+  private diffsVisible = true;
   private resourceLabelsVisible = false;
   private cache:
     | {
         width: number;
         expanded: boolean;
+        diffsVisible: boolean;
         header: string;
         headerDetails: readonly ToolCallHeaderDetail[];
         headerExpanded: boolean;
@@ -75,6 +77,12 @@ export class MutationPanel implements Component {
 
     this.expanded = expanded;
     this.renderedRows.clear();
+    this.invalidate();
+  }
+
+  public setDiffsVisible(visible: boolean): void {
+    if (this.diffsVisible === visible) return;
+    this.diffsVisible = visible;
     this.invalidate();
   }
 
@@ -173,6 +181,7 @@ export class MutationPanel implements Component {
     if (
       this.cache?.width === contentWidth &&
       this.cache.expanded === this.expanded &&
+      this.cache.diffsVisible === this.diffsVisible &&
       this.cache.header === this.header &&
       this.cache.headerDetails === this.headerDetails &&
       this.cache.headerExpanded === this.headerExpanded &&
@@ -181,17 +190,19 @@ export class MutationPanel implements Component {
       return this.renderShell(this.cache.lines, width);
     }
 
-    const panels = renderPanels(this.diffPanels, (resource) =>
-      renderDiffPanel(
-        resource,
-        contentWidth,
-        this.theme,
-        this.expanded,
-        this.background === "toolPendingBg",
-        this.renderedRows,
-        this.resourceLabelsVisible,
-      ),
-    );
+    const panels = this.diffsVisible
+      ? renderPanels(this.diffPanels, (resource) =>
+          renderDiffPanel(
+            resource,
+            contentWidth,
+            this.theme,
+            this.expanded,
+            this.background === "toolPendingBg",
+            this.renderedRows,
+            this.resourceLabelsVisible,
+          ),
+        )
+      : [];
     const ellipsis = `${this.theme.getBgAnsi(this.background)}...`;
     const summary =
       this.header.length === 0 ? [] : [truncateToWidth(this.header, contentWidth, ellipsis)];
@@ -208,6 +219,7 @@ export class MutationPanel implements Component {
     this.cache = {
       width: contentWidth,
       expanded: this.expanded,
+      diffsVisible: this.diffsVisible,
       header: this.header,
       headerDetails: this.headerDetails,
       headerExpanded: this.headerExpanded,

@@ -228,10 +228,16 @@ export class ReadResultPanel implements Component {
 
     const innerWidth = width - 2;
     const contentWidth = Math.max(1, innerWidth - 2);
-    const renderedRows = renderContentRows(this.state, contentWidth).flatMap((row) =>
+    const compactInput = compactRenderInput(this.state, contentWidth);
+    const renderedRows = renderContentRows(compactInput.state, contentWidth).flatMap((row) =>
       wrapTextWithAnsi(row, contentWidth),
     );
-    const rows = compactRows(renderedRows, this.state.expanded, this.state.theme);
+    const rows = compactRows(
+      renderedRows,
+      this.state.expanded,
+      this.state.theme,
+      compactInput.hasHiddenRows,
+    );
     const lines = [renderTopBorder(this.state, innerWidth, this.state.theme)];
 
     for (const row of rows) {
@@ -257,6 +263,49 @@ export class ReadResultPanel implements Component {
   }
 }
 
+const COMPACT_SOURCE_RENDER_THRESHOLD = 100;
+const MAX_COMPACT_SOURCE_LINES = COMPACT_READ_ROWS;
+const MAX_COMPACT_CHARACTERS_PER_ROW = 4;
+
+interface CompactRenderInput {
+  readonly state: ReadPanelState;
+  readonly hasHiddenRows: boolean;
+}
+
+function compactRenderInput(state: ReadPanelState, width: number): CompactRenderInput {
+  if (state.expanded) return { state, hasHiddenRows: false };
+
+  const lines = readLines(state.details);
+  if (lines !== undefined && lines.length > COMPACT_SOURCE_RENDER_THRESHOLD) {
+    return {
+      state: {
+        ...state,
+        details: { ...state.details, lines: lines.slice(0, MAX_COMPACT_SOURCE_LINES) },
+      },
+      hasHiddenRows: true,
+    };
+  }
+
+  if (lines !== undefined) return { state, hasHiddenRows: false };
+
+  const characterLimit = Math.max(
+    COMPACT_READ_ROWS,
+    width * COMPACT_READ_ROWS * MAX_COMPACT_CHARACTERS_PER_ROW,
+  );
+  const content = state.result.content.map((block) => {
+    if (block.type !== "text" || block.text.length <= characterLimit) return block;
+    return { ...block, text: block.text.slice(0, characterLimit) };
+  });
+  const hasHiddenRows = content.some((block, index) => {
+    const original = state.result.content[index];
+    return (
+      block.type === "text" && original?.type === "text" && block.text.length < original.text.length
+    );
+  });
+  return hasHiddenRows
+    ? { state: { ...state, result: { ...state.result, content } }, hasHiddenRows }
+    : { state, hasHiddenRows: false };
+}
 function renderContentRows(state: ReadPanelState, width: number): string[] {
   const lines = readLines(state.details);
   const text = cleanText(state.result, lines, state.details, !state.expanded);
@@ -390,19 +439,24 @@ function renderCodeViewLabel(value: string, theme: Theme, stripMarkers = true): 
   return theme.fg("toolOutput", line);
 }
 
-function compactRows(rows: readonly string[], expanded: boolean, theme: Theme): readonly string[] {
-  if (expanded || rows.length <= COMPACT_READ_ROWS) {
+function compactRows(
+  rows: readonly string[],
+  expanded: boolean,
+  theme: Theme,
+  hasHiddenRows = false,
+): readonly string[] {
+  if (expanded || (rows.length <= COMPACT_READ_ROWS && !hasHiddenRows)) {
     return rows;
   }
 
   const shown = rows.slice(0, COMPACT_READ_ROWS - 1);
   const omitted = rows.length - shown.length;
+  const count = hasHiddenRows
+    ? "more rows"
+    : `${String(omitted)} more ${omitted === 1 ? "row" : "rows"}`;
   return [
     ...shown,
-    `${theme.fg("dim", `… ${String(omitted)} more ${omitted === 1 ? "row" : "rows"} · `)}${keyHint(
-      "app.tools.expand",
-      "to expand",
-    )}`,
+    `${theme.fg("dim", `… ${count} · `)}${keyHint("app.tools.expand", "to expand")}`,
   ];
 }
 

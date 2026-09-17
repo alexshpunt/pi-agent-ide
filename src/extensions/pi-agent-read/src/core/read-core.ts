@@ -49,14 +49,13 @@ export interface ReadCore {
   renderPluginPromptGuideline(): string | undefined;
 }
 
-export function createReadCore(): ReadCore {
+export function createReadCore(
+  presentation: "full" | "compact" | "disabled" = "compact",
+): ReadCore {
   const outputReducers: ReadOutputReducer[] = [];
   const pendingPlugins = new Set<Promise<void>>();
   const plugins = new Map<string, RegisteredPlugin>();
-  const read = createReadTool(
-    () => renderPromptGuidelines(plugins),
-    () => renderPluginPromptGuideline(plugins),
-  );
+  const read = createReadTool(() => renderPromptGuidelines(plugins), presentation);
   let registrationQueue = Promise.resolve();
 
   return {

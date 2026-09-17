@@ -26,6 +26,7 @@ import {
 import { createReadResultRenderer } from "pi-agent-read/api/rendering";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import type { ResourceResolutionAttempt, ResourceResolver } from "pi-agent-resource";
 import type { TextDocument, TextLinePresenter } from "pi-agent-text";
 import type { ReadRequest, ReadResultDetails } from "pi-agent-read/api/tools/read";
@@ -36,6 +37,13 @@ const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "D
 type ReadDiagnostics = IdePluginApi["readDiagnostics"];
 
 export default async function registerDiagnostics(pi: ExtensionAPI): Promise<void> {
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "diagnostics",
+      description: "Diagnostic resources, readiness, and verification",
+      triggers: [{ tool: "read", resourcePrefixes: ["diagnostics:"] }],
+    }),
+  ]);
   let readDiagnostics: ReadDiagnostics | undefined;
   const collect: CollectDiagnostics = (filePath, cwd, options) => {
     if (readDiagnostics === undefined) {
@@ -128,10 +136,7 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
         },
       });
       api.describe(
-        'diagnostics:<path> — lint and language-server diagnostics. views: ["diagnostics"] — diagnostics alongside source text. Diagnostic sources name the actual reporting tools. Automatic notices include findings only and wake an idle agent after the notification buffer (five seconds by default); silence does not prove the file is clean. Use an explicit diagnostic read to check readiness. Pending results and snapshots are not completed checks; an empty snapshot does not prove the file is clean.',
-      );
-      api.addPromptGuideline(
-        "Use read with `diagnostics:<path>` or the `diagnostics` view for per-file diagnostics instead of running equivalent checks through Bash. Project builds and tests remain separate verification.",
+        'diagnostics:<path> — lint and language-server diagnostics. views: ["diagnostics"] — diagnostics alongside source text. Results identify their reporting tool and readiness; pending results and snapshots are not completed checks.',
       );
     },
   } satisfies ReadPlugin;

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 
 import type { BuiltinExtensionContext } from "#src/composite/selection.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -26,6 +27,13 @@ export default async function registerVision(
   pi: ExtensionAPI,
   context?: BuiltinExtensionContext,
 ): Promise<void> {
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "vision",
+      description: "Window, display, image, and sequence capture",
+      triggers: [{ tool: "read", resourcePrefixes: ["window:", "display:"] }],
+    }),
+  ]);
   const preferences = context?.preferences ?? {};
   configureVision({
     durationSeconds: preferences["vision.sequenceDurationSeconds"],
@@ -121,9 +129,6 @@ export default async function registerVision(
         api.describe(
           `Process metadata: process:PID. Visual capture: window:PID and display: or display:#N. HTTP(S) sources accept image and sequence screenshots. Use named view parameters such as sequence:duration=2,interval=0.5,scale=0.5 and image:scale=0.5,region=0.25,0.25,0.5,0.5. Duration is limited to 10 seconds and sequences to 20 frames. Defaults: duration=${defaults.durationSeconds}, interval=${defaults.intervalSeconds}, scale=${defaults.scale}. Region uses normalized x,y,width,height and runs before scaling. For captures, limit is a square grid cell size in output pixels and offset is one zero-based row-major cell index; limit without offset selects cell 0, while offset without limit is invalid. Omit both for the bounded transformed image.`,
         );
-        api.addPromptGuideline(
-          "Use search with process:<query> before reading process:PID or window:PID. Capture arbitrary desktop windows and full displays only when their dedicated flags are enabled; Agent IDE-owned terminal processes are allowed by default. Use a bounded sequence view only when one image is insufficient; set named duration, interval, scale and region parameters when the defaults do not fit. Use limit and offset to select one image grid cell.",
-        );
       },
     }),
     connectSearchPlugin(pi, {
@@ -168,9 +173,6 @@ export default async function registerVision(
         });
         api.describe(
           "process:<query> finds running processes by PID or command for process:PID metadata reads and guarded window:PID capture.",
-        );
-        api.addPromptGuideline(
-          "Use process:<query> to discover a PID before selecting a process or window source.",
         );
       },
     }),

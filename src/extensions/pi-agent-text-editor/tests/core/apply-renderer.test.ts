@@ -1,5 +1,5 @@
 import { initTheme, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 import {
   applyFrameRows,
@@ -7,6 +7,7 @@ import {
   renderApplyResult,
   createApplyCallRenderer,
   createApplyDisplay,
+  createApplyResultRenderer,
 } from "#src/core/apply/renderer.js";
 import { ApplyResults } from "#src/core/apply/results.js";
 
@@ -98,6 +99,27 @@ test("Apply does not leave blank rows after its last read panel", () => {
   expect(rows.at(-1)).toContain("╰");
 });
 
+test("Apply shows changed files when a large mutation panel has no compact rows", () => {
+  const render = createApplyResultRenderer(() => new Text("", 0, 0));
+  const context = { state: {}, isError: false } as Parameters<typeof render>[3];
+  const rows = render(
+    {
+      content: [],
+      details: {
+        display: {
+          blocks: [],
+          mutations: { results: [{ path: "large.test.ts" }] },
+        },
+      },
+    },
+    { expanded: false, isPartial: false },
+    theme,
+    context,
+  ).render(80);
+  expect(rows.join("\n")).toContain("large.test.ts");
+  expect(rows.join("\n")).not.toContain("No output");
+});
+
 test("Apply keeps transaction receipts agent-only", () => {
   const results = new ApplyResults();
   results.addValue({ verified: true, transaction: "APPLY#123456789ABC" });
@@ -145,6 +167,29 @@ test("mixed substitution uses the formatted display copy before splitting calls"
   );
 });
 
+test("Apply preview presentation controls collapsed source and expansion overrides it", () => {
+  const source = Array.from(
+    { length: 30 },
+    (_, index) => `const line${index + 1} = ${index + 1};`,
+  ).join("\n");
+  const context = { state: {}, expanded: false } as Parameters<
+    ReturnType<typeof createApplyCallRenderer>
+  >[2];
+  const full = createApplyCallRenderer((call) => call.name, "full");
+  const disabled = createApplyCallRenderer((call) => call.name, "disabled");
+
+  expect(full({ source }, theme, context).render(80).join("\n")).toContain("line15");
+  expect(
+    disabled({ source }, theme, context)
+      .render(80)
+      .map((line) => line.trimEnd()),
+  ).toEqual(["apply"]);
+  expect(
+    disabled({ source }, theme, { ...context, expanded: true })
+      .render(80)
+      .join("\n"),
+  ).toContain("line15");
+});
 test("compact Apply source keeps its head and tail within the read row budget", () => {
   const source = Array.from({ length: 30 }, (_, index) => `line-${index + 1}`).join("\n");
   const compact = compactApplyPreview(source, 12);

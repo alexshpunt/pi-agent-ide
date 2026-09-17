@@ -155,9 +155,9 @@ export function registerDiff(
     name: "diff",
     label: "Diff",
     parameters: diffParameters,
-    promptSnippet: "Compare two text-readable sources without changing them",
+    promptSnippet: "Compare two text-readable sources",
     description:
-      "Use diff to compare two sources without modifying them. before and after accept a source string or a read request {path, offset?, limit?, views?}. Use any source that read can resolve as text. Omit limit to compare complete resolved text; read presentation limits do not clip comparison inputs. Multiple resolved resources are joined with one newline separator in resolver order. Diff line numbers are relative to each selected text, not the original file when a window is selected. Native non-text content is rejected. Output uses the existing text diff and a shared output budget; oversized output has a full temporary reference. The same diff function is available inside Apply.",
+      "Use diff to compare two sources. before and after accept a source string or a read request {path, offset?, limit?, views?}. Use any source that read can resolve as text. Omit limit to compare complete resolved text; read presentation limits do not clip comparison inputs. Multiple resolved resources are joined with one newline separator in resolver order. Diff line numbers are relative to each selected text, not the original file when a window is selected. Native non-text content is rejected. Output uses the existing text diff and a shared output budget; oversized output has a full temporary reference. The same diff function is available inside Apply.",
     renderCall(_args, theme) {
       return new Text(theme.fg("toolTitle", theme.bold("Diff")), 0, 0);
     },

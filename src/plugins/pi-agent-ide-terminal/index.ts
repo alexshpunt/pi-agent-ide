@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   forgetReloadResource,
   retainReloadResource,
@@ -12,9 +13,27 @@ import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/s
 import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
 import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
 import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
+import { toolPresentation } from "#src/composite/presentation.js";
+import type { BuiltinExtensionContext } from "#src/composite/selection.js";
 
 /** Register the platform-aware terminal runner and shell session resources. */
-export default async function registerTerminal(pi: ExtensionAPI): Promise<void> {
+export default async function registerTerminal(
+  pi: ExtensionAPI,
+  context?: BuiltinExtensionContext,
+): Promise<void> {
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "terminal",
+      description: "Foreground and background commands, shell resources, and processes",
+      triggers: [
+        { tool: "bash" },
+        ...["read", "write", "insert", "delete"].map((tool) => ({
+          tool,
+          resourcePrefixes: ["shell:", "process:"],
+        })),
+      ],
+    }),
+  ]);
   const manager =
     (takeReloadResource("terminal") as TerminalSessionManager | undefined) ??
     new TerminalSessionManager();
@@ -23,7 +42,13 @@ export default async function registerTerminal(pi: ExtensionAPI): Promise<void> 
   const removeProcessProvider = agentIdeProcessRegistry(pi).add(terminalProcessProvider(manager));
 
   await Promise.all([registerTerminalResources(pi, manager), registerTerminalSearch(pi, manager)]);
-  registerTerminalTools(pi, manager, profile, ui);
+  registerTerminalTools(
+    pi,
+    manager,
+    profile,
+    ui,
+    toolPresentation(context?.preferences["ui.terminal"]),
+  );
 
   pi.on("session_start", (_event, context) => ui.bind(context));
   pi.on("agent_settled", (_event, context) => ui.onAgentSettled(context));

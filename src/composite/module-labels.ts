@@ -5,6 +5,10 @@ export const moduleLabels = {
     "Shared services used by language, formatting and diagnostic modules.",
   ],
   "ide.tips": ["Getting started tips", "Show contextual guidance while setting up a project."],
+  "ide.documentation": [
+    "Progressive agent documentation",
+    "Expose packaged guides and attach them on first relevant tool use.",
+  ],
   "ide.doctor": ["Setup doctor", "Check external tools and help configure project support."],
   "ide.languages": ["Language setup", "Discover languages and their recommended toolchains."],
   "ide.processes": [
@@ -25,6 +29,7 @@ export const moduleLabels = {
   ],
   "read.core": ["Read tools", "Read sources through the configured readers and views."],
   "read.filesystem": ["Local files", "Resolve files and folders from the local filesystem."],
+  "read.filesystem.jq": ["JSON queries", "Query local JSON files through jq read views."],
   "read.filesystem.image": ["Local images", "Read local images as visual content."],
   "read.filesystem.pdf": ["Local PDFs", "Extract readable content from local PDF documents."],
   "read.filesystem.text": ["Local text", "Read local text files with their source coordinates."],

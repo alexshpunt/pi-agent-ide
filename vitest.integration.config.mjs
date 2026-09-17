@@ -8,6 +8,7 @@ const repoRootPath = fileURLToPath(repoRoot);
 const require = createRequire(import.meta.url);
 process.chdir(repoRootPath);
 process.env.PI_SKIP_VERSION_CHECK = "1";
+process.env.PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE = "1";
 
 export default defineConfig({
   root: repoRootPath,

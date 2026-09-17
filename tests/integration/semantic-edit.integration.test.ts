@@ -59,7 +59,7 @@ test("Apply copies and removes an exact LSP declaration without matching unrelat
   });
 });
 
-test("standalone declaration edits and Apply reject semantic insert without losing earlier effects", async () => {
+test("standalone declaration edits and Apply global mutations coexist without losing earlier effects", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(
       path.join(cwd, "source.ts"),
@@ -108,7 +108,7 @@ test("standalone declaration edits and Apply reject semantic insert without losi
               name: "apply",
               arguments: {
                 source:
-                  'if (typeof insert !== "undefined" || typeof replace !== "undefined") throw new Error("Legacy mutation helper was exposed");',
+                  'if (typeof insertBefore !== "function" || typeof replace !== "function") throw new Error("Global mutation helpers are unavailable");',
               },
             }),
           ],

@@ -18,6 +18,7 @@ export interface ApplyOutput {
   readonly content: Content;
   readonly level: "full" | "compact" | "summary";
   readonly temporarySource?: string;
+  readonly mutations?: ReturnType<typeof finalApplyMutations>;
 }
 
 /** Presents net file effects once, preserving native images and one combined text budget. */
@@ -75,7 +76,7 @@ export async function renderApplyOutput(
   if (error !== undefined) content.push(text(formatError(error)));
   if (content.length === 0) content.push(text("No operations or explicit results."));
   const full = textContent(content);
-  if (!truncateHead(full).truncated) return { content, level: "full" };
+  if (!truncateHead(full).truncated) return { content, level: "full", mutations: finalMutations };
   const temporarySource = await read.saveTemporary(full);
   const footer = `\n\nFull Apply output: ${temporarySource}. Read this reference with offset/limit for more.`;
   if (read.reduceOutput !== undefined && !context.signal?.aborted) {
@@ -102,7 +103,7 @@ export async function renderApplyOutput(
     compact.push(...content.slice(suffixStart));
     compact.push(text(footer.trimStart()));
     if (!truncateHead(textContent(compact)).truncated)
-      return { content: compact, level: "compact", temporarySource };
+      return { content: compact, level: "compact", temporarySource, mutations: finalMutations };
   }
   const summary = [
     `Apply output reduced: ${selected.automatic.length} automatic results, ${selected.explicit.length} explicit results, ${selected.files.length} final files.`,
@@ -120,6 +121,7 @@ export async function renderApplyOutput(
     content: [text(bounded + footer), ...content.filter((block) => block.type === "image")],
     level: "summary",
     temporarySource,
+    mutations: finalMutations,
   };
 }
 

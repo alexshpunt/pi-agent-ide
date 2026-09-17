@@ -22,7 +22,15 @@ import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-export default async function registerTextEditorRenderer(pi: ExtensionAPI): Promise<void> {
+function parsePresentation(value: string | undefined): "full" | "compact" | "disabled" {
+  return value === "full" || value === "disabled" ? value : "compact";
+}
+export default async function registerTextEditorRenderer(
+  pi: ExtensionAPI,
+  context?: { readonly preferences: Readonly<Record<string, string>> },
+): Promise<void> {
+  const applyPresentation = parsePresentation(context?.preferences["ui.applyPreview"]);
+  const diffPresentation = parsePresentation(context?.preferences["ui.diffs"]);
   const animationPressure = createMutationAnimationPressure(pi);
   const plugin = {
     protocol: TEXT_EDITOR_PROTOCOL,
@@ -46,7 +54,9 @@ export default async function registerTextEditorRenderer(pi: ExtensionAPI): Prom
             );
           const panel = new MutationPanel(theme);
           panel.setBackground("toolSuccessBg");
-          panel.setExpanded(options.expanded);
+          const mode = options.expanded ? "full" : diffPresentation;
+          panel.setExpanded(mode === "full");
+          panel.setDiffsVisible(mode !== "disabled");
           panel.setResourceLabelsVisible(true);
           panel.setResultResources(resolveMutationResultResources(details, undefined));
           return panel;
@@ -95,11 +105,13 @@ export default async function registerTextEditorRenderer(pi: ExtensionAPI): Prom
                 ? `${display(call.before)} → ${display(call.after)}`
                 : `${source}${call.target ? ` → ${display(call.target)}` : ""}`;
           return `${theme.fg("toolTitle", theme.bold(call.name))} ${theme.fg("accent", identity)}${suffix}`;
-        }),
+        }, applyPresentation),
         renderResult: createApplyResultRenderer((details, theme, expanded, cwd) => {
           const panel = new MutationPanel(theme);
           panel.setBackground("toolSuccessBg");
-          panel.setExpanded(expanded);
+          const mode = expanded ? "full" : diffPresentation;
+          panel.setExpanded(mode === "full");
+          panel.setDiffsVisible(mode !== "disabled");
           panel.setResourceLabelsVisible(true);
           panel.setResultResources(
             resolveMutationResultResources(details, undefined).map((resource) => ({
@@ -118,6 +130,7 @@ export default async function registerTextEditorRenderer(pi: ExtensionAPI): Prom
         api,
         animationPressure,
         () => pi.getFlag("pi-agent-ide-no-animations") !== true,
+        diffPresentation,
       );
       pi.on("tool_result", (event) => {
         if (

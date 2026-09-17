@@ -334,6 +334,36 @@ test("compact reads bound wrapped terminal rows rather than source lines", () =>
   expect(compact.every((row) => visibleWidth(row) <= 40)).toBe(true);
 });
 
+test("compact rendering stays responsive for a large source result", () => {
+  const text = Array.from(
+    { length: 11_000 },
+    (_, index) => `export const value${String(index)} = ${String(index)};`,
+  ).join("\n");
+  const result: AgentToolResult<ReadResultDetails> = {
+    content: [{ type: "text", text }],
+    details: {
+      source: "/workspace/large.ts",
+      startLine: 1,
+      endLine: 11_000,
+      totalLines: 11_000,
+    },
+  };
+  const panel = createReadResultRenderer({ kind: "source" })(
+    result,
+    { expanded: false, isPartial: false },
+    plainTheme,
+    { isError: false, lastComponent: undefined } as never,
+  );
+
+  const started = performance.now();
+  const rendered = panel.render(100);
+  const elapsed = performance.now() - started;
+
+  expect(rendered.length).toBeLessThanOrEqual(16);
+  expect(rendered.join("\n")).toContain("more rows");
+  expect(elapsed).toBeLessThan(1_000);
+});
+
 test.each([false, true])(
   "completed clean diagnostics render no empty panel (expanded=%s)",
   (expanded) => {

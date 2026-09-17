@@ -115,9 +115,6 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
       api.describe(
         "symbol:<file>#<selector> — declaration source, e.g. symbol:src/catalog.ts#Catalog/find. graph:<file> — top-level declarations, references and calls; members include selectors. graph:<file>#<selector> — references and incoming/outgoing calls for that declaration or member.",
       );
-      api.addPromptGuideline(
-        "Use semantic code views first when exploring code supported by a configured language server. Use `symbols:<query>` to locate named declaration and reference candidates when the file is unknown. Use `graph:<file>` to map the declarations and relationships in a known file before reading implementation bodies. Use `graph:<file>#<selector>` to inspect references and incoming/outgoing calls for one declaration. Use `symbol:<file>#<selector>` to read that declaration’s source. Use text search for exact text, non-code files, or when semantic views are unavailable.",
-      );
     },
   } satisfies ReadPlugin;
 

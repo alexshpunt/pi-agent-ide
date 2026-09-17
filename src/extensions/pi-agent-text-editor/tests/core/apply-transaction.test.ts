@@ -121,6 +121,37 @@ test("same-position inserts preserve staging order", async () => {
   expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("afirstsecondb");
 });
 
+test("many replacements write one final file state", async () => {
+  const original = Array.from({ length: 1_000 }, (_, index) => `legacy-${index}\n`).join("");
+  const { cwd, core } = await fixture({ "large.txt": original });
+  let writes = 0;
+  const editor: TransactionEditor = {
+    ...core,
+    async editTexts(...arguments_) {
+      writes += 1;
+      return core.editTexts(...arguments_);
+    },
+  };
+  const operations = Array.from({ length: 1_000 }, (_, index) => {
+    const text = `legacy-${index}`;
+    const from = original.indexOf(text);
+    return replace("large", from, from + text.length, text, `stable-${index}`);
+  });
+
+  const outcome = await executeEditorTransaction(
+    editor,
+    { snapshots: [snapshot(cwd, "large", "large.txt", original)], operations },
+    new AbortController().signal,
+    { cwd },
+  );
+
+  expect(outcome.operations).toHaveLength(1_000);
+  expect(outcome.operations?.every(({ status }) => status === "applied")).toBe(true);
+  expect(writes).toBe(1);
+  expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(
+    original.replaceAll("legacy-", "stable-"),
+  );
+});
 test("a failed file operation leaves known state for later dependent work", async () => {
   const { cwd, run } = await fixture();
   const outcome = await run(
@@ -291,6 +322,42 @@ test("text move concatenates cross-file sources and removes them atomically", as
   expect(outcome.operations).toMatchObject([{ status: "applied" }]);
   expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("-");
   expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("ab ab");
+});
+
+test("linewise text move inserts at EOF without fusing lines", async () => {
+  const sourceContent = "keep\n// BEGIN\nbody\n// END\nafter\n";
+  const targetContent = "target\nlast";
+  const { cwd, run } = await fixture({
+    "source.txt": sourceContent,
+    "target.txt": targetContent,
+  });
+  const outcome = await run(
+    [
+      snapshot(cwd, "source", "source.txt", sourceContent),
+      snapshot(cwd, "target", "target.txt", targetContent),
+    ],
+    [
+      {
+        kind: "text-move",
+        sources: [
+          {
+            document: "source",
+            from: 5,
+            to: 26,
+            text: "// BEGIN\nbody\n// END\n",
+            linewise: true,
+          },
+        ],
+        destinations: [{ document: "target", from: 11, to: 11, text: "", linewise: true }],
+        text: "// BEGIN\nbody\n// END\n",
+      },
+    ],
+  );
+  expect(outcome.operations).toMatchObject([{ status: "applied" }]);
+  expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("keep\nafter\n");
+  expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+    "target\nlast\n// BEGIN\nbody\n// END\n",
+  );
 });
 
 test("same-file text move keeps original offsets", async () => {

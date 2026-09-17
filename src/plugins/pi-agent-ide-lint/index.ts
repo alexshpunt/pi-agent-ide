@@ -105,6 +105,6 @@ async function loadRegistry(cwd: string, external: boolean): Promise<LintCommand
   const configDirectory = external ? cwd : (process.env.PI_AGENT_IDE_CONFIG_DIR ?? cwd);
   return LintCommandRegistry.fromDirectory(configDirectory, {
     includeGlobal: !external,
-    requireBuiltInEvidence: external,
+    requireBuiltInEvidence: true,
   });
 }

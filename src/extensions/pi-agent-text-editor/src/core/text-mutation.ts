@@ -81,7 +81,6 @@ export function createTextTool<TParameters extends TSchema>(
   core: TextEditorCore,
   definition: TextMutationToolRegistration<TParameters>,
   annotations: ToolCallInterceptionRenderStore,
-  pluginPromptGuideline: () => string | undefined,
   getLastResolvedSource: () => string | undefined,
 ): ToolDefinition<TParameters, FileMutationBatchResult> {
   const renderer = core.getToolRenderer(definition.name);
@@ -178,7 +177,6 @@ export function createTextTool<TParameters extends TSchema>(
             ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
             : `When ${definition.source.field} is omitted, the tool can reuse the file identified by a supplied text anchor.`
           : "",
-        pluginPromptGuideline() ?? "",
       ]
         .filter(Boolean)
         .join("\n");

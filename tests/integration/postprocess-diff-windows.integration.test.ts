@@ -34,10 +34,6 @@ test.each([false, true])(
         JSON.stringify({ noAnimations: true }),
       );
       await writeFile(
-        path.join(cwd, ".pi/pi-agent-ide/text-editor.json"),
-        JSON.stringify({ renderer: { diffView: "compact" } }),
-      );
-      await writeFile(
         path.join(cwd, "local.case"),
         Array.from({ length: 30 }, (_, i) => `const value${i + 1} = ${i + 1};`).join("\n") + "\n",
       );

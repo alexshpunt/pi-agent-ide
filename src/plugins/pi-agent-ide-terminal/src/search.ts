@@ -33,9 +33,6 @@ export async function registerTerminalSearch(
       api.describe(
         "path shell:<session> searches the retained text output of that terminal, including rows outside its current screen.",
       );
-      api.addPromptGuideline(
-        "Use search with path shell:<session> to find text in retained terminal output. Read the same shell source with the returned line number when more context is needed.",
-      );
     },
   } satisfies SearchPlugin;
   await connectSearchPlugin(pi, plugin);

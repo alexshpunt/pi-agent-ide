@@ -8,6 +8,7 @@ import {
 } from "./extensions-config.js";
 import type { FeatureFlag } from "./feature-flags.js";
 import type { AgentIdePreference } from "./preferences.js";
+import { AGENT_IDE_PRESET_OPTIONS, disabledByPreset, type AgentIdePreset } from "./presets.js";
 import { saveModuleChoices, type ModuleChoice } from "./module-settings-store.js";
 import { createSettingsPanel } from "./settings-panel.js";
 import { selectBuiltinExtensions } from "./selection.js";
@@ -34,6 +35,7 @@ export function registerModuleSettings(
         const choices = new Map<string, ModuleChoice>();
         const featureChoices = new Map<string, boolean | undefined>();
         const preferenceChoices = new Map<string, string | undefined>();
+        let presetChoice: AgentIdePreset | undefined;
         const saved = await ctx.ui.custom<boolean>((tui, theme, _keys, done) => {
           const panel = createSettingsPanel(
             theme,
@@ -48,7 +50,12 @@ export function registerModuleSettings(
               }
               const effective = selectBuiltinExtensions(
                 BUILTIN_EXTENSIONS,
-                [...disabled, ...other.disabled],
+                [
+                  ...disabledByPreset(BUILTIN_EXTENSIONS, presetChoice ?? current.preset ?? "full"),
+                  ...disabled,
+                  ...disabledByPreset(BUILTIN_EXTENSIONS, other.preset ?? "full"),
+                  ...other.disabled,
+                ],
                 [...enabled, ...other.enabled],
               );
               return {
@@ -65,9 +72,20 @@ export function registerModuleSettings(
                         : "default"),
                   values: ["default", "enabled", "disabled"],
                 })),
-                features: [...flagItems("features"), ...preferenceItems("features")],
+                features: [presetItem(), ...flagItems("features"), ...preferenceItems("features")],
                 ui: [...flagItems("ui"), ...preferenceItems("ui")],
               };
+              function presetItem() {
+                const value = presetChoice ?? current.preset ?? "full";
+                return {
+                  id: "preset",
+                  label: "Preset",
+                  description: "Choose the built-in Agent IDE capability set. Reload required.",
+                  currentValue:
+                    AGENT_IDE_PRESET_OPTIONS.find((item) => item.value === value)?.label ?? value,
+                  values: AGENT_IDE_PRESET_OPTIONS.map((item) => item.label),
+                };
+              }
               function preferenceItems(group: "features" | "ui") {
                 return preferences
                   .filter((preference) => preference.group === group)
@@ -131,7 +149,9 @@ export function registerModuleSettings(
             },
             (tab, id, value) => {
               if (tab === "modules") choices.set(id, value as ModuleChoice);
-              else if (preferences.some((item) => item.id === id)) {
+              else if (id === "preset") {
+                presetChoice = AGENT_IDE_PRESET_OPTIONS.find((item) => item.label === value)?.value;
+              } else if (preferences.some((item) => item.id === id)) {
                 const preference = preferences.find((item) => item.id === id);
                 preferenceChoices.set(
                   id,
@@ -162,8 +182,22 @@ export function registerModuleSettings(
             },
           };
         });
-        if (!saved || choices.size + featureChoices.size + preferenceChoices.size === 0) return;
-        await saveModuleChoices(selectedPath, choices, featureChoices, preferenceChoices);
+        if (
+          !saved ||
+          choices.size +
+            featureChoices.size +
+            preferenceChoices.size +
+            (presetChoice === undefined ? 0 : 1) ===
+            0
+        )
+          return;
+        await saveModuleChoices(
+          selectedPath,
+          choices,
+          featureChoices,
+          preferenceChoices,
+          presetChoice,
+        );
         ctx.ui.notify(`Saved ${scope.toLowerCase()} Agent IDE settings. Reload required.`, "info");
         if (
           await ctx.ui.confirm(
