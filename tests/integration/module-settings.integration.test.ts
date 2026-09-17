@@ -106,7 +106,7 @@ test.each([
               id: "format",
               name: "apply",
               arguments: {
-                source: 'createFile("note.fixture", "value=2\\n"); apply();',
+                source: 'createFile("note.fixture", "value=2\\n"); flush();',
               },
             }),
           ],

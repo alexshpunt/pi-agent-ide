@@ -65,6 +65,7 @@ export class TerminalSessionManager {
       cwd: session.cwd,
       shell: session.shell.displayName,
       shellFamily: session.shell.family,
+      ...(session.process === undefined ? {} : { pid: session.process.pid }),
       background: session.background,
       status: session.status,
       ...(session.waitReason === undefined ? {} : { waitReason: session.waitReason }),

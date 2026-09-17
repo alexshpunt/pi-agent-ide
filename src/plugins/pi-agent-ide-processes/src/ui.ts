@@ -1,5 +1,4 @@
 import {
-  DynamicBorder,
   type ExtensionAPI,
   type ExtensionContext,
   type Theme,
@@ -148,19 +147,24 @@ export class AgentIdeProcessesUi {
               invalidate: () => list.invalidate(),
               render(width: number) {
                 const container = new Container();
-                container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
+
                 if (page === "list") {
-                  container.addChild(
-                    new Text(theme.fg("accent", theme.bold("Agent IDE processes")), 1, 0),
-                  );
                   container.addChild(list);
                   container.addChild(
-                    new Text(theme.fg("dim", "enter view · d stop · esc close"), 1, 0),
+                    new Text(
+                      theme.fg(
+                        "dim",
+                        active.length === 0 ? "esc close" : "enter view · d stop · esc close",
+                      ),
+                      1,
+                      0,
+                    ),
                   );
                 } else if (selected === undefined) {
                   container.addChild(
                     new Text(theme.fg("warning", "Process is no longer active."), 1, 0),
                   );
+                  container.addChild(new Text(theme.fg("dim", "esc back"), 1, 0));
                 } else {
                   container.addChild(selected.renderDetail(theme));
                   container.addChild(
@@ -180,8 +184,13 @@ export class AgentIdeProcessesUi {
                     ),
                   );
                 }
-                container.addChild(new DynamicBorder((text) => theme.fg("accent", text)));
-                return container.render(width);
+                const accent = (text: string): string => theme.fg("accent", text);
+                const innerWidth = Math.max(1, width - 2);
+                return [
+                  borderTop("Agent IDE Processes", `${active.length} active`, width, accent),
+                  ...container.render(innerWidth).map((line) => borderLine(line, width, accent)),
+                  borderBottom(width, accent),
+                ];
               },
               handleInput(data: string) {
                 if (page === "list") {
@@ -193,7 +202,7 @@ export class AgentIdeProcessesUi {
                   } else list.handleInput(data);
                 } else if (page === "detail") {
                   if (matchesKey(data, Key.escape)) page = "list";
-                  else if (data === "d") page = "confirm";
+                  else if (data === "d" && selected !== undefined) page = "confirm";
                   else if (data === "i" && selected?.sendInput !== undefined) page = "input";
                 } else if (page === "input") {
                   if (matchesKey(data, Key.escape)) page = "detail";

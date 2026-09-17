@@ -11,6 +11,10 @@ export const moduleLabels = {
     "Agent IDE processes",
     "Show active terminal and debugger sessions in one shared process surface.",
   ],
+  "ide.vision": [
+    "Agent vision",
+    "Inspect process metadata and capture supported windows and web pages as images.",
+  ],
   "ide.debugger": [
     "Debugger sessions",
     "Debug local programs through addressable DAP sessions and anchored breakpoints.",

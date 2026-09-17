@@ -11,6 +11,7 @@ import {
   type DoctorSetupInspection,
 } from "pi-agent-doctor/api/plugin-protocol";
 
+import { resolvePythonDebuggerCommand } from "./adapter-executables.js";
 import {
   DEBUGGER_LANGUAGE_MATRIX,
   DEBUGGER_RECIPES,
@@ -37,7 +38,10 @@ export const debuggerDoctorPlugin: DoctorPlugin = {
 };
 
 /** Inspect debugger selection and classify missing Linux prerequisites. */
-export async function inspectDebuggerSetup(context: DoctorContext): Promise<DoctorSetupInspection> {
+export async function inspectDebuggerSetup(
+  context: DoctorContext,
+  platform: NodeJS.Platform = process.platform,
+): Promise<DoctorSetupInspection> {
   const recipes = new Map(
     [...context.detectedLanguageIds]
       .map(debuggerRecipeForLanguage)
@@ -62,16 +66,22 @@ export async function inspectDebuggerSetup(context: DoctorContext): Promise<Doct
   for (const recipe of recipes.values()) {
     const debuggerRecipe = recipe.debugger;
     if (debuggerRecipe === undefined) continue;
-    if (process.platform !== "linux" || !debuggerRecipe.platforms.includes("linux")) {
+    const supportedPlatform =
+      platform === "linux" || platform === "darwin" || platform === "win32" ? platform : undefined;
+    if (supportedPlatform === undefined || !debuggerRecipe.platforms.includes(supportedPlatform)) {
       actions.push({
         id: `debugger-${recipe.id}-platform`,
         category: "unsupported-platform",
-        message: `${recipe.name} does not support the Linux debugger recipe`,
+        message: `${recipe.name} does not support the ${platform} debugger recipe`,
       });
       continue;
     }
+    const python =
+      recipe.id === "debugpy"
+        ? await resolvePythonDebuggerCommand(context.cwd, context.env, platform)
+        : undefined;
     const missingRuntime = await firstMissingExecutable(
-      debuggerRecipe.runtimeExecutables,
+      python === undefined ? debuggerRecipe.runtimeExecutables : [python.command],
       context.cwd,
       context.env,
     );
@@ -83,7 +93,7 @@ export async function inspectDebuggerSetup(context: DoctorContext): Promise<Doct
       });
       continue;
     }
-    if (!(await adapterInstalled(recipe.id, context.cwd, context.env))) {
+    if (!(await adapterInstalled(recipe.id, context.cwd, context.env, platform))) {
       actions.push({
         id: `debugger-${recipe.id}-adapter`,
         category: "missing-adapter",
@@ -91,7 +101,7 @@ export async function inspectDebuggerSetup(context: DoctorContext): Promise<Doct
       });
       continue;
     }
-    if (!(await adapterAvailable(recipe.id, context.cwd, context.env))) {
+    if (!(await adapterAvailable(recipe.id, context.cwd, context.env, platform))) {
       actions.push({
         id: `debugger-${recipe.id}-startup`,
         category: "adapter-startup",
@@ -136,7 +146,12 @@ async function firstMissingExecutable(
   }
   return undefined;
 }
-async function adapterInstalled(id: string, cwd: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+async function adapterInstalled(
+  id: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
   if (id === "elixir-ls-debug-adapter") {
     try {
       await access(env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH);
@@ -170,8 +185,11 @@ async function adapterInstalled(id: string, cwd: string, env: NodeJS.ProcessEnv)
   }
   if (id.startsWith("lldb-dap")) {
     return (
-      (await isExecutableAvailable(env.PI_LLDB_DAP_PATH ?? "lldb-dap-18", cwd, env)) ||
-      (await isExecutableAvailable("lldb-dap", cwd, env))
+      (await isExecutableAvailable(
+        env.PI_LLDB_DAP_PATH ?? (platform === "win32" ? "lldb-dap" : "lldb-dap-18"),
+        cwd,
+        env,
+      )) || (await isExecutableAvailable("lldb-dap", cwd, env))
     );
   }
   if (id === "delve") return isExecutableAvailable(env.PI_DELVE_PATH ?? "dlv", cwd, env);
@@ -191,19 +209,34 @@ async function adapterInstalled(id: string, cwd: string, env: NodeJS.ProcessEnv)
   }
   if (id === "dart-debug-adapter")
     return isExecutableAvailable(env.PI_DART_PATH ?? "dart", cwd, env);
+  const python = await resolvePythonDebuggerCommand(cwd, env, platform);
   const probe = await probeExecutable(
-    "python3",
-    ["-c", "import importlib.util; raise SystemExit(importlib.util.find_spec('debugpy') is None)"],
+    python.command,
+    [
+      ...python.args,
+      "-c",
+      "import importlib.util; raise SystemExit(importlib.util.find_spec('debugpy') is None)",
+    ],
     cwd,
     env,
   );
   return probe.ok;
 }
-async function adapterAvailable(id: string, cwd: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  return (await probeAdapter(id, cwd, env)).ok;
+async function adapterAvailable(
+  id: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+  return (await probeAdapter(id, cwd, env, platform)).ok;
 }
 
-async function probeAdapter(id: string, cwd: string, env: NodeJS.ProcessEnv) {
+async function probeAdapter(
+  id: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+) {
   if (id === "elixir-ls-debug-adapter") {
     return probeAdapterFile(env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH, cwd, env);
   }
@@ -224,9 +257,10 @@ async function probeAdapter(id: string, cwd: string, env: NodeJS.ProcessEnv) {
     return probeExecutable(env.PI_DART_PATH ?? "dart", ["--version"], cwd, env);
   }
   if (id === "debugpy") {
+    const python = await resolvePythonDebuggerCommand(cwd, env, platform);
     return probeExecutable(
-      "python3",
-      ["-c", "import debugpy; print(debugpy.__version__)"],
+      python.command,
+      [...python.args, "-c", "import debugpy; print(debugpy.__version__)"],
       cwd,
       env,
     );
@@ -266,7 +300,11 @@ async function probeAdapter(id: string, cwd: string, env: NodeJS.ProcessEnv) {
   if (id.startsWith("lldb-dap")) {
     const command =
       env.PI_LLDB_DAP_PATH ??
-      ((await isExecutableAvailable("lldb-dap-18", cwd, env)) ? "lldb-dap-18" : "lldb-dap");
+      (platform === "win32"
+        ? "lldb-dap"
+        : (await isExecutableAvailable("lldb-dap-18", cwd, env))
+          ? "lldb-dap-18"
+          : "lldb-dap");
     return probeExecutable(command, ["--version"], cwd, env);
   }
   if (id === "rdbg") {

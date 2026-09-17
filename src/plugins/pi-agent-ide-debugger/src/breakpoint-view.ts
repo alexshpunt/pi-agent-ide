@@ -15,7 +15,9 @@ export function createBreakpointPresenter(manager: DebugSessionManager): TextLin
     present(document, context) {
       const debugSession = manager.get(context.source);
       const sourceFile =
-        manager.sourceFile(context.source) ?? filesystemSource(document.source, context.cwd);
+        manager.sourceFile(context.source) ??
+        filesystemSource(context.source, context.cwd) ??
+        filesystemSource(document.source, context.cwd);
       if (sourceFile === undefined) return document;
       const breakpoints = manager.breakpointsForFile(sourceFile, debugSession?.source);
       if (breakpoints.length === 0) return document;

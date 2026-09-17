@@ -1,5 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import { runConfiguredProcess } from "pi-agent-ide/api/tool-config";
 
 import { parseDiagnostics } from "./diagnostics.js";
@@ -66,7 +68,7 @@ export async function runConfiguredLinter(
       const file = diagnostic.file.startsWith("file:")
         ? fileURLToPath(diagnostic.file)
         : diagnostic.file;
-      return path.resolve(workingDirectory, file) === path.resolve(context.filePath);
+      return sameFilePath(path.resolve(workingDirectory, file), context.filePath);
     })
     .map(({ file: _file, ...diagnostic }) => diagnostic);
   return {

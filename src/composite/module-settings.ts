@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Input } from "@earendil-works/pi-tui";
 import { BUILTIN_EXTENSIONS } from "./builtin-extensions.js";
 import {
   configuredFeatureFlags,
@@ -64,27 +65,44 @@ export function registerModuleSettings(
                         : "default"),
                   values: ["default", "enabled", "disabled"],
                 })),
-                features: flagItems("features"),
-                ui: [
-                  ...flagItems("ui"),
-                  ...preferences.map((preference) => {
+                features: [...flagItems("features"), ...preferenceItems("features")],
+                ui: [...flagItems("ui"), ...preferenceItems("ui")],
+              };
+              function preferenceItems(group: "features" | "ui") {
+                return preferences
+                  .filter((preference) => preference.group === group)
+                  .map((preference) => {
                     const configured = preferenceChoices.has(preference.id)
                       ? preferenceChoices.get(preference.id)
                       : current.preferences?.[preference.id];
                     return {
                       id: preference.id,
                       label: preference.name,
-                      description: `${preference.description} Default: ${preference.values.find((item) => item.value === preference.default)?.label ?? preference.default}.`,
+                      description: `${preference.description} Default: ${preference.kind === "choice" ? (preference.values.find((item) => item.value === preference.default)?.label ?? preference.default) : preference.default || "empty"}.`,
                       currentValue:
                         configured === undefined
                           ? "default"
-                          : (preference.values.find((item) => item.value === configured)?.label ??
-                            configured),
-                      values: ["default", ...preference.values.map((item) => item.label)],
+                          : preference.kind === "choice"
+                            ? (preference.values.find((item) => item.value === configured)?.label ??
+                              configured)
+                            : configured,
+                      ...(preference.kind === "choice"
+                        ? { values: ["default", ...preference.values.map((item) => item.label)] }
+                        : {
+                            submenu: (currentValue: string, done: (value?: string) => void) => {
+                              const input = new Input();
+                              const initial =
+                                currentValue === "default" ? preference.default : currentValue;
+                              if (initial.length > 0) input.handleInput(initial);
+                              input.focused = true;
+                              input.onSubmit = (value) => done(value);
+                              input.onEscape = () => done();
+                              return input;
+                            },
+                          }),
                     };
-                  }),
-                ],
-              };
+                  });
+              }
               function flagItems(group: "features" | "ui") {
                 return flags
                   .filter((flag) => (flag.group ?? "features") === group)
@@ -113,13 +131,15 @@ export function registerModuleSettings(
             },
             (tab, id, value) => {
               if (tab === "modules") choices.set(id, value as ModuleChoice);
-              else if (tab === "ui" && preferences.some((item) => item.id === id)) {
+              else if (preferences.some((item) => item.id === id)) {
                 const preference = preferences.find((item) => item.id === id);
                 preferenceChoices.set(
                   id,
-                  value === "default"
+                  value === "default" || value.length === 0
                     ? undefined
-                    : preference?.values.find((item) => item.label === value)?.value,
+                    : preference?.kind === "choice"
+                      ? preference.values.find((item) => item.label === value)?.value
+                      : value,
                 );
               } else {
                 featureChoices.set(

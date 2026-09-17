@@ -110,6 +110,31 @@ export function createApplyDisplay(
           !Array.isArray(value.errors)
         )
           return [];
+        if ("operations" in value && Array.isArray(value.operations)) {
+          const completed = value.operations.filter(
+            (operation: unknown) =>
+              operation !== null &&
+              typeof operation === "object" &&
+              "status" in operation &&
+              operation.status === "applied",
+          ).length;
+          if (completed === value.operations.length) return [];
+          const outcomes = value.operations
+            .filter(
+              (operation: unknown) =>
+                operation !== null &&
+                typeof operation === "object" &&
+                "status" in operation &&
+                operation.status !== "applied",
+            )
+            .map((operation: unknown) => ({ text: formatDisplayOutcome(operation) }));
+          return [
+            {
+              text: `Apply partially applied: ${completed} of ${value.operations.length} operations completed.`,
+            },
+            ...outcomes,
+          ];
+        }
         return value.errors.flatMap((error: unknown) =>
           error !== null &&
           typeof error === "object" &&
@@ -327,6 +352,18 @@ export function createApplyResultRenderer(
       },
     };
   };
+}
+
+function formatDisplayOutcome(value: unknown): string {
+  if (value === null || typeof value !== "object") return String(value);
+  const index = "index" in value ? Number(value.index) + 1 : "?";
+  const kind = "kind" in value ? String(value.kind) : "operation";
+  const status = "status" in value ? String(value.status) : "unknown";
+  const error =
+    "error" in value && value.error !== null && typeof value.error === "object"
+      ? `: ${"code" in value.error ? String(value.error.code) : "ERROR"}: ${"message" in value.error ? String(value.error.message) : "Operation failed"}`
+      : "";
+  return `Operation ${index} (${kind}): ${status}${error}`;
 }
 
 function redactApplyReceipts(text: string): string {

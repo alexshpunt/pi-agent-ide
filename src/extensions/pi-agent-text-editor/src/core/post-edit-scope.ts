@@ -36,6 +36,11 @@ export function deferPostEdit(source: string, finalize: Finalize): boolean {
 export function hasDeferredPostEdit(source: string): boolean {
   return active.getStore()?.has(source) ?? false;
 }
+
+/** Stop deferred processing when a later operation removes or moves the resource. */
+export function forgetDeferredPostEdit(source: string): void {
+  active.getStore()?.delete(source);
+}
 /** Writes stay immediate; finishing drains each surviving final resource once. */
 export function createPostEditScope() {
   const pending = new Map<string, Finalize>();

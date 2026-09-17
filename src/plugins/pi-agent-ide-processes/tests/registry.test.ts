@@ -44,6 +44,7 @@ describe("Agent IDE process registry", () => {
     let commandHandler: ((args: string, context: never) => Promise<void>) | undefined;
     let providerListener: () => void = () => undefined;
     let detail = "old output";
+    let active = true;
     const requestRender = vi.fn();
     const sendInput = vi.fn();
     let component:
@@ -56,7 +57,7 @@ describe("Agent IDE process registry", () => {
     const registry = new AgentIdeProcessRegistry();
     registry.add({
       id: "terminal",
-      list: () => [{ ...processWithDetail("shell:one", detail), sendInput }],
+      list: () => (active ? [{ ...processWithDetail("shell:one", detail), sendInput }] : []),
       onDidChange(listener) {
         providerListener = listener;
         return () => {
@@ -119,6 +120,20 @@ describe("Agent IDE process registry", () => {
     vi.advanceTimersByTime(1_000);
     expect(requestRender).toHaveBeenCalled();
     expect(component?.render(80).join("\n")).toContain("timer output");
+    const framed = component?.render(80) ?? [];
+    expect(framed[0]).toContain("Agent IDE Processes");
+    expect(
+      framed.every((line) => line.startsWith("│") || line.startsWith("╭") || line.startsWith("╰")),
+    ).toBe(true);
+    expect(
+      framed.every((line) => line.endsWith("│") || line.endsWith("╮") || line.endsWith("╯")),
+    ).toBe(true);
+
+    active = false;
+    providerListener();
+    const closedProcess = component?.render(80).join("\n") ?? "";
+    expect(closedProcess).toContain("Process is no longer active.");
+    expect(closedProcess).toContain("esc back");
     closeOverlay?.(null);
     await running;
     requestRender.mockClear();

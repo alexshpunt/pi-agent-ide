@@ -46,9 +46,10 @@ jobs:
           const workspace = "pnpm-workspace.yaml";
           const source = readFileSync(workspace, "utf8");
           const privateOverride = /^  pi-coding-agent-test: npm:@alexshp\/pi-coding-agent-test@[^\n]+\n/mu;
-          if (!privateOverride.test(source)) throw new Error("Private test-package override not found");
-          writeFileSync(workspace, source.replace(privateOverride, ""));
-          rmSync("pnpm-lock.yaml");
+          if (privateOverride.test(source)) {
+            writeFileSync(workspace, source.replace(privateOverride, ""));
+            rmSync("pnpm-lock.yaml");
+          }
           NODE
 
       - name: Install build dependencies

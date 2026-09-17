@@ -148,8 +148,7 @@ export function createReadTool(
       name: toolId,
       label: toolId,
 
-      promptSnippet:
-        "Read files, original bytes with raw:, URLs, temporary resources, search selections, and protocol sources, with optional views projected onto text content",
+      promptSnippet: "Read supported sources as text or bytes, with optional views",
       get description(): string {
         return [
           `Use read to inspect files, directories, URLs and supported sources without changing them. path selects the source; offset/limit select a text window; views add annotations. Text limit: ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB. Continuation: returned offset, or returned temp: reference as path. Temporary references remain available until their owning runtime is disposed.`,
@@ -162,7 +161,7 @@ export function createReadTool(
       get promptGuidelines(): string[] {
         return [
           "Use read to examine supported sources instead of cat, sed, head or tail. Use search to locate workspace text and paths instead of grep, rg or find.",
-          "Use read with raw:<local-file> instead of xxd, od or hexdump to inspect original bytes. In raw: mode offset/limit count bytes, not lines; omit text views.",
+          "Use read with raw:<local-file> instead of xxd, od or hexdump when byte-level inspection is needed.",
           ...(pluginPromptGuidelines?.() ?? []),
         ];
       },
@@ -349,12 +348,13 @@ async function executeRead(
   const targetSnapshot = [...targetResolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
-  const requestedViews = new Set([
+  const rawRequestedViews = [
     ...(request.views ?? []),
     ...(audience === "script" ? viewSnapshot.map(({ registration }) => registration.view) : []),
-  ]);
+  ];
+  const requestedViews = new Set(rawRequestedViews.map(viewName));
   const knownViews = new Set([...viewSnapshot.map(({ registration }) => registration.view)]);
-  const ignoredViews = [...requestedViews].filter((view) => !knownViews.has(view));
+  const ignoredViews = rawRequestedViews.filter((view) => !knownViews.has(viewName(view)));
   if (request.path !== undefined && targetSnapshot.length > 0) {
     const targeted = await resolveTextTargets(
       request,
@@ -1051,6 +1051,11 @@ async function runTextPresenters(
   const presented = mergeViewContributions(document, contributions);
 
   return { ...context, state: { ...state, text: presented } };
+}
+
+function viewName(view: string): string {
+  const separator = view.indexOf(":");
+  return separator < 0 ? view : view.slice(0, separator);
 }
 
 /** Prepends a note listing unknown view names so the agent can correct the request. */

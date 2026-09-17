@@ -123,6 +123,11 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     "search.core",
   ]),
   builtin("ide.processes", () => import("#src/plugins/pi-agent-ide-processes/index.js")),
+  builtin("ide.vision", () => import("#src/plugins/pi-agent-ide-vision/index.js"), [
+    "ide.processes",
+    "read.core",
+    "search.core",
+  ]),
   builtin("ide.debugger", () => import("#src/plugins/pi-agent-ide-debugger/index.js"), [
     "ide.processes",
     "read.core",
@@ -153,9 +158,9 @@ function builtin(
     name: moduleLabels[id][0],
     description: moduleLabels[id][1],
     dependencies,
-    async register(pi) {
+    async register(pi, context) {
       const extension = await load();
-      await extension.default(pi);
+      await extension.default(pi, context);
     },
     ...(defaultEnabled ? {} : { defaultEnabled: false }),
   };

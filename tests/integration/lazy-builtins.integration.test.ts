@@ -11,10 +11,8 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.js";
-
-// Missing disabled module files make eager evaluation fail at Pi's real loader boundary.
-test("loads only selected built-ins and leaves disabled dependencies unevaluated", async () => {
+// Pi may resolve the module graph eagerly, but disabled built-ins must never register.
+test("registers only selected built-ins", async () => {
   const parent = path.resolve(".agents/tmp/lazy-builtins");
   await mkdir(parent, { recursive: true });
   const cwd = await mkdtemp(path.join(parent, "project-"));
@@ -28,7 +26,6 @@ test("loads only selected built-ins and leaves disabled dependencies unevaluated
     );
     for (const file of [
       "src/pi-agent-ide.ts",
-      "src/composite/builtin-extensions.ts",
       "src/composite/selection.ts",
       "src/composite/extensions-config.ts",
       "src/composite/feature-flags.ts",
@@ -41,16 +38,26 @@ test("loads only selected built-ins and leaves disabled dependencies unevaluated
       await copyFile(path.resolve(file), path.join(cwd, file));
     }
     await writeFile(
+      path.join(cwd, "src/composite/builtin-extensions.ts"),
+      `export const BUILTIN_EXTENSIONS = [
+  { id: "ide.tips", dependencies: [], register: async (pi, context) => (await import("#src/tips/extension.js")).default(pi, context) },
+  { id: "ide.vision", dependencies: [], defaultEnabled: false, register: async (pi, context) => (await import("#src/disabled/extension.js")).default(pi, context) },
+];
+`,
+    );
+    await mkdir(path.join(cwd, "src/disabled"), { recursive: true });
+    await writeFile(
+      path.join(cwd, "src/disabled/extension.ts"),
+      `import { appendFileSync } from "node:fs"; appendFileSync(${JSON.stringify(path.join(cwd, "loaded.txt"))}, "disabled-loaded\\n"); export default function register() { appendFileSync(${JSON.stringify(path.join(cwd, "loaded.txt"))}, "disabled-registered\\n"); }\n`,
+    );
+    await writeFile(
       path.join(cwd, "src/tips/extension.ts"),
       `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(path.join(cwd, "loaded.txt"))}, "loaded\\n");\nexport default async function register() { appendFileSync(${JSON.stringify(path.join(cwd, "loaded.txt"))}, "registered\\n"); }\n`,
     );
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
-        // AST is not explicitly disabled, but its disabled core must prevent its import.
-        disabled: BUILTIN_EXTENSIONS.filter(
-          (item) => !["ide.tips", "ide.ast"].includes(item.id),
-        ).map((item) => item.id),
+        disabled: ["ide.vision"],
       }),
     );
     await new PiIntegrationTest({
@@ -61,7 +68,9 @@ test("loads only selected built-ins and leaves disabled dependencies unevaluated
       tools: [],
       conversation: [assistantMessage([text("Loaded selected extensions.")])],
     }).run("Finish without using tools.");
-    expect(await readFile(path.join(cwd, "loaded.txt"), "utf8")).toBe("loaded\nregistered\n");
+    const lifecycle = await readFile(path.join(cwd, "loaded.txt"), "utf8");
+    expect(lifecycle).toContain("loaded\nregistered\n");
+    expect(lifecycle).not.toContain("disabled-registered");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

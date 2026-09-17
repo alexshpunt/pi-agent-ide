@@ -1,5 +1,10 @@
 import { Type } from "typebox";
 
+import {
+  sourcePathProperty,
+  sourceRangeProperties,
+} from "#src/tools/text-tool-schema-properties.js";
+
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import {
   anchorSpanRange,
@@ -12,24 +17,10 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 
 export const replaceSchema = Type.Object(
   {
-    path: Type.Optional(
-      Type.String({
-        description:
-          "Source resource reference or file path. A returned SEARCH# reference can select replacement ranges.",
-      }),
+    path: sourcePathProperty(
+      "Source resource reference or file path. A returned SEARCH# reference can select replacement ranges.",
     ),
-    start: Type.Optional(
-      Type.String({
-        description:
-          "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects only its line. Omit when path already selects text through a supported resource reference. With end, selects a whole-line range.",
-      }),
-    ),
-    end: Type.Optional(
-      Type.String({
-        description:
-          "Optional anchor or unique exact text. Range includes start's first line through end's last line, even for SEARCH :match. Mixed types allowed; boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start. The end line is included, not a stopping point before it.",
-      }),
-    ),
+    ...sourceRangeProperties(),
     text: Type.String({
       description:
         "Replacement text. Empty text removes the selection; a whole-line selection removes its lines without inserting a blank line. Adjacent unselected lines are kept.",
@@ -37,7 +28,6 @@ export const replaceSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
 interface ReplaceParameters {
   readonly path?: string;
   readonly start?: string;
@@ -48,7 +38,7 @@ interface ReplaceParameters {
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
   name: "replace",
   description:
-    "Use replace to change an existing text fragment, an inclusive line range, or every selected search match. Exact text must be unique; SEARCH#...:all:match selects every returned match for replacement.",
+    "Use replace to change an existing text fragment, an inclusive line range, or every selected search match.",
 
   promptSnippet: "Make precise file edits by replacing text using exact matches or anchors",
   parameters: replaceSchema,

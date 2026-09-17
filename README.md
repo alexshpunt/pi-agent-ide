@@ -40,7 +40,7 @@ The project started as another take on hash-based editing. It later brought back
 
 The agent should express what it wants to do without choosing a different tool for every implementation behind it.
 
-`read` is the main interface to the environment. It reads text, source code, raw bytes, web pages, images, PDFs, terminal sessions, debugger sessions, and diagnostics. The same interface can ask for AST structure, language-server information, anchors, or other views. The agent chooses the information it needs while the parsing, conversion, and resource handling stay behind one facade.
+`read` is the main interface to the environment. It reads text, source code, raw bytes, web pages, images, PDFs, terminal sessions, debugger sessions, diagnostics, running processes, application windows, and full displays. The same interface can ask for AST structure, language-server information, anchors, or other views. The agent chooses the information it needs while the parsing, conversion, and resource handling stay behind one facade.
 
 `search` follows the same rule. It searches files, text, symbols, syntax trees, and supported live resources through one interface.
 
@@ -51,6 +51,8 @@ Editing tools state concrete intentions such as `write`, `replace`, `insert`, `d
 The shell remains available, but it behaves like part of an IDE. The agent can start long-running and interactive processes, leave them in the background, reconnect after an extension reload, and receive completion or stale-process notifications. Aborting an agent turn does not kill the process.
 
 Debugger sessions are also addressable resources. The agent can set breakpoints, inspect source and variables, step through a program, and reconnect after a reload. Formatting, diagnostics, AST views, language-server views, terminal output, and debugger state work through the same resource model. This support is currently focused on Linux and WSL.
+
+Agent vision uses that resource model instead of adding a separate screenshot workflow. The agent can discover a process, inspect its metadata, read an application window, capture a full display, or render a web page through `read`. Image and sequence views support downscaling, normalized regions, and grid-cell selection, so the model can inspect a useful area without loading every source pixel. Window and display access is guarded by ownership, executable allowlists, and separate opt-in settings.
 
 ### Extensible by protocol
 
@@ -130,7 +132,7 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 
 | Document                                   | Contents                                                             |
 | ------------------------------------------ | -------------------------------------------------------------------- |
-| [Tools and workflow](./docs/tools.md)      | Read, search, editing, anchors, and feedback                         |
+| [Tools and workflow](./docs/tools.md)      | Read, vision, search, editing, anchors, and feedback                 |
 | [Architecture](./docs/architecture.md)     | Module boundaries, protocols, and the umbrella extension             |
 | [Configuration](./docs/configuration.md)   | Run doctor, configure project tools and search, or disable built-ins |
 | [File hooks](./docs/user-hooks.md)         | Inspect, change, or deny reads and edits                             |

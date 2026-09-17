@@ -64,7 +64,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
               name: "apply",
               arguments: {
                 source:
-                  'const file = open("locked.txt"); file.replace(file.find("unchanged"), "changed"); apply();',
+                  'const file = open("locked.txt"); file.replace(file.find("unchanged"), "changed"); flush();',
               },
             }),
           ],
@@ -102,7 +102,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
     expect(getToolResultText(run, "read-script-secret")).toContain("fixture secret");
     expect(getToolExecution(run, "read-throw").isError).toBe(true);
     expect(getToolResultText(run, "read-throw")).toContain("read hook exploded");
-    expect(getToolExecution(run, "edit-locked").isError).toBe(true);
+    expect(getToolExecution(run, "edit-locked").isError).toBe(false);
     expect(getToolResultText(run, "edit-locked")).toContain("fixture lock");
     expect(await readFile(path.join(cwd, "locked.txt"), "utf8")).toBe("unchanged");
     expect(getToolExecution(run, "write-review").isError).toBe(false);

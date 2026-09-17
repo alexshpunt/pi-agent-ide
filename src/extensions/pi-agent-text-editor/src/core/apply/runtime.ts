@@ -7,6 +7,7 @@ export const defaultApplyOperations = [
   "search",
   "diff",
   "editorOpen",
+  "editorResolve",
   "editorApply",
 ] as const;
 export type ApplyOperation = (typeof defaultApplyOperations)[number];
@@ -77,7 +78,7 @@ export async function executeApplySource(
       },
     });
     await runner.run({
-      source: `${guestBindings(enabledOperations)}\n${source}\n__finishApplyScript();`,
+      source: `${guestBindings(enabledOperations)}\nawait (async () => {\n${source}\n})();\n__finishApplyScript();`,
       abortSignal: signal,
       limits: { ...limits, timeoutMs: limits?.timeoutMs ?? APPLY_EXECUTION_TIMEOUT_MS },
     });
@@ -118,7 +119,7 @@ function guestBindings(enabledOperations: readonly ApplyOperation[]): string {
   const readOperations = enabledOperations.filter(
     (name) => name === "read" || name === "search" || name === "diff",
   );
-  return `const { ${readOperations.join(", ")}, open, createFile, deleteFile, copyFile, moveFile, apply, result, __finishApplyScript } = (() => {
+  return `const { ${readOperations.join(", ")}, open, createFile, deleteFile, copyFile, moveFile, copy, move, flush, result, __finishApplyScript } = (() => {
     const origins = new WeakMap();
     const invoke = (name, args) => {
       const response = __apply[name](args);
@@ -126,40 +127,75 @@ function guestBindings(enabledOperations: readonly ApplyOperation[]): string {
       if (response.value !== null && typeof response.value === "object") origins.set(response.value, response.id);
       return response.value;
     };
-    let generation = 0;
     let snapshots = new Map();
     let operations = [];
     const assertCurrent = (document) => {
-      if (document.generation !== generation) throw Object.assign(new Error("Editor handle belongs to a committed transaction"), {code: "STALE_EDITOR"});
+      if (!snapshots.has(document.id)) throw Object.assign(new Error("Editor handle belongs to an unavailable snapshot"), {code: "STALE_EDITOR"});
     };
-    const selection = (document, from, to) => Object.freeze({document: document.id, from, to, text: document.content.slice(from, to)});
+    const selection = (document, from, to, linewise = false) => Object.freeze({document: document.id, from, to, text: document.content.slice(from, to), ...(linewise && {linewise: true})});
+    const selectionSet = (document, ranges, provenance) => {
+      const set = ranges.map(({from, to, linewise}) => selection(document, from, to, linewise === true));
+      Object.defineProperties(set, {document: {value: document.id}, generation: {value: document.generation}, provenance: {value: provenance}, text: {value: set.map((item) => item.text).join("")}});
+      return Object.freeze(set);
+    };
     const occurrences = (content, needle) => {
       if (typeof needle !== "string" || needle.length === 0) throw new Error("Find text must be non-empty");
       const found = [];
       for (let from = content.indexOf(needle); from >= 0; from = content.indexOf(needle, from + needle.length)) found.push(from);
       return found;
     };
-    const unique = (document, needle) => {
-      const found = occurrences(document.content, needle);
-      if (found.length !== 1) throw Object.assign(new Error("Expected exactly one match, found " + found.length), {code: found.length === 0 ? "NOT_FOUND" : "AMBIGUOUS_MATCH"});
-      return selection(document, found[0], found[0] + needle.length);
+    const targetSet = (document, target) => {
+      if (typeof target !== "string") return target;
+      const resolved = invoke("editorResolve", {snapshot: {id: document.id, source: document.source, content: document.content}, query: target});
+      return selectionSet(document, resolved.selections, {kind: "exact", query: target, warning: resolved.warning});
+    };
+    const stage = (document, target, text, edge) => {
+      const selected = targetSet(document, target);
+      if (!Array.isArray(selected) || selected.document !== document.id) throw new Error("SelectionSet belongs to another file");
+      if (selected.generation !== document.generation) throw Object.assign(new Error("SelectionSet belongs to a stale snapshot"), {code:"STALE_SELECTION"});
+      if (selected.length === 0) { operations.push({kind: "warning", document: document.id, query: selected.provenance?.query, warning: selected.provenance?.warning}); return; }
+      for (const range of selected) {
+        const point = edge === "before" ? range.from : edge === "after" ? range.to : undefined;
+        let insert = text;
+        if (point !== undefined && range.linewise === true) {
+          const ending = /(?:\\r\\n|\\r|\\n)$/u.exec(range.text)?.[0];
+          const separator = ending ?? (document.content.includes("\\r\\n") ? "\\r\\n" : "\\n");
+          if (edge === "after" && ending === undefined) insert = separator + insert;
+          else if (!/(?:\\r\\n|\\r|\\n)$/u.test(insert)) insert += separator;
+        }
+        operations.push({kind: "replace", selection: point === undefined ? range : selection(document, point, point), text: insert});
+      }
+    };
+    const stageTransfer = (kind, source, destination) => {
+      for (const set of [source, destination]) {
+        const document = snapshots.get(set?.document);
+        if (!Array.isArray(set) || document === undefined || set.generation !== document.generation) throw Object.assign(new Error("SelectionSet belongs to a stale or unopened snapshot"), {code:"STALE_SELECTION"});
+      }
+      const empty = source.length === 0 ? source : destination.length === 0 ? destination : undefined;
+      if (empty !== undefined) { operations.push({kind:"warning", document:empty.document, query:empty.provenance?.query, warning:empty.provenance?.warning}); return; }
+      operations.push({kind, sources:[...source], destinations:[...destination], text:source.map((item) => item.text).join("")});
     };
     const makeDocument = (snapshot) => {
-      const document = {id: snapshot.id, source: snapshot.source, content: snapshot.content, lines: snapshot.lines, generation};
+      const document = {id: snapshot.id, source: snapshot.source, content: snapshot.content, lines: snapshot.lines, generation: 0};
+      snapshots.set(document.id, document);
       const api = {
-        source: document.source,
-        content: document.content,
-        lines: document.lines,
-        find: (text) => { assertCurrent(document); return unique(document, text); },
-        findAll: (text) => { assertCurrent(document); return occurrences(document.content, text).map((from) => selection(document, from, from + text.length)); },
+        get source() { return document.source; },
+        get content() { return document.content; },
+        get lines() { return document.lines; },
+        find: (text) => { assertCurrent(document); const ranges = occurrences(document.content, text).map((from) => ({from, to: from + text.length})); if (ranges.length > 0) return selectionSet(document, ranges, {kind: "exact", query: text}); const resolved = invoke("editorResolve", {snapshot: {id: document.id, source: document.source, content: document.content}, query: text}); return selectionSet(document, [], {kind: "exact", query: text, warning: resolved.warning}); },
         between: (start, end, options = {}) => {
           assertCurrent(document);
-          const first = unique(document, start);
-          const tail = document.content.slice(first.to);
-          const ends = occurrences(tail, end);
-          if (ends.length !== 1) throw Object.assign(new Error("Expected exactly one end marker after start, found " + ends.length), {code: ends.length === 0 ? "NOT_FOUND" : "AMBIGUOUS_MATCH"});
-          const endFrom = first.to + ends[0];
-          return selection(document, options.inside === true ? first.to : first.from, options.inside === true ? endFrom : endFrom + end.length);
+          const ranges = [];
+          let cursor = 0;
+          while (cursor <= document.content.length) {
+            const from = document.content.indexOf(start, cursor);
+            if (from < 0) break;
+            const endFrom = document.content.indexOf(end, from + start.length);
+            if (endFrom < 0) break;
+            ranges.push({from: options.inside === true ? from + start.length : from, to: options.inside === true ? endFrom : endFrom + end.length});
+            cursor = endFrom + end.length;
+          }
+          return selectionSet(document, ranges, {kind: "between", start, end});
         },
 select: (match) => {
           assertCurrent(document);
@@ -175,7 +211,7 @@ select: (match) => {
           const to = starts[endLine - 1] + candidate.endColumn;
           const selected = selection(document, from, to);
           if (typeof candidate.matchedText === "string" && selected.text !== candidate.matchedText) throw Object.assign(new Error("Search match is stale"), {code: "STALE_SELECTION"});
-          return selected;
+          return selectionSet(document, [selected]);
         },
         line: (first, last = first) => {
           assertCurrent(document);
@@ -183,29 +219,44 @@ select: (match) => {
           const starts = [0];
           for (let index = 0; index < document.content.length; index += 1) if (document.content[index] === "\\n") starts.push(index + 1);
           if (last > starts.length) throw new RangeError("Line range is outside document");
-          return selection(document, starts[first - 1], starts[last] === undefined ? document.content.length : starts[last]);
+          return selectionSet(document, [{from: starts[first - 1], to: starts[last] === undefined ? document.content.length : starts[last]}]);
         },
-        replace: (selected, text) => { assertCurrent(document); operations.push({kind: "replace", selection: selected, text: String(text)}); },
-        remove: (selected) => { assertCurrent(document); operations.push({kind: "replace", selection: selected, text: ""}); },
-        insertBefore: (selected, text) => { assertCurrent(document); operations.push({kind: "replace", selection: selection(document, selected.from, selected.from), text: String(text)}); },
-        insertAfter: (selected, text) => { assertCurrent(document); operations.push({kind: "replace", selection: selection(document, selected.to, selected.to), text: String(text)}); },
-        replaceAll: (text, replacement) => { assertCurrent(document); const found = api.findAll(text); if (found.length === 0) throw Object.assign(new Error("No matches"), {code: "NOT_FOUND"}); for (const selected of found) api.replace(selected, replacement); return found.length; },
+        replace: (target, text) => { assertCurrent(document); stage(document, target, String(text)); },
+        remove: (target) => { assertCurrent(document); stage(document, target, ""); },
+        insertBefore: (target, text) => { assertCurrent(document); stage(document, target, String(text), "before"); },
+        insertAfter: (target, text) => { assertCurrent(document); stage(document, target, String(text), "after"); },
       };
       return Object.freeze(api);
     };
-    return {
+    const api = {
       ${readOperations.map((name) => `${name}: (args) => invoke(${JSON.stringify(name)}, args)`).join(",\n")},
-      open: (path) => { const snapshot = invoke("editorOpen", typeof path === "string" ? {path} : path); snapshots.set(snapshot.id, snapshot); return makeDocument(snapshot); },
+      open: (path) => makeDocument(invoke("editorOpen", typeof path === "string" ? {path} : path)),
       createFile: (path, content) => operations.push({kind: "create", path, content: String(content)}),
       deleteFile: (path) => operations.push({kind: "delete", path}),
       copyFile: (path, target, options = {}) => operations.push({kind: "copy", path, target, overwrite: options.overwrite === true}),
       moveFile: (path, target, options = {}) => operations.push({kind: "move", path, target, overwrite: options.overwrite === true}),
-      apply: () => {
-        const value = invoke("editorApply", {snapshots: [...snapshots.values()].map(({id, source, content}) => ({id, source, content})), operations});
-        generation += 1; snapshots = new Map(); operations = []; return value;
+      copy: (source, destination) => stageTransfer("text-copy", source, destination),
+      move: (source, destination) => stageTransfer("text-move", source, destination),
+      flush: () => {
+        if (operations.length === 0) return undefined;
+        const pending = operations;
+        operations = [];
+        const value = invoke("editorApply", {snapshots: [...snapshots.values()].map(({id, source, content}) => ({id, source, content})), operations: pending});
+        for (const refreshed of value?.snapshots ?? []) {
+          const document = snapshots.get(refreshed.id);
+          if (document !== undefined && refreshed.unavailable === true) snapshots.delete(refreshed.id);
+          else if (document !== undefined) {
+            document.source = refreshed.source;
+            document.content = refreshed.content;
+            document.lines = refreshed.lines;
+            document.generation += 1;
+          }
+        }
+        return value;
       },
       result: (value) => __apply.result(value, value !== null && typeof value === "object" ? origins.get(value) : undefined),
-      __finishApplyScript: () => { if (operations.length > 0) __apply.result({kind: "uncommitted-transaction", staged: operations.length, message: "Staged changes were not applied; call apply()."}); },
+      __finishApplyScript: () => { if (operations.length > 0) return api.flush(); },
     };
+    return api;
   })();`;
 }

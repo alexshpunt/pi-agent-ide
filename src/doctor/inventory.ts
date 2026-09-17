@@ -59,16 +59,21 @@ Maps registered language definitions to matching project files.
 export function detectProjectLanguages(
   files: readonly string[],
   languages: readonly LanguageDefinition[],
+  platform: NodeJS.Platform = process.platform,
 ): ReadonlyMap<string, readonly string[]> {
   const detected = new Map<string, string[]>();
+  const pathApi = platform === "win32" ? path.win32 : path;
 
   for (const language of languages) {
     const extensions = new Set(language.extensions.map((extension) => extension.toLowerCase()));
-    const names = new Set(language.fileNames);
+    const normalizeName = (name: string): string =>
+      platform === "win32" ? name.toLowerCase() : name;
+    const names = new Set(language.fileNames?.map(normalizeName));
     const matches = files.filter(
       (file) =>
         !file.split(path.sep).join("/").includes("/.pi/pi-agent-ide/") &&
-        (extensions.has(path.extname(file).toLowerCase()) || names.has(path.basename(file))),
+        (extensions.has(pathApi.extname(file).toLowerCase()) ||
+          names.has(normalizeName(pathApi.basename(file)))),
     );
 
     if (matches.length > 0) {

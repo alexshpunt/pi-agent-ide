@@ -274,6 +274,8 @@ export interface TextAnchorInTextRequest {
   readonly content: string;
   readonly value: string;
   readonly cwd: string;
+  /** Limit resolution to these registered anchor kinds. Omit to use all configured resolvers. */
+  readonly kinds?: readonly string[];
   readonly signal?: AbortSignal;
 }
 
@@ -618,7 +620,13 @@ export function createTextEditorCore(
         ...(request.signal !== undefined && { signal: request.signal }),
       };
 
-      return anchorRegistry.snapshot().resolve(request.value, context);
+      return anchorRegistry
+        .snapshot()
+        .resolve(
+          request.value,
+          context,
+          request.kinds === undefined ? undefined : new Set(request.kinds),
+        );
     },
     editText<Result>(
       source: string,

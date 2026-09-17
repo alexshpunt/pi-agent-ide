@@ -228,6 +228,138 @@ jobs:
           color: ${{ steps.integration-report.outputs.failed == '0' && 'brightgreen' || 'red' }}
           isError: ${{ steps.integration-report.outputs.failed != '0' }}
 
+  validate-windows-core:
+    name: Validate Windows core
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup npm and pnpm
+        run: npm install --global "npm@$env:NPM_VERSION" "pnpm@$env:PNPM_VERSION"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Windows source contracts
+        run: |
+          pnpm typecheck
+          pnpm vitest run src/api/path-identity.test.ts src/doctor/inventory.test.ts src/plugins/pi-agent-ide-debugger/tests
+
+      - name: Setup Windows native tools
+        if: ${{ hashFiles('validation/language-toolchains/build-windows-checks.mjs') != '' }}
+        shell: pwsh
+        run: |
+          python -m pip install debugpy==1.8.21
+          npm install --global @ast-grep/cli@0.45.3
+          $netcoreArchive = Join-Path $env:RUNNER_TEMP 'netcoredbg.zip'
+          $netcoreRoot = Join-Path $env:RUNNER_TEMP 'netcoredbg'
+          $netcoreUri = 'https://github.com/Samsung/netcoredbg/releases/download/' +
+            '3.2.0-1092/netcoredbg-win64.zip'
+          Invoke-WebRequest $netcoreUri -OutFile $netcoreArchive
+          Expand-Archive $netcoreArchive $netcoreRoot -Force
+          $netcore = Get-ChildItem $netcoreRoot -Recurse -Filter netcoredbg.exe |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $netcore) { throw 'netcoredbg.exe was not found' }
+          $dartArchive = Join-Path $env:RUNNER_TEMP 'dart.zip'
+          $dartRoot = Join-Path $env:RUNNER_TEMP 'dart'
+          $dartUri = 'https://storage.googleapis.com/dart-archive/channels/stable/' +
+            'release/3.13.3/sdk/dartsdk-windows-x64-release.zip'
+          Invoke-WebRequest $dartUri -OutFile $dartArchive
+          Expand-Archive $dartArchive $dartRoot -Force
+          $dart = Get-ChildItem $dartRoot -Recurse -Filter dart.exe |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $dart) { throw 'dart.exe was not found' }
+          $delveArchive = Join-Path $env:RUNNER_TEMP 'delve.zip'
+          $delveRoot = Join-Path $env:RUNNER_TEMP 'delve'
+          $delveUri = 'https://github.com/go-delve/delve/releases/download/' +
+            'v1.27.2/dlv_1.27.2_windows_amd64.zip'
+          Invoke-WebRequest $delveUri -OutFile $delveArchive
+          Expand-Archive $delveArchive $delveRoot -Force
+          $delve = Get-ChildItem $delveRoot -Recurse -Filter dlv.exe |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $delve) { throw 'dlv.exe was not found' }
+          $zigArchive = Join-Path $env:RUNNER_TEMP 'zig.zip'
+          $zigRoot = Join-Path $env:RUNNER_TEMP 'zig'
+          $zigUri = 'https://ziglang.org/download/0.15.2/' +
+            'zig-x86_64-windows-0.15.2.zip'
+          Invoke-WebRequest $zigUri -OutFile $zigArchive
+          Expand-Archive $zigArchive $zigRoot -Force
+          $zig = Get-ChildItem $zigRoot -Recurse -Filter zig.exe |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $zig) { throw 'zig.exe was not found' }
+          $psesArchive = Join-Path $env:RUNNER_TEMP 'pses.zip'
+          $psesRoot = Join-Path $env:RUNNER_TEMP 'pses'
+          $psesUri = 'https://github.com/PowerShell/PowerShellEditorServices/' +
+            'releases/download/v4.7.0/PowerShellEditorServices.zip'
+          Invoke-WebRequest $psesUri -OutFile $psesArchive
+          Expand-Archive $psesArchive $psesRoot -Force
+          choco install lua --yes --no-progress
+          $luaArchive = Join-Path $env:RUNNER_TEMP 'lua-debug.vsix'
+          $luaRoot = Join-Path $env:RUNNER_TEMP 'lua-debug'
+          $luaUri = 'https://open-vsx.org/api/tomblind/local-lua-debugger-vscode/' +
+            '0.3.3/file/tomblind.local-lua-debugger-vscode-0.3.3.vsix'
+          Invoke-WebRequest $luaUri -OutFile $luaArchive
+          Expand-Archive $luaArchive $luaRoot -Force
+          $luaAdapter = Get-ChildItem $luaRoot -Recurse -Filter debugAdapter.js |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $luaAdapter) { throw 'Lua debugAdapter.js was not found' }
+          $archive = Join-Path $env:RUNNER_TEMP 'js-debug-dap.tar.gz'
+          $adapterRoot = Join-Path $env:RUNNER_TEMP 'pi-debug-adapters'
+          $uri = 'https://github.com/microsoft/vscode-js-debug/releases/download/' +
+            'v1.117.0/js-debug-dap-v1.117.0.tar.gz'
+          Invoke-WebRequest $uri -OutFile $archive
+          New-Item -ItemType Directory -Force $adapterRoot | Out-Null
+          tar -xzf $archive -C $adapterRoot
+          $server = Get-ChildItem $adapterRoot -Recurse -Filter dapDebugServer.js |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $server) { throw 'dapDebugServer.js was not found' }
+          "PI_JS_DEBUG_PATH=$server" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $lldb = (Get-Command lldb-dap.exe -ErrorAction Stop).Source
+          $clang = (Get-Command clang.exe -ErrorAction Stop).Source
+          $clangxx = (Get-Command clang++.exe -ErrorAction Stop).Source
+          "PI_LLDB_DAP_PATH=$lldb" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_CLANG_PATH=$clang" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_CLANGXX_PATH=$clangxx" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $dotnet = (Get-Command dotnet.exe -ErrorAction Stop).Source
+          "PI_NETCOREDBG_PATH=$netcore" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_DOTNET_PATH=$dotnet" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_DART_PATH=$dart" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_DELVE_PATH=$delve" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_ZIG_PATH=$zig" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_POWERSHELL_EDITOR_SERVICES_PATH=$psesRoot" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $lua = (Get-Command lua.exe -ErrorAction Stop).Source
+          "PI_LUA_PATH=$lua" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PI_LUA_DEBUG_PATH=$luaAdapter" | Out-File `
+            -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run native Windows debugger lifecycle
+        if: ${{ hashFiles('validation/language-toolchains/build-windows-checks.mjs') != '' }}
+        shell: pwsh
+        run: |
+          node validation/language-toolchains/build-windows-checks.mjs
+          pnpm exec node .agents/tmp/windows-checks/windows-ast-check.mjs
+          node .agents/tmp/windows-checks/windows-debugger-check.mjs
+
   debugger-matrix:
     name: Debugger (${{ matrix.language }})
     runs-on: ubuntu-latest

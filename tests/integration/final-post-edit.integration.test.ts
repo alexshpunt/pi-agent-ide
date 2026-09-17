@@ -41,11 +41,11 @@ test.each([false, true])(
                   source: `
 createFile("a.note", "first");
 createFile("b.note", "second");
-apply();
+flush();
 if(read({path:"a.note"}).content!=="first") throw new Error("formatted too early");
 const a = open("a.note");
 a.replace(a.find("first"), "final");
-apply();
+flush();
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,
                 },
@@ -123,7 +123,7 @@ moveFile("temporary.note", "final.note");
 copyFile("source.note", "discard.note");
 deleteFile("discard.note");
 copyFile("binary.note", "binary-copy.note");
-apply();
+flush();
 `,
               },
             }),

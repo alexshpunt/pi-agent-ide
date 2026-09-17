@@ -10,7 +10,7 @@ const helpers = new Set([
   "deleteFile",
   "copyFile",
   "moveFile",
-  "apply",
+  "flush",
   "result",
 ]);
 
