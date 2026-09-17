@@ -2,13 +2,15 @@
 
 ## Agent IDE settings
 
-Open `/agent-ide-settings` inside Pi and choose Project or Global. The Modules tab lists human-readable module names and descriptions. The Features tab lists registered boolean options. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
+Open `/agent-ide-settings` inside Pi and choose Project or Global. The Modules tab lists human-readable module names and descriptions. The Features tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
 
 Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload; declining leaves changes pending until reload or startup. The command stays available even when every optional module is disabled.
 
 Feature overrides are stored under `flags` in `extensions.json`, keyed by their CLI name. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
 
 The Features tab includes **Disable Apply** (`pi-agent-ide-no-apply`). Enable it and reload to remove only the `apply` tool; standalone tools remain available. It defaults to off. The obsolete `old-tools` switch has been removed.
+
+Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Capture full displays**. Both default to off. Its text settings control the default sequence duration, frame interval, image scale, and a comma-separated list of exact executable file names that may be captured without arbitrary-window access. Press Enter to edit a text value, Enter again to commit it, then Ctrl+S to save.
 
 The UI tab contains animation preferences and **Apply presentation**. Mixed is the default: written helper calls are compacted while the script streams. Code shows the full script (`pi-agent-ide-apply-code: true`). Expanded display exposes the source in either mode. These previews never execute arguments and do not indicate successful edits; operation results are shown separately.
 After the call is complete, its display copy is formatted before Mixed substitutes the tool headers. Incomplete code uses the recoverable source preview. Headers keep supplied anchors and compact long argument expressions with their source size; those sizes are not counts of applied edits. `result(...)` stays visible as JavaScript. Expanded mode shows the full display copy. Execution always receives the original source.

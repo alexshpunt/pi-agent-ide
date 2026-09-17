@@ -63,11 +63,10 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
     },
     promptSnippet: "Compose guarded multi-file editor transactions with JavaScript",
     description:
-      `Use apply to compose read-only IDE operations and snapshot-guarded editor transactions in JavaScript. Read-only functions: read, search, diff, result. Editor functions: open, createFile, deleteFile, copyFile, moveFile, apply. Mutations are staged until apply() commits them. Calls execute sequentially. Output has one 2000-line/50KB budget. No shell, imports or resume.` +
+      `Use apply to run read-only IDE operations and snapshot-guarded editor transactions in JavaScript. Output has one 2000-line/50KB budget. No shell, imports or resume.` +
       applyHelperGuide(),
     promptGuidelines: [
-      "Use Apply for complex, multi-file changes. Open immutable file snapshots, select exact text or lines, stage guarded operations, then call apply() explicitly. Use standalone editor tools for small precise edits.",
-      "Do not call result() merely to display reads or committed file changes; Apply reports them automatically. Use result(value) only for additional calculated data.",
+      "Use Apply for complex, multi-file changes and standalone editor tools for small precise edits.",
     ],
     parameters: Type.Object({
       source: Type.String({

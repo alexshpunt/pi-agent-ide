@@ -48,3 +48,9 @@ test("only verified matrix entries are advertised as debugger recipes", () => {
     expect(recipe.debugger?.install.length).toBeGreaterThan(0);
   }
 });
+
+test("verified Windows debugger recipes declare Windows support", () => {
+  for (const language of ["python", "javascript", "typescript"]) {
+    expect(debuggerRecipeForLanguage(language)?.debugger?.platforms).toContain("win32");
+  }
+});

@@ -1,4 +1,6 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import spawn from "cross-spawn";
+
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import net from "node:net";
 import type { Readable, Writable } from "node:stream";
 
@@ -98,7 +100,8 @@ export class DapClient {
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    return new DapClient(child.stdout, child.stdin, child);
+    const pipedChild = child as ChildProcessWithoutNullStreams;
+    return new DapClient(pipedChild.stdout, pipedChild.stdin, pipedChild);
   }
 
   /** Adopt a connected DAP socket, optionally after an out-of-band initialize request. */

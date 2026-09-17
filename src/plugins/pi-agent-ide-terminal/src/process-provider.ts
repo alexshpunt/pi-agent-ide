@@ -21,6 +21,7 @@ export function terminalProcessProvider(manager: TerminalSessionManager): AgentI
             title: snapshot.shell.toLocaleLowerCase(),
             description: snapshot.command,
             status: snapshot.status === "stopping" ? ("stopping" as const) : ("running" as const),
+            ...(snapshot.pid === undefined ? {} : { pid: snapshot.pid, owned: true }),
             renderSummary: (theme) => renderActiveTerminal(snapshot, theme).split("\n"),
             renderDetail: (theme) => renderTerminalResult(snapshot, true, theme),
             sendInput: (data) => manager.write(snapshot.source, data),

@@ -58,6 +58,18 @@ LSP reads prefer standard pull reports. Servers that advertise a supported compl
 
 Other push-only servers return a `snapshot`: the latest publication, with no promise that every check has finished. This also applies to versioned pushes. An empty snapshot is not a completed clean report. For example, clangd publications remain usable C++ snapshots without invoking TypeScript commands. Later pushes from pull-capable or adapter-backed servers trigger a fresh completed request rather than replacing it with a partial publication.
 
+### Agent vision
+
+Use `search({query: "process:<query>"})` to find running processes by PID or command, then read `process:<pid>` for metadata. Read `window:<pid>` to capture a process window. Agent IDE-owned terminal PIDs are allowed by default. Other windows fail closed unless **Capture arbitrary windows** is enabled or their exact executable file name appears in **Vision allowed executables** in Agent IDE settings.
+
+Read `display:` to capture display 0 or `display:#N` to capture another zero-based display index. Full-display capture fails closed unless **Capture full displays** is enabled in Agent IDE settings. It uses the same image, sequence, and grid-cell behavior as window and web capture.
+
+Capture views accept named parameters after a colon. For example, `sequence:duration=2,interval=0.5,scale=0.5` captures five frames over two seconds, while `image:scale=0.5,region=0.25,0.25,0.5,0.5` returns the central half at half size. Duration is capped at 10 seconds and each sequence at 20 frames. Region values are normalized `x,y,width,height`; the pipeline applies region, then scale, then the existing `offset`/`limit` grid selection.
+
+For an HTTP(S) URL, use `views: ["image"]` to return a rendered page screenshot or `views: ["sequence"]` for a sequence using the configured duration and interval defaults. The default settings are two seconds, 0.5 seconds between frames, and 0.5 image scale. With an image view, `limit` is the size in pixels of a square grid cell and `offset` selects one zero-based row-major cell. A limit without an offset selects cell 0. An offset without a limit is invalid. Omit both to return the bounded full image. Captures are limited to 20 MB of source pixels.
+
+Window and display capture use `node-screenshots` on Linux and macOS. Desktop or window-manager restrictions are reported as unsupported instead of falling back to whole-screen capture. Under WSL, Windows PowerShell helpers capture Windows host process windows and displays. Web screenshots use an isolated system Chrome or Chromium browser. Missing platform support, browser support, windows, or permissions are reported as read failures.
+
 ## Terminal sessions
 
 `run` starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.

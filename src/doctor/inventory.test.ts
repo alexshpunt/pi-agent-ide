@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, test } from "vitest";
 
-import { collectProjectFiles } from "./inventory.js";
+import { collectProjectFiles, detectProjectLanguages } from "./inventory.js";
 
 test("tool configuration files are not treated as project source files", async () => {
   const project = await mkdtemp(path.join(os.tmpdir(), "pi-agent-doctor-inventory-"));
@@ -20,4 +20,12 @@ test("tool configuration files are not treated as project source files", async (
   } finally {
     await rm(project, { recursive: true, force: true });
   }
+});
+
+test("Windows language marker names are case-insensitive", () => {
+  const languages = [
+    { id: "docker", name: "Dockerfile", extensions: [], fileNames: ["Dockerfile"] },
+  ];
+  const detected = detectProjectLanguages(["C:\\work\\dockerfile"], languages, "win32");
+  expect(detected.get("docker")).toEqual(["C:\\work\\dockerfile"]);
 });

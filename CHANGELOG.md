@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.6.0 — 2026-09-16
+
+### Agent vision
+
+- Let agents discover running processes and read process metadata.
+- Let agents inspect application windows, full displays, and rendered web pages as images. Agent-owned windows are available by default; arbitrary windows and full displays require separate opt-in settings.
+- Add image sequences for observing changing interfaces and media over time.
+- Let agents choose sequence duration, frame interval, image scale, normalized image regions, and grid cells.
+- Add executable allowlists for desktop applications that agents may inspect without unrestricted window access.
+- Support Linux and macOS capture through `node-screenshots`, plus visible Windows-host windows and displays from WSL.
+
+### Apply
+
+- Keep successful independent changes when another operation in the same transaction fails, and report the outcome of each operation.
+- Add selection-set replacements, removals, copies, and moves for exact matches and structural-search results.
+- Add whole-file create, copy, move, and delete operations to Apply scripts.
+- Refresh open files after `flush()`, preserve line endings for line-based edits, and skip post-processing for files that were subsequently moved or deleted.
+
+### Windows
+
+- Add native Windows support for Agent IDE debugger workflows, filesystem identity, language detection, command launchers, and executable discovery.
+- Improve debugger support across the Windows language toolchains that are available on the machine.
+
+### Settings
+
+- Add editable settings for sequence duration, frame interval, image scale, and allowed executable names.
+
 ## 0.5.1 — 2026-09-14
 
 ### Sessions and processes
@@ -14,12 +41,6 @@
 - Return a bounded hex and ASCII preview for unsupported HTTP binary responses instead of downloading the full body or failing without useful content.
 - Preserve native image reads when a server reports a generic binary content type for a known image URL.
 - Keep search results when a file or terminal log changes during the search. Stale results remain visible, but unsafe anchors are omitted.
-
-### Reliability and documentation
-
-- Isolate Kotlin debugger verification from the main integration job to avoid resource contention in CI.
-- Rewrite the README around the project’s agent-facing tools, add a gallery, and document how to report problems and contribute.
-- Add a release-versioned Explicit Edit Benchmark badge.
 
 ## 0.5.0 — 2026-09-13
 

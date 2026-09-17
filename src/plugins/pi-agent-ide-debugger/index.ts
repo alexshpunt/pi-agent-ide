@@ -178,7 +178,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
         'views: ["breakpoints"] — show current debugger breakpoints beside source lines. On a normal file, all current sessions are included; on a debug source, results are session-scoped. debug:<session> — debugger state. Read the returned debug source before selecting a breakpoint line.',
       );
       api.addPromptGuideline(
-        'Use views: ["breakpoints"] when current breakpoint locations matter. Create a debug session with debug. Set adapter to elixir for Elixir or r for R. Read the returned debug source to get current anchors, insert text "breakpoint" at one source anchor, then insert "start" on the session. Use read for the latest stop and delete for a breakpoint or the session.',
+        'Use views: ["breakpoints"] when current breakpoint locations matter. Create a debug session with debug. Read the returned debug source to get current anchors, insert text "breakpoint" at one source anchor, then insert "start" on the session. Use read for the latest stop and delete for a breakpoint or the session.',
       );
     },
   } satisfies ReadPlugin;
@@ -324,14 +324,8 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
       name: "debug",
       label: "Debug session",
       promptSnippet: "Create a local DAP debug session before setting anchored breakpoints",
-      promptGuidelines: [
-        "Use the returned debug source resource rather than the filesystem path when setting breakpoints; its anchors are checked against fresh text without editing that text.",
-        "Use java for Java, kotlin for Kotlin, lldb-dap for C, C++, Rust, Swift, or Zig, and julia for Julia.",
-        "Use lldb-dap for C, C++, Rust, Swift, or Zig; use julia for Julia.",
-        "Use elixir for Elixir; use r for R.",
-      ],
       description:
-        "Use debug to create a configured local debugger session. This does not launch the program yet. Sessions survive extension reloads and keep the same debug: resources. Read the returned debug source, set breakpoints with insert, then start and control execution by inserting commands on the session resource.",
+        "Use debug to create a configured local debugger session. This does not launch the program yet. The returned debug: resource survives extension reloads.",
       parameters: debugParameters,
       async execute(_toolCallId, input, _signal, _onUpdate, context) {
         const cwd = path.resolve(context.cwd, input.cwd ?? ".");

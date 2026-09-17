@@ -57,6 +57,7 @@ export interface TerminalSessionSnapshot {
   readonly cwd: string;
   readonly shell: string;
   readonly shellFamily: ShellProfile["family"];
+  readonly pid?: number;
   readonly background: boolean;
   readonly status: TerminalSessionStatus;
   readonly waitReason?: TerminalWaitReason;

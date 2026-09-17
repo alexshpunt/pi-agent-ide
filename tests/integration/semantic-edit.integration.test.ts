@@ -37,7 +37,7 @@ test("Apply copies and removes an exact LSP declaration without matching unrelat
               name: "apply",
               arguments: {
                 source:
-                  'const source = open("source.ts"); const destination = open("destination.ts"); const declaration = source.find("export class Example {\\n  value() { return 1; }\\n}\\n"); destination.insertAfter(destination.find("// destination"), "\\n" + declaration.text); source.remove(declaration); apply();',
+                  'const source = open("source.ts"); const destination = open("destination.ts"); const declaration = source.find("export class Example {\\n  value() { return 1; }\\n}\\n"); destination.insertAfter(destination.find("// destination"), "\\n" + declaration.text); source.remove(declaration); flush();',
               },
             }),
           ],
@@ -225,7 +225,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
               name: "apply",
               arguments: {
                 source:
-                  'const found = search({query:"ast:console.log($ARG)",path:"nodes.ts"}); if(found.data.matches.length!==2) throw new Error("Missing AST selections"); const doc = open("nodes.ts"); doc.replace(doc.select(found.data.matches[1]), "logger.info(42)"); apply();',
+                  'const found = search({query:"ast:console.log($ARG)",path:"nodes.ts"}); if(found.data.matches.length!==2) throw new Error("Missing AST selections"); const doc = open("nodes.ts"); doc.replace(doc.select(found.data.matches[1]), "logger.info(42)"); flush();',
               },
             }),
           ],
@@ -242,7 +242,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
   });
 });
 
-test("Apply refreshes AST all selections without matching strings or stale nodes", async () => {
+test("Apply refreshes editor handles and AST selections after checkpoints", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "nodes.ts"), 'const emoji = "😀"; console.log("same");\n');
     const run = await new PiIntegrationTest({
@@ -263,14 +263,13 @@ test("Apply refreshes AST all selections without matching strings or stale nodes
 const firstSearch = search({query: "ast:console.log($ARG)", path: "nodes.ts"});
 const first = open("nodes.ts");
 first.replace(first.select(firstSearch.data.matches[0]), 'logger.info("same")');
-apply();
-let refused = false;
-try { first.replace(first.find("emoji"), "wrong"); } catch (error) { refused = error.code === "STALE_EDITOR"; }
-if (!refused) throw new Error("Committed editor handle accepted");
+flush();
+first.replace(first.find("emoji"), "symbol");
+flush();
 const secondSearch = search({query: "ast:logger.info($ARG)", path: "nodes.ts"});
 const second = open("nodes.ts");
 second.replace(second.select(secondSearch.data.matches[0]), "done()");
-apply();
+flush();
 `,
               },
             }),
@@ -279,11 +278,11 @@ apply();
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Refresh the structural query and reject a stale individual node");
+    }).run("Refresh the editor handle and structural query after each checkpoint");
     const execution = getToolExecution(run, "refresh");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "nodes.ts"), "utf8")).toBe(
-      'const emoji = "😀"; done();\n',
+      'const symbol = "😀"; done();\n',
     );
   });
 });

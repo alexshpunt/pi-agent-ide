@@ -1,4 +1,6 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import spawn from "cross-spawn";
+
+import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -6,6 +8,8 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { resolvePythonDebuggerCommand } from "./adapter-executables.js";
+import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import {
   DapClient,
   type DapEvent,
@@ -184,11 +188,10 @@ export class DebugSessionManager {
 
   /** Find breakpoints for a file, optionally scoped to one debug session. */
   breakpointsForFile(file: string, sessionSource?: string): readonly DebugBreakpoint[] {
-    const absolute = path.resolve(file);
     return this.list()
       .filter((session) => sessionSource === undefined || session.source === sessionSource)
       .flatMap((session) => [...session.breakpoints.values()])
-      .filter((breakpoint) => path.resolve(breakpoint.file) === absolute);
+      .filter((breakpoint) => sameFilePath(breakpoint.file, file));
   }
 
   /** Return the source file represented by a session-owned source URI. */
@@ -262,7 +265,7 @@ export class DebugSessionManager {
         path.join(tmpdir(), "pi-powershell-debug-"),
       );
     }
-    const recipe = adapterRecipe(session.options, session.adapterTemporaryDirectory);
+    const recipe = await adapterRecipe(session.options, session.adapterTemporaryDirectory);
     const client =
       session.options.adapter === "node"
         ? await this.#startNodeAdapter(session)
@@ -381,8 +384,8 @@ export class DebugSessionManager {
         .request("disconnect", { terminateDebuggee: true }, { signal, timeoutMs: 500 })
         .catch(() => {});
       for (const client of session.clients ?? [session.client]) client.close();
-      session.adapterProcess?.kill();
     }
+    await terminateOwnedAdapterProcess(session.adapterProcess);
     await removeAdapterTemporaryDirectory(session);
     session.status = "terminated";
     this.#notify(session);
@@ -396,7 +399,7 @@ export class DebugSessionManager {
         (session.client === undefined ? [] : [session.client])) {
         client.close();
       }
-      session.adapterProcess?.kill();
+      void terminateOwnedAdapterProcess(session.adapterProcess);
       if (session.adapterTemporaryDirectory !== undefined) {
         rmSync(session.adapterTemporaryDirectory, { recursive: true, force: true });
       }
@@ -426,6 +429,7 @@ export class DebugSessionManager {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+    traceAdapterProcess(session.adapterProcess, `rdbg:${String(port)}`);
     await waitForAdapterReady(session.adapterProcess, "Debugger can attach via TCP/IP", "rdbg");
     return DapClient.connect(port);
   }
@@ -691,8 +695,8 @@ export class DebugSessionManager {
       const breakpointFile =
         loadedPath === undefined
           ? undefined
-          : [...session.breakpoints.values()].find(
-              (breakpoint) => path.resolve(breakpoint.file) === loadedPath,
+          : [...session.breakpoints.values()].find((breakpoint) =>
+              sameFilePath(breakpoint.file, loadedPath),
             )?.file;
       if (breakpointFile !== undefined)
         await this.#configureBreakpointFile(
@@ -713,7 +717,7 @@ export class DebugSessionManager {
           typeof changed.line === "number" &&
           changed.line === breakpoint.line &&
           typeof changedSource.path === "string" &&
-          path.resolve(changedSource.path) === path.resolve(breakpoint.file)
+          sameFilePath(changedSource.path, breakpoint.file)
         ) {
           breakpoint.verified = true;
         }
@@ -777,7 +781,7 @@ export class DebugSessionManager {
       session.stop?.frame !== undefined &&
       ![...session.breakpoints.values()].some(
         (breakpoint) =>
-          path.resolve(breakpoint.file) === path.resolve(session.stop?.frame?.source?.path ?? "") &&
+          sameFilePath(breakpoint.file, session.stop?.frame?.source?.path ?? "") &&
           breakpoint.line === session.stop?.frame?.line,
       )
     ) {
@@ -802,10 +806,7 @@ export class DebugSessionManager {
       .stackFrames?.[0];
     if (frame?.source?.path !== undefined) {
       for (const breakpoint of session.breakpoints.values()) {
-        if (
-          path.resolve(breakpoint.file) === path.resolve(frame.source.path) &&
-          breakpoint.line === frame.line
-        ) {
+        if (sameFilePath(breakpoint.file, frame.source.path) && breakpoint.line === frame.line) {
           breakpoint.verified = true;
         }
       }
@@ -1024,7 +1025,7 @@ function waitForAdapterReady(child: ChildProcess, marker: string, adapter: strin
     const streams = [child.stdout, child.stderr].filter((stream) => stream !== null);
     const timer = setTimeout(
       () => reject(new Error(`Timed out starting ${adapter} server`)),
-      5_000,
+      process.platform === "win32" ? 15_000 : 5_000,
     );
     const cleanup = (): void => {
       clearTimeout(timer);
@@ -1080,8 +1081,32 @@ async function connectWithRetry(port: number, adapter = "js-debug"): Promise<Dap
 
 async function removeAdapterTemporaryDirectory(session: DebugSession): Promise<void> {
   if (session.adapterTemporaryDirectory === undefined) return;
-  await rm(session.adapterTemporaryDirectory, { recursive: true, force: true });
+  await rm(session.adapterTemporaryDirectory, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === "win32" ? 10 : 0,
+    retryDelay: 100,
+  });
   session.adapterTemporaryDirectory = undefined;
+}
+
+async function terminateOwnedAdapterProcess(child: ChildProcess | undefined): Promise<void> {
+  if (child === undefined || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform !== "win32" || child.pid === undefined) {
+    child.kill();
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    killer.once("error", () => {
+      child.kill();
+      resolve();
+    });
+    killer.once("exit", () => resolve());
+  });
 }
 
 interface AdapterRecipe {
@@ -1092,10 +1117,10 @@ interface AdapterRecipe {
   readonly launch: Readonly<Record<string, unknown>>;
 }
 
-function adapterRecipe(
+async function adapterRecipe(
   options: DebugSessionOptions,
   adapterTemporaryDirectory?: string,
-): AdapterRecipe {
+): Promise<AdapterRecipe> {
   const common = {
     name: "Pi Agent IDE debug session",
     request: "launch",
@@ -1120,9 +1145,10 @@ function adapterRecipe(
     };
   }
   if (options.adapter === "debugpy") {
+    const python = await resolvePythonDebuggerCommand(options.cwd);
     return {
-      command: "python3",
-      args: ["-m", "debugpy.adapter"],
+      command: python.command,
+      args: [...python.args, "-m", "debugpy.adapter"],
       adapterID: "debugpy",
       request: "launch",
       launch: { ...common, type: "python", console: "internalConsole", justMyCode: false },
@@ -1158,7 +1184,10 @@ function adapterRecipe(
   if (options.adapter === "elixir") {
     return {
       command:
-        process.env.PI_ELIXIR_LS_DEBUG_PATH ?? "/opt/pi-debug-adapters/elixir-ls/debug_adapter.sh",
+        process.env.PI_ELIXIR_LS_DEBUG_PATH ??
+        (process.platform === "win32"
+          ? "debug_adapter.bat"
+          : "/opt/pi-debug-adapters/elixir-ls/debug_adapter.sh"),
       args: [],
       adapterID: "mix_task",
       request: "launch",
@@ -1185,7 +1214,11 @@ function adapterRecipe(
   }
   if (options.adapter === "lldb-dap") {
     return {
-      command: process.env.PI_LLDB_DAP_PATH ?? "lldb-dap-18",
+      command:
+        path.extname(options.sourceFile).toLowerCase() === ".swift"
+          ? (process.env.PI_SWIFT_LLDB_DAP_PATH ?? process.env.PI_LLDB_DAP_PATH ?? "lldb-dap")
+          : (process.env.PI_LLDB_DAP_PATH ??
+            (process.platform === "win32" ? "lldb-dap" : "lldb-dap-18")),
       args: [],
       adapterID: "lldb-dap",
       request: "launch",

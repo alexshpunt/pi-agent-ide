@@ -44,6 +44,20 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     default: false,
   });
   flags.register({
+    id: "pi-agent-ide-vision-arbitrary-windows",
+    name: "Capture arbitrary windows",
+    description:
+      "Allow window:PID capture for processes not owned by Agent IDE. Keep disabled unless the agent may inspect other desktop apps.",
+    default: false,
+  });
+  flags.register({
+    id: "pi-agent-ide-vision-displays",
+    name: "Capture full displays",
+    description:
+      "Allow display screenshots through display: and display:#N resources. Keep disabled unless the agent may inspect the full desktop.",
+    default: false,
+  });
+  flags.register({
     id: "pi-agent-ide-no-apply",
     name: "Disable Apply",
     description: "Hide the Apply tool. Standalone read, search and editing tools remain available.",
@@ -68,8 +82,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   });
   registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
   const { enabled } = selectBuiltinExtensions(BUILTIN_EXTENSIONS, config.disabled, config.enabled);
-
   for (const extension of enabled) {
-    await extension.register(pi);
+    await extension.register(pi, { preferences: config.preferences ?? {} });
   }
 }

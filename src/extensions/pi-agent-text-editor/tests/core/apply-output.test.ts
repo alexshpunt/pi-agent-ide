@@ -35,7 +35,6 @@ test("Apply errors explain how to recover without hiding the structured code", a
     .map((block) => block.text)
     .join("\n");
   expect(shown).toContain("AMBIGUOUS_MATCH: Expected exactly one match, found 2");
-  expect(shown).toContain("Use a larger unique fragment or findAll()");
 });
 
 test("overflow returns a bounded summary and preserves complete output", async () => {

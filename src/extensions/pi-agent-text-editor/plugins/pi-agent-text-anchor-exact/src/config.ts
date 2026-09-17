@@ -27,7 +27,7 @@ export const DEFAULT_EXACT_TEXT_RECOVERY_CONFIG: ExactTextRecoveryConfig = {
   maxQuerySizeKiB: 1024,
   seedLimit: 3,
   blockLineVariance: 2,
-  contextLines: 5,
+  contextLines: 15,
   timeoutMs: 2000,
 };
 
@@ -90,7 +90,7 @@ export function loadExactTextRecoveryConfig(cwd: string): ExactTextRecoveryConfi
   }
   assertKeys(recovery, ["contextLines", "timeoutMs", "exactText"], "recovery");
   return parseExactTextRecoveryConfig({
-    contextLines: optionalInteger(recovery.contextLines, "contextLines", 0, 20) ?? 5,
+    contextLines: optionalInteger(recovery.contextLines, "contextLines", 0, 20) ?? 15,
     timeoutMs: optionalInteger(recovery.timeoutMs, "timeoutMs", 1, 10_000) ?? 2000,
     settings: recovery.exactText,
   });

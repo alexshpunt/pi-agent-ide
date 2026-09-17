@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-ide",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "description": "IDE capabilities for coding agents in Pi.",
   "keywords": [
@@ -94,6 +94,10 @@
       "types": "./src/api/hooks.ts",
       "default": "./src/api/hooks.ts"
     },
+    "./api/path-identity": {
+      "types": "./src/api/path-identity.ts",
+      "default": "./src/api/path-identity.ts"
+    },
     "./api/read": {
       "types": "./src/api/read.ts",
       "default": "./src/api/read.ts"
@@ -149,6 +153,7 @@
     "cross-spawn": "^7.0.6",
     "fast-fuzzy": "1.12.0",
     "node-pty": "^1.1.0",
+    "node-screenshots": "0.2.8",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-pdf": "workspace:^",
@@ -157,7 +162,8 @@
     "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
-    "pi-agent-tool-ui": "workspace:^"
+    "pi-agent-tool-ui": "workspace:^",
+    "playwright-core": "^1.62.1"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.84.2",

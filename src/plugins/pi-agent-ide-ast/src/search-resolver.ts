@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import spawn from "cross-spawn";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
@@ -35,7 +36,6 @@ export function createAstSearchResolver(
       }
 
       const collect = async (signal?: AbortSignal) => {
-        const started = Date.now();
         const found = await runAstGrep(pattern, request, context.cwd, signal);
         found.sort(
           (a, b) =>
@@ -46,7 +46,7 @@ export function createAstSearchResolver(
         const raw = found.slice(0, request.limit ?? 100);
         return {
           raw,
-          matches: await selectionMatches(raw, context.cwd, started, signal),
+          matches: await selectionMatches(raw, context.cwd, signal),
           complete: found.length <= (request.limit ?? 100),
         };
       };
@@ -101,7 +101,6 @@ export function createAstSearchResolver(
 async function selectionMatches(
   matches: readonly AstGrepMatch[],
   cwd: string,
-  started: number,
   signal?: AbortSignal,
 ): Promise<SearchSelectionMatch[]> {
   const sources = new Map<string, Buffer>();
@@ -111,7 +110,7 @@ async function selectionMatches(
     const before = await stat(source);
     const bytes = await readFile(source, { signal });
     const after = await stat(source);
-    if (before.mtimeMs > started || before.mtimeMs !== after.mtimeMs || before.size !== after.size)
+    if (before.mtimeMs !== after.mtimeMs || before.size !== after.size)
       throw new Error("AST source changed during search. Run the structural query again.");
     sources.set(source, bytes);
   }
@@ -161,7 +160,10 @@ function runAstGrep(
 
   arguments_.push(request.path ?? ".");
   return new Promise((resolve, reject) => {
-    const child = spawn("ast-grep", arguments_, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("ast-grep", arguments_, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    }) as ChildProcessWithoutNullStreams;
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");

@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { requiredValue } from "pi-agent-invariant";
 import { executeApplySource, serializeApplyError } from "#src/core/apply/runtime.js";
 
 function snapshot(id: string, content: string) {
@@ -11,7 +12,8 @@ test("Apply exposes guarded editor globals and hides raw mutation helpers", asyn
     `for (const name of ["write", "editBatch", "replace", "insert", "remove", "copy", "move", "delete_file", "copy_file", "move_file"]) {
       if (typeof globalThis[name] !== "undefined") throw new Error(name + " should be hidden");
     }
-    if (typeof open !== "function" || typeof apply !== "function") throw new Error("editor missing");
+    if (typeof open !== "function" || typeof flush !== "function") throw new Error("editor missing");
+    if (typeof apply !== "undefined") throw new Error("legacy apply checkpoint remains");
     read({path: "note.txt"});`,
     {
       async execute(operation) {
@@ -24,71 +26,307 @@ test("Apply exposes guarded editor globals and hides raw mutation helpers", asyn
   expect(calls).toEqual(["read"]);
 });
 
-test("editor stages stable selections from several files and commits once", async () => {
-  const requests: unknown[] = [];
-  const output: unknown[] = [];
-  let opened = 0;
+test("find returns zero, one, or many immutable ranges without findAll", async () => {
+  for (const [content, count] of [
+    ["none", 0],
+    ["same", 1],
+    ["same same", 2],
+  ] as const) {
+    const requests: { operations: unknown[] }[] = [];
+    await executeApplySource(
+      `const file=open("note.txt"); if(typeof file.findAll !== "undefined") throw new Error("findAll remains"); const found=file.find("same"); if(!Object.isFrozen(found)||found.length!==${count}) throw new Error("bad set"); file.replace(found,"new"); flush();`,
+      {
+        async execute(operation, arguments_) {
+          if (operation === "editorOpen") return snapshot("note", content);
+          if (operation === "editorResolve")
+            return { selections: [], warning: { code: "missing" } };
+          if (operation === "editorApply") {
+            requests.push(arguments_ as { operations: unknown[] });
+            return {
+              operation: "apply",
+              ok: true,
+              effect: "applied",
+              files: [],
+              completed: [],
+              errors: [],
+            };
+          }
+          return null;
+        },
+        async result() {},
+      },
+    );
+    expect(requiredValue(requests[0]).operations).toHaveLength(count === 0 ? 1 : count);
+    if (count === 0)
+      expect(requiredValue(requests[0]).operations[0]).toMatchObject({
+        kind: "warning",
+        query: "same",
+      });
+  }
+});
+
+test("between returns all sequential non-overlapping pairs", async () => {
+  const requests: { operations: unknown[] }[] = [];
   await executeApplySource(
-    `const first = open("first.txt");
-     const second = open("second.txt");
-     first.replace(first.find("old"), "new");
-     second.replaceAll("x", "y");
-     result(apply());`,
+    'const file=open("note.txt"); file.remove(file.between("<", ">", {inside:true})); flush();',
     {
       async execute(operation, arguments_) {
-        if (operation === "editorOpen")
-          return opened++ === 0 ? snapshot("first", "old value") : snapshot("second", "x x");
+        if (operation === "editorOpen") return snapshot("note", "<a> x <b>");
         if (operation === "editorApply") {
-          requests.push(arguments_);
+          requests.push(arguments_ as { operations: unknown[] });
           return {
             operation: "apply",
             ok: true,
             effect: "applied",
             files: [],
-            completed: ["first", "second"],
+            completed: [],
             errors: [],
           };
         }
-        throw new Error(`Unexpected ${operation}`);
+        return null;
       },
-      async result(value) {
-        output.push(value);
-      },
+      async result() {},
     },
   );
-  expect(requests).toHaveLength(1);
-  expect(requests[0]).toMatchObject({
-    snapshots: [{ content: "old value" }, { content: "x x" }],
-    operations: [
-      { kind: "replace", selection: { from: 0, to: 3, text: "old" }, text: "new" },
-      { kind: "replace", selection: { from: 0, to: 1, text: "x" }, text: "y" },
-      { kind: "replace", selection: { from: 2, to: 3, text: "x" }, text: "y" },
-    ],
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    { kind: "replace", selection: { from: 1, to: 2, text: "a" }, text: "" },
+    { kind: "replace", selection: { from: 7, to: 8, text: "b" }, text: "" },
+  ]);
+});
+
+test("direct string targets resolve through the host and apply every returned range", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource('const file=open("note.txt"); file.replace("same", "new"); flush();', {
+    async execute(operation, arguments_) {
+      if (operation === "editorOpen") return snapshot("note", "same same");
+      if (operation === "editorResolve")
+        return {
+          selections: [
+            { document: "note", from: 0, to: 4, text: "same" },
+            { document: "note", from: 5, to: 9, text: "same" },
+          ],
+        };
+      if (operation === "editorApply") {
+        requests.push(arguments_ as { operations: unknown[] });
+        return {
+          operation: "apply",
+          ok: true,
+          effect: "applied",
+          files: [],
+          completed: [],
+          errors: [],
+        };
+      }
+      return null;
+    },
+    async result() {},
   });
-  expect(output).toHaveLength(1);
+  expect(requiredValue(requests[0]).operations).toHaveLength(2);
+});
+test("direct linewise string targets retain resolver metadata", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource(
+    'const file=open("note.txt"); file.replace("before", "after"); flush();',
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen") return snapshot("note", "before\nnext\n");
+        if (operation === "editorResolve")
+          return {
+            selections: [{ document: "note", from: 0, to: 7, text: "before\n", linewise: true }],
+          };
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    {
+      kind: "replace",
+      selection: { from: 0, to: 7, text: "before\n", linewise: true },
+      text: "after",
+    },
+  ]);
 });
 
-test("missing and ambiguous matches fail before the host receives a transaction", async () => {
-  for (const content of ["none", "same same"]) {
-    const calls: string[] = [];
-    await expect(
-      executeApplySource(
-        'const file = open("note.txt"); file.replace(file.find("same"), "new"); apply();',
-        {
-          async execute(operation) {
-            calls.push(operation);
-            if (operation === "editorOpen") return snapshot("note", content);
-            return null;
-          },
-          async result() {},
-        },
-      ),
-    ).rejects.toBeInstanceOf(Error);
-    expect(calls).toEqual(["editorOpen"]);
-  }
+test("normal completion auto-commits pending operations once", async () => {
+  const calls: string[] = [];
+  await executeApplySource('const file=open("note.txt"); file.replace("before", "after");', {
+    async execute(operation) {
+      calls.push(operation);
+      if (operation === "editorOpen") return snapshot("note", "before");
+      if (operation === "editorResolve")
+        return { selections: [{ document: "note", from: 0, to: 6, text: "before" }] };
+      if (operation === "editorApply")
+        return {
+          operation: "apply",
+          ok: true,
+          effect: "applied",
+          files: [],
+          completed: [],
+          errors: [],
+          snapshots: [snapshot("note", "after")],
+        };
+      return null;
+    },
+    async result() {},
+  });
+  expect(calls).toEqual(["editorOpen", "editorResolve", "editorApply"]);
+});
+test("a normal early return still auto-commits pending operations", async () => {
+  const calls: string[] = [];
+  await executeApplySource('createFile("note.txt", "content"); return;', {
+    async execute(operation) {
+      calls.push(operation);
+      if (operation === "editorApply")
+        return {
+          operation: "apply",
+          ok: true,
+          effect: "applied",
+          files: [],
+          completed: [],
+          errors: [],
+          snapshots: [],
+        };
+      return null;
+    },
+    async result() {},
+  });
+  expect(calls).toEqual(["editorApply"]);
 });
 
-test("staged operations without apply are reported and do not reach the mutation host", async () => {
+test("an exception does not auto-commit pending operations", async () => {
+  const calls: string[] = [];
+  await expect(
+    executeApplySource('createFile("note.txt", "content"); throw new Error("stop");', {
+      async execute(operation) {
+        calls.push(operation);
+        return null;
+      },
+      async result() {},
+    }),
+  ).rejects.toThrow("stop");
+  expect(calls).toEqual([]);
+});
+
+test("the same handle continues after a checkpoint while old selections become stale", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  let applyCount = 0;
+  await executeApplySource(
+    'const file=open("note.txt"); const old=file.find("one"); file.replace(old,"ONE"); flush(); let stale=false; try { file.replace(old,"bad"); } catch(error) { stale=error.code==="STALE_SELECTION"; } if(!stale) throw new Error("old selection remained current"); file.replace("two","TWO");',
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen") return snapshot("note", "one two");
+        if (operation === "editorResolve")
+          return { selections: [{ document: "note", from: 4, to: 7, text: "two" }] };
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          applyCount += 1;
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+            snapshots: [snapshot("note", applyCount === 1 ? "ONE two" : "ONE TWO")],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requests.map(({ operations }) => operations.length)).toEqual([1, 1]);
+});
+
+test("normal completion with no pending mutations does not call the transaction host", async () => {
+  const calls: string[] = [];
+  await executeApplySource(
+    'const file=open("note.txt"); if(file.content!=="same") throw new Error("bad");',
+    {
+      async execute(operation) {
+        calls.push(operation);
+        return snapshot("note", "same");
+      },
+      async result() {},
+    },
+  );
+  expect(calls).toEqual(["editorOpen"]);
+});
+
+test("copy and move stage one coherent transfer operation", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  let opened = 0;
+  await executeApplySource(
+    'const source=open("source.txt"); const target=open("target.txt"); copy(source.find("a"), target.find("x")); move(source.find("b"), target.find("y")); flush();',
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen")
+          return opened++ === 0 ? snapshot("source", "a b") : snapshot("target", "x y");
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    { kind: "text-copy", text: "a", sources: [{ text: "a" }], destinations: [{ text: "x" }] },
+    { kind: "text-move", text: "b", sources: [{ text: "b" }], destinations: [{ text: "y" }] },
+  ]);
+});
+
+test("an empty transfer set warns without staging source deletion", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  let opened = 0;
+  await executeApplySource(
+    'const source=open("source.txt"); const target=open("target.txt"); move(source.find("a"), target.find("missing")); flush();',
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen")
+          return opened++ === 0 ? snapshot("source", "a") : snapshot("target", "x");
+        if (operation === "editorResolve")
+          return { selections: [], warning: { code: "EMPTY_SELECTION", message: "missing" } };
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: false,
+            effect: "not-applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([{ kind: "warning" }]);
+});
+
+test("staged operations without flush auto-commit through the mutation host", async () => {
   const calls: string[] = [];
   const output: unknown[] = [];
   await executeApplySource('createFile("new.txt", "content");', {
@@ -100,20 +338,14 @@ test("staged operations without apply are reported and do not reach the mutation
       output.push(value);
     },
   });
-  expect(calls).toEqual([]);
-  expect(output).toEqual([
-    {
-      kind: "uncommitted-transaction",
-      staged: 1,
-      message: "Staged changes were not applied; call apply().",
-    },
-  ]);
+  expect(calls).toEqual(["editorApply"]);
+  expect(output).toEqual([]);
 });
 
 test("a script can commit several fresh transactions", async () => {
   const calls: string[] = [];
   await executeApplySource(
-    'createFile("one.txt", "1"); apply(); createFile("two.txt", "2"); apply();',
+    'createFile("one.txt", "1"); flush(); createFile("two.txt", "2"); flush();',
     {
       async execute(operation) {
         calls.push(operation);
@@ -135,7 +367,7 @@ test("a script can commit several fresh transactions", async () => {
 test("operation errors retain structured rollback data inside the guest", async () => {
   const output: unknown[] = [];
   await executeApplySource(
-    'createFile("one.txt", "1"); try { apply(); } catch (error) { result({code: error.code, details: error.details}); }',
+    'createFile("one.txt", "1"); try { flush(); } catch (error) { result({code: error.code, details: error.details}); }',
     {
       async execute() {
         throw Object.assign(new Error("failed"), {
@@ -148,14 +380,7 @@ test("operation errors retain structured rollback data inside the guest", async 
       },
     },
   );
-  expect(output).toEqual([
-    { code: "TRANSACTION_FAILED", details: { effect: "rolled-back" } },
-    {
-      kind: "uncommitted-transaction",
-      staged: 1,
-      message: "Staged changes were not applied; call apply().",
-    },
-  ]);
+  expect(output).toEqual([{ code: "TRANSACTION_FAILED", details: { effect: "rolled-back" } }]);
 });
 
 test("synchronous reads transfer large data without clipping", async () => {

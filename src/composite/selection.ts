@@ -3,12 +3,16 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 /**
 One independently usable built-in extension composed into Pi Agent IDE.
 */
+export interface BuiltinExtensionContext {
+  readonly preferences: Readonly<Record<string, string>>;
+}
+
 export interface BuiltinExtension {
   readonly id: string;
   readonly name?: string;
   readonly description?: string;
   readonly dependencies: readonly string[];
-  readonly register: (pi: ExtensionAPI) => void | Promise<void>;
+  readonly register: (pi: ExtensionAPI, context: BuiltinExtensionContext) => void | Promise<void>;
   /**
   Set to false for built-ins that stay off until `enabled` lists them in extensions.json.
   */

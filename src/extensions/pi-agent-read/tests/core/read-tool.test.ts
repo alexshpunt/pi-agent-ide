@@ -372,6 +372,34 @@ test("ignores unknown views and reports them in a note and details", async () =>
   expect(result.details.failure).toBeUndefined();
 });
 
+test("recognizes named parameters after a registered view name", async () => {
+  const read = createReadTool();
+  read.registerContributions("fixture-plugin", {
+    resolvers: [{ resolver: textResolver("alpha") }],
+    views: [
+      {
+        view: "known",
+        presenter: {
+          id: "known-parameters",
+          present(document) {
+            return {
+              ...document,
+              lines: document.lines.map((line) => ({
+                ...line,
+                presentation: { prefix: "known|" },
+              })),
+            };
+          },
+        },
+      },
+    ],
+  });
+
+  const result = await executeRead(read, "notes.txt", ["known:value=1"]);
+  expect(result.content).toEqual([{ type: "text", text: "known|alpha" }]);
+  expect(result.details.ignoredViews).toBeUndefined();
+});
+
 test("runs text presenters in parallel and merges them in priority order", async () => {
   const read = createReadTool();
   const resolver = {

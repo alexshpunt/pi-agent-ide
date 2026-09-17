@@ -4,6 +4,7 @@ import {
   assistantMessage,
   getToolExecution,
   getToolExecutionDetails,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -31,7 +32,7 @@ test("Apply composes the configured IDE read and mutation pipelines", async () =
               name: "apply",
               arguments: {
                 source:
-                  'createFile("note.txt", "alpha\\nbeta\\n"); createFile("other.txt", "one\\ntwo\\n"); apply(); const note = open("note.txt"); const other = open("other.txt"); note.replace(note.find("beta"), "BETA"); other.replaceAll("one", "ONE"); other.replaceAll("two", "TWO"); apply();',
+                  'createFile("note.txt", "alpha\\nbeta\\n"); createFile("other.txt", "one\\ntwo\\n"); flush(); const note = open("note.txt"); const other = open("other.txt"); note.replace(note.find("beta"), "BETA"); other.replace(other.find("one"), "ONE"); other.replace(other.find("two"), "TWO"); flush();',
               },
             }),
           ],
@@ -52,6 +53,237 @@ test("Apply composes the configured IDE read and mutation pipelines", async () =
   });
 });
 
+test("Apply rejects an anchor-shaped literal when the structured resolver rejects it", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "anchor.txt"), "1#ABCD\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-exact-anchor-kind",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "exact-shaped",
+              name: "apply",
+              arguments: {
+                source:
+                  'const file=open("anchor.txt"); file.replace("1#ABCD", "literal"); flush();',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Reject stale structured anchor text without exact fallback");
+    expect(getToolExecution(run, "exact-shaped").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "anchor.txt"), "utf8")).toBe("1#ABCD\n");
+    expect(getToolResultText(run, "exact-shaped")).toContain("warning");
+  });
+});
+
+test("Apply direct strings resolve line anchors before exact fallback", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-anchor-parity",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "anchor-parity",
+              name: "apply",
+              arguments: {
+                source:
+                  'const shown=await read({path:"note.txt",views:["anchors"]}); const anchor=shown.lines?.[0]?.anchors?.[0]; if(!anchor) throw new Error("missing anchor"); const file=open("note.txt"); file.replace(anchor,"ALPHA"); file.replace("beta","BETA"); flush();',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Use a generated line anchor and exact fallback through Apply");
+    const execution = getToolExecution(run, "anchor-parity");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\n");
+  });
+});
+
+test("Apply auto-commits pending multi-file edits on normal completion", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "a.txt"), "old\n");
+    await writeFile(path.join(cwd, "b.txt"), "keep\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-auto-commit",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "auto",
+              name: "apply",
+              arguments: {
+                source:
+                  'const a=open("a.txt"); const b=open("b.txt"); a.replace("old","new"); b.replace("keep","kept");',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Edit two files without a final explicit checkpoint");
+    expect(getToolExecution(run, "auto").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("new\n");
+    expect(await readFile(path.join(cwd, "b.txt"), "utf8")).toBe("kept\n");
+  });
+});
+
+test("Apply does not commit pending edits when JavaScript throws", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "before\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-exception-no-commit",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "throwing",
+              name: "apply",
+              arguments: {
+                source:
+                  'const file=open("note.txt"); file.replace("before","after"); throw new Error("stop");',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Stage an edit and throw before normal completion");
+    expect(getToolExecution(run, "throwing").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("before\n");
+  });
+});
+
+test("Apply refreshes the same handle after a partial checkpoint", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "one two\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-refresh-handle",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "refresh",
+              name: "apply",
+              arguments: {
+                source: String.raw`const file=open("note.txt"); const stale=file.find("one"); file.replace(stale,"ONE"); file.replace(file.line(1),"blocked\n"); const first=flush(); if(first.operations.map(x=>x.status).join(",")!=="applied,failed") throw new Error("wrong partial result"); let rejected=false; try { file.replace(stale,"bad"); } catch(error) { rejected=error.code==="STALE_SELECTION"; } if(!rejected) throw new Error("selection stayed current"); if(file.content!=="ONE two\n" || file.lines?.[0]?.content!=="ONE two") throw new Error("handle did not refresh"); file.replace("two","TWO");`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Correct a partial checkpoint with the same opened handle");
+    expect(getToolExecution(run, "refresh").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ONE TWO\n");
+  });
+});
+
+test("Apply with no pending mutations creates no transaction", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "same\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-no-op",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "no-op",
+              name: "apply",
+              arguments: {
+                source: String.raw`const file=open("note.txt"); if(file.content!=="same\n") throw new Error("unexpected");`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Open a file without staging mutations");
+    const execution = getToolExecution(run, "no-op");
+    expect(execution.isError).toBe(false);
+    expect(JSON.stringify(getToolExecutionDetails(execution))).not.toMatch(/APPLY#[0-9A-F]{12}/u);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("same\n");
+  });
+});
+
+test("Apply mutates selection sets, copies text, and keeps an empty-set warning beside successful edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "x x\nmissing-ish\n");
+    await writeFile(path.join(cwd, "target.txt"), "slot slot\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-selection-sets",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "selection-sets",
+              name: "apply",
+              arguments: {
+                source:
+                  'const source=open("source.txt"); const target=open("target.txt"); source.replace(source.find("x"), "X"); copy(source.line(2), target.find("slot")); source.remove(source.find("missing-osh")); flush();',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Use SelectionSets and preserve an empty warning");
+    const execution = getToolExecution(run, "selection-sets");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("X X\nmissing-ish\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+      "missing-ish\n missing-ish\n\n",
+    );
+    const shown = getToolResultText(run, "selection-sets");
+    expect(shown).toContain("warning");
+    expect(shown).toMatch(/\d+#[A-F0-9]{4}/u);
+  });
+});
 test("Apply hides precise text and Git helpers by default without hiding standalone tools", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\n");
@@ -59,8 +291,6 @@ test("Apply hides precise text and Git helpers by default without hiding standal
       "replace",
       "insert",
       "remove",
-      "copy",
-      "move",
       "editBatch",
       "undo",
       "stage",
@@ -160,7 +390,7 @@ test("Apply search keeps raw matches and registers references for editing", asyn
               name: "apply",
               arguments: {
                 source:
-                  'const found = search({query: "beta", path: "note.txt", caseSensitive: true}); if (found.data.matches.length !== 1) throw new Error("Expected one raw match"); const doc = open("note.txt"); doc.replace(doc.find("beta"), "BETA"); apply();',
+                  'const found = search({query: "beta", path: "note.txt", caseSensitive: true}); if (found.data.matches.length !== 1) throw new Error("Expected one raw match"); const doc = open("note.txt"); doc.replace(doc.find("beta"), "BETA"); flush();',
               },
             }),
           ],
@@ -222,7 +452,7 @@ test("Apply creates an empty file rather than treating it as an unchanged file",
             toolCall({
               id: "empty",
               name: "apply",
-              arguments: { source: 'createFile("empty.txt", ""); apply();' },
+              arguments: { source: 'createFile("empty.txt", ""); flush();' },
             }),
           ],
           { stopReason: "toolUse" },
@@ -254,7 +484,7 @@ test("Apply returns structured candidates after ambiguous text selection", async
               name: "apply",
               arguments: {
                 source:
-                  'const doc = open("note.txt"); let ambiguous = false; try { doc.find("beta"); } catch(error) { ambiguous = error.code === "AMBIGUOUS_MATCH"; } if(!ambiguous) throw new Error("Expected ambiguity"); doc.replace(doc.line(1), "BETA\\n"); apply();',
+                  'const doc = open("note.txt"); if (doc.find("beta").length !== 2) throw new Error("Expected two matches"); doc.replace(doc.line(1), "BETA\\n"); flush();',
               },
             }),
           ],
@@ -291,7 +521,7 @@ test("Apply and standalone edits share the last read source", async () => {
               name: "apply",
               arguments: {
                 source:
-                  'const note = open("note.txt"); note.replace(note.find("alpha"), "beta"); createFile("second.txt", "beta\\n"); apply(); read({path:"second.txt"});',
+                  'const note = open("note.txt"); note.replace(note.find("alpha"), "beta"); createFile("second.txt", "beta\\n"); flush(); read({path:"second.txt"});',
               },
             }),
           ],
@@ -336,7 +566,7 @@ test("Apply composes guarded text selections with standalone undo", async () => 
               name: "apply",
               arguments: {
                 source:
-                  'createFile("source.txt", "a\\nb\\nc\\n"); createFile("target.txt", "x\\n"); apply(); const source = open("source.txt"); const target = open("target.txt"); const a = source.line(1); const b = source.line(2); source.remove(a); source.remove(b); source.insertAfter(source.find("c"), "\\nd"); target.insertAfter(target.find("x"), "\\n" + a.text.trim() + "\\n" + b.text.trim()); apply();',
+                  'createFile("source.txt", "a\\nb\\nc\\n"); createFile("target.txt", "x\\n"); flush(); const source = open("source.txt"); const target = open("target.txt"); const a = source.line(1); const b = source.line(2); source.remove(a); source.remove(b); source.insertAfter(source.find("c"), "\\nd"); target.insertAfter(target.find("x"), "\\n" + a.text.trim() + "\\n" + b.text.trim()); flush();',
               },
             }),
           ],
@@ -359,7 +589,7 @@ test("Apply composes guarded text selections with standalone undo", async () => 
       const execution = getToolExecution(run, id);
       expect(execution.isError, JSON.stringify(execution)).toBe(false);
     }
-    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("a\nb\nc\n");
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("c\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("x\na\nb\n");
   });
 });
@@ -481,7 +711,7 @@ test("copy, move, and delete handle whole files without separate tools", async (
               name: "apply",
               arguments: {
                 source:
-                  'moveFile("copy.bin", "moved.bin"); copyFile("moved.bin", "last.bin"); deleteFile("moved.bin"); apply();',
+                  'moveFile("copy.bin", "moved.bin"); copyFile("moved.bin", "last.bin"); deleteFile("moved.bin"); flush();',
               },
             }),
           ],
@@ -520,7 +750,74 @@ test("copy, move, and delete handle whole files without separate tools", async (
   });
 });
 
-test("Apply rejects overlapping selections without changing the file", async () => {
+test("Apply keeps independent edits when a create fails", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "before\n");
+    await writeFile(path.join(cwd, "exists.txt"), "keep\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-partial-create",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "partial",
+              name: "apply",
+              arguments: {
+                source:
+                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); createFile("exists.txt", "wrong\\n"); const outcome = flush(); if (outcome.operations[0].status !== "applied" || outcome.operations[1].status !== "failed") throw new Error("Wrong partial outcomes"); result(outcome);',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Apply an edit and report the failed create");
+    const execution = getToolExecution(run, "partial");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("after\n");
+    expect(await readFile(path.join(cwd, "exists.txt"), "utf8")).toBe("keep\n");
+    expect(JSON.stringify(getToolExecutionDetails(execution))).toMatch(/APPLY#[0-9A-F]{12}/u);
+  });
+});
+
+test("Apply rejects only the later overlapping edit and keeps snapshot offsets stable", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "one two three\n");
+    const run = await new PiIntegrationTest({
+      testName: "apply-partial-overlap",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["apply"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "overlap",
+              name: "apply",
+              arguments: {
+                source:
+                  'const doc = open("note.txt"); doc.replace(doc.find("one"), "ONE-LONG"); doc.replace(doc.line(1), "rejected\\n"); doc.replace(doc.find("three"), "THREE"); const outcome = flush(); if (outcome.operations.map(({status}) => status).join(",") !== "applied,failed,applied") throw new Error("Wrong overlap outcomes"); result(outcome);',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Apply independent snapshot edits around an overlap");
+    const execution = getToolExecution(run, "overlap");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ONE-LONG two THREE\n");
+  });
+});
+
+test("Apply keeps the first overlapping selection and rejects the later one", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha beta\n");
     const run = await new PiIntegrationTest({
@@ -538,7 +835,7 @@ test("Apply rejects overlapping selections without changing the file", async () 
               name: "apply",
               arguments: {
                 source:
-                  'const doc = open("note.txt"); doc.replace(doc.line(1), "line\\n"); doc.replace(doc.find("beta"), "BETA"); let refused = false; try { apply(); } catch (error) { refused = error.code === "INVALID_TRANSACTION"; } if (!refused) throw new Error("Overlap accepted");',
+                  'const doc = open("note.txt"); doc.replace(doc.line(1), "line\\n"); doc.replace(doc.find("beta"), "BETA"); const outcome = flush(); if (outcome.operations[0].status !== "applied" || outcome.operations[1].status !== "failed") throw new Error("Wrong overlap outcomes");',
               },
             }),
           ],
@@ -549,10 +846,10 @@ test("Apply rejects overlapping selections without changing the file", async () 
     }).run("Reject overlapping snapshot selections before writing");
     const execution = getToolExecution(run, "overlap");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha beta\n");
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("line\n");
   });
 });
-test("Apply restores earlier file effects when a later operation fails", async () => {
+test("Apply preserves earlier file effects when a later operation fails", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "first.bin"), Buffer.from([1, 2, 3]));
     await writeFile(path.join(cwd, "second.bin"), Buffer.from([4, 5, 6]));
@@ -572,7 +869,7 @@ test("Apply restores earlier file effects when a later operation fails", async (
               name: "apply",
               arguments: {
                 source:
-                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); copyFile("first.bin", "blocker"); moveFile("second.bin", "blocker/child"); try { apply(); } catch (error) { if (error.code !== "TRANSACTION_FAILED" || error.details.effect !== "rolled-back") throw error; result(error.details); }',
+                  'const note = open("note.txt"); note.replace(note.find("before"), "after"); copyFile("first.bin", "blocker"); moveFile("second.bin", "blocker/child"); const outcome = flush(); if (outcome.operations[2].status !== "failed") throw new Error("Expected failed move"); result(outcome);',
               },
             }),
           ],
@@ -585,8 +882,8 @@ test("Apply restores earlier file effects when a later operation fails", async (
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "first.bin"))).toEqual(Buffer.from([1, 2, 3]));
     expect(await readFile(path.join(cwd, "second.bin"))).toEqual(Buffer.from([4, 5, 6]));
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("before\n");
-    await expect(readFile(path.join(cwd, "blocker"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("after\n");
+    expect(await readFile(path.join(cwd, "blocker"))).toEqual(Buffer.from([1, 2, 3]));
   });
 });
 test("diff compares read sources and windows without editing either side", async () => {

@@ -21,21 +21,21 @@ export function loadTextEditorConfig(cwd: string): LoadedTextEditorConfig {
     value = JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
     if (isMissingFile(error)) {
-      return { contextLines: 5, timeoutMs: 2000, sections: {} };
+      return { contextLines: 15, timeoutMs: 2000, sections: {} };
     }
     throw new Error(`Invalid text editor config at ${file}`, { cause: error });
   }
   const root = record(value, "text editor config");
   assertKeys(root, ["recovery", "renderer"], "text editor config");
   if (root.recovery === undefined) {
-    return { contextLines: 5, timeoutMs: 2000, sections: {} };
+    return { contextLines: 15, timeoutMs: 2000, sections: {} };
   }
   const recovery = record(root.recovery, "recovery");
   const sections = Object.fromEntries(
     Object.entries(recovery).filter(([key]) => key !== "contextLines" && key !== "timeoutMs"),
   );
   return {
-    contextLines: integer(recovery.contextLines, "contextLines", 0, 20, 5),
+    contextLines: integer(recovery.contextLines, "contextLines", 0, 20, 15),
     timeoutMs: integer(recovery.timeoutMs, "timeoutMs", 1, 10_000, 2000),
     sections,
   };

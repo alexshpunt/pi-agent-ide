@@ -45,7 +45,7 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["dart"],
       adapterExecutables: ["dart"],
-      platforms: ["linux"],
+      platforms: ["linux", "win32"],
       install: "Install Dart SDK 3.13.3 from the official Dart archive.",
     },
   },
@@ -60,7 +60,7 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["python3"],
       adapterExecutables: ["python3"],
-      platforms: ["linux"],
+      platforms: ["linux", "win32"],
       install: "Install Python 3 and debugpy for that interpreter.",
     },
   },
@@ -75,8 +75,8 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["go"],
       adapterExecutables: ["dlv"],
-      platforms: ["linux"],
-      install: "Run go install github.com/go-delve/delve/cmd/dlv@v1.25.2.",
+      platforms: ["linux", "win32"],
+      install: "Install Go and Delve. Native Windows support requires amd64.",
     },
   },
   {
@@ -85,14 +85,14 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     kind: "debugger",
     languages: ["elixir"],
     executables: ["elixir", "mix"],
-    dependencies: ["Elixir 1.14.5", "Erlang/OTP 25.3.2.21", "ElixirLS 0.29.3"],
+    dependencies: ["Elixir", "Erlang/OTP", "ElixirLS 0.31.1"],
     documentation: "https://github.com/elixir-lsp/elixir-ls",
     debugger: {
       runtimeExecutables: ["elixir", "mix"],
-      adapterExecutables: ["debug_adapter.sh"],
-      platforms: ["linux"],
+      adapterExecutables: ["debug_adapter.sh", "debug_adapter.bat"],
+      platforms: ["linux", "win32"],
       install:
-        "Install Erlang/OTP 25.3.2.21, Elixir 1.14.5, and the ElixirLS 0.29.3 release at /opt/pi-debug-adapters/elixir-ls.",
+        "Install compatible Erlang/OTP and Elixir releases plus ElixirLS 0.31.1. Use debug_adapter.bat on Windows.",
     },
   },
   {
@@ -101,13 +101,13 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     kind: "debugger",
     languages: ["r"],
     executables: ["R"],
-    dependencies: ["R 4.3.3", "R6 2.5.1", "jsonlite 1.8.8", "vscDebugger 0.5.2"],
+    dependencies: ["R 4.5.3", "R6 2.6.1", "jsonlite 2.0.0", "vscDebugger 0.5.9"],
     documentation: "https://manuelhentschel.github.io/vscDebugger/",
     debugger: {
       runtimeExecutables: ["R"],
       adapterExecutables: ["R"],
-      platforms: ["linux"],
-      install: "Install R 4.3.3 and vscDebugger 0.5.2 for that R installation.",
+      platforms: ["linux", "win32"],
+      install: "Install R 4.5.3 and vscDebugger 0.5.9 for that R installation.",
     },
   },
   {
@@ -157,8 +157,9 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["dotnet"],
       adapterExecutables: ["netcoredbg"],
-      platforms: ["linux"],
-      install: "Install .NET SDK 8 and NetCoreDbg 3.2.0-1092.",
+      platforms: ["linux", "win32"],
+      install:
+        "Install .NET SDK 8 and NetCoreDbg 3.2.0-1092. On Windows, ensure the selected dotnet SDK is on PATH.",
     },
   },
   {
@@ -203,7 +204,7 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["zig"],
       adapterExecutables: ["lldb-dap-18", "lldb-dap"],
-      platforms: ["linux"],
+      platforms: ["linux", "win32"],
       install:
         "Install Zig 0.15.2 and LLDB 18, then compile the target in Debug mode with the LLVM backend (-fllvm) so LLDB can inspect locals.",
     },
@@ -219,8 +220,8 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["lua", "node"],
       adapterExecutables: ["debugAdapter.js"],
-      platforms: ["linux"],
-      install: "Install Lua, Node 24, and local-lua-debugger-vscode 0.3.3.",
+      platforms: ["linux", "win32"],
+      install: "Install Lua 5.3, Node 24, and local-lua-debugger-vscode 0.3.3.",
     },
   },
   {
@@ -234,7 +235,7 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["pwsh"],
       adapterExecutables: ["Start-EditorServices.ps1"],
-      platforms: ["linux"],
+      platforms: ["linux", "win32"],
       install: "Install PowerShell 7.4.13 and PowerShellEditorServices 4.7.0.",
     },
   },
@@ -244,13 +245,13 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     kind: "debugger",
     languages: ["ruby"],
     executables: ["rdbg"],
-    dependencies: ["debug gem 1.11.1"],
+    dependencies: ["debug gem 1.11.0 or newer"],
     documentation: "https://github.com/ruby/debug",
     debugger: {
       runtimeExecutables: ["ruby"],
-      adapterExecutables: ["rdbg"],
-      platforms: ["linux"],
-      install: "Install Ruby and debug gem 1.11.1.",
+      adapterExecutables: ["rdbg", "rdbg.bat"],
+      platforms: ["linux", "win32"],
+      install: "Install Ruby and debug gem 1.11.0 or newer.",
     },
   },
   {
@@ -279,7 +280,7 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["php", "node"],
       adapterExecutables: ["phpDebug.js"],
-      platforms: ["linux"],
+      platforms: ["linux", "win32"],
       install: "Install PHP with Xdebug, Node 24, and PHP Debug 1.40.1.",
     },
   },
@@ -294,7 +295,7 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     debugger: {
       runtimeExecutables: ["node"],
       adapterExecutables: ["dapDebugServer.js"],
-      platforms: ["linux"],
+      platforms: ["linux", "win32"],
       install: "Install Node 24 and js-debug-dap v1.117.0 from the official release archive.",
     },
   },

@@ -28,6 +28,20 @@ export interface ScriptMutationOutcome {
   readonly effect: "not-applied" | "applied" | "unknown";
   readonly files: readonly ScriptMutationFile[];
   readonly completed: readonly string[];
+  /** Per-operation outcomes in staging order for Apply transactions. */
+  readonly operations?: readonly {
+    readonly index: number;
+    readonly kind: string;
+    readonly status: "applied" | "warning" | "failed" | "unknown" | "blocked";
+    readonly effect: "not-applied" | "applied" | "unknown";
+    readonly resources: readonly string[];
+    readonly error?: { readonly code: string; readonly message: string };
+    readonly warning?: {
+      readonly code: string;
+      readonly message: string;
+      readonly presentation?: unknown;
+    };
+  }[];
   /** Session-scoped receipt accepted by undo. */
   readonly transaction?: string;
   readonly recoveries?: readonly ScriptAnchorRecovery[];

@@ -14,9 +14,9 @@ test("recognizes unfinished create arguments without exposing large text bodies"
 });
 
 test("recognizes transactional editor helpers", () => {
-  const source = 'open("a.ts"); copyFile("a.ts", "b.ts"); apply();';
-  expect(parseApplyCalls(source).map(({ name }) => name)).toEqual(["open", "copyFile", "apply"]);
-  expect(compactApplySource(source)).toContain("apply(");
+  const source = 'open("a.ts"); copyFile("a.ts", "b.ts"); flush();';
+  expect(parseApplyCalls(source).map(({ name }) => name)).toEqual(["open", "copyFile", "flush"]);
+  expect(compactApplySource(source)).toContain("flush(");
 });
 
 test("excludes comments strings and member methods", () => {
@@ -75,7 +75,7 @@ test("var hoisting and helper reassignment are not mistaken for IDE calls", () =
   expect(
     parseApplyCalls('function f() { if (ok) { var read = local; } read({path:"x"}); }'),
   ).toEqual([]);
-  expect(parseApplyCalls("apply = custom; apply();")).toEqual([]);
+  expect(parseApplyCalls("flush = custom; flush();")).toEqual([]);
 });
 
 test("explicit result values use a compact helper preview", () => {

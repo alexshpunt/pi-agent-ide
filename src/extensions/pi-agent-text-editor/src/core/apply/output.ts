@@ -42,6 +42,7 @@ export async function renderApplyOutput(
   for (const operation of selected.automatic) {
     if (
       operation.kind === "read" ||
+      hasOperationWarnings(operation.value) ||
       isFailure(operation.value) ||
       (operation.value !== null &&
         typeof operation.value === "object" &&
@@ -140,6 +141,18 @@ function expandReadSection(section: {
     ? resources.flatMap((read) => expandReadSection({ content: read.content, read }))
     : [section];
 }
+function hasOperationWarnings(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "operations" in value &&
+    Array.isArray(value.operations) &&
+    (value.operations as unknown[]).some(
+      (item) =>
+        item !== null && typeof item === "object" && "status" in item && item.status === "warning",
+    )
+  );
+}
 function isFailure(value: unknown): boolean {
   return value !== null && typeof value === "object" && "ok" in value && value.ok === false;
 }
@@ -153,7 +166,7 @@ function formatApplyFailure(code: string, message: string): string {
     NOT_FOUND:
       "The requested text or selection was not found. Read the current file and select existing text.",
     AMBIGUOUS_MATCH:
-      "The selection matched more than once. Use a larger unique fragment or findAll().",
+      "The selection matched more than once. Use a larger unique fragment or a current candidate anchor.",
     STALE_EDITOR:
       "This editor handle was already committed. Open the file again before staging more changes.",
     STALE_SELECTION:
@@ -190,12 +203,14 @@ function renderValue(value: unknown): Content {
     typeof value.operation === "string"
   ) {
     const lines = [
-      `${value.operation}: ${"effect" in value ? String(value.effect) : isFailure(value) ? "failed" : "completed"}`,
+      `${value.operation}: ${isFailure(value) && "effect" in value && value.effect === "applied" ? "partially applied" : "effect" in value ? String(value.effect) : isFailure(value) ? "failed" : "completed"}`,
     ];
     if ("path" in value && typeof value.path === "string") lines.push(value.path);
     if ("target" in value && typeof value.target === "string")
       lines.push(`Target: ${value.target}`);
-    if ("errors" in value && Array.isArray(value.errors))
+    if ("operations" in value && Array.isArray(value.operations))
+      lines.push(...value.operations.map(formatOperationOutcome));
+    else if ("errors" in value && Array.isArray(value.errors))
       lines.push(...value.errors.map(formatReceiptError));
     if ("error" in value) lines.push(formatReceiptError(value.error));
     if (
@@ -234,6 +249,20 @@ function asReadResult(value: unknown): ReadToolResult | undefined {
   )
     return undefined;
   return { content: renderValue(value), details: value as ReadResultDetails };
+}
+
+function formatOperationOutcome(value: unknown): string {
+  if (value === null || typeof value !== "object") return String(value);
+  const index = "index" in value ? Number(value.index) + 1 : "?";
+  const kind = "kind" in value ? String(value.kind) : "operation";
+  const status = "status" in value ? String(value.status) : "unknown";
+  const detail =
+    "warning" in value
+      ? ` — ${formatReceiptError(value.warning)}`
+      : "error" in value
+        ? ` — ${formatReceiptError(value.error)}`
+        : "";
+  return `${index}. ${kind}: ${status}${detail}`;
 }
 
 function formatReceiptError(value: unknown): string {

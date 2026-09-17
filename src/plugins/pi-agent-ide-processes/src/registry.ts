@@ -10,6 +10,10 @@ export interface AgentIdeProcess {
   readonly title: string;
   readonly description: string;
   readonly status: AgentIdeProcessStatus;
+  /** Native process ID when the provider owns the process. */
+  readonly pid?: number;
+  /** True only when Agent IDE created and controls this process. */
+  readonly owned?: boolean;
   renderSummary(theme: Theme): readonly string[];
   renderDetail(theme: Theme): Component;
   stop(): Promise<void>;

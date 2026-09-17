@@ -10,7 +10,11 @@ import { Value } from "typebox/value";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import { ApplyResults } from "#src/core/apply/results.js";
 import { serializeApplyError, type ApplyRuntimeHost } from "#src/core/apply/runtime.js";
-import { executeEditorTransaction } from "#src/core/apply/transaction.js";
+import { executeEditorTransaction, type EditorSnapshot } from "#src/core/apply/transaction.js";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.js";
+import { buildFailedTextMutationResult } from "#src/core/text-mutation.js";
+import { TextMutationAnchorResolutionError } from "#src/core/text-mutation-anchor-error.js";
 
 /** Configured IDE services and ordinary tool schemas, shared with the standalone tools. */
 export interface ApplyServices {
@@ -41,6 +45,91 @@ export function createApplyExecution(
           ? "read"
           : "mutation";
       let recorded = false;
+      const resolveMutationTarget = async (): Promise<unknown> => {
+        const request = arguments_ as {
+          snapshot?: { id?: unknown; source?: unknown; content?: unknown };
+          query?: unknown;
+        };
+        const snapshot = request.snapshot;
+        const content = snapshot?.content;
+        if (
+          snapshot === undefined ||
+          typeof snapshot.id !== "string" ||
+          typeof snapshot.source !== "string" ||
+          typeof content !== "string" ||
+          typeof request.query !== "string"
+        )
+          throw failure("INVALID_ARGUMENTS", "Invalid mutation-target resolution request");
+        let anchor;
+        try {
+          anchor = await services.editor.resolveAnchorInText({
+            source: snapshot.source,
+            content,
+            value: request.query,
+            cwd: context.cwd,
+            signal,
+          });
+        } catch (error) {
+          if (!(error instanceof TextAnchorResolutionError)) throw error;
+          const cause = new TextMutationAnchorResolutionError(
+            "apply",
+            "target",
+            snapshot.source,
+            request.query,
+            error,
+          );
+          const presentation = await buildFailedTextMutationResult(
+            services.editor,
+            { code: "RESOLVE_FAILED", source: snapshot.source, message: error.message, cause },
+            { ...context, signal },
+          );
+          return {
+            selections: [],
+            warning: {
+              code: "EMPTY_SELECTION",
+              message: presentation.content
+                .filter((block) => block.type === "text")
+                .map((block) => block.text)
+                .join("\n"),
+              presentation: {
+                anchorRecoveries: presentation.details.anchorRecoveries,
+              },
+            },
+          };
+        }
+        const starts = lineStarts(content);
+        if (!TextSelectionAnchor.is(anchor)) {
+          const from = starts[anchor.lineNumber - 1];
+          if (from === undefined)
+            throw failure("INVALID_SELECTION", "Anchor line is outside the opened snapshot");
+          const to = starts[anchor.lineNumber] ?? content.length;
+          return {
+            selections: [
+              {
+                document: snapshot.id,
+                from,
+                to,
+                text: content.slice(from, to),
+                linewise: true,
+              },
+            ],
+          };
+        }
+        return {
+          selections: anchor.ranges.map((range) => {
+            const from = positionOffset(starts, range.start.lineNumber, range.start.column);
+            const to = positionOffset(starts, range.end.lineNumber, range.end.column);
+            return {
+              document: snapshot.id,
+              from,
+              to,
+              text: content.slice(from, to),
+              ...(range.linewise === true && { linewise: true }),
+            };
+          }),
+        };
+      };
+      if (tool === "editorResolve") return await resolveMutationTarget();
       try {
         if (tool === "editorApply") {
           let value;
@@ -61,13 +150,36 @@ export function createApplyExecution(
                 if (typeof source === "string") scope.forget(source);
             throw error;
           }
-          results.record(id, "mutation", value);
+          const requestedSnapshots =
+            (arguments_ as { snapshots?: readonly EditorSnapshot[] }).snapshots ?? [];
+          const refreshed = await Promise.all(
+            requestedSnapshots.map(async (snapshot) => {
+              const outcome = await services.read.read(
+                { path: snapshot.source },
+                { cwd: context.cwd, signal },
+                "script",
+              );
+              const script = outcome.script;
+              return !outcome.isError &&
+                script?.kind === "text" &&
+                typeof script.content === "string"
+                ? {
+                    id: snapshot.id,
+                    source: outcome.details.source ?? script.source,
+                    content: script.content,
+                    lines: script.lines,
+                  }
+                : { id: snapshot.id, unavailable: true };
+            }),
+          );
+          const response = { ...value, snapshots: refreshed };
+          results.record(id, "mutation", response);
           recorded = true;
           for (const file of value.files) {
             results.updateFile(file.source, file.before, file.after);
             lastSource = file.source;
           }
-          return value;
+          return response;
         }
         if (tool === "editorOpen") {
           if (!Value.Check(readParameters, arguments_))
@@ -197,6 +309,16 @@ export function createApplyExecution(
       );
     },
   };
+}
+
+function lineStarts(content: string): number[] {
+  const starts = [0];
+  for (let index = 0; index < content.length; index += 1)
+    if (content[index] === "\n") starts.push(index + 1);
+  return starts;
+}
+function positionOffset(starts: readonly number[], line: number, column: number): number {
+  return (starts[line - 1] ?? 0) + column;
 }
 
 function failure(code: string, message: string, details?: unknown): Error {
