@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
@@ -99,6 +99,46 @@ test("background lint reports fixable errors without changing the edited file", 
   });
 }, 60_000);
 
+test("an installed Ruff does not run without project evidence", async () => {
+  await withTempDirectory(async (directory) => {
+    await installFakeRuff(directory);
+    const fileName = "routes.py";
+    await writeFile(path.join(directory, fileName), "value = 1\n", "utf8");
+    await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-ruff-without-evidence",
+      postflightViews: ["diagnostics"],
+      tool: "replace",
+      arguments: { path: fileName, start: formatLineHashAnchor(1, "value = 1"), text: "value = 2" },
+    });
+    await expect(readFile(path.join(directory, ".ruff_cache", "ran"), "utf8")).rejects.toThrow(
+      "ENOENT",
+    );
+  });
+}, 60_000);
+
+test("built-in Ruff uses an isolated cache", async () => {
+  await withTempDirectory(async (directory) => {
+    await installFakeRuff(directory);
+    await writeFile(path.join(directory, "ruff.toml"), "line-length = 88\n", "utf8");
+    const fileName = "routes.py";
+    await writeFile(path.join(directory, fileName), "value = 1\n", "utf8");
+    await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-ruff-no-cache",
+      postflightViews: ["diagnostics"],
+      tool: "replace",
+      arguments: { path: fileName, start: formatLineHashAnchor(1, "value = 1"), text: "value = 2" },
+    });
+    expect(await readFile(path.join(directory, "ruff-ran"), "utf8")).toBe("isolated-cache");
+    await expect(readFile(path.join(directory, ".ruff_cache", "ran"), "utf8")).rejects.toThrow(
+      "ENOENT",
+    );
+  });
+}, 60_000);
+
 test("malformed linter output does not break an edit", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "malformed-lint.ts";
@@ -148,6 +188,30 @@ test("malformed linter output does not break an edit", async () => {
     expect(scenario.result.tuiRenderedOutput).not.toContain("SyntaxError");
   });
 }, 60_000);
+
+async function installFakeRuff(directory: string): Promise<void> {
+  const executable = path.join(directory, "node_modules", ".bin", "ruff");
+  await mkdir(path.dirname(executable), { recursive: true });
+  await writeFile(
+    executable,
+    [
+      "#!/usr/bin/env node",
+      'const fs = require("node:fs");',
+      'const path = require("node:path");',
+      "const root = process.cwd();",
+      "const cache = process.env.RUFF_CACHE_DIR;",
+      "const isolated = cache && !path.resolve(cache).startsWith(path.resolve(root));",
+      'fs.writeFileSync(path.join(root, "ruff-ran"), isolated ? "isolated-cache" : "workspace-cache");',
+      "if (!isolated) {",
+      '  fs.mkdirSync(path.join(root, ".ruff_cache"), { recursive: true });',
+      '  fs.writeFileSync(path.join(root, ".ruff_cache", "ran"), "yes");',
+      "}",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await chmod(executable, 0o755);
+}
 
 async function withTempDirectory(callback: (directory: string) => Promise<void>): Promise<void> {
   await mkdir(tempRoot, { recursive: true });

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -61,13 +61,6 @@ describe("text mutation renderer", () => {
         const content = largeWriteContent(lineCount);
         await createFixture(directory, "large-write.txt", "");
         await createFixture(directory, "stream-ahead.txt", "next tool\n");
-        const configDirectory = path.join(directory, ".pi", "pi-agent-ide");
-        await mkdir(configDirectory, { recursive: true });
-        await writeFile(
-          path.join(configDirectory, "text-editor.json"),
-          JSON.stringify({ renderer: { diffView: mode === "expanded" ? "full" : "compact" } }),
-          "utf8",
-        );
         const args = { path: "large-write.txt", content };
         const argumentsJson = JSON.stringify(args);
         const marker = '"content":"';
@@ -469,16 +462,13 @@ describe("text mutation renderer", () => {
         ({ text: frameText }) =>
           frameText.includes("write .agents/tmp/growing-write.txt") && frameText.includes("▌"),
       );
-      const earlyFrame = activeFrames.find(({ text: frameText }) => frameText.includes(secondLine));
-      const lateActiveFrame = activeFrames.at(-1);
-      expect(earlyFrame).toBeDefined();
-      expect(lateActiveFrame).toBeDefined();
-      const firstCompletedRow = (frame: ReplayedFrame | undefined) =>
-        stripTerminalSequences(frame?.text ?? "")
-          .split("\n")
-          .find((line) => line.includes(firstLine));
-      expect(firstCompletedRow(lateActiveFrame)).toBe(firstCompletedRow(earlyFrame));
-      for (const frame of activeFrames) {
+      const contentFrames = activeFrames.filter(({ text: frameText }) =>
+        frameText.includes(firstLine),
+      );
+      expect(contentFrames.some(({ text: frameText }) => frameText.includes(secondLine))).toBe(
+        true,
+      );
+      for (const frame of contentFrames) {
         const completeLineNumbers = [...frame.text.matchAll(/streamed line (\d{2})/gu)].map(
           (match) => Number(match[1]),
         );
@@ -489,9 +479,8 @@ describe("text mutation renderer", () => {
         expect(frame.text).not.toContain("lines omitted");
       }
       const completeFrame = replay.frames.at(-1);
-      for (const line of streamedLines) {
-        expect(completeFrame?.text).toContain(line);
-      }
+      expect(completeFrame?.text).toContain(streamedLines.at(-1));
+      expect(completeFrame?.text).toContain("lines omitted");
       expect(result.terminalOutput).not.toContain("\u001B[3J");
       expect(getToolExecution(result, "complete-growing-write").isError).toBe(false);
       await expect(

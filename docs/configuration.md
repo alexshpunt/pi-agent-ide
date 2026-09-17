@@ -12,8 +12,9 @@ The Features tab includes **Disable Apply** (`pi-agent-ide-no-apply`). Enable it
 
 Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Capture full displays**. Both default to off. Its text settings control the default sequence duration, frame interval, image scale, and a comma-separated list of exact executable file names that may be captured without arbitrary-window access. Press Enter to edit a text value, Enter again to commit it, then Ctrl+S to save.
 
-The UI tab contains animation preferences and **Apply presentation**. Mixed is the default: written helper calls are compacted while the script streams. Code shows the full script (`pi-agent-ide-apply-code: true`). Expanded display exposes the source in either mode. These previews never execute arguments and do not indicate successful edits; operation results are shown separately.
-After the call is complete, its display copy is formatted before Mixed substitutes the tool headers. Incomplete code uses the recoverable source preview. Headers keep supplied anchors and compact long argument expressions with their source size; those sizes are not counts of applied edits. `result(...)` stays visible as JavaScript. Expanded mode shows the full display copy. Execution always receives the original source.
+The UI tab contains separate presentation settings for Apply previews, diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
+
+Apply previews never execute arguments and do not indicate successful edits; operation results are shown separately. In compact mode, completed source is formatted before recognized helper calls are projected into concise operation headers. Incomplete code uses the recoverable source preview. Headers keep supplied anchors and compact long argument expressions with their source size; those sizes are not counts of applied edits. Full mode shows the complete display copy. Execution always receives the original source.
 
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
@@ -106,6 +107,7 @@ A project can override it in `<project>/.pi/pi-agent-ide/search.json`. Set `time
 
 Pi Agent IDE ships formatter, linter, and LSP mappings. You do not need to copy them into each project. Install the tools and their required modules separately. Pi looks in project `node_modules/.bin`, Python `.venv` and `venv` executable directories, `vendor/bin`, and `PATH`. Python environments use `Scripts` on Windows and `bin` elsewhere. Windows command lookup respects `PATHEXT`, including `.cmd` launchers.
 
+Built-in formatters run only when the project contains matching evidence, such as `go.mod`, `Cargo.toml`, `.clang-format`, or a formatter configuration file. An executable being present on the machine and a matching file extension are not enough. Explicit project or global formatter entries remain opt-in configuration and do not require built-in evidence.
 You can replace built-in entries or add custom entries in either of these directories:
 
 ```text
@@ -223,19 +225,9 @@ Exact text anchors work without configuration. Optional recovery settings live i
 
 Missing fields use these defaults. Invalid values stop the editor from loading. Fuzzy recovery only returns candidates; it never applies an edit. The safe maxima are 100 exact candidates, 20 fuzzy candidates, 20 context lines, a 10-second timeout, a 100 MiB file, a 4 MiB query, 10 seed lines, and a block variance of 10 lines.
 
-### Diff view
+### Diff presentation
 
-Edit tool diffs show every diff row by default. The panel keeps completed rows visible and grows as the edit streams in. Set `renderer.diffView` to `"compact"` in `.pi/pi-agent-ide/text-editor.json` to choose a sliding window instead:
-
-```json
-{
-  "renderer": {
-    "diffView": "compact"
-  }
-}
-```
-
-`"full"` is the default and needs no configuration.
+Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, or Disabled diff panels. Compact is the default and shows a focused sliding window. Full shows every available diff row. Disabled hides diff rows but keeps mutation totals, status, failures, and warnings visible. Expanding a tool call temporarily shows the full diff. The setting applies to standalone mutations, the `diff` tool, and Apply results.
 
 ## Extension config behavior
 

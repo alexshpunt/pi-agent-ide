@@ -64,6 +64,21 @@ test("feature overrides preserve unrelated flags and default removes the old swi
   });
 });
 
+test("saves preset without losing unrelated settings", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-preset-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const file = path.join(cwd, "extensions.json");
+  await writeFile(file, JSON.stringify({ disabled: ["ide.vision"], custom: { keep: 1 } }));
+
+  await saveModuleChoices(file, new Map(), new Map(), new Map(), "text-editor");
+
+  expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+    disabled: ["ide.vision"],
+    enabled: [],
+    preset: "text-editor",
+    custom: { keep: 1 },
+  });
+});
 test("saves string preferences and preserves unrelated values", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-preferences-"));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));

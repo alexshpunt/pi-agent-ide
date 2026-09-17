@@ -1,4 +1,5 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   ToolCallInterceptionRenderStore,
   withToolCallInterceptionRendering,
@@ -19,8 +20,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export default async function registerReadCore(pi: ExtensionAPI): Promise<void> {
-  const core = createReadCore();
+function parsePresentation(value: string | undefined): "full" | "compact" | "disabled" {
+  return value === "full" || value === "disabled" ? value : "compact";
+}
+export default async function registerReadCore(
+  pi: ExtensionAPI,
+  context?: { readonly preferences: Readonly<Record<string, string>> },
+): Promise<void> {
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "read-resources",
+      description: "Resource selection, windows, views, raw bytes, and continuation",
+      triggers: [{ tool: "read" }],
+    }),
+  ]);
+  const core = createReadCore(parsePresentation(context?.preferences["ui.read"]));
 
   const unsubscribeRegistration = pi.events.on(READ_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isReadPluginRegistrationRequest(request)) {

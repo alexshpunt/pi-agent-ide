@@ -33,6 +33,7 @@ test("registers only selected built-ins", async () => {
       "src/composite/module-settings.ts",
       "src/composite/module-settings-store.ts",
       "src/composite/preferences.ts",
+      "src/composite/presets.ts",
       "src/composite/settings-panel.ts",
     ]) {
       await copyFile(path.resolve(file), path.join(cwd, file));

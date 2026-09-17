@@ -6,6 +6,7 @@ import {
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
+import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   toolCallHeader,
   type ToolCallHeaderDetail,
@@ -73,7 +74,24 @@ export function searchCallModel(
   };
 }
 
-export default async function registerSearchCore(pi: ExtensionAPI): Promise<void> {
+function parsePresentation(value: string | undefined): "full" | "compact" | "disabled" {
+  return value === "full" || value === "disabled" ? value : "compact";
+}
+export default async function registerSearchCore(
+  pi: ExtensionAPI,
+  context?: { readonly preferences: Readonly<Record<string, string>> },
+): Promise<void> {
+  const presentation = parsePresentation(context?.preferences["ui.search"]);
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "search-code",
+      description: "Text search, AST patterns, symbols, graphs, and semantic rename",
+      triggers: [
+        { tool: "search" },
+        { tool: "read", resourcePrefixes: ["ast:", "symbol:", "symbols:", "graph:"] },
+      ],
+    }),
+  ]);
   const core = createSearchCore();
   const interceptionRendering = new ToolCallInterceptionRenderStore();
   const unsubscribe = pi.events.on(SEARCH_PLUGIN_REGISTER_EVENT, (request) => {
@@ -89,12 +107,7 @@ export default async function registerSearchCore(pi: ExtensionAPI): Promise<void
       {
         name: "search",
         label: "search",
-        get description(): string {
-          return [
-            "Use search to locate text, file paths and code structures in the workspace.",
-            ...core.renderDescriptions(),
-          ].join("\n");
-        },
+        description: "Use search to locate workspace text, file paths, and code structures.",
         promptSnippet:
           "Search files and text with literals or regular expressions, plus syntax trees and language symbols",
         get promptGuidelines(): string[] {
@@ -104,14 +117,20 @@ export default async function registerSearchCore(pi: ExtensionAPI): Promise<void
           ];
         },
         parameters: searchSchema,
-        renderCall(arguments_, theme, context): Component {
+        renderCall(arguments_, theme, renderContext): Component {
+          const mode = renderContext.expanded ? "full" : presentation;
+          if (mode === "disabled") return new Text(theme.fg("toolTitle", "search"), 0, 0);
           return toolCallHeader(
-            context.lastComponent,
-            searchCallModel(arguments_, context.expanded),
+            renderContext.lastComponent,
+            searchCallModel(arguments_, mode === "full"),
             theme,
           );
         },
         renderResult(result, options, theme, context): Component {
+          const mode = options.expanded ? "full" : presentation;
+          if (mode === "disabled" && !context.isError && !options.isPartial)
+            return new Text(theme.fg("success", "✓ search"), 0, 0);
+          options = { ...options, expanded: mode === "full" };
           const details = result.details as SearchToolDetails | undefined;
           const renderer =
             details?.resolverId === undefined ? undefined : core.renderer(details.resolverId);

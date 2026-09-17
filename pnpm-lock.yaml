@@ -29,6 +29,9 @@ importers:
       pi-agent-doctor:
         specifier: workspace:^
         version: link:packages/pi-agent-doctor
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:packages/pi-agent-documentation
       pi-agent-invariant:
         specifier: workspace:^
         version: link:packages/pi-agent-invariant
@@ -127,6 +130,12 @@ importers:
         specifier: ^7.0.6
         version: 7.0.6
 
+  packages/pi-agent-documentation:
+    dependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.84.2
+        version: 0.84.2(ws@8.21.3)
+
   packages/pi-agent-image:
     dependencies:
       '@earendil-works/pi-coding-agent':
@@ -220,6 +229,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 0.84.2
         version: 0.84.2
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-documentation
       pi-agent-invariant:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-invariant
@@ -292,6 +304,31 @@ importers:
       pi-coding-agent-test:
         specifier: ^0.1.1
         version: 0.1.1(ws@8.21.3)
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(jiti@2.7.0)(yaml@2.9.0))
+
+  src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-jq:
+    dependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.84.2
+        version: 0.84.2(ws@8.21.3)
+      cross-spawn:
+        specifier: ^7.0.6
+        version: 7.0.6
+      pi-agent-doctor:
+        specifier: workspace:^
+        version: link:../../../../../../../packages/pi-agent-doctor
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:../../../../../../../packages/pi-agent-documentation
+      pi-agent-read:
+        specifier: workspace:^
+        version: link:../../../..
+      pi-agent-text:
+        specifier: workspace:^
+        version: link:../../../../../../../packages/pi-agent-text
+    devDependencies:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(jiti@2.7.0)(yaml@2.9.0))
@@ -440,6 +477,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 0.84.2
         version: 0.84.2
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-documentation
       pi-agent-tool-call-interception:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-tool-call-interception
@@ -513,6 +553,9 @@ importers:
       partial-json:
         specifier: ^0.1.7
         version: 0.1.7
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-documentation
       pi-agent-invariant:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-invariant
@@ -776,6 +819,9 @@ importers:
       pi-agent-doctor:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-doctor
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-documentation
       pi-agent-invariant:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-invariant

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
@@ -29,6 +29,64 @@ afterAll(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
+test("an installed built-in does not format without project evidence", async () => {
+  await withTempDirectory(async (directory) => {
+    const bin = path.join(directory, "bin");
+    const executable = path.join(bin, "gofmt");
+    const fileName = "fixture.go";
+    await mkdir(bin, { recursive: true });
+    await writeFile(executable, '#!/bin/sh\nprintf "\\n// formatter-ran\\n" >> "$2"\n', "utf8");
+    await chmod(executable, 0o755);
+    await writeFile(path.join(directory, fileName), "package fixture\n\nvar Value = 1\n", "utf8");
+
+    const scenario = await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-formatter-no-evidence",
+      environment: { PATH: [bin, process.env.PATH ?? ""].join(path.delimiter) },
+      tool: "replace",
+      arguments: {
+        path: fileName,
+        start: formatLineHashAnchor(3, "var Value = 1"),
+        text: "var Value=2",
+      },
+    });
+
+    expect(await readFile(path.join(directory, fileName), "utf8")).toBe(
+      "package fixture\n\nvar Value=2\n",
+    );
+    expect(getToolResultText(scenario.result, scenario.mutationCallId)).not.toContain(
+      "formatter-ran",
+    );
+  });
+}, 60_000);
+test("an installed built-in formats when the project has matching evidence", async () => {
+  await withTempDirectory(async (directory) => {
+    const bin = path.join(directory, "bin");
+    const executable = path.join(bin, "gofmt");
+    const fileName = "fixture.go";
+    await mkdir(bin, { recursive: true });
+    await writeFile(executable, '#!/bin/sh\nprintf "\\n// formatter-ran\\n" >> "$2"\n', "utf8");
+    await chmod(executable, 0o755);
+    await writeFile(path.join(directory, "go.mod"), "module example.test/fixture\n", "utf8");
+    await writeFile(path.join(directory, fileName), "package fixture\n\nvar Value = 1\n", "utf8");
+
+    await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-formatter-with-evidence",
+      environment: { PATH: [bin, process.env.PATH ?? ""].join(path.delimiter) },
+      tool: "replace",
+      arguments: {
+        path: fileName,
+        start: formatLineHashAnchor(3, "var Value = 1"),
+        text: "var Value=2",
+      },
+    });
+
+    expect(await readFile(path.join(directory, fileName), "utf8")).toContain("formatter-ran");
+  });
+}, 60_000);
 test("an edit returns the formatter result instead of the requested intermediate text", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "formatter.ts";

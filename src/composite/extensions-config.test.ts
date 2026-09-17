@@ -43,6 +43,7 @@ describe("Pi Agent IDE extension config", () => {
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
       disabled: [],
       enabled: [],
+      preset: "full",
       noAnimations: false,
       noPostProcessing: false,
     });
@@ -65,9 +66,24 @@ describe("Pi Agent IDE extension config", () => {
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
       disabled: ["editor.anchor.exact", "editor.anchor.line-hash", "editor.stale-anchor"],
       enabled: [],
+      preset: "full",
       noAnimations: false,
       noPostProcessing: false,
     });
+  });
+
+  test("project preset overrides global preset", async () => {
+    const directory = await temporaryDirectory();
+    const paths = {
+      globalPath: path.join(directory, "global", "extensions.json"),
+      projectPath: path.join(directory, "project", "extensions.json"),
+    };
+    await writeJson(paths.globalPath, { preset: "text-editor" });
+    await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toMatchObject({
+      preset: "text-editor",
+    });
+    await writeJson(paths.projectPath, { preset: "full" });
+    await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toMatchObject({ preset: "full" });
   });
 
   test("project preferences override global preferences", async () => {
@@ -97,6 +113,7 @@ describe("Pi Agent IDE extension config", () => {
     await expect(readPiAgentIdeExtensionsConfig(paths)).resolves.toEqual({
       disabled: [],
       enabled: ["editor.anchor.line-hash", "ide.lsp"],
+      preset: "full",
       noAnimations: false,
       noPostProcessing: false,
     });
@@ -133,6 +150,19 @@ describe("Pi Agent IDE extension config", () => {
     };
     await writeJson(paths.globalPath, { [field]: "true" });
     await expect(readPiAgentIdeExtensionsConfig(paths)).rejects.toThrow(Error);
+  });
+
+  test("rejects unknown preset", async () => {
+    const directory = await temporaryDirectory();
+    const paths = {
+      globalPath: path.join(directory, "global", "extensions.json"),
+      projectPath: path.join(directory, "project", "extensions.json"),
+    };
+
+    await writeJson(paths.globalPath, { preset: "tiny" });
+    await expect(readPiAgentIdeExtensionsConfig(paths)).rejects.toThrow(
+      /preset in .* must be one of: full, text-editor/,
+    );
   });
 
   test("rejects duplicate IDs in one config file for either field", async () => {

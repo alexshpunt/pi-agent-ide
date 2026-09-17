@@ -104,10 +104,7 @@ export async function registerTerminalResources(
         },
       });
       api.describe(
-        'shell:<session> — terminal session status and a bounded output tail with a full-log path when truncated. Use views: ["image"] to read the current virtual terminal screen as a PNG.',
-      );
-      api.addPromptGuideline(
-        "Use read with a returned shell:<session> source to inspect terminal status and output. Add the image view when cursor movement, ANSI layout, or a full-screen terminal interface matters.",
+        'shell:<session> — terminal status and a bounded output tail with a full-log path when truncated. views: ["image"] returns the virtual terminal screen as a PNG.',
       );
     },
   } satisfies ReadPlugin;

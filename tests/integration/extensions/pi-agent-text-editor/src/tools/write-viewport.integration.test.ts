@@ -32,16 +32,16 @@ const lastLine = writtenLines.at(-1) ?? "";
 afterAll(() => extensions.dispose());
 
 describe("write diff viewport", () => {
-  test("shows the complete write while the tool is collapsed", async () => {
+  test("bounds a collapsed write while preserving its tail", async () => {
     await withTempWorkspace(async (directory) => {
       const result = await runWrite(directory, false);
 
       expect(getToolExecution(result, "write-viewport").isError).toBe(false);
       expect(await readFile(path.join(directory, "generated.txt"), "utf8")).toBe(content);
       const panel = writePanel(result.tuiRenderedOutput);
-      expect(panel).toContain(firstLine);
+      expect(panel).not.toContain(firstLine);
       expect(panel).toContain(lastLine);
-      expect(panel).not.toContain("lines omitted");
+      expect(panel).toContain("lines omitted");
     });
   }, 120_000);
 

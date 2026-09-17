@@ -13,10 +13,17 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     "ide.doctor",
   ]),
   builtin("read.core", () => import("#src/extensions/pi-agent-read/index.js")),
+  builtin("ide.documentation", () => import("#src/documentation/extension.js"), ["read.core"]),
   builtin(
     "read.filesystem",
     () => import("#src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.js"),
     ["read.core", "editor.core"],
+  ),
+  builtin(
+    "read.filesystem.jq",
+    () =>
+      import("#src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-jq/index.js"),
+    ["read.filesystem", "ide.documentation", "ide.doctor"],
   ),
   builtin(
     "read.filesystem.image",

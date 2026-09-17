@@ -31,7 +31,7 @@ interface PackageManifest extends Record<string, unknown> {
   imports?: unknown;
   exports?: unknown;
   bundledDependencies?: string[];
-  pi?: { extensions?: string[] };
+  pi?: { extensions?: string[]; image?: string; video?: string };
   workspaces?: string[];
 }
 
@@ -437,6 +437,14 @@ function validatePackage(
   const packagedManifest = readJson(join(packageRoot, "package.json"));
   assert(packagedManifest.private === undefined, "Release manifest is private");
   assert(
+    packagedManifest.description === sourceManifest.description,
+    "Release manifest must preserve the package description",
+  );
+  assert(
+    JSON.stringify(packagedManifest.keywords) === JSON.stringify(sourceManifest.keywords),
+    "Release manifest must preserve package keywords",
+  );
+  assert(
     packagedManifest.devDependencies === undefined,
     "Release manifest contains devDependencies",
   );
@@ -447,6 +455,10 @@ function validatePackage(
   assert(
     packagedManifest.pi.extensions[0] === "./dist/pi-agent-ide.js",
     "Unexpected Pi extension entrypoint",
+  );
+  assert(
+    packagedManifest.pi.image === sourceManifest.pi?.image,
+    "Release manifest must preserve Pi gallery image metadata",
   );
 
   for (const markdownPath of paths.filter((path) => path.endsWith(".md"))) {
@@ -584,6 +596,11 @@ function requiredNumber(value: unknown, label: string): number {
   return value;
 }
 
+function optionalString(value: unknown, label: string): string | undefined {
+  if (value === undefined) return undefined;
+  return requiredString(value, label);
+}
+
 function optionalStringRecord(value: unknown, label: string): StringRecord | undefined {
   if (value === undefined) return undefined;
   assert(isRecord(value), `${label} must be an object`);
@@ -604,10 +621,17 @@ function optionalStringArray(value: unknown, label: string): string[] | undefine
   return value;
 }
 
-function parsePiManifest(value: unknown, path: string): { extensions?: string[] } | undefined {
+function parsePiManifest(
+  value: unknown,
+  path: string,
+): { extensions?: string[]; image?: string; video?: string } | undefined {
   if (value === undefined) return undefined;
   assert(isRecord(value), `${path} pi must be an object`);
-  return { extensions: optionalStringArray(value.extensions, `${path} pi.extensions`) };
+  return {
+    extensions: optionalStringArray(value.extensions, `${path} pi.extensions`),
+    image: optionalString(value.image, `${path} pi.image`),
+    video: optionalString(value.video, `${path} pi.video`),
+  };
 }
 
 function writeJson(path: string, value: unknown): void {

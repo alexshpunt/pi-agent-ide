@@ -51,8 +51,6 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
     label: "Apply",
     renderShell: "self",
     renderCall: (args, theme, context) => {
-      (context.state as { codeView?: boolean }).codeView =
-        pi.getFlag("pi-agent-ide-apply-code") === true;
       const render = editor.getToolRenderer("apply")?.renderCall ?? renderApplyCall;
       return render(args, theme, context);
     },
@@ -65,13 +63,11 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
     description:
       `Use apply to run read-only IDE operations and snapshot-guarded editor transactions in JavaScript. Output has one 2000-line/50KB budget. No shell, imports or resume.` +
       applyHelperGuide(),
-    promptGuidelines: [
-      "Use Apply for complex, multi-file changes and standalone editor tools for small precise edits.",
-    ],
+    promptGuidelines: [],
     parameters: Type.Object({
       source: Type.String({
         description:
-          "JavaScript function body. Call IDE functions directly without await; each call finishes before the next statement. Use result(value) for explicit output. The UI may compact written tool calls or format a display copy; execution uses this source unchanged.",
+          "JavaScript function body. Call IDE functions directly without await; each call finishes before the next statement. Read-only results are recorded automatically. The UI may compact written tool calls or format a display copy; execution uses this source unchanged.",
       }),
     }),
     async execute(_id, { source }, signal, _onUpdate, context) {

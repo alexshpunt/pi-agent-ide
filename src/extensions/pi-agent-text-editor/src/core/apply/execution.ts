@@ -152,25 +152,31 @@ export function createApplyExecution(
           }
           const requestedSnapshots =
             (arguments_ as { snapshots?: readonly EditorSnapshot[] }).snapshots ?? [];
+          const changedSources = new Set([
+            ...value.files.map((file) => file.source),
+            ...value.completed,
+          ]);
           const refreshed = await Promise.all(
-            requestedSnapshots.map(async (snapshot) => {
-              const outcome = await services.read.read(
-                { path: snapshot.source },
-                { cwd: context.cwd, signal },
-                "script",
-              );
-              const script = outcome.script;
-              return !outcome.isError &&
-                script?.kind === "text" &&
-                typeof script.content === "string"
-                ? {
-                    id: snapshot.id,
-                    source: outcome.details.source ?? script.source,
-                    content: script.content,
-                    lines: script.lines,
-                  }
-                : { id: snapshot.id, unavailable: true };
-            }),
+            requestedSnapshots
+              .filter((snapshot) => changedSources.has(snapshot.source))
+              .map(async (snapshot) => {
+                const outcome = await services.read.read(
+                  { path: snapshot.source },
+                  { cwd: context.cwd, signal },
+                  "script",
+                );
+                const script = outcome.script;
+                return !outcome.isError &&
+                  script?.kind === "text" &&
+                  typeof script.content === "string"
+                  ? {
+                      id: snapshot.id,
+                      source: outcome.details.source ?? script.source,
+                      content: script.content,
+                      lines: script.lines,
+                    }
+                  : { id: snapshot.id, unavailable: true };
+              }),
           );
           const response = { ...value, snapshots: refreshed };
           results.record(id, "mutation", response);

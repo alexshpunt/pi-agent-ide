@@ -12,6 +12,8 @@ node_modules/
 
 !.pi/skills/write-agent-tool-prompts/
 !.pi/skills/write-agent-tool-prompts/SKILL.md
+!.pi/skills/publish-pi-agent-ide/
+!.pi/skills/publish-pi-agent-ide/SKILL.md
 
 # Local session-runtime artifacts from agent tooling (never publishable).
 .linear-project

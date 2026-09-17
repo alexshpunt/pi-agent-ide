@@ -111,9 +111,44 @@ export async function executeEditorTransaction(
   const files: ScriptMutationFile[] = [];
   const operations: ApplyOperationOutcome[] = [];
   const cwd = context.cwd;
+  const batchedReplacements = new Set<number>();
 
   for (const [index, operation] of request.operations.entries()) {
     const resources = operationResources(operation, snapshots, cwd);
+    if (batchedReplacements.has(index)) continue;
+    if (operation.kind === "replace") {
+      const replacements: Array<{ index: number; operation: TextOperation }> = [];
+      for (
+        let candidateIndex = index;
+        candidateIndex < request.operations.length;
+        candidateIndex += 1
+      ) {
+        const candidate = request.operations[candidateIndex];
+        if (
+          candidate?.kind !== "replace" ||
+          candidate.selection.document !== operation.selection.document
+        )
+          break;
+        replacements.push({ index: candidateIndex, operation: candidate });
+      }
+      if (replacements.length > 1) {
+        for (const replacement of replacements) batchedReplacements.add(replacement.index);
+        const outcome = await executeReplacementBatch(
+          replacements,
+          snapshots,
+          accepted,
+          editor,
+          cwd,
+          signal,
+          options,
+        );
+        for (const state of outcome.saved)
+          if (!journal.has(state.path)) journal.set(state.path, state);
+        files.push(...outcome.files);
+        operations.push(...outcome.operations);
+        continue;
+      }
+    }
     if (operation.kind === "warning") {
       operations.push({
         index,
@@ -207,6 +242,141 @@ export async function executeEditorTransaction(
     ),
     operations,
   };
+}
+
+async function executeReplacementBatch(
+  replacements: readonly { readonly index: number; readonly operation: TextOperation }[],
+  snapshots: ReadonlyMap<string, EditorSnapshot>,
+  accepted: Map<string, TextChange[]>,
+  editor: TransactionEditor,
+  cwd: string,
+  signal: AbortSignal,
+  options: TransactionExecutionOptions,
+): Promise<{
+  readonly saved: readonly SavedPath[];
+  readonly files: readonly ScriptMutationFile[];
+  readonly operations: readonly ApplyOperationOutcome[];
+}> {
+  const first = requiredValue(replacements[0]);
+  const snapshot = snapshots.get(first.operation.selection.document);
+  const resources = operationResources(first.operation, snapshots, cwd);
+  if (snapshot === undefined)
+    return {
+      saved: [],
+      files: [],
+      operations: replacements.map(({ index, operation }) =>
+        failed(
+          index,
+          operation,
+          resources,
+          invalid("Selection belongs to an unknown editor snapshot"),
+        ),
+      ),
+    };
+
+  const prior = accepted.get(snapshot.source) ?? [];
+  const additions: TextChange[] = [];
+  const operationResults = new Map<number, ApplyOperationOutcome>();
+  for (const { index, operation } of replacements) {
+    try {
+      validateSelection(operation, snapshot);
+      if (
+        prior.some((change) => overlaps(change, operation.selection)) ||
+        additions.some((change) => overlaps(change, operation.selection))
+      )
+        throw invalid(`Overlapping selection in ${snapshot.source}`);
+      additions.push({
+        from: operation.selection.from,
+        to: operation.selection.to,
+        insert: preserveLineEnding(operation.selection, operation.text),
+      });
+    } catch (error) {
+      operationResults.set(index, failed(index, operation, resources, error));
+    }
+  }
+  if (additions.length === 0)
+    return {
+      saved: [],
+      files: [],
+      operations: replacements.map(({ index }) => requiredValue(operationResults.get(index))),
+    };
+
+  const before = applyTextChanges(snapshot.content, prior).content;
+  let current: string;
+  try {
+    current = await readFile(snapshot.source, "utf8");
+    if (current !== before) throw stale(snapshot.source);
+  } catch (error) {
+    for (const { index, operation } of replacements)
+      if (!operationResults.has(index))
+        operationResults.set(index, failed(index, operation, resources, error));
+    return {
+      saved: [],
+      files: [],
+      operations: replacements.map(({ index }) => requiredValue(operationResults.get(index))),
+    };
+  }
+
+  const saved = [await savePath(snapshot.source)];
+  const combined = [...prior, ...additions];
+  const applied = applyTextChanges(snapshot.content, combined);
+  try {
+    await editOne(editor, snapshot.source, before, applied.content, cwd, signal, false);
+    accepted.set(snapshot.source, combined);
+    for (const { index, operation } of replacements)
+      if (!operationResults.has(index))
+        operationResults.set(index, {
+          index,
+          kind: operation.kind,
+          status: "applied",
+          effect: "applied",
+          resources,
+        });
+    return {
+      saved,
+      files: [
+        {
+          source: snapshot.source,
+          before,
+          after: applied.content,
+          action: "edited",
+          changes: applied.changes.map((change, editIndex) => ({
+            editIndex,
+            fromA: change.fromBefore,
+            toA: change.toBefore,
+            fromB: change.fromAfter,
+            toB: change.toAfter,
+            removedText: change.removedText,
+            insertedText: change.insertedText,
+          })),
+          formatting: { status: "not-reported" },
+        },
+      ],
+      operations: replacements.map(({ index }) => requiredValue(operationResults.get(index))),
+    };
+  } catch (error) {
+    const rollbackErrors = await rollback(saved, options.restorePath);
+    for (const { index, operation } of replacements)
+      if (!operationResults.has(index))
+        operationResults.set(
+          index,
+          rollbackErrors.length === 0
+            ? failed(index, operation, resources, error)
+            : {
+                index,
+                kind: operation.kind,
+                status: "unknown",
+                effect: "unknown",
+                resources,
+                error: codedError(error, rollbackErrors),
+              },
+        );
+    return {
+      saved: rollbackErrors.length === 0 ? [] : saved,
+      files: [],
+      operations: replacements.map(({ index }) => requiredValue(operationResults.get(index))),
+    };
+  }
 }
 
 async function validateOperation(
@@ -370,6 +540,16 @@ function preserveLineEnding(selection: Selection, insert: string): string {
 function rangesOverlap(left: Selection, right: Selection): boolean {
   return left.from < right.to && right.from < left.to;
 }
+function transferInsert(snapshot: EditorSnapshot, destination: Selection, text: string): string {
+  if (destination.from !== destination.to || destination.linewise !== true || text.length === 0)
+    return text;
+  const separator = snapshot.content.includes("\r\n") ? "\r\n" : "\n";
+  const before = snapshot.content.slice(0, destination.from);
+  const after = snapshot.content.slice(destination.to);
+  const prefix = before.length > 0 && !/(?:\r\n|\r|\n)$/u.test(before) ? separator : "";
+  const suffix = after.length > 0 && !/(?:\r\n|\r|\n)$/u.test(text) ? separator : "";
+  return prefix + text + suffix;
+}
 async function executeTextTransfer(
   operation: TextTransferOperation,
   snapshots: ReadonlyMap<string, EditorSnapshot>,
@@ -382,7 +562,11 @@ async function executeTextTransfer(
   for (const destination of operation.destinations) {
     const snapshot = requiredValue(snapshots.get(destination.document));
     const changes = additions.get(snapshot.source) ?? [];
-    changes.push({ from: destination.from, to: destination.to, insert: operation.text });
+    changes.push({
+      from: destination.from,
+      to: destination.to,
+      insert: transferInsert(snapshot, destination, operation.text),
+    });
     additions.set(snapshot.source, changes);
   }
   if (operation.kind === "text-move")
@@ -649,6 +833,7 @@ function selections(value: unknown, label: string): Selection[] {
       from: integer(item.from, "selection from"),
       to: integer(item.to, "selection to"),
       text: text(item.text, "selection text"),
+      ...(item.linewise === true && { linewise: true }),
     };
   });
 }

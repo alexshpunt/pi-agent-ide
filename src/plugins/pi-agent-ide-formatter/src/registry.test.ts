@@ -40,6 +40,22 @@ test("keeps shipped formatters but does not select unavailable commands", async 
   }
 });
 
+test("does not select an installed built-in without project evidence", async () => {
+  const project = await temporaryDirectory("formatter-unevidenced-project-");
+  process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("formatter-unevidenced-agent-");
+  const bin = path.join(project, "bin");
+  await mkdir(bin, { recursive: true });
+  const executable = path.join(bin, "gofmt");
+  await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
+  await chmod(executable, 0o755);
+
+  const registry = await FormatterCommandRegistry.fromDirectory(project, {
+    environment: { PATH: bin },
+    requireBuiltInEvidence: true,
+  });
+
+  expect(registry.resolve("source.go", project)).toBeUndefined();
+});
 test("selects the first available shipped formatter", async () => {
   const project = await temporaryDirectory("formatter-available-project-");
   process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("formatter-available-agent-");

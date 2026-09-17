@@ -3,6 +3,7 @@ import { access } from "node:fs/promises";
 
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { Type } from "typebox";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -125,6 +126,16 @@ const debugParameters = Type.Object(
 
 /** Register agent-native debug sessions backed by Debug Adapter Protocol adapters. */
 export default async function registerDebugger(pi: ExtensionAPI): Promise<void> {
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "debugger",
+      description: "Debugger sessions, breakpoints, stepping, and cleanup",
+      triggers: [
+        { tool: "debug" },
+        ...["read", "insert", "delete"].map((tool) => ({ tool, resourcePrefixes: ["debug:"] })),
+      ],
+    }),
+  ]);
   const manager =
     (takeReloadResource("debugger") as DebugSessionManager | undefined) ??
     new DebugSessionManager();
@@ -175,10 +186,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
       });
       api.addView({ view: "breakpoints", presenter: breakpointPresenter });
       api.describe(
-        'views: ["breakpoints"] — show current debugger breakpoints beside source lines. On a normal file, all current sessions are included; on a debug source, results are session-scoped. debug:<session> — debugger state. Read the returned debug source before selecting a breakpoint line.',
-      );
-      api.addPromptGuideline(
-        'Use views: ["breakpoints"] when current breakpoint locations matter. Create a debug session with debug. Read the returned debug source to get current anchors, insert text "breakpoint" at one source anchor, then insert "start" on the session. Use read for the latest stop and delete for a breakpoint or the session.',
+        'views: ["breakpoints"] — current debugger breakpoints beside source lines. Normal files include every current session; debug sources are session-scoped. debug:<session> — debugger state.',
       );
     },
   } satisfies ReadPlugin;

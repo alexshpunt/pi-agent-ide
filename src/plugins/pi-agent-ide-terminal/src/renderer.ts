@@ -72,10 +72,35 @@ export function renderTerminalResult(
 /** Render the result beneath the already-visible run prompt without repeating the command. */
 export function renderRunResult(
   snapshot: Partial<TerminalSessionSnapshot>,
-  expanded: boolean,
+  presentation: "full" | "compact" | "disabled" | boolean,
   theme: TerminalTheme,
 ): Component {
-  if (expanded) return renderTerminalResult(snapshot, true, theme);
+  if (presentation === true) presentation = "full";
+  else if (presentation === false) presentation = "compact";
+  if (presentation === "disabled") {
+    const failed =
+      (snapshot.status !== undefined && !["running", "completed"].includes(snapshot.status)) ||
+      (snapshot.exitCode !== undefined && snapshot.exitCode !== 0) ||
+      snapshot.error !== undefined;
+    if (!failed)
+      return new Text(
+        statusLine(snapshot, (name, text) => theme.fg(name, text)),
+        0,
+        0,
+      );
+    const window = outputWindow(snapshot.output ?? "", COMPACT_READ_ROWS);
+    const lines = [
+      ...(window.omission === undefined ? [] : [`  ${theme.fg("muted", window.omission)}`]),
+      ...window.lines.map((line) => `  ${theme.fg("dim", line)}`),
+      ...(snapshot.error === undefined ? [] : [`  ${theme.fg("error", snapshot.error)}`]),
+      statusLine(snapshot, (name, text) => theme.fg(name, text)),
+    ];
+    return new Text(lines.join("\n"), 0, 0);
+  }
+  if (presentation === "full") {
+    const lines = terminalCardLines(snapshot, Number.POSITIVE_INFINITY, theme).slice(2);
+    return new Text(lines.join("\n"), 0, 0);
+  }
   const window = outputWindow(snapshot.output ?? "", COMPACT_READ_ROWS);
   const lines = [
     ...(window.omission === undefined ? [] : [`  ${theme.fg("muted", window.omission)}`]),

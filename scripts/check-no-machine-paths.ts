@@ -28,7 +28,10 @@ const failures: string[] = [];
 const forbiddenRepositoryPrefixes = [".pi/skills/"];
 const projectSkillPrefixes = [
   ".pi/skills/create-issue/",
+  ".pi/skills/design-read-views/",
   ".pi/skills/design-terminal-ui/",
+  ".pi/skills/export-agent-interface/",
+  ".pi/skills/publish-pi-agent-ide/",
   ".pi/skills/write-agent-tool-prompts/",
 ];
 

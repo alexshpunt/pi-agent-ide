@@ -66,7 +66,7 @@ describe("terminal renderer", () => {
 
   test("matches the compact read output row limit", () => {
     const output = Array.from({ length: 20 }, (_, index) => `line-${index + 1}`).join("\n");
-    const lines = renderRunResult(snapshot({ output }), false, theme).render(100);
+    const lines = renderRunResult(snapshot({ output }), "compact", theme).render(100);
 
     expect(lines).toHaveLength(14);
     expect(lines[0]).toContain("8 earlier lines");
@@ -75,20 +75,44 @@ describe("terminal renderer", () => {
     expect(lines[13]).toContain("running");
   });
 
-  test("expanded terminal result keeps a bounded tail", () => {
+  test("full terminal result shows all available output", () => {
     const output = Array.from({ length: 30 }, (_, index) => `line-${index + 1}`).join("\n");
-    const lines = renderRunResult(snapshot({ output }), true, theme).render(100);
+    const lines = renderRunResult(snapshot({ output }), "full", theme).render(100);
 
-    expect(lines.some((line) => line.trim() === "line-1")).toBe(false);
+    expect(lines.some((line) => line.trim() === "line-1")).toBe(true);
     expect(lines.some((line) => line.includes("line-30"))).toBe(true);
-    expect(lines.some((line) => line.includes("earlier lines"))).toBe(true);
-    expect(lines).toHaveLength(16);
+    expect(lines.some((line) => line.includes("earlier lines"))).toBe(false);
+    expect(lines).toHaveLength(31);
+  });
+
+  test("disabled terminal result keeps only status", () => {
+    const lines = renderRunResult(
+      snapshot({ output: "secret output", status: "completed", exitCode: 0 }),
+      "disabled",
+      theme,
+    ).render(100);
+
+    expect(lines.map((line) => line.trimEnd())).toEqual(["✓ completed · 12s · exit 0"]);
+  });
+
+  test("disabled terminal result preserves bounded failure output", () => {
+    const output = Array.from({ length: 20 }, (_, index) => `failure-${index + 1}`).join("\n");
+    const lines = renderRunResult(
+      snapshot({ output, status: "completed", exitCode: 1, error: "command failed" }),
+      "disabled",
+      theme,
+    ).render(100);
+
+    expect(lines[0]).toContain("8 earlier lines");
+    expect(lines.join("\n")).toContain("failure-20");
+    expect(lines.join("\n")).toContain("command failed");
+    expect(lines.at(-1)).toContain("exit 1");
   });
 
   test("bounds one extremely long output line", () => {
     const lines = renderRunResult(
       snapshot({ output: "x".repeat(100_000) + "THE-END" }),
-      true,
+      "full",
       theme,
     ).render(100);
 

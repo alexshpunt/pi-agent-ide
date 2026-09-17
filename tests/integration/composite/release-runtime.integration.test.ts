@@ -73,6 +73,8 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
   test("installed runtime keeps core tools, resources, and first-use optional capabilities", async () => {
     const calls = [
       { id: "read", name: "read", arguments: { path: "example.ts" } },
+      { id: "docs-list", name: "read", arguments: { path: "docs:" } },
+      { id: "docs-guide", name: "read", arguments: { path: "docs:editing" } },
       { id: "ast", name: "read", arguments: { path: "ast:example.ts" } },
       { id: "search", name: "search", arguments: { query: "startupMarker", path: "example.ts" } },
       {
@@ -111,6 +113,12 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
       );
     expect(getToolResultText(result, "ast")).toContain("startupMarker");
     expect(getToolResultText(result, "search")).toContain("startupMarker");
+    expect(getToolResultMessage(result, "docs-list").details).toMatchObject({
+      documentation: { kind: "list" },
+    });
+    expect(getToolResultMessage(result, "docs-guide").details).toMatchObject({
+      documentation: { kind: "document", id: "editing" },
+    });
     expect(await readFile(path.join(directory, "edit.txt"), "utf8")).toBe("after marker\n");
     for (const id of ["pdf-first", "pdf-next"])
       expect(getToolResultText(result, id)).toContain("PDF release marker");

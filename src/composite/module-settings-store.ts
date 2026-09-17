@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { readExtensionSettingsScope } from "./extensions-config.js";
+import type { AgentIdePreset } from "./presets.js";
 
 /** A scope override; default removes this scope's explicit choice. */
 export type ModuleChoice = "default" | "enabled" | "disabled";
@@ -12,6 +13,7 @@ export async function saveModuleChoices(
   choices: ReadonlyMap<string, ModuleChoice>,
   featureChoices: ReadonlyMap<string, boolean | undefined> = new Map(),
   preferenceChoices: ReadonlyMap<string, string | undefined> = new Map(),
+  presetChoice?: AgentIdePreset,
 ): Promise<void> {
   await withFileMutationQueue(configPath, async () => {
     const settings = await readExtensionSettingsScope(configPath);
@@ -49,6 +51,7 @@ export async function saveModuleChoices(
           ...original,
           disabled: [...disabled],
           enabled: [...enabled],
+          ...(presetChoice === undefined ? {} : { preset: presetChoice }),
           ...(featureChoices.size > 0 ? { flags } : {}),
           ...(preferenceChoices.size > 0 ? { preferences } : {}),
         },

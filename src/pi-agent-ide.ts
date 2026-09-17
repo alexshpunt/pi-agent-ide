@@ -4,6 +4,7 @@ import {
   resolvePiAgentIdeExtensionsConfigPaths,
 } from "#src/composite/extensions-config.js";
 import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.js";
+import { disabledByPreset } from "#src/composite/presets.js";
 import { selectBuiltinExtensions } from "#src/composite/selection.js";
 import { registerModuleSettings } from "#src/composite/module-settings.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
@@ -64,15 +65,6 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     default: false,
   });
   flags.register({
-    id: "pi-agent-ide-apply-code",
-    name: "Apply presentation",
-    description:
-      "Mixed compacts written tool calls during streaming. Code shows the full script. Expanded always exposes the source.",
-    group: "ui",
-    labels: { on: "Code", off: "Mixed" },
-    default: false,
-  });
-  flags.register({
     id: "pi-agent-ide-no-diagnostic-buffer",
     name: "Immediate diagnostic notices",
     description:
@@ -81,7 +73,12 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     default: false,
   });
   registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
-  const { enabled } = selectBuiltinExtensions(BUILTIN_EXTENSIONS, config.disabled, config.enabled);
+  const presetDisabled = disabledByPreset(BUILTIN_EXTENSIONS, config.preset ?? "full");
+  const { enabled } = selectBuiltinExtensions(
+    BUILTIN_EXTENSIONS,
+    [...presetDisabled, ...config.disabled],
+    config.enabled,
+  );
   for (const extension of enabled) {
     await extension.register(pi, { preferences: config.preferences ?? {} });
   }

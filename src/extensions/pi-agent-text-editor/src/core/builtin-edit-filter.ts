@@ -32,7 +32,7 @@ export function registerBuiltinEditFilter(pi: ExtensionAPI): void {
       "Use the smallest useful source view: reuse sufficient content and anchors, search for known text, or inspect structure when locating a declaration. Read nearby context when boundaries are unclear; resolve ambiguity rather than guessing.",
       "Use an available anchor when it selects exactly the intended text; otherwise use minimal unique exact text. Keep the edit limited to the intended content.",
       "When search broadens to separate words, treat its results as location hints. Refine the query before using those matches for replacement.",
-      "Submit independent mutations together in one tool-call block. They are evaluated against the original file contents. Combine overlapping changes into one mutation. A rejected mutation does not cancel other valid mutations; check each result and retry only changes that were not applied.",
+      "Use standalone mutation tools in one assistant-response batch when each change is known in advance and does not depend on another change. This is the default for several independent edits in one file or across files. Every call is evaluated against the original file snapshots. Combine overlapping changes into one mutation. Use Apply only when edits require computation, conditions, selection composition, checkpoints, or one coherent cross-file transaction. Check each batch result and retry only unapplied changes.",
     ],
     parameters: Type.Object({}, { additionalProperties: false }),
     execute() {

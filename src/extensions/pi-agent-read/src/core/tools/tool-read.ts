@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { Text } from "@earendil-works/pi-tui";
 import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   isAgentContent,
@@ -120,7 +121,7 @@ export interface ReadTool {
 /** Creates a read pipeline whose prompt contributions reflect the currently installed plugins. */
 export function createReadTool(
   pluginPromptGuidelines?: () => readonly string[],
-  pluginDescription?: () => string | undefined,
+  presentation: "full" | "compact" | "disabled" = "compact",
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
   const resolvers: RegisteredResolver[] = [
@@ -150,18 +151,11 @@ export function createReadTool(
 
       promptSnippet: "Read supported sources as text or bytes, with optional views",
       get description(): string {
-        return [
-          `Use read to inspect files, directories, URLs and supported sources without changing them. path selects the source; offset/limit select a text window; views add annotations. Text limit: ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB. Continuation: returned offset, or returned temp: reference as path. Temporary references remain available until their owning runtime is disposed.`,
-          "Use raw:<local-file> to inspect original bytes without decoding or conversion, including PDFs and images. In raw: mode offset is a zero-based byte position (negative from EOF), limit is a non-negative byte count, and 0 reads no bytes. Output uses hexadecimal offsets, hex bytes and printable ASCII; dots stand for nonprintable bytes. Follow the returned byte offset to continue. Raw sources do not accept views or text anchors.",
-          pluginDescription?.() ?? "",
-        ]
-          .filter(Boolean)
-          .join("\n");
+        return `Use read to inspect supported resources. path selects the source; offset and limit select a bounded window; views request source-specific presentations. Text output is limited to ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB; follow a returned continuation offset or temp: reference when present.`;
       },
       get promptGuidelines(): string[] {
         return [
-          "Use read to examine supported sources instead of cat, sed, head or tail. Use search to locate workspace text and paths instead of grep, rg or find.",
-          "Use read with raw:<local-file> instead of xxd, od or hexdump when byte-level inspection is needed.",
+          "Use read to inspect supported sources and search to locate workspace content.",
           ...(pluginPromptGuidelines?.() ?? []),
         ];
       },
@@ -172,7 +166,12 @@ export function createReadTool(
           source === undefined
             ? undefined
             : resolvers.find(({ matchesCall }) => matchesCall?.(source) === true)?.renderCall;
-        return (renderer ?? renderReadCall)(arguments_, theme, context);
+        const mode = context.expanded ? "full" : presentation;
+        if (mode === "disabled") return new Text(theme.fg("toolTitle", "read"), 0, 0);
+        return (renderer ?? renderReadCall)(arguments_, theme, {
+          ...context,
+          expanded: mode === "full",
+        });
       },
       renderResult(result, options, theme, context) {
         const resolvedBy = result.details.resolvedBy;
@@ -180,7 +179,15 @@ export function createReadTool(
           resolvedBy === undefined
             ? undefined
             : resolvers.find(({ resolver }) => resolver.id === resolvedBy)?.renderResult;
-        return (renderer ?? fallbackReadRenderer)(result, options, theme, context);
+        const mode = options.expanded ? "full" : presentation;
+        if (mode === "disabled" && !context.isError && !options.isPartial)
+          return new Text(theme.fg("success", "✓ read"), 0, 0);
+        return (renderer ?? fallbackReadRenderer)(
+          result,
+          { ...options, expanded: mode === "full" },
+          theme,
+          context,
+        );
       },
       async execute(_toolCallId, parameters, signal, _onUpdate, context) {
         const resolverContext: ResourceResolverContext = {

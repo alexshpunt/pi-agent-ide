@@ -55,17 +55,6 @@ export default async function registerTextEditorCore(
         editor,
         registration,
         interceptionRendering,
-        () =>
-          [
-            (registration.anchors?.length ?? 0) > 0
-              ? editor.renderGeneralPromptGuideline(
-                  new Set(registration.anchors?.flatMap((anchor) => anchor.kinds)),
-                )
-              : undefined,
-            editor.renderToolPromptGuideline(registration.name),
-          ]
-            .filter((guideline): guideline is string => guideline !== undefined)
-            .join("\n\n") || undefined,
         () => getLastResolvedResource(pi)?.source,
       ),
     );

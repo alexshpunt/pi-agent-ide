@@ -5,22 +5,15 @@ import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor"
 import {
   assistantMessage,
   getToolExecution,
-  PiIntegrationTest as BasePiIntegrationTest,
+  PiIntegrationTest,
   text,
   toolCall,
 } from "pi-coding-agent-test/base";
-import { afterAll, describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
+import { describe, expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
-const extensions = createExtensionSet();
-const defaultTextEditorExtension = path.resolve(
-  "tests/integration/extensions/pi-agent-text-editor/register-extension.ts",
-);
-const rendererTestStand = path.resolve(
-  "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/register-extension.ts",
-);
+const unifiedExtension = path.resolve("src/pi-agent-ide.ts");
 
 // Large enough that the compact 12-row window must clip it,
 // small enough that the full panel fits one terminal screen.
@@ -37,10 +30,8 @@ const interactivePacing =
     ? {}
     : { chunks: { kind: "fixed" as const, size: 16 }, delayMs: 24 };
 
-afterAll(() => extensions.dispose());
-
-describe("text editor diff view config", () => {
-  test("renders every replaced row by default without a config file", async () => {
+describe("text editor diff presentation preference", () => {
+  test("uses a compact diff by default", async () => {
     await withTempWorkspace(async (directory) => {
       const { fileName, expectedAfter } = await seedFile(directory);
       const result = await runReplace(directory, fileName);
@@ -49,21 +40,17 @@ describe("text editor diff view config", () => {
       expect(execution.isError).toBe(false);
       expect(await readFile(path.join(directory, fileName), "utf8")).toBe(expectedAfter);
 
-      const screen = result.tuiRenderedOutput;
-      for (let index = 1; index <= SWAPPED_ROWS; index++) {
-        expect(screen, `missing swapped row ${index}`).toContain(swappedLine(index));
-      }
-      expect(readableTerminal(result)).not.toContain("lines omitted");
+      expect(readableTerminal(result)).toContain("lines omitted");
     });
   }, 120_000);
 
-  test("clips the diff to a sliding window when diffView is compact", async () => {
+  test("renders every diff row when the UI preference is full", async () => {
     await withTempWorkspace(async (directory) => {
       const configDirectory = path.join(directory, ".pi", "pi-agent-ide");
       await mkdir(configDirectory, { recursive: true });
       await writeFile(
-        path.join(configDirectory, "text-editor.json"),
-        JSON.stringify({ renderer: { diffView: "compact" } }),
+        path.join(configDirectory, "extensions.json"),
+        JSON.stringify({ preferences: { "ui.diffs": "full" } }),
       );
 
       const { fileName, expectedAfter } = await seedFile(directory);
@@ -73,8 +60,10 @@ describe("text editor diff view config", () => {
       expect(execution.isError).toBe(false);
       expect(await readFile(path.join(directory, fileName), "utf8")).toBe(expectedAfter);
 
-      // While the edit streams in, the compact window clips the growing diff.
-      expect(readableTerminal(result)).toContain("lines omitted");
+      const screen = result.tuiRenderedOutput;
+      for (let index = 1; index <= SWAPPED_ROWS; index++)
+        expect(screen, `missing swapped row ${index}`).toContain(swappedLine(index));
+      expect(readableTerminal(result)).not.toContain("lines omitted");
     });
   }, 120_000);
 });
@@ -120,20 +109,18 @@ function replaceArguments(fileName: string, content: string) {
 async function runReplace(
   directory: string,
   fileName: string,
-): Promise<Awaited<ReturnType<BasePiIntegrationTest["run"]>>> {
+): Promise<Awaited<ReturnType<PiIntegrationTest["run"]>>> {
   const filePath = path.join(directory, fileName);
   const content = await readFile(filePath, "utf8");
-  return new BasePiIntegrationTest({
+  return new PiIntegrationTest({
     testName: `diff-view-config-${fileName}`,
     cwd: directory,
-    extensions: extensions.paths.map((extension) =>
-      extension === defaultTextEditorExtension ? rendererTestStand : extension,
-    ),
+    extensions: [unifiedExtension],
     tools: ["replace"],
     rawMode: false,
     timeoutMs: 120_000,
     isolateUserResources: true,
-    environment: { PI_SKIP_VERSION_CHECK: "1" },
+    environment: { PI_SKIP_VERSION_CHECK: "1", PI_INTEGRATION_TEST_LIVE: "1" },
     conversation: [
       assistantMessage(
         [

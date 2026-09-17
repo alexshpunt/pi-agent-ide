@@ -3,6 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { Text } from "@earendil-works/pi-tui";
 
 import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.js";
 import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
@@ -56,6 +57,7 @@ export function registerTerminalTools(
   manager: TerminalSessionManager,
   profile: ShellProfile,
   ui: Pick<TerminalUi, "bind" | "notifyWaitTransition">,
+  presentation: "full" | "compact" | "disabled" = "compact",
 ): void {
   const toolName = process.platform === "win32" ? "powershell" : "bash";
   pi.registerTool(
@@ -64,8 +66,7 @@ export function registerTerminalTools(
       label: profile.displayName,
       promptSnippet: `Execute ${profile.displayName} commands in synchronous or background terminal sessions`,
       promptGuidelines: [
-        `Write commands for ${profile.displayName}; commands are not translated between shell languages.`,
-        `Use ${toolName} with background for servers, watchers, and long builds. After a session enters background, do not poll it continuously; continue other work or wait for completion. Keep short tasks in the foreground. Enable periodic or verbose output for long-running commands. Use the returned shell: source with read, write, insert, and delete.`,
+        `Do not use ${toolName} commands or scripts to edit files. Use Apply or the standalone editing tools instead. Commands that inherently generate files, such as formatters and code generators, are allowed.`,
       ],
       description: `Use ${toolName} to execute a command in the user's configured ${profile.displayName} shell (${profile.executable}). Every call creates an addressable terminal session. Set background to true to continue without waiting. A foreground wait automatically returns the live session as background on timeout, a stable interactive prompt, or turn abort. Background completion is delivered automatically and wakes the agent. Silent background sessions are treated as potentially stale after two minutes and wake an idle agent for inspection. Sessions survive extension reloads and keep the same shell: source. Output uses the shared Read limits, keeps the tail, and links a complete log file when truncated. ${shellSyntaxGuidance(profile)}`,
       parameters: runParameters,
@@ -93,7 +94,9 @@ export function registerTerminalTools(
         if (outcome.reason === "aborted") ui.notifyWaitTransition(outcome.session);
         return terminalResult(manager.snapshot(outcome.session));
       },
-      renderCall(args, theme) {
+      renderCall(args, theme, context) {
+        const mode = context.expanded ? "full" : presentation;
+        if (mode === "disabled") return new Text(theme.fg("toolTitle", toolName), 0, 0);
         const command = typeof args.command === "string" ? args.command : "";
         const cwd =
           typeof args.cwd === "string" ? path.resolve(process.cwd(), args.cwd) : process.cwd();
@@ -102,7 +105,7 @@ export function registerTerminalTools(
       renderResult(result, options, theme) {
         return renderRunResult(
           result.details as Partial<TerminalSessionSnapshot>,
-          options.expanded,
+          options.expanded ? "full" : presentation,
           theme,
         );
       },

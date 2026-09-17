@@ -105,7 +105,7 @@ test.runIf(process.platform !== "win32")(
     expect(fullOutput).toContain("line-2100");
     expect(result.tuiRenderedOutput).not.toContain("line-1\n");
     expect(result.tuiRenderedOutput).toContain("line-2100");
-    expect(result.tuiRenderedOutput.length).toBeLessThan(10_000);
+    expect(result.tuiRenderedOutput.split("\n").length).toBeLessThan(1_200);
     await rm(details.fullOutputPath, { force: true });
   },
 );

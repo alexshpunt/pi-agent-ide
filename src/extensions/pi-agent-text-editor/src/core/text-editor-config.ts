@@ -26,7 +26,7 @@ export function loadTextEditorConfig(cwd: string): LoadedTextEditorConfig {
     throw new Error(`Invalid text editor config at ${file}`, { cause: error });
   }
   const root = record(value, "text editor config");
-  assertKeys(root, ["recovery", "renderer"], "text editor config");
+  assertKeys(root, ["recovery"], "text editor config");
   if (root.recovery === undefined) {
     return { contextLines: 15, timeoutMs: 2000, sections: {} };
   }

@@ -72,6 +72,19 @@ test("diff statuses stay at the tail, fit narrow widths, and do not change compl
   }
 });
 
+test("hidden diffs keep mutation totals without rendering changed rows", () => {
+  const panel = new MutationPanel(plainTheme);
+  panel.setResultResources([
+    { path: "example.ts", beforeContent: "old\n", afterContent: "new\n", ranges: [] },
+  ]);
+  panel.setDiffsVisible(false);
+
+  const text = panel.render(100).map(stripTerminalSequences).join("\n");
+  expect(text).not.toContain("old");
+  expect(text).not.toContain("new");
+  expect(text).toContain("+0 ~1 -0");
+});
+
 test("an unassignable diff still has a visible bounded tail without a body", () => {
   const panel = new MutationPanel(plainTheme);
   panel.setResultResources([

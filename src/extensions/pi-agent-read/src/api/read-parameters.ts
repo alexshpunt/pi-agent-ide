@@ -5,7 +5,7 @@ export const readParameters = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "What to read: a file or directory path, URL, returned temp: or SEARCH# reference, or one of the source forms listed in the description. Supply a path; an empty call cannot select a source.",
+        "What to read: a supported resource such as a file or directory path, URL, returned temp: reference, SEARCH# reference, or registered protocol source. Supply a path; an empty call cannot select a source.",
     }),
   ),
   offset: Type.Optional(
@@ -23,7 +23,7 @@ export const readParameters = Type.Object({
   views: Type.Optional(
     Type.Array(Type.String(), {
       description:
-        'Optional additions to the returned text. Use the views listed in the tool description. Combine views when needed, for example ["anchors", "ast"] for source text with editable line references and scope boundaries. Omit for the source\'s default presentation.',
+        'Optional source-specific presentations. Combine views when both presentations are needed, for example ["anchors", "ast"]. Omit for the source\'s default presentation.',
     }),
   ),
 });

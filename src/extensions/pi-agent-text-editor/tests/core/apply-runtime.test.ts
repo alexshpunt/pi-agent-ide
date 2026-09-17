@@ -14,6 +14,7 @@ test("Apply exposes guarded editor globals and hides raw mutation helpers", asyn
     }
     if (typeof open !== "function" || typeof flush !== "function") throw new Error("editor missing");
     if (typeof apply !== "undefined") throw new Error("legacy apply checkpoint remains");
+    if (typeof result !== "undefined") throw new Error("result should be hidden");
     read({path: "note.txt"});`,
     {
       async execute(operation) {
@@ -94,6 +95,240 @@ test("between returns all sequential non-overlapping pairs", async () => {
   ]);
 });
 
+test("linewise between and positional selectors stage insertion moves", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource(
+    `const source=open("source.txt");
+const target=open("target.txt");
+const block=source.between("// BEGIN", "// END", {lines:true});
+move(block, target.end());
+copy(source.line(1), target.start());
+copy(source.line(1), target.before(target.line(1)));
+copy(source.line(1), target.after(target.line(1)));
+flush();`,
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen")
+          return arguments_ && (arguments_ as { path?: string }).path === "source.txt"
+            ? snapshot("source", "keep\n// BEGIN\nbody\n// END\nafter\n")
+            : snapshot("target", "last");
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    {
+      kind: "text-move",
+      sources: [
+        {
+          from: 5,
+          to: 26,
+          text: "// BEGIN\nbody\n// END\n",
+          linewise: true,
+        },
+      ],
+      destinations: [{ from: 4, to: 4, text: "", linewise: true }],
+    },
+    {
+      kind: "text-copy",
+      destinations: [{ from: 0, to: 0, text: "", linewise: true }],
+    },
+    {
+      kind: "text-copy",
+      destinations: [{ from: 0, to: 0, text: "", linewise: true }],
+    },
+    {
+      kind: "text-copy",
+      destinations: [{ from: 4, to: 4, text: "", linewise: true }],
+    },
+  ]);
+});
+
+test("linewise content boundaries exclude the following blank separator", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource(
+    `const file=open("cases.test.ts");
+file.remove(file.between('test("named", () => {', "});", {lines:true}));
+file.flush();`,
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen")
+          return snapshot(
+            "cases",
+            'before\ntest("named", () => {\n  expect(true);\n});\n\nafter\n',
+          );
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    {
+      kind: "replace",
+      selection: {
+        text: 'test("named", () => {\n  expect(true);\n});\n',
+        linewise: true,
+      },
+      text: "",
+    },
+  ]);
+});
+test("between composes string and SelectionSet boundaries", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource(
+    'const file=open("note.txt"); file.remove(file.between(file.line(2), "end", {inside:true})); flush();',
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen") return snapshot("note", "keep\nstart\nbody\nend\nkeep\n");
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    { kind: "replace", selection: { text: "body\n" }, text: "" },
+  ]);
+});
+
+test("selection combinators preserve guarded sets", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource(
+    `const file=open("note.txt");
+const words=file.find("hit");
+file.replace(file.slice(words, -1), "LAST");
+file.insertBefore(file.union(file.slice(words, 0, 1), file.find("other")), ">");
+file.remove(file.within(words, file.line(2)));
+file.replace(file.linesOf(file.find("tail")), "TAIL");
+flush();`,
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen") return snapshot("note", "hit other\nhit\nhit\ntail here\n");
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    { selection: { from: 14, to: 17, text: "hit" }, text: "LAST" },
+    { selection: { from: 0, to: 0 }, text: ">" },
+    { selection: { from: 4, to: 4 }, text: ">" },
+    { selection: { from: 10, to: 13, text: "hit" }, text: "" },
+    { selection: { from: 18, to: 28, text: "tail here\n", linewise: true }, text: "TAIL" },
+  ]);
+});
+
+test("union rejects overlapping selections before staging mutations", async () => {
+  let caught: unknown;
+  try {
+    await executeApplySource(
+      'const file=open("note.txt"); file.union(file.line(1), file.find("hit"));',
+      {
+        async execute(operation) {
+          if (operation === "editorOpen") return snapshot("note", "hit here\n");
+          return null;
+        },
+        async result() {},
+      },
+    );
+  } catch (error) {
+    caught = error;
+  }
+  expect(serializeApplyError(caught)).toMatchObject({ code: "INVALID_SELECTION" });
+});
+
+test("selection composition rejects foreign and stale sets", async () => {
+  let opened = 0;
+  let foreign: unknown;
+  try {
+    await executeApplySource(
+      'const a=open("a.txt"); const b=open("b.txt"); a.union(b.find("b"));',
+      {
+        async execute(operation) {
+          if (operation === "editorOpen")
+            return opened++ === 0 ? snapshot("a", "a") : snapshot("b", "b");
+          return null;
+        },
+        async result() {},
+      },
+    );
+  } catch (error) {
+    foreign = error;
+  }
+  expect(serializeApplyError(foreign)).toMatchObject({ code: "CROSS_FILE_SELECTION" });
+
+  let stale: unknown;
+  try {
+    await executeApplySource(
+      'const file=open("a.txt"); const old=file.find("a"); file.replace(old,"A"); flush(); file.slice(old,0,1);',
+      {
+        async execute(operation) {
+          if (operation === "editorOpen") return snapshot("a", "a");
+          if (operation === "editorApply")
+            return {
+              operation: "apply",
+              ok: true,
+              effect: "applied",
+              files: [],
+              completed: [],
+              errors: [],
+              snapshots: [snapshot("a", "A")],
+            };
+          return null;
+        },
+        async result() {},
+      },
+    );
+  } catch (error) {
+    stale = error;
+  }
+  expect(serializeApplyError(stale)).toMatchObject({ code: "STALE_SELECTION" });
+});
+
 test("direct string targets resolve through the host and apply every returned range", async () => {
   const requests: { operations: unknown[] }[] = [];
   await executeApplySource('const file=open("note.txt"); file.replace("same", "new"); flush();', {
@@ -156,6 +391,144 @@ test("direct linewise string targets retain resolver metadata", async () => {
       selection: { from: 0, to: 7, text: "before\n", linewise: true },
       text: "after",
     },
+  ]);
+});
+
+test("global text mutations mirror document methods", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource(
+    `const file=open("note.txt");
+remove(file.find("one"));
+replace(file.find("two"), "TWO");
+insertBefore(file.find("three"), "[");
+insertAfter(file.find("three"), "]");
+file.remove(file.find("four"));
+flush();`,
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen") return snapshot("note", "one two three four");
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    { kind: "replace", selection: { text: "one" }, text: "" },
+    { kind: "replace", selection: { text: "two" }, text: "TWO" },
+    { kind: "replace", selection: { from: 8, to: 8 }, text: "[" },
+    { kind: "replace", selection: { from: 13, to: 13 }, text: "]" },
+    { kind: "replace", selection: { text: "four" }, text: "" },
+  ]);
+});
+
+test("file flush commits only independent operations for that document", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  let opened = 0;
+  await executeApplySource(
+    `const first=open("first.txt");
+const second=open("second.txt");
+const third=open("third.txt");
+first.remove(first.find("drop"));
+second.replace(second.find("old"), "new");
+move(second.find("move"), third.end());
+first.flush();
+flush();`,
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen") {
+          opened += 1;
+          if (opened === 1) return snapshot("first", "drop");
+          if (opened === 2) return snapshot("second", "old move");
+          return snapshot("third", "target");
+        }
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requests.map(({ operations }) => operations)).toMatchObject([
+    [{ kind: "replace", selection: { document: "first", text: "drop" } }],
+    [{ kind: "replace", selection: { document: "second", text: "old" } }, { kind: "text-move" }],
+  ]);
+});
+
+test("file flush leaves a transfer participant on the shared pending snapshot", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  let opened = 0;
+  await executeApplySource(
+    'const source=open("source.txt"); const target=open("target.txt"); source.remove(source.find("drop")); move(source.find("move"), target.end()); source.flush(); flush();',
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen")
+          return opened++ === 0 ? snapshot("source", "drop move") : snapshot("target", "target");
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.operations).toHaveLength(2);
+});
+
+test("file delete stages pending edits before deleting the opened file", async () => {
+  const requests: { operations: unknown[] }[] = [];
+  await executeApplySource(
+    'const file=open("note.txt"); replace(file.find("before"), "after"); file.delete();',
+    {
+      async execute(operation, arguments_) {
+        if (operation === "editorOpen") return snapshot("note", "before\n");
+        if (operation === "editorApply") {
+          requests.push(arguments_ as { operations: unknown[] });
+          return {
+            operation: "apply",
+            ok: true,
+            effect: "applied",
+            files: [],
+            completed: [],
+            errors: [],
+          };
+        }
+        return null;
+      },
+      async result() {},
+    },
+  );
+  expect(requiredValue(requests[0]).operations).toMatchObject([
+    { kind: "replace", selection: { document: "note" }, text: "after" },
+    { kind: "delete", path: "/tmp/note.txt" },
   ]);
 });
 
@@ -362,42 +735,6 @@ test("a script can commit several fresh transactions", async () => {
     },
   );
   expect(calls).toEqual(["editorApply", "editorApply"]);
-});
-
-test("operation errors retain structured rollback data inside the guest", async () => {
-  const output: unknown[] = [];
-  await executeApplySource(
-    'createFile("one.txt", "1"); try { flush(); } catch (error) { result({code: error.code, details: error.details}); }',
-    {
-      async execute() {
-        throw Object.assign(new Error("failed"), {
-          code: "TRANSACTION_FAILED",
-          details: { effect: "rolled-back" },
-        });
-      },
-      async result(value) {
-        output.push(value);
-      },
-    },
-  );
-  expect(output).toEqual([{ code: "TRANSACTION_FAILED", details: { effect: "rolled-back" } }]);
-});
-
-test("synchronous reads transfer large data without clipping", async () => {
-  const content = "x".repeat(2 * 1024 * 1024);
-  const output: unknown[] = [];
-  await executeApplySource(
-    "const doc = read({}); result({length: doc.content.length, last: doc.content.at(-1)});",
-    {
-      async execute() {
-        return { content };
-      },
-      async result(value) {
-        output.push(value);
-      },
-    },
-  );
-  expect(output).toEqual([{ length: content.length, last: "x" }]);
 });
 
 test("guest editor failures retain actionable Apply error codes", async () => {

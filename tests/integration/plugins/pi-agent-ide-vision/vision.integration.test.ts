@@ -2,7 +2,6 @@ import path from "node:path";
 
 import {
   assistantMessage,
-  getProviderSystemPrompt,
   getToolExecution,
   getToolResultText,
   PiIntegrationTest,
@@ -49,8 +48,6 @@ test("discovers processes and reads PID metadata through real Pi tools", async (
   expect(getToolExecution(result, "find-process").isError).toBe(false);
   expect(getToolResultText(result, "find-process")).toContain(`PID: ${process.pid}`);
   expect(getToolResultText(result, "read-process")).toContain("Owned by Agent IDE: no");
-  expect(getProviderSystemPrompt(result)).toContain("window:PID");
-  expect(getProviderSystemPrompt(result)).toContain("process:<query>");
 });
 
 test("denies display capture before touching the desktop backend", async () => {

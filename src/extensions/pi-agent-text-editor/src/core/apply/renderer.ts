@@ -12,6 +12,7 @@ import { preserveEnclosingBackground } from "pi-agent-tool-ui";
 import type { ApplyResults } from "./results.js";
 import type { ApplyOutput } from "./output.js";
 
+type ToolPresentation = "full" | "compact" | "disabled";
 /** Deliberate user presentation, separate from model-facing operation receipts. */
 export interface ApplyDisplay {
   readonly blocks: readonly { readonly text: string; readonly read?: ReadToolResult }[];
@@ -62,7 +63,7 @@ export function createApplyDisplay(
       ],
     };
   }
-  const mutations = finalApplyMutations(results);
+  const mutations = output.mutations ?? finalApplyMutations(results);
   return {
     ...(mutations.length > 0 ? { mutations: { results: mutations } } : {}),
     comparisons,
@@ -154,7 +155,7 @@ export function createApplyDisplay(
 type RenderState = {
   applyResultReady?: boolean;
   displaySource?: string;
-  codeView?: boolean;
+
   projectSource?: (source: string) => string;
 };
 
@@ -210,8 +211,11 @@ export function applyFrameRows(
 /** Compose compact written calls with a pure configured tool header renderer. */
 export function createApplyCallRenderer(
   renderWritten?: (call: ApplyCallPreview, theme: Theme) => string,
+  presentation: ToolPresentation = "compact",
 ): NonNullable<ToolDefinition["renderCall"]> {
   return (args, theme, context) => {
+    if (!context.expanded && presentation === "disabled")
+      return new Text(theme.fg("toolTitle", "apply"), 0, 0);
     const state = context.state as RenderState;
     const projectSource = (state.projectSource ??= createApplySourceProjection(
       renderWritten ? (call) => renderWritten(call, theme) : undefined,
@@ -228,14 +232,16 @@ export function createApplyCallRenderer(
       invalidate() {},
       render(width) {
         return applyFrameRows(
-          state.codeView || context.expanded
+          context.expanded || presentation === "full"
             ? (state.displaySource ?? source)
-            : compactApplyPreview(projectSource(state.displaySource ?? source)),
+            : presentation === "disabled"
+              ? ""
+              : compactApplyPreview(projectSource(state.displaySource ?? source)),
           theme,
           width,
           "call",
           !state.applyResultReady,
-          state.codeView || context.expanded || !renderWritten ? "javascript" : undefined,
+          context.expanded || presentation === "full" || !renderWritten ? "javascript" : undefined,
         );
       },
     };
@@ -328,6 +334,8 @@ export function createApplyResultRenderer(
           const rows = mutationPanel.render(Math.max(1, width - 4));
           if (body.length > 0 && rows.length > 0) body.push("");
           body.push(...rows);
+          if (rows.length === 0)
+            body.push(...(mutations?.results ?? []).map((file) => file.path ?? "Changed file"));
         } else if (mutations !== undefined)
           body.push(...(mutations.results ?? []).map((file) => file.path ?? "Changed file"));
         if (
