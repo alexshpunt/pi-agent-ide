@@ -56,6 +56,7 @@ if (main.object.sha !== pull.merge_commit_sha) {
   const releaseInfrastructurePaths = new Set([
     ".github/workflows/release.yml",
     "scripts/promote-release.ts",
+    "scripts/publish-candidate.ts",
   ]);
   if (
     comparison.status !== "ahead" ||
