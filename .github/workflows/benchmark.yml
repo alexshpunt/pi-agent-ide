@@ -33,6 +33,7 @@ jobs:
     outputs:
       agent_version: ${{ steps.versions.outputs.agent_version }}
       harness_version: ${{ steps.versions.outputs.harness_version }}
+      policy_sha: ${{ steps.policy.outputs.policy_sha }}
     steps:
       - name: Resolve npm tags to exact versions
         id: versions
@@ -52,6 +53,17 @@ jobs:
           echo "agent_version=$agent_version" >> "$GITHUB_OUTPUT"
           echo "harness_version=$harness_version" >> "$GITHUB_OUTPUT"
           echo "Pi $agent_version; Pi Agent IDE $harness_version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve current official benchmark policy
+        id: policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          policy_sha="$(gh api 'repos/alexshpunt/explicit-edit-benchmark/commits?path=policies/official-runs/v1.json&sha=main&per_page=1' --jq '.[0].sha')"
+          [[ "$policy_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "policy_sha=$policy_sha" >> "$GITHUB_OUTPUT"
+          echo "Official benchmark policy $policy_sha" >> "$GITHUB_STEP_SUMMARY"
 
   benchmark:
     name: Run official benchmark
@@ -73,13 +85,13 @@ jobs:
       harness_version: ${{ needs.resolve.outputs.harness_version }}
       runtime_version: ""
       provider: openai-codex
-      policy_sha: 456b6c22cc2f7cfd2e03ea0461d1bd55d4445d0d
+      policy_sha: ${{ needs.resolve.outputs.policy_sha }}
     secrets:
       pi_auth_json: ${{ secrets.PI_AUTH_JSON }}
 
   submit:
     name: Submit official benchmark result
-    needs: benchmark
+    needs: [resolve, benchmark]
     permissions:
       actions: read
       contents: read
@@ -88,7 +100,7 @@ jobs:
       producer_run_id: ${{ github.run_id }}
       producer_attempt: ${{ github.run_attempt }}
       signer_sha: 133dbdb59a1117a64b32a3fc7006addbc161ed66
-      policy_sha: 456b6c22cc2f7cfd2e03ea0461d1bd55d4445d0d
+      policy_sha: ${{ needs.resolve.outputs.policy_sha }}
       dataset_repository: alexshpunt/explicit-edit-benchmark
     secrets:
       hf_token: ${{ secrets.HF_TOKEN }}
