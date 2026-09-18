@@ -105,35 +105,9 @@ jobs:
     name: Benchmark published package
     needs: [validate, publish]
     if: inputs.publish && needs.publish.result == 'success'
-    permissions:
-      actions: read
-      artifact-metadata: write
-      attestations: write
-      contents: read
-      id-token: write
-    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@be568216c66a22149a1d869724ee3f2891b70988
+    uses: ./.github/workflows/benchmark.yml
     with:
-      adapter: pi-agent-ide
-      agent_version: "0.84.2"
-      harness_version: ${{ needs.validate.outputs.version }}
-      model: openai-codex/gpt-5.6-luna
-      thinking: low
-      concurrency: "10"
+      version: ${{ needs.validate.outputs.version }}
     secrets:
-      pi_auth_json: ${{ secrets.PI_AUTH_JSON }}
-
-  benchmark-submit:
-    name: Submit official benchmark result
-    needs: benchmark
-    permissions:
-      actions: read
-      contents: read
-    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-submit.yml@0136a4d4e32b9cdf7f2924f18f9ffbab6c1839f8
-    with:
-      producer_run_id: ${{ github.run_id }}
-      producer_attempt: ${{ github.run_attempt }}
-      signer_sha: be568216c66a22149a1d869724ee3f2891b70988
-      policy_sha: 0136a4d4e32b9cdf7f2924f18f9ffbab6c1839f8
-      dataset_repository: alexshpunt/explicit-edit-benchmark
-    secrets:
-      hf_token: ${{ secrets.HF_TOKEN }}
+      PI_AUTH_JSON: ${{ secrets.PI_AUTH_JSON }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}

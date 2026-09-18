@@ -1,0 +1,63 @@
+# yamllint disable rule:line-length rule:comments rule:document-start rule:truthy
+name: Benchmark published package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published pi-agent-ide version
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      PI_AUTH_JSON:
+        required: true
+      HF_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  benchmark:
+    name: Run official benchmark
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@be568216c66a22149a1d869724ee3f2891b70988
+    with:
+      model: openai-codex/gpt-5.6-luna
+      thinking: low
+      task: ""
+      concurrency: "10"
+      adapter: pi-agent-ide
+      agent_version: "0.84.2"
+      harness_version: ${{ inputs.version }}
+      runtime_version: ""
+      provider: openai-codex
+    secrets:
+      pi_auth_json: ${{ secrets.PI_AUTH_JSON }}
+
+  submit:
+    name: Submit official benchmark result
+    needs: benchmark
+    permissions:
+      actions: read
+      contents: read
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-submit.yml@6b39eca986e78f28758070ce7a0b343be58271b0
+    with:
+      producer_run_id: ${{ github.run_id }}
+      producer_attempt: ${{ github.run_attempt }}
+      signer_sha: be568216c66a22149a1d869724ee3f2891b70988
+      policy_sha: 6b39eca986e78f28758070ce7a0b343be58271b0
+      dataset_repository: alexshpunt/explicit-edit-benchmark
+    secrets:
+      hf_token: ${{ secrets.HF_TOKEN }}
