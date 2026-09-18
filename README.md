@@ -47,9 +47,21 @@ The interfaces are designed to combine. A search result can become an edit selec
 
 Views change how the same resource is presented. The agent can request source structure, editable anchors, diagnostics, an image, a sequence, or another supported projection without learning a separate tool for every source.
 
+<div align="center">
+
+[![Pi Agent IDE read examples](assets/summary/thumbs/read.png)](assets/summary/read.png)
+
+</div>
+
 ### Find anything through `search`
 
 `search` provides one interface for paths, exact text, regular expressions, AST patterns, symbols, references, code relationships, process discovery, and retained terminal output. Results are reusable guarded references, so the agent can find an intended target once and pass that selection directly to `read` or an editing tool.
+
+<div align="center">
+
+[![Pi Agent IDE search examples](assets/summary/thumbs/search.png)](assets/summary/search.png)
+
+</div>
 
 ### Express edits as intentions
 
@@ -64,13 +76,37 @@ Editing uses direct semantic operations:
 
 Independent edits can be submitted together as a tool-call batch. Conditional and multi-file work uses Apply, a code mode that exposes the same guarded operations through transactional JavaScript. Diffing and staging are first-class tools too.
 
+<div align="center">
+
+[![Pi Agent IDE editing examples](assets/summary/thumbs/editing.png)](assets/summary/editing.png)
+
+</div>
+
 Selections can come from exact text, anchors, search results, AST matches, or language-server symbols. Stale, ambiguous, and failed operations do not apply silently. If one selection method is a poor fit, the agent can recover through another without throwing away the rest of its work.
+
+<div align="center">
+
+[![Searching and replacing through guarded selections](assets/summary/thumbs/search-and-replace.png)](assets/summary/search-and-replace.png)
+
+</div>
 
 ### Run and debug through persistent sessions
 
 The terminal is a first-class cross-platform interface. The agent can run commands, keep interactive sessions and background tasks alive across turns and extension reloads, read retained output, send exact input or named keys, and inspect terminal applications through images and sequences.
 
+<div align="center">
+
+[![Running and interacting with a persistent terminal session](assets/summary/thumbs/terminal.png)](assets/summary/terminal.png)
+
+</div>
+
 Debugger sessions use the same resource model. The agent can set breakpoints, inspect stack frames and variables, evaluate expressions, step through execution, and return to a running session later.
+
+<div align="center">
+
+[![Setting breakpoints, inspecting locals, and stepping through a debugger session](assets/summary/thumbs/debugging.png)](assets/summary/debugging.png)
+
+</div>
 
 ### See the environment
 
@@ -89,6 +125,12 @@ Filesystem and HTTP reads, resource views, content converters, search backends, 
 ### Observe the work and recover cheaply
 
 A person can see the agent's edits, diffs, diagnostics, running processes, debugger state, and failures. Bounded presentation keeps live output readable without discarding the underlying result. Guarded snapshots and first-class undo make mistakes visible and recovery inexpensive.
+
+<div align="center">
+
+[![User-facing process view for active terminal sessions](assets/summary/thumbs/user_terminal.png)](assets/summary/user_terminal.png)
+
+</div>
 
 ### Work across languages and platforms
 
@@ -142,16 +184,6 @@ Doctor shows its report before changing anything. If project evidence points to 
 
 Run doctor again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
 
-## Gallery
-
-| Read and guarded tool editing                                                                                               | Transactional Apply                                                                                                   |
-| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| ![Reading source with anchors, then replacing, inserting, and deleting guarded selections](assets/gallery/tool-editing.png) | ![A multi-step file edit staged and committed through Apply](assets/gallery/apply-editing.png)                        |
-| Web reading                                                                                                                 | Search and replace                                                                                                    |
-| ![Reading a web page through the unified read interface](assets/gallery/read-web.png)                                       | ![Searching local code and reusing the returned match in replace](assets/gallery/search-replace.png)                  |
-| Background processes                                                                                                        | Source-level debugging                                                                                                |
-| ![A long-running terminal command continuing in the background process view](assets/gallery/terminal.png)                   | ![Setting a breakpoint, inspecting locals, stepping, and continuing a debugger session](assets/gallery/debugging.png) |
-
 ## Customization
 
 Pi Agent IDE follows Pi's permissive, YOLO-style default: the agent can use the tools without asking for approval at every step. You can make it as strict as your work requires.
@@ -159,6 +191,12 @@ Pi Agent IDE follows Pi's permissive, YOLO-style default: the agent can use the 
 - [Settings](./docs/configuration.md) control built-in tools, project mappings, search, vision, and presentation.
 - [File hooks](./docs/user-hooks.md) can inspect, change, or deny reads and edits.
 - [Extensions](./docs/extensions.md) can add or replace protocols, resolvers, views, anchors, search backends, and other behavior.
+
+<div align="center">
+
+[![Agent IDE settings](assets/summary/thumbs/settings.png)](assets/summary/settings.png)
+
+</div>
 
 ## Feedback and contributions
 
