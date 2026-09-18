@@ -48,8 +48,23 @@ const commit = api(`git/commits/${pull.merge_commit_sha}`) as {
   parents: { sha: string }[];
 };
 const main = api("git/ref/heads/main") as { object: { sha: string } };
-if (main.object.sha !== pull.merge_commit_sha)
-  throw new Error("Release must still be the current main commit");
+if (main.object.sha !== pull.merge_commit_sha) {
+  const comparison = api(`compare/${pull.merge_commit_sha}...${main.object.sha}`) as {
+    status: string;
+    files?: { filename: string }[];
+  };
+  const releaseInfrastructurePaths = new Set([
+    ".github/workflows/release.yml",
+    "scripts/promote-release.ts",
+  ]);
+  if (
+    comparison.status !== "ahead" ||
+    !comparison.files?.length ||
+    comparison.files.some(({ filename }) => !releaseInfrastructurePaths.has(filename))
+  ) {
+    throw new Error("Release candidate is no longer the current publishable main tree");
+  }
+}
 const manifestResponse = api(`contents/package.json?ref=${pull.merge_commit_sha}`) as {
   content: string;
 };
