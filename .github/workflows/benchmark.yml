@@ -39,7 +39,7 @@ jobs:
       task: ""
       concurrency: "10"
       adapter: pi-agent-ide
-      agent_version: "0.84.2"
+      agent_version: "0.85.1"
       harness_version: ${{ inputs.version }}
       runtime_version: ""
       provider: openai-codex
