@@ -61,7 +61,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          workflow_sha="$(gh api 'repos/alexshpunt/explicit-edit-benchmark/git/ref/heads/main' --jq '.object.sha')"
+          workflow_sha="$(gh api 'repos/alexshpunt/explicit-edit-benchmark/git/ref/heads/official' --jq '.object.sha')"
           policy_sha="$(gh api 'repos/alexshpunt/explicit-edit-benchmark/commits?path=policies/official-runs/v1.json&sha=main&per_page=1' --jq '.[0].sha')"
           [[ "$workflow_sha" =~ ^[0-9a-f]{40}$ ]]
           [[ "$policy_sha" =~ ^[0-9a-f]{40}$ ]]
@@ -78,7 +78,7 @@ jobs:
       attestations: write
       contents: read
       id-token: write
-    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@main
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@official
     with:
       model: openai-codex/gpt-5.6-luna
       thinking: low
@@ -99,7 +99,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-submit.yml@main
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-submit.yml@official
     with:
       producer_run_id: ${{ github.run_id }}
       producer_attempt: ${{ github.run_attempt }}
