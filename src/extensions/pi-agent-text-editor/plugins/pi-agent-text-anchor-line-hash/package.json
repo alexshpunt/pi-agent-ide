@@ -1,0 +1,28 @@
+{
+  "name": "pi-agent-text-anchor-line-hash",
+  "version": "0.6.2",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "exports": {
+    "./api/anchor": {
+      "types": "./src/anchor.ts",
+      "default": "./runtime/entry-59.js"
+    }
+  },
+  "dependencies": {
+    "pi-agent-invariant": "0.6.2",
+    "pi-agent-read": "0.6.2",
+    "pi-agent-text": "0.6.2",
+    "pi-agent-text-editor": "0.6.2"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-60.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

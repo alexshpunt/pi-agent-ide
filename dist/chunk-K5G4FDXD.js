@@ -1,0 +1,1 @@
+import{a as o}from"./chunk-EI7MMDWY.js";import e from"node:path";function c(s,i,r=process.platform){let a=r==="win32"?e.win32:e.posix,t=o(p=>{let n=a.resolve(p);return r==="win32"?n.toLowerCase():n},"normalize");return t(s)===t(i)}o(c,"sameFilePath");export{c as a};

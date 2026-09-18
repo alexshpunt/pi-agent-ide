@@ -1,0 +1,152 @@
+import path from "node:path";
+import os from "node:os";
+import { fileURLToPath } from "node:url";
+
+import { sameFilePath } from "pi-agent-ide/api/path-identity";
+import { runConfiguredProcess } from "pi-agent-ide/api/tool-config";
+
+import { parseDiagnostics } from "./diagnostics.js";
+import { LintCommandRegistry } from "./registry.js";
+
+import type { LinterCommandConfig, ProcessResult } from "pi-agent-ide/api/tool-config";
+import type { Diagnostic, Linter, LintResult } from "pi-agent-ide/api/toolchain";
+
+/** A lint result with a short failure reason for doctor reports. */
+export interface ConfiguredLintResult extends LintResult {
+  readonly failure?: string;
+}
+
+/**
+ * Runs one configured linter and turns launch or parser errors into a normal failed result.
+ */
+export async function runConfiguredLinter(
+  config: LinterCommandConfig,
+  context: {
+    readonly projectRoot: string;
+    readonly filePath: string;
+    readonly env?: NodeJS.ProcessEnv;
+
+    readonly signal?: AbortSignal;
+  },
+): Promise<ConfiguredLintResult> {
+  let result: ProcessResult;
+
+  try {
+    const executable = path.basename(config.check.command[0] ?? "").toLocaleLowerCase();
+    const isRuff = executable === "ruff" || executable === "ruff.exe";
+    const inheritedEnvironment = context.env ?? process.env;
+    result = await runConfiguredProcess(config.check, {
+      ...context,
+      ...(isRuff
+        ? {
+            env: {
+              ...inheritedEnvironment,
+              RUFF_CACHE_DIR:
+                inheritedEnvironment.RUFF_CACHE_DIR ??
+                path.join(os.tmpdir(), "pi-agent-ide", "ruff-cache"),
+            },
+          }
+        : {}),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      diagnostics: [],
+      failure: `command could not start: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  const output =
+    config.diagnostics.format === "regex" || config.diagnostics.format === "clang"
+      ? [result.stdout, result.stderr].filter((stream) => stream.trim().length > 0).join("\n")
+      : result.stdout.trim().length > 0
+        ? result.stdout
+        : result.stderr;
+  let diagnostics: Diagnostic[];
+
+  try {
+    diagnostics = parseDiagnostics(output, config.diagnostics);
+  } catch {
+    return {
+      ok: false,
+      diagnostics: [],
+      failure: `invalid ${config.diagnostics.format} diagnostics: ${output.trim().slice(0, 200) || "empty command output"}`,
+    };
+  }
+
+  const ok = result.ok && (result.exitCode === 0 || diagnostics.length > 0);
+
+  const workingDirectory =
+    config.check.cwd === "file" ? path.dirname(context.filePath) : context.projectRoot;
+  diagnostics = diagnostics
+    .filter((diagnostic) => {
+      if (diagnostic.file === undefined) return true;
+      const file = diagnostic.file.startsWith("file:")
+        ? fileURLToPath(diagnostic.file)
+        : diagnostic.file;
+      return sameFilePath(path.resolve(workingDirectory, file), context.filePath);
+    })
+    .map(({ file: _file, ...diagnostic }) => diagnostic);
+  return {
+    ok,
+    diagnostics,
+    ...(!ok && {
+      failure:
+        result.stderr.trim().slice(0, 200) || `command exited with code ${String(result.exitCode)}`,
+    }),
+  };
+}
+
+/**
+Creates a linter backed by validated project commands.
+*/
+export function createCommandLinter(registry: LintCommandRegistry): Linter {
+  return {
+    kind: "linter",
+    name: "command-lint",
+    priority: 100,
+    extensions: ["*"],
+    detect: () => Promise.resolve(true),
+    async lint({ filePath, fix }, context) {
+      const configured = registry.resolve(filePath, context.cwd);
+
+      if (configured === undefined) {
+        return { ok: true, diagnostics: [] };
+      }
+
+      const command =
+        fix === true && configured.fix !== undefined ? configured.fix : configured.check;
+      const result = await runConfiguredLinter(
+        { ...configured, check: command },
+        { projectRoot: context.cwd, filePath },
+      );
+      return { ok: result.ok, diagnostics: result.diagnostics };
+    },
+  };
+}
+
+/**
+Creates the configured linter and reloads it when the project changes.
+*/
+export function createConfiguredCommandLinter(): Linter {
+  let registryCwd: string | undefined;
+  let registryReady: Promise<LintCommandRegistry> | undefined;
+  const registryFor = (cwd: string): Promise<LintCommandRegistry> => {
+    if (registryReady === undefined || registryCwd !== cwd) {
+      registryCwd = cwd;
+      registryReady = LintCommandRegistry.fromDirectory(cwd);
+    }
+
+    return registryReady;
+  };
+  return {
+    kind: "linter",
+    name: "command-lint",
+    priority: 100,
+    extensions: ["*"],
+    detect: () => Promise.resolve(true),
+    async lint(input, context) {
+      return createCommandLinter(await registryFor(context.cwd)).lint(input, context);
+    },
+  };
+}

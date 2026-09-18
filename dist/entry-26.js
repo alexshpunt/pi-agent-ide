@@ -1,0 +1,1 @@
+import{a as r}from"./chunk-QIJMV2P2.js";import{v as e}from"./chunk-S3ZPXWX7.js";import{a as t}from"./chunk-EI7MMDWY.js";var n={target:{provider:"filesystem",capability:"read"},converter:r(),priority:100};async function i(o){await e(o,n)}t(i,"registerFilesystemImage");export{i as default};

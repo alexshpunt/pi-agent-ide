@@ -1,0 +1,26 @@
+{
+  "name": "pi-agent-ide-lint",
+  "version": "0.6.2",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-doctor": "0.6.2",
+    "pi-agent-invariant": "0.6.2",
+    "pi-agent-read": "0.6.2",
+    "pi-agent-resource": "0.6.2",
+    "pi-agent-text": "0.6.2"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-36.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "pi-agent-ide": "0.6.2"
+  },
+  "peerDependenciesMeta": {
+    "pi-agent-ide": {
+      "optional": true
+    }
+  }
+}

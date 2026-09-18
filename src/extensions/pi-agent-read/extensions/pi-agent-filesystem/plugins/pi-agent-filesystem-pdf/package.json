@@ -1,0 +1,17 @@
+{
+  "name": "pi-agent-filesystem-pdf",
+  "version": "0.6.2",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-pdf": "0.6.2",
+    "pi-agent-resource": "0.6.2"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-28.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

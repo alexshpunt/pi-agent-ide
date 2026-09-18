@@ -1,0 +1,23 @@
+{
+  "name": "pi-agent-filesystem-jq",
+  "version": "0.6.2",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "pi-agent-doctor": "0.6.2",
+    "pi-agent-documentation": "0.6.2",
+    "pi-agent-read": "0.6.2",
+    "pi-agent-text": "0.6.2"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-27.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "pi-agent-filesystem",
+  "version": "0.6.2",
+  "type": "module",
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "dependencies": {
+    "pi-agent-image": "0.6.2",
+    "pi-agent-read": "0.6.2",
+    "pi-agent-resource": "0.6.2",
+    "pi-agent-text": "0.6.2",
+    "pi-agent-text-editor": "0.6.2"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-25.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

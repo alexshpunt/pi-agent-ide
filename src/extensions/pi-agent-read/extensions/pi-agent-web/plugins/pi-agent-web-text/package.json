@@ -1,0 +1,17 @@
+{
+  "name": "pi-agent-web-text",
+  "version": "0.6.2",
+  "type": "module",
+  "dependencies": {
+    "pi-agent-resource": "0.6.2",
+    "pi-agent-text": "0.6.2"
+  },
+  "pi": {
+    "extensions": [
+      "./runtime/entry-86.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
