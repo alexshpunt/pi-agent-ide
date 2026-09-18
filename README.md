@@ -6,15 +6,27 @@
 
 <p align="center">Give your Pi agent a real IDE: one semantic interface for understanding, changing, running, debugging, and observing software.</p>
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/pi-agent-ide"><img src="https://img.shields.io/npm/v/pi-agent-ide" alt="npm version"></a>
-  <a href="https://www.npmjs.com/package/pi-agent-ide"><img src="https://img.shields.io/npm/dm/pi-agent-ide" alt="npm downloads"></a>
-  <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
-  <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Funit.json" alt="Unit test count"></a>
-  <a href="https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Fintegration.json" alt="Integration test count"></a>
-  <a href="https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Falexshpunt%2Fexplicit-edit-benchmark%2Fresolve%2Fmain%2Fbadges%2Fpi-agent-ide.json" alt="Explicit Edit Benchmark score"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/npm/l/pi-agent-ide" alt="MIT license"></a>
-</p>
+<div align="center">
+
+[![npm version](https://img.shields.io/npm/v/pi-agent-ide)](https://www.npmjs.com/package/pi-agent-ide)
+[![npm downloads](https://img.shields.io/npm/dm/pi-agent-ide)](https://www.npmjs.com/package/pi-agent-ide)
+[![CI status](https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml)
+[![MIT license](https://img.shields.io/npm/l/pi-agent-ide)](./LICENSE)
+
+</div>
+
+<div align="center">
+
+[![Unit test count](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Funit.json)](https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml)
+[![Integration test count](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Falexshpunt%2F0d28d39557e2a9976c4548e7737c102d%2Fraw%2Fintegration.json)](https://github.com/alexshpunt/pi-agent-ide/actions/workflows/ci.yml)
+
+</div>
+
+<div align="center">
+
+[![Explicit Edit Benchmark score](https://img.shields.io/endpoint?url=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Falexshpunt%2Fexplicit-edit-benchmark%2Fresolve%2Fmain%2Fbadges%2Fpi-agent-ide.json)](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest)
+
+</div>
 
 ## Summary
 
