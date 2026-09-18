@@ -544,12 +544,22 @@ describe("pi-agent-text-editor search", () => {
     await withTempWorkspace(async (directory) => {
       const source = path.join(directory, "src", "queue.ts");
       await mkdir(path.dirname(source), { recursive: true });
-      await writeFile(source, 'export const legacyQueue = { name: "jobs" };\n', "utf8");
+      await writeFile(
+        source,
+        [
+          "export function legacyQueue(name: string): string {",
+          "  return `queue:${name}`;",
+          "}",
+          "",
+        ].join("\n"),
+        "utf8",
+      );
       const result = await new PiIntegrationTest({
         testName: "search-protocol-routing",
         cwd: directory,
         extensions: extensions.paths,
         tools: ["search"],
+        rawMode: false,
         conversation: [
           assistantMessage(
             [
@@ -566,7 +576,10 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "search-ast",
                 name: "search",
-                arguments: { query: "ast:legacyQueue", path: "src" },
+                arguments: {
+                  query: "ast:export function $NAME($ARG): $RET { $$$BODY }",
+                  path: "src",
+                },
               }),
             ],
             { stopReason: "toolUse" },
@@ -580,6 +593,15 @@ describe("pi-agent-text-editor search", () => {
       expect(getToolExecution(result, "search-ast").isError).toBe(false);
       expect(getToolResultText(result, "search-ast")).toContain("src/queue.ts:1");
       expect(getToolResultText(result, "search-ast")).toContain("legacyQueue");
+      const astView = result.tuiRenderedOutput.slice(
+        result.tuiRenderedOutput.indexOf('search "ast:export function'),
+      );
+      expect(astView).toContain("1 match in 1 file");
+      expect(astView).toMatch(/src\/queue\.ts\s+1/u);
+      expect(astView).toContain("export function legacyQueue");
+      expect(astView).toContain("return `queue:${name}`");
+      expect(astView).toContain("╭");
+      expect(astView).not.toContain("SEARCH#");
     });
   }, 180_000);
 });

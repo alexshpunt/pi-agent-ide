@@ -1,3 +1,5 @@
+import { setTimeout as delay } from "node:timers/promises";
+
 import {
   READ_API_VERSION,
   READ_PROTOCOL,
@@ -26,6 +28,56 @@ import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal
 
 const WRITE_PREFIX = "\u0000pi-terminal-write\u0000";
 const KEYS_PREFIX = "\u0000pi-terminal-keys\u0000";
+
+interface TerminalVisualView {
+  readonly mode: "image" | "sequence";
+  readonly duration: number;
+  readonly interval: number;
+  readonly scale: number;
+}
+
+/** Parse the bounded image or sequence view requested for a terminal screen. */
+export function parseTerminalVisualView(
+  views: readonly string[] | undefined,
+): TerminalVisualView | undefined {
+  const selected = views?.find(
+    (view) =>
+      view === "image" ||
+      view === "sequence" ||
+      view.startsWith("image:") ||
+      view.startsWith("sequence:"),
+  );
+  if (selected === undefined) return undefined;
+  const separator = selected.indexOf(":");
+  const mode = (separator < 0 ? selected : selected.slice(0, separator)) as "image" | "sequence";
+  const values = new Map<string, number>();
+  if (separator >= 0) {
+    for (const parameter of selected.slice(separator + 1).split(",")) {
+      const [name, raw, extra] = parameter.split("=");
+      if (name === undefined || raw === undefined || extra !== undefined || raw.length === 0)
+        throw new Error(`Invalid terminal ${mode} view parameter: ${parameter}`);
+      if (name !== "duration" && name !== "interval" && name !== "scale")
+        throw new Error(`Unsupported terminal ${mode} view parameter: ${name}`);
+      const value = Number(raw);
+      if (!Number.isFinite(value)) throw new Error(`Terminal ${name} must be a number`);
+      values.set(name, value);
+    }
+  }
+  const duration = values.get("duration") ?? 2;
+  const interval = values.get("interval") ?? 0.5;
+  const scale = values.get("scale") ?? 1;
+  if (!(scale > 0 && scale <= 1))
+    throw new Error("Terminal image scale must be greater than 0 and at most 1");
+  if (mode === "sequence") {
+    if (!(duration > 0 && duration <= 10))
+      throw new Error("Terminal sequence duration must be greater than 0 and at most 10 seconds");
+    if (!(interval > 0))
+      throw new Error("Terminal sequence interval must be greater than 0 seconds");
+    if (Math.floor(duration / interval) + 1 > 20)
+      throw new Error("Terminal sequence capture is limited to 20 frames");
+  }
+  return { mode, duration, interval, scale };
+}
 
 type TerminalAction = "write" | "insert" | "delete";
 interface TerminalActionDetails {
@@ -71,13 +123,19 @@ export async function registerTerminalResources(
         stage: "pre-read",
         async handler(context) {
           const source = context.request.path;
-          if (
-            source === undefined ||
-            !isShellSource(source) ||
-            context.request.views?.includes("image") !== true
-          ) {
+          if (source === undefined || !isShellSource(source)) {
             return { kind: "continue", context };
           }
+          let visual: TerminalVisualView | undefined;
+          try {
+            visual = parseTerminalVisualView(context.request.views);
+          } catch (error) {
+            return {
+              kind: "return",
+              result: failure(source, error instanceof Error ? error.message : String(error)),
+            };
+          }
+          if (visual === undefined) return { kind: "continue", context };
           const session = manager.get(source);
           if (session === undefined) {
             return {
@@ -87,12 +145,33 @@ export async function registerTerminalResources(
           }
           try {
             manager.markInspected(source);
-            const data = await renderTerminalScreen(manager, source);
+            const count =
+              visual.mode === "image" ? 1 : Math.floor(visual.duration / visual.interval) + 1;
+            const content: Array<{
+              readonly type: "image";
+              readonly data: string;
+              readonly mimeType: "image/png";
+            }> = [];
+            for (let frame = 0; frame < count; frame += 1) {
+              context.resolverContext.signal?.throwIfAborted();
+              if (frame > 0) {
+                await delay(visual.interval * 1_000, undefined, {
+                  signal: context.resolverContext.signal,
+                });
+              }
+              const data = await renderTerminalScreen(manager, source, undefined, visual.scale);
+              content.push({ type: "image", data, mimeType: "image/png" });
+            }
             return {
               kind: "return",
               result: {
-                content: [{ type: "image", data, mimeType: "image/png" }],
-                details: { source: session.source, resolvedBy: "terminal" },
+                content,
+                details: {
+                  source: session.source,
+                  resolvedBy: "terminal",
+                  frames: count,
+                  mode: visual.mode,
+                },
               },
             };
           } catch (error) {
@@ -104,7 +183,7 @@ export async function registerTerminalResources(
         },
       });
       api.describe(
-        'shell:<session> — terminal status and a bounded output tail with a full-log path when truncated. views: ["image"] returns the virtual terminal screen as a PNG.',
+        "shell:<session> — terminal status and a bounded output tail with a full-log path when truncated. image and parameterized sequence views return the virtual terminal screen as ordered PNG frames.",
       );
     },
   } satisfies ReadPlugin;

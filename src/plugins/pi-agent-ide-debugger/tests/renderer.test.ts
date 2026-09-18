@@ -60,6 +60,23 @@ test("debug action renderer hides insert and shows the semantic command", () => 
   expect(lines).not.toContain("insert");
 });
 
+test("evaluation action and result show the expression without editor syntax", () => {
+  const call = renderDebugActionCall(snapshot(), "evaluate subtotal - discount", theme)
+    .render(100)
+    .join("\n");
+  const result = renderDebugResult(snapshot(), false, theme, {
+    expression: "subtotal - discount",
+    result: "43",
+    type: "int",
+    variablesReference: 0,
+  })
+    .render(100)
+    .join("\n");
+
+  expect(call).toContain("◆ subtotal - discount");
+  expect(result).toContain("subtotal - discount = 43  int");
+  expect(result).toContain("stopped · breakpoint");
+});
 test("stopped result shows frame, source context, and locals", () => {
   const lines = renderDebugResult(snapshot(), false, theme).render(100).join("\n");
   expect(lines).toContain("stopped · breakpoint");

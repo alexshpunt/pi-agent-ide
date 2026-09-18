@@ -100,7 +100,8 @@ export default async function registerVision(
 
               try {
                 const content = await captureImages(
-                  () => backend.captureWindow(windowPid, context.resolverContext.signal),
+                  () =>
+                    backend.captureWindow(windowPid, metadata.host, context.resolverContext.signal),
                   options(context.request),
                   context.resolverContext.signal,
                 );

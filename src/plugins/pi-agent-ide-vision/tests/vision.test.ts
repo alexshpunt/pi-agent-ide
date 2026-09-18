@@ -10,6 +10,7 @@ import {
   readProcess,
   selectImage,
   validateVisionOptions,
+  usesWindowsHostWindowCapture,
 } from "#src/plugins/pi-agent-ide-vision/src/vision.js";
 import { AgentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
 
@@ -72,6 +73,17 @@ test("matches allowlisted executables by exact file name without case sensitivit
   expect(isExecutableAllowed("/opt/UnrealEditor.exe --project demo")).toBe(true);
   expect(isExecutableAllowed("C:\\Tools\\NotUnity.exe")).toBe(false);
   configureVision({});
+});
+
+describe("WSL window backend selection", () => {
+  test("keeps Linux process identities on the local capture backend", () => {
+    expect(usesWindowsHostWindowCapture(true, "local")).toBe(false);
+  });
+
+  test("uses the Windows helper only for Windows process identities", () => {
+    expect(usesWindowsHostWindowCapture(true, "windows")).toBe(true);
+    expect(usesWindowsHostWindowCapture(false, "windows")).toBe(false);
+  });
 });
 
 describe("Agent vision image bounds", () => {
@@ -165,5 +177,6 @@ test("process metadata marks a registry PID as Agent IDE owned", async () => {
     pid: process.pid,
     owned: true,
     source: "shell:test",
+    host: "local",
   });
 });

@@ -773,6 +773,9 @@ importers:
       pi-agent-search:
         specifier: workspace:^
         version: link:../../extensions/pi-agent-search
+      pi-agent-search-text:
+        specifier: workspace:^
+        version: link:../../extensions/pi-agent-search/plugins/pi-agent-search-text
       pi-agent-text:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-text

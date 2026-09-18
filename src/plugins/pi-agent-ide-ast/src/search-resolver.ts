@@ -5,6 +5,9 @@ import path from "node:path";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
+import { renderSearchResult } from "pi-agent-search-text/rendering";
+
+import { createAstSearchPresentation } from "./search-presentation.js";
 
 interface AstGrepMatch {
   readonly text: string;
@@ -24,6 +27,7 @@ export function createAstSearchResolver(
 ): SearchResolver {
   return {
     id: "ast",
+    renderResult: renderSearchResult as SearchResolver["renderResult"],
     async tryResolve(request, context) {
       if (!request.query.startsWith("ast:")) {
         return { kind: "not-handled" };
@@ -65,6 +69,13 @@ export function createAstSearchResolver(
           })),
           complete: selected.complete,
           sessionId: session.id,
+          presentation: createAstSearchPresentation(
+            request.query,
+            selected.raw,
+            selected.complete,
+            context.cwd,
+            session.id,
+          ),
         },
       };
     },
@@ -74,10 +85,14 @@ export function createAstSearchResolver(
         readonly sessionId: string;
         readonly matches: readonly AstGrepMatch[];
         readonly complete: boolean;
+        readonly presentation: unknown;
       };
 
       if (result.matches.length === 0) {
-        return { content: [{ type: "text", text: "No AST matches found." }], details: result };
+        return {
+          content: [{ type: "text", text: "No AST matches found." }],
+          details: result.presentation,
+        };
       }
 
       const lines = result.matches.flatMap((match, index) => [
@@ -93,7 +108,10 @@ export function createAstSearchResolver(
         lines.push("Result limit reached.");
       }
 
-      return { content: [{ type: "text", text: lines.join("\n") }], details: result };
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        details: result.presentation,
+      };
     },
   };
 }

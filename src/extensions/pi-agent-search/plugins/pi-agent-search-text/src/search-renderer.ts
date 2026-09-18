@@ -166,11 +166,17 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
     selected.pop();
   }
 
-  const shownMatches = selected.reduce(
-    (count, row) => count + (row.kind === "line" ? row.line.matchCount : 0),
-    0,
+  const shownIds = new Set(
+    selected.flatMap((row) => (row.kind === "line" ? (row.line.logicalMatchIds ?? []) : [])),
   );
-  return [...selected, { kind: "omitted", matches: details.matchCount - shownMatches }];
+  const shownMatches =
+    shownIds.size > 0
+      ? shownIds.size
+      : selected.reduce((count, row) => count + (row.kind === "line" ? row.line.matchCount : 0), 0);
+  return [
+    ...selected,
+    { kind: "omitted", matches: Math.max(0, details.matchCount - shownMatches) },
+  ];
 }
 
 function compactRenderedRows(

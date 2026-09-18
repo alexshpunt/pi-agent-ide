@@ -68,6 +68,13 @@ export interface DebugFrame {
   readonly source?: { readonly path?: string; readonly name?: string };
 }
 
+export interface DebugEvaluation {
+  readonly expression: string;
+  readonly result: string;
+  readonly type?: string;
+  readonly variablesReference: number;
+}
+
 export interface DebugSourceLine {
   readonly lineNumber: number;
   readonly content: string;
@@ -129,6 +136,11 @@ interface ScopesBody {
 }
 interface VariablesBody {
   readonly variables?: readonly DebugVariable[];
+}
+interface EvaluateBody {
+  readonly result?: string;
+  readonly type?: string;
+  readonly variablesReference?: number;
 }
 interface SetBreakpointsBody {
   readonly breakpoints?: readonly { readonly verified?: boolean; readonly line?: number }[];
@@ -361,6 +373,33 @@ export class DebugSessionManager {
     this.#notify(session);
     await this.#waitForStop(session, signal);
     return session;
+  }
+
+  /** Evaluate one expression in the currently selected stopped frame. */
+  async evaluate(
+    session: DebugSession,
+    expression: string,
+    signal?: AbortSignal,
+  ): Promise<DebugEvaluation> {
+    if (session.status !== "stopped" || session.stop?.frame === undefined) {
+      throw new Error(`Cannot evaluate while session is ${session.status}`);
+    }
+    const trimmed = expression.trim();
+    if (trimmed.length === 0) throw new Error("Debug evaluation requires an expression");
+    const response = await requiredClient(session).request<EvaluateBody>(
+      "evaluate",
+      { expression: trimmed, frameId: session.stop.frame.id, context: "repl" },
+      { signal },
+    );
+    if (typeof response.result !== "string") {
+      throw new Error("Debug adapter returned no evaluation result");
+    }
+    return {
+      expression: trimmed,
+      result: response.result,
+      variablesReference: response.variablesReference ?? 0,
+      ...(response.type === undefined ? {} : { type: response.type }),
+    };
   }
 
   /** Terminate an owned debuggee and remove its session. */
