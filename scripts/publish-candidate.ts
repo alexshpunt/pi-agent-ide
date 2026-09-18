@@ -38,10 +38,29 @@ async function github(route: string, body?: TagRequest, allowMissing = false) {
   });
   if (allowMissing && response.status === 404) return null;
   if (!response.ok) throw new Error(`GitHub ${route}: ${response.status}`);
-  return (await response.json()) as { object: { sha: string; type: string }; sha: string };
+  return (await response.json()) as {
+    object: { sha: string; type: string };
+    sha: string;
+    status?: string;
+    files?: { filename: string }[];
+  };
 }
 const main = await github("git/ref/heads/main");
-if (main?.object.sha !== commit) throw new Error("Main changed while waiting for approval");
+if (main?.object.sha !== commit) {
+  const comparison = await github(`compare/${commit}...${main?.object.sha}`);
+  const releaseInfrastructurePaths = new Set([
+    ".github/workflows/release.yml",
+    "scripts/promote-release.ts",
+    "scripts/publish-candidate.ts",
+  ]);
+  if (
+    comparison?.status !== "ahead" ||
+    !comparison.files?.length ||
+    comparison.files.some(({ filename }) => !releaseInfrastructurePaths.has(filename))
+  ) {
+    throw new Error("Main changed while waiting for approval");
+  }
+}
 const tag = `v${version}`;
 const existing = await github(`git/ref/tags/${tag}`, undefined, true);
 if (existing) {
