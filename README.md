@@ -90,7 +90,7 @@ Selections can come from exact text, anchors, search results, AST matches, or la
 
 </div>
 
-### Run and debug through persistent sessions
+### Run through persistent terminal sessions
 
 The terminal is a first-class cross-platform interface. The agent can run commands, keep interactive sessions and background tasks alive across turns and extension reloads, read retained output, send exact input or named keys, and inspect terminal applications through images and sequences.
 
@@ -99,6 +99,8 @@ The terminal is a first-class cross-platform interface. The agent can run comman
 [![Running and interacting with a persistent terminal session](assets/summary/thumbs/terminal.png)](assets/summary/terminal.png)
 
 </div>
+
+### Debug programs interactively
 
 Debugger sessions use the same resource model. The agent can set breakpoints, inspect stack frames and variables, evaluate expressions, step through execution, and return to a running session later.
 
