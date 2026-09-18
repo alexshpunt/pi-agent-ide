@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.2 — 2026-09-18
+
+### Debugging and terminals
+
+- Let agents evaluate expressions in the selected stopped debugger frame and show the result directly in the debugger UI.
+- Add timed image sequences for live terminal resources, including configurable duration, frame interval, and scale.
+
+### Search and vision
+
+- Render structural AST search results with the same grouped files, match highlighting, context, and compact expansion behavior as ordinary text search, while preserving exact `SEARCH#` references for agents.
+- Route Agent IDE-owned Linux application windows through native Linux capture under WSL instead of treating their PIDs as Windows-host processes.
+
 ## 0.6.1 — 2026-09-17
 
 ### Progressive guidance

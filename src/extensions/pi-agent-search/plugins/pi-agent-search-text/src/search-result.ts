@@ -14,6 +14,7 @@ export interface SearchResultLine {
   readonly text: string;
   readonly matchCount: number;
   readonly ranges: readonly SearchResultRange[];
+  readonly logicalMatchIds?: readonly string[];
 }
 
 export interface SearchResultGroup {
@@ -155,6 +156,7 @@ function isSearchResultFile(value: unknown): value is SearchResultFile {
 
   const lines = value.lines as readonly SearchResultLine[];
   const groups = value.groups;
+  const logicalMatchIds = new Set(lines.flatMap((line) => line.logicalMatchIds ?? []));
   return (
     (groups === undefined ||
       (Array.isArray(groups) &&
@@ -163,7 +165,9 @@ function isSearchResultFile(value: unknown): value is SearchResultFile {
         ))) &&
     (value.uniqueLineCount === undefined || isCount(value.uniqueLineCount)) &&
     (lines.length === 0 ||
-      value.matchCount === lines.reduce((count, line) => count + line.matchCount, 0))
+      (logicalMatchIds.size > 0
+        ? logicalMatchIds.size === value.matchCount
+        : value.matchCount === lines.reduce((count, line) => count + line.matchCount, 0)))
   );
 }
 
@@ -176,6 +180,9 @@ function isSearchResultLine(value: unknown): value is SearchResultLine {
     isCount(value.matchCount) &&
     Array.isArray(value.ranges) &&
     value.ranges.length === value.matchCount &&
+    (value.logicalMatchIds === undefined ||
+      (Array.isArray(value.logicalMatchIds) &&
+        value.logicalMatchIds.every((id) => typeof id === "string"))) &&
     value.ranges.every((range) => isSearchResultRange(range, value.text as string))
   );
 }

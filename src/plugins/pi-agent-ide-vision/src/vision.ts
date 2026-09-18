@@ -45,10 +45,16 @@ export interface ProcessMetadata {
   readonly started?: string;
   readonly owned: boolean;
   readonly source?: string;
+  /** Host process namespace used to select the matching window backend under WSL. */
+  readonly host: "local" | "windows";
 }
 
 export interface CaptureBackend {
-  captureWindow(pid: number, signal?: AbortSignal): Promise<Uint8Array>;
+  captureWindow(
+    pid: number,
+    host: ProcessMetadata["host"],
+    signal?: AbortSignal,
+  ): Promise<Uint8Array>;
   captureDisplay(index: number, signal?: AbortSignal): Promise<Uint8Array>;
   captureUrl(url: URL, signal?: AbortSignal): Promise<Uint8Array>;
 }
@@ -179,6 +185,7 @@ export async function listProcesses(registry: AgentIdeProcessRegistry): Promise<
       command: item.description,
       owned: true,
       source: item.source,
+      host: "local",
     }));
   }
   const { stdout } = await execFileAsync("ps", ["-eo", "pid=,ppid=,lstart=,args="], {
@@ -196,6 +203,7 @@ export async function listProcesses(registry: AgentIdeProcessRegistry): Promise<
         started: match[3],
         command: match[4] ?? "",
         owned: item !== undefined,
+        host: "local" as const,
         ...(item === undefined ? {} : { source: item.source }),
       },
     ];
@@ -240,6 +248,7 @@ async function listWindowsProcesses(): Promise<ProcessMetadata[]> {
           pid: record.Id,
           command: path ?? name,
           owned: false,
+          host: "windows",
           ...(started === undefined ? {} : { started }),
         },
       ];
@@ -362,12 +371,17 @@ export async function selectImage(
   return [await canvas.encode("png")];
 }
 
+/** Selects the Windows-host helper only for Windows process identities discovered under WSL. */
+export function usesWindowsHostWindowCapture(wsl: boolean, host: ProcessMetadata["host"]): boolean {
+  return wsl && host === "windows";
+}
+
 /** Creates the supported local desktop and isolated browser capture backend. */
 export function createCaptureBackend(): CaptureBackend {
   return {
-    async captureWindow(pid, signal) {
+    async captureWindow(pid, host, signal) {
       signal?.throwIfAborted();
-      if (isWsl()) return captureWslWindow(pid, signal);
+      if (usesWindowsHostWindowCapture(isWsl(), host)) return captureWslWindow(pid, signal);
       if (process.platform !== "linux" && process.platform !== "darwin")
         throw new Error(`Window capture is unsupported on ${process.platform}`);
       const { Window } = await import("node-screenshots");

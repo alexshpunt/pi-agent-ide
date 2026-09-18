@@ -14,6 +14,14 @@
     "./search-session": {
       "types": "./src/search-session.ts",
       "default": "./src/search-session.ts"
+    },
+    "./rendering": {
+      "types": "./src/search-renderer.ts",
+      "default": "./src/search-renderer.ts"
+    },
+    "./result": {
+      "types": "./src/search-result.ts",
+      "default": "./src/search-result.ts"
     }
   },
   "dependencies": {

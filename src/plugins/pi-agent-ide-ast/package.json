@@ -39,6 +39,7 @@
     "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",
     "pi-agent-search": "workspace:^",
+    "pi-agent-search-text": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
     "tree-sitter-cpp": "^0.23.4",

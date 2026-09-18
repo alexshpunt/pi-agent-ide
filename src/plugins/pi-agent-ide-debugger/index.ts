@@ -33,7 +33,10 @@ import {
   renderDebugCall,
   renderDebugResult,
 } from "#src/plugins/pi-agent-ide-debugger/src/renderer.js";
-import { debuggerSnapshotFromResult } from "#src/plugins/pi-agent-ide-debugger/src/ui.js";
+import {
+  debuggerEvaluationFromResult,
+  debuggerSnapshotFromResult,
+} from "#src/plugins/pi-agent-ide-debugger/src/ui.js";
 import { debuggerProcessProvider } from "#src/plugins/pi-agent-ide-debugger/src/process-provider.js";
 import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
 
@@ -70,6 +73,7 @@ interface DebugToolDetails {
 import {
   DebugSessionManager,
   renderDebugSession,
+  type DebugEvaluation,
   type DebugSession,
 } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 
@@ -136,9 +140,11 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
       ],
     }),
   ]);
+  const retainedManager = takeReloadResource("debugger") as DebugSessionManager | undefined;
   const manager =
-    (takeReloadResource("debugger") as DebugSessionManager | undefined) ??
-    new DebugSessionManager();
+    retainedManager !== undefined && typeof retainedManager.evaluate === "function"
+      ? retainedManager
+      : new DebugSessionManager();
   const deletedSnapshots = new Map<string, ReturnType<DebugSessionManager["snapshot"]>>();
   const readResolver = createDebugResourceResolver(manager, "debugger-source");
   const editorResolver = createDebugResourceResolver(manager, "debugger-input");
@@ -231,11 +237,19 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
           if (parameters.path !== session.source || parameters.anchor !== undefined) {
             throw new Error("Debug commands target the session resource without an anchor");
           }
-          await executeSessionCommand(manager, session, parameters.text, context.signal);
+          const evaluation = await executeSessionCommand(
+            manager,
+            session,
+            parameters.text,
+            context.signal,
+          );
           return {
             source: session.source,
-            summary: renderDebugSession(session),
-            data: debugActionData(manager, session, parameters.text),
+            summary:
+              evaluation === undefined
+                ? renderDebugSession(session)
+                : `${evaluation.expression} = ${evaluation.result}${evaluation.type === undefined ? "" : ` (${evaluation.type})`}`,
+            data: debugActionData(manager, session, parameters.text, evaluation),
           };
         },
       });
@@ -263,7 +277,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
         },
       });
       api.describe(
-        'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" at an anchor. On the session, insert start, continue, step over, step into, or step out. Delete removes a breakpoint or terminates the session.',
+        'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" at an anchor. On the session, insert start, continue, step over, step into, step out, or evaluate <expression>. Delete removes a breakpoint or terminates the session.',
       );
       for (const tool of ["insert", "delete"] as const) {
         api.addToolRenderer({
@@ -314,7 +328,8 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
           renderResult(result, options, theme) {
             const snapshot = debuggerSnapshotFromResult(result.details);
             if (snapshot === undefined) throw new Error("Debugger result is missing its session");
-            return renderDebugResult(snapshot, options.expanded, theme);
+            const evaluation = debuggerEvaluationFromResult(result.details);
+            return renderDebugResult(snapshot, options.expanded, theme, evaluation);
           },
         });
       }
@@ -465,8 +480,13 @@ async function executeSessionCommand(
   session: DebugSession,
   command: string,
   signal?: AbortSignal,
-): Promise<void> {
-  switch (command.trim().toLowerCase()) {
+): Promise<DebugEvaluation | undefined> {
+  const trimmed = command.trim();
+  const evaluation = /^evaluate\s+(.+)$/isu.exec(trimmed);
+  if (evaluation !== null) {
+    return await manager.evaluate(session, evaluation[1] as string, signal);
+  }
+  switch (trimmed.toLowerCase()) {
     case "start": {
       await manager.start(session, signal);
       return;
@@ -517,6 +537,7 @@ function debugActionData(
   manager: DebugSessionManager,
   session: DebugSession,
   command: string,
+  evaluation?: DebugEvaluation,
 ): Readonly<Record<string, unknown>> {
   return {
     kind: "debug-command",
@@ -529,6 +550,7 @@ function debugActionData(
       verified,
     })),
     ...(session.stop === undefined ? {} : { stop: session.stop }),
+    ...(evaluation === undefined ? {} : { evaluation }),
     snapshot: manager.snapshot(session),
   };
 }

@@ -113,6 +113,19 @@ test.runIf(process.platform !== "win32")(
         assistantMessage(
           [
             toolCall({
+              id: "read-terminal-sequence",
+              name: "read",
+              arguments: {
+                path: "shell:abcdef123456",
+                views: ["sequence:duration=0.2,interval=0.1,scale=0.5"],
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
               id: "delete-terminal",
               name: "delete",
               arguments: { path: "shell:abcdef123456" },
@@ -137,5 +150,9 @@ test.runIf(process.platform !== "win32")(
     expect(image.some((block) => block.type === "image" && block.mimeType === "image/png")).toBe(
       true,
     );
+    const sequence = getToolResultMessage(result, "read-terminal-sequence").content;
+    expect(
+      sequence.filter((block) => block.type === "image" && block.mimeType === "image/png"),
+    ).toHaveLength(3);
   },
 );

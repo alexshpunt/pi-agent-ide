@@ -55,6 +55,7 @@ export interface IdeDiagnosticReadContext extends ToolContext {
   readonly mode?: "snapshot" | "complete";
   readonly signal?: AbortSignal;
 }
+/** Services available while an IDE plugin registers tools and diagnostics. */
 export interface IdePluginApi {
   addTool(tool: IdeTool): void;
   /** Registers background diagnostics shared by notifications and diagnostic reads. */
@@ -79,12 +80,16 @@ export interface IdePluginRegistrationRequest {
 }
 
 export function isIdeCoreReady(value: unknown): value is IdeCoreReady {
-  return isRecord(value) && value.protocol === IDE_PROTOCOL && value.apiVersion === IDE_API_VERSION;
+  return (
+    isUnknownRecord(value) &&
+    value.protocol === IDE_PROTOCOL &&
+    value.apiVersion === IDE_API_VERSION
+  );
 }
 
 export function isIdePlugin(value: unknown): value is IdePlugin {
   return (
-    isRecord(value) &&
+    isUnknownRecord(value) &&
     value.protocol === IDE_PROTOCOL &&
     value.apiVersion === IDE_API_VERSION &&
     typeof value.id === "string" &&
@@ -96,9 +101,10 @@ export function isIdePlugin(value: unknown): value is IdePlugin {
 export function isIdePluginRegistrationRequest(
   value: unknown,
 ): value is IdePluginRegistrationRequest {
-  return isRecord(value) && isIdePlugin(value.plugin) && typeof value.accept === "function";
+  return isUnknownRecord(value) && isIdePlugin(value.plugin) && typeof value.accept === "function";
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** Return whether an unknown value can be inspected as a keyed object. */
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }

@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { afterEach, describe, expect, test } from "vitest";
+import { loadImage } from "@napi-rs/canvas";
 
 import { renderTerminalScreen } from "#src/plugins/pi-agent-ide-terminal/src/screen-image.js";
 import {
@@ -218,6 +219,12 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     );
     expect(await manager.screenLines(session.source)).toContain("screen-ok");
+    const full = await loadImage(image);
+    const scaled = await loadImage(
+      Buffer.from(await renderTerminalScreen(manager, session.source, undefined, 0.5), "base64"),
+    );
+    expect(scaled.width).toBe(Math.round(full.width * 0.5));
+    expect(scaled.height).toBe(Math.round(full.height * 0.5));
   });
 
   test("deletes one process without affecting another", async () => {

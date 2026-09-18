@@ -4,6 +4,7 @@ import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 
 import type {
+  DebugEvaluation,
   DebugSessionSnapshot,
   DebugSessionStatus,
   DebugStop,
@@ -43,8 +44,15 @@ export function renderDebugResult(
   snapshot: DebugSessionSnapshot,
   expanded: boolean,
   theme: DebugTheme,
+  evaluation?: DebugEvaluation,
 ): Component {
-  return new Text(debugResultLines(snapshot, expanded, theme).join("\n"), 0, 0);
+  const lines = debugResultLines(snapshot, expanded, theme);
+  if (evaluation !== undefined) {
+    lines.unshift(
+      `${theme.fg("accent", evaluation.expression)} ${theme.fg("muted", "=")} ${theme.fg("toolOutput", evaluation.result)}${evaluation.type === undefined ? "" : theme.fg("dim", `  ${evaluation.type}`)}`,
+    );
+  }
+  return new Text(lines.join("\n"), 0, 0);
 }
 
 /** Render one compact live session for the below-editor activity widget. */
@@ -122,6 +130,7 @@ function actionLabel(action: string): string {
   if (normalized === "step over") return "↷ step over";
   if (normalized === "step into") return "↓ step into";
   if (normalized === "step out") return "↑ step out";
+  if (normalized.startsWith("evaluate ")) return `◆ ${action.trim().slice("evaluate ".length)}`;
   if (normalized.startsWith("breakpoint ")) return `● add ${normalized}`;
   if (normalized.startsWith("delete-breakpoint ")) {
     return `○ remove breakpoint · ${normalized.slice("delete-breakpoint ".length)}`;

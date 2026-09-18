@@ -33,6 +33,7 @@ export async function renderTerminalScreen(
   manager: TerminalSessionManager,
   source: string,
   rows?: { readonly start: number; readonly count: number },
+  scale = 1,
 ): Promise<string> {
   const session = manager.get(source);
   if (session === undefined) throw new Error(`Unknown terminal session ${source}`);
@@ -40,11 +41,14 @@ export async function renderTerminalScreen(
   const { createCanvas } = await import("@napi-rs/canvas");
   const startRow = Math.max(0, Math.min(session.rows - 1, rows?.start ?? 0));
   const rowCount = Math.max(1, Math.min(session.rows - startRow, rows?.count ?? session.rows));
+  const width = session.cols * CELL_WIDTH + PADDING * 2;
+  const height = rowCount * CELL_HEIGHT + PADDING * 2;
   const canvas = createCanvas(
-    session.cols * CELL_WIDTH + PADDING * 2,
-    rowCount * CELL_HEIGHT + PADDING * 2,
+    Math.max(1, Math.round(width * scale)),
+    Math.max(1, Math.round(height * scale)),
   );
   const context = canvas.getContext("2d");
+  context.scale(scale, scale);
   context.fillStyle = DEFAULT_BACKGROUND;
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.textBaseline = "top";

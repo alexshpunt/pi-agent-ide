@@ -138,7 +138,7 @@ A person can see the agent's edits, diffs, diagnostics, running processes, debug
 
 Built-in debugger recipes cover C, C++, C#, Dart, Elixir, Go, Java, JavaScript, Julia, Kotlin, Lua, PHP, PowerShell, Python, R, Ruby, Rust, shell scripts, Swift, TypeScript, and Zig. Formatting, linting, AST, language-server, and debugger support follows the tools and configuration available in each project.
 
-Windows and WSL are first-class supported environments alongside Linux. Run doctor to see the exact capabilities available on the current machine.
+Windows and WSL are first-class supported environments alongside Linux. Run `/pi-agent-ide-doctor` to see the exact capabilities available on the current machine.
 
 ### Built through data-driven development
 
@@ -184,7 +184,7 @@ Doctor reports the effective project, global, and built-in mappings, their sourc
 
 Doctor shows its report before changing anything. If project evidence points to a different installed tool, it can write a project-only override under `.pi/pi-agent-ide/`. It never changes global or built-in configuration. Native files such as `eslint.config.js`, `.clang-format`, and `pyproject.toml` remain unchanged.
 
-Run doctor again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
+Run `/pi-agent-ide-doctor` again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
 
 ## Customization
 
@@ -208,14 +208,14 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 
 ## Documentation
 
-| Document                                   | Contents                                                             |
-| ------------------------------------------ | -------------------------------------------------------------------- |
-| [Tools and workflow](./docs/tools.md)      | Read, vision, search, editing, anchors, and feedback                 |
-| [Architecture](./docs/architecture.md)     | Module boundaries, protocols, and the umbrella extension             |
-| [Configuration](./docs/configuration.md)   | Run doctor, configure project tools and search, or disable built-ins |
-| [File hooks](./docs/user-hooks.md)         | Inspect, change, or deny reads and edits                             |
-| [Writing extensions](./docs/extensions.md) | Add resolvers, views, anchors, search backends, and IDE plugins      |
-| [Development](./docs/development.md)       | Work from a checkout, test, and run modular mode                     |
+| Document                                   | Contents                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ |
+| [Tools and workflow](./docs/tools.md)      | Read, vision, search, editing, anchors, and feedback                                 |
+| [Architecture](./docs/architecture.md)     | Module boundaries, protocols, and the umbrella extension                             |
+| [Configuration](./docs/configuration.md)   | Run `/pi-agent-ide-doctor`, configure project tools and search, or disable built-ins |
+| [File hooks](./docs/user-hooks.md)         | Inspect, change, or deny reads and edits                                             |
+| [Writing extensions](./docs/extensions.md) | Add resolvers, views, anchors, search backends, and IDE plugins                      |
+| [Development](./docs/development.md)       | Work from a checkout, test, and run modular mode                                     |
 
 ## License
 

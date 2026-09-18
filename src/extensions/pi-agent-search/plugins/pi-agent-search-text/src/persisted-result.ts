@@ -1,7 +1,9 @@
 import { storeText, restoreText, type StoredText } from "pi-agent-text";
 import type { SearchToolDetails, SearchResultFile, SearchResultRange } from "./search-result.js";
 
-type StoredLine = readonly [number, StoredText, readonly SearchResultRange[]];
+type StoredLine =
+  | readonly [number, StoredText, readonly SearchResultRange[]]
+  | readonly [number, StoredText, readonly SearchResultRange[], readonly string[]];
 interface StoredSearchDetails extends Omit<SearchToolDetails, "files"> {
   readonly storedFiles: readonly (Omit<SearchResultFile, "lines"> & {
     readonly lines: readonly StoredLine[];
@@ -24,11 +26,10 @@ export function compactSearchDetails(
     ...rest,
     storedFiles: files.map(({ lines, ...file }) => ({
       ...file,
-      lines: lines.map((line): StoredLine => [
-        line.lineNumber,
-        storeText(line.text, source),
-        line.ranges,
-      ]),
+      lines: lines.map((line): StoredLine => {
+        const stored = [line.lineNumber, storeText(line.text, source), line.ranges] as const;
+        return line.logicalMatchIds === undefined ? stored : [...stored, line.logicalMatchIds];
+      }),
     })),
   };
 }
@@ -45,11 +46,12 @@ export function restoreSearchDetails(
     ...rest,
     files: storedFiles.map(({ lines, ...file }) => ({
       ...file,
-      lines: lines.map(([lineNumber, text, ranges]) => ({
+      lines: lines.map(([lineNumber, text, ranges, logicalMatchIds]) => ({
         lineNumber,
         text: restoreText(text, source),
         ranges,
         matchCount: ranges.length,
+        ...(logicalMatchIds === undefined ? {} : { logicalMatchIds }),
       })),
     })),
   };
