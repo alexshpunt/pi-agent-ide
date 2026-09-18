@@ -73,6 +73,7 @@ jobs:
       harness_version: ${{ needs.resolve.outputs.harness_version }}
       runtime_version: ""
       provider: openai-codex
+      policy_sha: de8142e18152a40f571f816a8f3776efa0294c69
     secrets:
       pi_auth_json: ${{ secrets.PI_AUTH_JSON }}
 
