@@ -5,13 +5,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Published pi-agent-ide version
-        required: true
+        description: Published pi-agent-ide version or latest
+        required: false
+        default: latest
         type: string
   workflow_call:
     inputs:
       version:
-        required: true
+        required: false
+        default: latest
         type: string
     secrets:
       PI_AUTH_JSON:
@@ -24,8 +26,36 @@ permissions:
   actions: read
 
 jobs:
+  resolve:
+    name: Resolve published versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      agent_version: ${{ steps.versions.outputs.agent_version }}
+      harness_version: ${{ steps.versions.outputs.harness_version }}
+    steps:
+      - name: Resolve npm tags to exact versions
+        id: versions
+        env:
+          HARNESS_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          agent_version="$(npm view '@earendil-works/pi-coding-agent@latest' version)"
+          if [[ "$HARNESS_VERSION" == "latest" ]]; then
+            harness_version="$(npm view 'pi-agent-ide@latest' version)"
+          else
+            harness_version="$(npm view "pi-agent-ide@${HARNESS_VERSION}" version)"
+          fi
+          semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          [[ "$agent_version" =~ $semver ]]
+          [[ "$harness_version" =~ $semver ]]
+          echo "agent_version=$agent_version" >> "$GITHUB_OUTPUT"
+          echo "harness_version=$harness_version" >> "$GITHUB_OUTPUT"
+          echo "Pi $agent_version; Pi Agent IDE $harness_version" >> "$GITHUB_STEP_SUMMARY"
+
   benchmark:
     name: Run official benchmark
+    needs: resolve
     permissions:
       actions: read
       artifact-metadata: write
@@ -39,8 +69,8 @@ jobs:
       task: ""
       concurrency: "10"
       adapter: pi-agent-ide
-      agent_version: "0.85.1"
-      harness_version: ${{ inputs.version }}
+      agent_version: ${{ needs.resolve.outputs.agent_version }}
+      harness_version: ${{ needs.resolve.outputs.harness_version }}
       runtime_version: ""
       provider: openai-codex
     secrets:
