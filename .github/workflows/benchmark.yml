@@ -62,7 +62,7 @@ jobs:
       attestations: write
       contents: read
       id-token: write
-    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@de8142e18152a40f571f816a8f3776efa0294c69
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@133dbdb59a1117a64b32a3fc7006addbc161ed66
     with:
       model: openai-codex/gpt-5.6-luna
       thinking: low
@@ -73,7 +73,7 @@ jobs:
       harness_version: ${{ needs.resolve.outputs.harness_version }}
       runtime_version: ""
       provider: openai-codex
-      policy_sha: f37197c10859b49080a48c56aa514f0efbae280f
+      policy_sha: 456b6c22cc2f7cfd2e03ea0461d1bd55d4445d0d
     secrets:
       pi_auth_json: ${{ secrets.PI_AUTH_JSON }}
 
@@ -83,12 +83,12 @@ jobs:
     permissions:
       actions: read
       contents: read
-    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-submit.yml@de8142e18152a40f571f816a8f3776efa0294c69
+    uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-submit.yml@133dbdb59a1117a64b32a3fc7006addbc161ed66
     with:
       producer_run_id: ${{ github.run_id }}
       producer_attempt: ${{ github.run_attempt }}
-      signer_sha: de8142e18152a40f571f816a8f3776efa0294c69
-      policy_sha: f37197c10859b49080a48c56aa514f0efbae280f
+      signer_sha: 133dbdb59a1117a64b32a3fc7006addbc161ed66
+      policy_sha: 456b6c22cc2f7cfd2e03ea0461d1bd55d4445d0d
       dataset_repository: alexshpunt/explicit-edit-benchmark
     secrets:
       hf_token: ${{ secrets.HF_TOKEN }}
