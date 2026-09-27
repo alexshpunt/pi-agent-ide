@@ -632,8 +632,8 @@ test("inserts into every file selected by a complete search anchor", async () =>
     }).run("Search each needle, then insert punctuation after every exact match");
 
     expect(getToolExecution(result, "insert-search-all").isError).toBe(false);
-    await expect(readFile(first, "utf8")).resolves.toBe("needle first\n!\n");
-    await expect(readFile(second, "utf8")).resolves.toBe("needle second\n!\n");
+    await expect(readFile(first, "utf8")).resolves.toBe("needle first\n!");
+    await expect(readFile(second, "utf8")).resolves.toBe("needle second\n!");
   });
 }, 180_000);
 
@@ -714,7 +714,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
 
     expect(getToolExecution(copyResult, "copy-search-range").isError).toBe(false);
     await expect(readFile(source, "utf8")).resolves.toBe("copy me\n");
-    await expect(readFile(target, "utf8")).resolves.toBe("target\ncopy me\n");
+    await expect(readFile(target, "utf8")).resolves.toBe("target\ncopy me");
     await writeFile(source, "move me\n", "utf8");
     await writeFile(target, "target\n", "utf8");
     const moveResult = await new PiIntegrationTest({
@@ -757,7 +757,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
 
     expect(getToolExecution(moveResult, "move-search-range").isError).toBe(false);
     await expect(readFile(source, "utf8")).resolves.toBe("\n");
-    await expect(readFile(target, "utf8")).resolves.toBe("target\nmove me\n");
+    await expect(readFile(target, "utf8")).resolves.toBe("target\nmove me");
   });
 }, 180_000);
 

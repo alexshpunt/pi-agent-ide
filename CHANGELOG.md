@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3 — 2026-09-27
+
+### Editing
+
+- Keep explicitly supplied trailing newlines when appending after an unfinished final line, and reject empty inserts without changing the file.
+- Add optional blank-line separation for standalone insert and linewise Apply so separate blocks do not join neighboring paragraphs.
+
 ## 0.6.2 — 2026-09-18
 
 ### Debugging and terminals

@@ -172,6 +172,7 @@ export function insertionAfterAnchor(
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
   insert: string,
+  separation: "line" | "blank-line" = "line",
 ): readonly [string, { readonly from: number; readonly to: number; readonly insert: string }] {
   const span = singleAnchorSpan(context, anchors, field, true);
   const normalizedInsert = targetText(context, span.source, insert);
@@ -179,7 +180,7 @@ export function insertionAfterAnchor(
   const lineNumber = span.linewiseEndLine ?? lineAnchor(anchors, field).lineNumber;
   return [
     span.source,
-    context.documentFor(span.source).insertAfterLine(lineNumber, normalizedInsert),
+    context.documentFor(span.source).insertAfterLine(lineNumber, normalizedInsert, separation),
   ];
 }
 
@@ -189,6 +190,7 @@ export function insertionBeforeAnchor(
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
   insert: string,
+  separation: "line" | "blank-line" = "line",
 ): readonly [string, { readonly from: number; readonly to: number; readonly insert: string }] {
   const span = singleAnchorSpan(context, anchors, field, true);
   const normalizedInsert = targetText(context, span.source, insert);
@@ -196,7 +198,7 @@ export function insertionBeforeAnchor(
   const lineNumber = span.linewiseStartLine ?? lineAnchor(anchors, field).lineNumber;
   return [
     span.source,
-    context.documentFor(span.source).insertBeforeLine(lineNumber, normalizedInsert),
+    context.documentFor(span.source).insertBeforeLine(lineNumber, normalizedInsert, separation),
   ];
 }
 
@@ -256,6 +258,7 @@ export function insertionChanges(
   selections: ReadonlyMap<string, TextSelectionAnchor>,
   insert: string,
   before = false,
+  separation: "line" | "blank-line" = "line",
 ): ReadonlyMap<
   string,
   readonly { readonly from: number; readonly to: number; readonly insert: string }[]
@@ -274,8 +277,8 @@ export function insertionChanges(
         const document = context.documentFor(source);
         const normalizedInsert = targetText(context, source, insert);
         return before
-          ? document.insertBeforeLine(line, normalizedInsert)
-          : document.insertAfterLine(line, normalizedInsert);
+          ? document.insertBeforeLine(line, normalizedInsert, separation)
+          : document.insertAfterLine(line, normalizedInsert, separation);
       }),
     ]),
   );

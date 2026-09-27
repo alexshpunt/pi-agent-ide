@@ -24,6 +24,8 @@ export interface TextChangeResult {
   readonly changes: readonly AppliedTextChange[];
 }
 
+export type LineSeparation = "line" | "blank-line";
+
 export class TextChangeDocument {
   readonly #lineStarts: readonly number[];
   readonly #separator: "\n" | "\r\n";
@@ -85,18 +87,34 @@ export class TextChangeDocument {
     return { ...range, insert: "" };
   }
 
-  public insertBeforeLine(lineNumber: number, text: string): TextChange {
+  public insertBeforeLine(
+    lineNumber: number,
+    text: string,
+    separation: LineSeparation = "line",
+  ): TextChange {
     this.#assertLine(lineNumber);
     const from = requiredValue(this.#lineStarts[lineNumber - 1]);
-    return { from, to: from, insert: this.#withTrailingSeparator(text) };
+    return {
+      from,
+      to: from,
+      insert: this.#lineInsertion(from, text, separation, from < this.content.length),
+    };
   }
 
-  public insertAfterLine(lineNumber: number, text: string): TextChange {
+  public insertAfterLine(
+    lineNumber: number,
+    text: string,
+    separation: LineSeparation = "line",
+  ): TextChange {
     this.#assertLine(lineNumber);
     const nextLine = this.#lineStarts[lineNumber];
 
     if (nextLine !== undefined) {
-      return { from: nextLine, to: nextLine, insert: this.#withTrailingSeparator(text) };
+      return {
+        from: nextLine,
+        to: nextLine,
+        insert: this.#lineInsertion(nextLine, text, separation, nextLine < this.content.length),
+      };
     }
 
     const prefix =
@@ -104,7 +122,7 @@ export class TextChangeDocument {
     return {
       from: this.content.length,
       to: this.content.length,
-      insert: prefix + removeTrailingLineBreak(text),
+      insert: this.#lineInsertion(this.content.length, text, separation, false, prefix),
     };
   }
 
@@ -119,8 +137,35 @@ export class TextChangeDocument {
       : text;
   }
 
-  #withTrailingSeparator(text: string): string {
-    return endsWithLineBreak(text) ? text : text + this.#separator;
+  #lineInsertion(
+    from: number,
+    text: string,
+    separation: LineSeparation,
+    following: boolean,
+    prefix = "",
+  ): string {
+    if (text.length === 0) throw new Error("Insert text must not be empty.");
+    if (separation === "blank-line") {
+      if (
+        from > 0 &&
+        !this.content.slice(0, from).endsWith(this.#separator + this.#separator) &&
+        !text.startsWith(this.#separator)
+      ) {
+        prefix += this.#separator;
+      }
+      if (
+        following &&
+        !text.endsWith(this.#separator + this.#separator) &&
+        !this.content.slice(from).startsWith(this.#separator)
+      ) {
+        return (
+          prefix +
+          text +
+          (endsWithLineBreak(text) ? this.#separator : this.#separator + this.#separator)
+        );
+      }
+    }
+    return prefix + (following && !endsWithLineBreak(text) ? text + this.#separator : text);
   }
 
   #offsetAt(lineNumber: number, column: number): number {
@@ -240,10 +285,6 @@ function endsWithLineBreak(text: string): boolean {
 
 function lineBreakOf(text: string): "\n" | "\r\n" | undefined {
   return text.endsWith("\r\n") ? "\r\n" : text.endsWith("\n") ? "\n" : undefined;
-}
-
-function removeTrailingLineBreak(text: string): string {
-  return text.replace(/(?:\r\n|\n)$/u, "");
 }
 
 function previousLineBreakStart(text: string, offset: number): number {

@@ -170,7 +170,9 @@ function guestBindings(enabledOperations: readonly ApplyOperation[]): string {
       const resolved = invoke("editorResolve", {snapshot: {id: document.id, source: document.source, content: document.content}, query: target});
       return selectionSet(document, resolved.selections, {kind: "exact", query: target, warning: resolved.warning});
     };
-    const stage = (document, target, text, edge) => {
+    const stage = (document, target, text, edge, options = {}) => {
+      if (edge !== undefined && text.length === 0) throw new Error("Insert text must not be empty.");
+      if (options.separation !== undefined && options.separation !== "line" && options.separation !== "blank-line") throw new Error("Invalid separation mode.");
       const selected = targetSet(document, target);
       if (!Array.isArray(selected) || selected.document !== document.id) throw new Error("SelectionSet belongs to another file");
       if (selected.generation !== document.generation) throw Object.assign(new Error("SelectionSet belongs to a stale snapshot"), {code:"STALE_SELECTION"});
@@ -179,10 +181,17 @@ function guestBindings(enabledOperations: readonly ApplyOperation[]): string {
         const point = edge === "before" ? range.from : edge === "after" ? range.to : undefined;
         let insert = text;
         if (point !== undefined && range.linewise === true) {
-          const ending = /(?:\\r\\n|\\r|\\n)$/u.exec(range.text)?.[0];
-          const separator = ending ?? (document.content.includes("\\r\\n") ? "\\r\\n" : "\\n");
-          if (edge === "after" && ending === undefined) insert = separator + insert;
-          else if (!/(?:\\r\\n|\\r|\\n)$/u.test(insert)) insert += separator;
+          const separator = document.content.includes("\\r\\n") ? "\\r\\n" : "\\n";
+          const before = document.content.slice(0, point);
+          const after = document.content.slice(point);
+          const prefix = edge === "after" && before.length > 0 && !before.endsWith("\\n") ? separator : "";
+          const following = after.length > 0;
+          insert = prefix + insert;
+          if (options.separation === "blank-line") {
+            if (before.length > 0 && !before.endsWith(separator + separator) && !insert.slice(prefix.length).startsWith(separator)) insert = separator + insert;
+            if (following && !insert.endsWith(separator + separator) && !after.startsWith(separator)) insert += insert.endsWith(separator) ? separator : separator + separator;
+          }
+          if (following && !insert.endsWith("\\n")) insert += separator;
         }
         operations.push({kind: "replace", selection: point === undefined ? range : selection(document, point, point), text: insert});
       }
@@ -196,10 +205,10 @@ function guestBindings(enabledOperations: readonly ApplyOperation[]): string {
       if (empty !== undefined) { operations.push({kind:"warning", document:empty.document, query:empty.provenance?.query, warning:empty.provenance?.warning}); return; }
       operations.push({kind, sources:[...source], destinations:[...destination], text:source.map((item) => item.text).join("")});
     };
-    const stageSet = (target, text, edge) => {
+    const stageSet = (target, text, edge, options) => {
       const document = snapshots.get(target?.document);
       if (document === undefined) throw selectionError("STALE_SELECTION", "SelectionSet belongs to a stale or unopened snapshot");
-      stage(document, target, text, edge);
+      stage(document, target, text, edge, options);
     };
     const refreshSnapshots = (value) => {
       for (const refreshed of value?.snapshots ?? []) {
@@ -326,8 +335,8 @@ function guestBindings(enabledOperations: readonly ApplyOperation[]): string {
         after: (set) => { assertCurrent(document); const selected = assertSet(document, set); return selectionSet(document, selected.map((item) => ({from: item.to, to: item.to, linewise: item.linewise === true})), {kind: "after", source: selected.provenance}); },
         replace: (target, text) => { assertCurrent(document); stage(document, target, String(text)); },
         remove: (target) => { assertCurrent(document); stage(document, target, ""); },
-        insertBefore: (target, text) => { assertCurrent(document); stage(document, target, String(text), "before"); },
-        insertAfter: (target, text) => { assertCurrent(document); stage(document, target, String(text), "after"); },
+        insertBefore: (target, text, options) => { assertCurrent(document); stage(document, target, String(text), "before", options); },
+        insertAfter: (target, text, options) => { assertCurrent(document); stage(document, target, String(text), "after", options); },
         flush: () => flushDocument(document),
         delete: () => { assertCurrent(document); operations.push({kind: "delete", path: document.source}); },
       };
@@ -342,8 +351,8 @@ function guestBindings(enabledOperations: readonly ApplyOperation[]): string {
       moveFile: (path, target, options = {}) => operations.push({kind: "move", path, target, overwrite: options.overwrite === true}),
       replace: (target, text) => stageSet(target, String(text)),
       remove: (target) => stageSet(target, ""),
-      insertBefore: (target, text) => stageSet(target, String(text), "before"),
-      insertAfter: (target, text) => stageSet(target, String(text), "after"),
+      insertBefore: (target, text, options) => stageSet(target, String(text), "before", options),
+      insertAfter: (target, text, options) => stageSet(target, String(text), "after", options),
       copy: (source, destination) => stageTransfer("text-copy", source, destination),
       move: (source, destination) => stageTransfer("text-move", source, destination),
       flush: () => {

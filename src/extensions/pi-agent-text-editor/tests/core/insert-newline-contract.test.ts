@@ -16,9 +16,9 @@ for (const separator of ["\n", "\r\n"]) {
           if (before) {
             expected = `FIRST${separator}${normalized}${normalized.endsWith(separator) ? "" : separator}ANCHOR${terminated ? separator : ""}`;
           } else if (terminated) {
-            expected = `${source}${normalized}${normalized.endsWith(separator) ? "" : separator}`;
+            expected = `${source}${normalized}`;
           } else {
-            expected = `${source}${separator}${normalized.endsWith(separator) ? normalized.slice(0, -separator.length) : normalized}`;
+            expected = `${source}${separator}${normalized}`;
           }
           expect(applyTextChanges(source, [change]).content).toBe(expected);
         });

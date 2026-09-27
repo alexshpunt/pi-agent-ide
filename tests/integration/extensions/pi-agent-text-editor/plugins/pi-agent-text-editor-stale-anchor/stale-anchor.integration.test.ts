@@ -56,18 +56,19 @@ async function runInsert(directory: string, callId: string, anchor: string) {
   }).run("Insert text");
 }
 
-const staleArgumentsJson = '{"path":"subject.txt","anchor":"1#AAAA","text":"inserted"}';
+const staleArgumentsJson = '{"path":"subject.txt","text":"inserted","anchor":"1#AAAA"}';
 const largeStaleText = Array.from(
   { length: 12 },
   (_, index) => `stale streamed line ${String(index + 1).padStart(2, "0")}`,
 ).join("\n");
-const largeStaleArgumentsJson = `{"anchor":"1#AAAA","path":"subject.txt","text":${JSON.stringify(largeStaleText)}}`;
+const largeStaleArgumentsJson = `{"path":"subject.txt","text":${JSON.stringify(largeStaleText)},"anchor":"1#AAAA"}`;
 const largeStaleChunks: ChunkSpec = {
   kind: "explicit",
   chunks: [
-    '{"',
-    'anchor":"1#AAAA","path":"subject.txt",',
-    `"text":${JSON.stringify(largeStaleText)}}`,
+    '{"path":"subject.txt","text":',
+    `${JSON.stringify(largeStaleText)},`,
+    '"anchor":"1#AAAA"',
+    "}",
   ],
 };
 const staleDeliveries: readonly { readonly name: string; readonly chunks: ChunkSpec }[] = [
@@ -75,7 +76,7 @@ const staleDeliveries: readonly { readonly name: string; readonly chunks: ChunkS
     name: "while arguments are still streaming",
     chunks: {
       kind: "explicit",
-      chunks: ['{"path":"subject.txt","anchor":"1#AAAA",', '"text":"inserted"}'],
+      chunks: ['{"path":"subject.txt","text":"inserted",', '"anchor":"1#AAAA"', "}"],
     },
   },
   {
@@ -132,7 +133,7 @@ function toolCallDeltaCount(
     throw new Error("This scenario requires explicit chunks");
   }
 
-  const expected = new Set(chunks.chunks);
+  const expected = new Set(chunks.chunks.filter((chunk) => chunk.includes("1#AAAA")));
   return result.traceEvents.filter((trace) => {
     if (
       trace.type !== "message_update" ||
@@ -264,7 +265,7 @@ describe("pi-agent-text-editor stale anchor", () => {
       expect(largeBlockedResult).toContain("1#BE76");
       expect(largeBlockedResult).not.toContain("Validation failed");
       expect(largeBlockedResult).not.toContain("Received arguments");
-      expect(toolCallDeltaCount(result, largeStaleChunks)).toBe(2);
+      expect(toolCallDeltaCount(result, largeStaleChunks)).toBe(1);
       expect(getToolCallNames(result).filter((tool) => tool === "insert")).toEqual([
         "insert",
         "insert",
