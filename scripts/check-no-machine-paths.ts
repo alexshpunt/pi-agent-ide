@@ -32,6 +32,7 @@ const projectSkillPrefixes = [
   ".pi/skills/design-terminal-ui/",
   ".pi/skills/export-agent-interface/",
   ".pi/skills/publish-pi-agent-ide/",
+  ".pi/skills/testing-pi-agent-ide/",
   ".pi/skills/write-agent-tool-prompts/",
 ];
 

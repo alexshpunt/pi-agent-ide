@@ -54,7 +54,7 @@ test("batched receipts describe successful operations without counting rejected 
       ],
     }).run("Apply the supplied independent edits.");
     expect(await readFile(path.join(cwd, "example.txt"), "utf8")).toBe(
-      "updated\nsecond\nthird\nfourth\n",
+      "updated\nsecond\nthird\nfourth",
     );
     expect(getToolExecution(result, "rejected").isError).toBe(true);
     for (const operation of ["replace", "insert"]) {

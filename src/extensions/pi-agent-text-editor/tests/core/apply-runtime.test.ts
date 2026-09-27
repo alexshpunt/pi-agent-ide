@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import { requiredValue } from "pi-agent-invariant";
 import { executeApplySource, serializeApplyError } from "#src/core/apply/runtime.js";
 
+import { TextChangeDocument, applyTextChanges } from "#src/core/text-change-engine.js";
 function snapshot(id: string, content: string) {
   return { id, source: `/tmp/${id}.txt`, content, lines: [] };
 }
@@ -770,4 +771,71 @@ test("synchronous bridge timeout aborts host work", async () => {
     ),
   ).rejects.toBeInstanceOf(Error);
   expect(aborted).toBe(true);
+});
+
+for (const separator of ["\n", "\r\n"]) {
+  for (const [source, payload, before, mode, expected] of [
+    ["A", "X", false, "line", "A\nX"],
+    ["A", "X\n", false, "line", "A\nX\n"],
+    ["A", "X\n\n", false, "line", "A\nX\n\n"],
+    ["P\nA", "X", false, "line", "P\nA\nX"],
+    ["P\nA", "X\n", false, "line", "P\nA\nX\n"],
+    ["P\nA", "X\n\n", false, "line", "P\nA\nX\n\n"],
+    ["P\nA", "X", false, "blank-line", "P\nA\n\nX"],
+    ["A\n", "X", false, "blank-line", "A\n\nX"],
+    ["A\nB", "X\n\n", false, "blank-line", "A\n\nX\n\nB"],
+    ["A\n\n\nB", "X", false, "blank-line", "A\n\nX\n\n\nB"],
+    ["A\nB", "X", false, "blank-line", "A\n\nX\n\nB"],
+    ["A\n\nB", "X", false, "blank-line", "A\n\nX\n\nB"],
+    ["A\nB", "X", true, "blank-line", "X\n\nA\nB"],
+    ["A", "X", false, "blank-line", "A\n\nX"],
+    ["A\nB", "\n", false, "line", "A\n\nB"],
+  ] as const) {
+    if (source === "A" && separator === "\r\n") continue;
+    test(`parity ${JSON.stringify({ separator, source, payload, before, mode })}`, async () => {
+      const convert = (text: string) => text.replace(/\n/g, separator);
+      const content = convert(source);
+      const document = new TextChangeDocument(content);
+      const change = before
+        ? document.insertBeforeLine(1, convert(payload), mode)
+        : document.insertAfterLine(source === "P\nA" ? 2 : 1, convert(payload), mode);
+      const standalone = applyTextChanges(content, [change]).content;
+      const operations: { selection: { from: number; to: number }; text: string }[] = [];
+      await executeApplySource(
+        `const file = open("sample.txt"); file.insert${before ? "Before" : "After"}(file.line(${source === "P\nA" ? 2 : 1}), ${JSON.stringify(convert(payload))}, {separation: ${JSON.stringify(mode)}});`,
+        {
+          async execute(operation, args) {
+            if (operation === "editorOpen") return snapshot("sample", content);
+            if (operation === "editorApply") {
+              operations.push(...(args as { operations: typeof operations }).operations);
+              return { snapshots: [] };
+            }
+            return null;
+          },
+          async result() {},
+        },
+      );
+      const applied = requiredValue(operations[0]);
+      const actual =
+        content.slice(0, applied.selection.from) +
+        applied.text +
+        content.slice(applied.selection.to);
+      expect(standalone).toBe(convert(expected));
+      expect(actual).toBe(standalone);
+    });
+  }
+}
+
+test("empty linewise insert is rejected but a newline payload is accepted", async () => {
+  const document = new TextChangeDocument("A\nB");
+  expect(() => document.insertBeforeLine(1, "")).toThrow("empty");
+  expect(() => document.insertAfterLine(1, "")).toThrow("empty");
+  await expect(
+    executeApplySource('const file = open("sample.txt"); file.insertAfter(file.line(1), "");', {
+      async execute(operation) {
+        return operation === "editorOpen" ? snapshot("sample", "A\nB") : null;
+      },
+      async result() {},
+    }),
+  ).rejects.toThrow("empty");
 });

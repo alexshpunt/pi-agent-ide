@@ -204,7 +204,7 @@ Use them to insert text immediately before each selected range.
 insertBefore(file.linesOf(file.find("function run")), "// Entry point\n");
 ```
 
-Effect: keeps the selected text and inserts before it. For linewise selections, Apply supplies the needed line boundary.
+Effect: keeps the selected text and inserts before it. For linewise selections, Apply supplies the needed line boundary. Pass `{ separation: "blank-line" }` as a third argument to add only missing blank lines around a separate block; the default is `"line"`. An empty insert is rejected.
 
 ### `insertAfter(selection, text)` and `file.insertAfter(target, text)`
 

@@ -78,7 +78,7 @@ describe("AST scope anchors through text editor tools", () => {
         end: first.endScopeAnchor.value,
         targetStart: second.endScopeAnchor.value,
       }),
-      [...lines, ...firstFunction].join("\n"),
+      [...lines, ...firstFunction, ""].join("\n"),
     );
   });
 
@@ -91,7 +91,7 @@ describe("AST scope anchors through text editor tools", () => {
         end: first.endScopeAnchor.value,
         targetStart: second.endScopeAnchor.value,
       }),
-      ["", ...secondFunction, ...firstFunction].join("\n"),
+      ["", ...secondFunction, ...firstFunction, ""].join("\n"),
     );
   });
 });

@@ -85,7 +85,7 @@ describe("line-hash anchors through text editor tools", () => {
       "copy",
       { start, end, targetStart: target },
       [start, end, target],
-      ["alpha", "bravo", "charlie", "delta", "echo", "bravo", "charlie"].join("\n"),
+      ["alpha", "bravo", "charlie", "delta", "echo", "bravo", "charlie", ""].join("\n"),
     );
   });
 
@@ -98,7 +98,7 @@ describe("line-hash anchors through text editor tools", () => {
       "move",
       { start, end, targetStart: target },
       [start, end, target],
-      ["alpha", "delta", "echo", "bravo", "charlie"].join("\n"),
+      ["alpha", "delta", "echo", "bravo", "charlie", ""].join("\n"),
     );
   });
 });
@@ -137,7 +137,7 @@ async function runLineHashScenario(
     expect(finalState).toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
     expect(finalState).not.toMatch(/^[+ -]\|/mu);
 
-    for (const [index, line] of expectedContent.split("\n").entries()) {
+    for (const [index, line] of expectedContent.replace(/\n$/u, "").split("\n").entries()) {
       expect(finalState).toContain(`${createLineHashAnchor(index + 1, line).value}|${line}`);
     }
     await expect(readFile(file, "utf8")).resolves.toBe(expectedContent);

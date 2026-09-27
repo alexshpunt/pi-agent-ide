@@ -912,10 +912,15 @@ describe("text mutation renderer", () => {
               toolCall({
                 id: "blocked-stale-anchor",
                 name: "insert",
-                arguments: {
-                  path: "blocked-stale.txt",
-                  anchor: "1#AAAA",
-                  text: "content that must never be rendered",
+                argumentsJson:
+                  '{"path":"blocked-stale.txt","text":"content that must never be rendered","anchor":"1#AAAA"}',
+                chunks: {
+                  kind: "explicit",
+                  chunks: [
+                    '{"path":"blocked-stale.txt","text":"content that must never be rendered",',
+                    '"anchor":"1#AAAA"',
+                    "}",
+                  ],
                 },
               }),
             ],

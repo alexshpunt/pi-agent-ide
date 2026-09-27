@@ -112,9 +112,19 @@ describe("text change document", () => {
     const range = document.lineRange(2, 2);
     const changes = [document.deleteLines(2, 2), document.insertAfterLine(4, document.text(range))];
 
-    expect(applyTextChanges(document.content, changes).content).toBe("one\nthree\nfour\ntwo");
+    expect(applyTextChanges(document.content, changes).content).toBe("one\nthree\nfour\ntwo\n");
   });
 
+  test("copy and move preserve copied trailing line breaks at an unterminated EOF", () => {
+    const source = "first\nblock\nlast";
+    const document = new TextChangeDocument(source);
+    const copied = document.text(document.lineRange(2, 2));
+    const addition = document.insertAfterLine(3, copied);
+    expect(applyTextChanges(source, [addition]).content).toBe("first\nblock\nlast\nblock\n");
+    expect(applyTextChanges(source, [document.deleteLines(2, 2), addition]).content).toBe(
+      "first\nlast\nblock\n",
+    );
+  });
   test("rejects a move whose target is inside the removed range", () => {
     const document = new TextChangeDocument("one\ntwo\nthree");
     expect(() =>

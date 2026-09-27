@@ -25,9 +25,16 @@ export const insertSchema = Type.Object(
       }),
     ),
     text: Type.String({
+      minLength: 1,
       description:
-        "New text only. The tool supplies the line boundary; do not prefix a newline just to start a new line. For example, 'NEW' inserts one line, while '\\nNEW' intentionally adds a blank line before it. A missing trailing newline is supplied before following text; additional newlines remain intentional blank lines. When appending after an unterminated final line, the tool supplies the separator before the new text and removes one trailing newline from the payload. Payload line endings follow the destination file's LF/CRLF style.",
+        "New text only. The tool supplies the line boundary; do not prefix a newline just to start a new line. For example, 'NEW' inserts one line, while '\\nNEW' intentionally adds a blank line before it. A missing trailing newline is supplied before following text; additional newlines remain intentional blank lines. When appending after an unterminated final line, the tool supplies the separator before the new text without removing trailing newlines from the payload. Payload line endings follow the destination file's LF/CRLF style.",
     }),
+    separation: Type.Optional(
+      Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
+        description:
+          "Defaults to line. Use blank-line to add only missing blank lines between the inserted block and existing neighboring content; explicit payload newlines remain intact.",
+      }),
+    ),
     before: Type.Optional(
       Type.Boolean({
         description:
@@ -42,6 +49,7 @@ interface InsertParameters {
   readonly path?: string;
   readonly anchor?: string;
   readonly text: string;
+  readonly separation?: "line" | "blank-line";
   readonly before?: boolean;
 }
 
@@ -62,11 +70,18 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
     },
   ],
   mutate: async (context, parameters: InsertParameters) => {
+    if (parameters.text.length === 0) throw new Error("Insert text must not be empty.");
     const anchors = await context.resolveAnchors("anchor");
     const selections = textSelections(anchors, "anchor");
 
     if (selections !== undefined) {
-      const changes = insertionChanges(context, selections, parameters.text, parameters.before);
+      const changes = insertionChanges(
+        context,
+        selections,
+        parameters.text,
+        parameters.before,
+        parameters.separation,
+      );
       return {
         edits: new Map(
           [...changes].map(([source, sourceChanges]) => [
@@ -78,7 +93,13 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
     }
 
     const insertion = parameters.before === true ? insertionBeforeAnchor : insertionAfterAnchor;
-    const [source, change] = insertion(context, anchors, "anchor", parameters.text);
+    const [source, change] = insertion(
+      context,
+      anchors,
+      "anchor",
+      parameters.text,
+      parameters.separation,
+    );
     return {
       edits: new Map([[source, { changes: [change], action: "edited" }]]),
     };

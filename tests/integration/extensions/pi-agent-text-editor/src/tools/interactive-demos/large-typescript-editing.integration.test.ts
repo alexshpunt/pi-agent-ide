@@ -288,7 +288,8 @@ describe("interactive text editor demos", () => {
         exportedUtilities,
         demoFile,
       );
-      const expected = applyFinalBatch(batchSource);
+      // The final insert does not request a trailing newline at EOF.
+      const expected = applyFinalBatch(batchSource).slice(0, -1);
       const callIds = [
         "demo-write-large-file",
         "demo-replace-hash-section",
