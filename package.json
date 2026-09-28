@@ -195,7 +195,7 @@
     "package:git-preview": "oxnode scripts/build-public-package.ts --git-runtime .agents/tmp/git-preview",
     "test": "pnpm test:unit",
     "security:scan": "oxnode scripts/security-scan.ts",
-    "snapshot:system-prompt": "oxnode scripts/snapshot-system-prompt.ts",
+    "snapshot:system-prompt": "oxnode scripts/snapshot-system-prompt.ts --output .tmp/prompt-snapshots/system-prompt.txt",
     "validate:tools:prepare": "oxnode scripts/prepare-tool-capability-workspace.ts",
     "test:unit": "vitest run",
     "test:unit:report": "vitest run --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/unit.xml",

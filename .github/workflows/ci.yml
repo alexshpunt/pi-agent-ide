@@ -54,6 +54,13 @@ jobs:
       - name: Setup npm and pnpm
         run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
 
+      - name: Enforce main release freeze
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          PR_HEAD: ${{ github.head_ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: node --experimental-strip-types scripts/release/merge-policy.ts
+
       - name: Setup runtime tools
         run: |
           sudo apt-get update
@@ -196,11 +203,11 @@ jobs:
           retention-days: 30
 
       - name: Build and install reproducible release candidate
-        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main'
         run: node --experimental-strip-types scripts/build-release-candidate.ts
 
       - name: Retain release candidate
-        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: release-candidate

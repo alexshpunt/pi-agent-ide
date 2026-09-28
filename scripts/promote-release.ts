@@ -20,7 +20,7 @@ function api(route: string): unknown {
 const pull = api(`pulls/${pr}`) as {
   merged: boolean;
   base: { ref: string };
-  head: { sha: string; repo: { full_name: string } | null };
+  head: { sha: string; ref: string; repo: { full_name: string } | null };
   merge_commit_sha: string;
 };
 const run = api(`actions/runs/${runId}`) as {
@@ -31,7 +31,12 @@ const run = api(`actions/runs/${runId}`) as {
   head_repository: { full_name: string } | null;
 };
 const workflow = api("actions/workflows/ci.yml") as { id: number };
-if (!pull.merged || pull.base.ref !== "main" || pull.head.repo?.full_name !== repository) {
+if (
+  !pull.merged ||
+  pull.base.ref !== "main" ||
+  pull.head.repo?.full_name !== repository ||
+  !/^release\/\d+\.\d+\.\d+$/.test(pull.head.ref)
+) {
   throw new Error("Only a merged same-repository main PR can be promoted");
 }
 if (
@@ -72,6 +77,9 @@ const manifestResponse = api(`contents/package.json?ref=${pull.merge_commit_sha}
 const manifest = JSON.parse(Buffer.from(manifestResponse.content, "base64").toString("utf8")) as {
   version: string;
 };
+if (pull.head.ref !== `release/${manifest.version}`) {
+  throw new Error("Merged release branch and package version differ");
+}
 const directory = ".agents/tmp/promoted-release";
 mkdirSync(directory, { recursive: true });
 execFileSync(

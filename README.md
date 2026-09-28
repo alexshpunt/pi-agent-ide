@@ -216,6 +216,7 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 | [File hooks](./docs/user-hooks.md)         | Inspect, change, or deny reads and edits                                             |
 | [Writing extensions](./docs/extensions.md) | Add resolvers, views, anchors, search backends, and IDE plugins                      |
 | [Development](./docs/development.md)       | Work from a checkout, test, and run modular mode                                     |
+| [Releases](./docs/releases.md)             | Nightly builds, release branches, verification, and npm publication                  |
 
 ## License
 
