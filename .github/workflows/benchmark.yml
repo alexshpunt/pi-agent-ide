@@ -4,6 +4,14 @@ name: Benchmark published package
 on:
   workflow_dispatch:
     inputs:
+      model:
+        description: OpenAI Codex model for this run
+        required: true
+        default: openai-codex/gpt-5.6-luna
+        type: choice
+        options:
+          - openai-codex/gpt-5.6-luna
+          - openai-codex/gpt-6-luna
       version:
         description: Published pi-agent-ide version or latest
         required: false
@@ -11,6 +19,10 @@ on:
         type: string
   workflow_call:
     inputs:
+      model:
+        required: false
+        default: openai-codex/gpt-5.6-luna
+        type: string
       version:
         required: false
         default: latest
@@ -80,7 +92,7 @@ jobs:
       id-token: write
     uses: alexshpunt/explicit-edit-benchmark/.github/workflows/official-run.yml@official
     with:
-      model: openai-codex/gpt-5.6-luna
+      model: ${{ inputs.model }}
       thinking: low
       task: ""
       concurrency: "10"
