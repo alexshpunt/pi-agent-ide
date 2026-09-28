@@ -117,7 +117,7 @@ function fence(language: string, value: string): string {
 function parseArguments(arguments_: readonly string[]): Options {
   let cwd = process.cwd();
   let extension = "src/pi-agent-ide.ts";
-  let output = ".agents/tmp/agent-interface.md";
+  let output = ".tmp/prompt-snapshots/pi-agent-ide.md";
   let tools: readonly string[] | undefined;
   for (let index = 0; index < arguments_.length; index += 1) {
     const flag = arguments_[index];

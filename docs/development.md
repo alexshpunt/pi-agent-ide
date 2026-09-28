@@ -159,22 +159,26 @@ The development checkout uses pnpm workspaces and includes test dependencies, so
 Install it on a work machine with Pi and Node.js:
 
 ```bash
-pi install git:github.com/alexshpunt/pi-agent-ide-dev@preview
+pi install git:github.com/alexshpunt/pi-agent-ide@preview
 ```
 
-For the private development repository, the SSH form is also supported:
+The SSH form also works:
 
 ```bash
-pi install git:git@github.com:alexshpunt/pi-agent-ide-dev@preview
+pi install git:git@github.com:alexshpunt/pi-agent-ide@preview
 ```
 
 After the preview workflow publishes a newer snapshot, refresh the installed package:
 
 ```bash
-pi install git:github.com/alexshpunt/pi-agent-ide-dev@preview
+pi install git:github.com/alexshpunt/pi-agent-ide@preview
 ```
 
 To build the runtime tree locally for inspection, run `pnpm package:git-preview`. The generated files are written to `.agents/tmp/git-preview/` and are not committed to the development branch.
+
+## Project tasks
+
+The Product Owner decides scope, priority, labels, status, and cycle plans. An agent assigned a tracked task may update its status while working and mark it complete after the accepted work is verified. Other project-management changes need the Product Owner's approval. The Project Manager gathers requirements, maintains task records, and plans only the next cycle; it does not inspect or change product code. Linear authentication and the optional local `.linear-project` binding are not needed to build or test the public repository.
 
 ## Repository layout
 

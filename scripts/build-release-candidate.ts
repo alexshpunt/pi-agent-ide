@@ -13,12 +13,19 @@ function git(...args: string[]): string {
 const eventPath = process.env.GITHUB_EVENT_PATH;
 if (!eventPath) throw new Error("Missing GitHub event");
 const event = JSON.parse(readFileSync(eventPath, "utf8")) as {
-  pull_request?: { number: number; head: { sha: string; repo: { full_name: string } } };
+  pull_request?: {
+    number: number;
+    base: { ref: string };
+    head: { sha: string; ref: string; repo: { full_name: string } };
+  };
 };
 const pr = event.pull_request;
 if (!pr || pr.head.repo.full_name !== process.env.GITHUB_REPOSITORY)
   throw new Error("Expected a same-repository PR");
 const { version } = JSON.parse(readFileSync("package.json", "utf8")) as { version: string };
+if (pr.base.ref !== "main") throw new Error("Release candidate must target main");
+if (pr.head.ref !== `release/${version}`)
+  throw new Error("Release branch and package version differ");
 const directory = ".agents/tmp/release-candidate";
 mkdirSync(directory, { recursive: true });
 run("pnpm", ["package:public"]);

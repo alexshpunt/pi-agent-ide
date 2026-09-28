@@ -101,6 +101,45 @@ jobs:
           gh release view "$tag" >/dev/null 2>&1 ||
             gh release create "$tag" "$archive" --verify-tag --generate-notes --title "Pi Agent IDE ${RELEASE_VERSION}"
 
+  finish:
+    name: Synchronize develop and lift release freeze
+    needs: [validate, publish]
+    if: inputs.publish && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Get short-lived public-repository credentials
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: alexshpunt
+          repositories: pi-agent-ide
+          permission-contents: write
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Download verified archive and evidence
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-${{ needs.validate.outputs.version }}
+          path: .agents/tmp/promoted-release
+      - name: Merge main into develop and end freeze
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          git config user.name pi-agent-ide-release[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          node --experimental-strip-types scripts/release/finish-single.ts
+
   benchmark:
     name: Benchmark published package
     needs: [validate, publish]

@@ -1,0 +1,51 @@
+# yamllint disable rule:line-length rule:document-start rule:truthy
+name: Cancel release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version X.Y.Z
+        required: true
+        type: string
+      confirmation:
+        description: Type cancel to close an unpublished release PR and remove its branch
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  cancel:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get short-lived public-repository credentials
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: alexshpunt
+          repositories: pi-agent-ide
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+      - name: Cancel only an unpublished, unmerged release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          CONFIRM_CANCEL: ${{ inputs.confirmation }}
+        run: node --experimental-strip-types scripts/release/cancel.ts

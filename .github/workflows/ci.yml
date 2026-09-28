@@ -3,9 +3,19 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop, "release/*"]
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Branch to validate in a reusable CI run
+        type: string
+        default: ""
+      nightly:
+        description: Retain an installable nightly package
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,6 +42,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ inputs.source_ref || github.ref }}
           fetch-depth: 0
 
       - name: Setup Node
@@ -42,6 +53,13 @@ jobs:
 
       - name: Setup npm and pnpm
         run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
+
+      - name: Enforce main release freeze
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          PR_HEAD: ${{ github.head_ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: node --experimental-strip-types scripts/release/merge-policy.ts
 
       - name: Setup runtime tools
         run: |
@@ -136,7 +154,7 @@ jobs:
             base="${{ github.event.pull_request.base.sha }}"
           else
             base="${{ github.event.before }}"
-            if [[ "$base" =~ ^0+$ ]]; then base="HEAD^"; fi
+            if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="HEAD^"; fi
           fi
           pnpm security:scan -- range "$base" HEAD
 
@@ -163,12 +181,33 @@ jobs:
           PI_DEBUGGER_CORE_EXCLUDE_ADAPTER: kotlin
         run: pnpm test:integration:report
 
+      - name: Smoke test nightly package
+        if: success() && inputs.nightly
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
+          test -n "$archive"
+          mkdir -p .agents/tmp/nightly-install
+          npm install --prefix .agents/tmp/nightly-install "$(realpath "$archive")" --registry=https://registry.npmjs.org/
+          node --experimental-strip-types --input-type=module -e 'import { verifyInstalledPackage } from "./scripts/release-candidate.ts"; verifyInstalledPackage(".agents/tmp/nightly-install");'
+
+      - name: Retain nightly package
+        if: success() && inputs.nightly
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: nightly-package
+          path: .agents/tmp/public-package/pi-agent-ide-*.tgz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
       - name: Build and install reproducible release candidate
-        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main'
         run: node --experimental-strip-types scripts/build-release-candidate.ts
 
       - name: Retain release candidate
-        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: release-candidate
@@ -184,6 +223,7 @@ jobs:
           name: test-results
           path: .agents/tmp/test-results/*.xml
           if-no-files-found: warn
+          retention-days: 30
 
       - name: Report unit tests
         id: unit-report
@@ -237,6 +277,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -374,6 +416,8 @@ jobs:
       - name: Checkout
         # actions/checkout v6
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
 
       - name: Setup Node
         # actions/setup-node v6

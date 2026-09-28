@@ -1,0 +1,55 @@
+# yamllint disable rule:line-length rule:document-start rule:truthy
+name: Start release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version X.Y.Z
+        required: true
+        type: string
+      notes:
+        description: Release notes for the changelog
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  start:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get short-lived public-repository credentials
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: alexshpunt
+          repositories: pi-agent-ide
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+      - run: npm install --global pnpm@11.22.0
+      - name: Prepare release branch and candidate PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: |
+          git config user.name pi-agent-ide-release[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          node --experimental-strip-types scripts/release/start.ts

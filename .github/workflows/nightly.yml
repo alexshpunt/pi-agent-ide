@@ -1,0 +1,53 @@
+# yamllint disable rule:line-length rule:document-start rule:truthy
+name: Develop nightly
+
+on:
+  # GitHub cron is UTC: Berlin midnight is 22:00 UTC in summer and 23:00 UTC in winter.
+  schedule:
+    - cron: "0 22 * * *"
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: develop-nightly
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.develop.outputs.sha }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+      - name: Check Berlin midnight and pin develop
+        id: develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == schedule && "$(node --experimental-strip-types scripts/nightly-schedule.ts)" != true ]]; then
+            echo 'Not Berlin midnight; the other UTC cron slot covers this date.'
+            exit 0
+          fi
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/develop" --jq '.object.sha')"
+          test "${#sha}" -eq 40
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: resolve
+    if: needs.resolve.outputs.sha != ''
+    permissions:
+      contents: read
+      checks: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      source_ref: ${{ needs.resolve.outputs.sha }}
+      nightly: true
