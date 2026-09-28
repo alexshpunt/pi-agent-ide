@@ -4,7 +4,7 @@ The public `pi-agent-ide` repository owns development and releases. Feature bran
 
 ## Activate the single repository
 
-Merge this change into the existing public `main` through a reviewed PR. Do not merge or push `pi-agent-ide-dev` history: the migration branch must be based on public `main`, and only reviewed files belong in the PR. After the public CI passes, create the public `develop` branch from the merged `main` (for example, `git fetch public main && git push public public/main:refs/heads/develop` from an authorized checkout). Confirm that `develop` points to that commit, its first CI run passes, the nightly workflow runs against `develop`, and both branch policies and the release App installation work on the public repository. Keep npm publishing manual. Archive the private product repository only after these checks; do not delete it as part of the migration.
+Create public `develop` from public `main` before opening a feature PR. Merge the migration feature into `develop` after CI passes, then merge `develop` into `main` through a second reviewed PR. Do not merge or push `pi-agent-ide-dev` history: the migration branch must be based on public `main`, and only reviewed files belong in the PR. Confirm that `develop` passes CI, the nightly workflow runs against it, and main branch protection and release App permissions work on the public repository. Keep npm publishing manual. Archive the private product repository only after these checks; do not delete it as part of the migration.
 
 ## Nightly
 
