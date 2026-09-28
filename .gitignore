@@ -8,15 +8,6 @@ node_modules/
 
 .agents/
 .tmp/
-.pi/skills/*
-
-!.pi/skills/write-agent-tool-prompts/
-!.pi/skills/write-agent-tool-prompts/SKILL.md
-!.pi/skills/publish-pi-agent-ide/
-!.pi/skills/publish-pi-agent-ide/SKILL.md
-!.pi/skills/testing-pi-agent-ide/
-!.pi/skills/testing-pi-agent-ide/SKILL.md
-
 # Local session-runtime artifacts from agent tooling (never publishable).
 .linear-project
 .mesh/

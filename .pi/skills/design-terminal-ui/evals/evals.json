@@ -1,0 +1,29 @@
+{
+  "skill_name": "design-terminal-ui",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Add a live spinner and changing file counts to the terminal diff shown while a write tool streams its arguments. Keep native scrollback usable when the user scrolls up.",
+      "expected_output": "Uses a stable head and a complete growing diff whose updates stay in the active tail, keeps the spinner moving without data chunks, reports only known counts, freezes completed output, and verifies no destructive scrollback clear.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Show progress for a multi-file terminal formatter. Each finished file should remain visible while the current file keeps updating below it.",
+      "expected_output": "Keeps completed file rows immutable and ordered while all changing progress stays in the active tail.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Rewrite the static README paragraph that explains our formatter configuration.",
+      "expected_output": "Does not use this skill because the request has no dynamic terminal presentation.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Change the colors in a static web dashboard diff table.",
+      "expected_output": "Does not use this skill because the UI is neither terminal-based nor dynamic.",
+      "files": []
+    }
+  ]
+}
