@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { synchronizeDevelop } from "./sync-develop.ts";
 
 const version = process.env.RELEASE_VERSION;
 if (!version || !/^\d+\.\d+\.\d+$/.test(version) || process.env.CONFIRM_CANCEL !== "cancel") {
@@ -34,6 +35,8 @@ if (prs.some((pr) => pr.merged_at)) {
     );
   }
 }
+// Keep the freeze in place if main has not made it back into develop.
+synchronizeDevelop();
 for (const pr of prs.filter((pr) => pr.state === "open")) {
   execFileSync("gh", ["pr", "close", String(pr.number)], { stdio: "inherit" });
 }
