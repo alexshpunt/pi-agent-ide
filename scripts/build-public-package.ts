@@ -32,7 +32,6 @@ interface PackageManifest extends Record<string, unknown> {
   exports?: unknown;
   bundledDependencies?: string[];
   pi?: { extensions?: string[]; image?: string; video?: string };
-  workspaces?: string[];
 }
 
 interface InternalPackage {
@@ -68,7 +67,6 @@ const repositoryRoot = findRepositoryRoot(import.meta.url);
 const outputDirectory = join(repositoryRoot, ".agents", "tmp", "public-package");
 const stageDirectory = join(outputDirectory, "stage");
 const inspectionDirectory = join(outputDirectory, "inspection");
-const gitRuntimeDirectory = parseGitRuntimeDirectory(process.argv.slice(2));
 
 const piPeerNames = new Set([
   "@earendil-works/pi-ai",
@@ -175,63 +173,10 @@ execFileSync("tar", ["-xzf", tarballPath, "-C", inspectionDirectory]);
 const extractedPackage = join(inspectionDirectory, "package");
 const report = validatePackage(extractedPackage, packResult, tarballPath);
 writeJson(join(outputDirectory, "report.json"), report);
-if (gitRuntimeDirectory !== undefined) {
-  await materializeGitRuntime(gitRuntimeDirectory, releaseManifest);
-}
-
 rmSync(stageDirectory, { recursive: true, force: true });
 rmSync(inspectionDirectory, { recursive: true, force: true });
 
 console.log(JSON.stringify(report, null, 2));
-
-/** Finds the private workspace packages that must travel inside the umbrella tarball. */
-function parseGitRuntimeDirectory(args: string[]): string | undefined {
-  const index = args.indexOf("--git-runtime");
-  if (index === -1) return undefined;
-  const value = args[index + 1];
-  assert(value !== undefined && value.length > 0, "--git-runtime requires a directory");
-  return resolve(repositoryRoot, value);
-}
-
-/** Creates the npm-installable tree used by the Git preview ref. */
-async function materializeGitRuntime(
-  directory: string,
-  releaseManifest: PackageManifest,
-): Promise<void> {
-  rmSync(directory, { recursive: true, force: true });
-  mkdirSync(directory, { recursive: true });
-
-  copyRequiredFile("README.md", directory);
-  copyRequiredFile("CHANGELOG.md", directory);
-  copyRequiredFile("LICENSE", directory);
-  copyRuntimeTree(join(repositoryRoot, "assets"), join(directory, "assets"));
-  copyRuntimeTree(join(repositoryRoot, "docs"), join(directory, "docs"), {
-    includeDocumentation: true,
-  });
-  copyRuntimeTree(join(repositoryRoot, "packages"), join(directory, "packages"));
-  copyRuntimeTree(join(repositoryRoot, "src"), join(directory, "src"));
-
-  for (const entry of internalPackages) {
-    const embeddedManifestPath = join(directory, relative(repositoryRoot, entry.manifestPath));
-    assert(existsSync(embeddedManifestPath), `Missing runtime package ${entry.manifest.name}`);
-    writeJson(embeddedManifestPath, sanitizeInternalManifest(entry.manifest));
-  }
-
-  const runtimeManifest = structuredClone(releaseManifest);
-  delete runtimeManifest.bundledDependencies;
-  delete runtimeManifest.publishConfig;
-  runtimeManifest.workspaces = ["packages/*", "src/extensions/**", "src/plugins/*"];
-  writeJson(join(directory, "package.json"), runtimeManifest);
-
-  await buildReleaseRuntime(
-    repositoryRoot,
-    directory,
-    internalPackages.map((entry) => ({
-      source: entry.directory,
-      targets: [join(directory, relative(repositoryRoot, entry.directory))],
-    })),
-  );
-}
 
 function discoverInternalPackages(): InternalPackage[] {
   const found: InternalPackage[] = [];

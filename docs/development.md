@@ -152,29 +152,13 @@ node scripts/measure-startup.ts \
 
 Use the entry declared in each installed package's `pi.extensions`. The script records an initial run separately, then five interleaved fresh-process runs for each variant and Pi alone. It measures process-to-RPC-ready time, not TUI rendering or import time alone. `PI_COMMAND` can select the Pi executable. Startup Doctor hints run after session readiness and are cancelled when their session ends.
 
-## Install the current development runtime
+## Try development builds
 
-The development checkout uses pnpm workspaces and includes test dependencies, so it is not the source for `pi install git`. The Git preview workflow builds an npm-compatible runtime tree from every pushed branch except `main` and `preview`, then publishes the latest successful build to the `preview` branch in the same repository. The preview tree has no development dependencies or `workspace:` ranges. If multiple branches are active at once, the most recent successful push wins.
+For local changes, use the `develop` checkout. Run `pnpm install --frozen-lockfile` before loading it as a local Pi package. This checkout uses pnpm workspaces, so do not install it through `pi install git`.
 
-Install it on a work machine with Pi and Node.js:
+To try a verified build without a checkout, download the `nightly-package` artifact from a successful [Develop nightly](nightly.md) run. The archive contains the tested `develop` commit and is retained for 30 days. The nightly guide explains how to install it in a disposable Pi environment. Nightlies do not publish to npm.
 
-```bash
-pi install git:github.com/alexshpunt/pi-agent-ide@preview
-```
-
-The SSH form also works:
-
-```bash
-pi install git:git@github.com:alexshpunt/pi-agent-ide@preview
-```
-
-After the preview workflow publishes a newer snapshot, refresh the installed package:
-
-```bash
-pi install git:github.com/alexshpunt/pi-agent-ide@preview
-```
-
-To build the runtime tree locally for inspection, run `pnpm package:git-preview`. The generated files are written to `.agents/tmp/git-preview/` and are not committed to the development branch.
+Public `main` carries released changes; install published versions from npm. See [Releases](releases.md) for the release flow.
 
 ## Project tasks
 
