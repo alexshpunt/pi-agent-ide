@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { verifyCandidateArchive, type CandidateEvidence } from "#scripts/release-candidate.ts";
+import { synchronizeDevelop } from "./sync-develop.ts";
 
 const directory = ".agents/tmp/promoted-release";
 const evidence = JSON.parse(
@@ -29,12 +30,7 @@ const branchHead = git("ls-remote", "origin", branch).split("\t")[0];
 if (branchHead !== evidence.headCommit) {
   throw new Error("Release branch changed after candidate validation; do not lift the freeze");
 }
-execFileSync("git", ["fetch", "origin", "main", "develop"], { stdio: "inherit" });
-execFileSync("git", ["switch", "--create", "finish-release", "origin/develop"], {
-  stdio: "inherit",
-});
-execFileSync("git", ["merge", "--no-ff", "--no-edit", "origin/main"], { stdio: "inherit" });
-execFileSync("git", ["push", "origin", "HEAD:develop"], { stdio: "inherit" });
+synchronizeDevelop();
 execFileSync(
   "git",
   ["push", `--force-with-lease=${branch}:${branchHead}`, "origin", `:${branch}`],
