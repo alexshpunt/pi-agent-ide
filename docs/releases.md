@@ -13,6 +13,7 @@ See [Develop nightly](nightly.md). Nightlies test a pinned `develop` commit and 
 ## Start a release
 
 Run **Start release** on `main` with an unused `X.Y.Z` and finished release notes. The workflow checks that no other release branch or registry version exists, creates `release/X.Y.Z` with the version and changelog update, and opens a PR to `main`. The App needs Contents and Pull requests write access to this public repository. Configure `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` as Actions secrets; never commit the key. A release branch is the freeze marker. The `Validate` check is required on PRs to `main`; it rejects `develop` while a release branch exists. It admits only the matching release PR or a `fix/release-*` PR labeled `release-fix`. Review the fix itself: a label is not proof that a change is a fix.
+Only a branch named exactly `release/X.Y.Z` is an active release marker; older `release/v*` and `release/official-*` branches remain untouched and do not block a new release.
 
 During the freeze, fix defects in `main` through a labeled fix PR. Rebase `release/X.Y.Z` onto the updated `main` using `--force-with-lease` and wait for the release PR's new CI run. A changed base, head or archive requires fresh candidate evidence. Do not merge features into `main` while a release is active.
 

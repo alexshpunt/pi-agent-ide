@@ -1,6 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
+/** Ignore legacy release refs when finding active versioned releases. */
+export function activeReleaseBranches(refs: string): string[] {
+  return refs
+    .split("\n")
+    .map((line) => line.split("refs/heads/")[1])
+    .filter((name): name is string => name !== undefined && /^release\/\d+\.\d+\.\d+$/.test(name));
+}
 /** Check which pull requests may enter main while a release branch exists. */
 export function canMergeIntoMain(
   releaseBranches: readonly string[],
@@ -23,10 +30,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     encoding: "utf8",
   });
   const labels = JSON.parse(process.env.PR_LABELS ?? "[]") as string[];
-  const active = refs
-    .split("\n")
-    .map((line) => line.split("refs/heads/")[1])
-    .filter((name): name is string => name !== undefined && /^release\/\d+\.\d+\.\d+$/.test(name));
+  const active = activeReleaseBranches(refs);
   if (!canMergeIntoMain(active, head, labels)) {
     throw new Error(
       `main is frozen by ${active.join(", ")}; only its release PR or labeled release fixes may merge`,

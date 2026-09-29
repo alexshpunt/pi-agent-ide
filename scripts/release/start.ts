@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { activeReleaseBranches } from "./merge-policy.ts";
 
 const version = process.env.RELEASE_VERSION;
 const notes = process.env.RELEASE_NOTES?.trim();
@@ -11,7 +12,7 @@ function git(...args: string[]): string {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 const active = git("ls-remote", "origin", "refs/heads/release/*");
-if (active)
+if (activeReleaseBranches(active).length)
   throw new Error("Finish or explicitly cancel the existing release before starting another");
 if (git("tag", "--list", `v${version}`)) throw new Error("Version tag already exists");
 const registry = await fetch(`https://registry.npmjs.org/pi-agent-ide/${version}`);
