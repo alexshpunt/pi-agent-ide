@@ -6,6 +6,10 @@ The public `pi-agent-ide` repository owns development and releases. Feature bran
 
 Create public `develop` from public `main` before opening a feature PR. Merge the migration feature into `develop` after CI passes, then merge `develop` into `main` through a second reviewed PR. Do not merge or push `pi-agent-ide-dev` history: the migration branch must be based on public `main`, and only reviewed files belong in the PR. Confirm that `develop` passes CI, the nightly workflow runs against it, and main branch protection and release App permissions work on the public repository. Keep npm publishing manual. Archive the private product repository only after these checks; do not delete it as part of the migration.
 
+## Keep develop current
+
+Squash-merging `develop` into `main` makes their histories diverge. The **Synchronize main into develop** workflow merges `main` back into `develop` after every ordinary `main` push; it does not force-push. If a versioned release is active, it waits: the publish or cancel workflow synchronizes `develop` before lifting the freeze. Check the sync job after every main merge. If an ordinary sync fails because develop advances during its push or a merge conflicts, resolve the conflict and rerun the sync workflow manually on `main`. During a release, repair the conflict and retry Publish or Cancel instead; the versioned branch keeps the freeze until synchronization succeeds. Never start another develop-to-main PR before the synchronization succeeds.
+
 ## Nightly
 
 See [Develop nightly](nightly.md). Nightlies test a pinned `develop` commit and keep an installable package and test reports in GitHub Actions for 30 days. They do not publish to npm.

@@ -1,0 +1,44 @@
+# yamllint disable rule:line-length rule:document-start rule:truthy
+name: Synchronize main into develop
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get short-lived public-repository credentials
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: alexshpunt
+          repositories: pi-agent-ide
+          permission-contents: write
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.19.0"
+          package-manager-cache: false
+      - name: Merge main into develop unless a release is active
+        env:
+          SKIP_ACTIVE_RELEASE: "true"
+        run: |
+          git config user.name pi-agent-ide-release[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          node --experimental-strip-types scripts/release/sync-develop.ts
