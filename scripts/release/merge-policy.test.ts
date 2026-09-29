@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { canMergeIntoMain } from "./merge-policy.ts";
+import { activeReleaseBranches, canMergeIntoMain } from "./merge-policy.ts";
 
 describe("release freeze", () => {
+  it("keeps legacy branches without treating them as active releases", () => {
+    const refs = [
+      "abc123\trefs/heads/release/v0.6.3",
+      "def456\trefs/heads/release/official-35373041178",
+    ].join("\n");
+    expect(activeReleaseBranches(refs)).toEqual([]);
+    expect(activeReleaseBranches(`${refs}\n012345\trefs/heads/release/0.6.4`)).toEqual([
+      "release/0.6.4",
+    ]);
+  });
   it("allows normal merges outside a release", () => {
     expect(canMergeIntoMain([], "develop", [])).toBe(true);
   });
