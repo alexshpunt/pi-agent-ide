@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.4 — 2026-09-29
+
+Temporary release workflow verification. Do not publish.
+
 ## 0.6.3 — 2026-09-27
 
 ### Editing
