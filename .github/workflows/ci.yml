@@ -296,6 +296,7 @@ jobs:
           pnpm vitest run src/api/path-identity.test.ts src/doctor/inventory.test.ts src/plugins/pi-agent-ide-debugger/tests
 
       - name: Verify Windows Pi 0.99.1 source and native tools
+        shell: bash
         run: pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
 
       - name: Verify Windows installed package and host boundaries
