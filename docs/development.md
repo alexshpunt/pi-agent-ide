@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- a current Pi installation with `pi` on `PATH`;
+- Pi 0.99.1 with `pi` on `PATH` for the pinned integration tests;
 - Node.js and pnpm;
 - Git.
 
@@ -53,6 +53,14 @@ pnpm test:integration
 ```
 
 Integration tests use `pi-coding-agent-test`. They start real Pi processes with scripted model responses and preserve traces and terminal artifacts under `.tmp/test-runs/`.
+
+The root runner uses native rendering by default. The published harness's raw renderer imports private files relative to the CLI and cannot start with Pi 0.99.1's bundled CLI. Explicit `rawMode: true` still exposes that failure; it is not silently replaced. Result and filesystem assertions remain enabled.
+
+Tests that need an unchanged conversation use `#integration/support/pi-runtime/native-pi-coding-agent-test.js`. The root `pi-coding-agent-test` alias uses the same native adapter and keeps its existing surrounding read calls. Both adapters forward explicit launch options; the native adapter also reads the system prompt from Pi 0.99's transcript system messages using the SDK.
+
+`pnpm test:integration:shards` runs four independent Pi pools. Each run prints its own log directory under `.tmp/integration-shards.*`, so parallel audits do not overwrite each other's logs. Set `LOG_DIR` to choose another parent directory.
+
+`--no-extensions` also disables Pi's native built-ins. Native fixtures explicitly load `builtin:codemode`, `builtin:tool-search`, and `builtin:mcp`; ordinary fixtures do not. `native-host.integration.test.ts` checks the version inside the launched process, deferred discovery, nested execution, and isolation from personal MCP servers.
 
 ### Watch integration tests live
 

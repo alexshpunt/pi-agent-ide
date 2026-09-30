@@ -3,10 +3,12 @@ import path from "node:path";
 
 import {
   defineTool,
+  type AgentToolResult,
+  type ExtensionContext,
   type ExtensionAPI,
   withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 
 import { ChangeService } from "#src/changes/change-service.js";
 
@@ -49,7 +51,7 @@ export function createIndexChangeTool(
   executor: GitCommandExecutor,
   queue: IndexMutationQueue,
 ) {
-  const targetState = action === "stage" ? "staged" : "unstaged";
+  const execute = createIndexChangeExecutor(action, executor, queue);
   const pastTense = action === "stage" ? "Staged" : "Unstaged";
 
   return defineTool<typeof indexChangeSchema, IndexChangeToolDetails>({
@@ -60,57 +62,73 @@ export function createIndexChangeTool(
     description: `Use ${action} to ${action === "stage" ? "add one current Git change to the index" : "remove one current Git change from the index"}. Select the change with a CHANGE# anchor; worktree content is kept.`,
     parameters: indexChangeSchema,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      const file = resolveFile(parameters.file, context.cwd);
-
-      return withFileMutationQueue(file, () =>
-        queue.run(async () => {
-          const worktreeText = await readFile(file, "utf8");
-          const creation = await ChangeService.create(executor, context.cwd, signal);
-
-          if (creation.status !== "ready") {
-            throw new Error(creation.message);
-          }
-
-          const result = await creation.service.changeIndex(
-            {
-              source: file,
-              worktreeText,
-              cwd: context.cwd,
-              ...(signal !== undefined && { signal }),
-            },
-            parameters.change,
-            action,
-          );
-
-          if (result.status === "unavailable") {
-            throw new Error(result.message);
-          }
-
-          if (result.status === "not-applicable") {
-            throw new Error(`${action} is not applicable to ${file}: ${result.reason}`);
-          }
-
-          const isUnchanged = result.status === "unchanged";
-          const text = isUnchanged
-            ? `${parameters.change} is already ${targetState} in ${parameters.file}.`
-            : `${pastTense} ${parameters.change} in ${parameters.file}.`;
-
-          return {
-            content: [{ type: "text", text }],
-            details: {
-              action,
-              change: parameters.change,
-              file,
-              state: targetState,
-              unchanged: isUnchanged,
-            },
-          };
-        }),
-      );
+      return execute(parameters, signal, context);
     },
   });
 }
 
+/** Shares guarded index execution between standalone tools and Apply without a synthetic tool context. */
+export function createIndexChangeExecutor(
+  action: ChangeIndexAction,
+  executor: GitCommandExecutor,
+  queue: IndexMutationQueue,
+) {
+  const targetState = action === "stage" ? "staged" : "unstaged";
+  const pastTense = action === "stage" ? "Staged" : "Unstaged";
+  return async (
+    parameters: Static<typeof indexChangeSchema>,
+    signal: AbortSignal | undefined,
+    context: Pick<ExtensionContext, "cwd">,
+  ): Promise<AgentToolResult<IndexChangeToolDetails>> => {
+    const file = resolveFile(parameters.file, context.cwd);
+
+    return withFileMutationQueue(file, () =>
+      queue.run(async () => {
+        const worktreeText = await readFile(file, "utf8");
+        const creation = await ChangeService.create(executor, context.cwd, signal);
+
+        if (creation.status !== "ready") {
+          throw new Error(creation.message);
+        }
+
+        const result = await creation.service.changeIndex(
+          {
+            source: file,
+            worktreeText,
+            cwd: context.cwd,
+            ...(signal !== undefined && { signal }),
+          },
+          parameters.change,
+          action,
+        );
+
+        if (result.status === "unavailable") {
+          throw new Error(result.message);
+        }
+
+        if (result.status === "not-applicable") {
+          throw new Error(`${action} is not applicable to ${file}: ${result.reason}`);
+        }
+
+        const isUnchanged = result.status === "unchanged";
+        const text = isUnchanged
+          ? `${parameters.change} is already ${targetState} in ${parameters.file}.`
+          : `${pastTense} ${parameters.change} in ${parameters.file}.`;
+
+        return {
+          content: [{ type: "text", text }],
+          details: {
+            action,
+            change: parameters.change,
+            file,
+            state: targetState,
+            unchanged: isUnchanged,
+          },
+        };
+      }),
+    );
+  };
+}
 function resolveFile(file: string, cwd: string): string {
   const normalized = file.startsWith("@") ? file.slice(1) : file;
   return path.resolve(cwd, normalized);

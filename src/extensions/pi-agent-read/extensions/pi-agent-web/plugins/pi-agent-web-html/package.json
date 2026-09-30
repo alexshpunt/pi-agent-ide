@@ -6,7 +6,7 @@
     "#src/*": "./src/*"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.99.1",
     "defuddle": "^0.19.1",
     "linkedom": "^0.18.12",
     "pi-agent-resource": "workspace:^"

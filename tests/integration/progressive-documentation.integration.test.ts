@@ -13,7 +13,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { afterAll, afterEach, expect, test } from "vitest";
-import { PiRun } from "pi-coding-agent-test/base";
+import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
 
 const extension = process.env.PI_AGENT_IDE_TEST_EXTENSION ?? path.resolve("src/pi-agent-ide.ts");

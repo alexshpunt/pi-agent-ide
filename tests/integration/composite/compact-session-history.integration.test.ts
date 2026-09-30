@@ -14,7 +14,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "pi-coding-agent-test/base";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 import { afterAll, expect, test } from "vitest";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
 

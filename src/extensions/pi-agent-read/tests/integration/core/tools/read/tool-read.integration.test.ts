@@ -1,3 +1,4 @@
+import type { JsonValue } from "@earendil-works/pi-ai";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -45,7 +46,7 @@ test("registers read without a resolver", async () => {
         assistantMessage([text("The read call finished")]),
       ],
     }).run("Run read without a resolver");
-    const message = getToolResultMessage(result, "read");
+    const message = getToolResultMessage<JsonValue>(result, "read");
 
     expect(message).toMatchObject({
       toolName: "read",
@@ -96,7 +97,7 @@ test("reads a saved temporary result through real Pi", async () => {
         assistantMessage([text("Done")]),
       ],
     }).run("Read the large dynamic fixture");
-    const message = getToolResultMessage(result, "create-temp");
+    const message = getToolResultMessage<JsonValue>(result, "create-temp");
     const block = message.content[0];
 
     expect(block?.type).toBe("text");
@@ -109,7 +110,7 @@ test("reads a saved temporary result through real Pi", async () => {
     expect("temporarySource" in details ? details.temporarySource : undefined).toMatch(
       /^temp:[0-9a-f-]+$/u,
     );
-    expect(getToolResultMessage(result, "read-temp")).toMatchObject({
+    expect(getToolResultMessage<JsonValue>(result, "read-temp")).toMatchObject({
       content: [{ type: "text", text: "fixture line 2001" }],
       details: { resolvedBy: "temp", startLine: 2_001, endLine: 2_001 },
     });
@@ -144,7 +145,7 @@ test("returns raw text by default even when plugin views are registered", async 
       ],
     }).run("Read without views returns raw text");
 
-    expect(getToolResultMessage(result, "read")).toMatchObject({
+    expect(getToolResultMessage<JsonValue>(result, "read")).toMatchObject({
       content: [{ type: "text", text: "alpha\nbravo\ncharlie" }],
     });
   } finally {
@@ -178,7 +179,7 @@ test("reports the removed lines view as unknown", async () => {
       ],
     }).run("Read with the lines view");
 
-    expect(getToolResultMessage(result, "read")).toMatchObject({
+    expect(getToolResultMessage<JsonValue>(result, "read")).toMatchObject({
       details: { ignoredViews: ["lines"] },
     });
   } finally {
@@ -212,7 +213,7 @@ test("adds plugin view annotations when the request lists the view", async () =>
       ],
     }).run("Read with a plugin view");
 
-    expect(getToolResultMessage(result, "read")).toMatchObject({
+    expect(getToolResultMessage<JsonValue>(result, "read")).toMatchObject({
       content: [{ type: "text", text: "1#hash|alpha\n2#hash|bravo\n3#hash|charlie" }],
     });
   } finally {
@@ -249,7 +250,7 @@ test("does not repeat a view already included by another view", async () => {
       ],
     }).run("Read with combined views");
 
-    expect(getToolResultMessage(result, "read")).toMatchObject({
+    expect(getToolResultMessage<JsonValue>(result, "read")).toMatchObject({
       content: [
         {
           type: "text",
@@ -288,7 +289,7 @@ test("ignores unknown views and reports them in the result note and details", as
       ],
     }).run("Read with an unknown view");
 
-    const message = getToolResultMessage(result, "read");
+    const message = getToolResultMessage<JsonValue>(result, "read");
     const block = message.content[0];
 
     expect(block?.type).toBe("text");

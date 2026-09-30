@@ -23,7 +23,7 @@ import { IndexMutationQueue } from "#src/index-mutation-queue.js";
 import { LastTextTransactionStore } from "#src/last-text-transaction-store.js";
 import {
   registerIndexChangeTools,
-  createIndexChangeTool,
+  createIndexChangeExecutor,
   indexChangeSchema,
 } from "#src/tool-index-change.js";
 import { createUndoMutationTool } from "#src/tool-text-undo.js";
@@ -69,18 +69,12 @@ export default async function registerGitChanges(pi: ExtensionAPI): Promise<void
         createUndoMutationTool(executor, transactions, indexQueue, api.restoreApplyUndo),
       );
       for (const action of ["stage", "unstage"] as const) {
-        const tool = createIndexChangeTool(action, executor, indexQueue);
+        const execute = createIndexChangeExecutor(action, executor, indexQueue);
         api.addScriptIndexOperation({
           name: action,
           parameters: indexChangeSchema,
           execute: (input, signal, context) =>
-            tool.execute(
-              `apply-${action}`,
-              Value.Decode(indexChangeSchema, input),
-              signal,
-              undefined,
-              context,
-            ),
+            execute(Value.Decode(indexChangeSchema, input), signal, context),
         });
       }
       api.addTextPresenter({ presenter });

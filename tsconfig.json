@@ -3,12 +3,15 @@
     "allowImportingTsExtensions": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "paths": {
+      "pi-coding-agent-test": ["./tests/integration/support/pi-runtime/pi-coding-agent-test.ts"]
+    },
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2023"
   },
-  "include": ["dev/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "src/**/*.ts"],
+  "include": ["dev/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts"],
   "exclude": [".worktrees/**", "**/dist/**", "**/node_modules/**"]
 }

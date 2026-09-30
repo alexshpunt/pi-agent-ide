@@ -8,8 +8,10 @@ set -uo pipefail
 root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 cd "$root"
 shards="${SHARDS:-4}"
-log_dir=".agents/tmp"
-mkdir -p "$log_dir"
+log_parent="${LOG_DIR:-.tmp}"
+mkdir -p "$log_parent"
+log_dir="$(mktemp -d "$log_parent/integration-shards.XXXXXX")"
+echo "Integration logs: $log_dir"
 
 pids=()
 for shard in $(seq 1 "$shards"); do

@@ -9,7 +9,7 @@ import {
   getToolExecution,
   getToolResultText,
   testArtifactsDir,
-} from "pi-coding-agent-test/base";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 
 for (const mode of ["focused", "view", "combined", "javascript"]) {
   test(`cold ${mode} diagnostics complete before reporting counts`, async () => {

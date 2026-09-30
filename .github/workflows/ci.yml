@@ -188,9 +188,7 @@ jobs:
           set -euo pipefail
           archive="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
           test -n "$archive"
-          mkdir -p .agents/tmp/nightly-install
-          npm install --prefix .agents/tmp/nightly-install "$(realpath "$archive")" --registry=https://registry.npmjs.org/
-          node --experimental-strip-types --input-type=module -e 'import { verifyInstalledPackage } from "./scripts/release-candidate.ts"; verifyInstalledPackage(".agents/tmp/nightly-install");'
+          node --experimental-strip-types --input-type=module -e 'import { installTestPackage, verifyInstalledPackage } from "./scripts/release-candidate.ts"; installTestPackage(".agents/tmp/nightly-install", process.argv[1]); verifyInstalledPackage(".agents/tmp/nightly-install");' "$archive"
 
       - name: Retain nightly package
         if: success() && inputs.nightly
@@ -296,6 +294,19 @@ jobs:
         run: |
           pnpm typecheck
           pnpm vitest run src/api/path-identity.test.ts src/doctor/inventory.test.ts src/plugins/pi-agent-ide-debugger/tests
+
+      - name: Verify Windows Pi 0.99.1 source and native tools
+        run: pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
+
+      - name: Verify Windows installed package and host boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm check:package
+          archive="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
+          test -n "$archive"
+          node --experimental-strip-types --input-type=module -e 'import { installTestPackage, verifyInstalledPackage } from "./scripts/release-candidate.ts"; installTestPackage(".tmp/windows-install", process.argv[1]); verifyInstalledPackage(".tmp/windows-install");' "$archive"
+          PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
 
       - name: Setup Windows native tools
         if: ${{ hashFiles('validation/language-toolchains/build-windows-checks.mjs') != '' }}
