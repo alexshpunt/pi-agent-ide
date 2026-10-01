@@ -153,7 +153,7 @@ export default function themeChangeFixture(pi: ExtensionAPI): void {
       totalLines: 2,
       lines: [
         { lineNumber: 1, content, lineEnding: "\n" as const },
-        { lineNumber: 2, content: "\u001b[31mcolored\u001b[0m", lineEnding: "" as const },
+        { lineNumber: 2, content: "// second source line", lineEnding: "" as const },
       ],
     };
     container.addChild(
