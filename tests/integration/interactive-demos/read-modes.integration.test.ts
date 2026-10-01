@@ -15,7 +15,10 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 
 import { generateReadExtensions } from "pi-agent-read/testing";
-import { expectToolRowsHaveBackground } from "#integration/support/tui-background.js";
+import {
+  expectToolRowsHaveBackground,
+  toolBackgroundTheme,
+} from "#integration/support/tui-background.js";
 
 const generatedExtensions = await generateReadExtensions([
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",
@@ -158,7 +161,7 @@ test("wraps a long source line in the real read panel", async () => {
       artifactsDir: testArtifactsDir(expect.getState().testPath),
       testName: "interactive-demo-read-word-wrap",
       cwd: directory,
-      extensions: generatedExtensions.paths,
+      extensions: [toolBackgroundTheme, ...generatedExtensions.paths],
       tools: ["read"],
       rawMode: false,
       conversation: [

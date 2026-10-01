@@ -17,7 +17,10 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/pi-coding-agent-test.js";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
-import { expectToolRowsPreserveBackground } from "#integration/support/tui-background.js";
+import {
+  expectToolRowsPreserveBackground,
+  toolBackgroundTheme,
+} from "#integration/support/tui-background.js";
 
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(
@@ -368,9 +371,12 @@ describe("text mutation renderer", () => {
       const result = await new PiIntegrationTest({
         testName: "text-editor-renderer-inherited-background",
         cwd: directory,
-        extensions: extensions.paths.map((extension) =>
-          extension === defaultTextEditorExtension ? rendererTestStand : extension,
-        ),
+        extensions: [
+          toolBackgroundTheme,
+          ...extensions.paths.map((extension) =>
+            extension === defaultTextEditorExtension ? rendererTestStand : extension,
+          ),
+        ],
         tools: ["write"],
         rawMode: false,
         conversation: [
