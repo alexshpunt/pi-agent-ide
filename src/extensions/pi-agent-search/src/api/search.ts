@@ -22,6 +22,8 @@ export type SearchResolutionAttempt =
   | { readonly kind: "failed"; readonly error: unknown };
 
 export interface SearchResolver {
+  /** Required for native data calls; project only documented JSON domain fields. */
+  readonly toScriptData?: (payload: unknown, formattedDetails: unknown) => unknown;
   readonly id: string;
   tryResolve(
     request: SearchRequest,
@@ -141,3 +143,4 @@ export interface SearchToolDetails {
 }
 
 export { searchSchema } from "#src/api/search-parameters.js";
+export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";

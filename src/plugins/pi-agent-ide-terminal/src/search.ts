@@ -5,6 +5,7 @@ import {
   type SearchPlugin,
 } from "pi-agent-search/api/plugin-protocol";
 import type { SearchRequest, SearchSelectionMatch } from "pi-agent-search/api/search";
+import { selectionData } from "pi-agent-search/api/search";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
@@ -41,6 +42,10 @@ export async function registerTerminalSearch(
 function terminalSearchResolver(manager: TerminalSessionManager) {
   return {
     id: "terminal",
+    toScriptData(payload: unknown) {
+      const result = parsePayload(payload);
+      return selectionData(result.matches, false);
+    },
     async tryResolve(request: SearchRequest) {
       if (request.path === undefined || !request.path.startsWith("shell:")) {
         return { kind: "not-handled" as const };

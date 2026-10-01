@@ -1,3 +1,13 @@
+export {
+  assertJsonData,
+  MAX_STRUCTURED_BYTES,
+  resultError,
+  resultErrorSchema,
+  structuredResultSchema,
+  withStructuredResult,
+  type ResultError,
+  type StructuredResult,
+} from "./tool-result.js";
 export type {
   AgentContent,
   AgentContentBlock,

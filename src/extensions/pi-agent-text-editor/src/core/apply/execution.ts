@@ -260,12 +260,13 @@ export function createApplyExecution(
         const searchFailure = outcome.details.failure;
         const value = {
           ...outcome.script,
-          ok: searchFailure === undefined,
+          structured: outcome.structuredContent,
+          ok: !outcome.isError && searchFailure === undefined,
           ...(searchFailure && { error: searchFailure }),
         };
         results.record(id, kind, value, { content: outcome.content, details: {} });
         recorded = true;
-        if (searchFailure !== undefined)
+        if (outcome.isError || searchFailure !== undefined)
           throw failure("SEARCH_FAILED", "Search failed", searchFailure);
         return value;
       } catch (error) {

@@ -141,6 +141,16 @@ export default async function registerVision(
           priority: -100,
           resolver: {
             id: "processes",
+            toScriptData(payload) {
+              const processes = payload as Awaited<ReturnType<typeof listProcesses>>;
+              return {
+                kind: "custom",
+                resolverId: "processes",
+                value: {
+                  processes: processes.map((item) => ({ pid: item.pid, command: item.command })),
+                },
+              };
+            },
             async tryResolve(request) {
               const match = /^process:(.*)$/isu.exec(request.query);
               if (match === null) return { kind: "not-handled" as const };
@@ -203,7 +213,11 @@ function requestsScreenshot(request: ReadRequest): boolean {
 function returned(source: string, content: ReadToolResult["content"]) {
   return {
     kind: "return" as const,
-    result: { content, details: { source, resolvedBy: "vision" } },
+    result: {
+      content,
+      script: { kind: "native" as const, source, blocks: content },
+      details: { source, resolvedBy: "vision" },
+    },
   };
 }
 function failed(source: string, message: string) {

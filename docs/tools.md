@@ -4,6 +4,10 @@ Pi Agent IDE explores a small tool surface for coding agents. The goal is to kee
 
 The project is experimental. The behavior below describes the current implementation, not a performance guarantee.
 
+## Native structured results
+
+IDE tools declare native result schemas. Codemode receives typed data and explicit success/error/partial outcomes instead of display strings. Check status and mutation effects before continuing or retrying. See [Native IDE results](./structured-results.md) for fields, resolver adapters, bounds, and `tools.flush({})`.
+
 ## Resource references
 
 Tool source fields take one complete resource reference. A filesystem path is the common case, but it is not the only kind of reference. Depending on the tool and loaded resolvers, a reference may name a file, URL, protocol source, temporary result, or a typed text selection.

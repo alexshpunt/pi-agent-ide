@@ -132,6 +132,9 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
       if (id.length > 0 && known) claimed.add(id);
       return {
         content: event.content,
+        ...(event.structuredContent === undefined
+          ? {}
+          : { structuredContent: event.structuredContent }),
         details: {
           ...(isRecord(event.details) ? event.details : {}),
           documentation: known
@@ -161,6 +164,9 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
         ...(isRecord(event.details) ? event.details : {}),
         documentation: { kind: "attachment", ids: documents.map((document) => document.id) },
       },
+      ...(event.structuredContent === undefined
+        ? {}
+        : { structuredContent: event.structuredContent }),
       isError: event.isError,
     };
   });

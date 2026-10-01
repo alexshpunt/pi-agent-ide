@@ -119,6 +119,10 @@ export class ApplyResults {
     this.#files.delete(source);
     this.#mutationPresentations.delete(source);
   }
+  /** Every recorded operation, including work hidden by final-state presentation. */
+  operations(): readonly OperationResult[] {
+    return [...this.#operations.values()];
+  }
   /** Selects output without deleting the underlying operation receipts. */
   select(): SelectedResults {
     return {

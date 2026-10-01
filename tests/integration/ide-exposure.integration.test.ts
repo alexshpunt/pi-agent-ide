@@ -183,7 +183,7 @@ test("deferred Git tools execute through native Codemode after namespace discove
     [
       call("discover", "tool_search", { query: "ide_git stage unstage", limit: 2 }),
       call("git", "codemode", {
-        code: 'const first = await tools.read({path: "example.txt", views: ["changes"]}); const change = first.match(/CHANGE#[0-9A-F]+/)[0]; text(await tools.stage({file: "example.txt", change})); const staged = await tools.read({path: "example.txt", views: ["changes"]}); const next = staged.match(/CHANGE#[0-9A-F]+/)[0]; text(await tools.unstage({file: "example.txt", change: next}));',
+        code: 'const first = await tools.read({path: "example.txt", views: ["changes"]}); const change = first.data.references[0].value; text(await tools.stage({file: "example.txt", change})); const staged = await tools.read({path: "example.txt", views: ["changes"]}); const next = staged.data.references[0].value; text(await tools.unstage({file: "example.txt", change: next}));',
       }),
     ],
     { defaultTools: ["+codemode"] },
@@ -193,8 +193,8 @@ test("deferred Git tools execute through native Codemode after namespace discove
   );
   expect(getToolResultText(result, "discover")).not.toContain("stage_note");
   expect(getToolExecution(result, "git").isError).toBe(false);
-  expect(getToolResultText(result, "git")).toContain("Staged CHANGE#");
-  expect(getToolResultText(result, "git")).toContain("Unstaged CHANGE#");
+  expect(getToolResultText(result, "git")).toContain('"state":"staged"');
+  expect(getToolResultText(result, "git")).toContain('"state":"unstaged"');
 });
 
 test.each(["settings", "modules"])(

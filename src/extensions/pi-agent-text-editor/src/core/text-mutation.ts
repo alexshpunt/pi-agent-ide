@@ -78,6 +78,7 @@ import type { Static, TSchema } from "typebox";
 import type { ScriptMutationOutcome } from "#src/core/apply/mutation-outcome.js";
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
 import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
+import { mutationOutputSchema, structuredMutation } from "./structured-result.js";
 
 export function createTextTool<TParameters extends TSchema>(
   core: TextEditorCore,
@@ -109,6 +110,7 @@ export function createTextTool<TParameters extends TSchema>(
       promptGuidelines: [...EDITING_GUIDELINES, ...(definition.promptGuidelines ?? [])],
       description: definition.description,
       parameters: definition.parameters,
+      outputSchema: mutationOutputSchema,
       prepareArguments: (arguments_) =>
         // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
         prepareGuardedArguments(
@@ -131,59 +133,85 @@ export function createTextTool<TParameters extends TSchema>(
           ),
       }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
-        const input = asMutationParameters<TParameters>(parameters);
-        const queued = executeNativeTextEditBatch(
-          core,
-          toolCallId,
-          definition,
-          input,
-          signal,
-          context,
-        );
-        if (queued !== undefined) return queued;
-        if (definition.direct?.matches(input) === true) {
-          try {
-            const action = await definition.direct.execute(
-              { cwd: context.cwd, ...(signal !== undefined && { signal }) },
+        const captured = await captureScriptMutation(core, async () => {
+          const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
+            const input = asMutationParameters<TParameters>(parameters);
+            const queued = executeNativeTextEditBatch(
+              core,
+              toolCallId,
+              definition,
               input,
+              signal,
+              context,
             );
-            return {
-              content: [{ type: "text", text: action.summary }],
-              details: {
-                results: [],
-                metadata: { semanticAction: { ...action.data, source: action.source } },
-              },
-            };
-          } catch (error) {
-            const code =
-              error !== null && typeof error === "object" && "code" in error
-                ? String(error.code)
-                : "DIRECT_MUTATION_FAILED";
-            return failureToolResult(
-              "transaction" in input ? String(input.transaction) : "",
-              code,
-              error instanceof Error ? error.message : String(error),
-              "not-applied",
-            );
-          }
-        }
-        if (isWholeFileInvocation(definition.wholeFileOperation, input)) {
-          return executeWholeFileTool(core, definition.wholeFileOperation, input, signal, context);
-        }
-        const directExecute = () =>
-          executeTextMutation(
-            core,
-            definition,
-            input,
-            signal,
-            context,
-            (field, state) =>
-              annotations.resolveArguments(toolCallId, {
-                [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
-              }),
-            getLastResolvedSource(),
+            if (queued !== undefined) return queued;
+            if (definition.direct?.matches(input) === true) {
+              try {
+                const action = await definition.direct.execute(
+                  { cwd: context.cwd, ...(signal !== undefined && { signal }) },
+                  input,
+                );
+                return {
+                  content: [{ type: "text", text: action.summary }],
+                  details: {
+                    results: [],
+                    metadata: { semanticAction: { ...action.data, source: action.source } },
+                  },
+                };
+              } catch (error) {
+                const code =
+                  error !== null && typeof error === "object" && "code" in error
+                    ? String(error.code)
+                    : "DIRECT_MUTATION_FAILED";
+                return failureToolResult(
+                  "transaction" in input ? String(input.transaction) : "",
+                  code,
+                  error instanceof Error ? error.message : String(error),
+                  "unknown",
+                );
+              }
+            }
+            if (isWholeFileInvocation(definition.wholeFileOperation, input)) {
+              return executeWholeFileTool(
+                core,
+                definition.wholeFileOperation,
+                input,
+                signal,
+                context,
+              );
+            }
+            const directExecute = () =>
+              executeTextMutation(
+                core,
+                definition,
+                input,
+                signal,
+                context,
+                (field, state) =>
+                  annotations.resolveArguments(toolCallId, {
+                    [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
+                  }),
+                getLastResolvedSource(),
+              );
+            return executeTextToolWithBatch(toolCallId, directExecute, signal, onUpdate, context);
+          };
+          return execute();
+        });
+        if (captured.kind === "failed") {
+          const failed = failureToolResult(
+            "",
+            "EXECUTION_FAILED",
+            errorMessage(captured.error),
+            "unknown",
           );
-        return executeTextToolWithBatch(toolCallId, directExecute, signal, onUpdate, context);
+          return structuredMutation(failed, definition.name, captured.completions, toolCallId);
+        }
+        return structuredMutation(
+          captured.value,
+          definition.name,
+          captured.completions,
+          toolCallId,
+        );
       },
     }),
     annotations,
@@ -992,7 +1020,8 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
 
 const scriptMutationScope = new AsyncLocalStorage<TextEditCompletion[]>();
 
-async function captureScriptMutation<T>(core: TextEditorCore, action: () => Promise<T>) {
+/** Capture actual completed effects across a tool or batch, including failed post-edit hooks. */
+export async function captureScriptMutation<T>(core: TextEditorCore, action: () => Promise<T>) {
   const completions: TextEditCompletion[] = [];
   const unsubscribe = core.onDidEdit((completion) => {
     if (scriptMutationScope.getStore() === completions) completions.push(completion);
@@ -1403,7 +1432,7 @@ async function anchorFailureToolResult(
     }
     return {
       content: [{ type: "text", text: messages.join("\n\n") }],
-      details: { results, anchorRecoveries },
+      details: { results, anchorRecoveries, effect: "not-applied" },
     };
   }
   if (!(failure.cause instanceof TextMutationAnchorResolutionError)) {
@@ -1460,7 +1489,13 @@ async function anchorFailureToolResult(
   const result = new FileMutationResult({
     ok: false,
     path: contextual.source,
-    errors: [{ path: contextual.source, code: failure.code, reason: failure.message }],
+    errors: [
+      {
+        path: contextual.source,
+        code: resolution.rejection?.code ?? failure.code,
+        reason: resolution.message,
+      },
+    ],
   });
   const recoveryContext = recoveryTexts.join("\n");
   const rejectionCode = resolution.rejection?.code;
@@ -1572,7 +1607,7 @@ function failureToolResult(
 
   return {
     content: [new FileMutationAgentResult(result).toTextContent()],
-    details: { results: [result], effect } as FileMutationBatchResult,
+    details: { results: [result], effect },
   };
 }
 

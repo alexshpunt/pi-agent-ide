@@ -19,6 +19,7 @@
     "pi-agent-documentation": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-read": "workspace:^",
+    "pi-agent-resource": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
     "typebox": "^1.0.63"

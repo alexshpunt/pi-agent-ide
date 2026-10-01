@@ -1,4 +1,5 @@
 import { formatApplySource } from "./format-source.js";
+import { applyOutputSchema, structuredApply } from "./structured-result.js";
 import { applyHelperGuide } from "#src/core/apply/prompt.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -82,6 +83,7 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
           "JavaScript function body. Call IDE functions directly without await; each call finishes before the next statement. Read-only results are recorded automatically. The UI may compact written tool calls or format a display copy; execution uses this source unchanged.",
       }),
     }),
+    outputSchema: applyOutputSchema,
     async execute(_id, { source }, signal, _onUpdate, context) {
       if (read === undefined || search === undefined)
         throw new Error("Apply requires the read and search extensions");
@@ -132,18 +134,24 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
           text: `Undo transaction: ${transaction}`,
         })),
       ];
-      return {
-        content,
-        details: {
-          failed,
-          displaySource: await displaySource,
-          outputLevel: output.level,
-          display: createApplyDisplay(execution.results, output, error, context.cwd),
-          temporarySource: output.temporarySource,
-          files: execution.results.select().files.map(({ source: file }) => file),
-          transactions,
+      return structuredApply(
+        {
+          content,
+          details: {
+            failed,
+            displaySource: await displaySource,
+            outputLevel: output.level,
+            display: createApplyDisplay(execution.results, output, error, context.cwd),
+            temporarySource: output.temporarySource,
+            files: execution.results.select().files.map(({ source: file }) => file),
+            transactions,
+          },
         },
-      };
+        execution.results,
+        read,
+        transactions,
+        error,
+      );
     },
   });
   pi.on("tool_result", (event) => {

@@ -9,6 +9,23 @@ import {
   withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
+import { resultError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
+const indexDataSchema = Type.Object(
+  {
+    action: Type.Union([Type.Literal("stage"), Type.Literal("unstage")]),
+    change: Type.String(),
+    file: Type.String(),
+    state: Type.Optional(Type.Union([Type.Literal("staged"), Type.Literal("unstaged")])),
+    effect: Type.Union([
+      Type.Literal("applied"),
+      Type.Literal("not-applied"),
+      Type.Literal("unknown"),
+    ]),
+    unchanged: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+export const indexOutputSchema = structuredResultSchema(indexDataSchema);
 
 import { ChangeService } from "#src/changes/change-service.js";
 
@@ -32,8 +49,8 @@ interface IndexChangeToolDetails {
   readonly action: ChangeIndexAction;
   readonly change: string;
   readonly file: string;
-  readonly state: "staged" | "unstaged";
-  readonly unchanged: boolean;
+  readonly state?: "staged" | "unstaged";
+  readonly unchanged?: boolean;
 }
 
 export function registerIndexChangeTools(
@@ -72,8 +89,40 @@ export function createIndexChangeTool(
     promptSnippet: `${pastTense.slice(0, -1)} a selected Git change`,
     description: `Use ${action} to ${action === "stage" ? "add one current Git change to the index" : "remove one current Git change from the index"}. Select the change with a CHANGE# anchor; worktree content is kept.`,
     parameters: indexChangeSchema,
+    outputSchema: indexOutputSchema,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
-      return execute(parameters, signal, context);
+      try {
+        const result = await execute(parameters, signal, context);
+        return withStructuredResult(result, indexDataSchema, {
+          status: "success",
+          data: { ...result.details, effect: result.details.unchanged ? "not-applied" : "applied" },
+          errors: [],
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        const failure = resultError(error, "INDEX_CHANGE_FAILED", parameters.file);
+        return withStructuredResult(
+          {
+            content: [{ type: "text", text: failure.message }],
+            details: {
+              action,
+              change: parameters.change,
+              file: resolveFile(parameters.file, context.cwd),
+            },
+          },
+          indexDataSchema,
+          {
+            status: "error",
+            data: {
+              action,
+              change: parameters.change,
+              file: resolveFile(parameters.file, context.cwd),
+              effect: "unknown",
+            },
+            errors: [failure],
+          },
+        );
+      }
     },
   });
 }

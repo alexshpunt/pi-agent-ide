@@ -62,6 +62,9 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
         },
       ],
       details: { ...event.details, searchObservations: observations },
+      ...(event.structuredContent === undefined
+        ? {}
+        : { structuredContent: event.structuredContent }),
     };
   });
 

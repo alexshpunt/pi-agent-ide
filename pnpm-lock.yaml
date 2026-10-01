@@ -480,6 +480,9 @@ importers:
       pi-agent-documentation:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-documentation
+      pi-agent-resource:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-resource
       pi-agent-tool-call-interception:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-tool-call-interception
@@ -831,6 +834,9 @@ importers:
       pi-agent-read:
         specifier: workspace:^
         version: link:../../extensions/pi-agent-read
+      pi-agent-resource:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-resource
       pi-agent-text:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-text

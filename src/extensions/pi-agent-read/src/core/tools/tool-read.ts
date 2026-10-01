@@ -56,6 +56,7 @@ import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
 
 import { readParameters } from "#src/api/read-parameters.js";
 import { readRaw } from "#src/core/tools/read/raw-read.js";
+import { readOutputSchema, structuredRead } from "./read/structured-result.js";
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
 
@@ -169,6 +170,7 @@ export function createReadTool(
         ];
       },
       parameters: readParameters,
+      outputSchema: readOutputSchema,
       renderCall(arguments_, theme, context) {
         const source = typeof arguments_.path === "string" ? arguments_.path : undefined;
         const renderer =
@@ -203,17 +205,29 @@ export function createReadTool(
           cwd: context.cwd,
           ...(signal !== undefined && { signal }),
         };
-        return executeRead(
-          parameters,
-          resolverContext,
-          resolvers,
-          handlers,
-          views,
-          temporaryResources,
-          fragments,
-          targetResolvers,
-          resourceGuards,
-        );
+        try {
+          const result = await executeRead(
+            parameters,
+            resolverContext,
+            resolvers,
+            handlers,
+            views,
+            temporaryResources,
+            fragments,
+            targetResolvers,
+            resourceGuards,
+          );
+          return structuredRead(result);
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          return structuredRead(
+            failureResult({
+              code: "READ_FAILED",
+              source: parameters.path,
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
       },
     },
     execute(request, context, audience = "agent"): Promise<ReadToolResult> {
@@ -648,23 +662,14 @@ async function resolveTextTargets(
       }
     }
     const aggregate = {
-      ...(audience === "script" && {
-        script:
-          resources.length === 1 && resources[0]?.script !== undefined
-            ? resources[0].script
-            : {
-                kind: "resources" as const,
-                source: request.path,
-                resources: resources.map(
-                  (result) =>
-                    result.script ?? {
-                      kind: "native" as const,
-                      source: result.details.source ?? request.path ?? "",
-                      blocks: result.content,
-                    },
-                ),
-              },
-      }),
+      script:
+        resources.length === 1 && resources[0]?.script !== undefined
+          ? resources[0].script
+          : {
+              kind: "resources" as const,
+              source: request.path,
+              resources: resources.map((result) => requiredValue(result.script)),
+            },
       content: [{ type: "text", text: chunks.join("\n") }],
       details:
         audience === "script"
@@ -1109,7 +1114,18 @@ function mergeViewContributions(
     );
   }
 
-  return lines === base.lines ? base : { ...base, lines };
+  const references = [
+    ...new Map(
+      [base, ...contributions.map((contribution) => contribution.document)]
+        .flatMap((document) => document.references ?? [])
+        .map((reference) => [reference.value, reference]),
+    ).values(),
+  ];
+  return {
+    ...base,
+    lines,
+    ...(references.length === 0 ? {} : { references }),
+  };
 }
 
 function assertPresentationOnly(base: TextDocument, contribution: ViewContribution): void {

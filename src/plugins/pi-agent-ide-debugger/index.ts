@@ -19,6 +19,31 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 import type { ResourceResolver } from "pi-agent-resource";
+import { resultError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
+const debugDataSchema = Type.Object(
+  {
+    source: Type.String(),
+    sourceResource: Type.String(),
+    breakpointsResource: Type.String(),
+    adapter: Type.String(),
+    program: Type.String(),
+    cwd: Type.String(),
+    status: Type.String(),
+    breakpoints: Type.Array(
+      Type.Object(
+        {
+          source: Type.String(),
+          file: Type.String(),
+          line: Type.Integer(),
+          verified: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+export const debugOutputSchema = structuredResultSchema(debugDataSchema);
 import { toolCallHeader } from "pi-agent-tool-ui";
 
 import {
@@ -361,6 +386,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
       description:
         "Use debug to create a configured local debugger session. This does not launch the program yet. The returned debug: resource survives extension reloads.",
       parameters: debugParameters,
+      outputSchema: debugOutputSchema,
       async execute(_toolCallId, input, _signal, _onUpdate, context) {
         const cwd = path.resolve(context.cwd, input.cwd ?? ".");
         const program = path.resolve(cwd, input.program);
@@ -375,23 +401,32 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
             ...(input.mainClass === undefined ? {} : { mainClass: input.mainClass }),
           });
           const details = debugDetails(manager, session);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${details.sourceResource} with views ["anchors"], then insert a breakpoint at an anchor.`,
-              },
-            ],
-            details,
-          };
+          const { snapshot: _snapshot, stop: _stop, ...data } = details;
+          return withStructuredResult(
+            {
+              content: [
+                {
+                  type: "text",
+                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${details.sourceResource} with views ["anchors"], then insert a breakpoint at an anchor.`,
+                },
+              ],
+              details,
+            },
+            debugDataSchema,
+            { status: "success", data, errors: [] },
+          );
         } catch (error) {
-          return {
-            content: [
-              { type: "text", text: error instanceof Error ? error.message : String(error) },
-            ],
-            details: { adapter: input.adapter, program, cwd, status: "failed" },
-            isError: true,
-          };
+          return withStructuredResult(
+            {
+              content: [
+                { type: "text", text: error instanceof Error ? error.message : String(error) },
+              ],
+              details: { adapter: input.adapter, program, cwd, status: "failed" },
+              isError: true,
+            },
+            debugDataSchema,
+            { status: "error", errors: [resultError(error, "DEBUG_SESSION_FAILED", program)] },
+          );
         }
       },
       renderCall(input, theme) {

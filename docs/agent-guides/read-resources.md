@@ -27,6 +27,12 @@ For `raw:` resources, offsets and limits count bytes. A negative offset counts f
 
 Temporary resources remain available only in their owning runtime.
 
+## Native Codemode data
+
+Check `status` before reading `data`. Use text `data.lines` and their `anchors` without parsing display rows. Use source-level `data.references` for actions such as Git changes. Follow `data.continuation` as a complete next Read request; its offset is absolute on its returned source. Check `data.truncated` and `data.fullResult` when present.
+
+Use `data.bytes` for `raw:` reads. Forward a native image from `data.blocks` with `image(block)`. Keep multi-source `data.resources` separate instead of joining unrelated ranges.
+
 ## Views
 
 Views request source-specific presentations without changing the selected resource. Common views include:

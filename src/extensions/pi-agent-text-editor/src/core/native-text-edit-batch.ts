@@ -1,4 +1,5 @@
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
 import type {
   AgentToolResult,
@@ -20,6 +21,15 @@ import {
 import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.js";
 import { isWholeFileInvocation } from "./file-operation-tools.js";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
+import { Type } from "typebox";
+import { resultError, withStructuredResult, type StructuredResult } from "pi-agent-resource";
+import { captureScriptMutation } from "./text-mutation.js";
+import {
+  mutationDataSchema,
+  mutationOutputSchema,
+  mutationOutcome,
+  type MutationData,
+} from "./structured-result.js";
 
 interface PendingBatch {
   readonly entries: TextBatchEntry[];
@@ -35,6 +45,8 @@ interface BatchSummary {
 }
 
 interface ScriptBatch {
+  readonly reports: StructuredResult<MutationData>[];
+  reportCursor: number;
   readonly id: string;
   readonly context: ExtensionContext;
   readonly summaries: BatchSummary[];
@@ -44,6 +56,45 @@ interface ScriptBatch {
   tail: Promise<void>;
   pending: PendingBatch;
   closed: boolean;
+}
+
+function mergedFiles(files: MutationData["files"]): MutationData["files"] {
+  const merged = new Map<string, MutationData["files"][number]>();
+  for (const file of files) {
+    const previous = merged.get(file.source);
+    const effect =
+      previous?.effect === "unknown" || file.effect === "unknown"
+        ? "unknown"
+        : previous?.effect === "applied" || file.effect === "applied"
+          ? "applied"
+          : file.effect;
+    merged.set(file.source, { ...file, effect });
+  }
+  return [...merged.values()];
+}
+
+function receiptEffect(files: MutationData["files"]): MutationData["effect"] {
+  return files.some((file) => file.effect === "unknown")
+    ? "unknown"
+    : files.some((file) => file.effect === "applied")
+      ? "applied"
+      : "not-applied";
+}
+
+function receiptStatus(
+  errors: readonly unknown[],
+  operations: NonNullable<MutationData["operations"]>,
+) {
+  return errors.length === 0
+    ? ("success" as const)
+    : operations.some(
+          (operation) => operation.effect === "applied" && operation.errors.length === 0,
+        ) &&
+        operations.some(
+          (operation) => operation.errors.length > 0 || operation.effect !== "applied",
+        )
+      ? ("partial" as const)
+      : ("error" as const);
 }
 
 function assertOpen(script: ScriptBatch): void {
@@ -98,12 +149,72 @@ class NativeTextEditBatchCoordinator {
     private readonly core: TextEditorCore,
     pi: ExtensionAPI,
   ) {
+    pi.registerTool({
+      name: "flush",
+      exposure: "codemode",
+      namespace: {
+        name: "ide_edit",
+        description: "Edit files and live IDE resources with guarded operations.",
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      label: "Flush",
+      description:
+        "Use flush to commit pending native Codemode text edits and return their observed effects. Await tools.flush({}) before depending on a completed write. A failed flush retains applied effects and does not replay edits. Call it only inside native Codemode.",
+      promptSnippet: "Commit pending native editor changes and inspect their effects",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      outputSchema: mutationOutputSchema,
+      execute: async (id) => {
+        const script = this.invocations.get(id);
+        if (!script) throw new Error("Flush requires an active native Codemode script");
+        const work = script.tail.then(async () => {
+          await this.commit(script);
+          const reports = script.reports.slice(script.reportCursor);
+          script.reportCursor = script.reports.length;
+          const files = mergedFiles(reports.flatMap((report) => report.data?.files ?? []));
+          const errors = reports.flatMap((report) => report.errors);
+          const operations = reports.flatMap((report) => report.data?.operations ?? []);
+          const effect = receiptEffect(files);
+          return withStructuredResult(
+            {
+              content: [
+                {
+                  type: "text",
+                  text:
+                    errors.length === 0
+                      ? `Flushed ${operations.length} editor operations; ${effect}.`
+                      : `Editor flush failed; ${effect}.\n${errors.map((error) => error.message).join("\n")}`,
+                },
+              ],
+              details: { results: [] },
+            },
+            mutationDataSchema,
+            {
+              status: receiptStatus(errors, operations),
+              data: { operation: "flush", effect, files, operations },
+              errors,
+            },
+          );
+        });
+        script.tail = work.then(
+          () => undefined,
+          () => undefined,
+        );
+        return work;
+      },
+    });
     pi.on("tool_call", async (event, context) => {
       if (event.toolName === "codemode" && event.parentToolCallId === undefined) {
         this.scripts.set(event.toolCallId, {
           id: event.toolCallId,
           context,
           summaries: [],
+          reports: [],
+          reportCursor: 0,
           results: [],
           errors: [],
           cancellation: new AbortController(),
@@ -116,6 +227,10 @@ class NativeTextEditBatchCoordinator {
       const script =
         event.parentToolCallId === undefined ? undefined : this.scripts.get(event.parentToolCallId);
       if (!script) return;
+      if (event.toolName === "flush") {
+        this.invocations.set(event.toolCallId, script);
+        return;
+      }
       const registration = this.core
         .getMutationTools()
         .find((tool) => tool.name === event.toolName);
@@ -179,7 +294,30 @@ class NativeTextEditBatchCoordinator {
       await script.tail;
       if (interrupted) {
         if (script.pending.entries.length > 0) {
-          script.errors.push("Pending editor batch cancelled; no pending edits were written.");
+          const error = resultError(
+            "Pending editor batch cancelled; no pending edits were written.",
+            "CANCELLED",
+          );
+          const operations = script.pending.entries.map((entry) => ({
+            id: entry.callId,
+            operation: entry.op,
+            effect: "not-applied" as const,
+            errors: [error],
+          }));
+          script.reports.push({
+            status: "error",
+            errors: [error],
+            data: {
+              operation: "flush",
+              effect: "not-applied",
+              operations,
+              files: [...script.pending.snapshots.keys()].map((source) => ({
+                source,
+                effect: "not-applied",
+              })),
+            },
+          });
+          script.errors.push(error.message);
           script.pending = pendingBatch();
         }
       } else await this.commit(script);
@@ -201,7 +339,14 @@ class NativeTextEditBatchCoordinator {
         typeof event.details === "object" && event.details !== null ? event.details : {};
       return {
         content,
-        details: { ...details, editorBatches: script.summaries },
+        details: {
+          ...details,
+          editorBatches: script.summaries,
+          editorBatchResults: script.reports,
+        },
+        ...(event.structuredContent === undefined
+          ? {}
+          : { structuredContent: event.structuredContent }),
         isError: event.isError || failed,
       };
     });
@@ -344,44 +489,97 @@ class NativeTextEditBatchCoordinator {
     if (batch.entries.length === 0) return true;
     script.pending = pendingBatch();
     const journal = new BatchExecutionJournal(batch.entries.map((entry) => entry.callId));
+    const registrations = new Map(this.core.getMutationTools().map((tool) => [tool.name, tool]));
     const signal =
       script.context.signal === undefined
         ? script.cancellation.signal
         : AbortSignal.any([script.context.signal, script.cancellation.signal]);
-    try {
-      signal.throwIfAborted();
-      const registrations = new Map(this.core.getMutationTools().map((tool) => [tool.name, tool]));
-      const result = await executeRegisteredTextBatch(
-        this.core,
-        registrations,
-        {
-          edits: batch.entries,
-          expectedContent: batch.snapshots,
-          expectedExistence: batch.existence,
-        },
-        signal,
-        undefined,
-        script.context,
-        journal.reporter(),
-        () => {},
-        batch.plan,
+    let observedSources: string[] = [];
+    const record = (outcome: StructuredResult<MutationData>): boolean => {
+      const calls = journal.snapshot();
+      const operations = calls.map((call) => ({
+        id: call.callId,
+        operation: requiredValue(batch.entries.find((entry) => entry.callId === call.callId)).op,
+        effect:
+          call.state === "completed" || call.state === "failed-applied"
+            ? ("applied" as const)
+            : call.state === "failed-unknown" || call.state === "running"
+              ? ("unknown" as const)
+              : ("not-applied" as const),
+        errors: call.failure === undefined ? [] : [resultError(call.failure.error)],
+      }));
+      const files = mergedFiles([
+        ...operations.flatMap((operation) => {
+          const entry = requiredValue(batch.entries.find((entry) => entry.callId === operation.id));
+          const registration = requiredValue(registrations.get(entry.op));
+          return [...mutationSources(registration, entry).values()].map((source) => ({
+            source,
+            effect: operation.effect,
+          }));
+        }),
+        ...observedSources.map((source) => ({ source, effect: "applied" as const })),
+      ]).map((file) =>
+        observedSources.includes(file.source) ? { ...file, effect: "applied" as const } : file,
       );
-      script.results.push(...(result.details.results ?? []));
-      const calls = journal.snapshot().map((call) => ({ id: call.callId, state: call.state }));
-      const applied = calls.every((call) => call.state === "completed");
-      script.summaries.push({ calls, applied });
-      if (!applied)
+      const errors = [
+        ...new Map(
+          [...outcome.errors, ...operations.flatMap((operation) => operation.errors)].map(
+            (error) => [JSON.stringify(error), error],
+          ),
+        ).values(),
+      ];
+      const completed = calls.every((call) => call.state === "completed");
+      if (!completed && errors.length === 0)
+        errors.push(resultError("Editor batch did not complete", "BATCH_FAILED"));
+      script.reports.push({
+        status: receiptStatus(errors, operations),
+        errors,
+        data: {
+          ...outcome.data,
+          operation: "flush",
+          effect: receiptEffect(files),
+          files,
+          operations,
+        },
+      });
+      script.summaries.push({
+        calls: calls.map((call) => ({ id: call.callId, state: call.state })),
+        applied:
+          operations.some((operation) => operation.effect === "applied") ||
+          observedSources.length > 0,
+      });
+      if (!completed)
         script.errors.push(
           "Editor batch failed; inspect its final file results. Accepted edits were not replayed.",
         );
-      return applied;
+      return completed;
+    };
+    try {
+      signal.throwIfAborted();
+      const captured = await captureScriptMutation(this.core, () =>
+        executeRegisteredTextBatch(
+          this.core,
+          registrations,
+          {
+            edits: batch.entries,
+            expectedContent: batch.snapshots,
+            expectedExistence: batch.existence,
+          },
+          signal,
+          undefined,
+          script.context,
+          journal.reporter(),
+          () => {},
+          batch.plan,
+        ),
+      );
+      observedSources = captured.completions.map((completion) => completion.resourceSource);
+      if (captured.kind === "failed") throw captured.error;
+      script.results.push(...(captured.value.details.results ?? []));
+      return record(mutationOutcome(captured.value, "flush", captured.completions));
     } catch (error) {
-      script.summaries.push({
-        calls: batch.entries.map((entry) => ({ id: entry.callId, state: "failed" })),
-        applied: false,
-      });
-      script.errors.push(error instanceof Error ? error.message : String(error));
-      return false;
+      journal.markRunningUnknown(error);
+      return record({ status: "error", errors: [resultError(error)] });
     }
   }
 }

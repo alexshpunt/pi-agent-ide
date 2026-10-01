@@ -4,6 +4,7 @@ import {
   assistantMessage,
   getToolExecution,
   getToolExecutionDetails,
+  getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -90,11 +91,15 @@ test("Apply completes 1,000 replacements in one large file", async () => {
     const final = await readFile(path.join(cwd, "cases.test.ts"), "utf8");
     expect(final.match(/stableCheckout/gu)).toHaveLength(1_000);
     expect(final.match(/legacyCheckout/gu)).toHaveLength(10_000);
-    expect(Buffer.byteLength(JSON.stringify(execution.result.content))).toBeLessThanOrEqual(
-      55 * 1024,
-    );
+    expect(
+      Buffer.byteLength(
+        JSON.stringify(
+          (getToolExecutionResult(run, "large-apply") as { content: unknown[] }).content,
+        ),
+      ),
+    ).toBeLessThanOrEqual(55 * 1024);
   });
-});
+}, 120_000);
 
 test("Apply moves a complete line block to a positional file end", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -373,7 +378,7 @@ test("Apply refreshes the same handle after a partial checkpoint", async () => {
         assistantMessage([text("Done")]),
       ],
     }).run("Correct a partial checkpoint with the same opened handle");
-    expect(getToolExecution(run, "refresh").isError).toBe(false);
+    expect(getToolExecution(run, "refresh").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ONE TWO\n");
   });
 });
@@ -598,7 +603,11 @@ test("Apply rejects explicitly unavailable diagnostics while ordinary script rea
       ],
     }).run("Read text and check unavailable diagnostics explicitly");
     const execution = getToolExecution(run, "diagnostics");
-    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(execution.isError, JSON.stringify(execution)).toBe(true);
+    expect(
+      (getToolExecutionResult(run, "diagnostics") as { structuredContent: { status: string } })
+        .structuredContent.status,
+    ).toBe("partial");
   });
 });
 
@@ -943,7 +952,11 @@ test("Apply keeps independent edits when a create fails", async () => {
       ],
     }).run("Apply an edit and report the failed create");
     const execution = getToolExecution(run, "partial");
-    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(execution.isError, JSON.stringify(execution)).toBe(true);
+    expect(
+      (getToolExecutionResult(run, "partial") as { structuredContent: { status: string } })
+        .structuredContent.status,
+    ).toBe("partial");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("after\n");
     expect(await readFile(path.join(cwd, "exists.txt"), "utf8")).toBe("keep\n");
     expect(JSON.stringify(getToolExecutionDetails(execution))).toMatch(/APPLY#[0-9A-F]{12}/u);
@@ -977,7 +990,11 @@ test("Apply rejects only the later overlapping edit and keeps snapshot offsets s
       ],
     }).run("Apply independent snapshot edits around an overlap");
     const execution = getToolExecution(run, "overlap");
-    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(execution.isError, JSON.stringify(execution)).toBe(true);
+    expect(
+      (getToolExecutionResult(run, "overlap") as { structuredContent: { status: string } })
+        .structuredContent.status,
+    ).toBe("partial");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ONE-LONG two THREE\n");
   });
 });
@@ -1010,7 +1027,14 @@ test("Apply keeps the first overlapping selection and rejects the later one", as
       ],
     }).run("Reject overlapping snapshot selections before writing");
     const execution = getToolExecution(run, "overlap-preflight");
-    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(execution.isError, JSON.stringify(execution)).toBe(true);
+    expect(
+      (
+        getToolExecutionResult(run, "overlap-preflight") as {
+          structuredContent: { status: string };
+        }
+      ).structuredContent.status,
+    ).toBe("partial");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("line\n");
   });
 });
@@ -1044,7 +1068,11 @@ test("Apply preserves earlier file effects when a later operation fails", async 
       ],
     }).run("Rollback a transaction after a later filesystem operation fails");
     const execution = getToolExecution(run, "rollback");
-    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(execution.isError, JSON.stringify(execution)).toBe(true);
+    expect(
+      (getToolExecutionResult(run, "rollback") as { structuredContent: { status: string } })
+        .structuredContent.status,
+    ).toBe("partial");
     expect(await readFile(path.join(cwd, "first.bin"))).toEqual(Buffer.from([1, 2, 3]));
     expect(await readFile(path.join(cwd, "second.bin"))).toEqual(Buffer.from([4, 5, 6]));
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("after\n");
@@ -1155,8 +1183,8 @@ test("diff uses converted text and keeps large comparisons complete behind bound
         assistantMessage([text("Done")]),
       ],
     }).run("Compare full text and converted sources");
-    for (const id of ["large-diff", "diff-data"])
-      expect(getToolExecution(run, id).isError).toBe(false);
+    expect(getToolExecution(run, "large-diff").isError).toBe(false);
+    expect(getToolExecution(run, "diff-data").isError).toBe(true);
     expect(getToolExecutionDetails(getToolExecution(run, "large-diff"))).toHaveProperty(
       "temporarySource",
       expect.stringMatching(/^temp:/),

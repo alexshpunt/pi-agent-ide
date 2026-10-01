@@ -12,6 +12,7 @@ import type {
   TextSearchSession,
 } from "#src/search-session.js";
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
+import { selectionData } from "pi-agent-search/api/search";
 
 interface TextPayload {
   readonly request: SearchRequest;
@@ -45,6 +46,10 @@ export function createRegexResolver(sessions: SearchSessionStore): SearchResolve
 export function createFileResolver(): SearchResolver {
   return {
     id: "files",
+    toScriptData(payload) {
+      const result = payload as FilePayload;
+      return { kind: "files", files: [...result.files], complete: result.complete };
+    },
     async tryResolve(request, context) {
       if (!request.query.startsWith("files:")) {
         return { kind: "not-handled" };
@@ -74,6 +79,14 @@ function createMatchResolver(
 ): SearchResolver {
   return {
     id,
+    toScriptData(payload, details) {
+      const result = payload as TextPayload;
+      const sessionId = (details as { sessionId?: string }).sessionId;
+      return {
+        ...selectionData(result.matches, result.complete, sessionId),
+        notices: [...result.notices],
+      };
+    },
     async tryResolve(request, context) {
       const recipe = queryBody(request);
       if (recipe === undefined) return { kind: "not-handled" };

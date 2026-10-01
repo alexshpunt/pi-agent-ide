@@ -37,6 +37,10 @@ Use `delete` with a path and no text selector to delete one complete file. Use a
 
 ## Native Codemode
 
+Check each IDE result's `status` before using its data. Structured domain errors resolve to `status: "error"` or `"partial"`; argument validation, blocking, and cancellation can still reject. Check `data.effect` and per-source effects before retrying.
+
+Await `tools.flush({})` when later script work needs a committed receipt. Inspect its `data.operations` for final effects keyed by accepted child call ID. A failed flush does not replay edits. An empty flush succeeds with no operations.
+
 Await independent local text-edit calls sequentially inside one script. Keep their selectors tied to the original file snapshots and combine overlapping edits before submitting them. Check the parent Codemode result for committed effects; a child acceptance is not proof that a file was written.
 
 Read or search again before dependent edits that need fresh content or anchors. Another tool, a whole-file operation, or a resource-owned selector ends the pending batch before running. Do not reuse old line anchors across that boundary.

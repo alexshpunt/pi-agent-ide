@@ -107,16 +107,15 @@ export async function readRaw(
           byteLength: count,
           totalBytes: stat.size,
         },
-        ...(audience === "script" && {
-          script: {
-            kind: "bytes" as const,
-            source,
-            byteOffset: start,
-            byteLength: count,
-            totalBytes: stat.size,
-            bytes: Array.from(bytes),
-          },
-        }),
+        script: {
+          kind: "bytes",
+          source,
+          byteOffset: start,
+          byteLength: count,
+          totalBytes: stat.size,
+          bytes: Array.from(bytes),
+          truncated: count < requestedLength,
+        },
       };
     } finally {
       await handle.close();
