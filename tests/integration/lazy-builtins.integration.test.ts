@@ -27,6 +27,7 @@ test("registers only selected built-ins", async () => {
     for (const file of [
       "src/pi-agent-ide.ts",
       "src/composite/host-version.ts",
+      "src/composite/tool-availability.ts",
       "src/composite/selection.ts",
       "src/composite/extensions-config.ts",
       "src/composite/feature-flags.ts",
