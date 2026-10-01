@@ -46,6 +46,7 @@ Public structured results must be finite plain JSON and fit within 1 MiB. Text w
 Read `continuation` is a complete next request with a resolved source and absolute offset. Follow it rather than recomputing offsets from a rendered annotation. `fullResult` identifies retained complete output when available. A huge indivisible block or invalid adapter returns an explicit error rather than a clipped success. Temporary references belong to their runtime.
 
 Native structured content is not copied into stored session messages. Existing compact renderer details stay separate. Scripts that explicitly print large data still store what they print.
+Guides attached to native structured child calls stay on the readable parent result, even when the script prints only selected data. They do not become fields in the public data schema.
 
 ## Resolver adapters
 

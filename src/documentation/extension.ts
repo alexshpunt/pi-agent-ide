@@ -20,6 +20,8 @@ const READ_RECORD = "agent-documentation-read";
 export default async function registerProgressiveDocumentation(pi: ExtensionAPI): Promise<void> {
   const registry = new AgentDocumentationRegistry();
   const claimed = new Set<string>();
+  const parents = new Map<string, string>();
+  const pendingGuides = new Map<string, readonly AgentDocumentation[]>();
   const remember = (ids: readonly string[]): void => {
     const unread = ids.filter((id) => !claimed.has(id));
     if (unread.length === 0) return;
@@ -82,8 +84,16 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
     restoreClaims(context.sessionManager.getBranch(), registry, claimed);
   });
 
+  pi.on("tool_call", (event) => {
+    if (event.toolCallId.includes("-preflight-")) return;
+    if (event.parentToolCallId !== undefined) parents.set(event.toolCallId, event.parentToolCallId);
+  });
   pi.on("tool_result", (event) => {
     if (event.toolCallId.includes("-preflight-")) return;
+    const parent = parents.get(event.toolCallId);
+    parents.delete(event.toolCallId);
+    const inherited = pendingGuides.get(event.toolCallId) ?? [];
+    pendingGuides.delete(event.toolCallId);
     const docsSource = event.toolName === "read" ? documentationSource(event.input) : undefined;
     if (docsSource !== undefined) {
       const id = docsSource.slice("docs:".length);
@@ -105,11 +115,18 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
         isError: event.isError,
       };
     }
-    const documents = registry
-      .matching(event.toolName, event.input)
-      .filter((document) => !claimed.has(document.id));
+    const documents = [
+      ...inherited,
+      ...registry
+        .matching(event.toolName, event.input)
+        .filter((document) => !claimed.has(document.id)),
+    ];
     if (documents.length === 0) return;
     remember(documents.map((document) => document.id));
+    // Native callers receive structured data, not this readable attachment.
+    // Keep the guide on the parent result so it reaches the agent even when data is filtered.
+    if (parent !== undefined && event.structuredContent !== undefined)
+      pendingGuides.set(parent, [...(pendingGuides.get(parent) ?? []), ...documents]);
     return {
       content: [
         ...event.content,
@@ -146,7 +163,7 @@ function renderPromptGuideline(documents: readonly AgentDocumentation[]): string
   if (documents.length === 0) return undefined;
   return [
     "Read the matching docs:<id> before using any tool or feature with packaged guidance, including tools discovered later or called through Codemode. Read each guide once per branch. Tool descriptions and docs: listings do not replace the full guide.",
-    "If a result includes a Guide, read it before your next use. The call has already run: do not repeat it just to obtain documentation. In Codemode, output child results to retain attached guides; filtered results can hide them.",
+    "If a result includes a Guide, read it before your next use. The call has already run: do not repeat it just to obtain documentation. Native structured child calls keep their guides on the parent result. Output readable-only child results to retain their guides; filtering those results can hide them.",
     "Available documents:",
     ...documents.map((document) => `  - ${document.id} — ${document.description}`),
   ].join("\n");

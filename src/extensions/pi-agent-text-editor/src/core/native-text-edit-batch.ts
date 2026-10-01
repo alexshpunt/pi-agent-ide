@@ -284,12 +284,14 @@ class NativeTextEditBatchCoordinator {
       const script = this.scripts.get(event.toolCallId);
       if (!script) return;
       script.closed = true;
-      const failure = event.content.at(-1);
       const interrupted =
         script.context.signal?.aborted ||
         (event.isError &&
-          failure?.type === "text" &&
-          /^Script error:\nScript (?:aborted|timed out):/u.test(failure.text));
+          event.content.some(
+            (block) =>
+              block.type === "text" &&
+              /^Script error:\nScript (?:aborted|timed out):/u.test(block.text),
+          ));
       if (interrupted) script.cancellation.abort();
       await script.tail;
       if (interrupted) {
