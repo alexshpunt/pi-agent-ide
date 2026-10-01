@@ -57,6 +57,7 @@ export class MutationPanel implements Component {
     this.themeColorMode = theme.getColorMode();
   }
 
+  /** Refresh colored caches when the theme or the palette behind Pi's proxy changes. */
   public setTheme(theme: Theme): void {
     if (
       this.theme === theme &&
