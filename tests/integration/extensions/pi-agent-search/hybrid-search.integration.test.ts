@@ -104,6 +104,64 @@ test("runs hybrid matching and empty protocol recovery through the default IDE",
   }
 });
 
+test("finds Boolean matches and registers literal anchors after a regex error on long lines", async () => {
+  const cwd = await workspace();
+  await writeFile(path.join(cwd, "boolean.txt"), "gpt-6-astra " + "x".repeat(32_000) + "\n");
+  await writeFile(path.join(cwd, "unicode.txt"), "astra " + "aĀ".repeat(16_000) + "\n");
+  const result = await new PiIntegrationTest({
+    testName: "search-long-line-regressions",
+    artifactsDir: testArtifactsDir(import.meta.filename),
+    cwd,
+    extensions: [ide, runtimeAnchors],
+    tools: ["search", "read"],
+    timeoutMs: 180_000,
+    rawMode: false,
+    conversation: [
+      call("invalid", "search", { query: "regex:(", path: "boolean.txt" }),
+      call("boolean", "search", { query: "gpt-6-astra OR astra", path: "boolean.txt", limit: 1 }),
+      call("boolean-match", "read", { path: "SEARCH#RUNTIME:1:all:match" }),
+      call("literal", "search", { query: "astra", path: "unicode.txt", limit: 1 }),
+      call("literal-match", "read", { path: "SEARCH#RUNTIME:2:all:match" }),
+      assistantMessage([text("Done")]),
+    ],
+  }).run("Search long ASCII and Unicode lines and read the exact anchors after a failed regex");
+  expect(getToolExecution(result, "invalid").isError).toBe(true);
+  for (const id of ["boolean", "boolean-match", "literal", "literal-match"])
+    expect(getToolExecution(result, id).isError, id).toBe(false);
+  expect(getToolResultText(result, "boolean")).toContain("⟦gpt-6-astra⟧");
+  expect(getToolResultText(result, "boolean-match")).toContain("gpt-6-astra");
+  expect(getToolResultText(result, "literal")).toContain("⟦astra⟧");
+  expect(getToolResultText(result, "literal-match")).toContain("astra");
+  expect(getToolExecutionDetails(getToolExecution(result, "boolean"))).toMatchObject({
+    payload: { matchCount: 1, complete: true },
+  });
+});
+test("keeps Boolean conditions when refreshing an all-match anchor after editing", async () => {
+  const cwd = await workspace();
+  await writeFile(path.join(cwd, "input.txt"), "alpha beta\n");
+  const result = await new PiIntegrationTest({
+    testName: "boolean-search-anchor-refresh",
+    artifactsDir: testArtifactsDir(import.meta.filename),
+    cwd,
+    extensions: [ide, runtimeAnchors],
+    tools: ["search", "write", "read"],
+    timeoutMs: 180_000,
+    conversation: [
+      call("search", "search", { query: "alpha AND beta NOT ignored", path: "input.txt" }),
+      call("change", "write", {
+        path: "input.txt",
+        content: "alpha alone\nalpha beta ignored\nβ alpha beta\n",
+      }),
+      call("refresh", "read", { path: "SEARCH#RUNTIME:1:all:match" }),
+      assistantMessage([text("Done")]),
+    ],
+  }).run("Refresh a Boolean selection after the matching lines change");
+  for (const id of ["search", "change", "refresh"])
+    expect(getToolExecution(result, id).isError, id).toBe(false);
+  expect(getToolResultText(result, "refresh")).toContain("alpha");
+  expect(getToolResultText(result, "refresh")).not.toContain("alone");
+  expect(getToolResultText(result, "refresh")).not.toContain("ignored");
+});
 test("refreshes a regex fallback as literal-first before reading and editing all matches", async () => {
   const cwd = await workspace();
   await writeFile(path.join(cwd, "input.txt"), "fooXbar\n");

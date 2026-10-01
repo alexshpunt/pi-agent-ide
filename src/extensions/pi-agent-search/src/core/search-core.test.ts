@@ -97,6 +97,7 @@ describe("search fallback dispatch", () => {
       const { core, fallback } = await setup(attempt);
       const result = await core.execute({ query: "symbols:needle" }, { cwd: process.cwd() });
       expect(result.details.failure?.code).toBe("RESOLVE_FAILED");
+      expect(result.isError).toBe(true);
       expect(fallback).not.toHaveBeenCalled();
     },
   );

@@ -362,6 +362,7 @@ function failure(
   cause?: unknown,
 ): AgentToolResult<SearchToolDetails> {
   return {
+    isError: true,
     content: [{ type: "text", text: message }],
     details: {
       failure: {

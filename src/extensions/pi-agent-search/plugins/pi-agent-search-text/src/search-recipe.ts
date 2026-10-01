@@ -3,12 +3,18 @@ import {
   type TextSearchRequest,
   type TextSearchBackendResult,
 } from "#src/search-backend.js";
-import { compileSearchQuery, compileSearchFallbackQuery } from "#src/search-query.js";
+import {
+  compileSearchQuery,
+  compileSearchFallbackQuery,
+  compileSearchCondition,
+  type SearchCondition,
+} from "#src/search-query.js";
 
 /** One optional broadening step after the previous search finds no matches. */
 export interface SearchFallback {
   readonly query: string;
   readonly mode: "regex" | "words";
+  readonly condition?: SearchCondition;
 }
 
 /** Replayable search inputs, including the same ordered fallbacks used by the original call. */
@@ -24,11 +30,15 @@ export function createSearchRecipe(request: TextSearchRequest): SearchRecipe {
   const regex = compileSearchQuery(request.query, true);
   const words = compileSearchFallbackQuery(request.query);
   const fallbacks: SearchFallback[] = [];
-  if (regex !== query) fallbacks.push({ query: regex, mode: "regex" });
+  const condition = compileSearchCondition(request.query);
+  const regexCondition = compileSearchCondition(request.query, true);
+  if (regex !== query || JSON.stringify(condition) !== JSON.stringify(regexCondition)) {
+    fallbacks.push({ query: regex, mode: "regex", condition: regexCondition });
+  }
   if (words !== undefined && words !== query && words !== regex) {
     fallbacks.push({ query: words, mode: "words" });
   }
-  return { ...request, query, regex: true, fallbacks };
+  return { ...request, query, regex: true, condition, fallbacks };
 }
 
 /** Run or refresh a recipe without hiding cancellation, I/O errors, or regex runtime failures. */
@@ -46,7 +56,11 @@ export async function runSearchRecipe(
     if (result.matches.length > 0 || !result.complete) break;
     signal?.throwIfAborted();
     try {
-      const next = await searchText({ ...recipe, query: fallback.query, regex: true }, cwd, signal);
+      const next = await searchText(
+        { ...recipe, query: fallback.query, regex: true, condition: fallback.condition },
+        cwd,
+        signal,
+      );
       result = next;
       query = fallback.query;
       notices.push(

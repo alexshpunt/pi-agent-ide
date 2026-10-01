@@ -62,6 +62,11 @@ describe("hybrid search through ripgrep", () => {
     expect(result.matches.map((match) => match.lineNumber)).toEqual([1, 2]);
     expect(result.matches.map((match) => match.matchedText)).toEqual(["foo42", "bar7"]);
   });
+  test("keeps zero-width regex terms as Boolean line conditions", async () => {
+    const result = await search("alpha AND (?=alpha)", "alpha\nother\n");
+    expect(result.matches.map((match) => match.matchedText)).toEqual(["alpha"]);
+    expect((await search(String.raw`alpha\d+ NOT (?=alpha)`, "alpha7\n")).matches).toEqual([]);
+  });
   test("keeps spaces and operator characters inside regex classes", async () => {
     const result = await search(String.raw`[()| ]+tag AND keep`, "()| tag keep\nother keep\n");
     expect(result.matches.map((match) => match.matchedText)).toEqual(["()| tag"]);
