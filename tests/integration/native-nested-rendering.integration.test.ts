@@ -59,7 +59,11 @@ test("nested IDE results keep their custom panels below Codemode without script 
       rawMode: false,
       cwd,
       isolateUserResources: true,
-      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        "builtin:codemode",
+        path.resolve("tests/integration/fixtures/native-history-probe.ts"),
+      ],
       tools: ["codemode", "read", "search", "replace"],
       conversation: [
         assistantMessage(
@@ -93,6 +97,11 @@ test("nested IDE results keep their custom panels below Codemode without script 
     expect(panelEntry).not.toContain('"beforeContentMap"');
     expect(panelEntry).not.toContain('"afterDocument"');
     expect(saved.session).not.toContain('"editorBatchRender"');
+    expect(await readFile(path.join(cwd, "first-request-persisted.txt"), "utf8")).toBe(
+      "user persisted before assistant\n",
+    );
+    expect(saved.session).toContain("IDE hidden guide export probe");
+    expect(saved.session).toContain("IDE hidden diagnostic export probe");
     const session = path.join(cwd, "saved.jsonl");
     await writeFile(session, saved.session ?? "");
     const restored = await new PiIntegrationTest({
