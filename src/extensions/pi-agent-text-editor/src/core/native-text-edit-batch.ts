@@ -25,6 +25,10 @@ import { Type } from "typebox";
 import { resultError, withStructuredResult, type StructuredResult } from "pi-agent-resource";
 import { captureScriptMutation } from "./text-mutation.js";
 import {
+  NATIVE_EDIT_BATCH_EVENT,
+  type NativeEditBatchEvent,
+} from "#src/api/native-edit-batch-event.js";
+import {
   mutationDataSchema,
   mutationOutputSchema,
   mutationOutcome,
@@ -147,7 +151,7 @@ class NativeTextEditBatchCoordinator {
 
   constructor(
     private readonly core: TextEditorCore,
-    pi: ExtensionAPI,
+    private readonly pi: ExtensionAPI,
   ) {
     pi.registerTool({
       name: "flush",
@@ -578,6 +582,11 @@ class NativeTextEditBatchCoordinator {
       observedSources = captured.completions.map((completion) => completion.resourceSource);
       if (captured.kind === "failed") throw captured.error;
       script.results.push(...(captured.value.details.results ?? []));
+      this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, {
+        parentToolCallId: script.id,
+        calls: batch.entries.map((entry) => entry.callId),
+        result: captured.value,
+      } satisfies NativeEditBatchEvent);
       return record(mutationOutcome(captured.value, "flush", captured.completions));
     } catch (error) {
       journal.markRunningUnknown(error);

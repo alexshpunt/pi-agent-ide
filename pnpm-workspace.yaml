@@ -5,14 +5,14 @@ packages:
 minimumReleaseAgeExclude:
   - "pi-coding-agent-test@0.1.1"
   - run@2.1.4
-  - "@earendil-works/chord@0.99.1"
-  - "@earendil-works/pi-agent-core@0.99.1"
-  - "@earendil-works/pi-ai@0.99.1"
-  - "@earendil-works/pi-codemode@0.99.1"
-  - "@earendil-works/pi-coding-agent@0.99.1"
-  - "@earendil-works/pi-mcp@0.99.1"
-  - "@earendil-works/pi-telemetry@0.99.1"
-  - "@earendil-works/pi-tui@0.99.1"
+  - "@earendil-works/chord@0.99.1 || 1.0.0"
+  - "@earendil-works/pi-agent-core@0.99.1 || 1.0.0"
+  - "@earendil-works/pi-ai@0.99.1 || 1.0.0"
+  - "@earendil-works/pi-codemode@0.99.1 || 1.0.0"
+  - "@earendil-works/pi-coding-agent@0.99.1 || 1.0.0"
+  - "@earendil-works/pi-mcp@0.99.1 || 1.0.0"
+  - "@earendil-works/pi-telemetry@0.99.1 || 1.0.0"
+  - "@earendil-works/pi-tui@0.99.1 || 1.0.0"
   - "@alexshp/pi-coding-agent-test@0.0.0-dev.1790864392"
 
 # node-fetch still depends on this deprecated compatibility shim.

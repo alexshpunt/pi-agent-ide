@@ -6,7 +6,7 @@
     "#extension": "./index.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.99.1",
+    "@earendil-works/pi-coding-agent": "1.0.0",
     "pi-agent-resource": "workspace:^",
     "pi-agent-text": "workspace:^"
   },

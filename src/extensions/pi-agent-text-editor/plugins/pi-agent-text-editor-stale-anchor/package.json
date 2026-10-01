@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.99.1",
+    "@earendil-works/pi-coding-agent": "1.0.0",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-text-editor": "workspace:^"

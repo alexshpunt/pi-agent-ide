@@ -14,12 +14,18 @@ export default function restoreToolHistory(pi: ExtensionAPI): void {
             if (root === undefined) throw new Error("Missing user root");
             await current.navigateTree(root.id, { summarize: false });
           }
+          if (process.env.IDE_RESTORE_TREE_RESULT === "1") {
+            const result = current.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "toolResult");
+            if (result === undefined) throw new Error("Missing tool result");
+            await current.navigateTree(result.id, { summarize: false });
+          }
           await current.sendUserMessage("History restored");
         },
       });
     },
   });
   pi.on("session_start", (_event, ctx) => {
+    if (process.env.IDE_HISTORY_THEME) ctx.ui.setTheme(process.env.IDE_HISTORY_THEME);
     ctx.ui.setToolsExpanded(process.env.IDE_HISTORY_EXPANDED === "1");
   });
 }
