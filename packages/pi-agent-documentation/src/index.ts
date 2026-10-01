@@ -17,7 +17,7 @@ export interface AgentDocumentationTrigger {
   readonly viewPrefixes?: readonly string[];
 }
 
-/** A packaged guide that can be discovered, read explicitly, and attached on first relevant use. */
+/** A packaged guide that can be read explicitly or added to the first relevant result, without blocking execution. */
 export interface AgentDocumentation {
   readonly id: string;
   readonly description: string;
