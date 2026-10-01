@@ -44,18 +44,34 @@ export class MutationPanel implements Component {
     | undefined;
   private renderedRows = new Map<DiffRow, readonly string[]>();
   private renderedWidth: number | undefined;
+  private themeColors: Theme["colors"];
+  private themeAppearance: Theme["appearance"];
+  private themeColorMode: ReturnType<Theme["getColorMode"]>;
 
   public constructor(
     private theme: Theme,
     private readonly ownsShell = false,
-  ) {}
+  ) {
+    this.themeColors = theme.colors;
+    this.themeAppearance = theme.appearance;
+    this.themeColorMode = theme.getColorMode();
+  }
 
+  /** Refresh colored caches when the theme or the palette behind Pi's proxy changes. */
   public setTheme(theme: Theme): void {
-    if (this.theme === theme) {
+    if (
+      this.theme === theme &&
+      this.themeColors === theme.colors &&
+      this.themeAppearance === theme.appearance &&
+      this.themeColorMode === theme.getColorMode()
+    ) {
       return;
     }
 
     this.theme = theme;
+    this.themeColors = theme.colors;
+    this.themeAppearance = theme.appearance;
+    this.themeColorMode = theme.getColorMode();
     this.diffPanels = [];
     this.renderedRows.clear();
     this.rebuildPanels();
@@ -171,6 +187,8 @@ export class MutationPanel implements Component {
   }
 
   public render(width: number): string[] {
+    // Pi can replace the palette behind the same theme proxy.
+    this.setTheme(this.theme);
     const contentWidth = this.ownsShell ? Math.max(1, width - 2) : width;
 
     if (this.renderedWidth !== contentWidth) {

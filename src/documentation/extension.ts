@@ -9,53 +9,27 @@ import {
   type AgentDocumentation,
 } from "#src/api/documentation.js";
 import { AgentDocumentationRegistry } from "#src/documentation/registry.js";
-import {
-  type InterceptResult,
-  registerToolCallInterceptor,
-  type ToolCallInterceptorHandler,
-} from "pi-agent-text-editor/api/tool-call-interceptor";
 
 interface RegistrationRequest {
   readonly documents: readonly AgentDocumentation[];
 }
 
-/** Registers progressive documentation discovery, resources, and first-use attachments. */
+const READ_RECORD = "agent-documentation-read";
+
+/** Exposes packaged guides and adds unread guides to results without blocking tools. */
 export default async function registerProgressiveDocumentation(pi: ExtensionAPI): Promise<void> {
   const registry = new AgentDocumentationRegistry();
   const claimed = new Set<string>();
-  const fallbackGates = new Map<string, readonly AgentDocumentation[]>();
-  const gatedToolNames: string[] = [];
-  const gateHandler: ToolCallInterceptorHandler = {
-    name: "agent-documentation-first-use",
-    blockExecution: true,
-    toolNames: gatedToolNames,
-    intercept(context): InterceptResult | undefined {
-      if (process.env.PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE === "1") return;
-      if (context.toolCall.id.includes("-preflight-")) return;
-      const documents = claimMatchingGuides(
-        registry,
-        claimed,
-        context.toolCall.name,
-        context.partialArgs ?? context.args,
-      );
-      if (documents.length === 0) return;
-      fallbackGates.set(context.toolCall.id, documents);
-      sendGuideToAgent(pi, documents);
-      return guideGateResult(documents);
-    },
+  const remember = (ids: readonly string[]): void => {
+    const unread = ids.filter((id) => !claimed.has(id));
+    if (unread.length === 0) return;
+    // Separate records survive bounded nested-call metadata and stay on their own branch.
+    pi.appendEntry(READ_RECORD, { ids: unread });
+    for (const id of unread) claimed.add(id);
   };
-  registerToolCallInterceptor(pi, gateHandler);
   const unsubscribe = pi.events.on(DOCUMENTATION_REGISTER_EVENT, (value) => {
     if (!isRegistrationRequest(value)) throw new Error("Invalid agent documentation registration");
     registry.register(value.documents);
-    gatedToolNames.splice(
-      0,
-      gatedToolNames.length,
-      ...new Set(
-        registry.list().flatMap((document) => document.triggers.map((trigger) => trigger.tool)),
-      ),
-    );
-    registerToolCallInterceptor(pi, gateHandler);
   });
   pi.on("session_shutdown", unsubscribe);
 
@@ -101,57 +75,41 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
   pi.on("session_start", (_event, context) => {
     restoreClaims(context.sessionManager.getBranch(), registry, claimed);
   });
-
-  pi.on("tool_call", (event, context) => {
-    if (process.env.PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE === "1") return;
-    if (event.toolCallId.includes("-preflight-")) return;
+  pi.on("session_tree", (_event, context) => {
     restoreClaims(context.sessionManager.getBranch(), registry, claimed);
-    const documents = claimMatchingGuides(registry, claimed, event.toolName, event.input);
-    if (documents.length === 0) return;
-    fallbackGates.set(event.toolCallId, documents);
-    sendGuideToAgent(pi, documents);
-    return { block: true, reason: guideNotice(documents) };
   });
-  pi.on("tool_result", (event, context) => {
+  pi.on("session_compact", (_event, context) => {
+    restoreClaims(context.sessionManager.getBranch(), registry, claimed);
+  });
+
+  pi.on("tool_result", (event) => {
     if (event.toolCallId.includes("-preflight-")) return;
-    const fallbackDocuments = fallbackGates.get(event.toolCallId);
-    if (fallbackDocuments !== undefined) {
-      fallbackGates.delete(event.toolCallId);
-      return {
-        content: [{ type: "text" as const, text: guideNotice(fallbackDocuments) }],
-        details: documentationGateDetails(fallbackDocuments),
-        isError: true,
-      };
-    }
-    restoreClaims(context.sessionManager.getBranch(), registry, claimed, event.toolCallId);
-    const docsSource = documentationSource(event.input);
+    const docsSource = event.toolName === "read" ? documentationSource(event.input) : undefined;
     if (docsSource !== undefined) {
       const id = docsSource.slice("docs:".length);
-      const available = registry.list();
       const known = id.length === 0 || registry.get(id) !== undefined;
-      if (id.length > 0 && known) claimed.add(id);
+      const document = registry.get(id);
+      if (document !== undefined && !event.isError && containsFullGuide(event.content, document))
+        remember([id]);
       return {
         content: event.content,
-        ...(event.structuredContent === undefined
-          ? {}
-          : { structuredContent: event.structuredContent }),
+        structuredContent: event.structuredContent,
         details: {
           ...(isRecord(event.details) ? event.details : {}),
           documentation: known
             ? id.length === 0
-              ? { kind: "list", ids: available.map((document) => document.id) }
+              ? { kind: "list", ids: registry.list().map((document) => document.id) }
               : { kind: "document", id }
             : { kind: "error", code: "UNKNOWN_DOCUMENTATION", id },
         },
         isError: event.isError,
       };
     }
-    if (process.env.PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE === "1") return;
     const documents = registry
       .matching(event.toolName, event.input)
       .filter((document) => !claimed.has(document.id));
     if (documents.length === 0) return;
-    for (const document of documents) claimed.add(document.id);
+    remember(documents.map((document) => document.id));
     return {
       content: [
         ...event.content,
@@ -160,13 +118,11 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
           text: `\n\n---\n\n# Guide: ${document.id}\n\n${document.markdown.trim()}`,
         })),
       ],
+      structuredContent: event.structuredContent,
       details: {
         ...(isRecord(event.details) ? event.details : {}),
         documentation: { kind: "attachment", ids: documents.map((document) => document.id) },
       },
-      ...(event.structuredContent === undefined
-        ? {}
-        : { structuredContent: event.structuredContent }),
       isError: event.isError,
     };
   });
@@ -177,58 +133,6 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
   });
 }
 
-function claimMatchingGuides(
-  registry: AgentDocumentationRegistry,
-  claimed: Set<string>,
-  toolName: string,
-  input: unknown,
-): readonly AgentDocumentation[] {
-  const documents = registry
-    .matching(toolName, input)
-    .filter((document) => !claimed.has(document.id));
-  for (const document of documents) claimed.add(document.id);
-  return documents;
-}
-
-function renderGuideGate(documents: readonly AgentDocumentation[]): string {
-  return [
-    "[SYSTEM] Read the attached guide before using this tool. Repeat the tool call after reading it.",
-    ...documents.map(
-      (document) => `\n\n---\n\n# Guide: ${document.id}\n\n${document.markdown.trim()}`,
-    ),
-  ].join("");
-}
-
-function guideNotice(documents: readonly AgentDocumentation[]): string {
-  return `Guide sent to agent: ${documents.map((document) => document.id).join(", ")}. Repeat the tool call.`;
-}
-
-function sendGuideToAgent(pi: ExtensionAPI, documents: readonly AgentDocumentation[]): void {
-  pi.sendMessage({
-    customType: "agent-documentation-first-use",
-    content: renderGuideGate(documents),
-    display: false,
-    details: documentationGateDetails(documents),
-  });
-}
-
-function documentationGateDetails(documents: readonly AgentDocumentation[]): {
-  readonly documentation: { readonly kind: "gate"; readonly ids: readonly string[] };
-} {
-  return { documentation: { kind: "gate", ids: documents.map((document) => document.id) } };
-}
-
-function guideGateResult(documents: readonly AgentDocumentation[]): InterceptResult {
-  return {
-    annotation: { kind: "blocked", reason: "Read the first-use guide, then retry." },
-    message: {
-      customType: "agent-documentation-first-use",
-      content: guideNotice(documents),
-      display: false,
-      details: documentationGateDetails(documents),
-    },
-  };
-}
 function renderListing(documents: readonly AgentDocumentation[]): string {
   if (documents.length === 0) return "No agent documentation is currently available.";
   return [
@@ -241,7 +145,9 @@ function renderListing(documents: readonly AgentDocumentation[]): string {
 function renderPromptGuideline(documents: readonly AgentDocumentation[]): string | undefined {
   if (documents.length === 0) return undefined;
   return [
-    "Read docs:<id> for detailed packaged guidance when needed. Available documents:",
+    "Read the matching docs:<id> before using any tool or feature with packaged guidance, including tools discovered later or called through Codemode. Read each guide once per branch. Tool descriptions and docs: listings do not replace the full guide.",
+    "If a result includes a Guide, read it before your next use. The call has already run: do not repeat it just to obtain documentation. In Codemode, output child results to retain attached guides; filtered results can hide them.",
+    "Available documents:",
     ...documents.map((document) => `  - ${document.id} — ${document.description}`),
   ].join("\n");
 }
@@ -250,46 +156,53 @@ function restoreClaims(
   branch: readonly unknown[],
   registry: AgentDocumentationRegistry,
   claimed: Set<string>,
-  currentToolCallId?: string,
 ): void {
+  claimed.clear();
   for (const entry of branch) {
-    if (!isRecord(entry) || entry.type !== "message" || !isRecord(entry.message)) continue;
-    const message = entry.message;
-    if (message.toolCallId === currentToolCallId) continue;
-    if (typeof message.toolCallId === "string" && message.toolCallId.includes("-preflight-"))
+    if (!isRecord(entry)) continue;
+    if (entry.type === "custom" && entry.customType === READ_RECORD && isRecord(entry.data)) {
+      addIds(entry.data.ids);
       continue;
-    if (message.role !== "toolResult" || typeof message.toolName !== "string") continue;
-    if (isRecord(message.details) && isRecord(message.details.documentation)) {
-      const documentation = message.details.documentation;
-      const ids = documentation.ids;
-      if (Array.isArray(ids)) {
-        for (const id of ids)
-          if (typeof id === "string" && registry.get(id) !== undefined) claimed.add(id);
-        continue;
-      }
-      if (
-        documentation.kind === "document" &&
-        typeof documentation.id === "string" &&
-        registry.get(documentation.id) !== undefined
-      ) {
-        claimed.add(documentation.id);
-        continue;
-      }
     }
-    const input = message.input ?? sourceInput(message.details);
-    for (const document of registry.matching(message.toolName, input)) claimed.add(document.id);
+    if (entry.type !== "message" || !isRecord(entry.message)) continue;
+    const message = entry.message;
+    if (message.role !== "toolResult" || !isRecord(message.details)) continue;
+    const documentation = message.details.documentation;
+    if (!isRecord(documentation)) continue;
+    if (documentation.kind === "attachment") addIds(documentation.ids);
+    if (
+      documentation.kind === "document" &&
+      !message.isError &&
+      typeof documentation.id === "string"
+    ) {
+      const document = registry.get(documentation.id);
+      if (document !== undefined && containsFullGuide(message.content, document))
+        addIds([document.id]);
+    }
+  }
+  function addIds(ids: unknown): void {
+    if (!Array.isArray(ids)) return;
+    for (const id of ids)
+      if (typeof id === "string" && registry.get(id) !== undefined) claimed.add(id);
   }
 }
 
+function containsFullGuide(content: unknown, document: AgentDocumentation): boolean {
+  return (
+    Array.isArray(content) &&
+    content.some(
+      (part: unknown) =>
+        isRecord(part) &&
+        part.type === "text" &&
+        typeof part.text === "string" &&
+        part.text.includes(document.markdown.trim()),
+    )
+  );
+}
 function documentationSource(input: unknown): string | undefined {
   if (!isRecord(input) || typeof input.path !== "string" || !input.path.startsWith("docs:"))
     return undefined;
   return input.path;
-}
-
-function sourceInput(details: unknown): { readonly path: string } | undefined {
-  if (!isRecord(details) || typeof details.source !== "string") return undefined;
-  return { path: details.source };
 }
 
 function isRegistrationRequest(value: unknown): value is RegistrationRequest {
