@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import {
   createAssistantMessageEventStream,
@@ -67,7 +67,14 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
           ],
           streamSimple(currentModel, context) {
             declarations.push(getCurrentTools(context.messages).map((tool) => tool.name));
-            const call = context.messages.at(-1)?.role === "user";
+            const last = context.messages.at(-1);
+            const tool =
+              last?.role === "user"
+                ? "edit"
+                : last?.role === "toolResult" && last.toolName === "edit"
+                  ? "edit_availability_probe"
+                  : undefined;
+            const call = tool !== undefined;
             const message: AssistantMessage = {
               role: "assistant",
               content: call
@@ -75,7 +82,7 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
                     {
                       type: "toolCall",
                       id: randomUUID(),
-                      name: "edit_availability_probe",
+                      name: tool,
                       arguments: {},
                     },
                   ]
@@ -133,6 +140,8 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
       if (phase === "resumed") {
         const file = session.sessionFile;
         if (!file) throw new Error("Missing persisted session");
+        const captured = path.join(root, "captured-session.jsonl");
+        await copyFile(file, captured);
         session.dispose();
         await loader.reload();
         ({ session } = await createAgentSession({
@@ -141,7 +150,7 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
           model,
           resourceLoader: loader,
           settingsManager,
-          sessionManager: SessionManager.open(file),
+          sessionManager: SessionManager.open(captured),
           tools: ["edit", "apply", "edit_availability_probe"],
         }));
       }
@@ -151,6 +160,12 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
       expect(session.getCallableToolNames()).not.toContain("edit");
       expect(session.getAllTools().find((tool) => tool.name === "edit")?.exposure).toBe("hidden");
       await session.prompt(`Check availability after ${phase}.`);
+      const direct = session.messages.findLast(
+        (message) => message.role === "toolResult" && message.toolName === "edit",
+      );
+      if (direct?.role !== "toolResult") throw new Error("Missing direct edit denial");
+      expect(direct.isError).toBe(true);
+      expect(direct.content).toEqual([{ type: "text", text: "Tool edit not found" }]);
       const result = session.messages.findLast(
         (message) =>
           message.role === "toolResult" && message.toolName === "edit_availability_probe",
@@ -164,7 +179,7 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
       expect(availability.nested.isError).toBe(true);
       expect(availability.nested.result.content[0]?.text).toBe("Tool edit not found");
     }
-    expect(declarations).toHaveLength(6);
+    expect(declarations).toHaveLength(9);
     for (const names of declarations) expect(names).not.toContain("edit");
   } finally {
     session?.dispose();
