@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { assistantMessage, PiIntegrationTest, text } from "pi-coding-agent-test/base";
+import { getCurrentTools, type Message } from "@earendil-works/pi-ai";
 
 interface ToolInfo {
   readonly name: string;
@@ -33,13 +34,16 @@ export async function exportAgentInterface(options: Options): Promise<void> {
   await rm(artifacts, { recursive: true, force: true });
   await mkdir(artifacts, { recursive: true });
 
-  await new PiIntegrationTest({
+  const result = await new PiIntegrationTest({
     testName: "agent-interface-export",
+    rawMode: false,
     artifactsDir: artifacts,
     cwd,
     isolateUserResources: true,
     extensions: [
       path.resolve(cwd, options.extension),
+      "builtin:codemode",
+      "builtin:tool-search",
       fileURLToPath(new URL("./capture-agent-interface-extension.ts", import.meta.url)),
     ],
     ...(options.tools === undefined ? {} : { tools: [...options.tools] }),
@@ -49,7 +53,20 @@ export async function exportAgentInterface(options: Options): Promise<void> {
 
   const captured = JSON.parse(await readFile(capture, "utf8")) as AgentInterfaceCapture;
   await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(output, renderMarkdown(captured, cwd), "utf8");
+  // Loadout hooks adapt declarations without changing the registered definitions.
+  const declared = new Map(
+    getCurrentTools(result.providerRequests[0]?.messages as Message[]).map((tool) => [
+      tool.name,
+      tool,
+    ]),
+  );
+  const tools = captured.tools.map((tool) => {
+    const definition = declared.get(tool.name);
+    return definition === undefined
+      ? tool
+      : { ...tool, description: definition.description, parameters: definition.parameters };
+  });
+  await writeFile(output, renderMarkdown({ ...captured, tools }, cwd), "utf8");
 }
 
 function renderMarkdown(capture: AgentInterfaceCapture, cwd: string): string {

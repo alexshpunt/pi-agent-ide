@@ -48,6 +48,17 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
   const operations = getApplyOperations();
   pi.registerTool({
     name: "apply",
+    exposure: "model-only",
+    namespace: {
+      name: "ide_edit",
+      description: "Edit files and live IDE resources with guarded operations.",
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     label: "Apply",
     renderShell: "self",
     renderCall: (args, theme, context) => {

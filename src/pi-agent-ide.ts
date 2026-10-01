@@ -8,8 +8,10 @@ import { disabledByPreset } from "#src/composite/presets.js";
 import { selectBuiltinExtensions } from "#src/composite/selection.js";
 import { registerModuleSettings } from "#src/composite/module-settings.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
+import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
+import { getCurrentTools } from "@earendil-works/pi-ai";
 import { assertSupportedHost } from "#src/composite/host-version.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -18,14 +20,51 @@ Registers the configured built-ins as one Pi Agent IDE extension.
 */
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
+  const availability = createIdeToolAvailability(pi);
+  pi.on("session_start", (event, context) => {
+    const restored =
+      event.reason === "reload"
+        ? []
+        : getCurrentTools(
+            context.sessionManager
+              .getBranch()
+              .flatMap((entry) => (entry.type === "message" ? [entry.message] : [])),
+          ).map((tool) => tool.name);
+    availability.reconcile(true, restored);
+  });
   pi.on("before_agent_start", (event) => {
+    availability.reconcile();
     const systemPrompt = event.systemPrompt
       .replace(
         "- bash: Execute bash commands (ls, grep, find, etc.)",
         "- bash: Execute Bash commands",
       )
       .replace("- Use bash for file operations like ls, rg, find\n", "");
-    return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
+    const tools = pi.getAllTools().filter((tool) => tool.exposure !== "hidden");
+    const active = pi.getActiveTools();
+    const discovery = active.includes("tool_search")
+      ? "Use tool_search to find"
+      : active.includes("codemode")
+        ? "Use searchTools inside codemode to find"
+        : "Enable native tool_search to find";
+    const gitTools = tools
+      .filter((tool) => tool.namespace?.name === "ide_git")
+      .map((tool) => tool.name);
+    const guidance = [
+      ...(gitTools.length === 0
+        ? []
+        : [
+            `${discovery} ${gitTools.join(" and ")} in ide_git when staging or unstaging selected Git changes.`,
+          ]),
+      ...(tools.some((tool) => tool.name === "debug" && tool.namespace?.name === "ide_debug")
+        ? [`${discovery} debug in ide_debug when creating a debugger session.`]
+        : []),
+    ];
+    const prompt =
+      guidance.length === 0
+        ? systemPrompt
+        : `${systemPrompt}\n\n<ide_discovery>\n${guidance.join("\n")}\n</ide_discovery>`;
+    return prompt === event.systemPrompt ? undefined : { systemPrompt: prompt };
   });
   const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
   const flags = createFeatureFlags(pi, {
@@ -83,6 +122,6 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     config.enabled,
   );
   for (const extension of enabled) {
-    await extension.register(pi, { preferences: config.preferences ?? {} });
+    await extension.register(availability.api, { preferences: config.preferences ?? {} });
   }
 }
