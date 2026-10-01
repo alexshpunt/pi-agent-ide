@@ -69,9 +69,10 @@ export function resolveExactTextAnchor(
   const endOffset = bomOffset + boundaryAt(source.boundaries, normalizedStart + query.length);
 
   const linewise = isWholeLineMatch(context.content, startOffset, endOffset);
-  const selectionEndOffset = linewise
-    ? includeTrailingLineBreak(context.content, endOffset)
-    : endOffset;
+  const selectionEndOffset =
+    linewise && !query.endsWith("\n")
+      ? includeTrailingLineBreak(context.content, endOffset)
+      : endOffset;
   const range = {
     start: positionAt(context.content, startOffset),
     end: positionAt(context.content, selectionEndOffset),
