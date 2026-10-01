@@ -47,6 +47,7 @@ import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.js";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
 import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.js";
 import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.js";
+import { executeNativeTextEditBatch } from "#src/core/native-text-edit-batch.js";
 import {
   contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
@@ -131,6 +132,15 @@ export function createTextTool<TParameters extends TSchema>(
       }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
         const input = asMutationParameters<TParameters>(parameters);
+        const queued = executeNativeTextEditBatch(
+          core,
+          toolCallId,
+          definition,
+          input,
+          signal,
+          context,
+        );
+        if (queued !== undefined) return queued;
         if (definition.direct?.matches(input) === true) {
           try {
             const action = await definition.direct.execute(
@@ -183,6 +193,9 @@ export function createTextTool<TParameters extends TSchema>(
     get(): string {
       return [
         definition.description,
+        definition.intent !== "restore"
+          ? "In native Codemode, sequential local text edits share original snapshots and return acceptance before writing. Another tool, whole-file operation, or resource-owned selector ends the batch; script completion also commits it. Ordinary script errors keep accepted edits; aborts and deadlines discard pending edits."
+          : "",
         definition.source.inherited
           ? definition.wholeFileOperation === undefined
             ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`

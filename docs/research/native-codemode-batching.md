@@ -1,5 +1,7 @@
 # Context research: native Codemode edit batching
 
+This records the investigation at revision ce8e0bc, before implementation. Keep its red-probe findings as historical evidence. The [solution decision](native-codemode-batch-decision.md) describes the agreed behavior; the linked suite now tests the implementation.
+
 ## Question
 
 Can sequential calls to the existing editor tools share an original file snapshot and one combined write through native Pi Codemode, without replacing Codemode or bypassing Pi's tool pipeline?
@@ -10,7 +12,7 @@ Can sequential calls to the existing editor tools share an original file snapsho
 
 The real-Pi probe reads anchors, awaits an insertion, then awaits a replacement and a deletion using the original anchors. The insertion writes immediately. The replacement rejects its now-stale line anchor, so the deletion is never called. The real file contains only the insertion. The stale-anchor guard works; the requested sequential batch does not.
 
-**Evidence:** [`native-codemode.integration.test.ts`](../../tests/integration/native-codemode.integration.test.ts), revision `de82738`. `pnpm test:integration tests/integration/native-codemode.integration.test.ts` returned one failing test. Its stale-error and partial-file checks passed before the batch-success assertion failed.
+**Evidence:** [`native-codemode.integration.test.ts`](https://github.com/alexshpunt/pi-agent-ide/blob/de82738/tests/integration/native-codemode.integration.test.ts), revision `de82738`. `pnpm test:integration tests/integration/native-codemode.integration.test.ts` returned one failing test. Its stale-error and partial-file checks passed before the batch-success assertion failed.
 
 ### The current coordinator needs all calls before execution
 

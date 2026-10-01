@@ -6,6 +6,16 @@ Text mutation recovery belongs to `pi-agent-text-editor` and has three internal 
 - The tool-call interceptor reports that a streamed call was blocked. It does not decide which later calls are safe.
 - The editor core owns text-specific dependency rules and executes safe calls through the normal mutation path.
 
+## Native Codemode
+
+Sequential local text edits in one native Codemode script accumulate against original file snapshots. Each child returns acceptance, not a written-file result. Planning checks anchors and overlapping changes without writing. A boundary commits the accepted plan once through the normal editor queue, guards, Resource writes, and post-edit processing.
+
+Another tool, a whole-file operation, or a resource-owned selector ends the pending batch before its own execution. Later local edits start a new batch. Ordinary script exceptions still commit accepted independent edits. Agent aborts and script deadlines discard pending writes; already committed batches remain committed.
+
+Commit checks both original content and file existence. A changed source fails instead of replaying mutations. The parent result preserves native child receipts and adds final file effects and `editorBatches` states keyed by child call ID. A failed commit makes the parent a tool error. Accepted child calls alone are not proof of persistence.
+
+This is not a transaction over arbitrary JavaScript. Native Codemode stores and other completed tool effects are not rolled back. Apply and standalone editor batching keep their existing execution paths.
+
 ## Execution states
 
 Every call starts as `pending`. The aggregate executor changes it to `running`, then to `completed` or a failure state. Failures record whether an effect was `not-applied`, `applied`, or `unknown`. Guard blocks are recorded separately as `blocked` and are always treated as not applied.

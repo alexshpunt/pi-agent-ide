@@ -16,7 +16,7 @@ An ordinary script exception does not discard accepted independent edits. Finish
 
 Do not replace or re-register native Codemode, change Apply exposure, bypass Pi's tool pipeline, or silently repair stale anchors by searching for similar text. Preserve the existing direct-call batch behavior.
 
-This is a behavior decision from the discussion, not implementation approval. Cancellation of pending writes and final reporting still need a concrete checked design.
+The user approved end-to-end implementation after this discussion. Pending edits are discarded on abort or script deadline. The parent Codemode result reports final file effects separately from child acceptance, while preserving native child call IDs and results.
 
 ## Why
 
@@ -24,4 +24,4 @@ The user wants the same original-snapshot approach as the direct editor batch. T
 
 Flushing before another tool gives that tool real committed files rather than an invisible virtual workspace. Keeping accepted independent edits after an ordinary script error follows the user's explicit choice.
 
-[Research and source evidence](native-codemode-batching.md) records the existing mechanisms and the unproven boundaries. The failing [sequential real-Pi test](../../tests/integration/native-codemode.integration.test.ts) remains the current reproduction.
+[Research and source evidence](native-codemode-batching.md) records the existing mechanisms and the unproven boundaries. The [sequential real-Pi suite](https://github.com/alexshpunt/pi-agent-ide/blob/develop/tests/integration/native-codemode.integration.test.ts) checks this contract against real files. The original red reproduction is preserved in commit de82738.

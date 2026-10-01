@@ -35,6 +35,14 @@ When a text tool allows an omitted path, it can inherit the source identified by
 
 Use `delete` with a path and no text selector to delete one complete file. Use a selector to remove text. Use `copy` or `move` with no text selectors for whole-file operations; add source and destination selectors for text transfers.
 
+## Native Codemode
+
+Await independent local text-edit calls sequentially inside one script. Keep their selectors tied to the original file snapshots and combine overlapping edits before submitting them. Check the parent Codemode result for committed effects; a child acceptance is not proof that a file was written.
+
+Read or search again before dependent edits that need fresh content or anchors. Another tool, a whole-file operation, or a resource-owned selector ends the pending batch before running. Do not reuse old line anchors across that boundary.
+
+Inspect final results after an ordinary script error and retry only unapplied edits. Abort or deadline discards pending writes, not batches that already committed.
+
 ## Specialized resources
 
 Some resources attach non-text actions to the same tools:

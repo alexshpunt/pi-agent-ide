@@ -4,6 +4,7 @@ import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-docu
 import { hideBuiltinEdit } from "./src/core/builtin-edit.js";
 import registerTextEditorCore from "./src/core/extension.js";
 import { registerTextEditBatching } from "./src/core/text-edit-batch-registrar.js";
+import { registerNativeTextEditBatching } from "./src/core/native-text-edit-batch.js";
 import { registerTextEditorTools } from "./src/tools/extension.js";
 
 export default async function registerTextEditor(pi: ExtensionAPI): Promise<void> {
@@ -27,4 +28,5 @@ export default async function registerTextEditor(pi: ExtensionAPI): Promise<void
   registerTextEditorTools(pi, core);
 
   registerTextEditBatching(pi, core);
+  registerNativeTextEditBatching(pi, core);
 }

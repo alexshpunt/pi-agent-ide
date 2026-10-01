@@ -4,4 +4,5 @@ export const EDITING_GUIDELINES = [
   "Use an available anchor when it selects exactly the intended text; otherwise use minimal unique exact text. Keep the edit limited to the intended content.",
   "When search broadens to separate words, treat its results as location hints. Refine the query before using those matches for replacement.",
   "Use standalone mutation tools in one assistant-response batch when each change is known in advance and does not depend on another change. This is the default for several independent edits in one file or across files. Every call is evaluated against the original file snapshots. Combine overlapping changes into one mutation. Use Apply only when edits require computation, conditions, selection composition, checkpoints, or one coherent cross-file transaction. Check each batch result and retry only unapplied changes.",
+  "Inside native Codemode, await independent local text-edit calls sequentially. Check the parent result for committed effects before retrying an accepted call. Read docs:editing for batch boundaries and dependent work.",
 ] as const;
