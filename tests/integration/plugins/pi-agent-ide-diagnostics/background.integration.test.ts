@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, expect, test } from "vitest";
 import { generateReadExtensions } from "pi-agent-read/testing";
 import type { DiagnosticEntryData } from "#src/core/diagnostic-entry.js";
-import { PiRun } from "pi-coding-agent-test/base";
+import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 import {
   assistantMessage,
   getToolExecution,

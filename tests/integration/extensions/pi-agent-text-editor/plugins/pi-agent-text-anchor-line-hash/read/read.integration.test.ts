@@ -84,8 +84,7 @@ test("adds hash anchors to filesystem text", async () => {
     expect(originalText).toContain(`${originalAnchor}|${fixtureLines[7]}`);
     expect(changedText).toContain(`${changedAnchor}|${changedFixtureLines[7]}`);
 
-    const firstLine = restoreReadDetails(original.details as ReadResultDetails, originalText)
-      .lines?.[0];
+    const firstLine = restoreReadDetails(original.details, originalText).lines?.[0];
     expect(firstLine).toMatchObject({ lineNumber: 1, content: fixtureLines[0] });
   });
 });
@@ -106,20 +105,17 @@ test("keeps original anchors when projecting a range", async () => {
     expect(getToolResultText(result, "read-range")).toContain(
       renderLineHashLines(fixtureLines, 7, 9).join("\n"),
     );
-    expect(
-      restoreReadDetails(
-        read.details as ReadResultDetails,
-        getToolResultText(result, "read-range"),
-      ),
-    ).toMatchObject({
-      startLine: 7,
-      endLine: 9,
-      totalLines: fixtureLines.length,
-      lines: selectedLines.map((content, index) => ({
-        lineNumber: index + 7,
-        content,
-      })),
-    });
+    expect(restoreReadDetails(read.details, getToolResultText(result, "read-range"))).toMatchObject(
+      {
+        startLine: 7,
+        endLine: 9,
+        totalLines: fixtureLines.length,
+        lines: selectedLines.map((content, index) => ({
+          lineNumber: index + 7,
+          content,
+        })),
+      },
+    );
   });
 });
 
@@ -135,10 +131,7 @@ test("does not process text resolved by another plugin", async () => {
       calls: [{ id: "read-other", path: "other:other.txt" }],
     });
     const read = getToolResultMessage<ReadResultDetails>(result, "read-other");
-    const lines = restoreReadDetails(
-      read.details as ReadResultDetails,
-      getToolResultText(result, "read-other"),
-    ).lines;
+    const lines = restoreReadDetails(read.details, getToolResultText(result, "read-other")).lines;
 
     expect(getToolResultText(result, "read-other")).toBe(source);
     expect(lines?.every((line) => line.anchor === undefined)).toBe(true);

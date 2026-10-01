@@ -9,12 +9,15 @@ import { selectBuiltinExtensions } from "#src/composite/selection.js";
 import { registerModuleSettings } from "#src/composite/module-settings.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
 
+import { VERSION } from "@earendil-works/pi-coding-agent";
+import { assertSupportedHost } from "#src/composite/host-version.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
 Registers the configured built-ins as one Pi Agent IDE extension.
 */
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
+  assertSupportedHost(VERSION);
   pi.on("before_agent_start", (event) => {
     const systemPrompt = event.systemPrompt
       .replace(

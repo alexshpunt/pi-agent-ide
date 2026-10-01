@@ -14,6 +14,7 @@ import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { toolBackgroundTheme } from "#integration/support/tui-background.js";
 
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(
@@ -78,6 +79,7 @@ describe("interactive text editor demos", () => {
         testName: "interactive-demo-search-replace",
         cwd: directory,
         extensions: [
+          toolBackgroundTheme,
           ...extensions.paths.map((extension) =>
             extension === defaultTextEditorExtension ? rendererTestStand : extension,
           ),

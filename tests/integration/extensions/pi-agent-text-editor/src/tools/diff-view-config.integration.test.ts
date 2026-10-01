@@ -8,7 +8,7 @@ import {
   PiIntegrationTest,
   text,
   toolCall,
-} from "pi-coding-agent-test/base";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 
 import { describe, expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";

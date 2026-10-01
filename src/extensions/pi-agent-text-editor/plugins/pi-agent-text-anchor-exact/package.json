@@ -10,7 +10,7 @@
     "./api/anchor": "./src/anchor.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.99.1",
     "fast-fuzzy": "1.12.0",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^"

@@ -227,9 +227,9 @@
     "playwright-core": "^1.62.1"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
-    "@earendil-works/pi-tui": "0.84.2",
+    "@earendil-works/pi-ai": "0.99.1",
+    "@earendil-works/pi-coding-agent": "0.99.1",
+    "@earendil-works/pi-tui": "0.99.1",
     "@oxlint/plugins": "^1.79.0",
     "@types/cross-spawn": "^6.0.6",
     "@typescript/native": "npm:typescript@^7.0.2",

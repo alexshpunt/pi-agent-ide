@@ -3,7 +3,8 @@ import {
   type AssistantMessage,
   type AssistantMessageEvent,
   type AssistantMessageEventStream,
-  type Context,
+  type TranscriptContext,
+  type ToolCall,
   createAssistantMessageEventStream,
   type Model,
   type SimpleStreamOptions,
@@ -14,7 +15,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 type StreamSimple = (
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream;
 
@@ -174,7 +175,7 @@ export function registerStreamingInterceptorProvider(
 function wrapStream(
   delegate: StreamSimple,
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options: SimpleStreamOptions | undefined,
   subscribers: ReadonlySet<StreamingSubscriber>,
 ): AssistantMessageEventStream {
@@ -266,7 +267,10 @@ function wrapStream(
               )
               .map((block) =>
                 block.type === "toolCall" && block.id === interception.toolCallId
-                  ? { ...block, arguments: structuredClone(interception.arguments) }
+                  ? {
+                      ...block,
+                      arguments: structuredClone(interception.arguments) as ToolCall["arguments"],
+                    }
                   : block,
               ),
           };

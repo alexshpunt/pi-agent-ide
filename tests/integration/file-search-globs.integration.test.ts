@@ -8,7 +8,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "pi-coding-agent-test/base";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 import { expect, test } from "vitest";
 
 test("real Pi discovers file globs below an ignored parent", async () => {

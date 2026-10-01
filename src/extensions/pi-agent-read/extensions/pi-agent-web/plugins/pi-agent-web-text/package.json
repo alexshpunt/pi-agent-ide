@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.99.1",
     "pi-agent-resource": "workspace:^",
     "pi-agent-text": "workspace:^"
   },

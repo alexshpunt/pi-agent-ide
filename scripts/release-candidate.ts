@@ -1,6 +1,44 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import spawn from "cross-spawn";
+import { findRepositoryRoot } from "./repository-root.ts";
+
+/** Installs a candidate with the exact host SDK versions used by this checkout. */
+export function installTestPackage(directory: string, archive: string): void {
+  const manifest = JSON.parse(
+    readFileSync(path.join(findRepositoryRoot(import.meta.url), "package.json"), "utf8"),
+  ) as { devDependencies: Record<string, string> };
+  const hosts = [
+    "@earendil-works/pi-ai",
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-tui",
+  ];
+  const specifications = hosts.map((name) => {
+    const version = manifest.devDependencies[name];
+    if (version === undefined || !/^\d+\.\d+\.\d+$/u.test(version)) {
+      throw new Error(`Installed-package tests need an exact host pin for ${name}`);
+    }
+    return `${name}@${version}`;
+  });
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    path.join(directory, "package.json"),
+    JSON.stringify({ private: true, type: "module" }),
+  );
+  const result = spawn.sync(
+    "npm",
+    ["install", path.resolve(archive), ...specifications, "--registry=https://registry.npmjs.org/"],
+    {
+      cwd: directory,
+      stdio: "inherit",
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0)
+    throw new Error(`Candidate installation failed with exit code ${result.status}`);
+}
 
 /** Evidence recorded by the successful PR validation job. */
 export interface CandidateEvidence {

@@ -2,7 +2,11 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { verifyInstalledPackage, type CandidateEvidence } from "./release-candidate.ts";
+import {
+  installTestPackage,
+  verifyInstalledPackage,
+  type CandidateEvidence,
+} from "./release-candidate.ts";
 
 function run(command: string, args: string[], cwd = process.cwd()): void {
   execFileSync(command, args, { cwd, stdio: "inherit" });
@@ -42,9 +46,7 @@ for (const report of readdirSync(".agents/tmp/test-results")) {
     cpSync(`.agents/tmp/test-results/${report}`, `${directory}/${report}`);
 }
 const smoke = path.resolve(".agents/tmp/candidate-install");
-mkdirSync(smoke, { recursive: true });
-writeFileSync(path.join(smoke, "package.json"), JSON.stringify({ private: true, type: "module" }));
-run("npm", ["install", path.resolve(source), "--registry=https://registry.npmjs.org/"], smoke);
+installTestPackage(smoke, source);
 verifyInstalledPackage(smoke);
 execFileSync(
   "pnpm",
@@ -55,6 +57,7 @@ execFileSync(
     "--config",
     "vitest.integration.config.mjs",
     "tests/integration/composite/release-runtime.integration.test.ts",
+    "tests/integration/native-host.integration.test.ts",
     "--reporter=default",
     "--reporter=junit",
     "--outputFile.junit=.agents/tmp/test-results/installed-runtime.xml",

@@ -29,7 +29,7 @@
     "@ast-grep/lang-sql": "^0.0.8",
     "@ast-grep/lang-swift": "^0.0.8",
     "@ast-grep/napi": "^0.42.3",
-    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.99.1",
     "@tree-sitter-grammars/tree-sitter-toml": "^0.7.0",
     "@tree-sitter-grammars/tree-sitter-yaml": "^0.7.1",
     "cross-spawn": "^7.0.6",
