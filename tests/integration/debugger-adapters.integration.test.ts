@@ -89,7 +89,7 @@ const cases: readonly AdapterCase[] = [
     local: "subtotal",
   },
   {
-    name: "Kotlin",
+    name: "Kotlin [disabled: LPT-216 lost-stop race]",
     adapter: "kotlin",
     program: "src/main/kotlin/Main.kt",
     source: "src/main/kotlin/Main.kt",
@@ -175,7 +175,10 @@ for (const item of cases) {
   test.runIf(
     matrixProvisioned &&
       (selectedAdapter === undefined || item.adapter === selectedAdapter) &&
-      item.adapter !== excludedAdapter,
+      item.adapter !== excludedAdapter &&
+      // fwcd can lose the first stopped event before its JVM listeners are attached.
+      // Restore after https://linear.app/alexshpunt/issue/LPT-216 is verified.
+      item.adapter !== "kotlin",
   )(
     `provisioned Linux debugger stops in ${item.name} and exposes locals`,
     async () => {
