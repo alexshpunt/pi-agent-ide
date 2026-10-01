@@ -153,6 +153,15 @@ export function registerDiff(
 ): void {
   pi.registerTool({
     name: "diff",
+    exposure: "direct",
+    namespace: { name: "ide_read", description: "Read resources and compare sources." },
+    // Inputs use the same polymorphic resource pipeline as Read.
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     label: "Diff",
     parameters: diffParameters,
     promptSnippet: "Compare two text-readable sources",

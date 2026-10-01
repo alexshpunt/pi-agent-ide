@@ -147,6 +147,15 @@ export function createReadTool(
     saveTemporary: (text) => temporaryResources.save(text),
     tool: {
       name: toolId,
+      exposure: "direct",
+      namespace: { name: "ide_read", description: "Read resources and compare sources." },
+      // Resource plugins can run processes and change live session state.
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       label: toolId,
 
       promptSnippet: "Read supported sources as text or bytes, with optional views",

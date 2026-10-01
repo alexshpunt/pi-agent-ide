@@ -56,6 +56,17 @@ export function createIndexChangeTool(
 
   return defineTool<typeof indexChangeSchema, IndexChangeToolDetails>({
     name: action,
+    exposure: "deferred",
+    namespace: {
+      name: "ide_git",
+      description: "Stage or unstage selected Git changes without changing worktree files.",
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
     label: action,
 
     promptSnippet: `${pastTense.slice(0, -1)} a selected Git change`,

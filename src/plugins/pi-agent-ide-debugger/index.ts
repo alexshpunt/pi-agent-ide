@@ -345,6 +345,17 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
   pi.registerTool(
     defineTool<typeof debugParameters, DebugToolDetails>({
       name: "debug",
+      exposure: "deferred",
+      namespace: {
+        name: "ide_debug",
+        description: "Create local debugger sessions and inspect debug resources.",
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
       label: "Debug session",
       promptSnippet: "Create a local DAP debug session before setting anchored breakpoints",
       description:

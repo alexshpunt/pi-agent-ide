@@ -63,6 +63,17 @@ export function registerTerminalTools(
   pi.registerTool(
     defineTool<typeof runParameters, TerminalSessionSnapshot>({
       name: toolName,
+      exposure: "direct",
+      namespace: {
+        name: "ide_terminal",
+        description: "Run shell commands in persistent terminal sessions.",
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       label: profile.displayName,
       promptSnippet: `Execute ${profile.displayName} commands in synchronous or background terminal sessions`,
       promptGuidelines: [

@@ -106,6 +106,17 @@ export default async function registerSearchCore(
     withToolCallInterceptionRendering(
       {
         name: "search",
+        exposure: "direct",
+        namespace: {
+          name: "ide_search",
+          description: "Find workspace text, paths and code structures.",
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
         label: "search",
         description: "Use search to locate workspace text, file paths, and code structures.",
         promptSnippet:

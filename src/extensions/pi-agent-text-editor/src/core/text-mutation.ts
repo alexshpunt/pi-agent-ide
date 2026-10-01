@@ -91,6 +91,17 @@ export function createTextTool<TParameters extends TSchema>(
   const tool = withToolCallInterceptionRendering<TParameters, FileMutationBatchResult, unknown>(
     defineTool<TParameters, FileMutationBatchResult, unknown>({
       name: definition.name,
+      exposure: "direct",
+      namespace: {
+        name: "ide_edit",
+        description: "Edit files and live IDE resources with guarded operations.",
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       label: definition.name,
 
       promptSnippet: definition.promptSnippet,
