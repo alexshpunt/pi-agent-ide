@@ -11,6 +11,7 @@ import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import type { SearchPluginApi } from "pi-agent-search/api/search";
 import { Type } from "typebox";
+import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
 import {
   getLastResolvedResource,
   rememberLastResolvedResource,
@@ -74,7 +75,7 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
     description:
       `Use apply to run read-only IDE operations and snapshot-guarded editor transactions in JavaScript. Output has one 2000-line/50KB budget. No shell, imports or resume.` +
       applyHelperGuide(),
-    promptGuidelines: [],
+    promptGuidelines: [...EDITING_GUIDELINES],
     parameters: Type.Object({
       source: Type.String({
         description:

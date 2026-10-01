@@ -1,7 +1,7 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 
-import { registerBuiltinEditFilter } from "./src/core/builtin-edit-filter.js";
+import { hideBuiltinEdit } from "./src/core/builtin-edit.js";
 import registerTextEditorCore from "./src/core/extension.js";
 import { registerTextEditBatching } from "./src/core/text-edit-batch-registrar.js";
 import { registerTextEditorTools } from "./src/tools/extension.js";
@@ -22,7 +22,7 @@ export default async function registerTextEditor(pi: ExtensionAPI): Promise<void
     }),
   ]);
   const core = await registerTextEditorCore(pi);
-  registerBuiltinEditFilter(pi);
+  hideBuiltinEdit(pi);
 
   registerTextEditorTools(pi, core);
 

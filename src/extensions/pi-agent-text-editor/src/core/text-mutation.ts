@@ -76,6 +76,7 @@ import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception"
 import type { Static, TSchema } from "typebox";
 import type { ScriptMutationOutcome } from "#src/core/apply/mutation-outcome.js";
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
+import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
 
 export function createTextTool<TParameters extends TSchema>(
   core: TextEditorCore,
@@ -104,8 +105,7 @@ export function createTextTool<TParameters extends TSchema>(
       label: definition.name,
 
       promptSnippet: definition.promptSnippet,
-      promptGuidelines:
-        definition.promptGuidelines === undefined ? undefined : [...definition.promptGuidelines],
+      promptGuidelines: [...EDITING_GUIDELINES, ...(definition.promptGuidelines ?? [])],
       description: definition.description,
       parameters: definition.parameters,
       prepareArguments: (arguments_) =>
