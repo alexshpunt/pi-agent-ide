@@ -7,7 +7,7 @@ import {
 import type { SearchRequest, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 
 import { renderTerminalAction } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
@@ -114,13 +114,11 @@ export class TerminalSearchPanel implements Component {
     const rows = this.content.render(width);
     if (this.expanded || rows.length <= COMPACT_TERMINAL_SEARCH_ROWS) return rows;
     const shown = COMPACT_TERMINAL_SEARCH_ROWS - 1;
-    return [
-      ...rows.slice(0, shown),
-      this.theme.fg(
-        "muted",
-        `… ${String(rows.length - shown)} visual rows omitted · ctrl+o to expand`,
-      ),
-    ];
+    const omitted = String(rows.length - shown);
+    const fullHint = `… ${omitted} visual rows omitted · ctrl+o to expand`;
+    const hint =
+      visibleWidth(fullHint) <= width ? fullHint : `… ${omitted} visual rows omitted · ctrl+o`;
+    return [...rows.slice(0, shown), this.theme.fg("muted", truncateToWidth(hint, width))];
   }
 
   public invalidate(): void {

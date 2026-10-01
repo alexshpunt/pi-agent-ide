@@ -1,9 +1,20 @@
 import { describe, expect, test } from "vitest";
 
-import { compileSearchFallbackQuery, compileSearchQuery } from "#src/search-query.js";
+import {
+  compileSearchFallbackQuery,
+  compileSearchQuery,
+  compileSearchCondition,
+  satisfiesSearchCondition,
+} from "#src/search-query.js";
 
-function expressionFor(query: string): RegExp {
-  return new RegExp(compileSearchQuery(query).replace("\\K", ""), "u");
+function expressionFor(query: string) {
+  const condition = compileSearchCondition(query);
+  return {
+    test: (line: string) =>
+      condition === undefined
+        ? new RegExp(compileSearchQuery(query), "u").test(line)
+        : satisfiesSearchCondition(condition, (pattern) => new RegExp(pattern, "u").test(line)),
+  };
 }
 
 describe("compileSearchQuery", () => {

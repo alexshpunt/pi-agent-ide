@@ -1,14 +1,10 @@
-interface CompiledExpression {
-  readonly condition: string;
-  readonly match: string;
-}
-
-type Expression =
+/** A line-level Boolean condition whose terms are ripgrep patterns. */
+export type SearchCondition =
   | { readonly kind: "term"; readonly value: string; readonly quoted?: boolean }
   | {
       readonly kind: "and" | "or" | "not";
-      readonly left: Expression;
-      readonly right: Expression;
+      readonly left: SearchCondition;
+      readonly right: SearchCondition;
     };
 
 type TokenType = "term" | "and" | "or" | "not" | "left" | "right" | "end";
@@ -20,15 +16,33 @@ interface Token {
   readonly quoted?: boolean;
 }
 
-/** Compile literal terms (or unquoted regex terms) while preserving Boolean conditions. */
+/** Compile the match pattern, paired with compileSearchCondition for Boolean line filtering. */
 export function compileSearchQuery(query: string, regex = false): string {
   const tokens = tokenize(query);
   if (!containsBooleanSyntax(tokens)) return regex ? query : escapeRegex(query);
 
-  const expression = compileExpression(new BooleanQueryParser(query, tokens).parse(), regex);
-  return `^${expression.condition}.*?\\K(${expression.match})`;
+  return matchPattern(compileTerms(new BooleanQueryParser(query, tokens).parse(), regex));
 }
 
+/** Compile Boolean line conditions separately from the pattern that selects a match. */
+export function compileSearchCondition(query: string, regex = false): SearchCondition | undefined {
+  const tokens = tokenize(query);
+  return containsBooleanSyntax(tokens)
+    ? compileTerms(new BooleanQueryParser(query, tokens).parse(), regex)
+    : undefined;
+}
+
+/** Evaluate a condition using each term's presence anywhere on the same line. */
+export function satisfiesSearchCondition(
+  condition: SearchCondition,
+  present: (pattern: string) => boolean,
+): boolean {
+  if (condition.kind === "term") return present(condition.value);
+  const left = satisfiesSearchCondition(condition.left, present);
+  if (condition.kind === "or") return left || satisfiesSearchCondition(condition.right, present);
+  const right = satisfiesSearchCondition(condition.right, present);
+  return left && (condition.kind === "not" ? !right : right);
+}
 /** Compile the any-term fallback for an ordinary multi-word query. */
 export function compileSearchFallbackQuery(query: string): string | undefined {
   if (containsBooleanSyntax(tokenize(query))) return undefined;
@@ -54,7 +68,7 @@ class BooleanQueryParser {
     this.#tokens = tokens;
   }
 
-  parse(): Expression {
+  parse(): SearchCondition {
     const expression = this.#parseOr();
     const token = this.#current();
     if (token.type !== "end") {
@@ -65,7 +79,7 @@ class BooleanQueryParser {
     return expression;
   }
 
-  #parseOr(): Expression {
+  #parseOr(): SearchCondition {
     let expression = this.#parseAnd();
     while (this.#current().type === "or") {
       const operator = this.#take();
@@ -75,11 +89,11 @@ class BooleanQueryParser {
     return expression;
   }
 
-  #parseAnd(): Expression {
+  #parseAnd(): SearchCondition {
     return this.#parseAndTail(this.#parseRequiredPrimary());
   }
 
-  #parseAndTail(initial: Expression): Expression {
+  #parseAndTail(initial: SearchCondition): SearchCondition {
     let expression = initial;
     for (;;) {
       const token = this.#current();
@@ -97,7 +111,7 @@ class BooleanQueryParser {
     }
   }
 
-  #parseRequiredPrimary(context?: string): Expression {
+  #parseRequiredPrimary(context?: string): SearchCondition {
     const token = this.#current();
     if (token.type === "term") {
       this.#take();
@@ -268,30 +282,24 @@ function syntaxError(offset: number, message: string): SyntaxError {
   );
 }
 
-function compileExpression(expression: Expression, regex: boolean): CompiledExpression {
+function compileTerms(expression: SearchCondition, regex: boolean): SearchCondition {
   if (expression.kind === "term") {
-    const pattern = regex && !expression.quoted ? expression.value : escapeRegex(expression.value);
-    return { condition: `(?=.*(?:${pattern}))`, match: pattern };
-  }
-
-  const left = compileExpression(expression.left, regex);
-  const right = compileExpression(expression.right, regex);
-  if (expression.kind === "or") {
     return {
-      condition: `(?:${left.condition}|${right.condition})`,
-      match: `(?:${left.match}|${right.match})`,
-    };
-  }
-  if (expression.kind === "not") {
-    return {
-      condition: `${left.condition}(?!${right.condition})`,
-      match: left.match,
+      kind: "term",
+      value: regex && !expression.quoted ? expression.value : escapeRegex(expression.value),
     };
   }
   return {
-    condition: `${left.condition}${right.condition}`,
-    match: `(?:${left.match}|${right.match})`,
+    kind: expression.kind,
+    left: compileTerms(expression.left, regex),
+    right: compileTerms(expression.right, regex),
   };
+}
+
+function matchPattern(condition: SearchCondition): string {
+  if (condition.kind === "term") return condition.value;
+  const left = matchPattern(condition.left);
+  return condition.kind === "not" ? left : `(?:${left}|${matchPattern(condition.right)})`;
 }
 
 function escapeRegex(value: string): string {

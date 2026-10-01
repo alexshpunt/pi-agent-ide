@@ -38,6 +38,39 @@ test("marks a complete line as linewise", () => {
   ]);
 });
 
+test.each(["\n", "\r\n", "\r"])(
+  "keeps blank separators outside an exact match ending in %j",
+  (eol) => {
+    const result = resolve("alpha\nbravo\n", `alpha${eol}bravo${eol}${eol}charlie${eol}`);
+    if (result.kind !== "resolved" || !TextSelectionAnchor.is(result.anchor)) {
+      throw new Error("Expected a text selection anchor");
+    }
+    expect(result.anchor.ranges).toEqual([
+      {
+        start: { lineNumber: 1, column: 0 },
+        end: { lineNumber: 3, column: 0 },
+        linewise: true,
+      },
+    ]);
+  },
+);
+
+test.each(["\n", "\r\n", "\r"])(
+  "keeps an EOF blank line outside an exact match ending in %j",
+  (eol) => {
+    const result = resolve("alpha\n", `alpha${eol}${eol}`);
+    if (result.kind !== "resolved" || !TextSelectionAnchor.is(result.anchor)) {
+      throw new Error("Expected a text selection anchor");
+    }
+    expect(result.anchor.ranges).toEqual([
+      {
+        start: { lineNumber: 1, column: 0 },
+        end: { lineNumber: 2, column: 0 },
+        linewise: true,
+      },
+    ]);
+  },
+);
 test("maps LF query boundaries back to CRLF source positions", () => {
   const result = resolve("bravo\ncharlie", "alpha\r\nbravo\r\ncharlie\r\ndelta");
   expect(result.kind).toBe("resolved");

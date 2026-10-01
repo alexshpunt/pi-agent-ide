@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 
 import { resolveRipgrepExecutable } from "#src/ripgrep.js";
 
+import { type SearchCondition, satisfiesSearchCondition } from "#src/search-query.js";
 import type { TextSearchMatch } from "#src/search-session.js";
 
 export interface TextSearchRequest {
@@ -12,6 +14,8 @@ export interface TextSearchRequest {
   readonly include?: string;
   readonly exclude?: string;
   readonly regex?: boolean;
+  /** Line conditions checked separately from the match pattern, without generated lookaround. */
+  readonly condition?: SearchCondition;
   readonly caseSensitive?: boolean;
   readonly wholeWord?: boolean;
   readonly limit?: number;
@@ -48,7 +52,21 @@ export async function searchText(
     throw new Error("Search supports one-line patterns only.");
   }
 
+  if (request.condition !== undefined) return searchBoolean(request, cwd, signal);
+  return searchPattern(request, cwd, signal);
+}
+
+type MatchingLine = (source: string, lineNumber: number) => void;
+
+async function searchPattern(
+  request: TextSearchRequest,
+  cwd: string,
+  signal?: AbortSignal,
+  onLine?: MatchingLine,
+): Promise<TextSearchBackendResult> {
   const target = path.resolve(cwd, stripFilePrefix(request.path ?? "."));
+  const directory = (await stat(target)).isDirectory();
+  const searchCwd = directory ? target : path.dirname(target);
   const commonArguments = [
     "--json",
     "--no-config",
@@ -62,31 +80,102 @@ export async function searchText(
     ...splitGlobList(request.exclude).flatMap((glob) => ["--glob", `!${glob}`]),
     "--",
     request.query,
-    target,
+    directory ? "." : path.basename(target),
   ];
 
   if (request.regex !== true) {
-    return runRipgrep(["--fixed-strings", ...commonArguments], signal);
+    return runRipgrep(["--fixed-strings", ...commonArguments], searchCwd, signal, onLine);
   }
 
   try {
-    return await runRipgrep(["--engine", "auto", ...commonArguments], signal);
+    return await runRipgrep(["--engine", "auto", ...commonArguments], searchCwd, signal, onLine);
   } catch (error) {
     if (!isPcre2MatchLimitError(error)) {
+      if (
+        error instanceof Error &&
+        /PCRE2 is not available|does not support PCRE2/iu.test(error.message)
+      ) {
+        throw new Error(
+          "This regex requires PCRE2. Install ripgrep with PCRE2 support or simplify the regex.",
+          { cause: error },
+        );
+      }
       throw error;
     }
-
-    return runRipgrep(["--engine", "default", ...commonArguments], signal);
+    try {
+      return await runRipgrep(
+        ["--engine", "default", ...commonArguments],
+        searchCwd,
+        signal,
+        onLine,
+      );
+    } catch (fallbackError) {
+      if (signal?.aborted) throw fallbackError;
+      throw new AggregateError(
+        [error, fallbackError],
+        "Regex exceeded the PCRE2 match limit and cannot run with the default engine. Narrow the search or simplify the regex.",
+        { cause: fallbackError },
+      );
+    }
   }
 }
 
+async function searchBoolean(
+  request: TextSearchRequest,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<TextSearchBackendResult> {
+  const condition = request.condition;
+  if (condition === undefined) throw new Error("Boolean search requires a line condition.");
+  const patterns = new Set<string>();
+  function collect(node: SearchCondition): void {
+    if (node.kind === "term") {
+      patterns.add(node.value);
+      return;
+    }
+    collect(node.left);
+    collect(node.right);
+  }
+  collect(condition);
+  const { condition: _condition, ...scope } = request;
+  const present = new Map<string, Set<string>>();
+  const lineKey = (match: TextSearchMatch): string =>
+    JSON.stringify([match.source, match.lineNumber]);
+  for (const pattern of patterns) {
+    signal?.throwIfAborted();
+    const lines = new Set<string>();
+    await searchPattern(
+      { ...scope, query: pattern, regex: true, wholeWord: false },
+      cwd,
+      signal,
+      (source, lineNumber) => lines.add(JSON.stringify([source, lineNumber])),
+    );
+    present.set(pattern, lines);
+  }
+  const result = await searchText(scope, cwd, signal);
+  const selected = new Set<string>();
+  const matches = result.matches.filter((match) => {
+    const key = lineKey(match);
+    if (
+      selected.has(key) ||
+      !satisfiesSearchCondition(condition, (pattern) => present.get(pattern)?.has(key) === true)
+    )
+      return false;
+    selected.add(key);
+    return true;
+  });
+  return { ...result, matches };
+}
 function runRipgrep(
   arguments_: readonly string[],
+  cwd: string,
   signal?: AbortSignal,
+  onLine?: MatchingLine,
 ): Promise<TextSearchBackendResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(resolveRipgrepExecutable(), arguments_, {
       stdio: ["ignore", "pipe", "pipe"],
+      cwd,
     });
     const output = createInterface({ input: child.stdout });
     const matches: TextSearchMatch[] = [];
@@ -117,7 +206,14 @@ function runRipgrep(
           return;
         }
 
-        for (const match of matchesFromEvent(event as RipgrepMatchEvent)) {
+        if (onLine !== undefined) {
+          const { path: source, line_number: lineNumber } = (event as RipgrepMatchEvent).data;
+          if (source.text !== undefined && Number.isSafeInteger(lineNumber)) {
+            onLine(path.resolve(cwd, source.text), lineNumber);
+          }
+          return;
+        }
+        for (const match of matchesFromEvent(event as RipgrepMatchEvent, cwd)) {
           matches.push(match);
         }
       } catch (error) {
@@ -167,7 +263,7 @@ function isPcre2MatchLimitError(error: unknown): boolean {
   );
 }
 
-function matchesFromEvent(event: RipgrepMatchEvent): TextSearchMatch[] {
+function matchesFromEvent(event: RipgrepMatchEvent, cwd: string): TextSearchMatch[] {
   const source = event.data.path.text;
   const rawLine = event.data.lines.text;
 
@@ -191,7 +287,7 @@ function matchesFromEvent(event: RipgrepMatchEvent): TextSearchMatch[] {
     const startColumn = lineBuffer.subarray(0, submatch.start).toString("utf8").length;
     const endColumn = lineBuffer.subarray(0, submatch.end).toString("utf8").length;
     matches.push({
-      source: path.resolve(source),
+      source: path.resolve(cwd, source),
       lineNumber: event.data.line_number,
       startColumn,
       endColumn,
