@@ -1,7 +1,6 @@
 import {
   getCurrentSystemPrompt,
   getInitialSystemMessage,
-  type JsonValue,
   type ToolResultMessage,
 } from "@earendil-works/pi-ai";
 import {
@@ -50,6 +49,6 @@ export function getProviderSystemPrompt(result: PiIntegrationTestResult, request
 export function getToolResultMessage<TDetails = unknown>(
   ...args: Parameters<typeof baseToolResultMessage>
 ): Omit<ToolResultMessage, "details"> & { details: TDetails } {
-  const message = baseToolResultMessage<JsonValue>(...args);
+  const message = baseToolResultMessage(...args);
   return { ...message, details: message.details as TDetails };
 }
