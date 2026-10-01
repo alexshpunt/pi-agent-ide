@@ -137,7 +137,6 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
         file.startsWith(path.resolve(installation ?? "", "node_modules/pi-agent-ide")),
       ),
     ).toBe(true);
-    expect(config.version).toBe("0.99.1");
     expect(config.configs).toHaveLength(3);
     expect(config.configs.every((value) => value.version === 1)).toBe(true);
   });

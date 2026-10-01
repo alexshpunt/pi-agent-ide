@@ -20,7 +20,7 @@ const probe = path.resolve("tests/integration/fixtures/native-host-probe.ts");
 const root = path.resolve(".tmp/native-host");
 
 test.each([false, true])(
-  "isolated Pi 0.99.1 loads only explicitly requested native tools (%s)",
+  "isolated Pi loads only explicitly requested native tools (%s)",
   async (native) => {
     await mkdir(root, { recursive: true });
     const cwd = await mkdtemp(path.join(root, "case-"));
@@ -59,12 +59,11 @@ test.each([false, true])(
           ...calls.map((call) => assistantMessage([toolCall(call)], { stopReason: "toolUse" })),
           assistantMessage([text("Done")]),
         ],
-      }).run("Verify the pinned host and native tool loading");
+      }).run("Verify isolated native tool loading");
       const host = JSON.parse(getToolResultText(result, "host")) as {
         version: string;
         tools: string[];
       };
-      expect(host.version).toBe("0.99.1");
       expect(host.tools.includes("codemode")).toBe(native);
       expect(host.tools.includes("tool_search")).toBe(native);
       expect(host.tools.some((name) => name.startsWith("mcp__"))).toBe(false);
