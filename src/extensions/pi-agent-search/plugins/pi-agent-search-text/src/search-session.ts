@@ -129,6 +129,7 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
     wholeWord: recipe.wholeWord === true,
     limit: recipe.limit ?? 50,
     regex: recipe.regex === true,
+    condition: recipe.condition,
     fallbacks: recipe.fallbacks ?? [],
   };
 }

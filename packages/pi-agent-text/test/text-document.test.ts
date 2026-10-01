@@ -19,6 +19,19 @@ test("preserves line endings and renders line presentation separately", () => {
   expect(renderPresentedTextDocument(presented)).toBe("1|alpha!\r\n2|bravo!\n");
 });
 
+test("keeps empty lines, CR, CRLF, LF, and an unterminated last line", () => {
+  const content = "\r\nalpha\rbravo\n\ncharlie";
+  const document = createTextDocument("notes.txt", content);
+  expect(document.lines.map((line) => [line.content, line.lineEnding])).toEqual([
+    ["", "\r\n"],
+    ["alpha", "\r"],
+    ["bravo", "\n"],
+    ["", "\n"],
+    ["charlie", ""],
+  ]);
+  expect(renderTextDocument(document)).toBe(content);
+  expect(createTextDocument("empty.txt", "").lines).toEqual([]);
+});
 test("aligns change markers, presented prefixes, and synthetic rows", () => {
   const document = createTextDocument("source.ts", "new value\ncontext\n");
   const presented = {

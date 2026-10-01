@@ -58,6 +58,35 @@ test("wraps a full search match line with one aligned line-number gutter", () =>
   expect(plain.join("\n")).toContain("suffix");
 });
 
+test.each([false, true])(
+  "shows a bounded preview around a distant match (expanded=%s)",
+  (expanded) => {
+    const text = "before ".repeat(3000) + "MATCH" + " after".repeat(3000);
+    const from = text.indexOf("MATCH");
+    const details: SearchToolDetails = {
+      query: "MATCH",
+      matchCount: 1,
+      fileCount: 1,
+      complete: true,
+      files: [
+        {
+          path: "large.txt",
+          link: "file:///large.txt",
+          matchCount: 1,
+          lines: [{ lineNumber: 1, text, matchCount: 1, ranges: [{ from, to: from + 5 }] }],
+        },
+      ],
+    };
+    const rendered = new SearchResultPanel(details, plainTheme, expanded).render(40);
+    const plain = rendered.map(stripTerminalSequences).join("\n");
+    expect(rendered.length).toBeLessThan(30);
+    expect(rendered.every((line) => visibleWidth(line) === 40)).toBe(true);
+    expect(plain).toContain("MATCH");
+    expect(plain).toContain("…");
+    expect(rendered.join("\n")).toContain(`${SELECTED_BACKGROUND}MATCH`);
+    expect(details.files[0]?.lines[0]?.text).toBe(text);
+  },
+);
 test("keeps expanded compacted search results bounded", () => {
   const details: SearchToolDetails = {
     query: "needle",
