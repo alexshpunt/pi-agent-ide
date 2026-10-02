@@ -96,7 +96,13 @@ export class TerminalUi {
 
   #refreshStaleTimer(session: TerminalSession, checkNow = false): void {
     this.#clearStaleTimer(session.id);
-    if (this.#closed || !session.background || session.status !== "running") return;
+    if (
+      this.#closed ||
+      session.staleReminderDelivered ||
+      !session.background ||
+      session.status !== "running"
+    )
+      return;
     const snapshot = this.manager.snapshot(session);
     const remaining = Math.max(0, this.staleIntervalMs - snapshot.idleMs);
     if (checkNow && remaining === 0) {
@@ -111,11 +117,18 @@ export class TerminalUi {
 
   #handleStale(session: TerminalSession): void {
     this.#staleTimers.delete(session.id);
-    if (this.#closed || session.status !== "running" || !session.background) return;
+    if (
+      this.#closed ||
+      session.staleReminderDelivered ||
+      session.status !== "running" ||
+      !session.background
+    )
+      return;
     if (this.#context?.isIdle() !== true) {
       this.#overdue.add(session.id);
       return;
     }
+    session.staleReminderDelivered = true;
     const snapshot = this.manager.snapshot(session);
     this.pi.sendMessage(
       {
@@ -125,10 +138,6 @@ export class TerminalUi {
         details: snapshot,
       },
       { triggerTurn: true, deliverAs: "followUp" },
-    );
-    this.#staleTimers.set(
-      session.id,
-      setTimeout(() => this.#handleStale(session), this.staleIntervalMs),
     );
   }
 
