@@ -66,15 +66,15 @@ test("a directory read conflicts with child writes but not similarly named sibli
   const scheduler = new ResourceScheduler();
   const release = gate();
   const reader = scheduler.run(
-    [{ resource: "file:/project/src", mode: "read", recursive: true }],
+    [{ resource: "file:///project/src", mode: "read", recursive: true }],
     () => release.promise,
   );
   let childRan = false;
-  const child = scheduler.run([{ resource: "file:/project/src/file.ts", mode: "write" }], () => {
+  const child = scheduler.run([{ resource: "file:///project/src/file.ts", mode: "write" }], () => {
     childRan = true;
   });
   await scheduler.run(
-    [{ resource: "file:/project/src-other/file.ts", mode: "write" }],
+    [{ resource: "file:///project/src-other/file.ts", mode: "write" }],
     () => undefined,
   );
   try {
@@ -202,14 +202,14 @@ test("a helper can borrow a hard-link identity without owning its other path", a
   await expect(
     scheduler.run(
       [
-        { resource: "file:/a", group: "file:/a", mode: "write" },
-        { resource: "inode:1:2", group: "file:/a", mode: "write" },
+        { resource: "file:///a", group: "file:///a", mode: "write" },
+        { resource: "inode:1:2", group: "file:///a", mode: "write" },
       ],
       () =>
         scheduler.run(
           [
-            { resource: "file:/alias", group: "file:/alias", mode: "read" },
-            { resource: "inode:1:2", group: "file:/alias", mode: "read" },
+            { resource: "file:///alias", group: "file:///alias", mode: "read" },
+            { resource: "inode:1:2", group: "file:///alias", mode: "read" },
           ],
           () => "covered",
         ),
