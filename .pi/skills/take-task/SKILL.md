@@ -9,7 +9,7 @@ description: Take a numbered Linear task through investigation, discussion, impl
 
 1. Read the Linear skills and use `linear_axi` to find the task by its number or identifier. Read its description, linked materials, and relevant comments. If a bare number matches more than one task, ask the user which one they mean.
 2. Create a new branch and worktree from `develop` with Teleport. Include the task identifier (including its number) and a short task description in the name, for example `abc-123-fix-read-preview`.
-3. Use Teleport to jump into that worktree. Continue all task work there. The tracked `.pi/settings.json` loads `packages: [".."]`, so Pi reads this worktree's package manifest and source directly. Do not install, publish, or add an absolute extension path for local development. Check that dependencies are available and that only this worktree's IDE extension loads; a global package pointing at another checkout can load a second copy.
+3. Use Teleport to jump into that worktree. Continue all task work there. Pi auto-loads the tracked `.pi/extensions/pi-agent-ide.ts`, which re-exports this checkout's source. No package installation is needed. The project settings exclude the global IDE entrypoint without disabling this local loader. If the global checkout moves, update that exclusion. Before reloading, check that dependencies are available and that only the local IDE extension loads.
 4. Update the task in Linear as work progresses. Use the team's existing statuses rather than inventing new ones. Keep useful decisions, blockers, progress, and links on the task.
 
 ## Investigate before implementing

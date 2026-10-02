@@ -1,3 +1,9 @@
 {
-  "packages": [".."]
+  "packages": [
+    {
+      "source": "/root/dev/pi/pi-agent-ide",
+      "autoload": false,
+      "extensions": ["-src/pi-agent-ide.ts"]
+    }
+  ]
 }
