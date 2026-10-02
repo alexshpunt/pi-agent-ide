@@ -43,8 +43,10 @@ test("an invalid Java executable fails promptly and cleanup remains idempotent",
     const env = await files(root);
     env.PI_JAVA_PATH = path.join(root, "missing-java");
     await expect(runtime.connect(root, AbortSignal.timeout(1_000), env)).rejects.toThrow(/ENOENT/u);
-    expect(runtime.processIds).toEqual([]);
+    // Windows cross-spawn can own a cmd.exe wrapper even when the executable is missing.
+    const pids = runtime.processIds;
     await runtime.close();
+    for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow(/ESRCH/u);
     await runtime.close();
   } finally {
     await runtime.close();
