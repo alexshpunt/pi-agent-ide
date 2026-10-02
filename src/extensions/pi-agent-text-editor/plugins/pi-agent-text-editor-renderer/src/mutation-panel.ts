@@ -272,6 +272,14 @@ function renderTail(
       path: resource.path,
       diffStatuses: [
         ...(resource.diffStatuses ?? []),
+        ...(resource.model?.rows.some((row) => row.inlineUnavailable)
+          ? [
+              {
+                text: "Inline diff unavailable: comparison limit reached",
+                tone: "warning" as const,
+              },
+            ]
+          : []),
         ...(resource.model?.omittedChanges === undefined
           ? []
           : [

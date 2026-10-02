@@ -683,6 +683,9 @@ importers:
       pi-agent-tool-ui:
         specifier: workspace:^
         version: link:../../../../../packages/pi-agent-tool-ui
+      vscode-diff:
+        specifier: 3.0.1
+        version: 3.0.1
 
   src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor:
     dependencies:
@@ -3432,6 +3435,9 @@ packages:
       jsdom:
         optional: true
 
+  vscode-diff@3.0.1:
+    resolution: {integrity: sha512-0rRDmIuGsuQMIIhbWsILSMxG4k5x8unNvkD7P+yn5cA7O6bKg28P/dhvgABRvP5ksYmGE9UKHonk/Z4PBMdojA==}
+
   vscode-jsonrpc@9.0.1:
     resolution: {integrity: sha512-rfuA6T75H6m5EkbhtEPzre9pT0HPcDI2MMy4+nPFIBks5J8JBAUHD4tRYSgaBOijIEC7SRkC1kKyXTLqbmh9jw==}
     engines: {node: '>=14.0.0'}
@@ -5531,6 +5537,8 @@ snapshots:
       '@types/node': 24.13.3
     transitivePeerDependencies:
       - msw
+
+  vscode-diff@3.0.1: {}
 
   vscode-jsonrpc@9.0.1: {}
 
