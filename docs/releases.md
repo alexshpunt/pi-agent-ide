@@ -25,6 +25,10 @@ During the freeze, fix defects in `main` through a labeled fix PR. Rebase `relea
 
 The release PR runs the full CI matrix. Its candidate step builds twice, compares archive bytes, scans and installs the package and tests the installed runtime. Do not merge a failed candidate. Squash-merge the verified PR into `main`; the protected `Validate` check must pass for the current head and base. Keep the release branch until publication and develop synchronization are complete.
 
+## Refresh after failed CI/CD
+
+Before publication, diagnose and verify the fix for a failed release check, then inspect the latest develop changes. Cancel the active unpublished candidate through the workflow, confirm synchronization, and prepare any remaining fixes in develop. Capture a fresh develop SHA, update the notes for the new scope, and promote it through a new pinned branch. Start a new candidate with the same unused version number. Do not reuse the old candidate's run or archive evidence. A watcher network error alone does not trigger a refresh, and a published or tagged version cannot be replaced.
+
 ## Verify, publish, finish
 
 Run **Publish to npm** on `main` with the merged release PR number and its successful CI run ID. Leave `publish: false` to verify the PR, tree and artifact without publishing. For publication set it to `true` and approve the protected `npm` environment after examining that same verified archive. The workflow downloads the CI archive; it does not rebuild it. npm Trusted Publishing publishes only its exact bytes. A retry cannot replace a tag or overwrite an existing version with different bytes. Do not approve a stale or expired candidate: rerun validation instead.

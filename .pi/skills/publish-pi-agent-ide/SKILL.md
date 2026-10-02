@@ -21,6 +21,19 @@ A promotion branch pins the approved source before the versioned release exists.
 
 If a promotion PR already uses develop and new feature merges change its head, stop following the moving head. Create a pinned promotion branch from the recorded cut and replace the moving-head PR. Keep develop open. If no cut was recorded and the intended scope is unclear, ask the user which commit to release.
 
+## Refresh after a failed release check
+
+For this project, a failed CI/CD check before publication is a gate to review the release scope again. Keep the unused version number; do not skip it just because a candidate failed. A watcher timeout is not a CI failure: check the actual run first.
+
+1. Record the failed job and diagnose its logs or artifacts. Fix and verify the cause before starting another candidate. Do not assume newer develop commits fixed it.
+2. Fetch develop and inspect changes since the recorded cut. Compare the actual trees as well as commit history, because squash promotion can make old commits appear new.
+3. If a versioned candidate is active, cancel it through the workflow before promoting a refreshed scope. Check that cancellation and main-to-develop synchronization succeed. Preserve any reviewed release fixes already on main.
+4. Put remaining fixes into develop through a verified PR. Include workflow or fixture fixes when those caused the failure; do not weaken product contracts to make a test pass.
+5. After the fixes merge, capture the latest develop SHA as a new cut. Update the notes for all included changes. Promote through a new pinned branch, then run Start release again with the same unused version and updated notes.
+6. Record fresh PR, base, head, run, and archive evidence. The previous candidate's evidence cannot be reused.
+
+This is an explicit scope refresh after a failure, not permission to follow a moving develop head while CI runs. Keep each attempt pinned. If develop has no new changes, still carry the verified fix into the new cut; do not invent changelog entries or repeatedly rebuild an unchanged failing candidate. Never refresh a published version in place. Publication or a tag changes the recovery path and needs a new version decision.
+
 ## Start the versioned release
 
 1. Check that the version is unused in npm and that no active `release/X.Y.Z` branch exists. Only exact stable version branches mark an active release; do not delete older `release/v*` or `release/official-*` branches.
@@ -36,7 +49,7 @@ Wait for the release PR's full required CI matrix. Candidate validation builds t
 
 Inspect failures and their artifacts before changing code or rerunning checks. Do not disable tests, increase limits, or bypass required checks to finish a release. A retry may confirm an identified intermittent failure; it is not a substitute for fixing a repeated failure.
 
-For a release defect, use a reviewed `fix/release-*` PR to main labeled `release-fix`. Review the change itself, not just its label. Rebase the release branch onto the fixed main using `--force-with-lease`, then rerun candidate validation. A changed base, head, or archive requires fresh evidence. Never pull unrelated develop features into the release to repair it.
+If the user explicitly keeps the pinned scope instead of refreshing it, fix a release defect through a reviewed `fix/release-*` PR to main labeled `release-fix`. Review the change itself, not just its label. Rebase the release branch onto the fixed main using `--force-with-lease`, then rerun candidate validation. A changed base, head, or archive requires fresh evidence. Never pull unrelated develop features into the release to repair it.
 
 Squash-merge only the verified release PR with the expected head. Keep the release branch until publication and develop synchronization finish.
 
@@ -65,3 +78,5 @@ Cancel only an unpublished release through **Cancel release** on main with its v
 - New features land in develop during candidate CI: the release head, candidate archive, and CI evidence stay unchanged.
 - A release fix changes main: the release branch is rebased and fresh candidate evidence is required.
 - Develop advances during the final sync: repair or retry synchronization without replacing published bytes or freezing develop.
+- A real release check fails and develop has new fixes: diagnose and verify the cause, cancel the old candidate, capture a new cut, update notes, and keep the unused version.
+- The watcher loses its network connection while CI is healthy: restore observation without refreshing scope or claiming CI failed.
