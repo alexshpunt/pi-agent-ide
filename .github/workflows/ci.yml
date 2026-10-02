@@ -415,6 +415,74 @@ jobs:
           pnpm exec node .agents/tmp/windows-checks/windows-ast-check.mjs
           node .agents/tmp/windows-checks/windows-debugger-check.mjs
 
+  java-debugger-lifecycle:
+    name: Java debugger (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup pinned JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21.0.8+9"
+
+      - name: Setup npm and pnpm
+        run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Provision pinned Java debugger
+        run: node scripts/provision-java-debugger.ts ".tmp/java dependencies"
+
+      - name: Verify Java source lifecycle and public Pi calls
+        run: >-
+          pnpm exec vitest run --config vitest.integration.config.mjs
+          tests/integration/debugger-jvm-adapters.integration.test.ts
+          tests/integration/debugger-java-native.integration.test.ts
+          tests/integration/debugger-java-public.integration.test.ts
+
+      - name: Verify installed Java debugger through public Pi calls
+        run: |
+          set -euo pipefail
+          pnpm check:package
+          archive="$(find .agents/tmp/public-package -maxdepth 1 -name 'pi-agent-ide-*.tgz' -print -quit)"
+          test -n "$archive"
+          node --input-type=module -e 'import { installTestPackage } from "./scripts/release-candidate.ts"; installTestPackage(".tmp/java candidate", process.argv[1]);' "$archive"
+          node scripts/build-java-checks.ts ".tmp/java candidate"
+          installation="$(node -p 'require("node:path").resolve(".tmp/java candidate")' | tr -d '\r')"
+          PI_AGENT_IDE_TEST_INSTALLATION="$installation" pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/debugger-java-public.integration.test.ts
+
+      - name: Retain candidate Pi traces
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: java-debugger-${{ matrix.os }}
+          path: |
+            .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/run.jsonl
+            .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/tui-rendered.log
+          include-hidden-files: true
+          if-no-files-found: error
+
   debugger-matrix:
     name: Debugger (${{ matrix.language }})
     runs-on: ubuntu-latest
@@ -422,7 +490,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [swift, zig, julia, java, kotlin, elixir, r]
+        language: [swift, zig, julia, kotlin, elixir, r]
 
     steps:
       - name: Checkout
@@ -505,7 +573,7 @@ jobs:
             echo "PI_ZIG_PATH=/opt/zig/zig" >> "$GITHUB_ENV"
             echo "PI_LLDB_DAP_PATH=$(command -v lldb-dap-18)" \
               >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.language }}" == "java" || "${{ matrix.language }}" == "kotlin" ]]; then
+          elif [[ "${{ matrix.language }}" == "kotlin" ]]; then
             sudo apt-get install --yes unzip
             jdk_url="https://github.com/adoptium/temurin21-binaries/releases/download"
             jdk_url+="/jdk-21.0.8%2B9"

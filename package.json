@@ -224,7 +224,8 @@
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
     "pi-agent-tool-ui": "workspace:^",
-    "playwright-core": "^1.62.1"
+    "playwright-core": "^1.62.1",
+    "vscode-jsonrpc": "^9.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.0.0",
