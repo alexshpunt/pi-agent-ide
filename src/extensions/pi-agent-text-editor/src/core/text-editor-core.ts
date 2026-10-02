@@ -5,6 +5,10 @@ import { requiredValue } from "pi-agent-invariant";
 import {
   isAgentContent,
   isResourceResolutionAttempt,
+  resourceScheduler,
+  resourceAccesses,
+  type ResourceAccess,
+  type ResourceResolutionAttempt,
   type Resource,
   type ResourceResolver,
   type ResourceResolverContext,
@@ -128,6 +132,53 @@ interface RegisteredResolver {
   readonly order: number;
 }
 
+/** Resolve owners once before scheduling, without reading or modifying their contents. */
+function scopedResolvers(
+  sources: readonly string[],
+  context: ResourceResolverContext,
+  resolvers: readonly RegisteredResolver[],
+  mode: ResourceAccess["mode"] = "write",
+): {
+  resolvers: readonly RegisteredResolver[];
+  accesses: Promise<readonly ResourceAccess[] | undefined>;
+} {
+  const cached = resolvers.map((registered) => {
+    const attempts = new Map<string, Promise<ResourceResolutionAttempt>>();
+    return {
+      ...registered,
+      resolver: {
+        ...registered.resolver,
+        tryResolve(source: string, request: ResourceResolverContext) {
+          let pending = attempts.get(source);
+          if (pending === undefined) {
+            pending = registered.resolver.tryResolve(source, request);
+            attempts.set(source, pending);
+          }
+          return pending;
+        },
+      },
+    };
+  });
+  const accesses = Promise.all(
+    sources.map(async (source) => {
+      try {
+        for (const { resolver } of cached) {
+          const attempt = await resolver.tryResolve(source, context);
+          if (!isResourceResolutionAttempt(attempt)) return undefined;
+          if (attempt.kind === "not-handled") continue;
+          if (attempt.kind === "failed") return undefined;
+          return await resourceAccesses(attempt.resource.source, context.cwd, mode);
+        }
+      } catch {
+        // Let the normal edit pipeline report the cached resolution failure.
+      }
+      return undefined;
+    }),
+  ).then((sets) =>
+    sets.some((set) => set === undefined) ? undefined : sets.flatMap((set) => set ?? []),
+  );
+  return { resolvers: cached, accesses };
+}
 interface ResolverContribution {
   readonly pluginId: string;
   readonly registration: ResourceResolverRegistration;
@@ -293,8 +344,16 @@ export interface TextEditorCore {
   hasApplyUndo(transaction: string): boolean;
   /** Finalize a surviving local text file after a whole-file operation; binary files are untouched. */
   postProcessFile(source: string, context: ResourceResolverContext): Promise<void>;
-  /** Serialize whole-file effects with text edits; the action must not enqueue another edit. */
-  enqueueFileOperation<T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T>;
+  /** Reserve complete file sets. Only an explicit transaction owner may enqueue covered nested edits. */
+  enqueueFileOperation<T>(
+    action: () => Promise<T>,
+    signal?: AbortSignal,
+    scope?: {
+      readonly sources: readonly string[];
+      readonly cwd: string;
+      readonly allowNestedEdits?: boolean;
+    },
+  ): Promise<T>;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
   resolveTextAnchorResources(
@@ -389,20 +448,12 @@ export function createTextEditorCore(
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
   const scriptIndexOperations = new Map<string, ScriptIndexOperation>();
   let registrationQueue = Promise.resolve();
-  // One core owns all IDE mutations, including ordinary tools and Apply. Queue the full
-  // read-modify-write window so aliases and multi-resource edits cannot lose updates.
-  let mutationTail: Promise<void> = Promise.resolve();
-  const enqueueMutation = <T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
-    const pending = mutationTail.then(() => {
-      signal?.throwIfAborted();
-      return action();
-    });
-    mutationTail = pending.then(
-      () => undefined,
-      () => undefined,
-    );
-    return pending;
-  };
+  const scheduler = resourceScheduler;
+  const enqueueMutation = <T>(
+    action: () => Promise<T>,
+    signal?: AbortSignal,
+    accesses?: Promise<readonly ResourceAccess[] | undefined>,
+  ): Promise<T> => scheduler.run(accesses, action, signal);
   const registerContributions = (draft: PluginContributionDraft): void => {
     validateContributionDraft(
       draft,
@@ -519,41 +570,60 @@ export function createTextEditorCore(
       return applyUndoStore.record(before);
     },
     restoreApplyUndo(transaction, signal) {
-      return enqueueMutation(() => applyUndoStore.restore(transaction), signal);
+      const accesses = Promise.all(
+        applyUndoStore
+          .sources(transaction)
+          .map((source) => resourceAccesses(source, process.cwd(), "write")),
+      ).then((sets) => sets.flat());
+      return enqueueMutation(() => applyUndoStore.restore(transaction), signal, accesses);
     },
     hasApplyUndo(transaction) {
       return applyUndoStore.has(transaction);
     },
     async postProcessFile(source, context) {
-      await enqueueMutation(async () => {
-        const file = path.resolve(context.cwd, source);
-        const stat = await lstat(file).catch(() => undefined);
-        if (!stat?.isFile() || stat.isSymbolicLink()) return;
-        const bytes = await readFile(file);
-        const text = bytes.toString("utf8");
-        if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) return;
-        await finalizeTextResource({
-          requestedSource: file,
-          outcomeSource: file,
-          resource: {
-            source: file,
-            async read() {
-              return [{ type: "text", text: await readFile(file, "utf8") }];
+      await enqueueMutation(
+        async () => {
+          const file = path.resolve(context.cwd, source);
+          const stat = await lstat(file).catch(() => undefined);
+          if (!stat?.isFile() || stat.isSymbolicLink()) return;
+          const bytes = await readFile(file);
+          const text = bytes.toString("utf8");
+          if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) return;
+          await finalizeTextResource({
+            requestedSource: file,
+            outcomeSource: file,
+            resource: {
+              source: file,
+              async read() {
+                return [{ type: "text", text: await readFile(file, "utf8") }];
+              },
             },
-          },
-          resolvedBy: "filesystem",
-          existed: true,
-          before: createTextDocument(file, text),
-          requestedText: text,
-          context,
-          presenters: [...presenters],
-          postEditHandlers: [...postEditHandlers.values()],
-          editCompletionListeners: [...editCompletionListeners],
-          result: undefined,
-        });
-      }, context.signal);
+            resolvedBy: "filesystem",
+            existed: true,
+            before: createTextDocument(file, text),
+            requestedText: text,
+            context,
+            presenters: [...presenters],
+            postEditHandlers: [...postEditHandlers.values()],
+            editCompletionListeners: [...editCompletionListeners],
+            result: undefined,
+          });
+        },
+        context.signal,
+        resourceAccesses(source, context.cwd, "write"),
+      );
     },
-    enqueueFileOperation: enqueueMutation,
+    enqueueFileOperation(action, signal, scope) {
+      const accesses =
+        scope === undefined
+          ? undefined
+          : Promise.all(
+              scope.sources.map((source) => resourceAccesses(source, scope.cwd, "write")),
+            ).then((sets) => sets.flat());
+      return scheduler.run(accesses, action, signal, {
+        allowNestedWrites: scope?.allowNestedEdits === true,
+      });
+    },
     addAnchorResolver(registration): void {
       if (!isTextAnchorResolverRegistration(registration)) {
         throw new TypeError("Invalid text anchor resolver");
@@ -646,12 +716,13 @@ export function createTextEditorCore(
           (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
           left.order - right.order,
       );
+      const scoped = scopedResolvers([source], context, resolverSnapshot);
       return enqueueMutation(
         () =>
           editTextResource(
             source,
             context,
-            resolverSnapshot,
+            scoped.resolvers,
             anchorRegistry.snapshot(),
             presenterSnapshot,
             [...postEditHandlers.values()],
@@ -659,6 +730,7 @@ export function createTextEditorCore(
             operation,
           ),
         context.signal,
+        scoped.accesses,
       );
     },
     editTexts<Result>(
@@ -677,12 +749,17 @@ export function createTextEditorCore(
           (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
           left.order - right.order,
       );
+      const scoped = scopedResolvers(
+        sources.map((request) => request.source),
+        context,
+        resolverSnapshot,
+      );
       return enqueueMutation(
         () =>
           editTextResources(
             sources,
             context,
-            resolverSnapshot,
+            scoped.resolvers,
             anchorRegistry.snapshot(),
             presenterSnapshot,
             [...postEditHandlers.values()],
@@ -691,18 +768,30 @@ export function createTextEditorCore(
             operation,
           ),
         context.signal,
+        scoped.accesses,
       );
     },
     previewTexts(sources, context, operation): Promise<TextMutationPreviewOutcome> {
       const resolverSnapshot = [...resolvers].sort(
         (left, right) => left.priority - right.priority || left.order - right.order,
       );
-      return previewTextResources(
-        sources,
+      const scoped = scopedResolvers(
+        sources.map((request) => request.source),
         context,
         resolverSnapshot,
-        anchorRegistry.snapshot(),
-        operation,
+        "read",
+      );
+      return scheduler.run(
+        scoped.accesses,
+        () =>
+          previewTextResources(
+            sources,
+            context,
+            scoped.resolvers,
+            anchorRegistry.snapshot(),
+            operation,
+          ),
+        context.signal,
       );
     },
     async executeEdit<Input, Result>(
@@ -1090,21 +1179,28 @@ async function editTextResources<Result>(
 
   const prepared = new Map<string, PreparedTextResource>();
 
-  for (const source of sources) {
+  // Settle every read before releasing the transaction's resource reservations.
+  const reads = await Promise.allSettled(
+    sources.map((source) => {
+      const request = requiredValue(requestBySource.get(source));
+      return prepareTextResource(
+        source,
+        request.read,
+        request.allowReadFailure ?? false,
+        request.requireWrite ?? true,
+        context,
+        resolvers,
+      );
+    }),
+  );
+  for (const [index, read] of reads.entries()) {
+    if (read.status === "rejected") throw read.reason;
+    const source = requiredValue(sources[index]);
     const request = requiredValue(requestBySource.get(source));
-    const outcome = await prepareTextResource(
-      source,
-      request.read,
-      request.allowReadFailure ?? false,
-      request.requireWrite ?? true,
-      context,
-      resolvers,
-    );
-
+    const outcome = read.value;
     if ("failure" in outcome) {
       return { kind: "failed", failure: outcome.failure, completed: [] };
     }
-
     if (request.expectedExistence !== undefined && request.expectedExistence !== outcome.existed) {
       throw new Error(`Snapshot source ${source} was created or removed before the edit batch.`);
     }
@@ -1154,6 +1250,36 @@ async function editTextResources<Result>(
     }
   }
 
+  if (mutation.changes.size > 1) {
+    const identities = await Promise.all(
+      [...mutation.changes.keys()].map(async (source) => ({
+        source,
+        accesses: await resourceAccesses(
+          requiredValue(prepared.get(source)).resource.source,
+          context.cwd,
+          "write",
+        ),
+      })),
+    );
+    const owners = new Map<string, string>();
+    for (const { source, accesses } of identities) {
+      for (const { resource } of accesses) {
+        const owner = owners.get(resource);
+        if (owner !== undefined && owner !== source) {
+          return {
+            kind: "failed",
+            failure: {
+              code: "MUTATION_REJECTED",
+              source,
+              message: `Sources ${owner} and ${source} alias the same resource; use one source name for its edits.`,
+            },
+            completed: [],
+          };
+        }
+        owners.set(resource, source);
+      }
+    }
+  }
   const applied = new Map<string, TextChangeResult>();
 
   for (const [source, changes] of mutation.changes) {
@@ -1213,69 +1339,55 @@ async function editTextResources<Result>(
 
   // A guard may finish after cancellation; reject before the first write.
   context.signal?.throwIfAborted();
-  const completed: string[] = [];
-  const written: string[] = [];
-  const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
-
-  for (const source of sources) {
+  const written = sources.filter((source) => {
     const text = applied.get(source)?.content;
     const item = requiredValue(prepared.get(source));
-
-    if (text === undefined || (item.existed && text === item.before.content)) {
-      continue;
-    }
-
-    const finalContent: unknown = [{ type: "text", text }];
-
-    if (!isAgentContent(finalContent)) {
-      return {
-        kind: "failed",
-        failure: {
-          code: "INVALID_WRITE_CONTENT",
-          source,
-          message: `Text edit for ${source} produced invalid content`,
-        },
-        completed,
-      };
-    }
-
-    try {
+    return text !== undefined && (!item.existed || text !== item.before.content);
+  });
+  const writes = await Promise.allSettled(
+    written.map(async (source) => {
+      const item = requiredValue(prepared.get(source));
+      const text = requiredValue(applied.get(source)).content;
       await requiredValue(item.resource.write)(
-        finalContent,
+        [{ type: "text", text }],
         context.signal === undefined ? {} : { signal: context.signal },
       );
-    } catch (error) {
-      const rollbackFailures: string[] = [];
-      for (const writtenSource of [source, ...written].reverse()) {
-        const writtenItem = requiredValue(prepared.get(writtenSource));
-        try {
-          await requiredValue(writtenItem.resource.write)(
-            [{ type: "text", text: writtenItem.before.content }],
-            {},
-          );
-        } catch {
-          rollbackFailures.push(writtenSource);
-        }
+    }),
+  );
+  const failedIndex = writes.findIndex((result) => result.status === "rejected");
+  if (failedIndex !== -1) {
+    const source = requiredValue(written[failedIndex]);
+    const item = requiredValue(prepared.get(source));
+    const failure = requiredValue(writes[failedIndex]);
+    const rollbackFailures: string[] = [];
+    // All attempts have settled; even a rejected write may have changed its resource.
+    for (const writtenSource of [...written].reverse()) {
+      const writtenItem = requiredValue(prepared.get(writtenSource));
+      try {
+        await requiredValue(writtenItem.resource.write)(
+          [{ type: "text", text: writtenItem.before.content }],
+          {},
+        );
+      } catch {
+        rollbackFailures.push(writtenSource);
       }
-      return {
-        kind: "failed",
-        failure: {
-          code: "WRITE_FAILED",
-          source,
-          resolverId: item.resolverId,
-          message:
-            rollbackFailures.length === 0
-              ? `Unable to write ${source}; completed writes were rolled back`
-              : `Unable to write ${source}; rollback failed for ${rollbackFailures.join(", ")}`,
-          cause: error,
-        },
-        completed: rollbackFailures,
-      };
     }
-
-    written.push(source);
-    completed.push(source);
+    return {
+      kind: "failed",
+      failure: {
+        code: "WRITE_FAILED",
+        source,
+        resolverId: item.resolverId,
+        message:
+          rollbackFailures.length === 0
+            ? `Unable to write ${source}; completed writes were rolled back`
+            : `Unable to write ${source}; rollback failed for ${rollbackFailures.join(", ")}`,
+        cause: failure.status === "rejected" ? failure.reason : undefined,
+      },
+      completed: rollbackFailures,
+    };
   }
+  const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
 
   await collectPostEditNotifications(async () => {
     for (const source of written) {

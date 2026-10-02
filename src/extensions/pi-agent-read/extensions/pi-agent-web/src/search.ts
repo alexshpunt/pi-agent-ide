@@ -16,6 +16,8 @@ interface WebSearchResult {
 export function createWebSearchResolver(web: ResourceResolver): SearchResolver {
   return {
     id: "web",
+    readResources: (request) =>
+      request.path !== undefined && /^https?:/iu.test(request.path) ? [request.path] : [],
     async tryResolve(request, context) {
       const source = request.path;
       if (source === undefined || !/^https?:/iu.test(source)) return { kind: "not-handled" };

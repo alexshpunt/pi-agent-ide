@@ -1,11 +1,52 @@
 import { requiredValue } from "pi-agent-invariant";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
-import type { ResourceResolver } from "pi-agent-resource";
+import { resourceScheduler, type ResourceResolver } from "pi-agent-resource";
 import type { TextLinePresenter } from "pi-agent-text";
 import { expect, test } from "vitest";
 
 import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
 
+test("a reserved writer blocks only reads of its resource", async () => {
+  const read = createReadTool();
+  const observed: string[] = [];
+  read.registerContributions("fixture", {
+    resolvers: [
+      {
+        resolver: {
+          id: "memory",
+          async tryResolve(source) {
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  observed.push(source);
+                  return [{ type: "text", text: source }];
+                },
+              },
+            };
+          },
+        },
+      },
+    ],
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const writer = resourceScheduler.run([{ resource: "memory:blocked", mode: "write" }], () => gate);
+  const blocked = read.execute({ path: "memory:blocked" }, { cwd: process.cwd() });
+  try {
+    const independent = await read.execute({ path: "memory:independent" }, { cwd: process.cwd() });
+    expect(independent.isError).not.toBe(true);
+    expect(observed).toEqual(["memory:independent"]);
+  } finally {
+    release();
+    await Promise.allSettled([writer, blocked]);
+    await read.dispose();
+  }
+  expect(observed).toEqual(["memory:independent", "memory:blocked"]);
+});
 test("script reads retain full requested lines without changing ordinary output limits", async () => {
   const read = createReadTool();
   const content = Array.from(
@@ -37,6 +78,64 @@ test("script reads retain full requested lines without changing ordinary output 
       endLine: 4,
     });
   } finally {
+    await read.dispose();
+  }
+});
+test("multi-target reads overlap and keep selection order", async () => {
+  const read = createReadTool();
+  const entered: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  read.registerContributions("fixture", {
+    resolvers: [
+      {
+        resolver: {
+          id: "concurrent",
+          async tryResolve(source) {
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  entered.push(source);
+                  if (source === "memory:first") await gate;
+                  else release();
+                  return [{ type: "text", text: source }];
+                },
+              },
+            };
+          },
+        },
+      },
+    ],
+    targetResolvers: [
+      {
+        resolver: {
+          id: "targets",
+          tryResolve: () => ({
+            kind: "resolved",
+            targets: ["memory:first", "memory:second"].map((source) => ({ source })),
+          }),
+        },
+      },
+    ],
+  });
+  try {
+    let timedOut = false;
+    watchdog = setTimeout(() => {
+      timedOut = true;
+      release();
+    }, 1000);
+    const result = await read.execute({ path: "selection" }, { cwd: process.cwd() }, "script");
+    expect(timedOut).toBe(false);
+    expect(entered).toEqual(["memory:first", "memory:second"]);
+    expect(result.details.resources?.map((resource) => resource.details.source)).toEqual(entered);
+  } finally {
+    clearTimeout(watchdog);
+    release();
     await read.dispose();
   }
 });
@@ -421,10 +520,15 @@ test("runs text presenters in parallel and merges them in priority order", async
   const presenterGate = new Promise<void>((resolve) => {
     releasePresenters = resolve;
   });
+  let signalStarted!: () => void;
+  const bothStarted = new Promise<void>((resolve) => {
+    signalStarted = resolve;
+  });
   const presenter = (id: string, prefix: string): TextLinePresenter => ({
     id,
     async present(document) {
       started.push(id);
+      if (started.length === 2) signalStarted();
       await presenterGate;
       return {
         ...document,
@@ -447,12 +551,21 @@ test("runs text presenters in parallel and merges them in priority order", async
     ],
   });
   const resultReady = executeRead(read, "notes.txt", ["first", "later"]);
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const startedTogether = [...started];
-  releasePresenters();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      bothStarted,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Presenters did not start together")), 1000);
+      }),
+    ]);
+    expect(started).toEqual(["first", "later"]);
+  } finally {
+    clearTimeout(timer);
+    releasePresenters();
+    await resultReady;
+  }
   const result = await resultReady;
-
-  expect(startedTogether).toEqual(["first", "later"]);
   expect(result.content).toEqual([{ type: "text", text: "ABalpha" }]);
 });
 

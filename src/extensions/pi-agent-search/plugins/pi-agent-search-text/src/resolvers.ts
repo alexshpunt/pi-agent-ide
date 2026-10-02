@@ -46,6 +46,8 @@ export function createRegexResolver(sessions: SearchSessionStore): SearchResolve
 export function createFileResolver(): SearchResolver {
   return {
     id: "files",
+    readResources: (request, context) =>
+      request.query.startsWith("files:") ? [request.path ?? context.cwd] : [],
     toScriptData(payload) {
       const result = payload as FilePayload;
       return { kind: "files", files: [...result.files], complete: result.complete };
@@ -78,6 +80,8 @@ function createMatchResolver(
   queryBody: (request: SearchRequest) => SearchRecipe | undefined,
 ): SearchResolver {
   return {
+    readResources: (request, context) =>
+      queryBody(request) === undefined ? [] : [request.path ?? context.cwd],
     id,
     toScriptData(payload, details) {
       const result = payload as TextPayload;

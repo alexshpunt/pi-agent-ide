@@ -523,20 +523,27 @@ async function snapshotContents(
   matches: readonly TextSearchMatch[],
   signal?: AbortSignal,
 ): Promise<ReadonlyMap<string, string>> {
-  const contentBySource = new Map<string, string>();
-  for (const source of new Set(matches.map((match) => match.source))) {
-    const content = await readFile(source, {
-      encoding: "utf8",
-      ...(signal !== undefined && { signal }),
-    });
-    const document = createTextDocument(source, content);
-    for (const match of matches.filter((candidate) => candidate.source === source)) {
-      const line = document.lines[match.lineNumber - 1]?.content;
-      if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText) {
-        throw new SearchSnapshotChangedError(source);
+  const sources = [...new Set(matches.map((match) => match.source))];
+  const snapshots = await Promise.allSettled(
+    sources.map(async (source) => {
+      const content = await readFile(source, {
+        encoding: "utf8",
+        ...(signal !== undefined && { signal }),
+      });
+      const document = createTextDocument(source, content);
+      for (const match of matches.filter((candidate) => candidate.source === source)) {
+        const line = document.lines[match.lineNumber - 1]?.content;
+        if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText) {
+          throw new SearchSnapshotChangedError(source);
+        }
       }
-    }
-    contentBySource.set(source, content);
+      return [source, content] as const;
+    }),
+  );
+  const contentBySource = new Map<string, string>();
+  for (const snapshot of snapshots) {
+    if (snapshot.status === "rejected") throw snapshot.reason;
+    contentBySource.set(...snapshot.value);
   }
   return contentBySource;
 }
