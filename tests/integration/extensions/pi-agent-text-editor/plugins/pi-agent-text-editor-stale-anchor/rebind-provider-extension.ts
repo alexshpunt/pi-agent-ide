@@ -5,8 +5,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export const REBOUND_PROVIDER_LOG = "rebound-provider.log";
 
+/** Rebinds on conversation messages without treating transcript checkpoints as another message. */
 export default function rebindProviderBetweenMessages(pi: ExtensionAPI): void {
-  pi.on("message_end", (_event, context_) => {
+  pi.on("message_end", (event, context_) => {
+    // System checkpoints must not add another conversational provider wrapper.
+    if (event.message.role === "system") return;
     const model = context_.model;
 
     if (!model) {

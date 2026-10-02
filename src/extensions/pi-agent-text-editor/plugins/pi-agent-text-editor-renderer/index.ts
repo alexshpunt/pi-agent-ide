@@ -32,6 +32,12 @@ export default async function registerTextEditorRenderer(
   const applyPresentation = parsePresentation(context?.preferences["ui.applyPreview"]);
   const diffPresentation = parsePresentation(context?.preferences["ui.diffs"]);
   const animationPressure = createMutationAnimationPressure(pi);
+  let animationsEnabled = pi.getFlag("pi-agent-ide-no-animations") !== true;
+  const refreshAnimations = () => {
+    animationsEnabled = pi.getFlag("pi-agent-ide-no-animations") !== true;
+  };
+  pi.on("session_start", refreshAnimations);
+  pi.on("before_agent_start", refreshAnimations);
   const plugin = {
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
@@ -129,7 +135,8 @@ export default async function registerTextEditorRenderer(
       registerMutationRenderers(
         api,
         animationPressure,
-        () => pi.getFlag("pi-agent-ide-no-animations") !== true,
+        // Completed panels can be redrawn after Pi has invalidated the extension API.
+        () => animationsEnabled,
         diffPresentation,
       );
       pi.on("tool_result", (event) => {

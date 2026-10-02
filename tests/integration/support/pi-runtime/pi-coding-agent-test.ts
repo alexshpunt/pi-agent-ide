@@ -6,10 +6,10 @@ import {
   text,
   toolCall,
   type ToolSelection,
-} from "pi-coding-agent-test/base";
+} from "./native-pi-coding-agent-test.ts";
 import { expect } from "vitest";
 
-export { type ChunkSpec, chunkString, testArtifactsDir } from "pi-coding-agent-test/base";
+export { type ChunkSpec, chunkString, testArtifactsDir } from "./native-pi-coding-agent-test.ts";
 
 export {
   emitMessageUpdateEvents,
@@ -22,20 +22,20 @@ export {
   type ToolCallEvent,
   type ToolCallInput,
   type ToolCallStartEvent,
-} from "pi-coding-agent-test/base";
+} from "./native-pi-coding-agent-test.ts";
 
 export {
   getProviderRequestLastMessageText,
   getProviderSystemPrompt,
+  getToolResultMessage,
   getToolCallNames,
   getToolExecution,
   getToolExecutionDetails,
   getToolExecutionResult,
   getToolExecutions,
-  getToolResultMessage,
   getToolResultText,
   type ToolExecutionTrace,
-} from "pi-coding-agent-test/base";
+} from "./native-pi-coding-agent-test.ts";
 
 export {
   type AssistantContentBlock,
@@ -51,7 +51,7 @@ export {
   type ToolSelection,
   type TraceEvent,
   type TuiSize,
-} from "pi-coding-agent-test/base";
+} from "./native-pi-coding-agent-test.ts";
 
 function includeReadTool(tools: ToolSelection | undefined): ToolSelection | undefined {
   if (tools === undefined) {

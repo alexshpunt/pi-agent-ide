@@ -4,6 +4,10 @@ Pi Agent IDE explores a small tool surface for coding agents. The goal is to kee
 
 The project is experimental. The behavior below describes the current implementation, not a performance guarantee.
 
+## Native structured results
+
+IDE tools declare native result schemas. Codemode receives typed data and explicit success/error/partial outcomes instead of display strings. Check status and mutation effects before continuing or retrying. See [Native IDE results](./structured-results.md) for fields, resolver adapters, bounds, and `tools.flush({})`.
+
 ## Resource references
 
 Tool source fields take one complete resource reference. A filesystem path is the common case, but it is not the only kind of reference. Depending on the tool and loaded resolvers, a reference may name a file, URL, protocol source, temporary result, or a typed text selection.
@@ -72,14 +76,26 @@ Window and display capture use `node-screenshots` on Linux and macOS. Desktop or
 
 ## Terminal sessions
 
-`run` starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.
+Native Codemode scripts receive a structured shell result. `output` holds up to 1 MiB of ANSI-free PTY output; empty output is `""`. Longer logs keep their first and last 512 KiB, cut at UTF-8 character boundaries. `truncated` reports missing output, not whether the process has finished. `output_ranges` gives the zero-based, end-exclusive byte ranges joined into `output`, with no added headings or omission marker. `full_output_path` points to the UTF-8 log, which keeps growing while the process runs and stays available until the session is deleted.
+
+The native fields `exit_code` and `wall_time_seconds` describe the process, not tool transport. `exit_code` is absent until known. IDE fields `session`, `source`, `status`, `background`, `wait_reason`, `completion_reason`, `signal`, and `error` describe the persistent session. A wait timeout leaves a running session, not a failed command. Nonzero exits and shell startup failures still return structured data to scripts. Normal model output and stored renderer details keep the shorter terminal preview limits.
+
+```ts
+const result = await tools.bash({ command: "your-command" });
+text({
+  status: result.status,
+  errors: result.output.split("\n").filter((line) => line.includes("error")),
+});
+```
+
+`bash` (Linux/WSL) or `powershell` (Windows) starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.
 
 Every run returns a stable `shell:<session>` source. Synchronous runs wait for the real exit status. Background runs return immediately, remain visible below the editor, and send one completion message that wakes the agent; nearby completions are combined without losing individual results. `/terminals` opens the active and recent session overlay.
 The UI tab in `/agent-ide-settings` controls persistent active-terminal presentation: Detailed cards (default), Compact count, or Off. Detailed cards replace the separate active count instead of showing both. This setting does not hide ordinary run results or completion messages.
 
 Use `read` on the returned source for status and bounded output. Compact cards show the latest 12 output rows and count omitted earlier rows; expanded cards show all retained rows. Add `views: ["image"]` to receive a PNG of the ANSI-aware virtual terminal screen. Use `write` to send exact text without Enter. Use `insert` for named keys and chords such as `Enter`, `Ctrl+C`, `Ctrl+Shift+Left`, or Unix caret controls such as `^U`; separate multiple keys with spaces or commas. Batched `apply` calls can send several terminal inputs without file formatting or diagnostics. Use `search` with the `shell:<session>` path to search retained output, including rows outside the current screen. `delete` terminates the owned process tree when needed, disposes the virtual screen, and removes the session. `replace` does not apply to terminal sessions.
 
-Deleting an active session first requests graceful termination, then forcefully terminates its process tree after the grace period. Deletion does not undo file or network effects. Sessions are owned by the current Pi runtime and are cleaned up on shutdown or reload; they are not reattached after restart.
+Deleting an active session first requests graceful termination, then forcefully terminates its process tree after the grace period. Deletion does not undo file or network effects. Sessions survive extension reloads in the current Pi process. Shutdown stops live processes; sessions are not reattached after restart.
 
 ## Search
 

@@ -9,12 +9,21 @@ import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/
 import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 import {
   expectTextToolDiff,
+  getTextToolMutationData,
   runTextToolScenario,
 } from "#integration/support/pi-runtime/scenario.js";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const restoreRunner = forceStandaloneIntegrationFile();
 const extensions = await createExtensionSet();
+const rendererExtensions = extensions.paths.map((extension) =>
+  extension ===
+  path.resolve("tests/integration/extensions/pi-agent-text-editor/register-extension.ts")
+    ? path.resolve(
+        "tests/integration/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/register-extension.ts",
+      )
+    : extension,
+);
 afterAll(async () => {
   restoreRunner();
   await extensions.dispose();
@@ -96,6 +105,69 @@ describe("exact text anchors through real text editor tools", () => {
     });
   });
 
+  for (const [eolName, eol] of [
+    ["lf", "\n"],
+    ["crlf", "\r\n"],
+  ] as const) {
+    for (const boundary of ["following-entry", "eof-blank-line", "eof"] as const) {
+      for (const tool of ["replace", "delete"] as const) {
+        test(`${tool} keeps separators after a newline-terminated exact match (${eolName}, ${boundary})`, async () => {
+          await withTempWorkspace(async (directory) => {
+            const entry =
+              tool === "replace"
+                ? "## Оплата 5\n\n- Состояние: платёж отложен\n"
+                : 'test("serializes checkout-payload 0001", () => {\n  expect(true).toBe(true);\n});\n';
+            const replacement = tool === "replace" ? entry.replace("отложен", "подтверждён") : "";
+            const suffix =
+              boundary === "following-entry"
+                ? "\nNEXT\n"
+                : boundary === "eof-blank-line"
+                  ? "\n"
+                  : "";
+            const before = ("PREFIX\n" + entry + suffix).replaceAll("\n", eol);
+            const after = ("PREFIX\n" + replacement + suffix).replaceAll("\n", eol);
+            const filename = tool === "replace" ? "checkout.md" : "cases.test.ts";
+            const file = await createFixture(directory, filename, before);
+            const scenario = await runTextToolScenario({
+              extensions: rendererExtensions,
+              cwd: directory,
+              testName: `exact-${tool}-terminated-${eolName}-${boundary}`,
+              tool,
+              arguments: {
+                path: filename,
+                start: entry,
+                ...(tool === "replace" ? { text: replacement } : {}),
+              },
+            });
+            expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+            await expect(readFile(file, "utf8")).resolves.toBe(after);
+            const details = getToolExecutionDetails(
+              getToolExecution(scenario.result, scenario.mutationCallId),
+            );
+            expect(getTextToolMutationData(details)).toMatchObject({
+              addedLines: tool === "replace" ? 1 : 0,
+              removedLines: tool === "replace" ? 1 : 3,
+            });
+            expect(details).toMatchObject({
+              mutationRender: [
+                {
+                  path: filename,
+                  model: {
+                    modified: tool === "replace" ? 1 : 0,
+                    removed: tool === "replace" ? 0 : 3,
+                  },
+                },
+              ],
+            });
+            expect(scenario.result.tuiRenderedOutput).toContain(filename);
+            if (tool === "replace") {
+              expect(scenario.result.tuiRenderedOutput).toContain("платёж подтверждён");
+            }
+          });
+        });
+      }
+    }
+  }
   test("mixes an exact start with a line-hash end", async () => {
     await runExactScenario(
       "exact-line-range",

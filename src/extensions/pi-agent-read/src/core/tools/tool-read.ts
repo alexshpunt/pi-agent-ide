@@ -56,6 +56,7 @@ import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
 
 import { readParameters } from "#src/api/read-parameters.js";
 import { readRaw } from "#src/core/tools/read/raw-read.js";
+import { readOutputSchema, structuredRead } from "./read/structured-result.js";
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
 
@@ -147,6 +148,15 @@ export function createReadTool(
     saveTemporary: (text) => temporaryResources.save(text),
     tool: {
       name: toolId,
+      exposure: "direct",
+      namespace: { name: "ide_read", description: "Read resources and compare sources." },
+      // Resource plugins can run processes and change live session state.
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       label: toolId,
 
       promptSnippet: "Read supported sources as text or bytes, with optional views",
@@ -160,6 +170,7 @@ export function createReadTool(
         ];
       },
       parameters: readParameters,
+      outputSchema: readOutputSchema,
       renderCall(arguments_, theme, context) {
         const source = typeof arguments_.path === "string" ? arguments_.path : undefined;
         const renderer =
@@ -194,17 +205,29 @@ export function createReadTool(
           cwd: context.cwd,
           ...(signal !== undefined && { signal }),
         };
-        return executeRead(
-          parameters,
-          resolverContext,
-          resolvers,
-          handlers,
-          views,
-          temporaryResources,
-          fragments,
-          targetResolvers,
-          resourceGuards,
-        );
+        try {
+          const result = await executeRead(
+            parameters,
+            resolverContext,
+            resolvers,
+            handlers,
+            views,
+            temporaryResources,
+            fragments,
+            targetResolvers,
+            resourceGuards,
+          );
+          return structuredRead(result);
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          return structuredRead(
+            failureResult({
+              code: "READ_FAILED",
+              source: parameters.path,
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
       },
     },
     execute(request, context, audience = "agent"): Promise<ReadToolResult> {
@@ -639,23 +662,14 @@ async function resolveTextTargets(
       }
     }
     const aggregate = {
-      ...(audience === "script" && {
-        script:
-          resources.length === 1 && resources[0]?.script !== undefined
-            ? resources[0].script
-            : {
-                kind: "resources" as const,
-                source: request.path,
-                resources: resources.map(
-                  (result) =>
-                    result.script ?? {
-                      kind: "native" as const,
-                      source: result.details.source ?? request.path ?? "",
-                      blocks: result.content,
-                    },
-                ),
-              },
-      }),
+      script:
+        resources.length === 1 && resources[0]?.script !== undefined
+          ? resources[0].script
+          : {
+              kind: "resources" as const,
+              source: request.path,
+              resources: resources.map((result) => requiredValue(result.script)),
+            },
       content: [{ type: "text", text: chunks.join("\n") }],
       details:
         audience === "script"
@@ -1100,7 +1114,18 @@ function mergeViewContributions(
     );
   }
 
-  return lines === base.lines ? base : { ...base, lines };
+  const references = [
+    ...new Map(
+      [base, ...contributions.map((contribution) => contribution.document)]
+        .flatMap((document) => document.references ?? [])
+        .map((reference) => [reference.value, reference]),
+    ).values(),
+  ];
+  return {
+    ...base,
+    lines,
+    ...(references.length === 0 ? {} : { references }),
+  };
 }
 
 function assertPresentationOnly(base: TextDocument, contribution: ViewContribution): void {
@@ -1282,28 +1307,33 @@ async function runPostReadHandlers(
   initialContext: ReadPipelineContext,
   handlers: readonly RegisteredHandler[],
 ): Promise<ReadStageOutcome> {
-  let context = initialContext;
+  const postHandlers = handlers.filter(({ registration }) => registration.stage === "post-read");
+  const outcomes = await Promise.all(
+    postHandlers.map((registered) =>
+      invokeHandler(
+        registered.registration.handler,
+        initialContext,
+        registered.pluginId,
+        "post-read",
+      ),
+    ),
+  );
 
-  for (const registered of handlers) {
-    if (registered.registration.stage !== "post-read") {
-      continue;
-    }
-
-    const outcome = await invokeHandler(
-      registered.registration.handler,
-      context,
-      registered.pluginId,
-      "post-read",
-    );
-
-    if (outcome.kind === "return") {
-      return outcome;
-    }
-
-    context = outcome.context;
+  for (const outcome of outcomes) {
+    if (outcome.kind === "return") return outcome;
   }
 
-  return { kind: "continue", context };
+  let result = initialContext.result;
+  for (const outcome of outcomes) {
+    if (outcome.kind === "return" || outcome.transform === undefined) continue;
+    if (result === undefined) throw new Error("Post-read transform requires a read result");
+    result = outcome.transform(result);
+  }
+
+  return {
+    kind: "continue",
+    context: result === undefined ? initialContext : { ...initialContext, result },
+  };
 }
 
 async function invokeHandler(

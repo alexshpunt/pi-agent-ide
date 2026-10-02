@@ -6,7 +6,14 @@ import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 
 import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.js";
-import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
+import {
+  formatAgentTerminalSnapshot,
+  terminalOutputTail,
+} from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
+import {
+  shellOutputSchema,
+  structuredShellResult,
+} from "#src/plugins/pi-agent-ide-terminal/src/shell-result.js";
 import { renderRunCall, renderRunResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 
 import { shellSyntaxGuidance } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
@@ -63,6 +70,17 @@ export function registerTerminalTools(
   pi.registerTool(
     defineTool<typeof runParameters, TerminalSessionSnapshot>({
       name: toolName,
+      exposure: "direct",
+      namespace: {
+        name: "ide_terminal",
+        description: "Run shell commands in persistent terminal sessions.",
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       label: profile.displayName,
       promptSnippet: `Execute ${profile.displayName} commands in synchronous or background terminal sessions`,
       promptGuidelines: [
@@ -70,6 +88,7 @@ export function registerTerminalTools(
       ],
       description: `Use ${toolName} to execute a command in the user's configured ${profile.displayName} shell (${profile.executable}). Every call creates an addressable terminal session. Set background to true to continue without waiting. A foreground wait automatically returns the live session as background on timeout, a stable interactive prompt, or turn abort. Background completion is delivered automatically and wakes the agent. Silent background sessions are treated as potentially stale after two minutes and wake an idle agent for inspection. Sessions survive extension reloads and keep the same shell: source. Output uses the shared Read limits, keeps the tail, and links a complete log file when truncated. ${shellSyntaxGuidance(profile)}`,
       parameters: runParameters,
+      outputSchema: shellOutputSchema,
       async execute(_toolCallId, input, signal, onUpdate, context) {
         ui.bind(context);
         const cwd = input.cwd === undefined ? context.cwd : path.resolve(context.cwd, input.cwd);
@@ -113,17 +132,30 @@ export function registerTerminalTools(
   );
 }
 
-function terminalResult(snapshot: TerminalSessionSnapshot) {
+function terminalPreview(snapshot: TerminalSessionSnapshot) {
+  const output = terminalOutputTail(snapshot.output).content;
   return {
     content: [{ type: "text" as const, text: formatAgentTerminalSnapshot(snapshot) }],
-    details: snapshot,
+    details: {
+      ...snapshot,
+      output,
+      outputStart: snapshot.outputEnd - output.length,
+      truncated: snapshot.truncated || output.length < snapshot.output.length,
+    },
     isError: snapshot.status === "failed" || snapshot.status === "lost",
+  };
+}
+
+async function terminalResult(snapshot: TerminalSessionSnapshot) {
+  return {
+    ...terminalPreview(snapshot),
+    structuredContent: await structuredShellResult(snapshot),
   };
 }
 async function captureInitialBackgroundPreview(
   manager: TerminalSessionManager,
   session: ReturnType<TerminalSessionManager["start"]>,
-  onUpdate: ((result: ReturnType<typeof terminalResult>) => void) | undefined,
+  onUpdate: ((result: ReturnType<typeof terminalPreview>) => void) | undefined,
 ): Promise<void> {
   await new Promise<void>((resolve) => {
     let settled = false;
@@ -138,7 +170,7 @@ async function captureInitialBackgroundPreview(
     };
     const publish = (): void => {
       const snapshot = manager.snapshot(session);
-      onUpdate?.(terminalResult(snapshot));
+      onUpdate?.(terminalPreview(snapshot));
       const rows = stripVTControlCharacters(snapshot.output)
         .replaceAll("\r", "")
         .split("\n")

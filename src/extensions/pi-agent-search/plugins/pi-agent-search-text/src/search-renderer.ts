@@ -25,6 +25,8 @@ const restoredDetails = new WeakMap<object, SearchToolDetails>();
 import type { SearchResultFile, SearchResultLine, SearchToolDetails } from "#src/search-result.js";
 
 const COMPACT_SEARCH_ROWS = 12;
+const FULL_LINE_CHARACTERS = 2048;
+const PREVIEW_CHARACTERS = 256;
 
 const FILE_BADGES: Readonly<
   Record<string, { readonly label: string; readonly color: ThemeColor }>
@@ -209,7 +211,16 @@ function renderPanelRow(
   }
 
   if (row.kind === "summary") {
-    return [framed(theme.fg("dim", `  ${safeText(row.text)}`), width, theme)];
+    return [
+      framed(
+        theme.fg(
+          "dim",
+          `  ${safeText(row.text.length > FULL_LINE_CHARACTERS ? `${row.text.slice(0, PREVIEW_CHARACTERS)}…` : row.text)}`,
+        ),
+        width,
+        theme,
+      ),
+    ];
   }
 
   if (row.kind === "omitted") {
@@ -250,14 +261,37 @@ function renderMatchLine(
   const number = String(line.lineNumber).padStart(gutterWidth);
   const gutter = ` ${theme.fg("dim", number)} ${theme.fg("borderMuted", "│")} `;
   const contentWidth = Math.max(1, width - visibleWidth(gutter) - 1);
-  const wrapped = wrapTextWithAnsi(renderHighlightedLine(line, theme), contentWidth);
+  const preview = previewMatchLine(line);
+  const wrapped = wrapTextWithAnsi(renderHighlightedLine(preview, theme), contentWidth);
   const continuationGutter = " ".repeat(visibleWidth(gutter));
 
-  return wrapped.map((content, index) =>
+  const rows = wrapped.map((content, index) =>
     framed(`${index === 0 ? gutter : continuationGutter}${content}`, width, theme),
   );
+  if (preview !== line)
+    rows.push(
+      framed(theme.fg("dim", "  … line shortened · read file for full text"), width, theme),
+    );
+  return rows;
 }
 
+// Crop before styling or wrapping so giant source lines never enter terminal layout.
+function previewMatchLine(line: SearchResultLine): SearchResultLine {
+  if (line.text.length <= FULL_LINE_CHARACTERS) return line;
+  const start = Math.max(0, (line.ranges[0]?.from ?? 0) - 64);
+  const end = Math.min(line.text.length, start + PREVIEW_CHARACTERS);
+  const prefix = start > 0 ? "…" : "";
+  return {
+    ...line,
+    text: `${prefix}${line.text.slice(start, end)}${end < line.text.length ? "…" : ""}`,
+    ranges: line.ranges
+      .filter((range) => range.from < end && range.to > start)
+      .map((range) => ({
+        from: Math.max(range.from, start) - start + prefix.length,
+        to: Math.min(range.to, end) - start + prefix.length,
+      })),
+  };
+}
 function renderHighlightedLine(line: SearchResultLine, theme: Theme): string {
   let result = "";
   let offset = 0;

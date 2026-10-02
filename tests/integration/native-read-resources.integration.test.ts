@@ -10,10 +10,13 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "pi-coding-agent-test/base";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
 
-import { expectToolRowsHaveBackground } from "#integration/support/tui-background.js";
+import {
+  expectToolRowsHaveBackground,
+  toolBackgroundTheme,
+} from "#integration/support/tui-background.js";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);
@@ -56,18 +59,18 @@ test.each([false, true])(
           { stopReason: "toolUse" },
         ),
         assistantMessage([text("Finished")]),
-      ];
+      ] as const;
       const historyFixture = path.resolve("tests/integration/fixtures/restore-tool-history.ts");
       const baseline = await new PiIntegrationTest({
         ...options,
         testName: `native-resource-baseline-${expanded}`,
-        extensions: [historyFixture],
+        extensions: [toolBackgroundTheme, historyFixture],
         conversation,
       }).run("Read the three resources.");
       const run = await new PiIntegrationTest({
         ...options,
         testName: `native-resource-ide-${expanded}`,
-        extensions: [path.resolve("src/pi-agent-ide.ts"), historyFixture],
+        extensions: [toolBackgroundTheme, path.resolve("src/pi-agent-ide.ts"), historyFixture],
         conversation: [
           conversation[0],
           assistantMessage(
@@ -125,7 +128,7 @@ test.each([false, true])(
       const resumed = await new PiIntegrationTest({
         ...options,
         testName: `native-resource-restored-${expanded}`,
-        extensions: [path.resolve("src/pi-agent-ide.ts"), historyFixture],
+        extensions: [toolBackgroundTheme, path.resolve("src/pi-agent-ide.ts"), historyFixture],
         environment: { ...options.environment, IDE_RESTORE_SESSION: saved },
         conversation: [assistantMessage([text("Restored")])],
       }).run("/restore-tool-history");

@@ -3,6 +3,8 @@ Runtime for intercepting streamed Pi tool calls.
 */
 
 import { Allow } from "partial-json";
+import { resultError, withStructuredResult } from "pi-agent-resource";
+import { mutationDataSchema } from "#src/core/structured-result.js";
 import {
   isToolCallAnnotation,
   type ToolCallAnnotation,
@@ -285,11 +287,29 @@ class InterceptorImpl implements ToolCallInterceptor {
       this.toolCallRecords.delete(event.toolCallId);
 
       if (guardResult) {
-        return {
-          content: guardResult.content,
-          details: guardResult.details,
-          isError: true,
-        };
+        const details = guardResult.details;
+        const effect =
+          typeof details === "object" &&
+          details !== null &&
+          "effect" in details &&
+          (details.effect === "not-applied" || details.effect === "applied")
+            ? details.effect
+            : "unknown";
+        const message = guardResult.content
+          .flatMap((block) => (block.type === "text" ? [block.text] : []))
+          .join("\n");
+        return withStructuredResult(
+          {
+            content: guardResult.content,
+            details,
+          },
+          mutationDataSchema,
+          {
+            status: "error",
+            errors: [resultError(message, "INTERCEPTED")],
+            data: { operation: event.toolName, operationId: event.toolCallId, effect, files: [] },
+          },
+        );
       }
 
       return;

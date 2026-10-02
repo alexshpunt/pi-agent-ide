@@ -52,7 +52,7 @@ if (available !== ${!disabled}) throw new Error("Wrong LSP module state");
         ],
       }).run("Check module selection through actual tools");
       const execution = getToolExecution(run, "probe");
-      expect(execution.isError, JSON.stringify(execution)).toBe(false);
+      expect(execution.isError, JSON.stringify(execution)).toBe(disabled);
     });
   },
 );
@@ -134,12 +134,13 @@ test.each([true, false])("Apply can be disabled independently: %s", async (disab
     await writeFile(
       probe,
       `import { writeFile } from "node:fs/promises";
-export default function(pi) { pi.on("session_start", async () => {
+import path from "node:path";
+export default function(pi) { pi.on("session_start", async (_event, context) => {
   const names = pi.getAllTools().map(tool => tool.name);
   if (names.includes("apply") !== ${!disabled}) throw new Error("Wrong Apply registration");
   for (const name of ["read", "search", "replace", "copy", "move", "delete", "diff"]) if (!names.includes(name)) throw new Error("Missing standalone tool: " + name);
   for (const name of ["copy_file", "move_file", "delete_file"]) if (names.includes(name)) throw new Error("Obsolete standalone tool: " + name);
-  await writeFile(${JSON.stringify(path.join(cwd, "verified.txt"))}, "verified");
+  await writeFile(path.join(context.cwd, "verified.txt"), "verified");
 }); }`,
     );
     const run = await new PiIntegrationTest({

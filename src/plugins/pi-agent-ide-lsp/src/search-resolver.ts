@@ -9,6 +9,23 @@ export function createLspSearchResolver(
 ): SearchResolver {
   return {
     id: "symbols",
+    toScriptData(payload) {
+      const { query, hits } = payload as { query: string; hits: readonly SymbolHit[] };
+      return {
+        kind: "custom",
+        resolverId: "symbols",
+        value: {
+          query,
+          hits: hits.map((hit) => ({
+            source: hit.filePath,
+            lineNumber: hit.lineNumber,
+            column: hit.column,
+            kind: hit.kind,
+            name: hit.name,
+          })),
+        },
+      };
+    },
     async tryResolve(request, context) {
       if (!request.query.startsWith("symbols:")) {
         return { kind: "not-handled" };

@@ -9,12 +9,23 @@ export default function restoreToolHistory(pi: ExtensionAPI): void {
       if (session === undefined) throw new Error("Missing test session path");
       await ctx.switchSession(session, {
         async withSession(current) {
+          if (process.env.IDE_RESTORE_TREE_ROOT === "1") {
+            const root = current.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "user");
+            if (root === undefined) throw new Error("Missing user root");
+            await current.navigateTree(root.id, { summarize: false });
+          }
+          if (process.env.IDE_RESTORE_TREE_RESULT === "1") {
+            const result = current.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "toolResult");
+            if (result === undefined) throw new Error("Missing tool result");
+            await current.navigateTree(result.id, { summarize: false });
+          }
           await current.sendUserMessage("History restored");
         },
       });
     },
   });
   pi.on("session_start", (_event, ctx) => {
+    if (process.env.IDE_HISTORY_THEME) ctx.ui.setTheme(process.env.IDE_HISTORY_THEME);
     ctx.ui.setToolsExpanded(process.env.IDE_HISTORY_EXPANDED === "1");
   });
 }

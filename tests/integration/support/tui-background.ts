@@ -1,4 +1,11 @@
+import path from "node:path";
+
 import { expect } from "vitest";
+
+/** Loads a colored palette only in scenarios that check background inheritance. */
+export const toolBackgroundTheme = path.resolve(
+  "tests/integration/fixtures/colored-tool-background.ts",
+);
 
 /** Checks that matching raw Pi terminal rows are enclosed by a tool background. */
 export function expectToolRowsHaveBackground(terminalOutput: string, marker: string): void {
@@ -23,7 +30,7 @@ export function expectToolRowsPreserveBackground(
   const backgrounds: string[] = [];
   let checkedResets = 0;
 
-  for (const row of terminalOutput.split("\u001B[2K")) {
+  for (const row of terminalOutput.split(/\u001B\[2K|\r?\n/u)) {
     if (!row.includes(marker)) {
       continue;
     }

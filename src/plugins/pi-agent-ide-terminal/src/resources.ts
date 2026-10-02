@@ -13,6 +13,8 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 import type { AgentContent, ResourceResolver } from "pi-agent-resource";
+import { withStructuredResult, resultError } from "pi-agent-resource";
+import { mutationDataSchema } from "pi-agent-text-editor/api/mutation-result";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -166,6 +168,7 @@ export async function registerTerminalResources(
               kind: "return",
               result: {
                 content,
+                script: { kind: "native" as const, source: session.source, blocks: content },
                 details: {
                   source: session.source,
                   resolvedBy: "terminal",
@@ -259,16 +262,23 @@ export async function registerTerminalResources(
       typeof requestedSource === "string" &&
       isShellSource(requestedSource)
     ) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `replace is unsupported for ${requestedSource}; use write for text, insert for keys, or delete to terminate and remove the session.`,
+      const message = `replace is unsupported for ${requestedSource}; use write for text, insert for keys, or delete to terminate and remove the session.`;
+      return withStructuredResult(
+        {
+          content: [{ type: "text", text: message }],
+          details: event.details,
+        },
+        mutationDataSchema,
+        {
+          status: "error",
+          errors: [resultError(message, "UNSUPPORTED_OPERATION", requestedSource)],
+          data: {
+            operation: "replace",
+            effect: "not-applied",
+            files: [{ source: requestedSource, effect: "not-applied" }],
           },
-        ],
-        details: event.details,
-        isError: true,
-      };
+        },
+      );
     }
     if (
       event.toolName === "delete" &&
@@ -279,27 +289,49 @@ export async function registerTerminalResources(
       if (session === undefined) return;
       const snapshot = manager.snapshot(session);
       return manager.delete(requestedSource).then(
-        () => ({
-          content: [
-            { type: "text" as const, text: `Deleted terminal session ${requestedSource}.` },
-          ],
-          details: {
-            source: requestedSource,
-            deleted: true,
-            snapshot,
-            action: "delete" as const,
-            input: "session",
-            changedLines: [],
-          } satisfies TerminalActionDetails,
-          isError: false,
-        }),
-        (error: unknown) => ({
-          content: [
-            { type: "text" as const, text: error instanceof Error ? error.message : String(error) },
-          ],
-          details: { source: requestedSource, deleted: false },
-          isError: true,
-        }),
+        () =>
+          withStructuredResult(
+            {
+              content: [{ type: "text", text: `Deleted terminal session ${requestedSource}.` }],
+              details: {
+                source: requestedSource,
+                deleted: true,
+                snapshot,
+                action: "delete",
+                input: "session",
+                changedLines: [],
+              } satisfies TerminalActionDetails,
+            },
+            mutationDataSchema,
+            {
+              status: "success",
+              errors: [],
+              data: {
+                operation: "delete",
+                effect: "applied",
+                files: [{ source: requestedSource, effect: "applied" }],
+              },
+            },
+          ),
+        (error: unknown) =>
+          withStructuredResult(
+            {
+              content: [
+                { type: "text", text: error instanceof Error ? error.message : String(error) },
+              ],
+              details: { source: requestedSource, deleted: false },
+            },
+            mutationDataSchema,
+            {
+              status: "error",
+              errors: [resultError(error, "TERMINAL_DELETE_FAILED", requestedSource)],
+              data: {
+                operation: "delete",
+                effect: "unknown",
+                files: [{ source: requestedSource, effect: "unknown" }],
+              },
+            },
+          ),
       );
     }
     if (event.toolName !== "write" && event.toolName !== "insert") return;
@@ -342,6 +374,9 @@ export async function registerTerminalResources(
         changedLines: region.lines,
       } satisfies TerminalActionDetails,
       isError: event.isError,
+      ...(event.structuredContent === undefined
+        ? {}
+        : { structuredContent: event.structuredContent }),
     };
   });
 }

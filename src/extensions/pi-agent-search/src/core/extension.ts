@@ -35,6 +35,8 @@ import { runWithSearchTimeout } from "#src/core/search-timeout.js";
 import type { SearchToolDetails } from "#src/api/search.js";
 
 import { searchSchema } from "#src/api/search-parameters.js";
+import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.js";
+import { resultError, withStructuredResult } from "pi-agent-resource";
 
 /** Arguments accepted by the search tool. */
 export type SearchParameters = Static<typeof searchSchema>;
@@ -106,6 +108,17 @@ export default async function registerSearchCore(
     withToolCallInterceptionRendering(
       {
         name: "search",
+        exposure: "direct",
+        namespace: {
+          name: "ide_search",
+          description: "Find workspace text, paths and code structures.",
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
         label: "search",
         description: "Use search to locate workspace text, file paths, and code structures.",
         promptSnippet:
@@ -117,6 +130,7 @@ export default async function registerSearchCore(
           ];
         },
         parameters: searchSchema,
+        outputSchema: searchOutputSchema,
         renderCall(arguments_, theme, renderContext): Component {
           const mode = renderContext.expanded ? "full" : presentation;
           if (mode === "disabled") return new Text(theme.fg("toolTitle", "search"), 0, 0);
@@ -149,21 +163,33 @@ export default async function registerSearchCore(
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
-          const config = await loadSearchConfig(
-            resolveSearchConfigPaths(process.env, os.homedir(), context.cwd),
-          );
-          return runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
-            await core.waitForPendingPlugins();
-            return core.execute(parameters, {
-              cwd: context.cwd,
-              ...(operationSignal !== undefined && { signal: operationSignal }),
-              ...(onUpdate !== undefined && {
-                onUpdate: (update) => {
-                  onUpdate(update);
-                },
-              }),
+          try {
+            const config = await loadSearchConfig(
+              resolveSearchConfigPaths(process.env, os.homedir(), context.cwd),
+            );
+            return await runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
+              await core.waitForPendingPlugins();
+              return core.execute(parameters, {
+                cwd: context.cwd,
+                ...(operationSignal !== undefined && { signal: operationSignal }),
+                ...(onUpdate !== undefined && { onUpdate }),
+              });
             });
-          });
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            return withStructuredResult(
+              {
+                content: [{ type: "text", text: message }],
+                details: { failure: { code: "RESOLVE_FAILED", message } },
+              },
+              searchDataSchema,
+              {
+                status: "error",
+                errors: [resultError(error, "SEARCH_FAILED")],
+              },
+            );
+          }
         },
       },
       interceptionRendering,

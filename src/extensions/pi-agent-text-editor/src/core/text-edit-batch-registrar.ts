@@ -43,6 +43,8 @@ import type { BatchExecutionReporter } from "#src/core/text-edit-batch-execution
 import type {
   TextEditorCore,
   TextResourceEditFailure,
+  ResolveResourceTextAnchor,
+  TextResourceEditRequest,
   TextResourcesEditOutcome,
 } from "#src/core/text-editor-core.js";
 import type {
@@ -61,7 +63,8 @@ interface PlannedTextMutation extends TextMutation {
   readonly resultPresentations: ReadonlyMap<string, MutationResultPresentation>;
 }
 
-interface PlannedTextBatch {
+export interface PlannedTextBatch {
+  readonly changes: ReadonlyMap<string, readonly TextChange[]>;
   readonly mutations: readonly {
     readonly callId: string;
     readonly mutation: PlannedTextMutation;
@@ -169,6 +172,107 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
   registerToolBatch(pi, definition);
 }
 
+/** Plan mutations once against one snapshot; callers choose when to commit them. */
+export async function planRegisteredTextBatch(
+  registrations: ReadonlyMap<string, AnyTextMutationToolRegistration>,
+  parameters: TextBatchParams,
+  texts: ReadonlyMap<string, string>,
+  resolveAnchor: ResolveResourceTextAnchor,
+  context: ExtensionContext,
+  signal: AbortSignal | undefined,
+  renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
+  priorChanges: ReadonlyMap<string, readonly TextChange[]> = new Map(),
+): Promise<PlannedTextBatch> {
+  const mutations: PlannedTextBatch["mutations"][number][] = [];
+  const failures: PlannedTextBatch["failures"][number][] = [];
+  const changes = new Map([...priorChanges].map(([source, edits]) => [source, [...edits]]));
+  for (const entry of parameters.edits) {
+    const registration = requiredValue(registrations.get(entry.op));
+    const { callId, op: _op, ...input } = entry;
+    const sources = mutationSources(registration, input);
+    const sourceFor = (field: string): string => requiredValue(sources.get(field));
+    const documentFor = (source: string) =>
+      new TextChangeDocument(requiredValue(texts.get(source)));
+    const majorAnchorSources = new Set<string>();
+    const publish = (field: string, state: ToolCallAnchorRenderState) =>
+      renderArguments(callId, {
+        [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
+      });
+    const resolveAnchors = async (field: string) => {
+      const descriptor = (registration.anchors ?? []).find((anchor) => anchor.field === field);
+      const value = input[field];
+      const source = descriptor === undefined ? undefined : sources.get(descriptor.sourceField);
+      if (descriptor === undefined || typeof value !== "string" || source === undefined) {
+        publish(field, { kind: "failed" });
+        throw new Error(`Unable to resolve mutation anchor ${field}`);
+      }
+      try {
+        const anchor = await resolveAnchor(source, value, descriptor.kinds);
+        if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(source);
+        const rendered = renderTextAnchor(anchor, value, { source, anchor });
+        publish(field, {
+          kind: "resolved",
+          full: rendered.full,
+          compact: rendered.compact,
+          resolverId: rendered.resolverId,
+        });
+        return new Map([[source, anchor]]);
+      } catch (error) {
+        publish(field, { kind: "failed" });
+        throw contextualizeTextMutationAnchorError(error, registration.name, field, source, value);
+      }
+    };
+    try {
+      const mutationContext = {
+        cwd: context.cwd,
+        ...(signal !== undefined && { signal }),
+        sourceDocument: documentFor(sourceFor(registration.source.field)),
+        sourceFor,
+        documentFor,
+        targetDocument: (field: string) => documentFor(sourceFor(field)),
+        resolveAnchors,
+        async resolveAnchor(field: string) {
+          return requiredValue((await resolveAnchors(field)).values().next().value);
+        },
+      };
+      await preflightMutationAnchors(registration, input, mutationContext);
+      const mutation = await registration.mutate(mutationContext, input);
+      for (const [source, edit] of mutation.edits) {
+        if (
+          edit.changes.some((change) =>
+            (changes.get(source) ?? []).some((prior) => textChangesConflict(prior, change)),
+          )
+        ) {
+          throw new Error(`Text mutation ${callId} overlaps an earlier successful mutation.`);
+        }
+      }
+      mutations.push({
+        callId,
+        mutation: {
+          ...mutation,
+          operation: registration.name,
+          resultPresentations: new Map(
+            [...mutation.edits.keys()].map((source) => [
+              source,
+              majorAnchorSources.has(source) ? "major-anchor" : "plain",
+            ]),
+          ),
+        },
+      });
+      for (const [source, edit] of mutation.edits)
+        changes.set(source, [...(changes.get(source) ?? []), ...edit.changes]);
+    } catch (error) {
+      if (parameters.failureMode === "abort") throw error;
+      failures.push({
+        callId,
+        source: sources.get(registration.source.field) ?? "",
+        error,
+        effect: "not-applied",
+      });
+    }
+  }
+  return { changes, mutations, failures };
+}
 export async function executeRegisteredTextBatch(
   core: TextEditorCore,
   registrations: ReadonlyMap<string, AnyTextMutationToolRegistration>,
@@ -178,6 +282,7 @@ export async function executeRegisteredTextBatch(
   context: ExtensionContext,
   reporter: BatchExecutionReporter,
   renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
+  planned?: PlannedTextBatch,
 ): Promise<AgentToolResult<TextBatchDetails>> {
   const prepared = parameters.edits.map((entry) => {
     const registration = registrations.get(entry.op);
@@ -192,7 +297,7 @@ export async function executeRegisteredTextBatch(
   const intents = new Set(prepared.map(({ registration }) => registration.intent ?? "edit"));
   const intent: TextEditIntent =
     intents.size > 1 ? "mixed" : (intents.values().next().value ?? "edit");
-  const requests = new Map<string, { source: string; read: true; allowReadFailure?: true }>();
+  const requests = new Map<string, TextResourceEditRequest>();
 
   for (const item of prepared) {
     for (const source of item.sources.values()) {
@@ -201,6 +306,9 @@ export async function executeRegisteredTextBatch(
         item.registration.name === "write" &&
         source === item.sources.get(item.registration.source.field);
       requests.set(source, {
+        ...(parameters.expectedExistence?.has(source) && {
+          expectedExistence: parameters.expectedExistence.get(source),
+        }),
         source,
         read: true,
         ...((current?.allowReadFailure === true || isAllowReadFailure) && {
@@ -219,144 +327,23 @@ export async function executeRegisteredTextBatch(
       [...requests.values()],
       { cwd: context.cwd, intent, ...(signal !== undefined && { signal }) },
       async (texts, resolveAnchor) => {
-        const mutations: PlannedTextBatch["mutations"][number][] = [];
-        const failures: PlannedTextBatch["failures"][number][] = [];
-        const changes = new Map<string, TextChange[]>();
-        if (parameters.expectedContent !== undefined) {
-          for (const [source, expected] of parameters.expectedContent) {
-            if (!texts.has(source)) {
-              throw new Error(`Snapshot source ${source} is not part of this edit batch.`);
-            }
-            if (texts.get(source) !== expected) {
-              throw new Error(`Snapshot source ${source} changed before the edit batch.`);
-            }
+        for (const [source, expected] of parameters.expectedContent ?? []) {
+          if (!texts.has(source) || texts.get(source) !== expected) {
+            throw new Error(`Snapshot source ${source} changed before the edit batch.`);
           }
         }
-
-        for (const item of prepared) {
-          const sourceFor = (field: string): string => {
-            const source = item.sources.get(field);
-
-            if (source === undefined) {
-              throw new Error(`Unknown mutation source field ${field}`);
-            }
-
-            return source;
-          };
-          const documentFor = (source: string): TextChangeDocument => {
-            const text = texts.get(source);
-
-            if (text === undefined) {
-              throw new Error(`Unknown mutation resource ${source}`);
-            }
-
-            return new TextChangeDocument(text);
-          };
-
-          const majorAnchorSources = new Set<string>();
-          const publishAnchorRenderPatch = (
-            field: string,
-            state: ToolCallAnchorRenderState,
-          ): void => {
-            renderArguments(item.callId, {
-              [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
-            });
-          };
-          const resolveAnchors = async (field: string) => {
-            const descriptor = (item.registration.anchors ?? []).find(
-              (anchor) => anchor.field === field,
-            );
-            const value = item.input[field];
-            const source =
-              descriptor === undefined ? undefined : item.sources.get(descriptor.sourceField);
-
-            if (descriptor === undefined || typeof value !== "string" || source === undefined) {
-              publishAnchorRenderPatch(field, { kind: "failed" });
-              throw new Error(`Unable to resolve mutation anchor ${field}`);
-            }
-
-            try {
-              const anchor = await resolveAnchor(source, value, descriptor.kinds);
-              if (resolvedTextAnchorType(anchor) === "major") {
-                majorAnchorSources.add(source);
-              }
-              const rendered = renderTextAnchor(anchor, value, { source, anchor });
-              publishAnchorRenderPatch(field, {
-                kind: "resolved",
-                full: rendered.full,
-                compact: rendered.compact,
-                resolverId: rendered.resolverId,
-              });
-              return new Map([[source, anchor]]);
-            } catch (error) {
-              publishAnchorRenderPatch(field, { kind: "failed" });
-              throw contextualizeTextMutationAnchorError(
-                error,
-                item.registration.name,
-                field,
-                source,
-                value,
-              );
-            }
-          };
-          try {
-            const mutationContext = {
-              cwd: context.cwd,
-              ...(signal !== undefined && { signal }),
-              sourceDocument: documentFor(sourceFor(item.registration.source.field)),
-              sourceFor,
-              documentFor,
-              targetDocument: (field: string) => documentFor(sourceFor(field)),
-              resolveAnchors,
-              async resolveAnchor(field: string) {
-                const resolved = await resolveAnchors(field);
-                return requiredValue(resolved.values().next().value);
-              },
-            };
-            await preflightMutationAnchors(item.registration, item.input, mutationContext);
-            const mutation = await item.registration.mutate(mutationContext, item.input);
-            for (const [source, edit] of mutation.edits) {
-              const existing = changes.get(source) ?? [];
-              if (
-                edit.changes.some((change) =>
-                  existing.some((prior) => textChangesConflict(prior, change)),
-                )
-              ) {
-                throw new Error(
-                  `Text mutation ${item.callId} overlaps an earlier successful mutation.`,
-                );
-              }
-            }
-            mutations.push({
-              callId: item.callId,
-              mutation: {
-                ...mutation,
-
-                operation: item.registration.name,
-                resultPresentations: new Map(
-                  [...mutation.edits.keys()].map((source) => [
-                    source,
-                    majorAnchorSources.has(source) ? "major-anchor" : "plain",
-                  ]),
-                ),
-              },
-            });
-
-            for (const [source, edit] of mutation.edits) {
-              changes.set(source, [...(changes.get(source) ?? []), ...edit.changes]);
-            }
-          } catch (error) {
-            if (parameters.failureMode === "abort") throw error;
-            failures.push({
-              callId: item.callId,
-              source: item.sources.get(item.registration.source.field) ?? "",
-              error,
-              effect: "not-applied",
-            });
-          }
-        }
-
-        return { changes, result: { mutations, failures } };
+        const result =
+          planned ??
+          (await planRegisteredTextBatch(
+            registrations,
+            parameters,
+            texts,
+            resolveAnchor,
+            context,
+            signal,
+            renderArguments,
+          ));
+        return { changes: result.changes, result };
       },
     );
   } catch (error) {

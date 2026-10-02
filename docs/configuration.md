@@ -24,6 +24,26 @@ Obsolete IDs in `disabled` are ignored. They do not stop IDE startup. Malformed 
 
 Pi Agent IDE enables every built-in extension by default. Project and global config files can disable built-ins by their stable IDs and turn on built-ins that are off by default.
 
+## Native tool availability
+
+Tools use fixed native exposure; there are no IDE exposure overrides or named profiles.
+
+| Namespace      | Tools                            | Exposure     |
+| -------------- | -------------------------------- | ------------ |
+| `ide_read`     | `read`, `diff`                   | `direct`     |
+| `ide_search`   | `search`                         | `direct`     |
+| `ide_edit`     | `apply`                          | `model-only` |
+| `ide_edit`     | Standalone editing tools         | `direct`     |
+| `ide_terminal` | `bash` (`powershell` on Windows) | `direct`     |
+| `ide_git`      | `stage`, `unstage`               | `deferred`   |
+| `ide_debug`    | `debug`                          | `deferred`   |
+
+Apply stays directly declared, including in Codemode-only mode. Nested calls and Codemode scripts cannot call it. Direct tools keep their normal calls and can also run through Codemode while active.
+
+Git staging and debugger tools are not declared ahead of time. Short agent guidance names the enabled capabilities and tells the agent to find them through native `tool_search`. IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
+
+Explicit `-name` entries in Pi's `defaultTools` hide matching IDE tools from direct calls, discovery and nested calls. A later `+name` restores the capability and selects it at startup. Pi's CLI allowlist and exclusions still apply: IDE does not restore a tool removed from the host registry. Disabling an IDE module removes its tools rather than leaving a deferred path behind. Discovery guidance omits disabled capabilities.
+
 ## Config files
 
 Pi Agent IDE reads these optional files:

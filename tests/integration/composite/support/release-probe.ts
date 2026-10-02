@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { resolveToolConfigPaths } from "pi-agent-ide/api/tool-config";
 import { connectSearchPlugin, SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-ide/api/search";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** Exercises only the installed public API, including reload and external registration. */
 export default async function registerReleaseProbe(pi: ExtensionAPI): Promise<void> {
@@ -39,7 +39,10 @@ export default async function registerReleaseProbe(pi: ExtensionAPI): Promise<vo
       const configs = await Promise.all(
         paths.map(async (file) => JSON.parse(await readFile(file, "utf8")) as unknown),
       );
-      return { content: [{ type: "text", text: JSON.stringify({ paths, configs }) }], details: {} };
+      return {
+        content: [{ type: "text", text: JSON.stringify({ version: VERSION, paths, configs }) }],
+        details: {},
+      };
     },
   });
   pi.registerTool({

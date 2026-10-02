@@ -128,6 +128,7 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
     expect(getToolResultText(result, "html-next")).toContain("Release page marker");
     expect(getToolResultText(result, "browser-next")).toContain("Browser release marker");
     const config = JSON.parse(getToolResultText(result, "config")) as {
+      version: string;
       paths: string[];
       configs: { version: number }[];
     };

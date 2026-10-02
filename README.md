@@ -128,6 +128,8 @@ Filesystem and HTTP reads, resource views, content converters, search backends, 
 
 A person can see the agent's edits, diffs, diagnostics, running processes, debugger state, and failures. Bounded presentation keeps live output readable without discarding the underlying result. Guarded snapshots and first-class undo make mistakes visible and recovery inexpensive.
 
+IDE tools called from native Codemode keep their custom panels in a separate block below the script, even when the script prints no results. Successful edits in one batch show one final diff per file, without intermediate edit cards or an extra block title. The panels survive session restore and tree navigation. Oversized or missing display data is marked as incomplete; rendering never repeats an operation or adds its cost again.
+
 <div align="center">
 
 [![User-facing process view for active terminal sessions](assets/summary/thumbs/user_terminal.png)](assets/summary/user_terminal.png)
@@ -150,7 +152,7 @@ Pi Agent IDE is experimental and under active development. Interfaces and behavi
 
 ## Installation
 
-Install [Pi](https://pi.dev/) first, then install Pi Agent IDE from npm:
+Install [Pi](https://pi.dev/) **0.99.1 or newer** first, then install Pi Agent IDE from npm. Development and integration tests use Pi 1.0.0. Older hosts are rejected with an upgrade message.
 
 ```bash
 pi install npm:pi-agent-ide

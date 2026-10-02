@@ -7,6 +7,7 @@ import {
   type TextContent,
 } from "pi-agent-resource";
 import { Type } from "typebox";
+import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { Value } from "typebox/value";
 
 import type { ToolDefinition, TruncationResult } from "@earendil-works/pi-coding-agent";
@@ -187,6 +188,7 @@ export type ReadScriptData =
       readonly byteLength: number;
       readonly totalBytes: number;
       readonly bytes: readonly number[];
+      readonly truncated?: boolean;
     }
   | {
       readonly kind: "text";
@@ -195,6 +197,11 @@ export type ReadScriptData =
       readonly lines: readonly ReadTextLine[];
       readonly startLine: number;
       readonly endLine: number;
+      readonly references?: readonly {
+        readonly value: string;
+        readonly kind: string;
+        readonly state?: string;
+      }[];
       readonly totalLines: number;
     }
   | {
@@ -208,7 +215,8 @@ export type ReadScriptData =
       readonly resources: readonly ReadScriptData[];
     };
 export interface ReadToolResult {
-  /** Present only for script execution; never reconstructed from rendered text. */
+  readonly structuredContent?: AgentToolResult<ReadResultDetails>["structuredContent"];
+  /** Canonical adapter data; never reconstructed from rendered text or stored in renderer details. */
   readonly script?: ReadScriptData;
   readonly content: (TextContent | ImageContent)[];
   readonly details: ReadResultDetails;
@@ -216,7 +224,16 @@ export interface ReadToolResult {
 }
 
 export type ReadStageOutcome =
-  | { readonly kind: "continue"; readonly context: ReadPipelineContext }
+  | {
+      readonly kind: "continue";
+      readonly context: ReadPipelineContext;
+      /**
+       * Post-read handlers inspect the same base result concurrently. Return a pure
+       * decoration here; transforms apply in registration order, unless a handler
+       * returns a final result. Context changes are ignored during post-read.
+       */
+      readonly transform?: (result: ReadToolResult) => ReadToolResult;
+    }
   | { readonly kind: "return"; readonly result: ReadToolResult };
 
 export type ReadPreReadHandler = ReadPipelineHandler;
@@ -413,3 +430,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export { readParameters } from "#src/api/read-parameters.js";
+export {
+  readDataSchema,
+  readOutputSchema,
+  structuredRead,
+} from "#src/core/tools/read/structured-result.js";

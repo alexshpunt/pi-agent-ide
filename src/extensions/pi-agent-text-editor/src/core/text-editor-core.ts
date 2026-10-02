@@ -231,6 +231,8 @@ export type TextResourceEditOutcome<Result> =
   | { readonly kind: "failed"; readonly failure: TextResourceEditFailure };
 
 export interface TextResourceEditRequest {
+  /** Reject a resource created or removed since its batch snapshot was captured. */
+  readonly expectedExistence?: boolean;
   readonly source: string;
   readonly read: boolean;
   readonly allowReadFailure?: boolean;
@@ -1003,6 +1005,12 @@ async function previewTextResources(
         return { kind: "failed", reason: outcome.failure.message };
       }
 
+      if (
+        request.expectedExistence !== undefined &&
+        request.expectedExistence !== outcome.existed
+      ) {
+        throw new Error(`Snapshot source ${source} was created or removed before the edit batch.`);
+      }
       prepared.set(source, outcome);
     }
 
@@ -1031,6 +1039,7 @@ async function previewTextResources(
         path: source,
         existed: item.existed,
         beforeRanges: applied.changes.map(({ fromBefore: from, toBefore: to }) => ({ from, to })),
+        resolvedBy: item.resolverId,
         ...(item.resource.link !== undefined && { link: item.resource.link }),
         beforeContent: item.before.content,
         afterContent: applied.content,
@@ -1096,6 +1105,9 @@ async function editTextResources<Result>(
       return { kind: "failed", failure: outcome.failure, completed: [] };
     }
 
+    if (request.expectedExistence !== undefined && request.expectedExistence !== outcome.existed) {
+      throw new Error(`Snapshot source ${source} was created or removed before the edit batch.`);
+    }
     prepared.set(source, outcome);
   }
 
@@ -1199,6 +1211,8 @@ async function editTextResources<Result>(
     }
   }
 
+  // A guard may finish after cancellation; reject before the first write.
+  context.signal?.throwIfAborted();
   const completed: string[] = [];
   const written: string[] = [];
   const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];

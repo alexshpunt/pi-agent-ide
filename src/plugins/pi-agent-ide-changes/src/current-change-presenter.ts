@@ -59,6 +59,11 @@ function presentChangeGroups(document: TextDocument, groups: readonly ChangeGrou
 
   return {
     ...document,
+    references: groups.map((group) => ({
+      value: group.selector,
+      kind: "change",
+      state: group.state,
+    })),
     lines: document.lines.map((line) => presentLine(line, presentations.get(line.lineNumber))),
   };
 }

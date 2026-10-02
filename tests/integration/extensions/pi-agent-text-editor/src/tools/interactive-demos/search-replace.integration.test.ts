@@ -14,6 +14,7 @@ import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { toolBackgroundTheme } from "#integration/support/tui-background.js";
 
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(
@@ -78,6 +79,7 @@ describe("interactive text editor demos", () => {
         testName: "interactive-demo-search-replace",
         cwd: directory,
         extensions: [
+          toolBackgroundTheme,
           ...extensions.paths.map((extension) =>
             extension === defaultTextEditorExtension ? rendererTestStand : extension,
           ),
@@ -160,7 +162,10 @@ function expectHighlightedSearchBackgrounds(terminalOutput: string, match: strin
       break;
     }
 
-    const rowStart = terminalOutput.lastIndexOf("\n", matchAt) + 1;
+    const rowStart = Math.max(
+      terminalOutput.lastIndexOf("\n", matchAt) + 1,
+      terminalOutput.lastIndexOf("\u001B[2K", matchAt) + 4,
+    );
     const enclosingBackground = terminalOutput
       .slice(rowStart, matchAt)
       .match(/\u001B\[48(?:;\d+)+m/u)?.[0];

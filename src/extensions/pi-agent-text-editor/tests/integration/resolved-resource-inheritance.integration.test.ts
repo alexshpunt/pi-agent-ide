@@ -1,3 +1,4 @@
+import type { JsonValue } from "@earendil-works/pi-ai";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -69,7 +70,7 @@ test("inherits the last resolved resource in a later edit call", async () => {
       ],
     }).run("Read the fixture, then replace its first line without repeating the path");
 
-    expect(getToolResultMessage(result, "read-file").details).toMatchObject({
+    expect(getToolResultMessage<JsonValue>(result, "read-file").details).toMatchObject({
       source: file,
       resolvedBy: "filesystem",
     });

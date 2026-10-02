@@ -12,7 +12,7 @@ import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
 } from "#pi-agent-text-editor/api/plugin-protocol.js";
-import { registerBuiltinEditFilter } from "#pi-agent-text-editor/core/builtin-edit-filter.js";
+import { hideBuiltinEdit } from "#pi-agent-text-editor/core/builtin-edit.js";
 import registerTextEditorCore from "#pi-agent-text-editor/core/extension.js";
 import { registerTextEditBatching } from "#pi-agent-text-editor/core/text-edit-batch-registrar.js";
 import { registerTextEditorTools } from "#pi-agent-text-editor/tools/extension.js";
@@ -63,7 +63,7 @@ export default async function registerRendererTestStand(pi: ExtensionAPI): Promi
   await registerTextEditorRenderer(pi);
   registerTextEditorTools(pi, core);
   registerTextEditBatching(pi, core);
-  registerBuiltinEditFilter(pi);
+  hideBuiltinEdit(pi);
   await Promise.all([
     registerLineHashTextAnchor(pi),
     registerConstantTextAnchors(pi),

@@ -1,4 +1,6 @@
 import { withBlockedToolResult } from "pi-agent-tool-call-interception";
+import { withStructuredResult } from "pi-agent-resource";
+import { searchDataSchema } from "#src/api/structured-result.js";
 
 import type { SearchPlugin } from "#src/api/plugin-protocol.js";
 import type {
@@ -227,29 +229,56 @@ export function createSearchCore(): SearchCore {
             );
           }
 
-          return {
-            content:
-              entry.registration.fallback && protocolLike
-                ? [
+          const data = resolver.toScriptData?.(attempt.payload, formatted.details);
+          const missingAdapter = data === undefined;
+          return withStructuredResult(
+            {
+              content:
+                entry.registration.fallback && protocolLike
+                  ? [
+                      {
+                        type: "text",
+                        text: emptyProtocol
+                          ? "Search fallback: empty protocol query; searched the original text."
+                          : "Search fallback: unhandled protocol query; searched the original text.",
+                      },
+                      ...formatted.content,
+                    ]
+                  : formatted.content,
+              details: { resolverId: resolver.id, payload: formatted.details },
+              ...(audience === "script" && {
+                script: {
+                  resolverId: resolver.id,
+                  data: attempt.payload,
+                  details: formatted.details,
+                },
+              }),
+              ...(formatted.usage !== undefined && { usage: formatted.usage }),
+            },
+            searchDataSchema,
+            missingAdapter
+              ? {
+                  status: "error",
+                  errors: [
                     {
-                      type: "text",
-                      text: emptyProtocol
-                        ? "Search fallback: empty protocol query; searched the original text."
-                        : "Search fallback: unhandled protocol query; searched the original text.",
+                      code: "STRUCTURED_ADAPTER_REQUIRED",
+                      message: `Search resolver ${resolver.id} must provide toScriptData`,
                     },
-                    ...formatted.content,
-                  ]
-                : formatted.content,
-            details: { resolverId: resolver.id, payload: formatted.details },
-            ...(audience === "script" && {
-              script: {
-                resolverId: resolver.id,
-                data: attempt.payload,
-                details: formatted.details,
-              },
-            }),
-            ...(formatted.usage !== undefined && { usage: formatted.usage }),
-          };
+                  ],
+                }
+              : formatted.isError
+                ? {
+                    status: "error",
+                    data,
+                    errors: [
+                      {
+                        code: "RESOLVE_FAILED",
+                        message: `Search resolver ${resolver.id} returned an error`,
+                      },
+                    ],
+                  }
+                : { status: "success", data, errors: [] },
+          );
         } catch (error) {
           return failure(
             "FORMAT_FAILED",
@@ -361,17 +390,22 @@ function failure(
   resolverId?: string,
   cause?: unknown,
 ): AgentToolResult<SearchToolDetails> {
-  return {
-    content: [{ type: "text", text: message }],
-    details: {
-      failure: {
-        code,
-        message,
-        ...(resolverId !== undefined && { resolverId }),
-        ...(cause !== undefined && { cause }),
+  return withStructuredResult(
+    {
+      isError: true,
+      content: [{ type: "text", text: message }],
+      details: {
+        failure: {
+          code,
+          message,
+          ...(resolverId !== undefined && { resolverId }),
+          ...(cause !== undefined && { cause }),
+        },
       },
     },
-  };
+    searchDataSchema,
+    { status: "error", errors: [{ code, message }] },
+  );
 }
 
 function normalizeDescriptionSource(value: unknown): SearchDescriptionSource {

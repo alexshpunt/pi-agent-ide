@@ -17,7 +17,10 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/pi-coding-agent-test.js";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
-import { expectToolRowsPreserveBackground } from "#integration/support/tui-background.js";
+import {
+  expectToolRowsPreserveBackground,
+  toolBackgroundTheme,
+} from "#integration/support/tui-background.js";
 
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(
@@ -368,9 +371,12 @@ describe("text mutation renderer", () => {
       const result = await new PiIntegrationTest({
         testName: "text-editor-renderer-inherited-background",
         cwd: directory,
-        extensions: extensions.paths.map((extension) =>
-          extension === defaultTextEditorExtension ? rendererTestStand : extension,
-        ),
+        extensions: [
+          toolBackgroundTheme,
+          ...extensions.paths.map((extension) =>
+            extension === defaultTextEditorExtension ? rendererTestStand : extension,
+          ),
+        ],
         tools: ["write"],
         rawMode: false,
         conversation: [
@@ -1218,7 +1224,7 @@ function verifyLargeWriteQuiescence(input: LargeWriteQuiescenceInput) {
 
 function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: string): number {
   const successorFrameIndex = input.frames.findIndex(({ text: frameText }) =>
-    frameText.includes("stream-ahead.txt"),
+    frameText.includes("read stream-ahead.txt"),
   );
   if (successorFrameIndex < 0) {
     throw new Error("No synchronized frame showed the later tool call");
@@ -1226,13 +1232,22 @@ function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: stri
   const settledAfterSuccessor = input.frames
     .slice(successorFrameIndex)
     .find(({ text: frameText }) => {
-      const mutationPanel = largeWriteMutationPanel(frameText);
-      return !mutationPanel.includes("▌") && mutationPanel.includes(finalRow);
+      const successor = frameText.indexOf("read stream-ahead.txt");
+      if (successor < 0) return false;
+      // Expanded panels can scroll their header out of the native fullscreen viewport.
+      // oxlint-disable-next-line unicorn/prefer-set-has -- This is substring matching on a terminal frame, not array membership.
+      const mutationPanel = frameText.slice(0, successor);
+      return (
+        mutationPanel.includes("╯") &&
+        !mutationPanel.includes("▌") &&
+        mutationPanel.includes(finalRow)
+      );
     });
   if (settledAfterSuccessor === undefined) {
     throw new Error("The mutation animation did not settle after the later tool call appeared");
   }
   const successorFrame = input.frames[successorFrameIndex];
+  if (successorFrame === undefined) throw new Error("Missing successor frame");
   const visualCatchUpMs = input.frameDelaysMs
     .slice(successorFrame.frame, settledAfterSuccessor.frame)
     .reduce((sum, delay) => sum + delay, 0);

@@ -1,4 +1,5 @@
 import { formatApplySource } from "./format-source.js";
+import { applyOutputSchema, structuredApply } from "./structured-result.js";
 import { applyHelperGuide } from "#src/core/apply/prompt.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -11,6 +12,7 @@ import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import type { SearchPluginApi } from "pi-agent-search/api/search";
 import { Type } from "typebox";
+import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
 import {
   getLastResolvedResource,
   rememberLastResolvedResource,
@@ -48,6 +50,17 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
   const operations = getApplyOperations();
   pi.registerTool({
     name: "apply",
+    exposure: "model-only",
+    namespace: {
+      name: "ide_edit",
+      description: "Edit files and live IDE resources with guarded operations.",
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     label: "Apply",
     renderShell: "self",
     renderCall: (args, theme, context) => {
@@ -63,13 +76,14 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
     description:
       `Use apply to run read-only IDE operations and snapshot-guarded editor transactions in JavaScript. Output has one 2000-line/50KB budget. No shell, imports or resume.` +
       applyHelperGuide(),
-    promptGuidelines: [],
+    promptGuidelines: [...EDITING_GUIDELINES],
     parameters: Type.Object({
       source: Type.String({
         description:
           "JavaScript function body. Call IDE functions directly without await; each call finishes before the next statement. Read-only results are recorded automatically. The UI may compact written tool calls or format a display copy; execution uses this source unchanged.",
       }),
     }),
+    outputSchema: applyOutputSchema,
     async execute(_id, { source }, signal, _onUpdate, context) {
       if (read === undefined || search === undefined)
         throw new Error("Apply requires the read and search extensions");
@@ -120,18 +134,24 @@ export async function registerApply(pi: ExtensionAPI, editor: TextEditorCore): P
           text: `Undo transaction: ${transaction}`,
         })),
       ];
-      return {
-        content,
-        details: {
-          failed,
-          displaySource: await displaySource,
-          outputLevel: output.level,
-          display: createApplyDisplay(execution.results, output, error, context.cwd),
-          temporarySource: output.temporarySource,
-          files: execution.results.select().files.map(({ source: file }) => file),
-          transactions,
+      return structuredApply(
+        {
+          content,
+          details: {
+            failed,
+            displaySource: await displaySource,
+            outputLevel: output.level,
+            display: createApplyDisplay(execution.results, output, error, context.cwd),
+            temporarySource: output.temporarySource,
+            files: execution.results.select().files.map(({ source: file }) => file),
+            transactions,
+          },
         },
-      };
+        execution.results,
+        read,
+        transactions,
+        error,
+      );
     },
   });
   pi.on("tool_result", (event) => {

@@ -21,9 +21,10 @@
     }
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.2",
-    "@earendil-works/pi-tui": "0.84.2",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "pi-agent-documentation": "workspace:^",
+    "pi-agent-resource": "workspace:^",
     "pi-agent-tool-call-interception": "workspace:^",
     "pi-agent-tool-ui": "workspace:^",
     "typebox": "^1.1.38"

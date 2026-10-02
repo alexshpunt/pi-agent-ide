@@ -1,4 +1,4 @@
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -24,20 +24,10 @@ test("registers only selected built-ins", async () => {
       path.join(cwd, "package.json"),
       JSON.stringify({ type: "module", imports: { "#src/*.js": "./src/*.ts" } }),
     );
-    for (const file of [
-      "src/pi-agent-ide.ts",
-      "src/composite/selection.ts",
-      "src/composite/extensions-config.ts",
-      "src/composite/feature-flags.ts",
-      "src/composite/module-labels.ts",
-      "src/composite/module-settings.ts",
-      "src/composite/module-settings-store.ts",
-      "src/composite/preferences.ts",
-      "src/composite/presets.ts",
-      "src/composite/settings-panel.ts",
-    ]) {
-      await copyFile(path.resolve(file), path.join(cwd, file));
-    }
+    await cp(path.resolve("src"), path.join(cwd, "src"), {
+      recursive: true,
+      filter: (source) => path.basename(source) !== "node_modules",
+    });
     await writeFile(
       path.join(cwd, "src/composite/builtin-extensions.ts"),
       `export const BUILTIN_EXTENSIONS = [

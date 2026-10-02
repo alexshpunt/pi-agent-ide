@@ -16,6 +16,9 @@ import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.js";
 import { buildFailedTextMutationResult } from "#src/core/text-mutation.js";
 import { TextMutationAnchorResolutionError } from "#src/core/text-mutation-anchor-error.js";
 
+// Leave room for the runner envelope below its 4 MB host-result limit.
+const MAX_APPLY_BRIDGE_BYTES = 3 * 1024 * 1024;
+
 /** Configured IDE services and ordinary tool schemas, shared with the standalone tools. */
 export interface ApplyServices {
   readonly editor: TextEditorCore;
@@ -185,7 +188,61 @@ export function createApplyExecution(
             results.updateFile(file.source, file.before, file.after);
             lastSource = file.source;
           }
-          return response;
+          const fullResultBytes = Buffer.byteLength(JSON.stringify(response));
+          if (fullResultBytes <= MAX_APPLY_BRIDGE_BYTES) return response;
+          const fullResult = await services.read.saveTemporary(JSON.stringify(response, null, 2));
+          Object.assign(response, { truncated: true, fullResult, fullResultBytes });
+          const reduced = {
+            ...response,
+            files: response.files.map(({ source, action }) => ({ source, action })),
+            truncated: true,
+            fullResult,
+          };
+          if (Buffer.byteLength(JSON.stringify(reduced)) <= MAX_APPLY_BRIDGE_BYTES) {
+            return reduced;
+          }
+          // Keep committed effects readable even when refreshed snapshots are too large.
+          const summary = {
+            operation: response.operation,
+            ok: response.ok,
+            effect: response.effect,
+            files: reduced.files,
+            completed: response.completed,
+            transaction: response.transaction,
+            errors: response.errors,
+            operations: response.operations,
+            snapshots: refreshed.map(({ id }) => ({ id, unavailable: true })),
+            truncated: true,
+            fullResult,
+          };
+          // Omitted entries remain available in fullResult; never invent effects for them.
+          const counts = {
+            operationCount: summary.operations?.length ?? 0,
+            fileCount: summary.files.length,
+            completedCount: summary.completed.length,
+            errorCount: summary.errors.length,
+            snapshotCount: summary.snapshots.length,
+          };
+          while (
+            Buffer.byteLength(JSON.stringify({ ...summary, ...counts })) > MAX_APPLY_BRIDGE_BYTES
+          ) {
+            summary.operations = summary.operations?.slice(
+              0,
+              Math.floor(summary.operations.length / 2),
+            );
+            summary.files = summary.files.slice(0, Math.floor(summary.files.length / 2));
+            summary.completed = summary.completed.slice(
+              0,
+              Math.floor(summary.completed.length / 2),
+            );
+            summary.errors = summary.errors.slice(0, Math.floor(summary.errors.length / 2));
+            summary.snapshots = summary.snapshots.slice(
+              0,
+              Math.floor(summary.snapshots.length / 2),
+            );
+          }
+          Object.assign(summary, counts);
+          return summary;
         }
         if (tool === "editorOpen") {
           if (!Value.Check(readParameters, arguments_))
@@ -260,12 +317,13 @@ export function createApplyExecution(
         const searchFailure = outcome.details.failure;
         const value = {
           ...outcome.script,
-          ok: searchFailure === undefined,
+          structured: outcome.structuredContent,
+          ok: !outcome.isError && searchFailure === undefined,
           ...(searchFailure && { error: searchFailure }),
         };
         results.record(id, kind, value, { content: outcome.content, details: {} });
         recorded = true;
-        if (searchFailure !== undefined)
+        if (outcome.isError || searchFailure !== undefined)
           throw failure("SEARCH_FAILED", "Search failed", searchFailure);
         return value;
       } catch (error) {

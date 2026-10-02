@@ -17,6 +17,25 @@ import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import { createUnifiedDiff, type DiffStats } from "#src/core/mutation-result/diff.js";
 import { FileMutationResult } from "#src/core/mutation-result/file-mutation-result.js";
+import { resultError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
+const comparisonSourceSchema = Type.Object(
+  { source: Type.String(), sources: Type.Array(Type.String()) },
+  { additionalProperties: false },
+);
+export const diffDataSchema = Type.Object(
+  {
+    kind: Type.Literal("diff"),
+    equal: Type.Boolean(),
+    before: comparisonSourceSchema,
+    after: comparisonSourceSchema,
+    stats: Type.Object({ added: Type.Integer(), removed: Type.Integer() }),
+    diff: Type.String(),
+    truncated: Type.Boolean(),
+    fullResult: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+export const diffOutputSchema = structuredResultSchema(diffDataSchema);
 
 const source = Type.Union([Type.String({ minLength: 1 }), readParameters]);
 /** Each side accepts a source string or the same request object as read. */
@@ -153,8 +172,18 @@ export function registerDiff(
 ): void {
   pi.registerTool({
     name: "diff",
+    exposure: "direct",
+    namespace: { name: "ide_read", description: "Read resources and compare sources." },
+    // Inputs use the same polymorphic resource pipeline as Read.
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
     label: "Diff",
     parameters: diffParameters,
+    outputSchema: diffOutputSchema,
     promptSnippet: "Compare two text-readable sources",
     description:
       "Use diff to compare two sources. before and after accept a source string or a read request {path, offset?, limit?, views?}. Use any source that read can resolve as text. Omit limit to compare complete resolved text; read presentation limits do not clip comparison inputs. Multiple resolved resources are joined with one newline separator in resolver order. Diff line numbers are relative to each selected text, not the original file when a window is selected. Native non-text content is rejected. Output uses the existing text diff and a shared output budget; oversized output has a full temporary reference. The same diff function is available inside Apply.",
@@ -180,26 +209,53 @@ export function registerDiff(
     async execute(_id, args, signal, _update, context) {
       const read = getRead();
       if (read === undefined) throw new Error("Diff requires the read extension");
-      const comparison = await executeDiff(read, args, { cwd: context.cwd, signal });
-      const full = diffText(comparison);
-      const bounded = truncateHead(full);
-      const temporarySource = bounded.truncated ? await read.saveTemporary(full) : undefined;
-      const footer = temporarySource === undefined ? "" : `\nFull diff: ${temporarySource}`;
-      return {
-        content: [
+      try {
+        const comparison = await executeDiff(read, args, { cwd: context.cwd, signal });
+        const full = diffText(comparison);
+        const bounded = truncateHead(full);
+        const temporarySource = bounded.truncated ? await read.saveTemporary(full) : undefined;
+        const footer = temporarySource === undefined ? "" : `\nFull diff: ${temporarySource}`;
+        return withStructuredResult(
           {
-            type: "text" as const,
-            text:
-              temporarySource === undefined
-                ? full
-                : truncateHead(full, {
-                    maxLines: DEFAULT_MAX_LINES - 2,
-                    maxBytes: DEFAULT_MAX_BYTES - Buffer.byteLength(footer),
-                  }).content + footer,
+            content: [
+              {
+                type: "text" as const,
+                text:
+                  temporarySource === undefined
+                    ? full
+                    : truncateHead(full, {
+                        maxLines: DEFAULT_MAX_LINES - 2,
+                        maxBytes: DEFAULT_MAX_BYTES - Buffer.byteLength(footer),
+                      }).content + footer,
+              },
+            ],
+            details: { ...diffPresentation(comparison, context.cwd), comparison, temporarySource },
           },
-        ],
-        details: { ...diffPresentation(comparison, context.cwd), comparison, temporarySource },
-      };
+          diffDataSchema,
+          {
+            status: "success",
+            data: {
+              kind: "diff",
+              equal: comparison.equal,
+              before: { source: comparison.before.source, sources: comparison.before.sources },
+              after: { source: comparison.after.source, sources: comparison.after.sources },
+              stats: comparison.stats,
+              diff: bounded.content,
+              truncated: bounded.truncated,
+              ...(temporarySource === undefined ? {} : { fullResult: temporarySource }),
+            },
+            errors: [],
+          },
+        );
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        const failure = resultError(error, "DIFF_FAILED");
+        return withStructuredResult(
+          { content: [{ type: "text", text: failure.message }], details: {} },
+          diffDataSchema,
+          { status: "error", errors: [failure] },
+        );
+      }
     },
   });
 }

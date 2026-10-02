@@ -77,6 +77,7 @@ function createHandler(
   const toolNames: string[] = [];
   const knownPaths = new Map<number, string>();
   const checks = new Map<number, Map<string, TextAnchorInspectionOutcome>>();
+  const blocks = new Map<number, Map<string, InterceptResult>>();
 
   const handler: ToolCallInterceptorHandler = {
     name: "text-editor-stale-anchor-inspection",
@@ -110,6 +111,7 @@ function createHandler(
         arguments_,
         source,
         checks,
+        blocks,
       );
 
       if (pairBlock !== undefined) {
@@ -146,6 +148,7 @@ function createHandler(
           [anchor],
           [descriptor.kinds],
           checks,
+          blocks,
         );
 
         if (block !== undefined) {
@@ -157,13 +160,16 @@ function createHandler(
     },
     onContentEnd(contentIndex) {
       checks.delete(contentIndex);
+      blocks.delete(contentIndex);
     },
     onAbort(contentIndex) {
       checks.delete(contentIndex);
+      blocks.delete(contentIndex);
       knownPaths.delete(contentIndex);
     },
     onAgentEnd() {
       checks.clear();
+      blocks.clear();
       knownPaths.clear();
     },
   };
@@ -225,6 +231,7 @@ async function inspectAnchorPair(
   arguments_: Record<string, unknown>,
   source: string,
   checks: Map<number, Map<string, TextAnchorInspectionOutcome>>,
+  blocks: Map<number, Map<string, InterceptResult>>,
 ): Promise<InterceptResult | undefined> {
   if (schema.pair === undefined) {
     return undefined;
@@ -261,6 +268,7 @@ async function inspectAnchorPair(
     [start, end],
     [startDescriptor.kinds, endDescriptor.kinds],
     checks,
+    blocks,
   );
 }
 
@@ -273,6 +281,7 @@ async function inspectAnchors(
   anchors: readonly [string] | readonly [string, string],
   kinds: readonly [readonly string[]] | readonly [readonly string[], readonly string[]],
   checks: Map<number, Map<string, TextAnchorInspectionOutcome>>,
+  blocks: Map<number, Map<string, InterceptResult>>,
 ): Promise<InterceptResult | undefined> {
   const contentIndex = context.contentIndex ?? -1;
   const key = `${source}${CACHE_KEY_PART_SEPARATOR}${anchors.join(
@@ -280,6 +289,8 @@ async function inspectAnchors(
   )}${CACHE_KEY_PART_SEPARATOR}${kinds
     .map((accepted) => accepted.join(CACHE_KEY_LIST_SEPARATOR))
     .join(CACHE_KEY_PART_SEPARATOR)}`;
+  const cachedBlock = blocks.get(contentIndex)?.get(key);
+  if (cachedBlock !== undefined) return cachedBlock;
   let result = checks.get(contentIndex)?.get(key);
 
   if (result === undefined) {
@@ -337,7 +348,11 @@ async function inspectAnchors(
     ...(!(readContext === undefined || readContext.length === 0) && { context: readContext }),
   };
 
-  return makeBlockResult(details, result.reason);
+  const block = makeBlockResult(details, result.reason);
+  const contentBlocks = blocks.get(contentIndex) ?? new Map<string, InterceptResult>();
+  contentBlocks.set(key, block);
+  blocks.set(contentIndex, contentBlocks);
+  return block;
 }
 
 function makeResolverBlockResult(

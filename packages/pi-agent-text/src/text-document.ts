@@ -30,6 +30,12 @@ export interface TextLine {
 }
 
 export interface TextDocument {
+  /** Resolver-owned selectors for source-level actions, separate from display annotations. */
+  readonly references?: readonly {
+    readonly value: string;
+    readonly kind: string;
+    readonly state?: string;
+  }[];
   readonly source: string;
   readonly content: string;
   readonly lines: readonly TextLine[];
@@ -137,21 +143,20 @@ function splitTextLines(content: string): TextLine[] {
   }
 
   const lines: TextLine[] = [];
-  const pattern = /([^\r\n]*)(\r\n|\r|\n|$)/gu;
+  const endings = /\r\n|\r|\n/gu;
+  let start = 0;
   let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(content)) !== null) {
-    if (match[0].length === 0) {
-      break;
-    }
-
+  while ((match = endings.exec(content)) !== null) {
     lines.push({
       lineNumber: lines.length + 1,
-      content: match[1] ?? "",
-      lineEnding: match[2] ?? "",
+      content: content.slice(start, match.index),
+      lineEnding: match[0],
     });
+    start = match.index + match[0].length;
   }
-
+  if (start < content.length) {
+    lines.push({ lineNumber: lines.length + 1, content: content.slice(start), lineEnding: "" });
+  }
   return lines;
 }
 

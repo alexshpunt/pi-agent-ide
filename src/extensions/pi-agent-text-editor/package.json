@@ -44,6 +44,10 @@
       "types": "./src/api/post-edit.ts",
       "default": "./src/api/post-edit.ts"
     },
+    "./api/native-edit-batch-event": {
+      "types": "./src/api/native-edit-batch-event.ts",
+      "default": "./src/api/native-edit-batch-event.ts"
+    },
     "./api/mutation-result": {
       "types": "./src/api/mutation-result.ts",
       "default": "./src/api/mutation-result.ts"
@@ -75,9 +79,9 @@
   },
   "dependencies": {
     "@codemirror/state": "^6.5.0",
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
-    "@earendil-works/pi-tui": "0.84.2",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "@lezer/common": "^1.5.2",
     "@lezer/javascript": "^1.5.4",
     "diff": "^9.0.0",

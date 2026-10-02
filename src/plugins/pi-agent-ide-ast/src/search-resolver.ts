@@ -5,6 +5,7 @@ import path from "node:path";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
+import { selectionData } from "pi-agent-search/api/search";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
 
 import { createAstSearchPresentation } from "./search-presentation.js";
@@ -78,6 +79,20 @@ export function createAstSearchResolver(
           ),
         },
       };
+    },
+    toScriptData(payload) {
+      const result = payload as {
+        matches: readonly {
+          selection: SearchSelectionMatch;
+        }[];
+        complete: boolean;
+        sessionId: string;
+      };
+      return selectionData(
+        result.matches.map((match) => match.selection),
+        result.complete,
+        result.sessionId,
+      );
     },
     format(payload) {
       const result = payload as {

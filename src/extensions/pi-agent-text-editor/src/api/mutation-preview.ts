@@ -15,6 +15,8 @@ export type TextMutationPreviewRanges = readonly TextMutationPreviewRange[];
 export interface TextMutationPreviewResource {
   readonly path: string;
   readonly existed?: boolean;
+  /** Resolver that owns this snapshot and its write policy. */
+  readonly resolvedBy?: string;
   readonly beforeRanges?: TextMutationPreviewRanges;
   readonly link?: string;
   readonly ranges: readonly TextMutationPreviewRange[];
