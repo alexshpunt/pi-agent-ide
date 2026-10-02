@@ -51,12 +51,19 @@ export interface ReadFailure {
   readonly stage?: ReadPipelineStage;
   readonly message: string;
   readonly cause?: unknown;
+  /** Ranked exact paths offered as hints, never read automatically. */
+  readonly candidates?: readonly { readonly path: string }[];
 }
 
 export type ReadResultRenderer = NonNullable<ToolDefinition["renderResult"]>;
 export type ReadCallRenderer = NonNullable<ToolDefinition["renderCall"]>;
 
 export interface ResourceResolverRegistration {
+  /** Offers recovery hints after this resolver fails to resolve or read a source. */
+  readonly recoverFailure?: (
+    failure: ReadFailure,
+    context: ResourceResolverContext,
+  ) => Promise<ReadFailure["candidates"]>;
   readonly resolver: ResourceResolver;
   /** Selects a resolver-specific call header before resource resolution. */
   readonly matchesCall?: (source: string) => boolean;
