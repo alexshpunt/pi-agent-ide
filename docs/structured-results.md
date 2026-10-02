@@ -24,6 +24,26 @@ Check `status` before using data. Domain errors with structured results resolve 
 - **Git index tools:** return action, change selector, file, index state, observed effect, and whether it was already in the requested state.
 - **Debugger:** creation returns session, source, and breakpoint resource references plus configuration and status. Debugger mutation actions return selected breakpoint or evaluation fields, not full session snapshots.
 
+## Source result composition
+
+Exact filesystem text Read results and local text/regex Search results expose an optional `target: "RESULT#..."`. Each public Search match also has its own target. These handles resolve backend-owned source ranges and snapshots; serializable preview fields do not grant or change write authority.
+
+Native `search.path` and `replace.path` accept a successful result envelope, its data, a target handle, or arrays of compatible results/matches. A whole result retains its complete stored scope even when its public window is shortened. Pass a matches array to narrow the scope explicitly. Read lines projected to strings or arbitrary coordinates are not editable targets.
+
+```js
+const read = await tools.read({ path: "note.txt", offset: 2, limit: 2 });
+if (read.status !== "success") throw new Error(JSON.stringify(read.errors));
+const found = await tools.search({ path: read, query: "old" });
+if (found.status !== "success") throw new Error(JSON.stringify(found.errors));
+const changed = await tools.replace({ path: found.data.matches.slice(0, 1), text: "new" });
+if (changed.status !== "success") throw new Error(JSON.stringify(changed.errors));
+text(changed);
+```
+
+Targets belong to the active session/runtime and worktree. A new session, reload or shutdown clears the store. Changing any source bytes makes a non-empty retained target stale; re-read or re-search rather than refreshing implicitly. Existing string `SEARCH#:all` selectors retain their separate refresh policy.
+
+Supported scoped Search runs each range separately through the normal ripgrep engine and maps matches back to source UTF-16 coordinates. It preserves inherited completeness and deduplicates by source/range identity. Boolean queries, include/exclude globs and other query providers are not supported for result scopes yet. Replace rejects incomplete input and contradictory snapshot versions before writing, preserves ordinary resource and mutation guards, and treats an empty set as an explicit successful no-op. Preview edits, deleted diff text, bytes, images and derived views without an exact filesystem mapping cannot supply arbitrary edit targets.
+
 ## Native editor commits
 
 Sequential local edits share original snapshots. Child success with `effect: "pending"` means accepted, not written. Await an explicit flush when the script needs the final receipt:

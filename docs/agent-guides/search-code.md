@@ -16,6 +16,14 @@ Local text results expose `SEARCH#HASH:N:line` for its containing line and `SEAR
 
 A single-result reference becomes stale after its file changes. Re-run the search before reuse. A complete `:all` reference refreshes its original query when selected files change. Compacted output retains complete all-selections.
 
+## Searching returned scopes
+
+Pass a source-aware Read/Search result, its `data`, a `RESULT#` reference, or an array of returned matches/resources as `path` to search their exact source ranges. Local text and `regex:` queries support this input. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
+
+Pass `found.data.matches.filter(...)` to narrow a result with JavaScript. A whole result's `target` still selects its complete stored scope; changing its preview does not narrow it. Preserve returned target handles instead of reconstructing coordinates from text.
+
+Check `complete` before treating zero matches as absence. Inherited incompleteness survives non-empty subsets. Empty arrays select no sources; they do not default to the workspace. Result-scoped Boolean queries, include/exclude globs, AST/symbol/file/process queries and other providers are unsupported at this stage and fail without widening the scope.
+
 ## AST search
 
 Use `ast:<pattern>` for syntax-aware matching. `$NAME` captures one syntax node and `$$$BODY` captures several nodes. Returned search references can select multiline matches for read, replace, copy, move, delete, and Apply. An incomplete result does not provide a complete all-selection. Text replacement through an AST selection does not update imports or references automatically.

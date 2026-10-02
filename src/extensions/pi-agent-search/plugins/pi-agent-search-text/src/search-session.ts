@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import type { ResultTargetStore } from "pi-agent-resource";
 import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -26,6 +27,8 @@ export type TextSearchMatch = SearchSelectionMatch;
 
 export interface TextSearchSession {
   readonly id: string;
+  readonly target?: string;
+  readonly matchTargets?: readonly string[];
   readonly query: string;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
@@ -149,6 +152,7 @@ export class SearchSessionStore {
 
   public constructor(
     private readonly createIdentity: typeof createSearchSessionIdentity = createSearchSessionIdentity,
+    private readonly resultTargets?: ResultTargetStore,
   ) {}
 
   public async register(
@@ -176,6 +180,7 @@ export class SearchSessionStore {
       matches,
       complete,
       contentBySource,
+      ...registerResultReferences(this.resultTargets, matches, contentBySource, cwd, complete),
       recipe,
       ...(refresh !== undefined && { refresh }),
       cwd: path.resolve(cwd),
@@ -422,6 +427,27 @@ export class SearchSessionStore {
   }
 }
 
+function registerResultReferences(
+  store: ResultTargetStore | undefined,
+  matches: readonly TextSearchMatch[],
+  contents: ReadonlyMap<string, string>,
+  cwd: string,
+  complete: boolean,
+): Pick<TextSearchSession, "target" | "matchTargets"> {
+  if (store === undefined) return {};
+  const documents = new Map(
+    [...contents].map(([source, content]) => [source, createTextDocument(source, content)]),
+  );
+  const targets = matches.map((match) => ({
+    source: match.source,
+    expectedContent: requiredValue(contents.get(match.source)),
+    ranges: [selectionRange(requiredValue(documents.get(match.source)), match, "match")],
+  }));
+  return {
+    target: store.register(targets, cwd, complete),
+    matchTargets: targets.slice(0, 100).map((target) => store.register([target], cwd, complete)),
+  };
+}
 function parseSearchAnchor(value: string): ParsedSearchAnchor | undefined {
   const match = searchAnchorPattern.exec(value);
 

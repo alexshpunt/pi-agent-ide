@@ -1,4 +1,5 @@
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
+import { connectResultTargets } from "pi-agent-resource";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
@@ -18,7 +19,7 @@ import { isSearchToolDetails } from "#src/search-result.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default async function registerTextSearch(pi: ExtensionAPI): Promise<void> {
-  const sessions = new SearchSessionStore();
+  const sessions = new SearchSessionStore(undefined, connectResultTargets(pi));
 
   pi.on("tool_result", async (event, ctx) => {
     if (

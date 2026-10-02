@@ -17,6 +17,7 @@ const references = Type.Object(
 const match = Type.Object(
   {
     source: Type.String(),
+    target: Type.Optional(Type.String()),
     range: position,
     matchedText: Type.Optional(Type.String()),
     textTruncated: Type.Optional(Type.Boolean()),
@@ -29,6 +30,7 @@ export const searchDataSchema = Type.Union([
   Type.Object(
     {
       kind: Type.Literal("matches"),
+      target: Type.Optional(Type.String()),
       truncated: Type.Optional(Type.Boolean()),
       fullResult: Type.Optional(Type.String()),
       complete: Type.Boolean(),
@@ -61,13 +63,18 @@ export function selectionData(
   }[],
   complete: boolean,
   sessionId?: string,
+  targets?: { readonly target?: string; readonly matchTargets?: readonly string[] },
 ) {
   return {
     kind: "matches" as const,
+    ...(targets?.target === undefined ? {} : { target: targets.target }),
     truncated: matches.length > 100,
     complete,
     matches: matches.slice(0, 100).map((match, index) => ({
       source: match.source,
+      ...(targets?.matchTargets?.[index] === undefined
+        ? {}
+        : { target: targets.matchTargets[index] }),
       range: {
         startLine: match.lineNumber,
         startColumn: match.startColumn,

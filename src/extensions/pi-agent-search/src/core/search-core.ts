@@ -181,6 +181,8 @@ export function createSearchCore(): SearchCore {
       const emptyProtocol = /^[a-z][\w-]*:\s*$/iu.test(request.query);
       const protocolLike = /^[a-z][\w-]*:/iu.test(request.query);
       for (const entry of snapshot) {
+        if (context.scope !== undefined && entry.registration.resolver.supportsResultScope !== true)
+          continue;
         if (emptyProtocol && !entry.registration.fallback) continue;
         const resolver = entry.registration.resolver;
         let attempt: unknown;

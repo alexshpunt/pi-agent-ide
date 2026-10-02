@@ -192,6 +192,8 @@ export type ReadScriptData =
     }
   | {
       readonly kind: "text";
+      /** Strict source-window handle, independent of preview truncation. */
+      readonly target?: string;
       readonly source: string;
       readonly content: string;
       readonly lines: readonly ReadTextLine[];

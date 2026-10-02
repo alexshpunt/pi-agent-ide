@@ -58,6 +58,37 @@ export async function searchText(
 
 type MatchingLine = (source: string, lineNumber: number) => void;
 
+/** Search exactly the supplied source text with the same ripgrep engine as file searches. */
+export async function searchTextContent(
+  request: TextSearchRequest,
+  content: string,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<TextSearchBackendResult> {
+  if (request.condition !== undefined)
+    throw new Error("Boolean scoped search is not available yet.");
+  if (/\r|\n/u.test(request.query)) throw new Error("Search supports one-line patterns only.");
+  return runRipgrep(
+    [
+      "--json",
+      "--no-config",
+      "--color=never",
+      "--with-filename",
+      "--line-number",
+      ...(request.regex === true ? ["--engine", "auto"] : ["--fixed-strings"]),
+      request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
+      ...(request.wholeWord === true ? ["--word-regexp"] : []),
+      "--",
+      request.query,
+      "-",
+    ],
+    cwd,
+    signal,
+    undefined,
+    content,
+  );
+}
+
 async function searchPattern(
   request: TextSearchRequest,
   cwd: string,
@@ -171,13 +202,18 @@ function runRipgrep(
   cwd: string,
   signal?: AbortSignal,
   onLine?: MatchingLine,
+  input?: string,
 ): Promise<TextSearchBackendResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(resolveRipgrepExecutable(), arguments_, {
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       cwd,
     });
     const output = createInterface({ input: child.stdout });
+    child.stdin.on("error", () => {
+      /* The process close/error event reports failed searches. */
+    });
+    child.stdin.end(input);
     const matches: TextSearchMatch[] = [];
     let stderr = "";
     let parseError: unknown;
@@ -280,7 +316,7 @@ function matchesFromEvent(event: RipgrepMatchEvent, cwd: string): TextSearchMatc
   const matches: TextSearchMatch[] = [];
 
   for (const submatch of event.data.submatches) {
-    if (submatch.start < 0 || submatch.end <= submatch.start || submatch.end > lineBuffer.length) {
+    if (submatch.start < 0 || submatch.end < submatch.start || submatch.end > lineBuffer.length) {
       continue;
     }
 

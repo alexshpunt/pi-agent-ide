@@ -143,6 +143,12 @@ A resource belongs to one resolution and one consuming operation. A later tool c
 
 The contract provides no cross-call cache, shared identity, close method, or long-lived cleanup protocol. A source integration completes operation-local cleanup before its work settles.
 
+## Retained result targets
+
+`ResultTargetStore` is separate from the Resource lifecycle. It stores source snapshots and ranges, not Resource instances or resolver callbacks. `connectResultTargets` shares one backend store through the active Pi extension event bus and clears it when the session starts or shuts down, including reload.
+
+Consumers resolve only registered `RESULT#` handles from supported result shapes, check the worktree, and verify source bytes before using a target. They still resolve each actual Resource through their own registry and enforce its access and mutation policy. See the repository's `docs/structured-results.md` for the current tool compatibility and examples.
+
 ## Invariants
 
 1. `source` is non-empty.

@@ -224,7 +224,13 @@ export function mutationOutcome(
   const known = unique.some((file) => file.effect === "applied");
   if (result.isError && errors.length === 0)
     errors.push({ code: "MUTATION_FAILED", message: "Mutation failed" });
-  if ((results?.length ?? 0) === 0 && !semantic && observed.size === 0 && errors.length === 0)
+  if (
+    (results?.length ?? 0) === 0 &&
+    !semantic &&
+    observed.size === 0 &&
+    errors.length === 0 &&
+    details.effect !== "not-applied"
+  )
     errors.push({ code: "UNKNOWN_RESULT", message: "Mutation effects were not reported" });
   const effect =
     unique.some((file) => file.effect === "unknown") ||

@@ -23,6 +23,12 @@ With an `end` selector, the operation covers complete lines from the first line 
 
 Selections are revision-sensitive. Re-read after a mutation before reusing a single-file line, scope, or search anchor. Complete `SEARCH#...:all` selections can refresh their original query.
 
+## Replacing returned targets
+
+Pass a source-aware Read/Search result, its `data`, a `RESULT#` reference, or an array of returned matches as `replace.path`. Omit `start` and `end`. A Read target selects its requested whole-line window; a Search target selects exact matches. Pass a filtered matches array to edit a subset, rather than changing a whole result's preview.
+
+New targets are strict snapshots. Obtain fresh targets after any source bytes change, the session changes, or Pi reloads. Incomplete, unsupported and expired inputs are rejected before writing. Empty target sets are successful no-ops with `effect: "not-applied"`. Existing string `SEARCH#:all` refresh behavior is unchanged. Other mutation tools still use their existing inputs.
+
 ## Choosing line separation
 
 Use `separation: "blank-line"` for a separate paragraph or section; use the default line mode for adjacent code lines, list items, or a continuation of the current block. For example, inserting `X` after `A` in `A\nB` with blank-line separation produces `A\n\nX\n\nB`. In Apply, pass `{ separation: "blank-line" }` as the third argument to a linewise `insertAfter` or `insertBefore`.

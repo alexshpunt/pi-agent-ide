@@ -248,6 +248,11 @@ class NativeTextEditBatchCoordinator {
         for (const descriptor of [registration.source, ...(registration.source.targets ?? [])]) {
           const value = input[descriptor.field];
           if (typeof value === "string" && value.length > 0) {
+            if (registration.name === "replace" && value.startsWith("RESULT#")) {
+              // The executor validates result handles and returns a structured rejection.
+              ownsSource = true;
+              continue;
+            }
             const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
             if (result.kind !== "not-handled") ownsSource = true;
           }

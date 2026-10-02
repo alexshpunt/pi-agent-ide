@@ -33,6 +33,12 @@ Check `status` before reading `data`. Use text `data.lines` and their `anchors` 
 
 Use `data.bytes` for `raw:` reads. Forward a native image from `data.blocks` with `image(block)`. Keep multi-source `data.resources` separate instead of joining unrelated ranges.
 
+## Reusing source windows
+
+Exact filesystem text reads expose `data.target`. Pass the successful result, its data, or that `RESULT#` reference as `search.path` or `replace.path` to reuse the requested window, not just its shortened preview. Read-only derived views, bytes, images, and directory listings do not gain text-edit authority.
+
+Check that a target was returned before composing source operations. Obtain a fresh Read/Search after source bytes change, the session changes, or Pi reloads. New result targets never silently refresh.
+
 ## Views
 
 Views request source-specific presentations without changing the selected resource. Common views include:

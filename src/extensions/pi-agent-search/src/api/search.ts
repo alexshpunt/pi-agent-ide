@@ -1,4 +1,5 @@
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ResolvedResultTargets } from "pi-agent-resource";
 
 export interface SearchRequest {
   readonly query: string;
@@ -11,6 +12,8 @@ export interface SearchRequest {
 }
 
 export interface SearchContext {
+  /** Exact backend-owned source scopes for native result composition. */
+  readonly scope?: ResolvedResultTargets;
   readonly cwd: string;
   readonly signal?: AbortSignal;
   readonly onUpdate?: (result: AgentToolResult<unknown>) => void;
@@ -22,6 +25,8 @@ export type SearchResolutionAttempt =
   | { readonly kind: "failed"; readonly error: unknown };
 
 export interface SearchResolver {
+  /** Handle exact source ranges instead of widening a structured input to a path. */
+  readonly supportsResultScope?: boolean;
   /** Required for native data calls; project only documented JSON domain fields. */
   readonly toScriptData?: (payload: unknown, formattedDetails: unknown) => unknown;
   readonly id: string;

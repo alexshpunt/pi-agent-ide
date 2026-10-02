@@ -286,6 +286,9 @@ function createRenderer(
         );
       }
 
+      if (!context.isError && result.details?.metadata?.emptyTargets === true) {
+        return new Text(theme.fg("muted", "No changes · empty target set"), 0, 0);
+      }
       const wholeFileSucceeded = wholeFileOperationSucceeded(result.details);
       if (wholeFileSucceeded !== undefined) {
         return new Text(
@@ -721,7 +724,14 @@ function mutationCallDetails(
 
   const generated = generatedField(tool);
   return Object.entries(input).map(([label, value]) => {
-    const encoded = typeof value === "string" ? value : JSON.stringify(value);
+    const encoded =
+      tool === "replace" && label === "path" && value !== null && typeof value === "object"
+        ? Array.isArray(value)
+          ? `${value.length} returned targets`
+          : "result scope"
+        : typeof value === "string"
+          ? value
+          : JSON.stringify(value);
     const exact = typeof encoded === "string" ? encoded : String(value);
     return {
       label,
@@ -752,7 +762,13 @@ function renderHeader(
   const source = registration.source;
   if (registration.name === "undo" && typeof input.transaction === "string")
     return `${theme.fg("toolTitle", theme.bold("undo"))} ${theme.fg("muted", "· Apply transaction")}`;
-  const path = stringValue(input[source.field]);
+  const path =
+    stringValue(input[source.field]) ??
+    (registration.name === "replace" &&
+    input[source.field] !== null &&
+    typeof input[source.field] === "object"
+      ? "result scope"
+      : undefined);
   const previewResources = preview?.kind === "completed" ? preview.resources : [];
   const displayedPath =
     path ??

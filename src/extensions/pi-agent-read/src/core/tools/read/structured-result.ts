@@ -30,6 +30,7 @@ const text = Type.Object(
   {
     ...common,
     kind: Type.Literal("text"),
+    target: Type.Optional(Type.String()),
     lines: Type.Array(line),
     startLine: Type.Integer(),
     endLine: Type.Integer(),
@@ -153,6 +154,7 @@ function publicData(value: ReadScriptData): unknown {
     endLine: lines.at(-1)?.lineNumber ?? 0,
     totalLines: value.totalLines,
     truncated,
+    ...(value.target === undefined ? {} : { target: value.target }),
     ...(value.references === undefined ? {} : { references: value.references }),
     ...(truncated || endLine < value.totalLines
       ? { continuation: { path: value.source, offset: endLine + 1 } }

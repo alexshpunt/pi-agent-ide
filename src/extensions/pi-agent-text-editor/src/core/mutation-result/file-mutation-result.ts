@@ -267,7 +267,7 @@ export interface FileMutationData {
  * Phases are batch-wide (gate runs once for all files), not per-FMR.
  */
 export interface FileMutationBatchResult {
-  /** Observed effects of a failed execution, independent of its error state. */
+  /** Observed effects of an execution, including an explicit no-op. */
   readonly effect?: "applied" | "not-applied" | "unknown";
   /** Structured contributions from configured IDE mutation handlers. */
   readonly metadata?: Readonly<Record<string, unknown>>;

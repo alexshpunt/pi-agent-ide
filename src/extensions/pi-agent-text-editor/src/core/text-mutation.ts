@@ -79,12 +79,14 @@ import type { ScriptMutationOutcome } from "#src/core/apply/mutation-outcome.js"
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
 import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
 import { mutationOutputSchema, structuredMutation } from "./structured-result.js";
+import type { ResultTargetStore } from "pi-agent-resource";
 
 export function createTextTool<TParameters extends TSchema>(
   core: TextEditorCore,
   definition: TextMutationToolRegistration<TParameters>,
   annotations: ToolCallInterceptionRenderStore,
   getLastResolvedSource: () => string | undefined,
+  resultTargets?: ResultTargetStore,
 ): ToolDefinition<TParameters, FileMutationBatchResult> {
   const renderer = core.getToolRenderer(definition.name);
   const initialRenderCall = renderer?.renderCall;
@@ -135,7 +137,45 @@ export function createTextTool<TParameters extends TSchema>(
       async execute(toolCallId, parameters, signal, onUpdate, context) {
         const captured = await captureScriptMutation(core, async () => {
           const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
-            const input = asMutationParameters<TParameters>(parameters);
+            let input = asMutationParameters<TParameters>(parameters);
+            if (
+              definition.name === "replace" &&
+              input.path !== undefined &&
+              (typeof input.path !== "string" || input.path.startsWith("RESULT#"))
+            ) {
+              try {
+                if (resultTargets === undefined) throw new Error("Result targets are unavailable.");
+                if (input.start !== undefined || input.end !== undefined)
+                  throw new Error("Do not combine result targets with start/end.");
+                const selected = resultTargets.resolve(input.path, context.cwd);
+                if (!selected.complete)
+                  throw new Error(
+                    "Incomplete result targets cannot establish a complete edit; repeat Search.",
+                  );
+                await resultTargets.verify(selected, signal);
+                if (selected.targets.length === 0)
+                  return {
+                    content: [{ type: "text", text: "Empty result target set; no changes." }],
+                    details: {
+                      results: [],
+                      effect: "not-applied",
+                      metadata: { emptyTargets: true },
+                    },
+                  };
+                input = {
+                  ...input,
+                  path: resultTargets.register(selected.targets, context.cwd, selected.complete),
+                };
+              } catch (error) {
+                signal?.throwIfAborted();
+                return failureToolResult(
+                  "",
+                  "RESULT_INPUT_REJECTED",
+                  errorMessage(error),
+                  "not-applied",
+                );
+              }
+            }
             const queued = executeNativeTextEditBatch(
               core,
               toolCallId,

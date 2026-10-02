@@ -277,10 +277,9 @@ export function createApplyExecution(
           results.record(id, "read", value, diffReadResult(value));
           return value;
         }
-        const schema = tool === "read" ? readParameters : searchSchema;
-        if (!Value.Check(schema, arguments_))
-          throw failure("INVALID_ARGUMENTS", `Invalid arguments for ${tool}`);
         if (tool === "read") {
+          if (!Value.Check(readParameters, arguments_))
+            throw failure("INVALID_ARGUMENTS", "Invalid arguments for read");
           const outcome = await services.read.read(
             arguments_,
             { cwd: context.cwd, signal },
@@ -306,6 +305,8 @@ export function createApplyExecution(
           services.rememberRead?.(outcome);
           return value;
         }
+        if (!Value.Check(searchSchema, arguments_))
+          throw failure("INVALID_ARGUMENTS", "Invalid arguments for search");
         const outcome = await services.search.search(
           arguments_ as SearchRequest,
           {

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { runScopedSearch } from "#src/scoped-search.js";
 
 import { searchFiles } from "#src/file-search.js";
 import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.js";
@@ -79,18 +80,27 @@ function createMatchResolver(
 ): SearchResolver {
   return {
     id,
+    supportsResultScope: true,
     toScriptData(payload, details) {
       const result = payload as TextPayload;
-      const sessionId = (details as { sessionId?: string }).sessionId;
+      const targetDetails = details as {
+        sessionId?: string;
+        target?: string;
+        matchTargets?: readonly string[];
+      };
+      const sessionId = targetDetails.sessionId;
       return {
-        ...selectionData(result.matches, result.complete, sessionId),
+        ...selectionData(result.matches, result.complete, sessionId, targetDetails),
         notices: [...result.notices],
       };
     },
     async tryResolve(request, context) {
       const recipe = queryBody(request);
       if (recipe === undefined) return { kind: "not-handled" };
-      const result = await runSearchRecipe(recipe, context.cwd, context.signal);
+      const result =
+        context.scope === undefined
+          ? await runSearchRecipe(recipe, context.cwd, context.signal)
+          : await runScopedSearch(recipe, context.scope, context.cwd, context.signal);
       return {
         kind: "resolved",
         payload: {
@@ -103,14 +113,8 @@ function createMatchResolver(
     async format(payload, context) {
       const result = payload as TextPayload;
 
-      if (result.matches.length === 0) {
-        return {
-          content: [{ type: "text", text: [...result.notices, "No matches found."].join("\n") }],
-          details: createSearchToolDetails(result.request.query, [], result.complete, context.cwd),
-        };
-      }
-
       const detailBudget = result.request.limit ?? 50;
+      const scope = context.scope;
       const session = await sessions.registerIfCurrent(
         result.request.query,
         result.matches,
@@ -118,7 +122,19 @@ function createMatchResolver(
         context.cwd,
         context.signal,
         result.recipe,
+        scope === undefined
+          ? undefined
+          : (signal) => runScopedSearch(result.recipe, scope, context.cwd, signal),
       );
+      if (result.matches.length === 0) {
+        return {
+          content: [{ type: "text", text: [...result.notices, "No matches found."].join("\n") }],
+          details: {
+            ...createSearchToolDetails(result.request.query, [], result.complete, context.cwd),
+            ...(session?.target === undefined ? {} : { target: session.target, matchTargets: [] }),
+          },
+        };
+      }
       const display = session ?? {
         query: result.request.query,
         matches: result.matches,
@@ -134,14 +150,19 @@ function createMatchResolver(
             ].join("\n"),
           },
         ],
-        details: createSearchToolDetails(
-          display.query,
-          display.matches,
-          display.complete,
-          context.cwd,
-          session?.id,
-          detailBudget,
-        ),
+        details: {
+          ...createSearchToolDetails(
+            display.query,
+            display.matches,
+            display.complete,
+            context.cwd,
+            session?.id,
+            detailBudget,
+          ),
+          ...(session?.target === undefined
+            ? {}
+            : { target: session.target, matchTargets: session.matchTargets }),
+        },
       };
     },
     renderResult: renderSearchResult as SearchResolver["renderResult"],
