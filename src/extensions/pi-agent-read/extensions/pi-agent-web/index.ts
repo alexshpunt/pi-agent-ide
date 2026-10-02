@@ -11,6 +11,13 @@ import { type ContentTarget, createContentHost, renderContentDescription } from 
 
 import { webDoctorPlugin } from "#src/doctor-plugin.js";
 import { createWebResolver } from "#src/resolver.js";
+import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
+import {
+  SEARCH_API_VERSION,
+  SEARCH_PROTOCOL,
+  type SearchPlugin,
+} from "pi-agent-search/api/plugin-protocol";
+import { createWebSearchResolver } from "#src/search.js";
 
 const readTarget = { provider: "web", capability: "read" } satisfies ContentTarget;
 const renderWebResult = createReadResultRenderer({ kind: "markdown", label: "WEB" });
@@ -34,8 +41,20 @@ export default async function registerWeb(pi: ExtensionAPI): Promise<void> {
     },
   } satisfies ReadPlugin;
 
+  const searchPlugin = {
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "web",
+    setup(api) {
+      api.addResolver({ resolver: createWebSearchResolver(webResolver), priority: 100 });
+      api.addPromptGuideline(
+        "Use search with an HTTP(S) path to find text on a web page; no prior read is required.",
+      );
+    },
+  } satisfies SearchPlugin;
   await Promise.all([
     connectReadPlugin(pi, plugin),
+    connectSearchPlugin(pi, searchPlugin),
     Promise.resolve(connectDoctorPlugin(pi, webDoctorPlugin)),
   ]);
 }

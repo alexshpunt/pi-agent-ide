@@ -43,6 +43,14 @@ Failed requests (including HTTP errors, network errors, and timeouts), failed HT
 
 Responses with an explicitly unsupported binary Content-Type do not enter content conversion. The provider reads at most 4 KiB, cancels the body, and returns a successful text report containing the requested URL, safe response headers, attachment metadata, and a hex/ASCII preview. It omits redirect-bearing and cookie headers and never exposes the final signed download URL.
 
+## Search
+
+`search({ query: "extensions", path: "https://pi.dev/" })` fetches and searches the same converted text as Read. No earlier Read is needed. Results keep the requested URL, including after a redirect.
+
+Web search supports literal text, quoted literals, `regex:` queries, case sensitivity, and whole-word matching. It searches one page, not linked pages. File include/exclude globs do not apply. Converted images return a text-content error.
+
+The default limit is 50 matches. An extra match marks the result incomplete. Text previews are short, and rendered output stays below 50 KiB. Structured results use the shared search limits. Web matches do not return editable `SEARCH#` anchors.
+
 ## Browser read
 
 Automatic fallback loads the original URL in system Chrome or Chromium through Playwright. The browser waits for DOM content and a short best-effort network-idle window, removes DOM elements hidden by HTML or computed CSS, then sends the rendered HTML and final page URL to `web/read`.
