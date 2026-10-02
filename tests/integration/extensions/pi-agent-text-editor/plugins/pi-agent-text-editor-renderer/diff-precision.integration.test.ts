@@ -19,16 +19,16 @@ const defaultEditor = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/register-extension.ts",
 );
 
-test("shows an unavailable warning instead of zero changes when alignment is bounded", async () => {
+test("keeps a write diff visible when detailed line pairing is bounded", async () => {
   await withTempWorkspace(async (directory) => {
-    const before = Array.from({ length: 200 }, (_, i) => `legacy legacy legacy ${i}`).join("\n");
-    const after = Array.from({ length: 200 }, (_, i) => `modern modern modern ${i}`).join("\n");
+    const before = Array.from({ length: 200 }, () => "aaaa").join("\n");
+    const after = Array.from({ length: 200 }, () => "zzzz").join("\n");
     await createFixture(directory, "bounded.txt", before);
     const result = await new PiIntegrationTest({
       testName: "native-diff-budget",
       cwd: directory,
       extensions: extensions.paths.map((item) => (item === defaultEditor ? extension : item)),
-      tools: ["replace"],
+      tools: ["write"],
       rawMode: false,
       environment: { PI_AGENT_IDE_TEST_EXPANDED: "1" },
       conversation: [
@@ -36,19 +36,24 @@ test("shows an unavailable warning instead of zero changes when alignment is bou
           [
             toolCall({
               id: "bounded",
-              name: "replace",
-              arguments: { path: "bounded.txt", start: "begin", end: "end", text: after },
+              name: "write",
+              arguments: { path: "bounded.txt", content: after },
             }),
           ],
           { stopReason: "toolUse" },
         ),
         assistantMessage([text("Done")], { delayMs: 500 }),
       ],
-    }).run("Replace the file and report comparison limits honestly");
+    }).run("Write the file and keep its line changes visible");
     expect(getToolExecution(result, "bounded").isError).toBe(false);
     await expect(readFile(path.join(directory, "bounded.txt"), "utf8")).resolves.toBe(after);
     // The required postflight read scrolls this panel out of the final viewport.
-    expect(result.terminalOutput).toContain("Local diff unavailable: alignment limit reached");
+    expect(getToolResultText(result, "bounded")).toContain("bounded.txt");
+    expect(result.terminalOutput).not.toContain("Local diff unavailable");
+    expect(result.terminalOutput).toContain("zzzz");
+    expect(result.terminalOutput).toContain("+200");
+    expect(result.terminalOutput).toContain("~0");
+    expect(result.terminalOutput).toContain("-200");
     expect(result.terminalOutput).not.toContain("+0 ~0 -0");
   });
 });
