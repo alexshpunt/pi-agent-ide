@@ -9,6 +9,13 @@ if (!["linux", "win32"].includes(process.platform))
   throw new Error("Java lifecycle checks require Linux or native Windows");
 if (!process.env.JAVA_HOME) throw new Error("Set JAVA_HOME to a JDK 21 installation");
 await mkdir(directory, { recursive: true });
+let tar = "tar";
+if (process.platform === "win32") {
+  const systemRoot = process.env.SystemRoot;
+  if (!systemRoot) throw new Error("Windows provisioning requires SystemRoot");
+  // Git Bash also ships GNU tar, which treats Windows drive paths as remote hosts.
+  tar = path.join(systemRoot, "System32", "tar.exe");
+}
 const archives = [
   {
     file: "jdtls.tar.gz",
@@ -42,7 +49,7 @@ for (const archive of archives) {
   await mkdir(target, { recursive: true });
   if (archive.file.endsWith(".vsix") && process.platform !== "win32")
     execFileSync("unzip", ["-q", "-o", filename, "-d", target], { stdio: "inherit" });
-  else execFileSync("tar", ["-xf", filename, "-C", target], { stdio: "inherit" });
+  else execFileSync(tar, ["-xf", filename, "-C", target], { stdio: "inherit" });
 }
 const suffix = process.platform === "win32" ? ".exe" : "";
 const environment = {

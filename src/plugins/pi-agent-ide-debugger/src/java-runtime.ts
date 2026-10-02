@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import net from "node:net";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc/node";
+import {
+  createMessageConnection,
+  StreamMessageReader,
+  StreamMessageWriter,
+  type Message,
+  type MessageConnection,
+} from "vscode-jsonrpc/node";
 
 import { DapClient } from "./dap-client.js";
 import type { DebugSessionOptions } from "./session-manager.js";
@@ -152,13 +158,24 @@ export class JavaDebugRuntime {
       }),
       signal,
     );
-    const connection = createMessageConnection(server.stdout, server.stdin);
+    const crashed = new AbortController();
+    const writer = new (class extends StreamMessageWriter {
+      override async write(message: Message): Promise<void> {
+        try {
+          await super.write(message);
+        } catch (error) {
+          // jsonrpc's async request executor rethrows writer failures as unhandled promises.
+          // Route the transport failure to the bounded startup instead.
+          crashed.abort(error);
+        }
+      }
+    })(server.stdin);
+    const connection = createMessageConnection(new StreamMessageReader(server.stdout), writer);
     this.#connection = connection;
     let stderr = "";
     server.stderr.on("data", (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-4_000);
     });
-    const crashed = new AbortController();
     server.once("error", (error) => crashed.abort(error));
     server.once("exit", (code) =>
       crashed.abort(new Error(`Java debugger language server exited (${String(code)}): ${stderr}`)),
@@ -270,11 +287,11 @@ async function javaClassPaths(options: DebugSessionOptions): Promise<string[]> {
 }
 
 async function bounded<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
   let abort: () => void = () => {};
   const cancelled = new Promise<never>((_resolve, reject) => {
     abort = () => reject(signal.reason);
     signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
   });
   try {
     return await Promise.race([operation, cancelled]);

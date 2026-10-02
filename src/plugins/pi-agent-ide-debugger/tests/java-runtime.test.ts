@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { StreamMessageWriter } from "vscode-jsonrpc/node";
 import {
   JavaDebugRuntime,
   javaDebuggerFiles,
@@ -46,6 +47,27 @@ test("an invalid Java executable fails promptly and cleanup remains idempotent",
     await runtime.close();
     await runtime.close();
   } finally {
+    await runtime.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a failed JSON-RPC write rejects startup without an unhandled promise and cleans up", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "pi-java-write-failure-"));
+  const runtime = new JavaDebugRuntime();
+  const write = vi
+    .spyOn(StreamMessageWriter.prototype, "write")
+    .mockRejectedValueOnce(new Error("EPIPE"));
+  try {
+    const env = await files(root);
+    env.PI_JAVA_PATH = process.execPath;
+    await expect(runtime.connect(root, AbortSignal.timeout(1_000), env)).rejects.toThrow("EPIPE");
+    expect(write).toHaveBeenCalledOnce();
+    expect(runtime.processIds).toHaveLength(1);
+    await runtime.close();
+    await runtime.close();
+  } finally {
+    write.mockRestore();
     await runtime.close();
     await rm(root, { recursive: true, force: true });
   }
