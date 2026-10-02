@@ -234,12 +234,28 @@ function alignChangedLines(
   added: readonly NumberedLine[],
   deadline: number,
 ): readonly DiffRow[] | undefined {
+  const similaritiesByText = new Map<string, Map<string, number>>();
+  const compareCharacters = (before: string, after: string): number | undefined => {
+    if (performance.now() >= deadline) return undefined;
+    const cached = similaritiesByText.get(before)?.get(after);
+    if (cached !== undefined) return cached;
+    const score = characterSimilarity(before, after, deadline);
+    if (score !== undefined) {
+      let comparisons = similaritiesByText.get(before);
+      if (comparisons === undefined) {
+        comparisons = new Map();
+        similaritiesByText.set(before, comparisons);
+      }
+      comparisons.set(after, score);
+    }
+    return score;
+  };
   // Preserve corresponding lines in a replacement block before trying every possible pair.
   if (removed.length > 1 && removed.length === added.length) {
     const paired: DiffRow[] = [];
     for (const [index, before] of removed.entries()) {
       const after = requiredValue(added[index]);
-      const similarity = lineSimilarity(before.text, after.text, deadline);
+      const similarity = lineSimilarity(before.text, after.text, compareCharacters);
       if (similarity === undefined) return undefined;
       if (similarity < LINE_PAIR_THRESHOLD) break;
       const row = modifiedRow(before, after, deadline);
@@ -266,7 +282,7 @@ function alignChangedLines(
       const similarity = lineSimilarity(
         requiredValue(removed[oldIndex - 1]).text,
         requiredValue(added[newIndex - 1]).text,
-        deadline,
+        compareCharacters,
       );
       if (similarity === undefined) return undefined;
       requiredValue(similarities[oldIndex - 1])[newIndex - 1] = similarity;
@@ -366,8 +382,14 @@ export function compareInlineText(
   return { addedRanges, deletedOffsets };
 }
 
-function lineSimilarity(before: string, after: string, deadline: number): number | undefined {
-  const characterScore = characterSimilarity(before, after, deadline);
+type CharacterComparison = (before: string, after: string) => number | undefined;
+
+function lineSimilarity(
+  before: string,
+  after: string,
+  compareCharacters: CharacterComparison,
+): number | undefined {
+  const characterScore = compareCharacters(before, after);
   if (characterScore === undefined) return undefined;
   const beforeTokens = semanticTokens(before);
   const afterTokens = semanticTokens(after);
@@ -376,8 +398,8 @@ function lineSimilarity(before: string, after: string, deadline: number): number
     return characterScore;
   }
 
-  const forward = directionalTokenSimilarity(beforeTokens, afterTokens, deadline);
-  const backward = directionalTokenSimilarity(afterTokens, beforeTokens, deadline);
+  const forward = directionalTokenSimilarity(beforeTokens, afterTokens, compareCharacters);
+  const backward = directionalTokenSimilarity(afterTokens, beforeTokens, compareCharacters);
   if (forward === undefined || backward === undefined) return undefined;
   const tokenScore = (forward + backward) / 2;
   return characterScore * 0.35 + tokenScore * 0.65;
@@ -392,14 +414,14 @@ function semanticTokens(line: string): readonly string[] {
 function directionalTokenSimilarity(
   source: readonly string[],
   target: readonly string[],
-  deadline: number,
+  compareCharacters: CharacterComparison,
 ): number | undefined {
   if (source.length === 0 || target.length === 0) return 0;
   let total = 0;
   for (const token of source) {
     let greatest = 0;
     for (const candidate of target) {
-      const score = characterSimilarity(token, candidate, deadline);
+      const score = compareCharacters(token, candidate);
       if (score === undefined) return undefined;
       greatest = Math.max(greatest, score);
     }
@@ -417,7 +439,54 @@ function characterSimilarity(before: string, after: string, deadline: number): n
     return 1;
   }
 
-  const parts = diffChars(before, after, { timeout, maxEditLength: 2_000 });
+  if (before === after) return 1;
+  const beforeCharacters = Array.from(before);
+  const afterCharacters = Array.from(after);
+  let start = 0;
+  let commonLength = 0;
+  while (
+    start < beforeCharacters.length &&
+    start < afterCharacters.length &&
+    beforeCharacters[start] === afterCharacters[start]
+  ) {
+    commonLength += requiredValue(beforeCharacters[start]).length;
+    start++;
+  }
+  let beforeEnd = beforeCharacters.length;
+  let afterEnd = afterCharacters.length;
+  while (
+    beforeEnd > start &&
+    afterEnd > start &&
+    beforeCharacters[beforeEnd - 1] === afterCharacters[afterEnd - 1]
+  ) {
+    commonLength += requiredValue(beforeCharacters[--beforeEnd]).length;
+    afterEnd--;
+  }
+  let left = beforeCharacters.slice(start, beforeEnd);
+  let right = afterCharacters.slice(start, afterEnd);
+  if (right.length > left.length) [left, right] = [right, left];
+  // Short single-unit strings use the same LCS score without a quadratic table.
+  if (right.length <= 31 && left.every((character) => character.length === 1)) {
+    const masks = new Map<string, number>();
+    for (const [index, character] of right.entries()) {
+      masks.set(character, (masks.get(character) ?? 0) | (1 << index));
+    }
+    let matches = 0;
+    for (const character of left) {
+      const candidates = (masks.get(character) ?? 0) | matches;
+      matches = candidates & ~(candidates - ((matches << 1) | 1));
+    }
+    let unchanged = commonLength;
+    while (matches !== 0) {
+      matches &= matches - 1;
+      unchanged++;
+    }
+    return unchanged / longest;
+  }
+  const parts = diffChars(before, after, {
+    timeout: deadline - performance.now(),
+    maxEditLength: 2_000,
+  });
   if (parts === undefined) return undefined;
   const unchanged = parts
     .filter((part) => !part.added && !part.removed)
