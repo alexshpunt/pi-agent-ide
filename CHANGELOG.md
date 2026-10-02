@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.6.4 — 2026-10-02
+
+### Native Pi integration
+
+- Support Pi 0.99.1 and newer hosts with native tool namespaces, discovery, and Codemode execution.
+- Keep the built-in edit placeholder hidden from declarations, discovery, and nested calls.
+- Return structured IDE and shell results with explicit success, error, and partial outcomes.
+- Batch sequential Codemode text edits against shared snapshots and expose committed results through `flush()`.
+- Attach first-use guides without blocking or replaying tool calls, and preserve guidance across nested calls and session navigation.
+- Keep IDE panels visible for nested calls, show final batch diffs without duplicate bookkeeping panels, and preserve bounded history and native usage accounting.
+- Verify IDE tool coexistence with native MCP tools and resources.
+
+### Packaging
+
+- Fix Windows release entrypoint resolution, npm packing, and archive extraction.
+
+### Editing and reading
+
+- Preserve neighboring blank separators when exact-text anchors already include a newline.
+- Bound large committed Apply results before serialization and keep full results addressable.
+- Preserve structured source data when AST output exceeds the preview budget.
+- Run independent post-read handlers concurrently while applying their transforms in order.
+- Document and verify jq views for JSONL inspection.
+
+### Search and presentation
+
+- Search converted HTTP pages by URL, including regular-expression queries.
+- Execute Boolean search without unsupported generated lookaround expressions.
+- Keep Search footers within narrow terminals, including 40-column layouts.
+- Refresh diff caches after native theme palette changes and preserve panel backgrounds and keyboard focus.
+- Remove the redundant Git preview channel.
+
+### Debugging
+
+- Route deletion of terminated debugger sessions and breakpoints through the debugger resource handler.
+- Bound replayable DAP events so noisy debug targets do not grow the queue without limit.
+
 ## 0.6.3 — 2026-09-27
 
 ### Editing
