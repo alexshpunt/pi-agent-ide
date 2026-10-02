@@ -106,7 +106,8 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
     if (event.parentToolCallId === undefined) return;
     const root = parents.get(event.parentToolCallId) ?? event.parentToolCallId;
     parents.set(event.toolCallId, root);
-    if (!definitions.has(event.toolName)) return;
+    // Flush is bookkeeping; its committed edits already own the final diff panels.
+    if (event.toolName === "flush" || !definitions.has(event.toolName)) return;
     let group = groups.get(root);
     if (!group) {
       group = { parentToolCallId: root, cwd: context.cwd, calls: [], complete: true };
