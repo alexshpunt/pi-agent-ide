@@ -1235,6 +1235,7 @@ function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: stri
       const successor = frameText.indexOf("read stream-ahead.txt");
       if (successor < 0) return false;
       // Expanded panels can scroll their header out of the native fullscreen viewport.
+      // oxlint-disable-next-line unicorn/prefer-set-has -- This is substring matching on a terminal frame, not array membership.
       const mutationPanel = frameText.slice(0, successor);
       return (
         mutationPanel.includes("╯") &&
