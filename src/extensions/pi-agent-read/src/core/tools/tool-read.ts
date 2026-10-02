@@ -1307,28 +1307,33 @@ async function runPostReadHandlers(
   initialContext: ReadPipelineContext,
   handlers: readonly RegisteredHandler[],
 ): Promise<ReadStageOutcome> {
-  let context = initialContext;
+  const postHandlers = handlers.filter(({ registration }) => registration.stage === "post-read");
+  const outcomes = await Promise.all(
+    postHandlers.map((registered) =>
+      invokeHandler(
+        registered.registration.handler,
+        initialContext,
+        registered.pluginId,
+        "post-read",
+      ),
+    ),
+  );
 
-  for (const registered of handlers) {
-    if (registered.registration.stage !== "post-read") {
-      continue;
-    }
-
-    const outcome = await invokeHandler(
-      registered.registration.handler,
-      context,
-      registered.pluginId,
-      "post-read",
-    );
-
-    if (outcome.kind === "return") {
-      return outcome;
-    }
-
-    context = outcome.context;
+  for (const outcome of outcomes) {
+    if (outcome.kind === "return") return outcome;
   }
 
-  return { kind: "continue", context };
+  let result = initialContext.result;
+  for (const outcome of outcomes) {
+    if (outcome.kind === "return" || outcome.transform === undefined) continue;
+    if (result === undefined) throw new Error("Post-read transform requires a read result");
+    result = outcome.transform(result);
+  }
+
+  return {
+    kind: "continue",
+    context: result === undefined ? initialContext : { ...initialContext, result },
+  };
 }
 
 async function invokeHandler(
