@@ -51,6 +51,18 @@ interface EventWaiter {
   readonly timer: NodeJS.Timeout;
 }
 
+// Only events used for debugger control flow need replay after arrival.
+const REPLAYABLE_EVENTS = new Set([
+  "initialized",
+  "stopped",
+  "continued",
+  "terminated",
+  "exited",
+  "loadedSource",
+  "breakpoint",
+  "custom",
+]);
+const MAX_BUFFERED_EVENTS = 128;
 /** Framed JSON client for one Debug Adapter Protocol transport. */
 export class DapClient {
   readonly #readable: Readable;
@@ -190,12 +202,17 @@ export class DapClient {
     return response;
   }
 
-  /** Wait for the next matching event, including an event already received. */
+  /** Wait for a matching event. Only the newest 128 control events can be replayed. */
   waitForEvent(event: string, timeoutMs = 30_000): Promise<DapEvent> {
     return this.waitForAnyEvent([event], timeoutMs);
   }
 
-  /** Wait for the next event whose name is in the supplied set. */
+  /**
+   * Wait for a matching event, replaying buffered control events first.
+   * Replay covers initialized, stopped, continued, terminated, exited, loadedSource,
+   * breakpoint, and custom. Other events reach only listeners and active waiters.
+   * The buffer keeps at most 128 events and drops the oldest on overflow.
+   */
   waitForAnyEvent(
     events: readonly string[],
     timeoutMs = 30_000,
@@ -295,8 +312,11 @@ export class DapClient {
     if (message.type === "event") {
       for (const listener of this.#eventListeners) listener(message);
       const waiter = [...this.#waiters].find((candidate) => candidate.events.has(message.event));
-      if (waiter === undefined) this.#events.push(message);
-      else waiter.resolve(message);
+      if (waiter !== undefined) waiter.resolve(message);
+      else if (REPLAYABLE_EVENTS.has(message.event)) {
+        if (this.#events.length === MAX_BUFFERED_EVENTS) this.#events.shift();
+        this.#events.push(message);
+      }
       return;
     }
     void this.#handleReverseRequest(message);
