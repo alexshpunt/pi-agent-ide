@@ -9,8 +9,21 @@ description: Take a numbered Linear task through investigation, discussion, impl
 
 1. Read the Linear skills and use `linear_axi` to find the task by its number or identifier. Read its description, linked materials, and relevant comments. If a bare number matches more than one task, ask the user which one they mean.
 2. Create a new branch and worktree from `develop` with Teleport. Include the task identifier (including its number) and a short task description in the name, for example `abc-123-fix-read-preview`.
-3. Use Teleport to jump into that worktree. Continue all task work there. Pi auto-loads the tracked `.pi/extensions/pi-agent-ide.ts`, which re-exports this checkout's source. No package installation is needed. The project settings exclude the global IDE entrypoint without disabling this local loader. If the global checkout moves, update that exclusion. Before reloading, check that dependencies are available and that only the local IDE extension loads.
+3. Use Teleport to jump into that worktree. Continue all task work there. Set up temporary local IDE loading yourself using the section below. Do not assume the worktree already has the right settings or loader.
 4. Update the task in Linear as work progresses. Use the team's existing statuses rather than inventing new ones. Keep useful decisions, blockers, progress, and links on the task.
+
+## Temporarily load the worktree's IDE
+
+The task session must run the worktree's code, not the globally installed IDE. Load exactly one copy: two copies cause duplicate plugin and post-edit handler registrations.
+
+- Read the current Pi package docs and inspect personal and project settings. Find the global IDE package source and resolve its identity; relative paths resolve from the settings file, not the current directory.
+- Record the existing contents and Git status of each file you will touch. Keep any backup in the ignored `.tmp` directory. Preserve unrelated settings and other agents' changes.
+- In this worktree's `.pi/settings.json`, override the same global package source with `extensions: []`. Use a normal project package entry, not `autoload: false`. Do not edit personal settings. Preserve other resource filters and unrelated package entries.
+- Create or temporarily enable one `.pi/extensions/pi-agent-ide.ts` loader that re-exports `../../src/pi-agent-ide.js`. Disable any other local IDE loader or package entry for this checkout so it does not load twice. Check that dependencies are available. No package installation is needed just to load the checkout.
+- Treat these edits as session setup, not feature changes. Do not stage, commit, or push them, even if a file is already tracked. Use explicit staging paths rather than `git add .`.
+- Before reloading, run the normal-configuration startup smoke test described in step 8. Then reload Pi and confirm that only this worktree's IDE loads. If loading fails, fix the setup before continuing.
+
+After the feature passes local verification, remove your temporary loader and package override, or restore the previous contents if those files existed. Restore only your own edits; do not overwrite changes made by another agent. Confirm that no task-session setup remains in the diff or index. Run the startup smoke test again with the restored configuration, then reload Pi to return to normal global IDE loading before review and Git work. If the user asks for more changes, repeat the temporary setup and cleanup. Also clean up if the task is canceled or paused; report any blocker rather than leaving a broken loader behind.
 
 ## Investigate before implementing
 
@@ -24,12 +37,12 @@ description: Take a numbered Linear task through investigation, discussion, impl
    - Before reloading your working session, launch a separate Pi process from the current worktree with the normal project configuration. Use an in-memory session and no model prompt. Check that Pi starts, loads this worktree's extension without errors or duplicate registrations, and shuts down cleanly. Do not use `--no-extensions` or an explicit entrypoint: that would bypass the configuration you need to check. Inspect startup errors as well as the exit code. If the smoke test fails, fix it before reloading.
    - After the smoke test passes, call `pi_extension_dev_reload_self` with `confirm_state_loss: true`. Include the current worktree and exact demonstration steps in the continuation prompt. Reload may reset extension state; do not depend on it surviving.
    - Immediately after reload, exercise the changed tool or feature and demonstrate the result. Check the agent-facing output and, when it renders to the user, capture and inspect the real viewport with `inspect_tui`. Report what you observed, not just that tests passed.
-9. Tell the user the task is ready for their review. Show what changed, what you checked, and how they can verify it. Ask with `ask_user` whether they are satisfied or want changes.
+9. Remove the temporary local IDE setup and return to normal loading as described above. Tell the user the task is ready for their review. Show what changed, what you checked, and how they can verify it. Ask with `ask_user` whether they are satisfied or want changes.
 10. Wait for explicit acceptance, such as “OK”. If the user wants changes, make them, check them, and ask again. Do not create or merge the PR, remove the worktree, or mark the task done before acceptance.
 
 ## Merge and finish
 
-11. After acceptance, commit and push the task branch. Create a PR targeting `develop` so the work is visible. Link the Linear task and summarize the changes and checks.
+11. After acceptance, check that temporary IDE settings and loaders are absent from the staged diff. Commit and push only the task changes. Create a PR targeting `develop` so the work is visible. Link the Linear task and summarize the changes and checks.
 12. Merge through the PR. Respect required repository checks; a full optional CI/CD run is not necessary. If merging is blocked, report the blocker and keep the branch and worktree.
 13. After the merge succeeds, return from the task worktree with Teleport and remove that worktree. Delete the task branch locally and remotely once it is safe to do so. Do not remove other agents' work or unrelated changes.
 14. Move the Linear task to the appropriate completed status and attach the PR link. If the task was canceled instead, use the appropriate canceled status, not completed.

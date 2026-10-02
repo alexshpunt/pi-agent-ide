@@ -19,6 +19,9 @@ export default async function registerReleaseProbe(pi: ExtensionAPI): Promise<vo
               ? { kind: "resolved", payload: "external package connected" }
               : { kind: "not-handled" };
           },
+          toScriptData(payload) {
+            return { kind: "custom", resolverId: "release-probe", value: payload };
+          },
           format(payload) {
             return { content: [{ type: "text", text: String(payload) }], details: {} };
           },

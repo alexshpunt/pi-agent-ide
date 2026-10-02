@@ -58,7 +58,7 @@ test("Doctor falls back to python3 when python is unavailable on Windows", async
 
 const adapterCases: {
   language: string;
-  runtimes: [string, ...string[]];
+  runtimes: string[];
   adapter?: string;
   variable: string;
 }[] = [
@@ -78,7 +78,9 @@ const adapterCases: {
 test.skipIf(process.platform === "win32").each(adapterCases)(
   "Doctor checks the $language adapter without Python",
   async ({ language, runtimes, adapter, variable }) => {
-    const bin = await fakeExecutable(runtimes[0], "exit 0");
+    const primaryRuntime = runtimes[0];
+    if (primaryRuntime === undefined) throw new Error("Missing adapter test runtime");
+    const bin = await fakeExecutable(primaryRuntime, "exit 0");
     for (const runtime of runtimes.slice(1)) {
       const executable = path.join(bin, runtime);
       await writeFile(executable, "#!/bin/sh\nexit 0\n");
@@ -109,7 +111,7 @@ test.skipIf(process.platform === "win32").each(adapterCases)(
     }
     expect((await inspectDebuggerSetup(context(language, env))).actions).toEqual([]);
 
-    const failingExecutable = adapter ? adapterPath : path.join(bin, runtimes[0]);
+    const failingExecutable = adapter ? adapterPath : path.join(bin, primaryRuntime);
     await writeFile(failingExecutable, "#!/bin/sh\nexit 1\n");
     expect(
       (await inspectDebuggerSetup(context(language, env))).actions?.map(({ category }) => category),
