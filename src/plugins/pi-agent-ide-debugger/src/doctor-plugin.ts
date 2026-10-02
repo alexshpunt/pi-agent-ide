@@ -209,6 +209,29 @@ async function adapterInstalled(
   }
   if (id === "dart-debug-adapter")
     return isExecutableAvailable(env.PI_DART_PATH ?? "dart", cwd, env);
+  if (id === "netcoredbg")
+    return isExecutableAvailable(env.PI_NETCOREDBG_PATH ?? "netcoredbg", cwd, env);
+  if (id === "rdbg") return isExecutableAvailable(env.PI_RUBY_DEBUG_PATH ?? "rdbg", cwd, env);
+  const adapterFiles: Record<string, string> = {
+    "vscode-php-debug":
+      env.PI_PHP_DEBUG_PATH ?? "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js",
+    "local-lua-debugger":
+      env.PI_LUA_DEBUG_PATH ??
+      "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js",
+    "vscode-bash-debug":
+      env.PI_BASH_DEBUG_PATH ?? "/opt/pi-debug-adapters/bash-debug/extension/out/bashDebug.js",
+    "powershell-editor-services-debug": `${env.PI_POWERSHELL_EDITOR_SERVICES_PATH ?? "/opt/pi-debug-adapters/powershell-editor-services"}/PowerShellEditorServices/Start-EditorServices.ps1`,
+  };
+  const adapterFile = adapterFiles[id];
+  if (adapterFile !== undefined) {
+    try {
+      await access(adapterFile);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (id !== "debugpy") return false;
   const python = await resolvePythonDebuggerCommand(cwd, env, platform);
   const probe = await probeExecutable(
     python.command,
@@ -353,6 +376,9 @@ async function probeAdapter(
     return runtime.ok
       ? probeAdapterFile(`${bundle}/PowerShellEditorServices/Start-EditorServices.ps1`, cwd, env)
       : runtime;
+  }
+  if (id !== "vscode-js-debug") {
+    return { ok: false as const, detail: `Unknown debugger adapter: ${id}` };
   }
   const server = env.PI_JS_DEBUG_PATH ?? DEFAULT_JS_DEBUG_PATH;
   try {
