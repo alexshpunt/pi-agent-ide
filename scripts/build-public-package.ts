@@ -172,7 +172,9 @@ const tarballPath = join(outputDirectory, packResult.filename);
 assert(existsSync(tarballPath), `Missing tarball ${tarballPath}`);
 
 mkdirSync(inspectionDirectory, { recursive: true });
-execFileSync("tar", ["-xzf", tarballPath, "-C", inspectionDirectory]);
+execFileSync("tar", ["-xzf", packResult.filename, "-C", "inspection"], {
+  cwd: outputDirectory,
+});
 const extractedPackage = join(inspectionDirectory, "package");
 const report = validatePackage(extractedPackage, packResult, tarballPath);
 writeJson(join(outputDirectory, "report.json"), report);
