@@ -24,7 +24,10 @@ test("registers only selected built-ins", async () => {
       path.join(cwd, "package.json"),
       JSON.stringify({ type: "module", imports: { "#src/*.js": "./src/*.ts" } }),
     );
-    await cp(path.resolve("src"), path.join(cwd, "src"), { recursive: true });
+    await cp(path.resolve("src"), path.join(cwd, "src"), {
+      recursive: true,
+      filter: (source) => path.basename(source) !== "node_modules",
+    });
     await writeFile(
       path.join(cwd, "src/composite/builtin-extensions.ts"),
       `export const BUILTIN_EXTENSIONS = [
