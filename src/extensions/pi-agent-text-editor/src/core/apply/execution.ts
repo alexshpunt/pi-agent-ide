@@ -38,7 +38,7 @@ export function createApplyExecution(
   finish(): Promise<void>;
 } {
   const results = new ApplyResults();
-  const scope = createPostEditScope();
+  const scope = createPostEditScope(context.cwd);
   let lastSource = services.lastResolvedSource;
   const host: ApplyRuntimeHost = {
     async execute(operation, arguments_, signal, id) {
@@ -340,36 +340,39 @@ export function createApplyExecution(
     host: { ...host, execute: (...args) => scope.run(() => host.execute(...args)) },
     results,
     async finish() {
-      await services.editor.enqueueFileOperation(() =>
-        scope.finish((outcome) => {
-          const source = outcome.after.source;
-          const previous = results.mutationPresentation(source)?.data;
-          const formatting = outcome.postEditContributions
-            .map((item) => item.data)
-            .findLast(isFormattingContribution)?.formatting;
-          if (
-            !previous &&
-            outcome.before.content === outcome.after.content &&
-            !formatting?.formatter
-          )
-            return;
-          results.updateFile(source, outcome.before.content, outcome.after.content);
-          results.rememberMutation(
-            source,
-            new FileMutationResult({
-              ok: true,
-              path: source,
-              ...previous,
-              afterContent: outcome.after.content,
-              afterDocument: outcome.after,
-              diffStatuses: outcome.postEditContributions
-                .map((item) => item.data)
-                .filter(isDiffStatusContribution)
-                .flatMap((item) => item.diffStatuses),
-              formatting: formatting ?? { status: "not-reported" },
-            }),
-          );
-        }),
+      await services.editor.enqueueFileOperation(
+        () =>
+          scope.finish((outcome) => {
+            const source = outcome.after.source;
+            const previous = results.mutationPresentation(source)?.data;
+            const formatting = outcome.postEditContributions
+              .map((item) => item.data)
+              .findLast(isFormattingContribution)?.formatting;
+            if (
+              !previous &&
+              outcome.before.content === outcome.after.content &&
+              !formatting?.formatter
+            )
+              return;
+            results.updateFile(source, outcome.before.content, outcome.after.content);
+            results.rememberMutation(
+              source,
+              new FileMutationResult({
+                ok: true,
+                path: source,
+                ...previous,
+                afterContent: outcome.after.content,
+                afterDocument: outcome.after,
+                diffStatuses: outcome.postEditContributions
+                  .map((item) => item.data)
+                  .filter(isDiffStatusContribution)
+                  .flatMap((item) => item.diffStatuses),
+                formatting: formatting ?? { status: "not-reported" },
+              }),
+            );
+          }),
+        undefined,
+        { cwd: context.cwd, sources: scope.sources() },
       );
     },
   };

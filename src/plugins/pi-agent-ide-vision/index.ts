@@ -141,6 +141,7 @@ export default async function registerVision(
           priority: -100,
           resolver: {
             id: "processes",
+            readResources: (request) => (/^process:/iu.test(request.query) ? undefined : []),
             toScriptData(payload) {
               const processes = payload as Awaited<ReturnType<typeof listProcesses>>;
               return {

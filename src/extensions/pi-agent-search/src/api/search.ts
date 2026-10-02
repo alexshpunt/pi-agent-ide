@@ -22,6 +22,14 @@ export type SearchResolutionAttempt =
   | { readonly kind: "failed"; readonly error: unknown };
 
 export interface SearchResolver {
+  /** Complete read scope for resolving and formatting. Empty means no resource reads;
+   * undefined means unknown scope, compatible with reads but conflicting with every write.
+   * Declaring a scope must not read resource contents.
+   */
+  readonly readResources?: (
+    request: SearchRequest,
+    context: SearchContext,
+  ) => readonly string[] | undefined | Promise<readonly string[] | undefined>;
   /** Required for native data calls; project only documented JSON domain fields. */
   readonly toScriptData?: (payload: unknown, formattedDetails: unknown) => unknown;
   readonly id: string;

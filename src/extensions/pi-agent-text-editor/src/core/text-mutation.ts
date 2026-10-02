@@ -225,7 +225,7 @@ export function createTextTool<TParameters extends TSchema>(
       return [
         definition.description,
         definition.intent !== "restore"
-          ? "In native Codemode, sequential local text edits share original snapshots and return acceptance before writing. Another tool, whole-file operation, or resource-owned selector ends the batch; script completion also commits it. Ordinary script errors keep accepted edits; aborts and deadlines discard pending edits."
+          ? "In native Codemode, local text edits share original snapshots and return acceptance before writing. Another tool, whole-file operation, or resource-owned selector ends the batch; script completion also commits it. Ordinary script errors keep accepted edits; aborts and deadlines discard pending edits."
           : "",
         definition.source.inherited
           ? definition.wholeFileOperation === undefined

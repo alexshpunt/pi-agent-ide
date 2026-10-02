@@ -1,3 +1,5 @@
+export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.js";
+export { resourceAccesses } from "./resource-access.js";
 export {
   assertJsonData,
   MAX_STRUCTURED_BYTES,
