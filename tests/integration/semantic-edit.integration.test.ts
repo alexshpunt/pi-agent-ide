@@ -190,7 +190,7 @@ test("Apply symbol search honors its file scope before applying the result limit
               name: "apply",
               arguments: {
                 source:
-                  'const hit = search({query:"symbols:ScopedExample",path:"second.ts",limit:1}); if(hit.data.hits.length !== 1 || hit.data.hits[0].filePath !== "second.ts") throw new Error(JSON.stringify(hit)); const excluded = search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}); if(excluded.data.hits.length !== 0) throw new Error("Excluded symbol returned");',
+                  'const hit = search({query:"symbols:ScopedExample",path:"second.ts",limit:1}); const matches = hit.structured.data.matches; if(matches.length !== 1 || !matches[0].source.endsWith("/second.ts")) throw new Error(JSON.stringify(hit.structured)); const excluded = search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}); if(excluded.structured.data.matches.length !== 0) throw new Error("Excluded symbol returned");',
               },
             }),
           ],

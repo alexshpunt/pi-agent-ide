@@ -58,6 +58,46 @@ test("script search keeps resolver data and formatted reference data separately"
   const ordinary = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() });
   expect(ordinary.script).toBeUndefined();
 });
+test.each(["ast:call($ARG)", "symbols:entry", "ast:", "symbols:"])(
+  "does not turn unsupported scoped %s into text search",
+  async (query) => {
+    const core = createSearchCore();
+    const fallback = vi.fn(() => ({ kind: "resolved" as const, payload: "wrong" }));
+    await core.registerPlugin({
+      protocol: SEARCH_PROTOCOL,
+      apiVersion: SEARCH_API_VERSION,
+      id: "text-only",
+      setup(api) {
+        api.addResolver({
+          fallback: true,
+          resolver: {
+            id: "text",
+            supportsResultScope: true,
+            tryResolve: fallback,
+            format: () => ({ content: [{ type: "text", text: "Wrong fallback" }], details: {} }),
+          },
+        });
+      },
+    });
+    const result = await core.execute(
+      { query },
+      { cwd: process.cwd(), scope: { targets: [], complete: true } },
+    );
+    expect(result.details.failure?.code).toBe("NO_RESOLVER");
+    expect(fallback).not.toHaveBeenCalled();
+  },
+);
+
+test("rejects reference navigation for non-LSP queries before dispatch", async () => {
+  const { core, fallback, specialized } = await setup({ kind: "not-handled" });
+  const result = await core.execute(
+    { query: "ast:call($ARG)", navigation: "references" },
+    { cwd: process.cwd() },
+  );
+  expect(result.details.failure?.code).toBe("INVALID_REQUEST");
+  expect(fallback).not.toHaveBeenCalled();
+  expect(specialized).not.toHaveBeenCalled();
+});
 describe("search fallback dispatch", () => {
   test.each(["symbols:", "ast:", "regex:", "files:", "custom:   "])(
     "routes empty %s straight to local text",

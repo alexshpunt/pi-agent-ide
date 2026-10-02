@@ -110,17 +110,7 @@ export class ResultTargetStore {
 
   /** Reject changed source bytes before a consumer uses a retained selection. */
   public async verify(result: ResolvedResultTargets, signal?: AbortSignal): Promise<void> {
-    const contents = new Map<string, string>();
-    for (const target of result.targets) {
-      signal?.throwIfAborted();
-      let current = contents.get(target.source);
-      if (current === undefined) {
-        current = await readFile(target.source, { encoding: "utf8", signal });
-        contents.set(target.source, current);
-      }
-      if (current !== target.expectedContent)
-        throw new Error("Result target is stale; repeat Read/Search.");
-    }
+    await verifyResultTargets(result, signal);
   }
 
   #references(input: unknown): string[] {
@@ -142,6 +132,23 @@ export class ResultTargetStore {
   }
 }
 
+/** Verify retained source snapshots for tools and provider refresh operations. */
+export async function verifyResultTargets(
+  result: ResolvedResultTargets,
+  signal?: AbortSignal,
+): Promise<void> {
+  const contents = new Map<string, string>();
+  for (const target of result.targets) {
+    signal?.throwIfAborted();
+    let current = contents.get(target.source);
+    if (current === undefined) {
+      current = await readFile(target.source, { encoding: "utf8", signal });
+      contents.set(target.source, current);
+    }
+    if (current !== target.expectedContent)
+      throw new Error("Result target is stale; repeat Read/Search.");
+  }
+}
 function combineTargets(targets: readonly ResultSourceTarget[]): ResultSourceTarget[] {
   const grouped = new Map<
     string,

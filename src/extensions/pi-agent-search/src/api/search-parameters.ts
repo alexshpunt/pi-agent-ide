@@ -12,8 +12,14 @@ export const searchSchema = Type.Object(
     path: Type.Optional({
       ...resultInputSchema,
       description:
-        "File, directory, URL, or a source-aware Read/Search/replace/insert result, RESULT# reference, or array of returned targets. Result scopes search only their exact ranges; plain preview text is not a source.",
+        "File, directory, URL, or a source-aware Read/Search/replace/insert result, RESULT# reference, or array of returned targets. Result scopes search only their exact ranges unless symbols: navigation explicitly follows external references; plain preview text is not a source.",
     }),
+    navigation: Type.Optional(
+      Type.Literal("references", {
+        description:
+          "Only for symbols: queries. Explicitly follow symbols represented inside path to their references outside that scope. Without navigation, all returned ranges stay inside path.",
+      }),
+    ),
     include: Type.Optional(Type.String({ description: "Optional include glob for local search" })),
     exclude: Type.Optional(Type.String({ description: "Optional exclude glob for local search" })),
     caseSensitive: Type.Optional(Type.Boolean({ description: "Match letter case" })),

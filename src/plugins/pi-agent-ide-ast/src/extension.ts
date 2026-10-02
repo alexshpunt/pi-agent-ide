@@ -84,7 +84,7 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
       setup(api): void {
         api.addResolver({ resolver: createAstSearchResolver(api.registerSelection) });
         api.describe(
-          "Search code structure with ast:<pattern>, using source-code syntax and placeholders such as $NAME for one node and $$$BODY for several nodes. path, include and exclude narrow the search. Use returned SEARCH# references to read, replace, copy, move or delete exact AST matches, including multiline nodes. A single :match reference becomes stale after its file changes; :all:match reruns the original structural query. Incomplete results do not provide all selections. Use captures in Apply to compute replacement text; these edits do not update imports or references.",
+          "Search code structure with ast:<pattern>, using source-code syntax and placeholders such as $NAME for one node and $$$BODY for several nodes. path, include and exclude narrow the search. Use returned SEARCH# references to read, replace, copy, move or delete exact AST matches, including multiline nodes. A single :match reference becomes stale after its file changes; :all:match reruns the original structural query. Incomplete results do not provide all selections. Use each match's captures.NAME array in native Codemode as Search/replace input. Single captures contain one node; multi captures retain provider nodes, including punctuation. Strict result scopes return only wholly contained matches. These edits do not update imports or references.",
         );
       },
     }),

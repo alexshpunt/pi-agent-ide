@@ -5,6 +5,7 @@ import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/ed
 import type { LspManagerProvider } from "./code-view-resolvers.js";
 import { resolveLspRenameTarget } from "./lsp/code-views.js";
 import { requestRename } from "./lsp/rename.js";
+import { prepareProjectQuery } from "./lsp/project.js";
 import type { LspPosition } from "./lsp/types.js";
 
 function offset(content: string, position: LspPosition): number {
@@ -57,23 +58,7 @@ export async function prepareSymbolRename(
     state.cwd,
     state.signal,
   );
-  // TypeScript can answer rename before loading unopened project files.
-  // Its advertised project query loads them before requesting workspace edits.
-  if (target.client.supportsCommand("typescript.tsserverRequest")) {
-    const project = await target.client.sendRequest<{ success?: boolean } | null>(
-      "workspace/executeCommand",
-      {
-        command: "typescript.tsserverRequest",
-        arguments: [
-          "projectInfo",
-          { file: source, needFileNameList: true },
-          { isAsync: false, expectsResult: true },
-        ],
-      },
-    );
-    if (project?.success !== true)
-      throw new Error("TypeScript could not load the project for rename. No edits applied.");
-  }
+  await prepareProjectQuery(target.client, source);
   const requestedAt = Date.now();
   const edit = await requestRename(target.client, target.uri, target.position, input.text);
   state.signal?.throwIfAborted();

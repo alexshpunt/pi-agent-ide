@@ -58,6 +58,9 @@ export function searchCallModel(
             truncate: "start" as const,
           },
         ]),
+    ...(arguments_.navigation === undefined
+      ? []
+      : [{ text: "reference navigation", color: "warning" as const }]),
     ...(arguments_.include === undefined ? [] : [{ text: `include ${arguments_.include}` }]),
     ...(arguments_.exclude === undefined ? [] : [{ text: `exclude ${arguments_.exclude}` }]),
     ...(arguments_.caseSensitive === true ? [{ text: "case sensitive" }] : []),
@@ -177,7 +180,7 @@ export default async function registerSearchCore(
               const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
               if (scope !== undefined) {
                 await targets.verify(scope, operationSignal);
-                if (/^(?:files|ast|symbols|symbol|graph|process):/u.test(parameters.query))
+                if (/^(?:files|symbol|graph|process):/u.test(parameters.query))
                   throw new Error("This query provider does not support result scopes yet.");
               }
               return core.execute(
@@ -232,6 +235,7 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
           ? arguments_.path
           : "result scope",
     ),
+    ...optionalDetail("navigation", arguments_.navigation),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),
     ...optionalDetail(

@@ -4,6 +4,7 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 
 import { LspClient } from "./client.js";
+import { prepareProjectQuery } from "./project.js";
 
 import { resolveInitializationOptions } from "./initialization-options.js";
 import { toDiagnostic } from "./diagnostics.js";
@@ -241,6 +242,7 @@ export class LspManager {
         const opened = await this.openFile(filePath, cwd, capability).catch(() => null);
 
         if (opened) {
+          await prepareProjectQuery(opened.client, filePath);
           clients.add(opened.client);
           remainingExtensions.delete(extension);
         }
@@ -250,7 +252,9 @@ export class LspManager {
     const selected = path.resolve(cwd, scope);
     if ((await stat(selected)).isFile()) {
       const opened = await this.openFile(selected, cwd, capability);
-      return opened === null ? [] : [opened.client];
+      if (opened === null) return [];
+      await prepareProjectQuery(opened.client, selected);
+      return [opened.client];
     }
     await visit(selected);
     return [...clients];

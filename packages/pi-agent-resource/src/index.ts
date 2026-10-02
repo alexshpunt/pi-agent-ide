@@ -87,6 +87,7 @@ export {
 
 export {
   connectResultTargets,
+  verifyResultTargets,
   ResultTargetStore,
   resultInputSchema,
   type ResultRange,

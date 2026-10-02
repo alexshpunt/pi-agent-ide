@@ -9,6 +9,8 @@ export interface SearchRequest {
   readonly caseSensitive?: boolean;
   readonly wholeWord?: boolean;
   readonly limit?: number;
+  /** Explicitly follow scoped LSP symbols to references outside the input scope. */
+  readonly navigation?: "references";
 }
 
 export interface SearchContext {
@@ -102,6 +104,9 @@ export interface SearchSelectionRegistration extends SearchSelectionSnapshot {
 }
 export interface RegisteredSearchSelection {
   readonly id: string;
+  /** Shared immutable source targets, independent of legacy SEARCH refresh handles. */
+  readonly target?: string;
+  readonly matchTargets?: readonly string[];
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
 }
@@ -148,4 +153,5 @@ export interface SearchToolDetails {
 }
 
 export { searchSchema } from "#src/api/search-parameters.js";
+export { containsSearchMatch } from "./search-scope.js";
 export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";

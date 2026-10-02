@@ -170,6 +170,9 @@ export function createSearchCore(): SearchCore {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
 
+      if (request.navigation !== undefined && !request.query.startsWith("symbols:"))
+        return failure("INVALID_REQUEST", "navigation is supported only for symbols: queries.");
+
       const snapshot = [...resolvers].sort(
         (left, right) =>
           Number(left.registration.fallback === true) -
@@ -183,7 +186,10 @@ export function createSearchCore(): SearchCore {
       for (const entry of snapshot) {
         if (context.scope !== undefined && entry.registration.resolver.supportsResultScope !== true)
           continue;
-        if (emptyProtocol && !entry.registration.fallback) continue;
+        const structuralProtocol = /^(?:ast|symbols):/u.test(request.query);
+        if (entry.registration.fallback && structuralProtocol && context.scope !== undefined)
+          continue;
+        if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;
         let attempt: unknown;
 

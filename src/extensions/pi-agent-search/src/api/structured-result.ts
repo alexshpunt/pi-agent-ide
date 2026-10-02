@@ -14,14 +14,36 @@ const references = Type.Object(
   { line: Type.Optional(Type.String()), match: Type.Optional(Type.String()) },
   { additionalProperties: false },
 );
+const sourceMatchFields = {
+  source: Type.String(),
+  target: Type.Optional(Type.String()),
+  range: position,
+  matchedText: Type.Optional(Type.String()),
+  textTruncated: Type.Optional(Type.Boolean()),
+  references: Type.Optional(references),
+};
 const match = Type.Object(
   {
-    source: Type.String(),
-    target: Type.Optional(Type.String()),
-    range: position,
-    matchedText: Type.Optional(Type.String()),
-    textTruncated: Type.Optional(Type.Boolean()),
-    references: Type.Optional(references),
+    ...sourceMatchFields,
+    captures: Type.Optional(
+      Type.Record(
+        Type.String(),
+        Type.Array(Type.Object(sourceMatchFields, { additionalProperties: false })),
+      ),
+    ),
+    role: Type.Optional(Type.Union([Type.Literal("definition"), Type.Literal("reference")])),
+    symbol: Type.Optional(
+      Type.Object(
+        {
+          id: Type.String(),
+          name: Type.String(),
+          kind: Type.String(),
+          source: Type.String(),
+          range: position,
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );

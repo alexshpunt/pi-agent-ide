@@ -2,10 +2,12 @@ import spawn from "cross-spawn";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
-import { selectionData } from "pi-agent-search/api/search";
+import { selectionData, containsSearchMatch } from "pi-agent-search/api/search";
+import { verifyResultTargets } from "pi-agent-resource";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
 
 import { createAstSearchPresentation } from "./search-presentation.js";
@@ -20,14 +22,24 @@ interface AstGrepMatch {
     readonly start: { readonly line: number; readonly column: number };
     readonly end: { readonly line: number; readonly column: number };
   };
-  readonly metaVariables?: unknown;
+  readonly metaVariables?: {
+    readonly single: Readonly<Record<string, AstCapture>>;
+    readonly multi: Readonly<Record<string, readonly AstCapture[]>>;
+  };
 }
 
+interface AstCapture {
+  readonly text: string;
+  readonly range: AstGrepMatch["range"];
+}
+
+/** Search existing AST patterns inside exact source scopes and retain associated capture targets. */
 export function createAstSearchResolver(
   registerSelection: SearchPluginApi["registerSelection"],
 ): SearchResolver {
   return {
     id: "ast",
+    supportsResultScope: true,
     renderResult: renderSearchResult as SearchResolver["renderResult"],
     async tryResolve(request, context) {
       if (!request.query.startsWith("ast:")) {
@@ -41,18 +53,49 @@ export function createAstSearchResolver(
       }
 
       const collect = async (signal?: AbortSignal) => {
-        const found = await runAstGrep(pattern, request, context.cwd, signal);
+        if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
+        const found = await runAstGrep(
+          pattern,
+          request,
+          context.cwd,
+          signal,
+          context.scope?.targets.map((target) => target.source),
+        );
         found.sort(
           (a, b) =>
             path.resolve(context.cwd, a.file).localeCompare(path.resolve(context.cwd, b.file)) ||
             a.range.byteOffset.start - b.range.byteOffset.start ||
             a.range.byteOffset.end - b.range.byteOffset.end,
         );
-        const raw = found.slice(0, request.limit ?? 100);
+        const mapped = await selectionMatches(found, context.cwd, signal);
+        const eligible = found
+          .map((raw, index) => {
+            const selection = requiredValue(mapped[index]);
+            return {
+              selection,
+              raw: {
+                ...raw,
+                range: {
+                  ...raw.range,
+                  start: { line: selection.lineNumber - 1, column: selection.startColumn },
+                  end: {
+                    line: (selection.endLineNumber ?? selection.lineNumber) - 1,
+                    column: selection.endColumn,
+                  },
+                },
+              },
+            };
+          })
+          .filter(
+            ({ selection }) =>
+              context.scope === undefined || containsSearchMatch(context.scope, selection),
+          );
+        const kept = eligible.slice(0, request.limit ?? 100);
+        if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
         return {
-          raw,
-          matches: await selectionMatches(raw, context.cwd, signal),
-          complete: found.length <= (request.limit ?? 100),
+          raw: kept.map((item) => item.raw),
+          matches: kept.map((item) => item.selection),
+          complete: (context.scope?.complete ?? true) && eligible.length <= (request.limit ?? 100),
         };
       };
       const selected = await collect(context.signal);
@@ -60,9 +103,58 @@ export function createAstSearchResolver(
         { request, matches: selected.matches, complete: selected.complete, refresh: collect },
         context,
       );
+      const data = selectionData(selected.matches, selected.complete, session.id, session);
+      const captures: Record<string, ReturnType<typeof selectionData>["matches"]>[] = [];
+      for (const raw of selected.raw.slice(0, data.matches.length)) {
+        const groups = Object.entries({
+          ...Object.fromEntries(
+            Object.entries(raw.metaVariables?.single ?? {}).map(([name, node]) => [name, [node]]),
+          ),
+          ...raw.metaVariables?.multi,
+        });
+        const projected = [];
+        for (const [name, nodes] of groups) {
+          for (const node of nodes) {
+            if (
+              node.range.byteOffset.start < raw.range.byteOffset.start ||
+              node.range.byteOffset.end > raw.range.byteOffset.end
+            )
+              throw new Error("AST capture lies outside its parent match.");
+          }
+          const matches = await selectionMatches(
+            nodes.map((node) => ({ ...raw, ...node })),
+            context.cwd,
+            context.signal,
+          );
+          const nodesData: ReturnType<typeof selectionData>["matches"] = [];
+          // Shared Search previews hold 100 nodes. Register every capture chunk without dropping nodes.
+          for (let offset = 0; offset < matches.length; offset += 100) {
+            const chunk = matches.slice(offset, offset + 100);
+            const captured = await registerSelection(
+              {
+                request,
+                matches: chunk,
+                complete: selected.complete,
+                refresh: async () => {
+                  throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
+                },
+              },
+              context,
+            );
+            nodesData.push(...selectionData(chunk, selected.complete, undefined, captured).matches);
+          }
+          projected.push([name, nodesData] as const);
+        }
+        captures.push(Object.fromEntries(projected));
+      }
+      if (context.scope !== undefined) await verifyResultTargets(context.scope, context.signal);
       return {
         kind: "resolved",
         payload: {
+          data: {
+            ...data,
+            matches: data.matches.map((match, index) => ({ ...match, captures: captures[index] })),
+          },
           pattern,
           matches: selected.raw.map((match, index) => ({
             ...match,
@@ -81,18 +173,7 @@ export function createAstSearchResolver(
       };
     },
     toScriptData(payload) {
-      const result = payload as {
-        matches: readonly {
-          selection: SearchSelectionMatch;
-        }[];
-        complete: boolean;
-        sessionId: string;
-      };
-      return selectionData(
-        result.matches.map((match) => match.selection),
-        result.complete,
-        result.sessionId,
-      );
+      return (payload as { readonly data: unknown }).data;
     },
     format(payload) {
       const result = payload as {
@@ -180,7 +261,10 @@ function runAstGrep(
   request: SearchRequest,
   cwd: string,
   signal?: AbortSignal,
+  sources?: readonly string[],
 ): Promise<AstGrepMatch[]> {
+  signal?.throwIfAborted();
+  if (sources?.length === 0) return Promise.resolve([]);
   const arguments_ = ["run", "--pattern", pattern, "--json=compact", "--no-ignore", "parent"];
 
   for (const include of splitGlobs(request.include)) {
@@ -191,7 +275,7 @@ function runAstGrep(
     arguments_.push("--globs", `!${exclude}`);
   }
 
-  arguments_.push(request.path ?? ".");
+  arguments_.push(...(sources ?? [request.path ?? "."]));
   return new Promise((resolve, reject) => {
     const child = spawn("ast-grep", arguments_, {
       cwd,

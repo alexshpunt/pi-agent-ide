@@ -286,7 +286,7 @@ function createRenderer(
         );
       }
 
-      if (!context.isError && result.details?.metadata?.emptyTargets === true) {
+      if (!context.isError && result.details.metadata?.emptyTargets === true) {
         return new Text(theme.fg("muted", "No changes · empty target set"), 0, 0);
       }
       const wholeFileSucceeded = wholeFileOperationSucceeded(result.details);
