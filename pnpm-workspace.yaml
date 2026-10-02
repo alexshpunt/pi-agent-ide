@@ -3,7 +3,7 @@ packages:
   - "src/extensions/**"
   - "src/plugins/*"
 minimumReleaseAgeExclude:
-  - "pi-coding-agent-test@0.1.1"
+  - pi-coding-agent-test@0.1.1 || 0.1.3
   - run@2.1.4
   - "@earendil-works/chord@0.99.1 || 1.0.0"
   - "@earendil-works/pi-agent-core@0.99.1 || 1.0.0"
