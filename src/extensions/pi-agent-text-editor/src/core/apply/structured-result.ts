@@ -18,6 +18,8 @@ const operationSchema = Type.Object(
   {
     id: Type.String(),
     kind: Type.Union([Type.Literal("read"), Type.Literal("mutation")]),
+    fullResultBytes: Type.Optional(Type.Integer({ minimum: 0 })),
+    fullResult: Type.Optional(Type.String()),
     status: Type.Union([Type.Literal("success"), Type.Literal("error"), Type.Literal("partial")]),
     data: Type.Optional(
       Type.Union([
@@ -168,6 +170,10 @@ export async function structuredApply<D>(
     operations.push({
       id: entry.id,
       kind: entry.kind,
+      ...(typeof value.fullResult === "string" ? { fullResult: value.fullResult } : {}),
+      ...(typeof value.fullResultBytes === "number"
+        ? { fullResultBytes: value.fullResultBytes }
+        : {}),
       status:
         failures.length === 0
           ? "success"
@@ -192,12 +198,42 @@ export async function structuredApply<D>(
     values: selected.explicit.filter((entry) => entry.kind === "value").map((entry) => entry.value),
     truncated: false,
   };
-  if (Buffer.byteLength(JSON.stringify(data)) > 512 * 1024) {
-    const fullResult = await read.saveTemporary(JSON.stringify(data));
+  if (
+    results.mutationValues().some((value) => record(value) && value.truncated === true) ||
+    Buffer.byteLength(JSON.stringify(data)) > 512 * 1024
+  ) {
+    const fullResult = await read.saveTemporary(JSON.stringify(data, null, 2));
+    const oversized = Buffer.byteLength(JSON.stringify(data)) > 512 * 1024;
+    const withoutReads = operations.map((operation) => {
+      if (!oversized || operation.kind === "mutation") return operation;
+      const { data: _detail, ...summary } = operation;
+      return summary;
+    });
+    const mutationsOversized = Buffer.byteLength(JSON.stringify(withoutReads)) > 512 * 1024;
+    const summaries = withoutReads.map((operation) => {
+      if (!mutationsOversized || !("data" in operation)) return operation;
+      const { data: detail, ...summary } = operation;
+      const value = record(detail) ? detail : undefined;
+      return {
+        ...summary,
+        ...(operation.kind === "mutation" && value !== undefined
+          ? {
+              data: {
+                operation: value.operation,
+                effect: value.effect,
+                files: value.files,
+                ...(typeof value.transaction === "string"
+                  ? { transaction: value.transaction }
+                  : {}),
+              },
+            }
+          : {}),
+      };
+    });
     return withStructuredResult(result, applyDataSchema, {
       status,
       data: {
-        operations: [],
+        operations: summaries,
         files: data.files,
         transactions: data.transactions,
         values: [],

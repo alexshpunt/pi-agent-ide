@@ -120,6 +120,93 @@ test("an execution request allows an identical stopped event without continued",
   await expect(client.waitForEvent("stopped")).resolves.toMatchObject({ event: "stopped" });
 });
 
+async function connectedAdapter(): Promise<{ client: DapClient; adapter: net.Socket }> {
+  let acceptAdapter: (socket: net.Socket) => void = () => {};
+  const connected = new Promise<net.Socket>((resolve) => {
+    acceptAdapter = resolve;
+  });
+  const server = net.createServer(acceptAdapter);
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (address === null || typeof address === "string") throw new Error("Missing test port");
+  const client = await DapClient.connect(address.port);
+  clients.push(client);
+  return { client, adapter: await connected };
+}
+
+test("sustained output reaches listeners without retaining output or evicting control events", async () => {
+  const { client, adapter } = await connectedAdapter();
+  let outputCount = 0;
+  const received = new Promise<void>((resolve) => {
+    client.onEvent((event) => {
+      if (event.event === "output") outputCount++;
+      if (event.event === "breakpoint") resolve();
+    });
+  });
+  const controlEvents = [
+    "initialized",
+    "stopped",
+    "continued",
+    "exited",
+    "terminated",
+    "loadedSource",
+    "custom",
+  ];
+  for (const [seq, event] of controlEvents.entries()) {
+    adapter.write(frame({ seq, type: "event", event }));
+  }
+  for (let seq = 0; seq < 2_000; seq++) {
+    adapter.write(
+      frame({ seq, type: "event", event: "output", body: { output: "x".repeat(1024) } }),
+    );
+  }
+  adapter.write(frame({ seq: 3_000, type: "event", event: "breakpoint" }));
+  await received;
+
+  expect(outputCount).toBe(2_000);
+  await expect(client.waitForEvent("output", 10)).rejects.toThrow(/Timed out/u);
+  for (const event of [...controlEvents, "breakpoint"]) {
+    await expect(client.waitForEvent(event, 10)).resolves.toMatchObject({ event });
+  }
+});
+
+test("control event overflow retains the newest 128 events in order", async () => {
+  const { client, adapter } = await connectedAdapter();
+  const received = new Promise<void>((resolve) => {
+    client.onEvent((event) => {
+      if (event.seq === 255) resolve();
+    });
+  });
+  for (let seq = 0; seq < 256; seq++) {
+    adapter.write(frame({ seq, type: "event", event: "custom" }));
+  }
+  await received;
+
+  for (let seq = 128; seq < 256; seq++) {
+    await expect(client.waitForEvent("custom", 10)).resolves.toMatchObject({ seq });
+  }
+  await expect(client.waitForEvent("custom", 10)).rejects.toThrow(/Timed out/u);
+});
+
+test("non-replayable events still reach active waiters and listeners", async () => {
+  const { client, adapter } = await connectedAdapter();
+  const observed: string[] = [];
+  client.onEvent((event) => observed.push(event.event));
+  const waiting = client.waitForEvent("output", 1_000);
+  adapter.write(frame({ seq: 1, type: "event", event: "output", body: { output: "hello" } }));
+  await expect(waiting).resolves.toMatchObject({ body: { output: "hello" } });
+  expect(observed).toEqual(["output"]);
+
+  const received = new Promise<void>((resolve) => {
+    client.onEvent((event) => {
+      if (event.event === "adapterNoise") resolve();
+    });
+  });
+  adapter.write(frame({ seq: 2, type: "event", event: "adapterNoise" }));
+  await received;
+  await expect(client.waitForEvent("adapterNoise", 10)).rejects.toThrow(/Timed out/u);
+});
 async function readMessage(socket: net.Socket): Promise<{ readonly seq: number }> {
   return new Promise((resolve) => {
     socket.once("data", (chunk: Buffer) => {

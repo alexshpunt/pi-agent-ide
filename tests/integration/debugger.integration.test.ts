@@ -14,6 +14,41 @@ import { expect, test } from "vitest";
 
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
+test("delete removes a terminated debug session and its breakpoint through real Pi", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "example.py"), "print(42)\n");
+    const run = await new PiIntegrationTest({
+      testName: "terminated-debug-delete",
+      rawMode: false,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [
+        path.resolve("tests/integration/support/terminated-debug-fixture.ts"),
+        path.resolve("src/pi-agent-ide.ts"),
+      ],
+      tools: ["check_debug_cleanup", "read", "delete"],
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "cleanup", name: "check_debug_cleanup", arguments: {} })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Check cleanup of a terminated debugger session and breakpoint");
+    const execution = getToolExecution(run, "cleanup");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    expect(getToolExecutionDetails(execution)).toMatchObject({
+      beforeError: false,
+      breakpointDeleteError: false,
+      breakpointReadError: true,
+      sessionDeleteError: false,
+      sessionReadError: true,
+      breakpointRemoved: true,
+      sessionRemoved: true,
+    });
+  });
+});
+
 test("debug creates an addressable configured session without changing source", async () => {
   await withTempWorkspace(async (cwd) => {
     const program = path.join(cwd, "example.py");

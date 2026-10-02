@@ -171,7 +171,10 @@ export function createTextTool<TParameters extends TSchema>(
                 );
               }
             }
-            if (isWholeFileInvocation(definition.wholeFileOperation, input)) {
+            if (
+              isWholeFileInvocation(definition.wholeFileOperation, input) &&
+              core.getSemanticMutationHandler(definition.name, input) === undefined
+            ) {
               return executeWholeFileTool(
                 core,
                 definition.wholeFileOperation,

@@ -664,6 +664,106 @@ test("rejects a malformed resolver registration", () => {
   }).toThrow(/invalid resource resolver/u);
 });
 
+test("post-read handlers overlap on the base result and transform in registration order", async () => {
+  const read = createReadTool();
+  const started: string[] = [];
+  const bases: unknown[] = [];
+  let releaseFirst = () => {};
+  let markFirstStarted = () => {};
+  const firstStarted = new Promise<void>((resolve) => {
+    markFirstStarted = resolve;
+  });
+  const secondStarted = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  read.registerContributions("fixture", { resolvers: [{ resolver: textResolver("base") }] });
+  for (const name of ["first", "second"]) {
+    read.registerContributions(name, {
+      handlers: [
+        {
+          stage: "post-read",
+          async handler(context) {
+            started.push(name);
+            bases.push(context.result);
+            if (name === "first") {
+              markFirstStarted();
+              await secondStarted;
+            } else releaseFirst();
+            return {
+              kind: "continue",
+              context,
+              transform: (result: NonNullable<typeof context.result>) => ({
+                ...result,
+                content: [...result.content, { type: "text" as const, text: name }],
+              }),
+            };
+          },
+        },
+      ],
+    });
+  }
+  try {
+    const pending = executeRead(read, "notes.txt");
+    // Both must start before the first handler can complete. No timing benchmark needed.
+    await firstStarted;
+    expect(started).toEqual(["first", "second"]);
+    expect(bases[0]).toBe(bases[1]);
+    expect((await pending).content).toEqual([
+      { type: "text", text: "base" },
+      { type: "text", text: "first" },
+      { type: "text", text: "second" },
+    ]);
+  } finally {
+    releaseFirst();
+    await read.dispose();
+  }
+});
+
+test("a final post-read result wins in registration order without applying transforms", async () => {
+  const read = createReadTool();
+  let transformed = false;
+  read.registerContributions("fixture", { resolvers: [{ resolver: textResolver("base") }] });
+  read.registerContributions("decorate", {
+    handlers: [
+      {
+        stage: "post-read",
+        handler(context) {
+          return {
+            kind: "continue",
+            context,
+            transform: (result: NonNullable<typeof context.result>) => {
+              transformed = true;
+              return result;
+            },
+          };
+        },
+      },
+    ],
+  });
+  for (const name of ["first", "second"]) {
+    read.registerContributions(name, {
+      handlers: [
+        {
+          stage: "post-read",
+          handler() {
+            return {
+              kind: "return",
+              result: { content: [{ type: "text", text: name }], details: {} },
+            };
+          },
+        },
+      ],
+    });
+  }
+  try {
+    expect((await executeRead(read, "notes.txt")).content).toEqual([
+      { type: "text", text: "first" },
+    ]);
+    expect(transformed).toBe(false);
+  } finally {
+    await read.dispose();
+  }
+});
 function executeRead(read: ReadTool, path: string, views?: string[]) {
   return read.tool.execute(
     "call",

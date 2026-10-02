@@ -40,7 +40,12 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
     );
     const text = format(outline);
     if (truncateHead(text, budget).truncated) return undefined;
-    return { content: [{ type: "text", text }], details: { source, resolvedBy: "ast-overflow" } };
+    return {
+      // The outline is presentation only; structured readers still receive exact source data.
+      script: result.script,
+      content: [{ type: "text", text }],
+      details: { source, resolvedBy: "ast-overflow" },
+    };
   } catch {
     context.signal?.throwIfAborted();
     return undefined;

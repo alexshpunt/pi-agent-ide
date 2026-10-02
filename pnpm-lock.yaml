@@ -400,6 +400,9 @@ importers:
       pi-agent-resource:
         specifier: workspace:^
         version: link:../../../../../packages/pi-agent-resource
+      pi-agent-search:
+        specifier: workspace:^
+        version: link:../../../pi-agent-search
       pi-agent-text:
         specifier: workspace:^
         version: link:../../../../../packages/pi-agent-text

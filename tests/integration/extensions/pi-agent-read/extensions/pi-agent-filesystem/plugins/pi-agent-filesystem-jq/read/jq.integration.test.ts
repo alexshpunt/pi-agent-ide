@@ -20,6 +20,116 @@ const extension = path.resolve("src/pi-agent-ide.ts");
 const workspace = path.resolve(".tmp/pi-agent-filesystem-jq");
 const jqAvailable = spawnSync("jq", ["--version"], { windowsHide: true }).status === 0;
 
+afterAll(() => rm(workspace, { recursive: true, force: true }));
+
+test.skipIf(!jqAvailable)(
+  "reads and continues JSONL session records and rejects malformed input",
+  async () => {
+    await mkdir(workspace, { recursive: true });
+    const records = Array.from({ length: 2200 }, (_, id) =>
+      JSON.stringify({ type: "message", id, message: { role: "user", content: "x".repeat(100) } }),
+    );
+    await writeFile(path.join(workspace, "session.jsonl"), `${records.join("\n")}\n`);
+    await writeFile(path.join(workspace, "broken.jsonl"), `${records[0]}\n{"type": nope}\n`);
+
+    const result = await new PiIntegrationTest({
+      testName: "filesystem-jq-jsonl",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd: workspace,
+      extensions: [extension],
+      tools: ["read"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "records",
+              name: "read",
+              arguments: {
+                path: "session.jsonl",
+                views: ['jq:select(.type == "message") | .id'],
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "continue",
+              name: "read",
+              arguments: {
+                path: "session.jsonl",
+                views: ['jq:select(.type == "message") | .id'],
+                offset: 2001,
+                limit: 200,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "bytes",
+              name: "read",
+              arguments: {
+                path: "session.jsonl",
+                views: ["jq:.message.content"],
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "malformed",
+              name: "read",
+              arguments: {
+                path: "broken.jsonl",
+                views: ["jq:.type"],
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Inspect JSONL records with Read only");
+
+    expect(getToolExecution(result, "records").isError).toBe(false);
+    const first = getToolResultMessage(result, "records");
+    expect(first.details).toMatchObject({
+      startLine: 1,
+      totalLines: 2200,
+      truncation: { truncated: true, outputLines: 2000 },
+    });
+    const firstText = first.content
+      .flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("\n");
+    expect(firstText).toContain("offset=2001");
+    expect(firstText).toContain("Session files and other JSONL input");
+    expect(getToolResultMessage(result, "continue").details).toMatchObject({
+      startLine: 2001,
+      endLine: 2200,
+      totalLines: 2200,
+    });
+    const continued = getToolResultMessage(result, "continue")
+      .content.flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("\n");
+    expect(continued).toContain("2199");
+    expect(getToolExecution(result, "bytes").isError).toBe(false);
+    const large = getToolResultMessage(result, "bytes");
+    expect(large.details).toMatchObject({ truncation: { truncated: true, truncatedBy: "bytes" } });
+    expect(large.details).toHaveProperty("temporarySource");
+    expect(getToolExecution(result, "malformed").isError).toBe(true);
+    const error = getToolResultMessage(result, "malformed")
+      .content.flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("\n");
+    expect(error).toMatch(/jq failed:.*line 2/su);
+  },
+);
+
 test.skipIf(!jqAvailable)("queries JSON through a parameterized jq view", async () => {
   await rm(workspace, { recursive: true, force: true });
   await mkdir(workspace, { recursive: true });

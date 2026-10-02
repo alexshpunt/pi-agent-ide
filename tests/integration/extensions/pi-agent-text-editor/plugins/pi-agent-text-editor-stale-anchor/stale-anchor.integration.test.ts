@@ -56,6 +56,39 @@ async function runInsert(directory: string, callId: string, anchor: string) {
   }).run("Insert text");
 }
 
+test("reuses blocked context reads and clears them on abort, content end, and agent end", async () => {
+  await withTempWorkspace(async (directory) => {
+    await writeFile(path.join(directory, "subject.txt"), "one\ntwo\n", "utf8");
+    const result = await new PiIntegrationTest({
+      artifactsDir: testArtifactsDir(expect.getState().testPath),
+      testName: "stale-block-cache",
+      cwd: directory,
+      extensions: [
+        ...extensions.paths,
+        path.join(path.dirname(import.meta.filename), "block-cache-probe-extension.ts"),
+      ],
+      tools: ["probe_block_cache"],
+      conversation: [
+        assistantMessage([toolCall({ id: "probe", name: "probe_block_cache", arguments: {} })], {
+          stopReason: "toolUse",
+        }),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Check stale-anchor block caching");
+    expect(JSON.parse(getToolResultText(result, "probe"))).toEqual({
+      afterFirst: 1,
+      afterRepeat: 1,
+      afterAbort: 2,
+      afterContentEnd: 2,
+      afterRestart: 3,
+      sameMessage: true,
+    });
+    expect(
+      JSON.parse(await readFile(path.join(directory, "cache-agent-end.json"), "utf8")),
+    ).toEqual({ before: 3, after: 4 });
+    expect(await readFile(path.join(directory, "subject.txt"), "utf8")).toBe("one\ntwo\n");
+  });
+});
 const staleArgumentsJson = '{"path":"subject.txt","text":"inserted","anchor":"1#AAAA"}';
 const largeStaleText = Array.from(
   { length: 12 },

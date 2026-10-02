@@ -13,6 +13,7 @@
     "pi-agent-image": "workspace:^",
     "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",
+    "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
     "playwright-core": "^1.62.1"
   },
