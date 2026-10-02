@@ -4,6 +4,7 @@ import {
   assistantMessage,
   getToolExecution,
   getToolExecutionDetails,
+  getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -57,7 +58,14 @@ test.runIf(process.platform !== "win32")(
         ],
       }).run("Filter shell output inside a native script and show a bounded direct preview.");
       expect(getToolExecution(result, "script").isError).toBe(false);
-      const data = JSON.parse(getToolResultText(result, "script").split("Output:\n")[1] ?? "") as {
+      const script = getToolExecutionResult(result, "script") as {
+        content: { type: string; text?: string }[];
+      };
+      const output = script.content.find(
+        (part) => part.type === "text" && part.text?.startsWith("{"),
+      );
+      if (output?.text === undefined) throw new Error("Missing shell script JSON output");
+      const data = JSON.parse(output.text) as {
         empty: { full_output_path: string };
         failed: { full_output_path: string };
         waiting: { full_output_path: string };

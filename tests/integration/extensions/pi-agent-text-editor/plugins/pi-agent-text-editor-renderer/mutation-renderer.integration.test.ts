@@ -1224,7 +1224,7 @@ function verifyLargeWriteQuiescence(input: LargeWriteQuiescenceInput) {
 
 function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: string): number {
   const successorFrameIndex = input.frames.findIndex(({ text: frameText }) =>
-    frameText.includes("stream-ahead.txt"),
+    frameText.includes("read stream-ahead.txt"),
   );
   if (successorFrameIndex < 0) {
     throw new Error("No synchronized frame showed the later tool call");
@@ -1232,13 +1232,21 @@ function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: stri
   const settledAfterSuccessor = input.frames
     .slice(successorFrameIndex)
     .find(({ text: frameText }) => {
-      const mutationPanel = largeWriteMutationPanel(frameText);
-      return !mutationPanel.includes("▌") && mutationPanel.includes(finalRow);
+      const successor = frameText.indexOf("read stream-ahead.txt");
+      if (successor < 0) return false;
+      // Expanded panels can scroll their header out of the native fullscreen viewport.
+      const mutationPanel = frameText.slice(0, successor);
+      return (
+        mutationPanel.includes("╯") &&
+        !mutationPanel.includes("▌") &&
+        mutationPanel.includes(finalRow)
+      );
     });
   if (settledAfterSuccessor === undefined) {
     throw new Error("The mutation animation did not settle after the later tool call appeared");
   }
   const successorFrame = input.frames[successorFrameIndex];
+  if (successorFrame === undefined) throw new Error("Missing successor frame");
   const visualCatchUpMs = input.frameDelaysMs
     .slice(successorFrame.frame, settledAfterSuccessor.frame)
     .reduce((sum, delay) => sum + delay, 0);
