@@ -46,7 +46,8 @@ export default async function registerWeb(pi: ExtensionAPI): Promise<void> {
     apiVersion: SEARCH_API_VERSION,
     id: "web",
     setup(api) {
-      api.addResolver({ resolver: createWebSearchResolver(webResolver), priority: 100 });
+      // Claim URL scopes before local query resolvers such as regex.
+      api.addResolver({ resolver: createWebSearchResolver(webResolver), priority: -100 });
       api.addPromptGuideline(
         "Use search with an HTTP(S) path to find text on a web page; no prior read is required.",
       );
