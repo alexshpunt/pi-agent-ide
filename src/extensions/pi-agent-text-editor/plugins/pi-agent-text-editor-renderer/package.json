@@ -13,7 +13,8 @@
     "pi-agent-invariant": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
     "pi-agent-tool-call-interception": "workspace:^",
-    "pi-agent-tool-ui": "workspace:^"
+    "pi-agent-tool-ui": "workspace:^",
+    "vscode-diff": "3.0.1"
   },
   "pi": {
     "extensions": [

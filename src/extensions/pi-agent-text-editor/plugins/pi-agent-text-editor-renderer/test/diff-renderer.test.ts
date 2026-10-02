@@ -323,7 +323,7 @@ describe("semantic text mutation diff", () => {
         text: "    timeout: 5_000,",
         beforeLine: 4,
         afterLine: 4,
-        addedRanges: [{ from: 13, to: 18 }],
+        addedRanges: [{ from: 13, to: 14 }],
       }),
     ]);
     expect(model.rows.map(({ text }) => text)).not.toContain("    timeout: 1_000,");
@@ -449,6 +449,35 @@ describe("semantic text mutation diff", () => {
     expect(plain.join("\n")).toContain("xxx");
   });
 
+  test("highlights the surviving word near a deletion without markers, including tabs and wrapping", () => {
+    const palette = createDiffThemePalette(plainTheme, false);
+    for (const [before, after, word] of [
+      ["return await run();", "return run();", "run"],
+      ["await run();", "run();", "run"],
+      ["finish() await", "finish()", "finish"],
+      ["\t👩‍💻 await run(); // old", "\t👩‍💻 run();", "run"],
+      ["a!b?c", "abc", "abc"],
+    ] as const) {
+      const model = createDiffModel(before, after);
+      for (const width of [22, 80]) {
+        const rendered = renderDiffPanel(
+          { path: "deletion.ts", model, highlightedRows: new Map() },
+          width,
+          plainTheme,
+          true,
+          false,
+        );
+        const text = rendered.map(stripTerminalSequences).join("\n");
+        expect(text).not.toContain("⌫");
+        expect(text).not.toContain("await");
+        expect(text).not.toContain("old");
+        expect(rendered.join("\n")).toContain(
+          `${palette.modified.emphasisBackground}${word}${palette.modified.background}`,
+        );
+        expect(rendered.every((line) => visibleWidth(line) <= width)).toBe(true);
+      }
+    }
+  });
   test("highlights only the new fragment with a stronger theme-derived background", () => {
     const before = "export const timeout = 1_000;";
     const after = "export const timeout = 5_000;";
@@ -467,7 +496,7 @@ describe("semantic text mutation diff", () => {
     ).join("\n");
 
     expect(rendered).toContain(
-      `${palette.modified.emphasisBackground}5_000${palette.modified.background}`,
+      `${palette.modified.emphasisBackground}5${palette.modified.background}_000`,
     );
     expect(rendered).not.toContain("\u001B[1;4m");
     expect(rendered).not.toContain("1_000");
