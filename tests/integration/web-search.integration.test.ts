@@ -50,6 +50,16 @@ test("real Pi searches converted web pages without a prior Read", async () => {
           ],
           { stopReason: "toolUse" },
         ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "web-regex",
+              name: "search",
+              arguments: { query: "regex:Extensions?", path: url, limit: 2 },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
         assistantMessage([text("Done")]),
       ],
     }).run("Search this web page for extensions without reading it first.");
@@ -64,6 +74,11 @@ test("real Pi searches converted web pages without a prior Read", async () => {
     expect(result.tuiRenderedOutput).toContain("Extensions");
     expect(result.tuiRenderedOutput).toContain("limit reached");
     expect(getSystemPrompt(result)).toContain("no prior read is required");
+    expect(getToolExecution(result, "web-regex").isError).toBe(false);
+    const regexOutput = getToolResultText(result, "web-regex");
+    expect(regexOutput).toContain(url);
+    expect(regexOutput).toContain("Extensions");
+    expect(regexOutput).not.toContain("No such file");
   } finally {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) =>
