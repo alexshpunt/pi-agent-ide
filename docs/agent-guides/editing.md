@@ -25,7 +25,9 @@ Selections are revision-sensitive. Re-read after a mutation before reusing a sin
 
 ## Replacing returned targets
 
-Pass a source-aware Read/Search result, its `data`, a `RESULT#` reference, or an array of returned matches as `replace.path`. Omit `start` and `end`. A Read target selects its requested whole-line window; a Search target selects exact matches. Pass a filtered matches array to edit a subset, rather than changing a whole result's preview.
+Pass a source-aware Read/Search/replace/insert result, its `data`, a `RESULT#` reference, or an array of returned matches as `replace.path`. Omit `start` and `end`. A Read target selects its requested whole-line window; a Search target selects exact matches. Pass a filtered matches array to edit a subset, rather than changing a whole result's preview.
+
+A local replace/insert result selects only the text that call actually inserted, including supplied line separators. Empty replacement selects the resulting position, not the removed text. These targets do not inherit whole-line replacement behavior. Check `data.target` before composing; `data.targetUnavailable` explains why a successful write could not publish a safe target.
 
 New targets are strict snapshots. Obtain fresh targets after any source bytes change, the session changes, or Pi reloads. Incomplete, unsupported and expired inputs are rejected before writing. Empty target sets are successful no-ops with `effect: "not-applied"`. Existing string `SEARCH#:all` refresh behavior is unchanged. Other mutation tools still use their existing inputs.
 
@@ -49,7 +51,9 @@ Await `tools.flush({})` when later script work needs a committed receipt. Inspec
 
 Await independent local text-edit calls sequentially inside one script. Keep their selectors tied to the original file snapshots and combine overlapping edits before submitting them. Check the parent Codemode result for committed effects; a child acceptance is not proof that a file was written.
 
-Read or search again before dependent edits that need fresh content or anchors. Another tool, a whole-file operation, or a resource-owned selector ends the pending batch before running. Do not reuse old line anchors across that boundary.
+Pass a pending replace/insert result directly to Search or replace for dependent work. That boundary commits the batch and confirms its target before the dependent tool runs. The original child receipt remains `effect: "pending"`; use flush or the parent receipt for final effects. A failed or cancelled operation never grants editable targets. Another tool, a whole-file operation, or a resource-owned selector also ends the batch. Do not reuse old line anchors across that boundary.
+
+Formatting and registered resource post-edit handlers run once per surviving resource after all calls in one native Codemode script. Reads and dependent searches inside that script see written but not yet formatted text. Flush commits writes, not final formatting. If final processing changes bytes, earlier targets are stale; repeat Read/Search. Standalone calls outside Codemode still finish post-edit work immediately.
 
 Inspect final results after an ordinary script error and retry only unapplied edits. Abort or deadline discards pending writes, not batches that already committed.
 

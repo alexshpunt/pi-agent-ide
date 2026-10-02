@@ -41,6 +41,24 @@ describe("source result targets", () => {
     expect(() => store.resolve(first, "/workspace")).toThrow("expired or unknown");
   });
 
+  test("confirms pending handles once without rebinding committed snapshots", () => {
+    const store = new ResultTargetStore();
+    const reference = store.reserve("/workspace");
+    expect(() => store.resolve(reference, "/workspace")).toThrow("pending");
+    expect(() => store.confirm(reference, [target], "/other-worktree")).toThrow("this worktree");
+    store.confirm(reference, [target], "/workspace");
+    expect(store.resolve(reference, "/workspace").targets).toEqual([target]);
+    expect(() =>
+      store.confirm(reference, [{ ...target, expectedContent: "new" }], "/workspace"),
+    ).toThrow("Only a pending result");
+    store.reject(reference, "later failure");
+    expect(store.resolve(reference, "/workspace").targets).toEqual([target]);
+    const rejected = store.reserve("/workspace");
+    store.reject(rejected, "Write was cancelled");
+    expect(() => store.resolve(rejected, "/workspace")).toThrow("Write was cancelled");
+    expect(() => store.confirm(rejected, [target], "/workspace")).toThrow("Only a pending result");
+  });
+
   test("preserves zero-width positions as targets rather than an empty set", () => {
     const store = new ResultTargetStore();
     const position = {

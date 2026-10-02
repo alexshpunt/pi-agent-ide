@@ -124,6 +124,7 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
       ).toEqual([initial, initial, initial]);
       expect(recorded.filter((event) => event.type === "guard")).toHaveLength(1);
       expect(recorded.filter((event) => event.type === "edit")).toHaveLength(1);
+      expect(recorded.filter((event) => event.type === "post-edit")).toHaveLength(1);
       const details = batchDetails(run);
       expect(details.editorBatches).toEqual([
         {

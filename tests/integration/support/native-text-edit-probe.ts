@@ -77,7 +77,7 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
       });
       api.onDidEdit(async (completion) => {
         await record(completion.cwd, {
-          type: "edit",
+          type: completion.postProcessing === "final" ? "post-edit" : "edit",
           path: completion.resourceSource,
           before: completion.before.content,
           after: completion.after.content,

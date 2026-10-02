@@ -46,6 +46,18 @@ export const mutationDataSchema = Type.Object(
     operation: Type.String(),
     effect,
     operationId: Type.Optional(Type.String()),
+    target: Type.Optional(
+      Type.String({
+        description:
+          "Backend-owned replace/insert scope for this call's actual resulting text. Pending handles become usable only after a confirmed commit.",
+      }),
+    ),
+    targetUnavailable: Type.Optional(
+      Type.String({
+        description:
+          "Why a completed mutation could not provide a safe resulting-text target. The write effect is reported separately.",
+      }),
+    ),
     files: Type.Array(file),
     operations: Type.Optional(Type.Array(operation)),
     parentToolCallId: Type.Optional(Type.String()),
@@ -137,6 +149,9 @@ export function mutationOutcome(
       data: {
         operation,
         effect: "pending",
+        ...(typeof details.metadata?.resultTarget === "string"
+          ? { target: details.metadata.resultTarget }
+          : {}),
         files:
           typeof detailRecord.source === "string"
             ? [{ source: detailRecord.source, effect: "pending" }]
@@ -290,6 +305,12 @@ export function mutationOutcome(
       operation,
       effect,
       files: unique,
+      ...(typeof details.metadata?.resultTarget === "string"
+        ? { target: details.metadata.resultTarget }
+        : {}),
+      ...(typeof details.metadata?.targetUnavailable === "string"
+        ? { targetUnavailable: details.metadata.targetUnavailable }
+        : {}),
       ...(details.anchorRecoveries === undefined
         ? {}
         : {

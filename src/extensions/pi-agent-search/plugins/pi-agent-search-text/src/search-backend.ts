@@ -68,7 +68,7 @@ export async function searchTextContent(
   if (request.condition !== undefined)
     throw new Error("Boolean scoped search is not available yet.");
   if (/\r|\n/u.test(request.query)) throw new Error("Search supports one-line patterns only.");
-  return runRipgrep(
+  const result = await runRipgrep(
     [
       "--json",
       "--no-config",
@@ -85,8 +85,17 @@ export async function searchTextContent(
     cwd,
     signal,
     undefined,
-    content,
+    // An empty source still has one position. Ripgrep excludes the record delimiter from matches.
+    content.length === 0 ? "\n" : content,
   );
+  return content.length === 0
+    ? {
+        ...result,
+        matches: result.matches.filter(
+          (match) => match.lineNumber === 1 && match.startColumn === 0 && match.endColumn === 0,
+        ),
+      }
+    : result;
 }
 
 async function searchPattern(

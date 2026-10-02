@@ -2,6 +2,43 @@ import { expect, test } from "vitest";
 import { Value } from "typebox/value";
 import { mutationOutcome, mutationOutputSchema } from "./structured-result.js";
 
+test("keeps a pending mutation target separate from its unapplied effect", () => {
+  const result = {
+    content: [],
+    details: {
+      results: [],
+      source: "note.txt",
+      nativeEditBatch: { state: "accepted", parentToolCallId: "script" },
+      metadata: { resultTarget: "RESULT#pending" },
+    },
+  };
+  const outcome = mutationOutcome(result, "replace");
+  expect(outcome).toMatchObject({
+    status: "success",
+    data: { effect: "pending", target: "RESULT#pending" },
+  });
+  expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
+});
+
+test("an unavailable target does not turn a completed write into a failure", () => {
+  const result = semanticResult({ ok: true, source: "note.txt" });
+  const outcome = mutationOutcome(
+    {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: { ...result.details.metadata, targetUnavailable: "Mapping changed" },
+      },
+    },
+    "replace",
+  );
+  expect(outcome).toMatchObject({
+    status: "success",
+    data: { effect: "applied", targetUnavailable: "Mapping changed" },
+  });
+  expect(outcome.data?.target).toBeUndefined();
+  expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
+});
 function semanticResult(action: Record<string, unknown>) {
   return { content: [], details: { results: undefined, metadata: { semanticAction: action } } };
 }

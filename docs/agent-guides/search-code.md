@@ -18,7 +18,9 @@ A single-result reference becomes stale after its file changes. Re-run the searc
 
 ## Searching returned scopes
 
-Pass a source-aware Read/Search result, its `data`, a `RESULT#` reference, or an array of returned matches/resources as `path` to search their exact source ranges. Local text and `regex:` queries support this input. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
+Pass a source-aware Read/Search/replace/insert result, its `data`, a `RESULT#` reference, or an array of returned matches/resources as `path` to search their exact source ranges. Local text and `regex:` queries support this input. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
+
+A replace/insert result searches only that call's resulting text, including an empty resulting position. In native Codemode, passing a pending result commits the batch first. Final formatting runs at script end; targets from before changed formatting become stale, not silently rebound.
 
 Pass `found.data.matches.filter(...)` to narrow a result with JavaScript. A whole result's `target` still selects its complete stored scope; changing its preview does not narrow it. Preserve returned target handles instead of reconstructing coordinates from text.
 

@@ -34,9 +34,15 @@ export const resultInputSchema = Type.Union([
 const prefix = "RESULT#";
 const event = "pi-agent-resource:result-targets";
 
+type ResultEntry = { readonly cwd: string } & (
+  | (ResolvedResultTargets & { readonly state: "ready" })
+  | { readonly state: "pending" }
+  | { readonly state: "rejected"; readonly reason: string }
+);
+
 /** Stores immutable source selections for one extension runtime, isolated by worktree. */
 export class ResultTargetStore {
-  readonly #entries = new Map<string, ResolvedResultTargets & { readonly cwd: string }>();
+  readonly #entries = new Map<string, ResultEntry>();
 
   /** Forget results when the session closes or the extensions reload. */
   public clear(): void {
@@ -47,11 +53,39 @@ export class ResultTargetStore {
   public register(targets: readonly ResultSourceTarget[], cwd: string, complete = true): string {
     const reference = `${prefix}${randomUUID()}`;
     this.#entries.set(reference, {
+      state: "ready",
       targets: combineTargets(targets),
       complete,
       cwd: path.resolve(cwd),
     });
     return reference;
+  }
+
+  /** Reserve an operation result before writing. It has no source authority until confirmed. */
+  public reserve(cwd: string): string {
+    const reference = `${prefix}${randomUUID()}`;
+    this.#entries.set(reference, { state: "pending", cwd: path.resolve(cwd) });
+    return reference;
+  }
+
+  /** Resolve one pending operation to an immutable committed snapshot, exactly once. */
+  public confirm(reference: string, targets: readonly ResultSourceTarget[], cwd: string): void {
+    const entry = this.#entries.get(reference);
+    if (entry?.state !== "pending" || entry.cwd !== path.resolve(cwd))
+      throw new Error("Only a pending result in this worktree can be confirmed.");
+    this.#entries.set(reference, {
+      state: "ready",
+      cwd: entry.cwd,
+      targets: combineTargets(targets),
+      complete: true,
+    });
+  }
+
+  /** Failed or cancelled operations cannot turn their reserved handle into live text. */
+  public reject(reference: string, reason: string): void {
+    const entry = this.#entries.get(reference);
+    if (entry?.state !== "pending") return;
+    this.#entries.set(reference, { state: "rejected", cwd: entry.cwd, reason });
   }
 
   /** Traverse supported result shapes and resolve only registered source targets. */
@@ -65,6 +99,9 @@ export class ResultTargetStore {
         throw new Error("Result target expired or unknown; repeat Read/Search.");
       if (entry.cwd !== path.resolve(cwd))
         throw new Error("Result target belongs to another worktree.");
+      if (entry.state === "pending")
+        throw new Error("Result target is pending; its write has not been confirmed.");
+      if (entry.state === "rejected") throw new Error(entry.reason);
       complete &&= entry.complete;
       targets.push(...entry.targets);
     }
