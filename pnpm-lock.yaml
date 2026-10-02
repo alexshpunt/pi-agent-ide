@@ -266,6 +266,9 @@ importers:
       pi-agent-image:
         specifier: workspace:^
         version: link:../../../../../packages/pi-agent-image
+      pi-agent-invariant:
+        specifier: workspace:^
+        version: link:../../../../../packages/pi-agent-invariant
       pi-agent-read:
         specifier: workspace:^
         version: link:../..
