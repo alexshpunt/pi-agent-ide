@@ -132,6 +132,7 @@ export class TerminalSessionManager {
       completion,
       resolveCompletion,
       completionDelivered: false,
+      staleReminderDelivered: false,
     };
 
     let process: IPty;
