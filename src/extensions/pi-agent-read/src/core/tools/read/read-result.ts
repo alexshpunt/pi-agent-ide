@@ -137,7 +137,23 @@ function renderFinalTextLines(
 
 export function failureResult(failure: ReadFailure): ReadToolResult {
   return {
-    content: [{ type: "text", text: `${failure.code}: ${failure.message}` }],
+    content: [
+      {
+        type: "text",
+        text: [
+          `${failure.code}: ${failure.message}`,
+          ...(failure.candidates?.length
+            ? [
+                "",
+                "Possible matches:",
+                ...failure.candidates.map((candidate) => `- ${JSON.stringify(candidate.path)}`),
+                "",
+                "Retry read with an exact candidate path.",
+              ]
+            : []),
+        ].join("\n"),
+      },
+    ],
     details: { failure },
     isError: true,
   };

@@ -83,7 +83,7 @@ describe("text mutation render state", () => {
 
     expect(changedExecute).toMatchObject({
       kind: "modified",
-      addedRanges: [{ from: 4, to: 15 }],
+      addedRanges: [{ from: 12, to: 13 }],
     });
 
     const previousVisible = "function run() {\n";
@@ -104,8 +104,41 @@ describe("text mutation render state", () => {
 
     expect(advancedExecute).toMatchObject({
       kind: "modified",
-      addedRanges: [{ from: 4, to: 8 }],
+      addedRanges: [],
+      deletedOffsets: [],
     });
+  });
+
+  test("marks a deletion only after its streamed line completes and keeps that row stable", () => {
+    const beforeContent = "return await run();\nend";
+    const afterContent = "return run();\nend";
+    const resource: TextMutationPreviewResource = {
+      path: "worker.ts",
+      beforeRanges: [{ from: 0, to: beforeContent.length }],
+      ranges: [{ from: 0, to: afterContent.length }],
+      beforeContent,
+      afterContent,
+    };
+    const partial = "return run();";
+    const previous = projectTypingResources([resource], afterContent, partial);
+    expect(previous[0]?.model?.rows[0]?.deletedOffsets).toEqual([]);
+    const completed = advanceTypingProjectionResources(
+      [resource],
+      afterContent,
+      previous,
+      partial,
+      partial + "\n",
+    );
+    const row = completed?.[0]?.model?.rows[0];
+    expect(row?.deletedOffsets).toEqual([7]);
+    const advanced = advanceTypingProjectionResources(
+      [resource],
+      afterContent,
+      requiredValue(completed),
+      partial + "\n",
+      afterContent,
+    );
+    expect(advanced?.[0]?.model?.rows[0]).toBe(row);
   });
 
   test("keeps the generated viewport while rendering the actual final file", () => {

@@ -15,6 +15,7 @@ import {
 } from "pi-agent-text-editor/api/plugin-protocol";
 
 import { createFilesystemReadResolver, createFilesystemWriteResolver } from "#src/resolver.js";
+import { recoverFilesystemPath } from "#src/path-recovery.js";
 
 const readTarget = { provider: "filesystem", capability: "read" } satisfies ContentTarget;
 const writeTarget = { provider: "filesystem", capability: "write" } satisfies ContentTarget;
@@ -30,7 +31,11 @@ export default async function registerFilesystemPlugin(pi: ExtensionAPI): Promis
     apiVersion: READ_API_VERSION,
     id: "filesystem",
     setup(api) {
-      api.addResolver({ resolver: readResolver, renderResult: renderReadResult });
+      api.addResolver({
+        resolver: readResolver,
+        renderResult: renderReadResult,
+        recoverFailure: recoverFilesystemPath,
+      });
       api.describe(() =>
         renderContentDescription(
           "File path — file content; directory path — entry listing. Relative, absolute and file:// paths accepted.",
