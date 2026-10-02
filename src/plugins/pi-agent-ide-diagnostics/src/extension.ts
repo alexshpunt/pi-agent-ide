@@ -106,13 +106,11 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
           if (check && context.result) {
             return {
               kind: "continue",
-              context: {
-                ...context,
-                result: {
-                  ...context.result,
-                  details: { ...context.result.details, diagnosticCheck: check },
-                },
-              },
+              context,
+              transform: (result) => ({
+                ...result,
+                details: { ...result.details, diagnosticCheck: check },
+              }),
             };
           }
           const document = documents.get(context.request);
@@ -122,15 +120,17 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
           if (!status || !result || first?.type !== "text") return { kind: "continue", context };
           return {
             kind: "continue",
-            context: {
-              ...context,
-              result: {
-                ...result,
+            context,
+            transform(updated) {
+              const first = updated.content[0];
+              if (first?.type !== "text") return updated;
+              return {
+                ...updated,
                 content: [
                   { ...first, text: `${status}\n${first.text}` },
-                  ...result.content.slice(1),
+                  ...updated.content.slice(1),
                 ],
-              },
+              };
             },
           };
         },

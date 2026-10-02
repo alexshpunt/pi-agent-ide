@@ -224,7 +224,16 @@ export interface ReadToolResult {
 }
 
 export type ReadStageOutcome =
-  | { readonly kind: "continue"; readonly context: ReadPipelineContext }
+  | {
+      readonly kind: "continue";
+      readonly context: ReadPipelineContext;
+      /**
+       * Post-read handlers inspect the same base result concurrently. Return a pure
+       * decoration here; transforms apply in registration order, unless a handler
+       * returns a final result. Context changes are ignored during post-read.
+       */
+      readonly transform?: (result: ReadToolResult) => ReadToolResult;
+    }
   | { readonly kind: "return"; readonly result: ReadToolResult };
 
 export type ReadPreReadHandler = ReadPipelineHandler;

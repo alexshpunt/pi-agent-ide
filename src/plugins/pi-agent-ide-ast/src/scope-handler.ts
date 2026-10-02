@@ -85,9 +85,13 @@ export function createAstScopePostReadHandler(): ReadPostReadHandler {
       (left, right) => left.lineNumber - right.lineNumber,
     );
     const lines = [...renderedLines, ...appendedLines];
-    const updatedResult = appendTextLines(result, lines, renderedLines.at(-1));
+    const lastRenderedLine = renderedLines.at(-1);
 
-    return { kind: "continue", context: { ...context, result: updatedResult } };
+    return {
+      kind: "continue",
+      context,
+      transform: (updated) => appendTextLines(updated, lines, lastRenderedLine),
+    };
   };
 }
 
