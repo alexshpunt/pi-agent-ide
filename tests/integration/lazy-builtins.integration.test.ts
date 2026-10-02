@@ -28,6 +28,7 @@ test("registers only selected built-ins", async () => {
       "src/pi-agent-ide.ts",
       "src/composite/host-version.ts",
       "src/composite/tool-availability.ts",
+      "src/composite/nested-tool-rendering.ts",
       "src/composite/selection.ts",
       "src/composite/extensions-config.ts",
       "src/composite/feature-flags.ts",
