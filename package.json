@@ -244,7 +244,7 @@
     "pi-agent-search-text": "workspace:^",
     "pi-agent-text-anchor-exact": "workspace:^",
     "pi-agent-text-anchor-line-hash": "workspace:^",
-    "pi-coding-agent-test": "npm:@alexshp/pi-coding-agent-test@^0.0.0-dev.1790864392",
+    "pi-coding-agent-test": "0.1.3",
     "typebox": "^1.1.38",
     "vitest": "^4.1.10"
   },

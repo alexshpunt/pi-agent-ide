@@ -63,7 +63,7 @@ for (const expanded of [false, true]) {
       const options = {
         cwd: workspace,
         extensions,
-        tools: [name],
+        tools: [name, ...(name === "replace" ? ["read"] : [])],
         rawMode: false,
         isolateUserResources: true,
         artifactsDir: testArtifactsDir(
@@ -77,6 +77,20 @@ for (const expanded of [false, true]) {
         ...options,
         testName: `${baseline ? "baseline" : "compact"}-${id}`,
         conversation: [
+          ...(name === "replace"
+            ? [
+                assistantMessage(
+                  [
+                    toolCall({
+                      id: "editing-guide",
+                      name: "read",
+                      arguments: { path: "docs:editing" },
+                    }),
+                  ],
+                  { stopReason: "toolUse" },
+                ),
+              ]
+            : []),
           assistantMessage([toolCall({ id, name, arguments: arguments_, delayMs: 0 })], {
             stopReason: "toolUse",
           }),

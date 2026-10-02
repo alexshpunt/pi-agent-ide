@@ -63,30 +63,20 @@ test.each(["direct", "native", "apply-only"] as const)(
             ? [
                 call("discover", "tool_search", { query: "edit", limit: 20 }),
                 call("script", "codemode", {
-                  code: 'text({editType: typeof tools.edit, matches: await searchTools("edit", {limit: 20}), description: await describeTool("edit")});',
+                  code: 'let description; try { description = await describeTool("edit"); } catch {} text({editType: "edit" in tools ? "available" : "undefined", matches: await searchTools("edit", {limit: 20}), description});',
                 }),
               ]
             : []),
           call("direct-edit", "edit", {}),
           ...(applyOnly
             ? [
-                call("apply-guide", "apply", {
-                  source:
-                    'const file = open("subject.txt"); file.replace(file.find("alpha"), "alpha\\nrecovered");',
-                }),
                 call("apply", "apply", {
                   source:
                     'const file = open("subject.txt"); file.replace(file.find("alpha"), "alpha\\nrecovered");',
                 }),
               ]
             : [
-                call("read-guide", "read", { path: "subject.txt", views: ["anchors"] }),
                 call("read", "read", { path: "subject.txt", views: ["anchors"] }),
-                call("insert-guide", "insert", {
-                  path: "subject.txt",
-                  anchor: "1#BE76",
-                  text: "recovered",
-                }),
                 call("insert", "insert", {
                   path: "subject.txt",
                   anchor: "1#BE76",

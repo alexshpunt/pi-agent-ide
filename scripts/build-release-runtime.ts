@@ -111,6 +111,7 @@ export async function buildReleaseRuntime(
         name: "release-runtime",
         setup(builder) {
           builder.onResolve({ filter: /^[^./#]/ }, ({ path: specifier }) => {
+            if (path.isAbsolute(specifier)) return undefined;
             const name = specifier.startsWith("@")
               ? specifier.split("/").slice(0, 2).join("/")
               : specifier.split("/")[0];
