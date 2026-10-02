@@ -27,6 +27,7 @@ export default async function registerTerminal(
       description: "Foreground and background commands, shell resources, and processes",
       triggers: [
         { tool: "bash" },
+        { tool: "powershell" },
         ...["read", "write", "insert", "delete"].map((tool) => ({
           tool,
           resourcePrefixes: ["shell:", "process:"],
