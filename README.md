@@ -128,7 +128,7 @@ Filesystem and HTTP reads, resource views, content converters, search backends, 
 
 A person can see the agent's edits, diffs, diagnostics, running processes, debugger state, and failures. Bounded presentation keeps live output readable without discarding the underlying result. Guarded snapshots and first-class undo make mistakes visible and recovery inexpensive.
 
-IDE tools called from native Codemode keep their custom panels in a separate block below the script, even when the script prints no results. The block survives session restore and tree navigation. Oversized or missing display data is marked as incomplete; rendering never repeats an operation or adds its cost again.
+IDE tools called from native Codemode keep their custom panels in a separate block below the script, even when the script prints no results. Successful edits in one batch show one final diff per file, without intermediate edit cards or an extra block title. The panels survive session restore and tree navigation. Oversized or missing display data is marked as incomplete; rendering never repeats an operation or adds its cost again.
 
 <div align="center">
 

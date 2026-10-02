@@ -21,7 +21,9 @@ interface ChildPanel {
   id: string;
   name: string;
   args: unknown;
+  renderArgs?: unknown;
   omitted?: boolean;
+  batched?: boolean;
   result?: { content: AgentToolResult<unknown>["content"]; details: unknown; isError: boolean };
 }
 interface BatchReport {
@@ -161,6 +163,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
     const saved: PanelGroup = { ...group, calls: [], complete: group.complete };
     let bytes = 0;
     for (const call of group.calls) {
+      if (call.batched) continue;
       const json = JSON.stringify(call);
       bytes += Buffer.byteLength(json);
       if (bytes > MAX_BYTES) {
@@ -187,12 +190,11 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
     let panel = components.get(entry.data);
     if (!panel) {
       panel = new Container();
-      panel.addChild(new Text(theme.fg("toolTitle", theme.bold("Nested IDE results")), 0, 0));
       for (const call of entry.data.calls) {
         const component = new ToolExecutionComponent(
           call.name,
           call.id,
-          call.args,
+          call.renderArgs ?? call.args,
           { showImages: true },
           call.omitted || !call.result ? undefined : definitions.get(call.name),
           tui,
@@ -220,9 +222,6 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
         );
       components.set(entry.data, panel);
     }
-    const title = panel.children[0];
-    if (title instanceof Text)
-      title.setText(theme.fg("toolTitle", theme.bold("Nested IDE results")));
     const warning = panel.children.at(-1);
     if (!entry.data.complete && warning instanceof Text)
       warning.setText(
@@ -241,26 +240,19 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
       for (const id of batch.calls) {
         const call = group.calls.find((call) => call.id === id);
         if (!call) continue;
-        retainResult(
-          group,
-          call,
-          id === batch.calls.at(-1)
-            ? {
-                content: batch.result.content,
-                details,
-                isError: batch.result.isError === true,
-              }
-            : {
-                content: [
-                  {
-                    type: "text",
-                    text: "Applied in the same editor batch; final diff follows its last call.",
-                  },
-                ],
-                details: { results: [] },
-                isError: false,
-              },
-        );
+        // Native history keeps every call; user presentation keeps the final batch diff only.
+        call.batched = id !== batch.calls.at(-1);
+        if (call.batched) call.result = undefined;
+        else {
+          // A multi-file batch has no single source: let the existing renderer label each file.
+          if (new Set(details.mutationRender?.map((resource) => resource.path)).size > 1)
+            call.renderArgs = {};
+          retainResult(group, call, {
+            content: batch.result.content,
+            details,
+            isError: batch.result.isError === true,
+          });
+        }
       }
     });
     pi.on("tool_result", (event) => {
@@ -279,6 +271,8 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
             if (!call) continue;
             const errors = operation.errors.map((error) => error.message);
             if (errors.length > 0 || operation.effect !== "applied") {
+              call.batched = false;
+              delete call.renderArgs;
               retainResult(group, call, {
                 content: [
                   {

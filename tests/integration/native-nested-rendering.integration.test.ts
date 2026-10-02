@@ -72,7 +72,7 @@ test("nested IDE results keep their custom panels below Codemode without script 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'await tools.read({path:"note.txt"}); await tools.search({path:"note.txt",query:"beta"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"});',
+                code: 'await tools.read({path:"note.txt"}); await tools.search({path:"note.txt",query:"beta"}); await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"});',
               },
             }),
           ],
@@ -82,11 +82,13 @@ test("nested IDE results keep their custom panels below Codemode without script 
       ],
     }).run("Run nested IDE tools without printing their results");
     expect(getToolExecution(run, "parent").isError).toBe(false);
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\n");
-    expect(run.tuiRenderedOutput).toContain("Nested IDE results");
-    const panels = run.tuiRenderedOutput.split("Nested IDE results")[1] ?? "";
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\n");
+    expect(run.tuiRenderedOutput).not.toContain("Nested IDE results");
+    const panels = run.tuiRenderedOutput;
     expect(panels).toContain("BETA");
-    expect(panels).toContain("+0 ~1 -0");
+    expect(panels.match(/\+0 ~2 -0/g)).toHaveLength(1);
+    expect(panels).not.toContain("Applied in the same editor batch");
+    expect(getToolResultMessage(run, "parent").nestedCalls?.calls).toHaveLength(4);
     expect(panels).not.toContain("not yet applied");
     const saved = await PiRun.open(run.artifacts.run);
     expect(saved.session).toContain("ide-nested-results");
@@ -124,8 +126,10 @@ test("nested IDE results keep their custom panels below Codemode without script 
       },
       conversation: [assistantMessage([text("Restored")])],
     }).run("/restore-tool-history");
-    const restoredPanels = restored.tuiRenderedOutput.split("Nested IDE results")[1] ?? "";
-    expect(restoredPanels).toContain("+0 ~1 -0");
+    const restoredPanels = restored.tuiRenderedOutput;
+    expect(restoredPanels.match(/\+0 ~2 -0/g)).toHaveLength(1);
+    expect(restoredPanels).not.toContain("Nested IDE results");
+    expect(restoredPanels).not.toContain("Applied in the same editor batch");
     expect(restoredPanels).toContain("BETA");
     expect(restoredPanels).not.toContain("not yet applied");
     await promisify(execFile)(process.env.PI_COMMAND ?? "pi", [
@@ -146,9 +150,10 @@ test("nested IDE results keep their custom panels below Codemode without script 
   });
 });
 
-test("ordinary parent failure preserves committed batch effects without repeating its diff", async () => {
+test("ordinary parent failure keeps one final diff per file and every native call", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
+    await writeFile(path.join(cwd, "other.txt"), "gamma\n");
     const run = await new PiIntegrationTest({
       testName: "nested-parent-error",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -163,7 +168,7 @@ test("ordinary parent failure preserves committed batch effects without repeatin
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); throw new Error("parent stopped");',
+                code: 'await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); await tools.replace({path:"other.txt",start:"gamma",text:"GAMMA"}); throw new Error("parent stopped");',
               },
             }),
           ],
@@ -174,9 +179,24 @@ test("ordinary parent failure preserves committed batch effects without repeatin
     }).run("Edit both lines then fail");
     expect(getToolExecution(run, "parent").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\n");
-    const panels = run.tuiRenderedOutput.split("Nested IDE results")[1] ?? "";
-    expect(panels).toContain("Applied in the same editor batch");
-    expect(panels.match(/\+0 ~2 -0/g)).toHaveLength(1);
+    const panels = run.tuiRenderedOutput;
+    expect(panels).not.toContain("Applied in the same editor batch");
+    expect(panels).not.toContain("Nested IDE results");
+    expect(panels.match(/\+0 ~3 -0/g)).toHaveLength(1);
+    expect(panels).toContain("replace 2 files");
+    for (const file of ["note.txt", "other.txt"])
+      expect(
+        panels.split("\n").filter((line) => line.includes("╭─") && line.includes(file)),
+      ).toHaveLength(1);
+    expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("GAMMA\n");
+    expect(getToolResultMessage(run, "parent").nestedCalls?.calls).toHaveLength(3);
+    const saved = await PiRun.open(run.artifacts.run);
+    const entry = JSON.parse(
+      saved.session
+        ?.split("\n")
+        .find((line) => line.includes('"customType":"ide-nested-results"')) ?? "{}",
+    ) as { data: { calls: unknown[] } };
+    expect(entry.data.calls).toHaveLength(1);
     expect(panels).not.toContain("not yet applied");
   });
 });
@@ -250,7 +270,7 @@ test("nested terminal and debugger calls retain their custom panels and a child 
       ],
     }).run("Run terminal and debugger work followed by a failed Read");
     expect(getToolExecution(run, "parent").isError).toBe(false);
-    const panels = run.tuiRenderedOutput.split("Nested IDE results")[1] ?? "";
+    const panels = run.tuiRenderedOutput;
     expect(panels).toContain("nested-terminal");
     expect(panels).toContain("nested-background");
     expect(panels).toContain("debugpy");
@@ -294,7 +314,7 @@ test("a deadline renders accepted edits as not applied rather than successful", 
     }).run("Reach a deadline before writing accepted edits");
     expect(getToolExecution(run, "parent").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\n");
-    const panels = run.tuiRenderedOutput.split("Nested IDE results")[1] ?? "";
+    const panels = run.tuiRenderedOutput;
     expect(panels).toContain("Not changed");
     expect(panels).not.toContain("not yet applied");
     expect(panels).not.toContain("+0 ~1 -0");
