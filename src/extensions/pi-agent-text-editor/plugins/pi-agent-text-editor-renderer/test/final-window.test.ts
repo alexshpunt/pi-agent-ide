@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { lineDiff } from "diff";
+import { DefaultLinesDiffComputer } from "vscode-diff";
 
 import { FileMutationResult } from "pi-agent-text-editor/api/mutation-result";
 import { resolveMutationResultResources } from "#src/mutation-result.js";
@@ -233,7 +233,9 @@ test("compact omission counts include the rows replaced by indicators", () => {
 
 test("alignment budget exhaustion is explicit without inventing counts", () => {
   const frozen = freezeMutationViewports([resource]);
-  const diff = vi.spyOn(lineDiff, "diff").mockReturnValue([]);
+  const diff = vi
+    .spyOn(DefaultLinesDiffComputer.prototype, "computeDiff")
+    .mockReturnValue({ changes: [], moves: [], hitTimeout: true });
   try {
     const model = requiredValue(
       projectFinalResources([{ ...resource, afterContent: formatted }], frozen)[0]?.model,

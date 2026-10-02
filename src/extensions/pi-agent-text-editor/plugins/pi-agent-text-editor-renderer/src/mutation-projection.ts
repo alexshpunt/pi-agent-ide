@@ -1,6 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import {
   createDiffModel,
+  compareInlineText,
   DIFF_CONTEXT_LINES,
   type DiffModel,
   type DiffRow,
@@ -204,7 +205,7 @@ function advanceTypingProjectionResource(
   );
   const row = model.rows[rowIndex];
 
-  if (row === undefined || row.kind === "omitted") {
+  if (row === undefined || row.kind === "omitted" || row.beforeLine !== undefined) {
     return undefined;
   }
 
@@ -222,7 +223,7 @@ function advanceTypingProjectionResource(
   }
 
   const rows = [...model.rows];
-  const kind = row.beforeLine === undefined ? "added" : "modified";
+  const kind = "added";
   rows[rowIndex] = {
     ...row,
     kind,
@@ -237,8 +238,8 @@ function advanceTypingProjectionResource(
     model: {
       ...model,
       rows,
-      added: model.added + (kind === "added" ? 1 : 0) - (row.kind === "added" ? 1 : 0),
-      modified: model.modified + (kind === "modified" ? 1 : 0) - (row.kind === "modified" ? 1 : 0),
+      added: model.added + 1 - (row.kind === "added" ? 1 : 0),
+      modified: model.modified - (row.kind === "modified" ? 1 : 0),
       focusRow: rowIndex,
     },
   };
@@ -272,6 +273,7 @@ function advanceFullFileTypingResource(
   let added = model.added;
   let modified = model.modified;
   const isAfterNewline = previousVisibleText.endsWith("\n");
+  const deadline = performance.now() + 100;
   const active = rows.at(-1);
   const suffix = [...fullFileLines(isAfterNewline ? appended : `${active?.text ?? ""}${appended}`)];
 
@@ -281,8 +283,14 @@ function advanceFullFileTypingResource(
       requiredValue(suffix[0]),
       rows.length - 1,
       visibleText.endsWith("\n") && suffix.length === 1 && requiredValue(suffix[0]).length === 0,
+      suffix.length > 1,
+      deadline,
     );
-    if (active.text !== next.text || active.kind !== next.kind) {
+    if (
+      active.text !== next.text ||
+      active.kind !== next.kind ||
+      active.deletedOffsets?.join(",") !== next.deletedOffsets?.join(",")
+    ) {
       added += (next.kind === "added" ? 1 : 0) - (active.kind === "added" ? 1 : 0);
       modified += (next.kind === "modified" ? 1 : 0) - (active.kind === "modified" ? 1 : 0);
       rows[rows.length - 1] = next;
@@ -296,6 +304,8 @@ function advanceFullFileTypingResource(
       text,
       rows.length,
       offset === suffix.length - 1 && visibleText.endsWith("\n"),
+      offset < suffix.length - 1,
+      deadline,
     );
     rows.push(row);
     modified += row.kind === "modified" ? 1 : 0;
@@ -326,6 +336,8 @@ function createTypingLine(
   text: string,
   index: number,
   isTrailingCursorRow = false,
+  complete = false,
+  deadline = performance.now() + 100,
 ): DiffRow {
   const beforeText = beforeLines[index];
   if (isTrailingCursorRow || beforeText?.trim() === text.trim()) {
@@ -344,7 +356,7 @@ function createTypingLine(
     ...(beforeText !== undefined && { beforeLine: index + 1 }),
     afterLine: index + 1,
     changed: true,
-    addedRanges: typingTextRanges(text),
+    ...typingChanges(beforeText, text, complete, deadline),
   };
 }
 
@@ -462,9 +474,8 @@ function createTypingModel(
     project: false,
     focusAfterLine: cursorLine,
   } as const;
-  const rows = createDiffModel(beforeWindow, afterWindow, [], modelOptions).rows.flatMap(
-    projectTypingRow,
-  );
+  const visibleModel = createDiffModel(beforeWindow, afterWindow, [], modelOptions);
+  const rows = visibleModel.rows.flatMap(projectTypingRow);
   const focusRow = typingFocusRow(rows, cursorLine);
   const finalAfterWindow =
     resource.beforeContent.slice(windowFrom, beforeRange.from) +
@@ -483,6 +494,9 @@ function createTypingModel(
 
   return {
     rows: canonicalRows,
+    ...(visibleModel.omittedChanges !== undefined && {
+      omittedChanges: visibleModel.omittedChanges,
+    }),
     added: canonicalRows.filter(({ kind }) => kind === "added").length,
     modified: canonicalRows.filter(({ kind }) => kind === "modified").length,
     removed: 0,
@@ -510,6 +524,7 @@ function createFullFileTypingModel(
 ): DiffModel {
   const beforeLines = fullFileLines(beforeContent);
   const visibleLines = fullFileLines(visibleContent);
+  const deadline = performance.now() + 100;
   const cursorLine = lineAtOffset(visibleContent, cursorOffset);
   const rows: DiffRow[] = visibleLines.map((text, index) => {
     const line = index + 1;
@@ -536,7 +551,7 @@ function createFullFileTypingModel(
       ...(beforeText !== undefined && { beforeLine: line }),
       afterLine: line,
       changed: true,
-      addedRanges: typingTextRanges(text),
+      ...typingChanges(beforeText, text, index < visibleLines.length - 1, deadline),
     };
   });
 
@@ -565,6 +580,21 @@ function projectTypingRow(row: DiffRow): readonly DiffRow[] {
   return row.kind === "added" ? [{ ...row, addedRanges: typingTextRanges(row.text) }] : [row];
 }
 
+function typingChanges(
+  before: string | undefined,
+  after: string,
+  complete: boolean,
+  deadline: number,
+) {
+  if (before === undefined) return { addedRanges: typingTextRanges(after) };
+  const changes = compareInlineText(before, after, deadline);
+  return changes === undefined
+    ? { addedRanges: [], inlineUnavailable: true }
+    : {
+        ...changes,
+        deletedOffsets: complete ? changes.deletedOffsets : [],
+      };
+}
 function typingTextRanges(text: string): readonly DiffTextRange[] {
   const from = text.length - text.trimStart().length;
   const to = text.trimEnd().length;

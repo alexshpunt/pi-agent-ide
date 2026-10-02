@@ -11,6 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import spawn from "cross-spawn";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 
 import { buildReleaseRuntime } from "#scripts/build-release-runtime.ts";
@@ -159,17 +160,21 @@ await buildReleaseRuntime(
   })),
 );
 
-const packOutput = execFileSync(
+const packed = spawn.sync(
   "npm",
   ["pack", "--ignore-scripts", "--json", "--pack-destination", outputDirectory],
   { cwd: stageDirectory, encoding: "utf8" },
 );
-const packResult = parsePackResult(packOutput);
+if (packed.error) throw packed.error;
+assert(packed.status === 0, `Package packing failed: ${packed.stderr}`);
+const packResult = parsePackResult(packed.stdout);
 const tarballPath = join(outputDirectory, packResult.filename);
 assert(existsSync(tarballPath), `Missing tarball ${tarballPath}`);
 
 mkdirSync(inspectionDirectory, { recursive: true });
-execFileSync("tar", ["-xzf", tarballPath, "-C", inspectionDirectory]);
+execFileSync("tar", ["-xzf", packResult.filename, "-C", "inspection"], {
+  cwd: outputDirectory,
+});
 const extractedPackage = join(inspectionDirectory, "package");
 const report = validatePackage(extractedPackage, packResult, tarballPath);
 writeJson(join(outputDirectory, "report.json"), report);

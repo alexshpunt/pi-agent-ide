@@ -45,6 +45,8 @@ export interface TerminalSession {
   completion: Promise<TerminalSession>;
   resolveCompletion: (session: TerminalSession) => void;
   completionDelivered: boolean;
+  /** Keep the one-time stale reminder state when this session survives a reload. */
+  staleReminderDelivered: boolean;
   waitReason?: TerminalWaitReason;
   completionReason?: TerminalCompletionReason;
   lastActivityAt: number;

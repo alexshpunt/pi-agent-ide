@@ -61,6 +61,14 @@ const native = Type.Object(
   { additionalProperties: false },
 );
 export const readDataSchema = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal("recovery"),
+      source: Type.String(),
+      candidates: Type.Array(Type.Object({ path: Type.String() }, { additionalProperties: false })),
+    },
+    { additionalProperties: false },
+  ),
   text,
   bytes,
   native,
@@ -166,6 +174,11 @@ export function structuredRead(result: ReadToolResult): ReadToolResult {
   if (result.isError || failure !== undefined)
     return withStructuredResult(result, readDataSchema, {
       status: "error",
+      ...(failure?.candidates?.length && failure.source !== undefined
+        ? {
+            data: { kind: "recovery", source: failure.source, candidates: failure.candidates },
+          }
+        : {}),
       errors: [
         {
           code: failure?.code ?? "READ_FAILED",

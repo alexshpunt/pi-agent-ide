@@ -26,7 +26,7 @@ describe("terminal completion UI", () => {
     ui.dispose();
   });
 
-  test("wakes an idle agent after each stale interval and resets on activity", () => {
+  test("wakes an idle agent only once per session despite later activity", () => {
     vi.useFakeTimers();
     try {
       const sendMessage = vi.fn();
@@ -48,21 +48,63 @@ describe("terminal completion UI", () => {
       expect(delivery).toContain('"triggerTurn":true');
       expect(delivery).toContain('"deliverAs":"followUp"');
 
-      vi.advanceTimersByTime(120_000);
-      expect(sendMessage).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(360_000);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
 
       session.lastActivityAt = Date.now();
       manager.change(session);
-      vi.advanceTimersByTime(119_999);
+      vi.advanceTimersByTime(240_000);
+      ui.onAgentSettled({ isIdle: () => true } as ExtensionContext);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+
+      const another = { ...backgroundSession(), id: "second", source: "shell:second" };
+      manager.change(another);
+      vi.advanceTimersByTime(120_000);
       expect(sendMessage).toHaveBeenCalledTimes(2);
-      vi.advanceTimersByTime(1);
-      expect(sendMessage).toHaveBeenCalledTimes(3);
       ui.dispose();
     } finally {
       vi.useRealTimers();
     }
   });
 
+  test("keeps the reminder consumed across UI reload and still delivers completion", () => {
+    vi.useFakeTimers();
+    try {
+      const sendMessage = vi.fn();
+      const manager = fakeManager();
+      const pi = extensionApi({
+        registerMessageRenderer: vi.fn(),
+        registerCommand: vi.fn(),
+        sendMessage,
+      });
+      const context = { isIdle: () => true } as ExtensionContext;
+      const ui = new TerminalUi(pi, manager.value, 120_000);
+      ui.bind(context);
+      const session = backgroundSession();
+      manager.change(session);
+      vi.advanceTimersByTime(120_000);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      ui.dispose();
+
+      const reloaded = new TerminalUi(pi, manager.value, 120_000);
+      reloaded.bind(context);
+      manager.change(session);
+      vi.advanceTimersByTime(360_000);
+      reloaded.onAgentSettled(context);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+
+      manager.complete(session);
+      vi.advanceTimersByTime(120);
+      expect(sendMessage).toHaveBeenCalledTimes(2);
+      expect(sendMessage.mock.lastCall?.[0]).toMatchObject({
+        customType: "terminal-completion",
+      });
+      expect(session.completionDelivered).toBe(true);
+      reloaded.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   test("defers a stale wakeup until the agent settles", () => {
     vi.useFakeTimers();
     try {
@@ -113,14 +155,20 @@ function backgroundSession(): TerminalSession {
     completion: new Promise(() => {}),
     resolveCompletion: () => {},
     completionDelivered: false,
+    staleReminderDelivered: false,
   };
 }
 
 function fakeManager() {
   let changeListener: ((session: TerminalSession) => void) | undefined;
+  let completeListener: ((session: TerminalSession) => void) | undefined;
   const sessions = new Map<string, TerminalSession>();
   return {
     sessions,
+    complete(session: TerminalSession) {
+      session.status = "completed";
+      completeListener?.(session);
+    },
     change(session: TerminalSession) {
       sessions.set(session.id, session);
       changeListener?.(session);
@@ -132,8 +180,11 @@ function fakeManager() {
           changeListener = undefined;
         };
       },
-      onDidComplete(_listener: (session: TerminalSession) => void) {
-        return () => {};
+      onDidComplete(listener: (session: TerminalSession) => void) {
+        completeListener = listener;
+        return () => {
+          completeListener = undefined;
+        };
       },
       get(id: string) {
         return sessions.get(id.replace("shell:", ""));

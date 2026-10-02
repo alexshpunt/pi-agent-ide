@@ -162,7 +162,10 @@ function expectHighlightedSearchBackgrounds(terminalOutput: string, match: strin
       break;
     }
 
-    const rowStart = terminalOutput.lastIndexOf("\n", matchAt) + 1;
+    const rowStart = Math.max(
+      terminalOutput.lastIndexOf("\n", matchAt) + 1,
+      terminalOutput.lastIndexOf("\u001B[2K", matchAt) + 4,
+    );
     const enclosingBackground = terminalOutput
       .slice(rowStart, matchAt)
       .match(/\u001B\[48(?:;\d+)+m/u)?.[0];

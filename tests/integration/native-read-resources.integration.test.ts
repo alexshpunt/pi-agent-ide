@@ -97,6 +97,8 @@ test.each([false, true])(
       const headers = (output: string) =>
         output
           .split(/\n[ \t]*\n/u)
+          // Recovery hints can mention a native resource without being its read header.
+          .filter((block) => !block.includes("Possible matches:"))
           .map((block) =>
             block
               .split("\n")

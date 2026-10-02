@@ -66,6 +66,7 @@ interface RegisteredResourceGuard {
 }
 
 interface RegisteredResolver {
+  readonly recoverFailure?: ResourceResolverRegistration["recoverFailure"];
   readonly resolver: ResourceResolver;
   readonly matchesCall?: (source: string) => boolean;
   readonly renderCall?: NonNullable<ToolDefinition["renderCall"]>;
@@ -308,6 +309,9 @@ export function createReadTool(
           }),
           priority: registration.priority ?? 0,
           preserveTruncatedOutput: registration.preserveTruncatedOutput ?? false,
+          ...(registration.recoverFailure === undefined
+            ? {}
+            : { recoverFailure: registration.recoverFailure }),
           order: resolvers.length,
         });
       }
@@ -808,6 +812,15 @@ async function resolveSource(
 
   for (const registeredResolver of resolvers) {
     const { resolver } = registeredResolver;
+    const recoveredFailure = async (failure: ReadFailure): Promise<ReadToolResult> => {
+      try {
+        const candidates = await registeredResolver.recoverFailure?.(failure, resolverContext);
+        return failureResult({ ...failure, ...(candidates?.length ? { candidates } : {}) });
+      } catch {
+        // A failed hint search must never replace the original read error.
+        return failureResult(failure);
+      }
+    };
     let attempt: unknown;
 
     try {
@@ -815,7 +828,7 @@ async function resolveSource(
     } catch (error) {
       return {
         kind: "return",
-        result: failureResult({
+        result: await recoveredFailure({
           code: "RESOLVE_FAILED",
           source,
           resolverId: resolver.id,
@@ -845,7 +858,7 @@ async function resolveSource(
     if (attempt.kind === "failed") {
       return {
         kind: "return",
-        result: failureResult({
+        result: await recoveredFailure({
           code: "RESOLVE_FAILED",
           source,
           resolverId: resolver.id,
@@ -922,7 +935,7 @@ async function resolveSource(
     } catch (error) {
       return {
         kind: "return",
-        result: failureResult({
+        result: await recoveredFailure({
           code: "READ_FAILED",
           source: resource.source,
           resolverId: resolver.id,

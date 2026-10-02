@@ -52,7 +52,7 @@ if (available !== ${!disabled}) throw new Error("Wrong LSP module state");
         ],
       }).run("Check module selection through actual tools");
       const execution = getToolExecution(run, "probe");
-      expect(execution.isError, JSON.stringify(execution)).toBe(false);
+      expect(execution.isError, JSON.stringify(execution)).toBe(disabled);
     });
   },
 );
