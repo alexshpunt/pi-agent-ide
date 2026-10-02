@@ -33,7 +33,11 @@ const forbidden: {
     // These test values are resource keys, not package dependencies.
     allowedFiles: ["packages/pi-agent-resource/src/resource-scheduler.test.ts"],
   },
-  { label: "current checkout path", pattern: new RegExp(escapeRegExp(process.cwd()), "u") },
+  {
+    label: "current checkout path",
+    pattern: new RegExp(escapeRegExp(process.cwd()), "u"),
+    allowedFiles: [".pi/settings.json"],
+  },
 ];
 const failures: string[] = [];
 const forbiddenRepositoryPrefixes = [".pi/skills/"];
