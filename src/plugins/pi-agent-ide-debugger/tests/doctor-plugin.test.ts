@@ -56,12 +56,7 @@ test("Doctor falls back to python3 when python is unavailable on Windows", async
   expect(result.actions).toEqual([]);
 });
 
-const adapterCases: {
-  language: string;
-  runtimes: string[];
-  adapter?: string;
-  variable: string;
-}[] = [
+const adapterCases = [
   {
     language: "csharp",
     runtimes: ["dotnet"],
