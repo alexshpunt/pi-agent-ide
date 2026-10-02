@@ -480,6 +480,7 @@ jobs:
           path: |
             .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/run.jsonl
             .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/tui-rendered.log
+            .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/error.log
           include-hidden-files: true
           if-no-files-found: error
 

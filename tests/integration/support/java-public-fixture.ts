@@ -4,19 +4,6 @@ import { Type } from "typebox";
 /** Exercise public tools with the ids and anchors they return, without rewriting streamed arguments. */
 export default function javaPublicFixture(pi: ExtensionAPI): void {
   let source: string | undefined;
-  pi.registerCommand("java-lifecycle-reload", {
-    description: "Reload the candidate before checking the Java lifecycle.",
-    async handler(_args, ctx) {
-      await ctx.reload();
-    },
-  });
-  pi.on("resources_discover", (event) => {
-    if (event.reason === "reload")
-      pi.sendUserMessage(
-        "Debug Main.java at line 4, inspect subtotal, then continue and clean up.",
-        { deliverAs: "followUp" },
-      );
-  });
   pi.registerTool({
     name: "check_java_lifecycle",
     label: "Check Java lifecycle",

@@ -45,6 +45,8 @@ test.runIf(enabled)(
         rawMode: false,
         isolateUserResources: true,
         tuiSize: { cols: 120, rows: 40 },
+        // Leave time for the harness to save failure evidence before Vitest's 30s deadline.
+        timeoutMs: 25_000,
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         extensions: [
@@ -67,7 +69,7 @@ test.runIf(enabled)(
           call("continue", "check_java_lifecycle", { phase: "continue" }),
           assistantMessage([text("Java lifecycle complete.")]),
         ],
-      }).run("/java-lifecycle-reload");
+      }).run("Debug Main.java at line 4, inspect subtotal, then continue and clean up.");
       for (const id of [
         "guide",
         "start",
