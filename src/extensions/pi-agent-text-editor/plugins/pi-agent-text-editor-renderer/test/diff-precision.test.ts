@@ -9,6 +9,23 @@ function modified(before: string, after: string) {
 }
 
 describe("precise inline changes", () => {
+  test("keeps a full replacement block available within the alignment budget", () => {
+    const before = Array.from({ length: 60 }, (_, index) => `const filler${index} = ${index};`);
+    const replacements = Array.from(
+      { length: 18 },
+      (_, index) =>
+        `const swappedLine${String(index + 1).padStart(2, "0")} = "diff-view-row-${String(index + 1).padStart(2, "0")}";`,
+    );
+    const after = [...before];
+    after.splice(9, replacements.length, ...replacements);
+    const model = createDiffModel(`${before.join("\n")}\n`, `${after.join("\n")}\n`, [], {
+      project: false,
+    });
+    expect(model.omittedChanges?.unavailable).not.toBe(true);
+    for (const text of replacements) {
+      expect(model.rows.some((row) => row.text === text)).toBe(true);
+    }
+  });
   test.each([
     ["timeout: 1_000,", "timeout: 5_000,", [{ from: 9, to: 10 }]],
     ["const userId = 1;", "const userID = 1;", [{ from: 11, to: 12 }]],
