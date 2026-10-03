@@ -24,18 +24,44 @@ const match = Type.Object(
   },
   { additionalProperties: false },
 );
+const selectionProperties = {
+  kind: Type.Literal("matches"),
+  truncated: Type.Optional(Type.Boolean()),
+  fullResult: Type.Optional(Type.String()),
+  complete: Type.Boolean(),
+  matches: Type.Array(match),
+  all: Type.Optional(references),
+  notices: Type.Optional(Type.Array(Type.String())),
+};
+/** Separate possible-name groups with exact captured ranges and optional Read references. */
+export const fuzzyDataSchema = Type.Object(
+  {
+    status: Type.Union([Type.Literal("ready"), Type.Literal("skipped")]),
+    message: Type.Optional(Type.String()),
+    candidates: Type.Array(
+      Type.Object(
+        {
+          identifier: Type.String(),
+          kind: Type.Union([
+            Type.Literal("normalized"),
+            Type.Literal("component"),
+            Type.Literal("typo"),
+          ]),
+          reason: Type.String(),
+          matchCount: Type.Integer(),
+          fileCount: Type.Integer(),
+          selection: Type.Object(selectionProperties, { additionalProperties: false }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
 /** Resolver adapters supply selected domain fields, never renderer details or raw backend objects. */
 export const searchDataSchema = Type.Union([
   Type.Object(
-    {
-      kind: Type.Literal("matches"),
-      truncated: Type.Optional(Type.Boolean()),
-      fullResult: Type.Optional(Type.String()),
-      complete: Type.Boolean(),
-      matches: Type.Array(match),
-      all: Type.Optional(references),
-      notices: Type.Optional(Type.Array(Type.String())),
-    },
+    { ...selectionProperties, fuzzy: Type.Optional(fuzzyDataSchema) },
     { additionalProperties: false },
   ),
   Type.Object(

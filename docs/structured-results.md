@@ -24,6 +24,12 @@ Check `status` before using data. Domain errors with structured results resolve 
 - **Git index tools:** return action, change selector, file, index state, observed effect, and whether it was already in the requested state.
 - **Debugger:** creation returns session, source, and breakpoint resource references plus configuration and status. Debugger mutation actions return selected breakpoint or evaluation fields, not full session snapshots.
 
+### Possible-name groups
+
+After a complete zero result, eligible local and URL identifier searches can add `fuzzy: { status, message?, candidates }`. The original `matches` stays empty. Each candidate has `identifier`, a mechanical `kind` and `reason`, captured `matchCount` and `fileCount`, and a separate `selection` using the normal match/range/reference fields.
+
+Candidate selections show at most three locations. Their `truncated` flag describes that display window; `complete` describes the exact alternative's capture. Limited capture has lower-bound counts and no complete `all` reference. URL candidates use URL ranges, never editable Search references. A `skipped` branch explains its budget or extra-branch failure without changing the completed ordinary zero into an error.
+
 ## Native editor commits
 
 Sequential local edits share original snapshots. Child success with `effect: "pending"` means accepted, not written. Await an explicit flush when the script needs the final receipt:

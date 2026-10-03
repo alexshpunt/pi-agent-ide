@@ -1,6 +1,8 @@
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 
+import { compactSearchDetails, restoreSearchDetails } from "#src/persisted-result.js";
+import { createFuzzyPresentation, isSearchToolDetails } from "#src/search-result.js";
 import { SearchResultPanel } from "#src/search-renderer.js";
 
 import type { SearchToolDetails } from "#src/search-result.js";
@@ -17,6 +19,151 @@ const plainTheme = Object.assign(Object.create(null) as Theme, {
   underline: (text: string): string => text,
 });
 
+test.each([false, true])(
+  "keeps original zero separate from possible-name groups (expanded=%s)",
+  (expanded) => {
+    const details: SearchToolDetails = {
+      query: "generateHintStrings",
+      matchCount: 0,
+      fileCount: 0,
+      complete: true,
+      files: [],
+      fuzzyPresentation: {
+        fileCount: 1,
+        groups: [
+          {
+            identifier: "hintStrings",
+            files: [
+              {
+                path: "hints.js",
+                link: "file:///workspace/hints.js",
+                matchCount: 1,
+                lines: [
+                  {
+                    lineNumber: 886,
+                    text: "  hintStrings(linkCount) {",
+                    matchCount: 1,
+                    ranges: [{ from: 2, to: 13 }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      fuzzy: {
+        status: "ready",
+        message: "Source changed; stable references unavailable.",
+        candidates: [
+          {
+            identifier: "hintStrings",
+            kind: "component",
+            reason: "remove leading component 'generate'",
+            matchCount: 5,
+            fileCount: 1,
+            selection: {
+              kind: "matches",
+              truncated: false,
+              complete: true,
+              matches: [
+                {
+                  source: "/workspace/hints.js",
+                  range: { startLine: 886, endLine: 886, startColumn: 2, endColumn: 13 },
+                  matchedText: "hintStrings",
+                },
+              ],
+              all: { line: "SEARCH#AAAA:all:line", match: "SEARCH#AAAA:all:match" },
+            },
+          },
+        ],
+      },
+    };
+    const saved = compactSearchDetails(details, "");
+    expect(restoreSearchDetails(saved, "")).toEqual(details);
+    expect(isSearchToolDetails(restoreSearchDetails(saved, ""))).toBe(true);
+    expect(
+      isSearchToolDetails({
+        ...details,
+        fuzzy: { status: "ready", candidates: [{ identifier: null }] },
+      }),
+    ).toBe(false);
+    const rendered = new SearchResultPanel(details, plainTheme, expanded).render(80);
+    const plain = rendered.map(stripTerminalSequences).join("\n");
+    expect(plain).toContain("0 exact · 5 fuzzy matches · 1 file");
+    expect(plain).toContain("No exact matches found");
+    expect(plain).toContain("hintStrings(linkCount) {");
+    expect(plain).toContain("886");
+    expect(rendered.join("\n")).toContain(`${SELECTED_BACKGROUND}hintStrings`);
+    expect(plain).toContain("Possible name: hintStrings");
+    expect(plain).toContain("5 matches");
+    expect(plain).toContain("in 1 file");
+    expect(plain).not.toContain("1 files");
+    expect(plain).toContain("Source changed; stable references unavailable.");
+    expect(plain).toContain("remove leading component");
+    expect(plain).toContain("hints.js");
+    expect(plain).not.toContain("SEARCH#");
+    expect(rendered.every((line) => visibleWidth(line) === 80)).toBe(true);
+  },
+);
+test("bounds user previews and counts shared files once, including files outside the preview", () => {
+  const text = " ".repeat(10000) + "hintStrings" + " ".repeat(10000);
+  const matches = Array.from({ length: 5 }, (_, index) => ({
+    source: index === 4 ? "/workspace/other.js" : "/workspace/hints.js",
+    lineNumber: index + 1,
+    lineText: text,
+    matchedText: "hintStrings",
+    startColumn: 10000,
+    endColumn: 10011,
+  }));
+  const first = {
+    identifier: "hintStrings",
+    kind: "component" as const,
+    reason: "remove leading component",
+    matches,
+    complete: true,
+  };
+  const preview = createFuzzyPresentation(
+    [first, { ...first, identifier: "generateHintString" }],
+    "/workspace",
+  );
+  expect(preview.fileCount).toBe(2);
+  expect(preview.groups[0]?.files[0]?.lines).toHaveLength(3);
+  for (const group of preview.groups)
+    for (const file of group.files)
+      for (const line of file.lines) {
+        expect(line.text.length).toBeLessThan(220);
+        expect(line.text.slice(line.ranges[0]?.from, line.ranges[0]?.to)).toBe("hintStrings");
+      }
+});
+test("marks captured fuzzy totals as lower bounds when a group is incomplete", () => {
+  const details: SearchToolDetails = {
+    query: "generateHintStrings",
+    matchCount: 0,
+    fileCount: 0,
+    complete: true,
+    files: [],
+    fuzzy: {
+      status: "ready",
+      candidates: [
+        {
+          identifier: "hintStrings",
+          kind: "component",
+          reason: "remove leading component",
+          matchCount: 200,
+          fileCount: 1,
+          selection: { kind: "matches", truncated: true, complete: false, matches: [] },
+        },
+      ],
+    },
+    fuzzyPresentation: { fileCount: 1, groups: [] },
+  };
+  const plain = new SearchResultPanel(details, plainTheme, false)
+    .render(80)
+    .map(stripTerminalSequences)
+    .join("\n");
+  expect(plain).toContain("0 exact · 200+ fuzzy matches · 1+ file");
+  expect(plain).toContain("Capture limited");
+});
 test("wraps a full search match line with one aligned line-number gutter", () => {
   const text = `prefix ${"alpha ".repeat(5)}MATCH ${"https://example.com/".repeat(8)} suffix`;
   const matchStart = text.indexOf("MATCH");

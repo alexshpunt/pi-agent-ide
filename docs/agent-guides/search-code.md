@@ -8,6 +8,14 @@ Use uppercase `AND` and `OR`, infix `NOT`, `||`, or a space-separated `|` for Bo
 
 Use `files:<pattern>` for paths. Slash-containing globs match workspace-relative paths; basename globs match at any depth. Narrow with `path`, `include`, and `exclude` before broadening a noisy query.
 
+## Possible names after zero matches
+
+Use possible-name groups as spelling hints, not synonyms or proof of equivalent behavior. Inspect the candidate source before choosing an edit. The original match list stays empty; each group is a separate exact alternative in the same scope.
+
+Inside native Codemode, use `data.fuzzy.candidates` when returned. Check each group's `selection.complete` separately from `selection.truncated`. Use its `selection.all` only when returned, or its individual match references. A candidate all-reference refreshes that exact alternative, not the fuzzy ranking. For URL groups, read the returned URL and line range; no editable Search references exist.
+
+If the extra branch reports a budget skip, narrow `path` rather than treating the skip as proof that no nearby name exists. Keep quoted exact queries, Boolean queries, and explicit protocols exact.
+
 ## Search resources
 
 Inside native Codemode, check `status` and use `data.matches`, their exact `range`, and `references.line` or `references.match`. Use `data.all` only when returned. Check backend `complete` separately from public-window `truncated`; an empty successful match list is not an error.
