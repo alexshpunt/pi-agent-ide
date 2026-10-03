@@ -32,7 +32,7 @@ export function formatAgentTerminalSnapshot(snapshot: TerminalSessionSnapshot): 
     snapshot.completionReason === undefined
       ? undefined
       : `completionReason: ${snapshot.completionReason}`,
-    snapshot.waitReason === undefined
+    snapshot.waitReason === undefined || snapshot.status !== "running"
       ? undefined
       : `next: Read ${snapshot.source} to inspect it, then use write or insert to send input.`,
     `outputRange: ${snapshot.outputStart}-${snapshot.outputEnd}`,
