@@ -26,6 +26,7 @@ If a promotion PR already uses develop and new feature merges change its head, s
 For this project, a failed CI/CD check before publication is a gate to review the release scope again. Keep the unused version number; do not skip it just because a candidate failed. A watcher timeout is not a CI failure: check the actual run first.
 
 1. Record the failed job and diagnose its logs or artifacts. Fix and verify the cause before starting another candidate. Do not assume newer develop commits fixed it.
+   Download the immediate unit report before canceling a running job. Unit failures stop Validate before integration starts, so let report upload and normal shutdown finish. Forced cancellation can discard job logs; do not use it before retaining the failure evidence.
 2. Fetch develop and inspect changes since the recorded cut. Compare the actual trees as well as commit history, because squash promotion can make old commits appear new.
 3. If a versioned candidate is active, cancel it through the workflow before promoting a refreshed scope. Check that cancellation and main-to-develop synchronization succeed. Preserve any reviewed release fixes already on main.
 4. Put remaining fixes into develop through a verified PR. Include workflow or fixture fixes when those caused the failure; do not weaken product contracts to make a test pass.

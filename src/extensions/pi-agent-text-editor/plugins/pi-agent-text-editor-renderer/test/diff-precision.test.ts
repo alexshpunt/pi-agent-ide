@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDiffModel } from "#src/diff-model.js";
 import writeAlignment from "./fixtures/write-alignment.json" with { type: "json" };
 
@@ -8,6 +8,13 @@ function modified(before: string, after: string) {
   expect(model.rows).toHaveLength(1);
   return model.rows[0];
 }
+
+// Content checks use a fixed clock; expired deadlines are checked separately.
+beforeEach(() => vi.useFakeTimers({ toFake: ["Date", "performance"] }));
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe("precise inline changes", () => {
   test("keeps a full replacement block available within the alignment budget", () => {
@@ -112,7 +119,14 @@ describe("precise inline changes", () => {
     expect(model.rows.some((row) => row.changed && row.text.includes("computer_open"))).toBe(true);
     expect(model.added + model.modified + model.removed).toBeGreaterThan(0);
   });
-  test("reports exhausted alignment instead of an empty successful comparison", () => {
+  test("reports unavailable when the comparison deadline expires", () => {
+    vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValue(101);
+    const model = createDiffModel("old();", "new();");
+    expect(model.omittedChanges?.unavailable).toBe(true);
+  });
+
+  test("reports unavailable when the line comparison time budget expires", () => {
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(101);
     const before = Array.from({ length: 11_000 }, (_, index) => `old${index}();`).join("\n");
     const after = Array.from({ length: 11_000 }, (_, index) => `new${index}();`).join("\n");
     const model = createDiffModel(before, after);
