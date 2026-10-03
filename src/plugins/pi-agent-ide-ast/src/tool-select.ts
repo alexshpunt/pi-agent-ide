@@ -30,6 +30,9 @@ function operationLabel(operation: SelectParameters["operation"]): string {
     case "part": {
       return `part ${operation.part}`;
     }
+    case "elementExtent": {
+      return `list element · ${operation.extent}`;
+    }
     case "navigate": {
       return `${operation.relation}${operation.relation === "siblings" ? ` ${operation.direction ?? "all"}` : ""}${operation.object ? ` · ${operation.object}` : ""}`;
     }
@@ -108,7 +111,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
           openWorldHint: false,
         },
         description:
-          "Use select to derive verified text boundaries and positions, combine source-local range sets, and navigate normalized JavaScript/TypeScript constructs and named parts, without JSX/TSX. AST enclosing matches the full seed and counts levels within the requested category. Navigation skips parser-only wrappers; filters do not change relationships. Navigation requires exact named syntax nodes; parts require a node with that supported part. Supported optional parts may be absent; unsupported parts are errors with available names. syntax describes the result category, not edit authority. Text operations apply per region; range/lines require one source. Geometry matches by source and snapshot, not array position; within retains whole candidates, intersection clips, difference subtracts, and merge explicitly joins overlaps or optional adjacency without filling gaps. Points use included starts and excluded ends. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Expansion and merge retain input associations. Results keep strict snapshots, completeness and individually consumable items; preview truncation does not clip the whole target. ownBody, semantic identity and separator-aware list edits are not implemented.",
+          "Use select to derive verified text boundaries and positions, combine source-local range sets, and navigate normalized JavaScript/TypeScript constructs and named parts, without JSX/TSX. AST enclosing matches the full seed and counts levels within the requested category. Navigation skips parser-only wrappers; filters do not change relationships. Navigation requires exact named syntax nodes; parts require a node with that supported part. Supported optional parts may be absent; unsupported parts are errors with available names. syntax describes the result category, not edit authority. Text operations apply per region; range/lines require one source. Geometry matches by source and snapshot, not array position; within retains whole candidates, intersection clips, difference subtracts, and merge explicitly joins overlaps or optional adjacency without filling gaps. Points use included starts and excluded ends. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Expansion and merge retain input associations. Results keep strict snapshots, completeness and individually consumable items; preview truncation does not clip the whole target. elementExtent derives exact JS/TS argument/parameter boundaries, optionally including owned commas/whitespace; adjacent comments refuse around extents. It does not repair destination syntax. ownBody and semantic identity are not implemented.",
         promptSnippet:
           "Derive text and AST boundaries, navigate constructs and combine source-range sets",
         promptGuidelines: [
@@ -180,7 +183,8 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
               ? selectGeometryRegions(input, operation, scopes, signal)
               : operation.kind === "object" ||
                   operation.kind === "part" ||
-                  operation.kind === "navigate"
+                  operation.kind === "navigate" ||
+                  operation.kind === "elementExtent"
                 ? await selectStructuralRegions(input, operation, context.cwd, signal)
                 : selectTextRegions(input, operation, signal);
             await targets.verify(verified, signal);

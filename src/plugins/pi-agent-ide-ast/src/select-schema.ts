@@ -205,6 +205,17 @@ const objectFilter = Type.Optional({
 const structuralOperationSchema = Type.Union([
   Type.Object(
     {
+      kind: Type.Literal("elementExtent"),
+      extent: Type.Union([Type.Literal("inside"), Type.Literal("around")]),
+    },
+    {
+      additionalProperties: false,
+      description:
+        "Select an exact direct JS/TS call argument or parenthesized function parameter. inside keeps the element; around includes owned comma/whitespace. Prefer the following separator; last without a trailing comma uses the preceding gap; only elements own the list interior. Adjacent boundary comments reject around. No destination syntax repair.",
+    },
+  ),
+  Type.Object(
+    {
       kind: Type.Literal("object"),
       object: astObjectSchema,
       relation: Type.Optional(Type.Literal("enclosing")),

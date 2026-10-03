@@ -8,6 +8,7 @@ import {
 } from "#src/selection-region.js";
 import type { ResolvedResultTargets } from "pi-agent-resource";
 import { parseDocument } from "./manager.js";
+import { listElementExtent } from "./element-extent.js";
 import {
   constructChildren,
   constructIndex,
@@ -117,7 +118,7 @@ function navigate(
     .sort((a, b) => a.node.startIndex - b.node.startIndex || b.node.endIndex - a.node.endIndex);
 }
 
-/** Derive normalized JS/TS constructs and parts from verified bytes using the existing syntax provider. */
+/** Derive JS/TS constructs, parts and list-element extents from verified bytes using the existing syntax provider. */
 export async function selectStructuralRegions(
   input: ResolvedResultTargets,
   operation: StructuralSelectOperation,
@@ -157,6 +158,10 @@ export async function selectStructuralRegions(
           operation.kind === "object"
             ? enclosing(nodes, start, end, operation)
             : exactNode(nodes, start, end);
+        const element =
+          owner && operation.kind === "elementExtent"
+            ? listElementExtent(owner, operation.extent, target.expectedContent)
+            : undefined;
         const outputs = owner
           ? operation.kind === "part"
             ? [constructPart(owner, operation.part)]
@@ -168,13 +173,14 @@ export async function selectStructuralRegions(
           : [];
         if (!outputs.length) missingInputs++;
         for (const output of outputs) {
-          const node = output.node;
-          const syntax = output.object
-            ? {
-                object: output.object,
-                ...(operation.kind === "part" ? { part: operation.part } : {}),
-              }
-            : undefined;
+          const node = element ?? output.node;
+          const syntax =
+            output.object && operation.kind !== "elementExtent"
+              ? {
+                  object: output.object,
+                  ...(operation.kind === "part" ? { part: operation.part } : {}),
+                }
+              : undefined;
           retainRegion(selected, {
             target,
             range: { start: source.position(node.startIndex), end: source.position(node.endIndex) },

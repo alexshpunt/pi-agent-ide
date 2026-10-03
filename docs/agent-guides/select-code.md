@@ -56,7 +56,7 @@ Use `{kind:"part", part:"arguments"}` on an exact construct. Parts retain provid
 | property                                  | key, value; shorthand selects the same identifier for both |
 | return / throw                            | value                                                      |
 
-A supported optional part that is absent produces no selection and increments missingInputs: anonymous function name, optional else, bodyless TS declaration, missing annotation, bare return, optional catch parameter, or new without arguments. Unsupported parts return an error listing available names. Objects and arrays do not invent a body or arguments part; use navigation for nested constructs and AST Search for scalar elements. Separator-aware list-element selection belongs to a later stage.
+A supported optional part that is absent produces no selection and increments missingInputs: anonymous function name, optional else, bodyless TS declaration, missing annotation, bare return, optional catch parameter, or new without arguments. Unsupported parts return an error listing available names. Objects and arrays do not invent a body or arguments part; use navigation for nested constructs and AST Search for scalar elements. For argument/parameter separator ownership, use elementExtent below; array/object list extents are not implemented.
 
 Structural items include parser-derived syntax.object and, for part selections, syntax.part where a normalized owner exists. These labels are descriptive, not editable authority. Read takes the item's target string; its displayed line context never widens the exact part's source scope.
 
@@ -67,6 +67,35 @@ const args = await tools.select({ path: call, operation: { kind: "part", part: "
 await tools.read({ path: args.data.target });
 const number = await tools.search({ path: args, query: "10" });
 await tools.replace({ path: number, text: "20" });
+```
+
+## List element extents
+
+Use `{kind:"elementExtent", extent:"inside"}` on an exact direct JS/TS call/new argument or parenthesized function/method/arrow parameter. AST captures can provide those element targets. Variadic captures may also contain punctuation; choose the element items in JavaScript before passing them here. Commas themselves are not elements. A typed/default parameter must include its type/default, not just its name. Partial expressions, whole lists, array/object elements and unparenthesized arrow parameters are unsupported; this operation never silently selects an enclosing element.
+
+`inside` keeps only the element. `around` adds owned comma/whitespace, reports expansion and preserves list parentheses:
+
+| Element                             | around includes                                                                        |
+| ----------------------------------- | -------------------------------------------------------------------------------------- |
+| First or middle with a next element | Element through the next element's start, including the following comma and whitespace |
+| Last with a trailing comma          | Element through the closing parenthesis, excluding the parenthesis                     |
+| Last without a trailing comma       | Previous element's end through this element's end; keeps closing whitespace            |
+| Only element                        | Entire list interior, including leading/trailing whitespace and any trailing comma     |
+
+Both adjacent gaps must contain only the expected comma and whitespace for around. Comments in those gaps return AMBIGUOUS_LIST_TRIVIA instead of guessing their owner. Comments inside the element are retained. inside does not assign neighboring trivia and remains available when an around request is refused.
+
+Example: `send(a, b, c)` selects `b, ` around b and `, c` around c. Removing either single extent preserves the comma structure. Several selected extents can overlap: edit tools still reject overlap; do not assume arbitrary bulk deletion is repaired. Source bytes and CRLF stay exact.
+
+Copy/move transports precisely the selected bytes, not a refactoring. A following-comma extent can be inserted before an existing destination element; a preceding-comma extent can be inserted after one. Destination syntax, parameter ordering and semantic validity are the caller's responsibility. Read the extent's target to preview it before editing. No new edit input contract or implicit syntax repair is provided.
+
+```js
+const found = await tools.search({ path: "client.ts", query: "ast:send($FIRST, $MIDDLE, $LAST)" });
+const element = await tools.select({
+  path: found.data.matches[0].captures.MIDDLE,
+  operation: { kind: "elementExtent", extent: "around" },
+});
+await tools.read({ path: element.data.target });
+await tools.delete({ path: element });
 ```
 
 ## Text operations
