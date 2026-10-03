@@ -62,7 +62,8 @@ test.runIf(enabled)(
           ),
         ],
         tools: ["check_java_lifecycle", "debug", "read", "insert", "delete"],
-        environment: { PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE: "0" },
+        // Pi helper downloads are not part of the Java lifecycle contract.
+        environment: { PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE: "0", PI_OFFLINE: "1" },
         conversation: [
           call("guide", "read", { path: "docs:debugger" }),
           call("start", "check_java_lifecycle", { phase: "start" }),
@@ -105,6 +106,7 @@ test.runIf(enabled)(
       expect(run.tuiRenderedOutput).toContain("Main.java");
       // Native Windows retains the final viewport, not Linux-style scrollback.
       const renderedStream = stripVTControlCharacters(run.terminalOutput);
+      expect(renderedStream).not.toContain("not found. Downloading...");
       expect(renderedStream).toContain("Status: stopped");
       expect(renderedStream).toContain("subtotal: 42");
       expect(run.tuiRenderedOutput).toContain("Status: terminated");
