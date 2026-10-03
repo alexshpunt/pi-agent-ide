@@ -1,8 +1,50 @@
 import { expect, test } from "vitest";
 import { createTextDocument } from "pi-agent-text";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import { committedMutationTargets, type OwnedMutationChanges } from "./mutation-result-targets.js";
+import {
+  attachCommittedMutationTarget,
+  committedMutationTargets,
+  type OwnedMutationChanges,
+} from "./mutation-result-targets.js";
+import { ResultTargetStore } from "pi-agent-resource";
+import { FileMutationResult } from "./mutation-result/file-mutation-result.js";
 
+test("move cannot publish a removed position when a handler did not supply owned destination changes", async () => {
+  const result = await attachCommittedMutationTarget(
+    {
+      content: [],
+      details: {
+        results: [
+          new FileMutationResult({
+            ok: true,
+            path: "/workspace/note.txt",
+            rawChanges: [
+              {
+                editIndex: 0,
+                fromA: 0,
+                toA: 3,
+                fromB: 0,
+                toB: 0,
+                removedText: "old",
+                insertedText: "",
+              },
+            ],
+          }),
+        ],
+      },
+    },
+    [completion("old", "")],
+    new ResultTargetStore(),
+    "move",
+    "/workspace",
+    undefined,
+    false,
+    undefined,
+    true,
+  );
+  expect(result.details.metadata?.resultTarget).toBeUndefined();
+  expect(result.details.metadata?.targetUnavailable).toMatch(/ownership/iu);
+});
 function completion(before: string, after: string, resolvedBy = "filesystem"): TextEditCompletion {
   return {
     source: "/workspace/note.txt",
@@ -61,6 +103,33 @@ test.each([
   );
   const position = { lineNumber: item.lineNumber, column: item.column };
   expect(targets.get("empty")?.[0]?.ranges).toEqual([{ start: position, end: position }]);
+});
+
+test("move outputs omit removals but include their shifts in destination coordinates", () => {
+  const targets = committedMutationTargets(
+    [
+      {
+        callId: "move",
+        edits: new Map([
+          [
+            "/workspace/note.txt",
+            {
+              action: "edited",
+              resultChanges: [1],
+              changes: [
+                { from: 0, to: 3, insert: "" },
+                { from: 8, to: 11, insert: "ONE" },
+              ],
+            },
+          ],
+        ]),
+      },
+    ],
+    [completion("ONE gap TWO", " gap ONE")],
+  );
+  expect(targets.get("move")?.[0]?.ranges).toEqual([
+    { start: { lineNumber: 1, column: 5 }, end: { lineNumber: 1, column: 8 } },
+  ]);
 });
 
 test("does not guess coordinates after formatting or unsupported resource writes", () => {

@@ -725,7 +725,7 @@ function mutationCallDetails(
   const generated = generatedField(tool);
   return Object.entries(input).map(([label, value]) => {
     const encoded =
-      tool === "replace" && label === "path" && value !== null && typeof value === "object"
+      ["path", "file", "target"].includes(label) && value !== null && typeof value === "object"
         ? Array.isArray(value)
           ? `${value.length} returned targets`
           : "result scope"
@@ -741,6 +741,13 @@ function mutationCallDetails(
           : exact,
     };
   });
+}
+
+function sourceLabel(value: unknown): string | undefined {
+  if (typeof value === "string" && value.startsWith("RESULT#")) return "result scope";
+  return (
+    stringValue(value) ?? (value !== null && typeof value === "object" ? "result scope" : undefined)
+  );
 }
 
 /** Render a written call header without preparing previews or reading files. */
@@ -762,13 +769,7 @@ function renderHeader(
   const source = registration.source;
   if (registration.name === "undo" && typeof input.transaction === "string")
     return `${theme.fg("toolTitle", theme.bold("undo"))} ${theme.fg("muted", "· Apply transaction")}`;
-  const path =
-    stringValue(input[source.field]) ??
-    (registration.name === "replace" &&
-    input[source.field] !== null &&
-    typeof input[source.field] === "object"
-      ? "result scope"
-      : undefined);
+  const path = sourceLabel(input[source.field]);
   const previewResources = preview?.kind === "completed" ? preview.resources : [];
   const displayedPath =
     path ??
@@ -782,10 +783,10 @@ function renderHeader(
       ? requiredValue(previewResources[0]).link
       : resourceLink(preview, path);
   const targets = (source.targets ?? [])
-    .map(({ field }) => ({ field, path: stringValue(input[field]) }))
+    .map(({ field }) => ({ field, path: sourceLabel(input[field]) }))
     .filter(
       (target): target is { readonly field: string; readonly path: string } =>
-        target.path !== undefined && target.path !== path,
+        target.path !== undefined && (target.path === "result scope" || target.path !== path),
     );
   let header = `${theme.fg("toolTitle", theme.bold(registration.name))} ${renderPath(
     displayedPath,

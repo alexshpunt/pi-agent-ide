@@ -1,5 +1,6 @@
 import { diffChars } from "diff";
 import { Type } from "typebox";
+import { resultInputSchema } from "pi-agent-resource";
 
 import { CHANGE_ANCHOR_KIND } from "#src/change-anchor.js";
 import { ChangeService } from "#src/changes/change-service.js";
@@ -11,11 +12,11 @@ import type { TextMutationToolRegistration } from "pi-agent-text-editor/api/muta
 
 export const undoSchema = Type.Object(
   {
-    file: Type.Optional(
-      Type.String({
-        description: "File to restore; may be omitted to inherit the previous batched source",
-      }),
-    ),
+    file: Type.Optional({
+      ...resultInputSchema,
+      description:
+        "File to restore or one whole-file source result; partial and multi-file scopes are rejected. May be omitted to inherit the previous source.",
+    }),
     change: Type.Optional(
       Type.String({
         description:
@@ -34,7 +35,7 @@ export const undoSchema = Type.Object(
 );
 
 interface UndoParameters {
-  readonly file?: string;
+  readonly file?: unknown;
   readonly change?: string;
   readonly transaction?: string;
 }

@@ -269,7 +269,10 @@ class NativeTextEditBatchCoordinator {
         for (const descriptor of [registration.source, ...(registration.source.targets ?? [])]) {
           const value = input[descriptor.field];
           if (typeof value === "string" && value.length > 0) {
-            if (registration.name === "replace" && value.startsWith("RESULT#")) {
+            if (
+              ["replace", "write", "copy", "move", "delete", "undo"].includes(registration.name) &&
+              value.startsWith("RESULT#")
+            ) {
               // The executor validates result handles and returns a structured rejection.
               ownsSource = true;
               continue;
@@ -577,10 +580,9 @@ class NativeTextEditBatchCoordinator {
       ...planning.plan,
       mutations: [...batch.plan.mutations, ...planning.plan.mutations],
     };
-    const target =
-      registration.name === "replace" || registration.name === "insert"
-        ? this.resultTargets.reserve(context.cwd)
-        : undefined;
+    const target = ["replace", "insert", "write", "copy", "move"].includes(registration.name)
+      ? this.resultTargets.reserve(context.cwd)
+      : undefined;
     if (target) script.targets.set(id, target);
     const details = {
       results: [],
@@ -673,9 +675,13 @@ class NativeTextEditBatchCoordinator {
         ...operations.flatMap((operation) => {
           const entry = requiredValue(batch.entries.find((entry) => entry.callId === operation.id));
           const registration = requiredValue(registrations.get(entry.op));
+          const mutation = batch.plan.mutations.find(
+            (item) => item.callId === operation.id,
+          )?.mutation;
           return [...mutationSources(registration, entry).values()].map((source) => ({
             source,
-            effect: operation.effect,
+            effect:
+              mutation?.edits.has(source) === false ? ("not-applied" as const) : operation.effect,
           }));
         }),
         ...observedSources.map((source) => ({ source, effect: "applied" as const })),

@@ -53,6 +53,9 @@ import {
   recordNativeTextMutation,
 } from "#src/core/native-text-edit-batch.js";
 import { attachCommittedMutationTarget } from "./mutation-result-targets.js";
+import { wholeFileResultSource } from "./result-input.js";
+import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
+import { isResultInput, prepareResultTransfer } from "./result-transfer.js";
 import {
   contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
@@ -140,26 +143,31 @@ export function createTextTool<TParameters extends TSchema>(
           ),
       }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
+        let plannedEdits: ReadonlyMap<string, TextMutationEdit> | undefined;
         const captured = await runNativePostEditScope(core, toolCallId, () =>
           captureScriptMutation(core, async () => {
             const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
               let input = asMutationParameters<TParameters>(parameters);
               if (
-                definition.name === "replace" &&
-                input.path !== undefined &&
-                (typeof input.path !== "string" || String(input.path).startsWith("RESULT#"))
+                ["replace", "write", "delete", "undo"].includes(definition.name) &&
+                isResultInput(input[definition.source.field])
               ) {
                 try {
                   if (resultTargets === undefined)
                     throw new Error("Result targets are unavailable.");
                   if (input.start !== undefined || input.end !== undefined)
                     throw new Error("Do not combine result targets with start/end.");
-                  const selected = resultTargets.resolve(input.path, context.cwd);
+                  const selected = resultTargets.resolve(
+                    input[definition.source.field],
+                    context.cwd,
+                  );
                   if (!selected.complete)
                     throw new Error(
                       "Incomplete result targets cannot establish a complete edit; repeat Search.",
                     );
                   await resultTargets.verify(selected, signal);
+                  if (definition.name === "write" || definition.name === "undo")
+                    wholeFileResultSource(selected);
                   if (selected.targets.length === 0)
                     return {
                       content: [{ type: "text", text: "Empty result target set; no changes." }],
@@ -171,7 +179,11 @@ export function createTextTool<TParameters extends TSchema>(
                     };
                   input = {
                     ...input,
-                    path: resultTargets.register(selected.targets, context.cwd, selected.complete),
+                    [definition.source.field]: resultTargets.register(
+                      selected.targets,
+                      context.cwd,
+                      selected.complete,
+                    ),
                   };
                 } catch (error) {
                   signal?.throwIfAborted();
@@ -183,6 +195,54 @@ export function createTextTool<TParameters extends TSchema>(
                   );
                 }
               }
+              let executionDefinition = definition;
+              let verifyFileSource: (() => Promise<void>) | undefined;
+              if (
+                (definition.name === "copy" || definition.name === "move") &&
+                (isResultInput(input.path) || isResultInput(input.target))
+              ) {
+                try {
+                  if (resultTargets === undefined)
+                    throw new Error("Result targets are unavailable.");
+                  const prepared = await prepareResultTransfer(
+                    definition.name,
+                    input,
+                    resultTargets,
+                    context.cwd,
+                    signal,
+                  );
+                  input = asMutationParameters<TParameters>(prepared.input);
+                  verifyFileSource = prepared.verifyFileSource;
+                  if (prepared.empty)
+                    return {
+                      content: [{ type: "text", text: "Empty result target set; no changes." }],
+                      details: {
+                        results: [],
+                        effect: "not-applied",
+                        metadata: { emptyTargets: true },
+                      },
+                    };
+                  if (prepared.mutate !== undefined)
+                    executionDefinition = { ...definition, mutate: prepared.mutate };
+                } catch (error) {
+                  signal?.throwIfAborted();
+                  return failureToolResult(
+                    "",
+                    "RESULT_INPUT_REJECTED",
+                    errorMessage(error),
+                    "not-applied",
+                  );
+                }
+              }
+              const directDefinition = executionDefinition;
+              executionDefinition = {
+                ...directDefinition,
+                mutate: async (mutationContext, arguments_) => {
+                  const mutation = await directDefinition.mutate(mutationContext, arguments_);
+                  plannedEdits = mutation.edits;
+                  return mutation;
+                },
+              };
               const queued = executeNativeTextEditBatch(
                 core,
                 toolCallId,
@@ -228,12 +288,13 @@ export function createTextTool<TParameters extends TSchema>(
                   input,
                   signal,
                   context,
+                  verifyFileSource,
                 );
               }
               const directExecute = () =>
                 executeTextMutation(
                   core,
-                  definition,
+                  executionDefinition,
                   input,
                   signal,
                   context,
@@ -259,7 +320,8 @@ export function createTextTool<TParameters extends TSchema>(
         }
         recordNativeTextMutation(core, toolCallId, captured.value);
         const value =
-          resultTargets && (definition.name === "replace" || definition.name === "insert")
+          resultTargets &&
+          ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
             ? await attachCommittedMutationTarget(
                 captured.value,
                 captured.completions,
@@ -267,6 +329,9 @@ export function createTextTool<TParameters extends TSchema>(
                 toolCallId,
                 context.cwd,
                 signal,
+                definition.name === "write" || definition.name === "undo",
+                plannedEdits,
+                definition.name === "copy" || definition.name === "move",
               )
             : captured.value;
         return structuredMutation(value, definition.name, captured.completions, toolCallId);
@@ -282,8 +347,22 @@ export function createTextTool<TParameters extends TSchema>(
         definition.intent !== "restore"
           ? "In native Codemode, sequential local text edits share original snapshots and return acceptance before writing. Another tool, whole-file operation, or resource-owned selector commits the batch first; script completion also commits it. Formatting and registered resource post-edit handlers run at script end, not at flush or dependency boundaries. Earlier targets become stale if final processing changes bytes. Ordinary script errors keep accepted edits; aborts and deadlines discard pending edits."
           : "",
-        definition.name === "replace" || definition.name === "insert"
-          ? "Local results can expose data.target for this call's actual inserted text, including supplied separators; empty replacement selects the resulting position. A pending handle becomes usable only after confirmed writing. Successful writes without a safe mapping can expose data.targetUnavailable."
+        (
+          {
+            replace:
+              "Local data.target selects this call's resulting text; empty replacement selects the resulting position, not the removed text.",
+            insert:
+              "Local data.target selects this call's inserted text, including supplied line separators.",
+            write: "Local data.target selects the whole written file, not only its changed span.",
+            copy: "Local data.target selects only the destination text; a whole-file copy selects the whole destination. The source is unchanged.",
+            move: "Local data.target selects only the destination text; a whole-file move selects the whole destination. Source removals never become output targets.",
+            delete:
+              "Deletion returns a change record and file state, never a live target or an empty-position target.",
+            undo: "Local data.target selects whole restored text files, not only reversed spans. Restored absence is reported in files[].state without a live target.",
+          } as Record<string, string>
+        )[definition.name] ?? "",
+        ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
+          ? "A pending data.target requires confirmed writing. Successful changes without a verified text mapping expose data.targetUnavailable; inspect effects separately."
           : "",
         definition.source.inherited
           ? definition.wholeFileOperation === undefined
@@ -376,7 +455,11 @@ async function resolveMutationSources(
     source: string,
   ): Promise<readonly TextTarget[] | undefined> => {
     try {
-      return await core.resolveTextAnchorResources(value, allKinds, context);
+      return await core.resolveTextAnchorResources(
+        value,
+        value.startsWith("RESULT#") ? [...allKinds, TEXT_SEARCH_ANCHOR_KIND] : allKinds,
+        context,
+      );
     } catch (error) {
       throw contextualizeTextMutationAnchorError(error, definition.name, field, source, value);
     }
@@ -473,6 +556,7 @@ async function resolveMutationSources(
     if (
       targets !== undefined &&
       hasImplicitSourceSelection &&
+      definition.name !== "undo" &&
       descriptor.field === firstAnchor?.field
     ) {
       implicitTargets.set(descriptor.field, targets);

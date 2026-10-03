@@ -1,4 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import {
   assistantMessage,
@@ -18,6 +20,7 @@ async function runComposition(
   name: string,
   scripts: readonly string[],
   extraExtensions: readonly string[] = [],
+  prelude: readonly ReturnType<typeof assistantMessage>[] = [],
 ) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
   await writeFile(
@@ -39,8 +42,21 @@ async function runComposition(
       path.resolve("tests/integration/support/mutation-result-probe.ts"),
       ...extraExtensions,
     ],
-    tools: ["read", "search", "replace", "insert", "write", "codemode"],
+    tools: [
+      "read",
+      "search",
+      "replace",
+      "insert",
+      "write",
+      "copy",
+      "move",
+      "delete",
+      "undo",
+      "apply",
+      "codemode",
+    ],
     conversation: [
+      ...prelude,
       ...scripts.map((code, index) =>
         assistantMessage(
           [toolCall({ id: `compose-${index}`, name: "codemode", arguments: { code } })],
@@ -51,6 +67,112 @@ async function runComposition(
     ],
   }).run("Compose ordinary tools through source-aware results without rebuilding coordinates");
 }
+
+test.each(["copy", "move"] as const)(
+  "%s maps same-file destination after source shifts",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "same.txt"), "😀 ONE\r\ngap\r\nDEST\r\nONE outside");
+      const run = await runComposition(cwd, `same-file-${operation}-scope`, [
+        `const source = await tools.search({path:"same.txt",query:"ONE"});
+const destination = await tools.search({path:"same.txt",query:"DEST"});
+const changed = await tools.${operation}({path:source.data.matches.slice(0,1),target:destination});
+if (changed.status !== "success") throw Error(JSON.stringify(changed.errors));
+const found = await tools.search({path:changed,query:"ONE"});
+if (found.status !== "success" || found.data.matches.length !== 1 || found.data.matches[0].range.startLine !== 3) throw Error("Transfer output includes the source or lost its shifted destination");
+text(await tools.replace({path:found,text:"NEW"}));`,
+      ]);
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "same.txt"), "utf8")).toBe(
+        operation === "copy"
+          ? "😀 ONE\r\ngap\r\nNEW\r\nONE outside"
+          : "😀 \r\ngap\r\nNEW\r\nONE outside",
+      );
+    });
+  },
+);
+
+test("CHANGE undo exposes the whole restored file while keeping the Git route", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const git = (...args: string[]) => promisify(execFile)("git", args, { cwd });
+    await git("init", "-q");
+    const baseline = "fresh before\r\nold body\r\nfresh after";
+    await writeFile(path.join(cwd, "restore.txt"), baseline);
+    await git("add", "restore.txt");
+    await git(
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.test",
+      "commit",
+      "-qm",
+      "baseline",
+    );
+    await writeFile(path.join(cwd, "restore.txt"), baseline.replace("old", "new"));
+    const run = await runComposition(cwd, "change-undo-whole-restored-result", [
+      `const current = await tools.read({path:"restore.txt",views:["changes"]});
+const change = current.data.references?.find(reference => reference.kind === "change");
+if (!change) throw Error("Missing Git change reference");
+const restored = await tools.undo({file:current.data,change:change.value});
+if (restored.status !== "success" || !restored.data.target) throw Error(JSON.stringify(restored));
+const found = await tools.search({path:restored,query:"fresh"});
+if (found.status !== "success" || found.data.matches.length !== 2) throw Error("Git undo exposed only its reversed span");
+text(await tools.replace({path:found.data.matches.slice(0,1),text:"NEW"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "restore.txt"), "utf8")).toBe(
+      "NEW before\r\nold body\r\nfresh after",
+    );
+    expect((await git("show", ":restore.txt")).stdout).toBe(baseline);
+  });
+});
+
+test.each(["write", "copy", "move"] as const)(
+  "%s output expires after final formatting, not during composition",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "format.txt"), "old body\r\n");
+      await writeFile(path.join(cwd, "source.txt"), "format_me outside\r\nformat_me");
+      const script =
+        operation === "write"
+          ? 'const changed = await tools.write({path:"format.txt",content:"format_me\\r\\n"});'
+          : `const source = await tools.search({path:"source.txt",query:"format_me"});
+const destination = await tools.search({path:"format.txt",query:"old body"});
+const changed = await tools.${operation}({path:source.data.matches.slice(1),target:destination});`;
+      const run = await runComposition(
+        cwd,
+        `${operation}-final-formatting-result-expiry`,
+        [
+          script +
+            `
+if (changed.status !== "success" || !changed.data.target) throw Error(JSON.stringify(changed));
+const found = await tools.search({path:changed,query:"format_me"});
+if (found.status !== "success" || found.data.matches.length !== 1) throw Error("Formatting ran early or scope included a source");
+store("before-format",changed.data.target); text({operation:"${operation}",matches:found.data.matches.length});`,
+          `const refused = await tools.replace({path:load("before-format"),text:"BAD"});
+if (refused.status !== "error" || refused.data.effect !== "not-applied") throw Error("Pre-format scope rebound after the script"); text({effect:refused.data.effect});`,
+        ],
+        [path.resolve("tests/integration/support/native-post-edit-probe.ts")],
+      );
+      for (const index of [0, 1])
+        expect(
+          getToolExecution(run, `compose-${index}`).isError,
+          getToolResultText(run, `compose-${index}`),
+        ).toBe(false);
+      expect(await readFile(path.join(cwd, "format.txt"), "utf8")).toBe("FORMATTED\r\n");
+      const events = (await readFile(path.join(cwd, "post-edit-events.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line: string) => JSON.parse(line) as { content: string });
+      expect(events).toHaveLength(1);
+      expect(events[0]?.content).toBe("format_me\r\n");
+    });
+  },
+);
 
 test("composes a pending replace result through scoped Search and another edit", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -74,6 +196,348 @@ text({first:changed.data.effect,matches:found.data.matches,second:next.data.effe
     expect(await readFile(path.join(cwd, "changed.txt"), "utf8")).toBe(
       "fresh outside\r\n😀 FINAL chunk\r\nfresh outside",
     );
+  });
+});
+
+test("composes the whole written file through a pending write result", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runComposition(cwd, "write-result-search-replace", [
+      `const written = await tools.write({path:"written.txt",content:"😀 fresh first\\r\\nfresh second"});
+if (written.status !== "success" || written.data.effect !== "pending" || !written.data.target) throw Error("Write did not reserve a whole-file target");
+const found = await tools.search({path:written,query:"fresh"});
+if (found.status !== "success" || found.data.matches.length !== 2 || found.data.matches[0].range.startColumn !== 3) throw Error("Write result lost its source mapping");
+const changed = await tools.replace({path:found.data.matches.slice(0,1),text:"NEW"});
+if (changed.status !== "success") throw Error(JSON.stringify(changed.errors)); text(changed);`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "written.txt"), "utf8")).toBe(
+      "😀 NEW first\r\nfresh second",
+    );
+  });
+});
+
+test("accepts only whole-file structured write inputs without widening windows", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "whole.txt"), "keep\r\nold\r\nneighbor");
+    const run = await runComposition(cwd, "write-structured-input-boundaries", [
+      `const window = await tools.read({path:"whole.txt",offset:2,limit:1});
+const refused = await tools.write({path:window,content:"WRONG"});
+if (refused.status !== "error" || refused.data.effect !== "not-applied") throw Error("Write widened a partial source scope");
+const current = await tools.read({path:"whole.txt"});
+if (current.data.lines.length !== 3 || current.data.lines[0].content !== "keep") throw Error("Refused write changed source bytes");
+const written = await tools.write({path:current.data,content:"fresh whole\\r\\n"});
+if (written.status !== "success" || !written.data.target) throw Error("Whole-file input did not compose");
+const found = await tools.search({path:written,query:"fresh"});
+if (found.status !== "success" || found.data.matches.length !== 1) throw Error("Whole-file write target unavailable");
+text(await tools.replace({path:found,text:"NEW"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "whole.txt"), "utf8")).toBe("NEW whole\r\n");
+  });
+});
+
+test.each(["copy", "move"] as const)(
+  "pairs structured %s selections in declared order and targets only destinations",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "😀 ONE\r\nTWO\r\nONE outside");
+      await writeFile(path.join(cwd, "destination.txt"), "LEFT\r\nRIGHT\r\nONE outside");
+      const run = await runComposition(cwd, `${operation}-structured-pair-order`, [
+        `const window = await tools.read({path:"source.txt",limit:2});
+const source = await tools.search({path:window,query:"regex:ONE|TWO"});
+const destination = await tools.search({path:"destination.txt",query:"regex:LEFT|RIGHT"});
+const changed = await tools.${operation}({path:source.data.matches.slice().reverse(),target:destination.data});
+if (changed.status !== "success" || !changed.data.target) throw Error(JSON.stringify(changed));
+const found = await tools.search({path:changed,query:"regex:ONE|TWO"});
+if (found.status !== "success" || found.data.matches.length !== 2 || found.data.matches.some(m=>!m.source.endsWith("destination.txt"))) throw Error("Transfer result escaped the destination ranges");
+const first = found.data.matches.filter(m=>m.range.startLine===1);
+text(await tools.replace({path:first,text:"NEW"}));`,
+      ]);
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
+        "NEW\r\nONE\r\nONE outside",
+      );
+      expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(
+        operation === "copy" ? "😀 ONE\r\nTWO\r\nONE outside" : "😀 \r\n\r\nONE outside",
+      );
+    });
+  },
+);
+
+test.each(["copy", "move"] as const)(
+  "inserts structured %s into an exact zero-width destination",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "😀 ONE\r\nONE outside");
+      await writeFile(path.join(cwd, "destination.txt"), "LEFT gap RIGHT\r\nONE outside");
+      const run = await runComposition(cwd, `${operation}-zero-width-destination`, [
+        `const sourceWindow = await tools.read({path:"source.txt",limit:1});
+const source = await tools.search({path:sourceWindow,query:"ONE"});
+const point = await tools.replace({path:"destination.txt",start:"gap",text:""});
+const changed = await tools.${operation}({path:[source.data.matches[0],source.data.matches[0]],target:point.data.target});
+if (changed.status !== "success" || !changed.data.target) throw Error(JSON.stringify(changed));
+const found = await tools.search({path:changed,query:"ONE"});
+if (found.status !== "success" || found.data.matches.length !== 1 || found.data.matches[0].range.startColumn !== 5) throw Error("Zero-width target widened or lost coordinates");
+text(await tools.replace({path:found,text:"NEW"}));`,
+      ]);
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
+        "LEFT NEW RIGHT\r\nONE outside",
+      );
+      expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(
+        operation === "copy" ? "😀 ONE\r\nONE outside" : "😀 \r\nONE outside",
+      );
+    });
+  },
+);
+
+test("rejects unequal, overlapping, stale and forged transfer selections without writes", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "ONE TWO\r\nneighbor");
+    await writeFile(path.join(cwd, "destination.txt"), "LEFT RIGHT\r\nneighbor");
+    const run = await runComposition(cwd, "transfer-result-refusals", [
+      `const source = await tools.search({path:"source.txt",query:"regex:ONE|TWO"});
+const destination = await tools.search({path:"destination.txt",query:"regex:LEFT|RIGHT"});
+const unequal = await tools.copy({path:source,target:destination.data.matches.slice(0,1)});
+const overlap = await tools.move({path:source,target:source});
+const forged = await tools.copy({path:"RESULT#forged",target:destination});
+for (const refused of [unequal,overlap,forged]) if (refused.status !== "error" || refused.data.effect !== "not-applied" || refused.data.target) throw Error("Transfer guard granted authority");
+const empty = await tools.copy({path:[],target:[]});
+if (empty.status !== "success" || empty.data.effect !== "not-applied") throw Error("Empty pairing changed sources");
+await tools.replace({path:"source.txt",start:"ONE",text:"NEW"});
+await tools.flush({});
+const stale = await tools.move({path:source,target:destination});
+if (stale.status !== "error" || stale.data.effect !== "not-applied") throw Error("Stale transfer refreshed its scope");
+text({unequal:unequal.status,overlap:overlap.status,forged:forged.status,empty:empty.data.effect,stale:stale.status});`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("NEW TWO\r\nneighbor");
+    expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
+      "LEFT RIGHT\r\nneighbor",
+    );
+  });
+});
+
+test.each(["copy", "move"] as const)(
+  "composes pending legacy %s and reports only actual source effects",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "😀 ONE\r\nneighbor");
+      await writeFile(path.join(cwd, "destination.txt"), "anchor\r\nONE outside");
+      const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
+        `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:"anchor"});
+if (changed.status !== "success" || changed.data.effect !== "pending" || !changed.data.target) throw Error("Legacy transfer did not reserve an output");
+const final = await tools.flush({});
+const source = final.data.files.find(file=>file.source.endsWith("source.txt"));
+if (source?.effect !== ${JSON.stringify(operation === "copy" ? "not-applied" : "applied")}) throw Error("Transfer reported an incorrect source effect");
+const found = await tools.search({path:changed,query:"ONE"});
+if (found.status !== "success" || found.data.matches.length !== 1 || !found.data.matches[0].source.endsWith("destination.txt")) throw Error("Pending output included removals or neighbors");
+text(await tools.replace({path:found,text:"NEW"}));`,
+      ]);
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
+        "anchor\r\nNEW\r\nONE outside",
+      );
+      expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(
+        operation === "copy" ? "😀 ONE\r\nneighbor" : "😀 \r\nneighbor",
+      );
+    });
+  },
+);
+
+test.each(["copy", "move"] as const)(
+  "shows both structured %s scopes without dumping input objects",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "ONE");
+      await writeFile(path.join(cwd, "destination.txt"), "LEFT");
+      const run = await runComposition(cwd, `${operation}-structured-scope-header`, [
+        `const source = await tools.read({path:"source.txt"});
+const destination = await tools.read({path:"destination.txt"});
+const changed = await tools.${operation}({path:source,target:destination});
+if (changed.status !== "success") throw Error(JSON.stringify(changed.errors));
+text({effect:changed.data.effect});`,
+      ]);
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(run.tuiRenderedOutput).toContain(
+        operation === "copy" ? "copy result scope -> result scope" : "move 2 files",
+      );
+      expect(run.tuiRenderedOutput).not.toContain("[object Object]");
+      expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("ONE");
+    });
+  },
+);
+
+test("delete receipts describe removals without publishing a live point", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "removed.txt"), "keep\r\n😀 old\r\nold outside");
+    const run = await runComposition(cwd, "delete-structured-removal-receipt", [
+      `const window = await tools.read({path:"removed.txt",offset:2,limit:1});
+const found = await tools.search({path:window,query:"old"});
+const removed = await tools.delete({path:found});
+if (removed.status !== "success" || removed.data.target !== undefined) throw Error("Delete published a live point or failed");
+await tools.flush({});
+const receipt = await tools.read({path:"removed.txt"});
+if (receipt.data.lines[1].content !== "😀 ") throw Error("Delete widened its selected range");
+text(removed);`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "removed.txt"), "utf8")).toBe(
+      "keep\r\n😀 \r\nold outside",
+    );
+    const shown = getToolResultText(run, "compose-0");
+    expect(shown).toContain('"removedText":"old"');
+  });
+});
+
+test.each(["copy", "move"] as const)(
+  "composes a whole-file %s destination and reports source state",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "😀 fresh\r\nneighbor");
+      const run = await runComposition(cwd, `${operation}-whole-file-output`, [
+        `const source = await tools.read({path:"source.txt"});
+const changed = await tools.${operation}({path:source,target:"destination.txt"});
+if (changed.status !== "success" || !changed.data.target) throw Error(JSON.stringify(changed));
+const found = await tools.search({path:changed,query:"fresh"});
+if (found.status !== "success" || found.data.matches.length !== 1 || !found.data.matches[0].source.endsWith("destination.txt")) throw Error("No destination scope");
+text(changed); text(await tools.replace({path:found,text:"NEW"}));`,
+      ]);
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("😀 NEW\r\nneighbor");
+      if (operation === "move")
+        await expect(readFile(path.join(cwd, "source.txt"))).rejects.toThrow("ENOENT");
+      else
+        expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("😀 fresh\r\nneighbor");
+    });
+  },
+);
+
+test("undo accepts only a whole-file source and returns the whole restored file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "restore.txt"), "fresh before\r\nold body\r\nfresh after");
+    const run = await runComposition(cwd, "undo-whole-restored-output", [
+      `const changed = await tools.replace({path:"restore.txt",start:"old body",text:"new body"});
+await tools.flush({});
+const window = await tools.read({path:"restore.txt",offset:2,limit:1});
+const refused = await tools.undo({file:window,change:"last"});
+if (refused.status !== "error" || refused.data.effect !== "not-applied") throw Error("Undo widened its input");
+const whole = await tools.read({path:"restore.txt"});
+const restored = await tools.undo({file:whole.data.target,change:"last"});
+if (restored.status !== "success" || !restored.data.target) throw Error(JSON.stringify(restored));
+const found = await tools.search({path:restored,query:"fresh"});
+if (found.status !== "success" || found.data.matches.length !== 2) throw Error("Undo did not return the whole restored file");
+text(restored); text(await tools.replace({path:found.data.matches.slice(0,1),text:"NEW"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "restore.txt"), "utf8")).toBe(
+      "NEW before\r\nold body\r\nfresh after",
+    );
+  });
+});
+
+test("whole-file operations preserve binary bytes without granting a text target", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const bytes = Buffer.from([0, 255, 1, 13, 10, 128]);
+    await writeFile(path.join(cwd, "source.bin"), bytes);
+    await writeFile(path.join(cwd, "existing.bin"), bytes);
+    const run = await runComposition(cwd, "file-operation-binary-and-refusal", [
+      `const copied = await tools.copy({path:"source.bin",target:"copy.bin"});
+if (copied.status !== "success" || copied.data.effect !== "applied" || copied.data.target || !copied.data.targetUnavailable) throw Error("Binary copy falsely granted text authority");
+const refused = await tools.move({path:"source.bin",target:"existing.bin"});
+if (refused.status !== "error" || refused.data.effect !== "not-applied" || refused.data.target) throw Error("Failed file move granted authority");
+text({copy:copied.data.effect,targetUnavailable:copied.data.targetUnavailable,move:refused.data.effect});`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    for (const name of ["source.bin", "copy.bin", "existing.bin"])
+      expect(await readFile(path.join(cwd, name))).toEqual(bytes);
+  });
+});
+
+test("whole-file structured delete removes text, while a string path removes the file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "whole.txt"), "😀 old\r\nneighbor");
+    const run = await runComposition(cwd, "delete-whole-text-versus-file", [
+      `const source = await tools.read({path:"whole.txt"});
+const textRemoval = await tools.delete({path:source.data.target});
+if (textRemoval.status !== "success" || textRemoval.data.target) throw Error("Structured delete unlinked its file or granted a point");
+const empty = await tools.read({path:"whole.txt"});
+if (empty.status !== "success" || empty.data.lines.some(line=>line.content!=="")) throw Error("Whole-file text removal did not preserve an empty file");
+const noSource = await tools.replace({path:textRemoval,text:"BAD"});
+if (noSource.status !== "error" || noSource.data.effect !== "not-applied") throw Error("Removal receipt was consumed as live text");
+const fileRemoval = await tools.delete({path:"whole.txt"});
+if (fileRemoval.status !== "success" || fileRemoval.data.target || fileRemoval.data.files[0].state !== "absent") throw Error("File deletion did not report absence");
+text(fileRemoval);`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    await expect(readFile(path.join(cwd, "whole.txt"))).rejects.toThrow("ENOENT");
+  });
+});
+
+test("Apply undo exposes restored files and reports restored absence without a live target", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "existing.txt"), "fresh before\r\nold body");
+    const run = await runComposition(
+      cwd,
+      "apply-undo-restored-files-and-absence",
+      [
+        `const {transaction:receipt} = await tools.fixture_apply_receipt({});
+const restored = await tools.undo({transaction:receipt});
+if (restored.status !== "success" || !restored.data.target || restored.data.files.find(file=>file.source.endsWith("created.txt"))?.state !== "absent") throw Error(JSON.stringify(restored));
+const found = await tools.search({path:restored,query:"fresh"});
+if (found.status !== "success" || found.data.matches.length !== 1 || !found.data.matches[0].source.endsWith("existing.txt")) throw Error("Undo scope included an absent file or only the old diff range");
+text(await tools.replace({path:found,text:"NEW"}));`,
+      ],
+      [path.resolve("tests/integration/support/apply-receipt-probe.ts")],
+      [
+        assistantMessage(
+          [
+            toolCall({
+              id: "setup-apply",
+              name: "apply",
+              arguments: {
+                source:
+                  'const f = open("existing.txt"); f.replace(f.find("old body"), "new body"); createFile("created.txt", "temporary");',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+      ],
+    );
+    expect(
+      getToolExecution(run, "setup-apply").isError,
+      getToolResultText(run, "setup-apply"),
+    ).toBe(false);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "existing.txt"), "utf8")).toBe("NEW before\r\nold body");
+    await expect(readFile(path.join(cwd, "created.txt"))).rejects.toThrow("ENOENT");
   });
 });
 

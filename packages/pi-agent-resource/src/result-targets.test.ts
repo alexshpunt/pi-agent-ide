@@ -31,6 +31,20 @@ describe("source result targets", () => {
     expect(store.resolve([], "/workspace")).toEqual({ targets: [], complete: true });
   });
 
+  test("keeps declared selection order for paired operations without duplicate ranges", () => {
+    const store = new ResultTargetStore();
+    const firstTarget = {
+      ...target,
+      ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 1 } }],
+    };
+    const first = store.register([firstTarget], "/workspace");
+    const second = store.register([target], "/workspace", false);
+    const selected = store.resolveOrdered([second, first, second], "/workspace");
+    expect(selected).toEqual({ targets: [target, firstTarget], complete: false });
+    Object.assign(selected.targets[0]?.ranges[0]?.start ?? {}, { column: 0 });
+    expect(store.resolve(second, "/workspace").targets).toEqual([target]);
+  });
+
   test("rejects conflicting snapshots, another worktree, and expired handles", () => {
     const store = new ResultTargetStore();
     const first = store.register([target], "/workspace");

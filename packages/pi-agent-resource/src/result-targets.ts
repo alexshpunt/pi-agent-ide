@@ -108,6 +108,24 @@ export class ResultTargetStore {
     return { targets: combineTargets(targets), complete };
   }
 
+  /** Resolve individual ranges in declared handle order for one-to-one source/destination pairs. */
+  public resolveOrdered(input: unknown, cwd: string): ResolvedResultTargets {
+    const resolved = this.resolve(input, cwd);
+    const targets: ResultSourceTarget[] = [];
+    const seen = new Set<string>();
+    for (const reference of new Set(this.#references(input))) {
+      for (const target of this.resolve(reference, cwd).targets) {
+        for (const range of target.ranges) {
+          const identity = JSON.stringify([target.source, range]);
+          if (seen.has(identity)) continue;
+          seen.add(identity);
+          targets.push({ ...target, ranges: [range] });
+        }
+      }
+    }
+    return { targets, complete: resolved.complete };
+  }
+
   /** Reject changed source bytes before a consumer uses a retained selection. */
   public async verify(result: ResolvedResultTargets, signal?: AbortSignal): Promise<void> {
     await verifyResultTargets(result, signal);

@@ -1,6 +1,7 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import {
+  MAX_STRUCTURED_BYTES,
   resultError,
   resultErrorSchema,
   structuredResultSchema,
@@ -19,7 +20,14 @@ const effect = Type.Union([
   Type.Literal("unknown"),
 ]);
 const file = Type.Object(
-  { source: Type.String(), effect, action: Type.Optional(Type.String()) },
+  {
+    source: Type.String(),
+    effect,
+    action: Type.Optional(Type.String()),
+    state: Type.Optional(
+      Type.Union([Type.Literal("present"), Type.Literal("absent"), Type.Literal("unknown")]),
+    ),
+  },
   { additionalProperties: false },
 );
 const operation = Type.Object(
@@ -49,7 +57,7 @@ export const mutationDataSchema = Type.Object(
     target: Type.Optional(
       Type.String({
         description:
-          "Backend-owned replace/insert scope for this call's actual resulting text. Pending handles become usable only after a confirmed commit.",
+          "Backend-owned resulting-text scope: replace/insert text, write's whole file, copy/move destinations, or undo's whole restored files. Delete never supplies a live target. Pending handles require a confirmed commit.",
       }),
     ),
     targetUnavailable: Type.Optional(
@@ -59,6 +67,31 @@ export const mutationDataSchema = Type.Object(
       }),
     ),
     files: Type.Array(file),
+    changes: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            source: Type.String(),
+            from: Type.Integer({
+              description:
+                "Inclusive zero-based UTF-16 offset in the pre-edit snapshot; not a live selector.",
+            }),
+            to: Type.Integer({
+              description:
+                "Exclusive zero-based UTF-16 offset in the pre-edit snapshot; not a live selector.",
+            }),
+            removedText: Type.String(),
+            insertedText: Type.String(),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    ),
+    changesUnavailable: Type.Optional(
+      Type.String({
+        description: "Why the exact change record is omitted; applied effects remain reported.",
+      }),
+    ),
     operations: Type.Optional(Type.Array(operation)),
     parentToolCallId: Type.Optional(Type.String()),
     transaction: Type.Optional(Type.String()),
@@ -176,6 +209,7 @@ export function mutationOutcome(
     for (const source of sources)
       files.push({
         source,
+        ...(observed.has(source) ? { state: "present" as const } : {}),
         effect:
           observed.has(source) ||
           (data.ok === true && data.files?.some((file) => file.path === source))
@@ -196,7 +230,8 @@ export function mutationOutcome(
       });
   }
   for (const source of observed)
-    if (!files.some((file) => file.source === source)) files.push({ source, effect: "applied" });
+    if (!files.some((file) => file.source === source))
+      files.push({ source, effect: "applied", state: "present" });
   const semantic =
     record(details.metadata) && record(details.metadata.semanticAction)
       ? details.metadata.semanticAction
@@ -212,6 +247,14 @@ export function mutationOutcome(
     if (source && !Array.isArray(semantic.restored))
       files.push({
         source,
+        ...(semantic.kind === "file-operation" && semantic.ok === true
+          ? {
+              state:
+                operation === "delete" || operation === "move"
+                  ? ("absent" as const)
+                  : ("present" as const),
+            }
+          : {}),
         effect:
           operation === "copy" && typeof semantic.target === "string" && semantic.target !== source
             ? "not-applied"
@@ -221,7 +264,13 @@ export function mutationOutcome(
       for (const source of semantic.restored)
         if (typeof source === "string") files.push({ source, effect: semanticEffect });
     if (typeof semantic.target === "string")
-      files.push({ source: semantic.target, effect: semanticEffect });
+      files.push({
+        source: semantic.target,
+        effect: semanticEffect,
+        ...(semantic.kind === "file-operation" && semantic.ok === true
+          ? { state: "present" as const }
+          : {}),
+      });
     if (record(semantic.error))
       errors.push(
         resultError(
@@ -236,6 +285,26 @@ export function mutationOutcome(
       errors.push(resultError("Resource operation failed", "MUTATION_FAILED", source));
   }
   const unique = [...new Map(files.map((file) => [file.source, file])).values()];
+  if (Array.isArray(details.metadata?.resultFileStates))
+    for (const state of details.metadata.resultFileStates) {
+      if (!record(state)) continue;
+      const file = unique.find((file) => file.source === state.source);
+      if (file && (state.state === "present" || state.state === "absent")) file.state = state.state;
+    }
+  const changes = (results ?? [])
+    .filter((item) => item.data.ok)
+    .flatMap((item) => {
+      const source = item.data.path;
+      if (source === undefined) return [];
+      return (item.data.rawChanges ?? []).map((change) => ({
+        source,
+        from: change.fromA,
+        to: change.toA,
+        removedText: change.removedText,
+        insertedText: change.insertedText,
+      }));
+    });
+  const changesFit = Buffer.byteLength(JSON.stringify(changes)) <= MAX_STRUCTURED_BYTES / 2;
   const known = unique.some((file) => file.effect === "applied");
   if (result.isError && errors.length === 0)
     errors.push({ code: "MUTATION_FAILED", message: "Mutation failed" });
@@ -305,6 +374,14 @@ export function mutationOutcome(
       operation,
       effect,
       files: unique,
+      ...(changes.length === 0
+        ? {}
+        : changesFit
+          ? { changes }
+          : {
+              changesUnavailable:
+                "Exact change record exceeds the 512 KiB receipt budget; it was not clipped.",
+            }),
       ...(typeof details.metadata?.resultTarget === "string"
         ? { target: details.metadata.resultTarget }
         : {}),

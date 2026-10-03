@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 
 import {
-  sourcePathProperty,
+  resultSourceProperty,
   sourceRangeProperties,
   targetProperties,
 } from "#src/tools/text-tool-schema-properties.js";
@@ -19,8 +19,8 @@ import type { TextChange } from "#src/core/text-change-engine.js";
 
 export const moveSchema = Type.Object(
   {
-    path: sourcePathProperty(
-      "Source file path, or a returned SEARCH# reference selecting the text to move",
+    path: resultSourceProperty(
+      "Source file path or structured source selection; omit start/end for structured inputs. Use one whole-file result when target is a string without text selectors. Structured source/destination selections pair in declared order, with equal counts and duplicate ranges removed. Destinations must not overlap or touch source ranges.",
     ),
     ...sourceRangeProperties(),
     ...targetProperties(),
@@ -28,10 +28,10 @@ export const moveSchema = Type.Object(
   { additionalProperties: false },
 );
 interface MoveParameters {
-  readonly path?: string;
+  readonly path?: unknown;
   readonly start?: string;
   readonly end?: string;
-  readonly target?: string;
+  readonly target?: unknown;
   readonly targetStart?: string;
   readonly targetEnd?: string;
 }
@@ -101,13 +101,15 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
 
     if (sourceSpan.source === target) {
       return {
-        edits: new Map([[target, { changes: [deletion, targetChange], action: "edited" }]]),
+        edits: new Map([
+          [target, { changes: [deletion, targetChange], action: "edited", resultChanges: [1] }],
+        ]),
       };
     }
 
     return {
       edits: new Map([
-        [sourceSpan.source, { changes: [deletion], action: "edited" }],
+        [sourceSpan.source, { changes: [deletion], action: "edited", resultChanges: [] }],
         [target, { changes: [targetChange], action: "edited" }],
       ]),
     };

@@ -1,4 +1,10 @@
 import { Type } from "typebox";
+import { resultInputSchema } from "pi-agent-resource";
+
+/** Build a structured source selector without changing legacy path semantics. */
+export function resultSourceProperty(description: string) {
+  return Type.Optional({ ...resultInputSchema, description });
+}
 
 /** Build the source selector shared by text mutation schemas. */
 export function sourcePathProperty(description: string) {
@@ -26,16 +32,13 @@ export function sourceRangeProperties() {
 /** Build the destination selectors shared by copy and move schemas. */
 export function targetProperties() {
   return {
-    target: Type.Optional(
-      Type.String({
-        description:
-          "Target resource reference or file path. Required for a whole-file operation; defaults to the source for selected text.",
-      }),
+    target: resultSourceProperty(
+      "Destination file path or source result. A structured result replaces its exact ranges (zero-width ranges insert); omit targetStart/targetEnd. Source and destination selections pair in declared order with equal counts. A string target keeps its existing anchor semantics.",
     ),
     targetStart: Type.Optional(
       Type.String({
         description:
-          "Registered anchor or unique exact text in the destination. Required unless target already selects one destination range. Without targetEnd, inserts after the last containing line, keeping the selected text. With targetEnd, replacement starts at the first containing line. SEARCH :match also uses these line boundaries.",
+          "Registered anchor or unique exact text in the destination. Required for text transfers with a string target; omit for whole-file transfers or a structured target. Without targetEnd, inserts after the last containing line, keeping the selected text. With targetEnd, replacement starts at the first containing line. SEARCH :match also uses these line boundaries.",
       }),
     ),
     targetEnd: Type.Optional(
