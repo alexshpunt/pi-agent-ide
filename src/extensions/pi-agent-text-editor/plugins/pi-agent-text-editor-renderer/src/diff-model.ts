@@ -185,8 +185,23 @@ function createSemanticRows(
       .slice(change.modified.startLineNumber - 1, change.modified.endLineNumberExclusive - 1)
       .map((text, index) => ({ text, line: afterStartLine + newIndex + index }));
     const aligned = alignChangedLines(removed, added, deadline);
-    if (aligned === undefined) return undefined;
-    rows.push(...aligned);
+    // Detailed pairing is optional: the line comparison already identified this changed block.
+    rows.push(
+      ...(aligned ?? [
+        ...removed.map(({ text, line }): DiffRow => ({
+          kind: "removed",
+          text,
+          beforeLine: line,
+          changed: true,
+        })),
+        ...added.map(({ text, line }): DiffRow => ({
+          kind: "added",
+          text,
+          afterLine: line,
+          changed: true,
+        })),
+      ]),
+    );
     oldIndex += removed.length;
     newIndex += added.length;
   }

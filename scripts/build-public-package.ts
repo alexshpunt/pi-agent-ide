@@ -32,7 +32,7 @@ interface PackageManifest extends Record<string, unknown> {
   imports?: unknown;
   exports?: unknown;
   bundledDependencies?: string[];
-  pi?: { extensions?: string[]; image?: string; video?: string };
+  pi?: { extensions?: string[]; skills?: string[]; image?: string; video?: string };
 }
 
 interface InternalPackage {
@@ -102,6 +102,7 @@ const allowedTarballRoots = new Set([
   "docs",
   "node_modules",
   "package.json",
+  "skills",
   "src",
 ]);
 
@@ -129,6 +130,9 @@ copyRequiredFile("README.md");
 copyRequiredFile("CHANGELOG.md");
 copyRequiredFile("LICENSE");
 copyRuntimeTree(join(repositoryRoot, "assets"), join(stageDirectory, "assets"));
+copyRuntimeTree(join(repositoryRoot, "skills"), join(stageDirectory, "skills"), {
+  includeDocumentation: true,
+});
 copyRuntimeTree(join(repositoryRoot, "docs"), join(stageDirectory, "docs"), {
   includeDocumentation: true,
 });
@@ -210,7 +214,7 @@ function createReleaseManifest(): PackageManifest {
   delete manifest.devDependencies;
   delete manifest.scripts;
 
-  manifest.files = ["src", "assets", "docs", "CHANGELOG.md", "LICENSE", "README.md"];
+  manifest.files = ["src", "assets", "skills", "docs", "CHANGELOG.md", "LICENSE", "README.md"];
   manifest.publishConfig = { access: "public" };
   manifest.imports = filterPathMap(manifest.imports);
   manifest.exports = filterPathMap(manifest.exports);
@@ -411,6 +415,13 @@ function validatePackage(
     "Release manifest must preserve Pi gallery image metadata",
   );
 
+  for (const skillRoot of packagedManifest.pi.skills ?? []) {
+    assert(existsSync(join(packageRoot, skillRoot)), `Missing skill root: ${skillRoot}`);
+  }
+  assert(
+    existsSync(join(packageRoot, "skills/capture-code-review-rule/SKILL.md")),
+    "Missing packaged code-review capture skill",
+  );
   for (const markdownPath of paths.filter((path) => path.endsWith(".md"))) {
     const markdown = readFileSync(join(packageRoot, markdownPath), "utf8");
     for (const match of markdown.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
@@ -574,11 +585,12 @@ function optionalStringArray(value: unknown, label: string): string[] | undefine
 function parsePiManifest(
   value: unknown,
   path: string,
-): { extensions?: string[]; image?: string; video?: string } | undefined {
+): { extensions?: string[]; skills?: string[]; image?: string; video?: string } | undefined {
   if (value === undefined) return undefined;
   assert(isRecord(value), `${path} pi must be an object`);
   return {
     extensions: optionalStringArray(value.extensions, `${path} pi.extensions`),
+    skills: optionalStringArray(value.skills, `${path} pi.skills`),
     image: optionalString(value.image, `${path} pi.image`),
     video: optionalString(value.video, `${path} pi.video`),
   };

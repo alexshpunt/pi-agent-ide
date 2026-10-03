@@ -63,6 +63,10 @@ Views change how the same resource is presented. The agent can request source st
 
 </div>
 
+### Review edits against your own rules
+
+Optional [Jev code review](docs/code-review.md) checks small saved diffs against natural-language YAML rules you supply. It delivers background hints without replacing normal diagnostics. A separately enabled skill helps turn your review feedback into proposed rules, saved only after confirmation. Both features are off by default.
+
 ### Express edits as intentions
 
 Editing uses direct semantic operations:

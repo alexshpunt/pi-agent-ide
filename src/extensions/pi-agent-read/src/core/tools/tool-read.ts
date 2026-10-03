@@ -4,6 +4,8 @@ import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   isAgentContent,
   isResourceResolutionAttempt,
+  resourceScheduler,
+  resourceAccesses,
   type ResourceResolver,
   type ResourceResolverContext,
 } from "pi-agent-resource";
@@ -599,11 +601,11 @@ async function resolveTextTargets(
     const chunks: string[] = [];
     const resources: ReadToolResult[] = [];
     let firstDetails: ReadResultDetails | undefined;
-    for (const target of attempt.targets) {
+    const pending = attempt.targets.flatMap((target) => {
       const ranges = target.ranges ?? [
         { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 1 } },
       ];
-      for (const range of ranges) {
+      return ranges.map(async (range): Promise<ReadToolResult> => {
         const rangeLimit = Math.max(1, range.end.lineNumber - range.start.lineNumber);
         let rangePipeline: ReadPipelineContext = {
           request: {
@@ -619,12 +621,7 @@ async function resolveTextTargets(
           if (preRead.kind === "return") {
             if (preRead.result.isError === true)
               return withIgnoredViews(preRead.result, ignoredViews);
-            for (const block of preRead.result.content) {
-              if (block.type === "text") chunks.push(block.text);
-            }
-            resources.push(preRead.result);
-            firstDetails ??= preRead.result.details;
-            continue;
+            return preRead.result;
           }
           rangePipeline = preRead.context;
         }
@@ -641,12 +638,7 @@ async function resolveTextTargets(
         if (processed.kind === "return") {
           if (processed.result.isError === true)
             return withIgnoredViews(processed.result, ignoredViews);
-          for (const block of processed.result.content) {
-            if (block.type === "text") chunks.push(block.text);
-          }
-          resources.push(processed.result);
-          firstDetails ??= processed.result.details;
-          continue;
+          return processed.result;
         }
         const presented = await runTextPresenters(processed.context, views, requestedViews);
         const projected = projectReadState(requiredValue(presented.state), presented.request, {
@@ -658,12 +650,19 @@ async function resolveTextTargets(
         const result =
           postRead.kind === "return" ? postRead.result : requiredValue(postRead.context.result);
         if (result.isError === true) return withIgnoredViews(result, ignoredViews);
-        for (const block of result.content) {
-          if (block.type === "text") chunks.push(block.text);
-        }
-        resources.push(result);
-        firstDetails ??= result.details;
+        return result;
+      });
+    });
+    const completed = await Promise.allSettled(pending);
+    for (const outcome of completed) {
+      if (outcome.status === "rejected") throw outcome.reason;
+      const result = outcome.value;
+      if (result.isError === true) return withIgnoredViews(result, ignoredViews);
+      for (const block of result.content) {
+        if (block.type === "text") chunks.push(block.text);
       }
+      resources.push(result);
+      firstDetails ??= result.details;
     }
     const aggregate = {
       script:
@@ -929,9 +928,14 @@ async function resolveSource(
     let content: unknown;
 
     try {
-      content = await resource.read({
-        ...(resolverContext.signal !== undefined && { signal: resolverContext.signal }),
-      });
+      content = await resourceScheduler.run(
+        resourceAccesses(resource.source, resolverContext.cwd, "read"),
+        () =>
+          requiredValue(resource.read)({
+            ...(resolverContext.signal !== undefined && { signal: resolverContext.signal }),
+          }),
+        resolverContext.signal,
+      );
     } catch (error) {
       return {
         kind: "return",

@@ -12,8 +12,15 @@ const files = execFileSync(
 )
   .split("\0")
   .filter(Boolean);
-const forbidden: { readonly label: string; readonly pattern: RegExp }[] = [
-  { label: "root home path", pattern: new RegExp(`/${["ro", "ot"].join("")}/`, "u") },
+const forbidden: {
+  readonly label: string;
+  readonly pattern: RegExp;
+  readonly allowedFiles?: readonly string[];
+}[] = [
+  {
+    label: "root home path",
+    pattern: new RegExp(`/${["ro", "ot"].join("")}/`, "u"),
+  },
   {
     label: "personal home path",
     pattern: new RegExp(`/home/(?:${["to", "bi"].join("")}|${["circle", "ci"].join("")})/`, "u"),
@@ -21,8 +28,13 @@ const forbidden: { readonly label: string; readonly pattern: RegExp }[] = [
   {
     label: "local file dependency",
     pattern: new RegExp(`\\b${["fi", "le"].join("")}:(?:/(?!/)|\\.{1,2}/)`, "u"),
+    // These test values are resource keys, not package dependencies.
+    allowedFiles: ["packages/pi-agent-resource/src/resource-scheduler.test.ts"],
   },
-  { label: "current checkout path", pattern: new RegExp(escapeRegExp(process.cwd()), "u") },
+  {
+    label: "current checkout path",
+    pattern: new RegExp(escapeRegExp(process.cwd()), "u"),
+  },
 ];
 const failures: string[] = [];
 const forbiddenRepositoryPrefixes = [".pi/skills/"];
@@ -53,7 +65,9 @@ for (const file of files) {
   }
 
   for (const rule of forbidden) {
-    if (rule.pattern.test(content)) failures.push(`${file}: ${rule.label}`);
+    if (!rule.allowedFiles?.includes(file) && rule.pattern.test(content)) {
+      failures.push(`${file}: ${rule.label}`);
+    }
   }
 }
 

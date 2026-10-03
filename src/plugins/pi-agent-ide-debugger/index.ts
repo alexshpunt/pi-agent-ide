@@ -464,7 +464,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
       return;
     }
     forgetReloadResource("debugger", manager);
-    manager.dispose();
+    return manager.dispose();
   });
 }
 

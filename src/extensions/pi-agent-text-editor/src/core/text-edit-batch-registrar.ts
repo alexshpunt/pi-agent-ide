@@ -186,43 +186,50 @@ export async function planRegisteredTextBatch(
   const mutations: PlannedTextBatch["mutations"][number][] = [];
   const failures: PlannedTextBatch["failures"][number][] = [];
   const changes = new Map([...priorChanges].map(([source, edits]) => [source, [...edits]]));
-  for (const entry of parameters.edits) {
-    const registration = requiredValue(registrations.get(entry.op));
-    const { callId, op: _op, ...input } = entry;
-    const sources = mutationSources(registration, input);
-    const sourceFor = (field: string): string => requiredValue(sources.get(field));
-    const documentFor = (source: string) =>
-      new TextChangeDocument(requiredValue(texts.get(source)));
-    const majorAnchorSources = new Set<string>();
-    const publish = (field: string, state: ToolCallAnchorRenderState) =>
-      renderArguments(callId, {
-        [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
-      });
-    const resolveAnchors = async (field: string) => {
-      const descriptor = (registration.anchors ?? []).find((anchor) => anchor.field === field);
-      const value = input[field];
-      const source = descriptor === undefined ? undefined : sources.get(descriptor.sourceField);
-      if (descriptor === undefined || typeof value !== "string" || source === undefined) {
-        publish(field, { kind: "failed" });
-        throw new Error(`Unable to resolve mutation anchor ${field}`);
-      }
-      try {
-        const anchor = await resolveAnchor(source, value, descriptor.kinds);
-        if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(source);
-        const rendered = renderTextAnchor(anchor, value, { source, anchor });
-        publish(field, {
-          kind: "resolved",
-          full: rendered.full,
-          compact: rendered.compact,
-          resolverId: rendered.resolverId,
+  // Compute against immutable snapshots together; accept conflicts in call order.
+  const planned = await Promise.allSettled(
+    parameters.edits.map(async (entry): Promise<PlannedTextBatch["mutations"][number]> => {
+      const registration = requiredValue(registrations.get(entry.op));
+      const { callId, op: _op, ...input } = entry;
+      const sources = mutationSources(registration, input);
+      const sourceFor = (field: string): string => requiredValue(sources.get(field));
+      const documentFor = (source: string) =>
+        new TextChangeDocument(requiredValue(texts.get(source)));
+      const majorAnchorSources = new Set<string>();
+      const publish = (field: string, state: ToolCallAnchorRenderState) =>
+        renderArguments(callId, {
+          [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
         });
-        return new Map([[source, anchor]]);
-      } catch (error) {
-        publish(field, { kind: "failed" });
-        throw contextualizeTextMutationAnchorError(error, registration.name, field, source, value);
-      }
-    };
-    try {
+      const resolveAnchors = async (field: string) => {
+        const descriptor = (registration.anchors ?? []).find((anchor) => anchor.field === field);
+        const value = input[field];
+        const source = descriptor === undefined ? undefined : sources.get(descriptor.sourceField);
+        if (descriptor === undefined || typeof value !== "string" || source === undefined) {
+          publish(field, { kind: "failed" });
+          throw new Error(`Unable to resolve mutation anchor ${field}`);
+        }
+        try {
+          const anchor = await resolveAnchor(source, value, descriptor.kinds);
+          if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(source);
+          const rendered = renderTextAnchor(anchor, value, { source, anchor });
+          publish(field, {
+            kind: "resolved",
+            full: rendered.full,
+            compact: rendered.compact,
+            resolverId: rendered.resolverId,
+          });
+          return new Map([[source, anchor]]);
+        } catch (error) {
+          publish(field, { kind: "failed" });
+          throw contextualizeTextMutationAnchorError(
+            error,
+            registration.name,
+            field,
+            source,
+            value,
+          );
+        }
+      };
       const mutationContext = {
         cwd: context.cwd,
         ...(signal !== undefined && { signal }),
@@ -237,16 +244,7 @@ export async function planRegisteredTextBatch(
       };
       await preflightMutationAnchors(registration, input, mutationContext);
       const mutation = await registration.mutate(mutationContext, input);
-      for (const [source, edit] of mutation.edits) {
-        if (
-          edit.changes.some((change) =>
-            (changes.get(source) ?? []).some((prior) => textChangesConflict(prior, change)),
-          )
-        ) {
-          throw new Error(`Text mutation ${callId} overlaps an earlier successful mutation.`);
-        }
-      }
-      mutations.push({
+      return {
         callId,
         mutation: {
           ...mutation,
@@ -258,7 +256,27 @@ export async function planRegisteredTextBatch(
             ]),
           ),
         },
-      });
+      };
+    }),
+  );
+  for (const [index, result] of planned.entries()) {
+    const entry = requiredValue(parameters.edits[index]);
+    const { callId, op: _op, ...input } = entry;
+    const registration = requiredValue(registrations.get(entry.op));
+    const sources = mutationSources(registration, input);
+    try {
+      if (result.status === "rejected") throw result.reason;
+      const mutation = result.value.mutation;
+      for (const [source, edit] of mutation.edits) {
+        if (
+          edit.changes.some((change) =>
+            (changes.get(source) ?? []).some((prior) => textChangesConflict(prior, change)),
+          )
+        ) {
+          throw new Error(`Text mutation ${callId} overlaps an earlier successful mutation.`);
+        }
+      }
+      mutations.push(result.value);
       for (const [source, edit] of mutation.edits)
         changes.set(source, [...(changes.get(source) ?? []), ...edit.changes]);
     } catch (error) {

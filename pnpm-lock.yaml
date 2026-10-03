@@ -17,6 +17,9 @@ importers:
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
       fast-fuzzy:
         specifier: 1.12.0
         version: 1.12.0
@@ -59,6 +62,12 @@ importers:
       playwright-core:
         specifier: ^1.62.1
         version: 1.62.1
+      vscode-jsonrpc:
+        specifier: ^9.0.0
+        version: 9.0.1
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@earendil-works/pi-ai':
         specifier: 1.0.0
@@ -78,9 +87,6 @@ importers:
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
-      diff:
-        specifier: ^9.0.0
-        version: 9.0.0
       esbuild:
         specifier: 0.25.12
         version: 0.25.12

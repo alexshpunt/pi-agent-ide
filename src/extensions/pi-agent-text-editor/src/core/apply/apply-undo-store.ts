@@ -72,6 +72,10 @@ export class ApplyUndoStore {
     return this.#receipts.has(transaction);
   }
 
+  /** Paths reserved by a receipt; unavailable receipts cannot restore any paths. */
+  public sources(transaction: string): readonly string[] {
+    return this.#receipts.get(transaction)?.paths.map((state) => state.path) ?? [];
+  }
   public async restore(transaction: string): Promise<ApplyUndoResult> {
     const receipt = this.#receipts.get(transaction);
     if (receipt === undefined)

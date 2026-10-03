@@ -83,7 +83,7 @@ export interface ApplyOperationOutcome {
 
 export type TransactionEditor = Pick<
   TextEditorCore,
-  "editTexts" | "postProcessFile" | "recordApplyUndo"
+  "editTexts" | "postProcessFile" | "recordApplyUndo" | "enqueueFileOperation"
 >;
 
 /** Optional transaction execution dependencies for deterministic failure handling. */
@@ -105,143 +105,165 @@ export async function executeEditorTransaction(
   const snapshots = new Map(request.snapshots.map((snapshot) => [snapshot.id, snapshot]));
   if (snapshots.size !== request.snapshots.length) throw invalid("Duplicate editor snapshot id");
 
-  const accepted = new Map<string, TextChange[]>();
-  const unknown = new Set<string>();
-  const journal = new Map<string, SavedPath>();
-  const files: ScriptMutationFile[] = [];
-  const operations: ApplyOperationOutcome[] = [];
-  const cwd = context.cwd;
-  const batchedReplacements = new Set<number>();
-
-  for (const [index, operation] of request.operations.entries()) {
-    const resources = operationResources(operation, snapshots, cwd);
-    if (batchedReplacements.has(index)) continue;
-    if (operation.kind === "replace") {
-      const replacements: Array<{ index: number; operation: TextOperation }> = [];
-      for (
-        let candidateIndex = index;
-        candidateIndex < request.operations.length;
-        candidateIndex += 1
-      ) {
-        const candidate = request.operations[candidateIndex];
-        if (
-          candidate?.kind !== "replace" ||
-          candidate.selection.document !== operation.selection.document
-        )
-          break;
-        replacements.push({ index: candidateIndex, operation: candidate });
-      }
-      if (replacements.length > 1) {
-        for (const replacement of replacements) batchedReplacements.add(replacement.index);
-        const outcome = await executeReplacementBatch(
-          replacements,
-          snapshots,
-          accepted,
-          editor,
-          cwd,
-          signal,
-          options,
-        );
-        for (const state of outcome.saved)
-          if (!journal.has(state.path)) journal.set(state.path, state);
-        files.push(...outcome.files);
-        operations.push(...outcome.operations);
-        continue;
-      }
-    }
-    if (operation.kind === "warning") {
-      operations.push({
-        index,
-        kind: "warning",
-        status: "warning",
-        effect: "not-applied",
-        resources,
-        warning: warningDetails(operation),
-      });
-      continue;
-    }
-    if (resources.some((resource) => unknown.has(resource))) {
-      operations.push({
-        index,
-        kind: operation.kind,
-        status: "blocked",
-        effect: "unknown",
-        resources,
-        error: {
-          code: "DEPENDENCY_UNKNOWN",
-          message: "A prior operation left a required resource in an unknown state.",
-        },
-      });
-      continue;
-    }
-    if (operation.kind === "replace") {
-      const snapshot = snapshots.get(operation.selection.document);
-      const prior = snapshot === undefined ? [] : (accepted.get(snapshot.source) ?? []);
-      if (prior.some((change) => overlaps(change, operation.selection))) {
-        operations.push(
-          failed(
-            index,
-            operation,
-            resources,
-            invalid(`Overlapping selection in ${snapshot?.source ?? "unknown snapshot"}`),
-          ),
-        );
-        continue;
-      }
-    }
-
-    let saved: readonly SavedPath[] = [];
-    try {
-      await validateOperation(operation, snapshots, accepted, cwd);
-      saved = await Promise.all(resources.map(savePath));
-      const produced = await executeOperation(operation, snapshots, accepted, editor, cwd, signal);
-      for (const state of saved) if (!journal.has(state.path)) journal.set(state.path, state);
-      files.push(...produced);
-      operations.push({
-        index,
-        kind: operation.kind,
-        status: "applied",
-        effect: "applied",
-        resources,
-      });
-    } catch (error) {
-      const rollbackErrors = await rollback(saved, options.restorePath);
-      if (rollbackErrors.length > 0) {
-        for (const resource of resources) unknown.add(resource);
-        operations.push({
-          index,
-          kind: operation.kind,
-          status: "unknown",
-          effect: "unknown",
-          resources,
-          error: codedError(error, rollbackErrors),
-        });
-      } else operations.push(failed(index, operation, resources, error));
-    }
-  }
-
-  const successful = operations.some(({ effect }) => effect === "applied");
-  const transaction = successful ? await editor.recordApplyUndo([...journal.values()]) : undefined;
-  return {
-    operation: "apply",
-    ok: operations.length > 0 && operations.every(({ status }) => status === "applied"),
-    effect: unknown.size > 0 ? "unknown" : successful ? "applied" : "not-applied",
-    ...(transaction === undefined ? {} : { transaction }),
-    files,
-    completed: [
-      ...new Set(
-        operations
-          .filter(({ effect }) => effect === "applied")
-          .flatMap(({ resources }) => resources),
+  const reserved = [
+    ...new Set(
+      request.operations.flatMap((operation) =>
+        operationResources(operation, snapshots, context.cwd),
       ),
-    ],
-    errors: operations.flatMap((item) =>
-      item.status === "warning" || item.error === undefined
-        ? []
-        : [{ source: item.resources.join(", "), ...item.error }],
     ),
-    operations,
-  };
+  ];
+  return editor.enqueueFileOperation(
+    async (): Promise<ScriptMutationOutcome> => {
+      const accepted = new Map<string, TextChange[]>();
+      const unknown = new Set<string>();
+      const journal = new Map<string, SavedPath>();
+      const files: ScriptMutationFile[] = [];
+      const operations: ApplyOperationOutcome[] = [];
+      const cwd = context.cwd;
+      const batchedReplacements = new Set<number>();
+
+      for (const [index, operation] of request.operations.entries()) {
+        const resources = operationResources(operation, snapshots, cwd);
+        if (batchedReplacements.has(index)) continue;
+        if (operation.kind === "replace") {
+          const replacements: Array<{ index: number; operation: TextOperation }> = [];
+          for (
+            let candidateIndex = index;
+            candidateIndex < request.operations.length;
+            candidateIndex += 1
+          ) {
+            const candidate = request.operations[candidateIndex];
+            if (
+              candidate?.kind !== "replace" ||
+              candidate.selection.document !== operation.selection.document
+            )
+              break;
+            replacements.push({ index: candidateIndex, operation: candidate });
+          }
+          if (replacements.length > 1) {
+            for (const replacement of replacements) batchedReplacements.add(replacement.index);
+            const outcome = await executeReplacementBatch(
+              replacements,
+              snapshots,
+              accepted,
+              editor,
+              cwd,
+              signal,
+              options,
+            );
+            for (const state of outcome.saved)
+              if (!journal.has(state.path)) journal.set(state.path, state);
+            files.push(...outcome.files);
+            operations.push(...outcome.operations);
+            continue;
+          }
+        }
+        if (operation.kind === "warning") {
+          operations.push({
+            index,
+            kind: "warning",
+            status: "warning",
+            effect: "not-applied",
+            resources,
+            warning: warningDetails(operation),
+          });
+          continue;
+        }
+        if (resources.some((resource) => unknown.has(resource))) {
+          operations.push({
+            index,
+            kind: operation.kind,
+            status: "blocked",
+            effect: "unknown",
+            resources,
+            error: {
+              code: "DEPENDENCY_UNKNOWN",
+              message: "A prior operation left a required resource in an unknown state.",
+            },
+          });
+          continue;
+        }
+        if (operation.kind === "replace") {
+          const snapshot = snapshots.get(operation.selection.document);
+          const prior = snapshot === undefined ? [] : (accepted.get(snapshot.source) ?? []);
+          if (prior.some((change) => overlaps(change, operation.selection))) {
+            operations.push(
+              failed(
+                index,
+                operation,
+                resources,
+                invalid(`Overlapping selection in ${snapshot?.source ?? "unknown snapshot"}`),
+              ),
+            );
+            continue;
+          }
+        }
+
+        let saved: readonly SavedPath[] = [];
+        try {
+          await validateOperation(operation, snapshots, accepted, cwd);
+          saved = await Promise.all(resources.map(savePath));
+          const produced = await executeOperation(
+            operation,
+            snapshots,
+            accepted,
+            editor,
+            cwd,
+            signal,
+          );
+          for (const state of saved) if (!journal.has(state.path)) journal.set(state.path, state);
+          files.push(...produced);
+          operations.push({
+            index,
+            kind: operation.kind,
+            status: "applied",
+            effect: "applied",
+            resources,
+          });
+        } catch (error) {
+          const rollbackErrors = await rollback(saved, options.restorePath);
+          if (rollbackErrors.length > 0) {
+            for (const resource of resources) unknown.add(resource);
+            operations.push({
+              index,
+              kind: operation.kind,
+              status: "unknown",
+              effect: "unknown",
+              resources,
+              error: codedError(error, rollbackErrors),
+            });
+          } else operations.push(failed(index, operation, resources, error));
+        }
+      }
+
+      const successful = operations.some(({ effect }) => effect === "applied");
+      const transaction = successful
+        ? await editor.recordApplyUndo([...journal.values()])
+        : undefined;
+      return {
+        operation: "apply",
+        ok: operations.length > 0 && operations.every(({ status }) => status === "applied"),
+        effect: unknown.size > 0 ? "unknown" : successful ? "applied" : "not-applied",
+        ...(transaction === undefined ? {} : { transaction }),
+        files,
+        completed: [
+          ...new Set(
+            operations
+              .filter(({ effect }) => effect === "applied")
+              .flatMap(({ resources }) => resources),
+          ),
+        ],
+        errors: operations.flatMap((item) =>
+          item.status === "warning" || item.error === undefined
+            ? []
+            : [{ source: item.resources.join(", "), ...item.error }],
+        ),
+        operations,
+      };
+    },
+    signal,
+    { cwd: context.cwd, sources: reserved, allowNestedEdits: true },
+  );
 }
 
 async function executeReplacementBatch(
