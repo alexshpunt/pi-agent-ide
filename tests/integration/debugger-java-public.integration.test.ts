@@ -26,7 +26,11 @@ function call(id: string, name: string, arguments_: Record<string, unknown>) {
   });
 }
 
-test.runIf(enabled)(
+// Quarantined on Windows: public-Pi Java startup flakes while native lifecycle cases pass.
+// Evidence: https://github.com/alexshpunt/pi-agent-ide/actions/runs/37105857611
+// Evidence: https://github.com/alexshpunt/pi-agent-ide/actions/runs/37108400575
+// Keep Linux public-Pi coverage and native Windows Java tests enabled.
+test.runIf(enabled && process.platform !== "win32")(
   "public Pi Java calls stop with source and locals then terminate from a spaced path",
   async () => {
     const cwd = await mkdtemp(path.join(tmpdir(), "pi public Java lifecycle "));
