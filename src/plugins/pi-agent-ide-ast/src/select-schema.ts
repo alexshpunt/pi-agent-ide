@@ -110,6 +110,54 @@ const textOperationSchema = Type.Union([
   ),
 ]);
 
+function scopedOperation<const Kind extends "within" | "intersection" | "difference">(
+  kind: Kind,
+  description: string,
+) {
+  return Type.Object(
+    {
+      kind: Type.Literal(kind),
+      scopes: {
+        ...resultInputSchema,
+        description:
+          "Comparison scopes: verified results, data, targets, item arrays, or a readable source string. Match sets by source, not array position.",
+      },
+    },
+    { additionalProperties: false, description },
+  );
+}
+
+const geometryOperationSchema = Type.Union([
+  scopedOperation(
+    "within",
+    "Retain each candidate whole only when one comparison scope contains it. Never clip or join scopes for containment.",
+  ),
+  scopedOperation(
+    "intersection",
+    "Clip each candidate to the union of comparison scopes in its source. Touching text ranges do not create a point.",
+  ),
+  scopedOperation(
+    "difference",
+    "Subtract comparison scopes from each candidate, retaining separate surviving fragments. Point scopes do not cut text.",
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("merge"),
+      adjacent: Type.Optional(
+        Type.Boolean({
+          description:
+            "Also merge touching nonempty ranges. Default false; never fill a gap or extend text for a point.",
+        }),
+      ),
+    },
+    {
+      additionalProperties: false,
+      description:
+        "Explicitly merge overlapping ranges by source, retaining every contributing origin. Covered points are absorbed; other points remain separate.",
+    },
+  ),
+]);
+
 /** Callable text and structural transformations; future catalog entries are not exposed here. */
 export const selectSchema = Type.Object(
   {
@@ -137,6 +185,7 @@ export const selectSchema = Type.Object(
         { additionalProperties: false },
       ),
       textOperationSchema,
+      geometryOperationSchema,
     ]),
   },
   { additionalProperties: false },
@@ -148,8 +197,13 @@ export type SelectParameters = Static<typeof selectSchema>;
 export type SelectOperation = SelectParameters["operation"];
 /** AST operations require the existing syntax provider. */
 export type StructuralSelectOperation = Extract<SelectOperation, { kind: "object" | "part" }>;
+/** Geometry operations compare verified source-local sets. */
+export type GeometrySelectOperation = Static<typeof geometryOperationSchema>;
 /** Text operations work independently of a source language or parser. */
-export type TextSelectOperation = Exclude<SelectOperation, StructuralSelectOperation>;
+export type TextSelectOperation = Exclude<
+  SelectOperation,
+  StructuralSelectOperation | GeometrySelectOperation
+>;
 
 const rangeSchema = Type.Object(
   {

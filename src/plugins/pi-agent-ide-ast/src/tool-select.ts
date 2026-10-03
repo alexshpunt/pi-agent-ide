@@ -12,12 +12,14 @@ import { selectPresentation } from "./select-presentation.js";
 import { selectFunctionRegions } from "./ast/selection.js";
 import { publicRange } from "./selection-region.js";
 import { selectTextRegions } from "./text-selection.js";
+import { selectGeometryRegions } from "./geometry-selection.js";
 import {
   selectSchema,
   selectOutputSchema,
   selectionDataSchema,
   type SelectionData,
   type SelectParameters,
+  type GeometrySelectOperation,
 } from "./select-schema.js";
 
 function operationLabel(operation: SelectParameters["operation"]): string {
@@ -55,7 +57,25 @@ function operationLabel(operation: SelectParameters["operation"]): string {
     case "columns": {
       return `columns ${operation.from}–${operation.to}`;
     }
+    case "within":
+    case "intersection":
+    case "difference": {
+      return operation.kind;
+    }
+    case "merge": {
+      return operation.adjacent ? "merge overlaps and adjacent ranges" : "merge overlaps";
+    }
   }
+}
+function isGeometryOperation(
+  operation: SelectParameters["operation"],
+): operation is GeometrySelectOperation {
+  return (
+    operation.kind === "within" ||
+    operation.kind === "intersection" ||
+    operation.kind === "difference" ||
+    operation.kind === "merge"
+  );
 }
 /** Register read-only text and AST selection using the existing Read and source-target backends. */
 export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Promise<void> {
@@ -63,8 +83,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "select-code",
-      description:
-        "Derive text boundaries, positions, enclosing functions and bodies from verified source targets",
+      description: "Derive text/function boundaries and combine verified source-range sets",
       triggers: [{ tool: "select" }],
     }),
   ]);
@@ -85,9 +104,8 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
           openWorldHint: false,
         },
         description:
-          "Use select to derive verified text boundaries and positions, or the nearest enclosing JavaScript/TypeScript function and its exact body, without JSX/TSX. Text operations are language-independent and apply per input region; range/lines require one source. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Only linesOf, between/lines and enclosing function selection can expand; expansions retain input associations. Results keep strict snapshots and individually consumable items; preview truncation does not clip the whole target. No ownBody or general AST traversal is implemented.",
-        promptSnippet:
-          "Derive text boundaries, positions and function regions from verified source targets",
+          "Use select to derive verified text boundaries and positions, combine source-local range sets, or find the nearest enclosing JavaScript/TypeScript function and its exact body, without JSX/TSX. Text operations apply per region; range/lines require one source. Geometry matches by source and snapshot, not array position; within retains whole candidates, intersection clips, difference subtracts, and merge explicitly joins overlaps or optional adjacency without filling gaps. Points use included starts and excluded ends. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Line/function expansion and merge retain input associations. Results keep strict snapshots, both inputs’ completeness and individually consumable items; preview truncation does not clip the whole target. No ownBody or general AST traversal is implemented.",
+        promptSnippet: "Derive text/function boundaries and combine verified source-range sets",
         promptGuidelines: [
           "Use Search for predicate matches and existing captures; use Select when a target needs new text or structural boundaries.",
           "Compare the enclosing owner of each inner match with the original function when checking a condition in that function's own body.",
@@ -130,27 +148,35 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
         async execute(_id, parameters: SelectParameters, signal, _onUpdate, context) {
           try {
             signal?.throwIfAborted();
-            let source: unknown = parameters.path;
-            if (typeof parameters.path === "string" && !parameters.path.startsWith("RESULT#")) {
-              const resolved = await read.read(
-                { path: parameters.path },
-                {
-                  cwd: context.cwd,
-                  ...(signal !== undefined && { signal }),
-                },
-                "script",
-              );
-              if (resolved.isError) throw new Error("Select could not read this source.");
-              source = resolved.script;
-            }
-            const input = targets.resolve(source, context.cwd);
-            await targets.verify(input, signal);
+            const resolve = async (source: unknown) => {
+              if (typeof source === "string" && !source.startsWith("RESULT#")) {
+                const resolved = await read.read(
+                  { path: source },
+                  { cwd: context.cwd, ...(signal !== undefined && { signal }) },
+                  "script",
+                );
+                if (resolved.isError) throw new Error("Select could not read this source.");
+                source = resolved.script;
+              }
+              return targets.resolve(source, context.cwd);
+            };
+            const input = await resolve(parameters.path);
             const operation = parameters.operation;
-            const selected =
-              operation.kind === "object" || operation.kind === "part"
+            const scopes =
+              isGeometryOperation(operation) && "scopes" in operation
+                ? await resolve(operation.scopes)
+                : { targets: [], complete: true };
+            const verified = {
+              targets: [...input.targets, ...scopes.targets],
+              complete: input.complete && scopes.complete,
+            };
+            await targets.verify(verified, signal);
+            const selected = isGeometryOperation(operation)
+              ? selectGeometryRegions(input, operation, scopes, signal)
+              : operation.kind === "object" || operation.kind === "part"
                 ? await selectFunctionRegions(input, operation, context.cwd, signal)
                 : selectTextRegions(input, operation, signal);
-            await targets.verify(input, signal);
+            await targets.verify(verified, signal);
             signal?.throwIfAborted();
             const sourceTargets = selected.regions.map((region) => ({
               ...region.target,
@@ -158,8 +184,8 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
             }));
             const data: SelectionData = {
               kind: "selection",
-              target: targets.register(sourceTargets, context.cwd, input.complete),
-              complete: input.complete,
+              target: targets.register(sourceTargets, context.cwd, verified.complete),
+              complete: verified.complete,
               totalItems: selected.regions.length,
               missingInputs: selected.missingInputs,
               truncated: selected.regions.length > 100,
@@ -169,7 +195,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
                   target: targets.register(
                     [{ ...region.target, ranges: [region.range] }],
                     context.cwd,
-                    input.complete,
+                    verified.complete,
                   ),
                   source: region.target.source,
                   range: publicRange(region.range),
@@ -184,7 +210,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
                 content: [{ type: "text", text: JSON.stringify(data) }],
                 details: selectPresentation(
                   selected.regions,
-                  input.complete,
+                  verified.complete,
                   selected.missingInputs,
                   context.cwd,
                 ),

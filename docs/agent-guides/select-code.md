@@ -45,6 +45,32 @@ await tools.replace({ path: value, text: "new value" });
 
 Select works as an ordinary tool as well as inside native Codemode. A position can be consumed by replace or a paired copy/move destination for exact insertion. insert keeps its string-path/anchor contract.
 
+## Range sets
+
+Use path for candidates and operation.scopes for comparison scopes. Both accept verified results/data/targets/item arrays and readable source strings. Match sets by file and snapshot, never by array order; different files do not match. Every input is verified even when it has no counterpart. Stale or incompatible snapshots reject the operation.
+
+- within retains a complete candidate only when one scope contains it. It does not clip or join adjacent scopes for containment.
+- intersection clips each candidate to the union of comparison scopes.
+- difference subtracts the union of scopes from each candidate and returns separate surviving fragments.
+- merge explicitly joins overlapping candidates. Set adjacent:true to also join touching nonempty ranges; default false. Never fill a real gap.
+
+Clipping/subtraction keeps different candidate seeds separate. Equal output geometry is deduplicated; origins retain the candidate associations, not comparison scopes. Merge retains every contributor and reports its expansion relative to each candidate.
+
+A point belongs to a nonempty [start,end) range at its included start but not its excluded end. Equal points match. Intersection with an explicit point keeps that point when contained; touching nonempty text does not create a point. Difference removes covered candidate points, but subtracting a point does not cut text. Merge absorbs covered points and keeps other points separate without extending text or bridging gaps. EOF points are outside a range ending at EOF.
+
+Empty comparison scopes make within/intersection empty and difference unchanged. Empty candidates stay empty. Binary output complete is the conjunction of both inputs, including unmatched comparison files. Incomplete scopes do not establish absence or authorize an edit. missingInputs counts candidates that produce no output.
+
+```js
+const candidates = await tools.search({ path: "notes.txt", query: "regex:<[^>]+>" });
+const protectedText = await tools.search({ path: candidates, query: "KEEP" });
+const editable = await tools.select({
+  path: candidates,
+  operation: { kind: "difference", scopes: protectedText },
+});
+const found = await tools.search({ path: editable, query: "old" });
+await tools.replace({ path: found, text: "new" });
+```
+
 ## Source inputs and results
 
 path accepts compatible Read/Search/mutation/Select results, their data, RESULT# references and arrays of returned items. A file path obtains a fresh whole-file Read snapshot; the chosen operation still must make sense for that entire seed. A multi-function file is not implicitly split into functions.
