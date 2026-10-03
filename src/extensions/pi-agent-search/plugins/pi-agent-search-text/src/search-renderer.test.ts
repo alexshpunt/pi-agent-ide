@@ -90,18 +90,24 @@ test.each([false, true])(
     const rendered = new SearchResultPanel(details, plainTheme, expanded).render(80);
     const plain = rendered.map(stripTerminalSequences).join("\n");
     expect(plain).toContain("0 exact · 5 fuzzy matches · 1 file");
-    expect(plain).toContain("No exact matches found");
     expect(plain).toContain("hintStrings(linkCount) {");
     expect(plain).toContain("886");
     expect(rendered.join("\n")).toContain(`${SELECTED_BACKGROUND}hintStrings`);
-    expect(plain).toContain("Possible name: hintStrings");
-    expect(plain).toContain("5 matches");
-    expect(plain).toContain("in 1 file");
-    expect(plain).not.toContain("1 files");
-    expect(plain).toContain("Source changed; stable references unavailable.");
-    expect(plain).toContain("remove leading component");
+    expect(plain).toContain("Shown 1 of 5");
     expect(plain).toContain("hints.js");
-    expect(plain).not.toContain("SEARCH#");
+    for (const agentDetail of [
+      "No exact matches found",
+      "Possible names",
+      "Possible name:",
+      "not equivalent behavior",
+      "Source changed; stable references unavailable.",
+      "remove leading component",
+      "5 matches in 1 file",
+      "Read for all",
+      "Exact alternative",
+      "SEARCH#",
+    ])
+      expect(plain).not.toContain(agentDetail);
     expect(rendered.every((line) => visibleWidth(line) === 80)).toBe(true);
   },
 );
@@ -162,7 +168,8 @@ test("marks captured fuzzy totals as lower bounds when a group is incomplete", (
     .map(stripTerminalSequences)
     .join("\n");
   expect(plain).toContain("0 exact · 200+ fuzzy matches · 1+ file");
-  expect(plain).toContain("Capture limited");
+  expect(plain).not.toContain("Capture limited");
+  expect(plain).not.toContain("narrow the scope");
 });
 test("wraps a full search match line with one aligned line-number gutter", () => {
   const text = `prefix ${"alpha ".repeat(5)}MATCH ${"https://example.com/".repeat(8)} suffix`;

@@ -1,7 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-import type { FuzzyCandidateData } from "pi-agent-search/api/search";
 
 import {
   type AgentToolResult,
@@ -52,12 +50,12 @@ interface SearchRenderContext {
 }
 
 type SearchPanelRow =
-  | { readonly kind: "candidate"; readonly candidate: FuzzyCandidateData }
+  | { readonly kind: "candidate"; readonly identifier: string }
   | { readonly kind: "file"; readonly file: SearchResultFile }
   | { readonly kind: "line"; readonly file: SearchResultFile; readonly line: SearchResultLine }
   | { readonly kind: "summary"; readonly text: string }
   | { readonly kind: "omitted"; readonly matches: number }
-  | { readonly kind: "empty"; readonly exact?: boolean };
+  | { readonly kind: "empty" };
 
 export function renderSearchResult(
   result: AgentToolResult<SearchToolDetails>,
@@ -142,9 +140,12 @@ export class SearchResultPanel implements Component {
 }
 
 function searchViewport(details: SearchToolDetails, expanded: boolean): readonly SearchPanelRow[] {
+  const hasCandidates = details.fuzzy?.status === "ready" && details.fuzzy.candidates.length > 0;
   const rows: SearchPanelRow[] =
     details.files.length === 0
-      ? [{ kind: "empty", exact: details.fuzzy !== undefined } satisfies SearchPanelRow]
+      ? hasCandidates
+        ? []
+        : [{ kind: "empty" } satisfies SearchPanelRow]
       : details.files.flatMap((file): SearchPanelRow[] => [
           { kind: "file", file },
           ...(file.uniqueLineCount === undefined
@@ -165,15 +166,9 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
     if (details.fuzzy.status === "skipped")
       rows.push({
         kind: "summary",
-        text: "Possible-name fallback skipped: " + (details.fuzzy.message ?? "budget reached"),
+        text: "Fuzzy search unavailable",
       });
     else if (details.fuzzy.candidates.length > 0) {
-      rows.push({
-        kind: "summary",
-        text: "Possible names · spelling suggestions, not equivalent behavior",
-      });
-      if (details.fuzzy.message !== undefined)
-        rows.push({ kind: "summary", text: details.fuzzy.message });
       rows.push(
         ...details.fuzzy.candidates.flatMap((candidate): SearchPanelRow[] => {
           const files =
@@ -182,13 +177,13 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
             )?.files ?? [];
           const previewCount = files.reduce((count, file) => count + file.matchCount, 0);
           return [
-            { kind: "candidate", candidate },
+            { kind: "candidate", identifier: candidate.identifier },
             ...(files.length === 0
               ? []
               : [
                   {
                     kind: "summary",
-                    text: `Preview · ${String(previewCount)} of ${String(candidate.matchCount)}${candidate.selection.complete ? "" : "+"} spans · Read for all`,
+                    text: `Shown ${String(previewCount)} of ${String(candidate.matchCount)}${candidate.selection.complete ? "" : "+"}`,
                   } as const,
                   ...files.flatMap((file): SearchPanelRow[] => [
                     { kind: "file", file },
@@ -246,37 +241,10 @@ function renderPanelRow(
   theme: Theme,
 ): readonly string[] {
   if (row.kind === "candidate") {
-    const candidate = row.candidate;
-    const suffix = candidate.selection.complete ? "" : "+";
-    const first = candidate.selection.matches[0];
-    const location =
-      first === undefined
-        ? ""
-        : fileLink(path.basename(first.source), pathToFileURL(first.source).href, theme) +
-          ":" +
-          String(first.range.startLine);
-    const texts = [
-      theme.fg("accent", theme.bold("Possible name: " + candidate.identifier)),
-      theme.fg("dim", candidate.reason),
-      theme.fg(
-        "toolOutput",
-        String(candidate.matchCount) +
-          suffix +
-          " matches in " +
-          String(candidate.fileCount) +
-          suffix +
-          " " +
-          plural(candidate.fileCount, "file", "files"),
-      ) + (location ? " · " + location : ""),
-      ...(candidate.selection.complete
-        ? []
-        : [theme.fg("warning", "Capture limited · narrow the scope for all matches")]),
-    ];
-    return texts.flatMap((text) =>
-      wrapTextWithAnsi(text, Math.max(1, width - 4)).map((line) =>
-        framed("  " + line, width, theme),
-      ),
-    );
+    return wrapTextWithAnsi(
+      theme.fg("accent", theme.bold(row.identifier)),
+      Math.max(1, width - 4),
+    ).map((line) => framed("  " + line, width, theme));
   }
   if (row.kind === "file") {
     return [framed(renderFileHeader(row.file, width, theme), width, theme, true)];
@@ -313,13 +281,7 @@ function renderPanelRow(
     ];
   }
 
-  return [
-    framed(
-      theme.fg("dim", row.exact ? "  No exact matches found" : "  No matches found"),
-      width,
-      theme,
-    ),
-  ];
+  return [framed(theme.fg("dim", "  No matches found"), width, theme)];
 }
 
 function renderFileHeader(file: SearchResultFile, width: number, theme: Theme): string {

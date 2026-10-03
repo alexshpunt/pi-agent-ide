@@ -105,12 +105,28 @@ test("shows pinned Vimium possible names in native Search for files and URLs wit
   expect(getToolResultText(result, "web")).toContain("No matches in " + fixture.url);
   expect(getToolResultText(result, "web")).not.toContain("SEARCH#");
   expect(fixture.requests()).toBe(1);
-  expect(result.tuiRenderedOutput).toContain("Possible name: hintStrings");
-  expect(result.tuiRenderedOutput).toContain("0 exact · 7 fuzzy matches · 1 file");
-  expect(result.tuiRenderedOutput).toContain("No exact matches found");
-  expect(result.tuiRenderedOutput).toContain("const hintStrings = this.hintStrings");
+  const header = "0 exact · 7 fuzzy matches · 1 file";
+  expect(result.tuiRenderedOutput).toContain(header);
+  const localStart = result.tuiRenderedOutput.indexOf(header);
+  const nextSearch = result.tuiRenderedOutput.indexOf('search "', localStart);
+  const localCard = result.tuiRenderedOutput.slice(
+    localStart,
+    nextSearch === -1 ? undefined : nextSearch,
+  );
+  expect(localCard).toContain("hintStrings");
+  expect(localCard).toContain("generateHintString");
+  expect(localCard).toContain("Shown 3 of 5");
+  expect(localCard).toContain("const hintStrings = this.hintStrings");
+  for (const agentDetail of [
+    "No exact matches found",
+    "Possible name:",
+    "not equivalent behavior",
+    "remove leading component",
+    "one character edit",
+    "Read for all",
+  ])
+    expect(localCard).not.toContain(agentDetail);
   expect(getToolResultText(result, "local")).not.toContain("const hintStrings =");
-  expect(result.tuiRenderedOutput).toContain("Possible name: generateHintString");
   expect(result.tuiRenderedOutput).toContain("No matches");
 }, 150_000);
 
