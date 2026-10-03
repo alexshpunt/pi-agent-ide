@@ -60,14 +60,16 @@ const createRunParameters = (profile: ShellProfile) =>
     { additionalProperties: false },
   );
 
-/** Register terminal process lifecycle tools with platform-specific shell guidance. */
+/** Register shell tools and return a callback that releases their active waits on steering. */
 export function registerTerminalTools(
   pi: Pick<ExtensionAPI, "registerTool">,
   manager: TerminalSessionManager,
   profile: ShellProfile,
   ui: Pick<TerminalUi, "bind" | "notifyWaitTransition">,
   presentation: "full" | "compact" | "disabled" = "compact",
-): void {
+): () => void {
+  // Keep wait cancellation in this registration, not in a PTY manager retained from older code.
+  const foregroundWaits = new Set<AbortController>();
   const toolName = process.platform === "win32" ? "powershell" : "bash";
   const runParameters = createRunParameters(profile);
   pi.registerTool(
@@ -109,10 +111,22 @@ export function registerTerminalTools(
           return terminalResult(manager.snapshot(session));
         }
         if (session.status === "failed") return terminalResult(manager.snapshot(session));
-        const outcome = await manager.waitForForeground(session.source, {
-          signal,
-          timeoutMs: (input.timeoutSeconds ?? 60) * 1_000,
-        });
+        const steering = new AbortController();
+        foregroundWaits.add(steering);
+        let outcome;
+        try {
+          outcome = await manager.waitForForeground(session.source, {
+            signal:
+              signal === undefined ? steering.signal : AbortSignal.any([signal, steering.signal]),
+            timeoutMs: (input.timeoutSeconds ?? 60) * 1_000,
+          });
+        } finally {
+          foregroundWaits.delete(steering);
+        }
+        if (outcome.reason === "aborted" && steering.signal.aborted && signal?.aborted !== true) {
+          outcome.session.waitReason = "steering";
+          return terminalResult(manager.snapshot(outcome.session));
+        }
         if (outcome.reason === "aborted") ui.notifyWaitTransition(outcome.session);
         return terminalResult(manager.snapshot(outcome.session));
       },
@@ -133,6 +147,9 @@ export function registerTerminalTools(
       },
     }),
   );
+  return () => {
+    for (const wait of foregroundWaits) wait.abort();
+  };
 }
 
 function terminalPreview(snapshot: TerminalSessionSnapshot) {
