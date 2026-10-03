@@ -52,6 +52,8 @@ Inspect failures and their artifacts before changing code or rerunning checks. D
 
 If the user explicitly keeps the pinned scope instead of refreshing it, fix a release defect through a reviewed `fix/release-*` PR to main labeled `release-fix`. Review the change itself, not just its label. Rebase the release branch onto the fixed main using `--force-with-lease`, then rerun candidate validation. A changed base, head, or archive requires fresh evidence. Never pull unrelated develop features into the release to repair it.
 
+A publication-only infrastructure fix is a separate case. If the tested product and archive are unchanged, ask the user whether to keep that exact candidate. Check the existing allowed infrastructure paths in `scripts/promote-release.ts` and `scripts/publish-candidate.ts`. Make the reviewed fix through a `release-fix` PR, wait for its required CI, and rerun verification with the same release PR and candidate run. Do not rebase or rebuild the preserved candidate, broaden the guards, or replace its tag.
+
 Squash-merge only the verified release PR with the expected head. Keep the release branch until publication and develop synchronization finish.
 
 ## Verify, publish, and finish
@@ -65,6 +67,8 @@ Squash-merge only the verified release PR with the expected head. Keep the relea
 
 Do not call the release complete before registry verification and synchronization succeed. The post-publication benchmark is separate evidence; its failure does not undo publication.
 
+npm can accept an archive before the registry serves its version. If npm reports that the package is still being processed and the registry returns 404, wait for visibility and verify the registry archive against the candidate hashes. Then retry only the failed finish or benchmark jobs. Do not repeat a successful publication, cancel the release, replace the tag, or delete the freeze branch before synchronization succeeds.
+
 If develop advances during synchronization or a merge conflicts, keep the release branch and retry the same verified release after resolving the sync. Do not force-push develop or publish again with different bytes.
 
 ## Stop and recovery conditions
@@ -77,7 +81,9 @@ Cancel only an unpublished release through **Cancel release** on main with its v
 
 - New features land in develop during promotion CI: the promotion head and release scope stay unchanged.
 - New features land in develop during candidate CI: the release head, candidate archive, and CI evidence stay unchanged.
-- A release fix changes main: the release branch is rebased and fresh candidate evidence is required.
+- A product fix changes main: the release branch is rebased and fresh candidate evidence is required.
+- An approved publication-only infrastructure fix changes main: the allowed-path guards still pass and verification uses the original candidate archive.
+- npm accepts the archive before registry visibility: wait, verify its hashes, and retry failed follow-up jobs without repeating publication.
 - Develop advances during the final sync: repair or retry synchronization without replacing published bytes or freezing develop.
 - A real release check fails and develop has new fixes: diagnose and verify the cause, cancel the old candidate, capture a new cut, update notes, and keep the unused version.
 - The watcher loses its network connection while CI is healthy: restore observation without refreshing scope or claiming CI failed.
