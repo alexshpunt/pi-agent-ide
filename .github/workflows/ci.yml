@@ -174,9 +174,28 @@ jobs:
         id: unit-tests
         run: pnpm test:unit:report
 
+      - name: Upload unit test report
+        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: unit-test-results
+          path: .agents/tmp/test-results/unit.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report unit tests
+        id: unit-report
+        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        with:
+          name: Unit tests
+          path: .agents/tmp/test-results/unit.xml
+          reporter: java-junit
+          fail-on-error: false
+
       - name: Run integration tests
         id: integration-tests
-        if: always()
+        if: success()
         env:
           PI_DEBUGGER_CORE_EXCLUDE_ADAPTER: kotlin
         run: pnpm test:integration:report
@@ -222,16 +241,6 @@ jobs:
           path: .agents/tmp/test-results/*.xml
           if-no-files-found: warn
           retention-days: 30
-
-      - name: Report unit tests
-        id: unit-report
-        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
-        with:
-          name: Unit tests
-          path: .agents/tmp/test-results/unit.xml
-          reporter: java-junit
-          fail-on-error: false
 
       - name: Report integration tests
         id: integration-report
