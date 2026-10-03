@@ -44,6 +44,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
+      - name: Install release script dependencies
+        run: |
+          npm install --global pnpm@11.22.0
+          pnpm install --frozen-lockfile
       - name: Verify candidate identity and archive
         id: candidate
         env:
@@ -80,6 +84,10 @@ jobs:
           package-manager-cache: false
       - name: Install pinned npm
         run: npm install --global "npm@${NPM_VERSION}"
+      - name: Install release script dependencies
+        run: |
+          npm install --global pnpm@11.22.0
+          pnpm install --frozen-lockfile
       - name: Download verified artifact
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
@@ -127,6 +135,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
+      - name: Install release script dependencies
+        run: |
+          npm install --global pnpm@11.22.0
+          pnpm install --frozen-lockfile
       - name: Download verified archive and evidence
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:

@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.6.4 — 2026-10-03
+
+### Native Pi integration
+
+- Support Pi 0.99.1 and newer hosts with native tool namespaces, discovery, and Codemode execution.
+- Keep the built-in edit placeholder hidden from declarations, discovery, and nested calls.
+- Return structured IDE and shell results with explicit success, error, and partial outcomes.
+- Batch sequential Codemode text edits against shared snapshots and expose committed results through `flush()`.
+- Run disjoint Read, Search, and editing operations concurrently while preserving ordering and rollback protection for shared resources.
+- Attach first-use guides without blocking or replaying tool calls, and preserve guidance across nested calls and session navigation.
+- Keep IDE panels visible for nested calls, show final batch diffs without duplicate bookkeeping panels, and preserve bounded history and native usage accounting.
+- Verify IDE tool coexistence with native MCP tools and resources.
+
+### Packaging
+
+- Fix Windows release entrypoint resolution, npm packing, and archive extraction.
+
+### Editing and reading
+
+- Suggest up to three nearby workspace paths when a local file is missing, without reading another file automatically.
+- Preserve neighboring blank separators when exact-text anchors already include a newline.
+- Bound large committed Apply results before serialization and keep full results addressable.
+- Preserve structured source data when AST output exceeds the preview budget.
+- Run independent post-read handlers concurrently while applying their transforms in order.
+- Document and verify jq views for JSONL inspection.
+
+### Search and presentation
+
+- Search converted HTTP pages by URL, including regular-expression queries.
+- Execute Boolean search without unsupported generated lookaround expressions.
+- Keep Search footers within narrow terminals, including 40-column layouts.
+- Refresh diff caches after native theme palette changes and preserve panel backgrounds and keyboard focus.
+- Show precise character-level edit highlights and bound diff comparisons; report unavailable totals when comparison limits are reached.
+- Keep known added and removed lines visible when detailed pairing reaches its limit, and avoid repeated short-string similarity work.
+- Remove the redundant Git preview channel.
+
+### Terminal
+
+- Release foreground terminal waits as soon as Pi accepts user steering. Keep the same command running in the background with retained output and normal completion notifications; follow-up messages keep their existing wait behavior.
+- Send one stale reminder per terminal session, including across reloads, while keeping completion notifications.
+- Expose the actual shell, executable, and command syntax to agents, including PowerShell guidance on Windows.
+
+### Optional code review
+
+- Add opt-in background Jev review of saved diff fragments against user-defined YAML rules, without blocking edits or replacing diagnostics.
+- Ship a separately enabled rule-capture skill that proposes reusable review rules and waits for confirmation before saving them. Both features are off by default.
+
+### Debugging
+
+- Fix the Java debugger lifecycle on Linux and native Windows with a dedicated java-debug/JDT LS backend. Start owned JVM targets suspended so the first breakpoint is not missed, and preserve source, locals, continue, and termination handling.
+- Route deletion of terminated debugger sessions and breakpoints through the debugger resource handler.
+- Bound replayable DAP events so noisy debug targets do not grow the queue without limit.
+- Check each debugger's own executable or configured adapter path instead of applying Python or JavaScript probes to unrelated adapters.
+
+### Verification
+
+- Temporarily skip the flaky Windows Java public-Pi startup test. Keep Linux public-Pi and native Windows Java lifecycle checks enabled.
+- Retain unit test reports immediately and stop before integration tests when the unit suite fails. Keep content checks independent of wall-clock load and allow independent formatters to finish in either order.
+
 ## 0.6.3 — 2026-09-27
 
 ### Editing
