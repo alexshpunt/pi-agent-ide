@@ -1,15 +1,49 @@
 # Select source boundaries
 
-Use Search to find code by a predicate. Use Select when an existing target needs new structural boundaries. Ordinary JavaScript chooses returned items; it cannot grant source authority to reconstructed coordinates or strings.
+Use Search to find text or code by a predicate. Use Select when an existing target needs new text or structural boundaries. Ordinary JavaScript chooses returned items; it cannot grant source authority to reconstructed coordinates or strings.
 
-## Supported operations
+## AST operations
 
-Select currently supports JavaScript (.js/.mjs/.cjs) and TypeScript (.ts/.mts/.cts), without JSX/TSX. Syntax errors and unavailable providers are errors, not evidence that a function is absent.
+The function/body operations support JavaScript (.js/.mjs/.cjs) and TypeScript (.ts/.mts/.cts), without JSX/TSX. Syntax errors and unavailable providers are errors, not evidence that a function is absent. Text operations do not require a parser or a particular source language.
 
 - `operation: {kind:"object", object:"function", relation:"enclosing", level:1, extent:"around"}` returns the nearest function containing the entire input range. An exact function selects itself. It can expand outside a Read/Search window and reports each input range and whether expansion occurred. A seed spanning separate functions is rejected rather than choosing from its first character.
 - `operation: {kind:"part", part:"body"}` requires an exact supported function target. A block body includes braces; an expression-bodied arrow returns its expression. A declaration without a body produces no selection, reported by missingInputs.
 
-Function declarations/expressions, arrow functions, class/object methods and their async/generator forms are supported, including TypeScript signatures without bodies. A function's parameters belong to that function, including default expressions. No lexical text objects, ownBody subtraction, arbitrary ranges, other nesting levels or general AST traversal are implemented.
+Function declarations/expressions, arrow functions, class/object methods and their async/generator forms are supported, including TypeScript signatures without bodies. A function's parameters belong to that function, including default expressions. No ownBody subtraction, other nesting levels or general AST traversal is implemented.
+
+## Text operations
+
+Use `operation.kind` to choose a text transformation:
+
+- `range` with startLine/startColumn/endLine/endColumn selects absolute source coordinates in one source. Lines are one-based, columns UTF-16 and the end exclusive. The entire requested range must fit one input region.
+- `lines` with first/last selects inclusive absolute complete lines in one source, including their existing line endings. Require containment in one input region.
+- `between` with non-empty literal start/end markers and extent inside/around/lines pairs the next opening marker with the nearest following closing marker, then resumes after that pair. inside excludes markers; around includes them; lines explicitly expands to complete containing lines. There is no nesting or bracket balancing. Identical markers pair successive occurrences. An unmatched opening is an error; no opening is valid absence.
+- `sliceText` with non-negative from and optional to slices each region by relative UTF-16 offsets. to is exclusive and defaults to the region end. This slices source text, not the items array.
+- `trim` with side start/end/both removes Unicode whitespace from those edges of each region. Whitespace-only input returns a zero-width point at its end.
+- `split` with a non-empty literal delimiter returns segments without the delimiter. Empty segments remain zero-width points.
+- `linesOf` explicitly expands each region to its complete containing lines. An exclusive end at next-line column zero leaves that untouched next line out.
+- `position` with edge before/after returns each region's zero-width start/end. Use a whole-file Read for file edges.
+- `columns` with from/to returns the exclusive UTF-16 column interval on each touched line, without line endings. Every interval must fit both its line and input scope.
+
+Except for range/lines, apply each operation independently to every input region. Keep files and sparse gaps separate; markers or delimiters cannot span those gaps. Invalid bounds, short-line columns and boundaries inside surrogate pairs or CRLF are errors, not clipped ranges. Preserve original CRLF/LF/bare-CR endings and unterminated EOF. Only linesOf and between/lines explicitly expand text input and report expansion.
+
+Resolve registered anchors through existing Read inputs, then pass their verified target to Select. Use Search for regex captures rather than a second regex language inside Select. Use JavaScript array slice/filter to choose items; use sliceText to derive source boundaries.
+
+```js
+const source = await tools.read({ path: "notes.txt", offset: 2, limit: 1 });
+const inside = await tools.select({
+  path: source,
+  operation: { kind: "between", start: "<", end: ">", extent: "inside" },
+});
+const value = await tools.select({
+  path: inside,
+  operation: { kind: "trim", side: "both" },
+});
+await tools.read({ path: value.data.target });
+await tools.replace({ path: value, text: "new value" });
+```
+
+Select works as an ordinary tool as well as inside native Codemode. A position can be consumed by replace or a paired copy/move destination for exact insertion. insert keeps its string-path/anchor contract.
 
 ## Source inputs and results
 

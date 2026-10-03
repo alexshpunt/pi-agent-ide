@@ -9,7 +9,9 @@ import {
   withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";
 import { selectPresentation } from "./select-presentation.js";
-import { publicRange, selectFunctionRegions } from "./ast/selection.js";
+import { selectFunctionRegions } from "./ast/selection.js";
+import { publicRange } from "./selection-region.js";
+import { selectTextRegions } from "./text-selection.js";
 import {
   selectSchema,
   selectOutputSchema,
@@ -18,13 +20,51 @@ import {
   type SelectParameters,
 } from "./select-schema.js";
 
-/** Register read-only AST boundary selection using the existing Read and source-target backends. */
+function operationLabel(operation: SelectParameters["operation"]): string {
+  switch (operation.kind) {
+    case "object": {
+      return "enclosing function";
+    }
+    case "part": {
+      return "function body";
+    }
+    case "between": {
+      return `between ${JSON.stringify(operation.start)} … ${JSON.stringify(operation.end)} · ${operation.extent}`;
+    }
+    case "range": {
+      return `range ${operation.startLine}:${operation.startColumn}–${operation.endLine}:${operation.endColumn}`;
+    }
+    case "lines": {
+      return `lines ${operation.first}–${operation.last}`;
+    }
+    case "sliceText": {
+      return `text slice ${operation.from}–${operation.to ?? "end"}`;
+    }
+    case "trim": {
+      return `trim ${operation.side}`;
+    }
+    case "split": {
+      return `split ${JSON.stringify(operation.delimiter)}`;
+    }
+    case "linesOf": {
+      return "containing lines";
+    }
+    case "position": {
+      return `position ${operation.edge}`;
+    }
+    case "columns": {
+      return `columns ${operation.from}–${operation.to}`;
+    }
+  }
+}
+/** Register read-only text and AST selection using the existing Read and source-target backends. */
 export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Promise<void> {
   const targets = connectResultTargets(pi);
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "select-code",
-      description: "Derive containing functions and their bodies from verified source targets",
+      description:
+        "Derive text boundaries, positions, enclosing functions and bodies from verified source targets",
       triggers: [{ tool: "select" }],
     }),
   ]);
@@ -45,10 +85,11 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
           openWorldHint: false,
         },
         description:
-          "Use select to derive the nearest enclosing JavaScript/TypeScript function or the body of an exact function target, without JSX/TSX. object/function/enclosing/level=1/around contains the entire seed and can expand beyond it. part/body requires an exact function target and includes braces, or the expression of an arrow; nested functions remain included. Results retain strict snapshots, input associations and individually consumable items; preview truncation does not clip the whole target. No ownBody, arbitrary ranges or other operations are implemented.",
-        promptSnippet: "Derive exact enclosing functions and bodies from verified source targets",
+          "Use select to derive verified text boundaries and positions, or the nearest enclosing JavaScript/TypeScript function and its exact body, without JSX/TSX. Text operations are language-independent and apply per input region; range/lines require one source. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Only linesOf, between/lines and enclosing function selection can expand; expansions retain input associations. Results keep strict snapshots and individually consumable items; preview truncation does not clip the whole target. No ownBody or general AST traversal is implemented.",
+        promptSnippet:
+          "Derive text boundaries, positions and function regions from verified source targets",
         promptGuidelines: [
-          "Use Search for predicate matches and existing captures; use Select only when new structural boundaries are needed.",
+          "Use Search for predicate matches and existing captures; use Select when a target needs new text or structural boundaries.",
           "Compare the enclosing owner of each inner match with the original function when checking a condition in that function's own body.",
         ],
         parameters: selectSchema,
@@ -59,8 +100,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
             {
               tool: "select",
               primary: {
-                text:
-                  parameters.operation.kind === "object" ? "enclosing function" : "function body",
+                text: operationLabel(parameters.operation),
                 color: "accent",
               },
               qualifiers: [
@@ -105,12 +145,11 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
             }
             const input = targets.resolve(source, context.cwd);
             await targets.verify(input, signal);
-            const selected = await selectFunctionRegions(
-              input,
-              parameters.operation,
-              context.cwd,
-              signal,
-            );
+            const operation = parameters.operation;
+            const selected =
+              operation.kind === "object" || operation.kind === "part"
+                ? await selectFunctionRegions(input, operation, context.cwd, signal)
+                : selectTextRegions(input, operation, signal);
             await targets.verify(input, signal);
             signal?.throwIfAborted();
             const sourceTargets = selected.regions.map((region) => ({

@@ -1,9 +1,15 @@
 import path from "node:path";
-import { createTextDocument } from "pi-agent-text";
-import type { ResultRange, ResultSourceTarget, ResolvedResultTargets } from "pi-agent-resource";
+import { SourceText } from "#src/source-text.js";
+import {
+  publicRange,
+  retainRegion,
+  SelectionError,
+  type SelectedRegion,
+} from "#src/selection-region.js";
+import type { ResultRange, ResolvedResultTargets } from "pi-agent-resource";
 import { parseDocument } from "./manager.js";
 import type { SyntaxNode } from "./syntax-tree.js";
-import type { SelectOperation, SelectionItem } from "#src/select-schema.js";
+import type { StructuralSelectOperation } from "#src/select-schema.js";
 
 const extensions = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"]);
 const functions = new Set([
@@ -18,28 +24,10 @@ const functions = new Set([
   "abstract_method_signature",
 ]);
 
-/** A structural refusal is different from a valid seed with no enclosing function or body. */
-export class SelectionError extends Error {
-  public constructor(
-    public readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-/** Trusted output geometry and original seed associations, before handles and previews are added. */
-export interface SelectedRegion {
-  readonly target: ResultSourceTarget;
-  readonly range: ResultRange;
-  readonly text: string;
-  readonly origins: SelectionItem["origins"];
-}
-
 /** Derive function boundaries from verified bytes without changing or concatenating source ranges. */
 export async function selectFunctionRegions(
   input: ResolvedResultTargets,
-  operation: SelectOperation,
+  operation: StructuralSelectOperation,
   cwd: string,
   signal?: AbortSignal,
 ): Promise<{ readonly regions: readonly SelectedRegion[]; readonly missingInputs: number }> {
@@ -74,11 +62,11 @@ export async function selectFunctionRegions(
         if (functions.has(node.type)) nodes.push(node);
         pending.push(...node.namedChildren);
       }
-      const lines = sourceLines(target.expectedContent);
+      const source = new SourceText(target.expectedContent);
       for (const seed of target.ranges) {
         signal?.throwIfAborted();
-        const start = positionOffset(lines, seed.start);
-        const end = positionOffset(lines, seed.end);
+        const start = source.offset(seed.start);
+        const end = source.offset(seed.end);
         let owner: SyntaxNode | undefined;
         if (operation.kind === "part") {
           owner = nodes.find((node) => node.startIndex === start && node.endIndex === end);
@@ -108,21 +96,19 @@ export async function selectFunctionRegions(
           continue;
         }
         const range: ResultRange = {
-          start: offsetPosition(lines, output.startIndex),
-          end: offsetPosition(lines, output.endIndex),
+          start: source.position(output.startIndex),
+          end: source.position(output.endIndex),
         };
-        const identity = JSON.stringify([target.source, range]);
         const origin = {
           source: target.source,
-          range: publicRange({ start: seed.start, end: offsetPosition(lines, end) }),
+          range: publicRange({ start: seed.start, end: source.position(end) }),
           expanded: output.startIndex < start || output.endIndex > end,
         };
-        const previous = selected.get(identity);
-        selected.set(identity, {
+        retainRegion(selected, {
           target,
           range,
           text: target.expectedContent.slice(output.startIndex, output.endIndex),
-          origins: previous ? [...previous.origins, origin] : [origin],
+          origins: [origin],
         });
       }
     } finally {
@@ -130,47 +116,4 @@ export async function selectFunctionRegions(
     }
   }
   return { regions: [...selected.values()], missingInputs };
-}
-
-interface SourceLine {
-  readonly start: number;
-  readonly length: number;
-}
-
-function sourceLines(source: string): SourceLine[] {
-  let start = 0;
-  const document = createTextDocument("", source);
-  const lines = document.lines.map((line) => {
-    const result = { start, length: line.content.length };
-    start += line.content.length + line.lineEnding.length;
-    return result;
-  });
-  if (lines.length === 0 || document.lines.at(-1)?.lineEnding) lines.push({ start, length: 0 });
-  return lines;
-}
-
-function positionOffset(lines: readonly SourceLine[], position: ResultRange["start"]): number {
-  const line = lines[position.lineNumber - 1];
-  if (!line || position.column < 0 || position.column > line.length)
-    throw new SelectionError(
-      "INVALID_RANGE",
-      "Source coordinates are outside the retained snapshot.",
-    );
-  return line.start + position.column;
-}
-
-function offsetPosition(lines: readonly SourceLine[], offset: number): ResultRange["start"] {
-  let index = lines.length - 1;
-  while (index > 0 && (lines[index]?.start ?? 0) > offset) index--;
-  return { lineNumber: index + 1, column: offset - (lines[index]?.start ?? 0) };
-}
-
-/** Public coordinates use one-based lines and exclusive UTF-16 character ends. */
-export function publicRange(range: ResultRange): SelectionItem["range"] {
-  return {
-    startLine: range.start.lineNumber,
-    startColumn: range.start.column,
-    endLine: range.end.lineNumber,
-    endColumn: range.end.column,
-  };
 }

@@ -1,7 +1,8 @@
 import path from "node:path";
 import type { ResultRange, ResolvedResultTargets } from "pi-agent-resource";
 import { expect, test } from "vitest";
-import { publicRange, selectFunctionRegions } from "./selection.js";
+import { selectFunctionRegions } from "./selection.js";
+import { publicRange } from "#src/selection-region.js";
 import type { SelectOperation } from "#src/select-schema.js";
 
 const enclosing: SelectOperation = {

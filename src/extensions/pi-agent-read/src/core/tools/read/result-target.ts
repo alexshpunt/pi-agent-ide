@@ -44,7 +44,12 @@ export function createReadResultTargetHandler(store: ResultTargetStore): ReadPos
         const last = script.lines.at(-1);
         const window: ResultRange | undefined =
           first === undefined || last === undefined
-            ? undefined
+            ? content.length === 0
+              ? {
+                  start: { lineNumber: 1, column: 0 },
+                  end: { lineNumber: 1, column: 0 },
+                }
+              : undefined
             : {
                 start: { lineNumber: first.lineNumber, column: 0 },
                 end:

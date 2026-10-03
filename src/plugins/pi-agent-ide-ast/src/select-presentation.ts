@@ -6,7 +6,7 @@ import {
   type ResultPanelRow,
   type SourcePreview,
 } from "pi-agent-tool-ui";
-import type { SelectedRegion } from "./ast/selection.js";
+import type { SelectedRegion } from "./selection-region.js";
 
 /** Render verified snapshot context separately from agent previews and target authority. */
 export function selectPresentation(
@@ -37,7 +37,8 @@ export function selectPresentation(
     const content = selected[0]?.target.expectedContent.split(/\r\n|\n|\r/u) ?? [];
     for (const region of shown) {
       const { start, end } = region.range;
-      const last = end.lineNumber - (end.column === 0 ? 1 : 0);
+      const point = start.lineNumber === end.lineNumber && start.column === end.column;
+      const last = point ? start.lineNumber : end.lineNumber - (end.column === 0 ? 1 : 0);
       const through = Math.min(last, start.lineNumber + 19);
       shortened ||= through < last;
       for (let number = start.lineNumber; number <= through; number++) {
@@ -64,6 +65,14 @@ export function selectPresentation(
     if (shortened)
       rows.push({ kind: "note", text: "… selection preview shortened · full target retained" });
     for (const region of shown) {
+      if (
+        region.range.start.lineNumber === region.range.end.lineNumber &&
+        region.range.start.column === region.range.end.column
+      )
+        rows.push({
+          kind: "note",
+          text: `zero-width · ${region.range.start.lineNumber}:${region.range.start.column}`,
+        });
       const { start, end } = region.range;
       rows.push({
         kind: "note",

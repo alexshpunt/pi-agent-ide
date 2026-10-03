@@ -3,8 +3,21 @@ import { ResultPanel } from "pi-agent-tool-ui";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { selectPresentation } from "./select-presentation.js";
-import type { SelectedRegion } from "./ast/selection.js";
+import type { SelectedRegion } from "./selection-region.js";
 
+test("keeps zero-width positions visible, including an empty EOF line", () => {
+  const content = "A\r\n";
+  const point = { lineNumber: 2, column: 0 };
+  const region: SelectedRegion = {
+    target: { source: "/workspace/caret.txt", expectedContent: content, ranges: [] },
+    range: { start: point, end: point },
+    text: "",
+    origins: [],
+  };
+  const panel = selectPresentation([region], true, 0, "/workspace");
+  expect(panel.rows).toContainEqual({ kind: "note", text: "zero-width · 2:0" });
+  expect(panel.rows.some((row) => row.kind === "source" && row.label === "caret.txt")).toBe(true);
+});
 const theme = Object.assign(Object.create(null) as Theme, {
   fg: (_color: string, s: string) => s,
   bg: (_color: string, s: string) => `\u001B[48;5;25m${s}\u001B[49m`,
