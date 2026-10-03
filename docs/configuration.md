@@ -180,6 +180,20 @@ Regex diagnostic parsers run with multiline matching. Set `columnBase: 0` when a
 
 A runtime being installed does not prove its modules or language-server features are installed. For example, Taplo's npm build can format TOML but does not include its LSP. Use an LSP-enabled Taplo build for language-server diagnostics. Doctor reports the actual startup failure rather than treating that file as clean.
 
+## Java debugger
+
+Java uses Microsoft java-debug through a private JDT LS process on Linux and native Windows. Kotlin still uses fwcd's adapter.
+
+Install JDK 21 or newer, JDT LS 1.61.0, and `com.microsoft.java.debug.plugin-0.53.2.jar` from vscode-java-debug 0.59.0. Set these variables before starting Pi:
+
+- `PI_JAVA_PATH`: the Java executable. Otherwise Pi uses `JAVA_HOME/bin/java` (`java.exe` on Windows), then `java` on PATH.
+- `PI_JDTLS_HOME`: the extracted JDT LS directory, containing `plugins` and `config_linux` or `config_win`.
+- `PI_JAVA_DEBUG_PLUGIN_PATH`: the Java debug plugin jar.
+
+Compile with debug information (`javac -g`) before starting the session. Pi finds the main class in `build/classes/java/main`, `target/classes`, `out/production`, `bin`, or the project directory. This launch path does not resolve Maven/Gradle dependency classpaths.
+
+Create the session with `adapter: "java"` and the fully qualified `mainClass`. Use the returned resources to read source, set an anchored breakpoint, start, inspect locals, and continue. Pi keeps the target suspended until attach and breakpoint configuration finish. Deleting the session closes only its own target JVM and JDT LS process. Doctor checks the actual bridge rather than treating a Kotlin adapter as a Java dependency.
+
 ## Doctor
 
 Run `/pi-agent-ide-doctor` to check the effective tools for the current project. Doctor uses the same layered entries as runtime. For each applicable entry it shows the stable ID, source layer, command, and real probe result. A missing or failing command is reported instead of falling back to a lower layer.

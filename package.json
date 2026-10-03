@@ -227,6 +227,7 @@
     "pi-agent-text-editor": "workspace:^",
     "pi-agent-tool-ui": "workspace:^",
     "playwright-core": "^1.62.1",
+    "vscode-jsonrpc": "^9.0.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

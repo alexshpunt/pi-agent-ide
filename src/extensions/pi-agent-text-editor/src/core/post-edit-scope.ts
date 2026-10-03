@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { ResourceScheduler, resourceAccesses } from "pi-agent-resource";
 import type { TextResourceEditOutcome } from "./text-editor-core.js";
 
 type Completed = Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>;
@@ -42,7 +43,7 @@ export function forgetDeferredPostEdit(source: string): void {
   active.getStore()?.delete(source);
 }
 /** Writes stay immediate; finishing drains each surviving final resource once. */
-export function createPostEditScope() {
+export function createPostEditScope(cwd = process.cwd()) {
   const pending = new Map<string, Finalize>();
   return {
     run<T>(operation: () => T): T {
@@ -51,17 +52,30 @@ export function createPostEditScope() {
     forget(source: string): void {
       pending.delete(source);
     },
+    /** Complete resource set that finish may modify. */
+    sources(): readonly string[] {
+      return [...pending.keys()];
+    },
     async finish(onCompleted?: (outcome: Completed) => void): Promise<Completed[]> {
-      const work = [...pending.values()];
+      const work = [...pending];
       pending.clear();
       const completed: Completed[] = [];
       const errors: unknown[] = [];
       await collectPostEditNotifications(async () => {
-        for (const finalize of work) {
+        const scheduler = new ResourceScheduler();
+        const outcomes = await Promise.allSettled(
+          work.map(([source, finalize]) =>
+            scheduler.run(resourceAccesses(source, cwd, "write"), finalize),
+          ),
+        );
+        for (const outcome of outcomes) {
+          if (outcome.status === "rejected") {
+            errors.push(outcome.reason);
+            continue;
+          }
+          completed.push(outcome.value);
           try {
-            const outcome = await finalize();
-            completed.push(outcome);
-            onCompleted?.(outcome);
+            onCompleted?.(outcome.value);
           } catch (error) {
             errors.push(error);
           }

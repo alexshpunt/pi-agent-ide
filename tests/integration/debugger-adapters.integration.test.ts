@@ -213,7 +213,7 @@ for (const item of cases) {
         expect(session.status, JSON.stringify(session.stop)).toBe("terminated");
       } finally {
         await manager.delete(session.source);
-        manager.dispose();
+        await manager.dispose();
       }
     },
     45_000,

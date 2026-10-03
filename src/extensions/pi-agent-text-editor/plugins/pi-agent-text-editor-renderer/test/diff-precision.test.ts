@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createDiffModel } from "#src/diff-model.js";
+import writeAlignment from "./fixtures/write-alignment.json" with { type: "json" };
 
 function modified(before: string, after: string) {
   const model = createDiffModel(before, after);
@@ -9,6 +10,23 @@ function modified(before: string, after: string) {
 }
 
 describe("precise inline changes", () => {
+  test("keeps a full replacement block available within the alignment budget", () => {
+    const before = Array.from({ length: 60 }, (_, index) => `const filler${index} = ${index};`);
+    const replacements = Array.from(
+      { length: 18 },
+      (_, index) =>
+        `const swappedLine${String(index + 1).padStart(2, "0")} = "diff-view-row-${String(index + 1).padStart(2, "0")}";`,
+    );
+    const after = [...before];
+    after.splice(9, replacements.length, ...replacements);
+    const model = createDiffModel(`${before.join("\n")}\n`, `${after.join("\n")}\n`, [], {
+      project: false,
+    });
+    expect(model.omittedChanges?.unavailable).not.toBe(true);
+    for (const text of replacements) {
+      expect(model.rows.some((row) => row.text === text)).toBe(true);
+    }
+  });
   test.each([
     ["timeout: 1_000,", "timeout: 5_000,", [{ from: 9, to: 10 }]],
     ["const userId = 1;", "const userID = 1;", [{ from: 11, to: 12 }]],
@@ -69,6 +87,31 @@ describe("precise inline changes", () => {
     ]);
   });
 
+  test("keeps a line diff when a replacement exceeds the pairing limit", () => {
+    const before = Array.from({ length: 200 }, () => "aaaa").join("\n");
+    const after = Array.from({ length: 200 }, () => "zzzz").join("\n");
+    const model = createDiffModel(before, after);
+    expect(model.omittedChanges?.unavailable).not.toBe(true);
+    expect(model).toMatchObject({ added: 200, modified: 0, removed: 200 });
+    expect(model.rows).toHaveLength(400);
+    expect(model.rows[0]).toMatchObject({
+      kind: "removed",
+      text: "aaaa",
+      beforeLine: 1,
+    });
+    expect(model.rows[200]).toMatchObject({
+      kind: "added",
+      text: "zzzz",
+      afterLine: 1,
+    });
+  });
+
+  test("keeps the reported test-file write visible", () => {
+    const model = createDiffModel(writeAlignment.before, writeAlignment.after);
+    expect(model.omittedChanges?.unavailable).not.toBe(true);
+    expect(model.rows.some((row) => row.changed && row.text.includes("computer_open"))).toBe(true);
+    expect(model.added + model.modified + model.removed).toBeGreaterThan(0);
+  });
   test("reports exhausted alignment instead of an empty successful comparison", () => {
     const before = Array.from({ length: 11_000 }, (_, index) => `old${index}();`).join("\n");
     const after = Array.from({ length: 11_000 }, (_, index) => `new${index}();`).join("\n");

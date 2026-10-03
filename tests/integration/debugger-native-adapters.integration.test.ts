@@ -124,7 +124,7 @@ for (const item of cases) {
             ?.findings.filter(({ status }) => status !== "pass"),
         ).toEqual([]);
       } finally {
-        manager.dispose();
+        await manager.dispose();
         await rm(cwd, { recursive: true, force: true });
       }
     },

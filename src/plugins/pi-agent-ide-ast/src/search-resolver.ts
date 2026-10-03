@@ -28,6 +28,8 @@ export function createAstSearchResolver(
 ): SearchResolver {
   return {
     id: "ast",
+    readResources: (request, context) =>
+      request.query.startsWith("ast:") ? [request.path ?? context.cwd] : [],
     renderResult: renderSearchResult as SearchResolver["renderResult"],
     async tryResolve(request, context) {
       if (!request.query.startsWith("ast:")) {

@@ -9,6 +9,8 @@ export function createLspSearchResolver(
 ): SearchResolver {
   return {
     id: "symbols",
+    // Workspace symbol backends may read beyond the requested path.
+    readResources: (request) => (request.query.startsWith("symbols:") ? undefined : []),
     toScriptData(payload) {
       const { query, hits } = payload as { query: string; hits: readonly SymbolHit[] };
       return {

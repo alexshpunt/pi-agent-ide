@@ -31,6 +31,12 @@ export async function executeWholeFileTool(
   const outcome = await core.enqueueFileOperation(
     () => executeFileOperation(operation, input, context.cwd, signal),
     signal,
+    {
+      cwd: context.cwd,
+      sources: [input.path, input.target].filter(
+        (value): value is string => typeof value === "string",
+      ),
+    },
   );
   let postProcessingError: string | undefined;
   if (outcome.ok && outcome.target !== undefined) {
