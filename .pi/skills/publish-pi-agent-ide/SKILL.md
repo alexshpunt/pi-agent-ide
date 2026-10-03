@@ -37,7 +37,7 @@ This is an explicit scope refresh after a failure, not permission to follow a mo
 
 ## Start the versioned release
 
-1. Check that the version is unused in npm and that no active `release/X.Y.Z` branch exists. Only exact stable version branches mark an active release; do not delete older `release/v*` or `release/official-*` branches.
+1. Check that the version is unused in npm and that no active `release/X.Y.Z` branch exists. Only exact stable version branches mark an active release; older `release/v*` and `release/official-*` branches are not freeze markers.
 2. Finish notes for the pinned scope, including preparation fixes. Do not include later develop features. Do not add the version or its CHANGELOG section manually: Start release owns both.
 3. Run **Start release** (`release-start.yml`) on main with `version` and `notes`.
 4. Record the created `release/X.Y.Z` branch, PR, head SHA, main base, and candidate CI run.
@@ -63,7 +63,7 @@ Squash-merge only the verified release PR with the expected head. Keep the relea
 3. The workflow downloads the tested archive; it does not rebuild it. Never substitute a locally built archive or another run's artifact.
 4. Verify the registry version, archive integrity, and immutable tag.
 5. Wait for **Synchronize develop and lift release freeze** to succeed. It verifies registry integrity, merges main into develop, and deletes the unchanged release branch with a lease.
-6. Clean up the release worktree and its preparation branches after their work is merged. Report the published version and verification results.
+6. Clean up the release worktree and its merged or abandoned preparation and release branches, including old `release/v*` and `release/official-*` names. Check that no open PR, running workflow, or worktree still needs each branch, then delete it with an expected-head lease. Keep all release tags. Never delete an active `release/X.Y.Z` branch before publication and synchronization, or confirmed cancellation, finish. Report the published version and verification results.
 
 Do not call the release complete before registry verification and synchronization succeed. The post-publication benchmark is separate evidence; its failure does not undo publication.
 
