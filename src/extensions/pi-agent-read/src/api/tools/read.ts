@@ -137,6 +137,8 @@ export interface ReadPipelineContext {
   /** Data execution keeps full requested content; presentation handlers must not compact it. */
   readonly audience?: "agent" | "script";
   readonly request: ReadRequest;
+  /** Original RESULT# scope bounds source authority even when Read shows surrounding lines. */
+  readonly sourceTarget?: string;
   readonly resolverContext: ResourceResolverContext;
   readonly state?: ReadState;
   readonly result?: ReadToolResult;

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ResultPanel } from "pi-agent-tool-ui";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 
 import type { BuiltinExtensionContext } from "#src/composite/selection.js";
@@ -164,6 +165,24 @@ export default async function registerVision(
                 )
                 .slice(0, Math.min(request.limit ?? 50, 100));
               return { kind: "resolved" as const, payload: matches };
+            },
+            renderResult(result, options, theme) {
+              const data = result.details as {
+                processes: Awaited<ReturnType<typeof listProcesses>>;
+              };
+              return new ResultPanel(
+                {
+                  summary: `${data.processes.length} processes shown`,
+                  rows: data.processes.length
+                    ? data.processes.map((item) => ({
+                        kind: "note",
+                        text: `${item.pid}  ${item.command}`,
+                      }))
+                    : [{ kind: "note", text: "No matching processes" }],
+                },
+                theme,
+                options.expanded,
+              );
             },
             format(payload) {
               const processes = payload as Awaited<ReturnType<typeof listProcesses>>;

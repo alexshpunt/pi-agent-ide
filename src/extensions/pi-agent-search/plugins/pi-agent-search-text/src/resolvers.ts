@@ -1,4 +1,6 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.js";
 
 import { searchFiles } from "#src/file-search.js";
@@ -60,14 +62,36 @@ export function createFileResolver(): SearchResolver {
       const result = await searchFiles(query, request, context.cwd, context.signal);
       return { kind: "resolved", payload: { query, ...result } satisfies FilePayload };
     },
-    format(payload) {
+    renderResult(result, options, theme) {
+      const data = result.details as FilePayload & { cwd: string };
+      return new ResultPanel(
+        {
+          summary: `${data.files.length}${data.complete ? "" : "+"} ${data.files.length === 1 ? "file" : "files"}`,
+          rows: data.files.length
+            ? data.files.map((file) => ({
+                kind: "source",
+                label: file,
+                link: pathToFileURL(path.resolve(data.cwd, file)).href,
+              }))
+            : [{ kind: "note", text: "No files found" }],
+        },
+        theme,
+        options.expanded,
+      );
+    },
+    format(payload, context) {
       const result = payload as FilePayload;
       const heading = result.complete
         ? `${String(result.files.length)} files`
         : `${String(result.files.length)}+ files (limit reached)`;
       return {
         content: [{ type: "text", text: [heading, ...result.files].join("\n") }],
-        details: { query: result.query, files: result.files, complete: result.complete },
+        details: {
+          query: result.query,
+          files: result.files,
+          complete: result.complete,
+          cwd: context.cwd,
+        },
       };
     },
   };

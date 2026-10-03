@@ -25,7 +25,7 @@ Selections are revision-sensitive. Re-read after a mutation before reusing a sin
 
 ## Editing returned targets
 
-Pass a source-aware result, its `data`, a `RESULT#` reference, or an array of returned matches to the supported input field. Omit the corresponding string selectors. A Read target selects its requested whole-line window; a Search target selects exact matches. Pass a filtered matches array to edit a subset, rather than changing a whole result's preview.
+Pass a source-aware result, its `data`, a `RESULT#` reference, or an array of returned matches to the supported input field. Omit the corresponding string selectors. An ordinary file Read target selects its requested whole-line window; a Read of a `RESULT#` target stays within the original exact scope. A Search target selects exact matches. Pass a filtered matches array to edit a subset, rather than changing a whole result's preview.
 
 - `replace.path` replaces exact ranges. `delete.path` removes exact ranges but keeps the file, even for a whole-file selection.
 - `write.path` and `undo.file` require one whole-file target. Partial and multi-file scopes are rejected, not widened.

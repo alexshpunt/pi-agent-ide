@@ -8,7 +8,11 @@ export default function nativePostEditProbe(pi: ExtensionAPI): void {
   connectTextEditorPostEditHandler(pi, {
     id: "composition-post-edit-probe",
     async handler(transaction) {
-      if (!transaction.resourceSource.endsWith("format.txt")) return;
+      if (
+        !transaction.resourceSource.endsWith("format.txt") &&
+        !transaction.resourceSource.endsWith("select-format.ts")
+      )
+        return;
       await appendFile(
         path.join(path.dirname(transaction.resourceSource), "post-edit-events.jsonl"),
         JSON.stringify({

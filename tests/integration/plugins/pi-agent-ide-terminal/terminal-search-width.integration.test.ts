@@ -68,7 +68,9 @@ test.runIf(process.platform !== "win32")(
       expect(result).toContain(
         "https://github.com/alexshpunt/explicit-edit-benchmark-run/actions/runs/36568016139",
       );
-      expect(run.tuiRenderedOutput).toContain("visual rows omitted · ctrl+o");
+      expect(run.tuiRenderedOutput).toContain("output truncated");
+      expect(run.tuiRenderedOutput).toContain("╭─ 6+ matches in 1 source");
+      expect(run.tuiRenderedOutput).toContain("Retained terminal output");
       expect(run.tuiRenderedOutput).toContain("Session still usable.");
       expect(run.state?.isIdle).toBe(true);
     });

@@ -140,7 +140,11 @@ export async function parseDocument(
   const parser = await ensureParser(extension);
 
   if (parser) {
-    return parser.parse(source) ?? undefined;
+    try {
+      return parser.parse(source) ?? undefined;
+    } finally {
+      parser.delete();
+    }
   }
 
   return parseNativeDocument(extension, source);

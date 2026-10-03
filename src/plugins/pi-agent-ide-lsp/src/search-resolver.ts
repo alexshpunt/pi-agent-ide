@@ -1,6 +1,6 @@
 import { searchSymbols } from "./lsp/symbol-search.js";
 import path from "node:path";
-import { selectionData } from "pi-agent-search/api/search";
+import { selectionData, renderSearchMatches } from "pi-agent-search/api/search";
 import type { LspManager } from "./lsp/manager.js";
 import type { SymbolHit } from "./lsp/symbol-search.js";
 import type { SearchPluginApi, SearchResolver } from "pi-agent-search/api/search";
@@ -63,6 +63,25 @@ export function createLspSearchResolver(
         },
       };
     },
+    renderResult(result, options, theme) {
+      const data = result.details as {
+        hits: readonly SymbolHit[];
+        complete: boolean;
+        navigation?: "references";
+        cwd: string;
+      };
+      return renderSearchMatches(
+        data.hits,
+        data.complete,
+        theme,
+        options.expanded,
+        data.cwd,
+        data.navigation === "references"
+          ? ["LSP reference navigation · may leave input scope"]
+          : [],
+        data.hits.map((hit) => `${hit.role} ${hit.symbol.name}`),
+      );
+    },
     format(payload, context) {
       const result = payload as {
         readonly query: string;
@@ -85,7 +104,10 @@ export function createLspSearchResolver(
               );
       if (!result.complete) lines.push("Incomplete results; not a complete edit scope.");
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
-      return { content: [{ type: "text", text: [heading, ...lines].join("\n") }], details: result };
+      return {
+        content: [{ type: "text", text: [heading, ...lines].join("\n") }],
+        details: { ...result, cwd: context.cwd },
+      };
     },
   };
 }

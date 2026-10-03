@@ -1,13 +1,13 @@
 import {
   type AgentToolResult,
   type ExtensionAPI,
-  keyText,
   type Theme,
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
+  ResultPanel,
   toolCallHeader,
   type ToolCallHeaderDetail,
   type ToolCallHeaderModel,
@@ -154,8 +154,13 @@ export default async function registerSearchCore(
           const renderer =
             details?.resolverId === undefined ? undefined : core.renderer(details.resolverId);
 
-          if (renderer !== undefined) {
-            const inner = { ...result, details: details?.payload };
+          if (
+            renderer !== undefined &&
+            details?.payload !== undefined &&
+            !context.isError &&
+            !options.isPartial
+          ) {
+            const inner = { ...result, details: details.payload };
             return renderer(inner, options, theme, context);
           }
 
@@ -265,10 +270,15 @@ function fallbackResult(
   const text = result.content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n");
-  const preview = options.expanded ? text : text.split("\n").slice(0, 8).join("\n");
-  const hint =
-    !options.expanded && text.split("\n").length > 8
-      ? `\n${theme.fg("dim", `${keyText("app.tools.expand")} to expand`)}`
-      : "";
-  return new Text(`${theme.fg("muted", preview)}${hint}`, 0, 0);
+  return new ResultPanel(
+    {
+      summary:
+        result.details && typeof result.details === "object" && "failure" in result.details
+          ? "Search failed"
+          : "Search results",
+      rows: text.split("\n").map((line) => ({ kind: "note", text: line })),
+    },
+    theme,
+    options.expanded,
+  );
 }

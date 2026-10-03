@@ -1,6 +1,7 @@
 import type { ResourceResolver } from "pi-agent-resource";
 import {
   selectionData,
+  renderSearchMatches,
   type SearchRequest,
   type SearchResolver,
   type SearchSelectionMatch,
@@ -72,6 +73,13 @@ export function createWebSearchResolver(web: ResourceResolver): SearchResolver {
     toScriptData(payload) {
       const result = payload as WebSearchResult;
       return selectionData(result.matches, result.complete);
+    },
+    renderResult(result, options, theme) {
+      const data = result.details as WebSearchResult;
+      return renderSearchMatches(data.matches, data.complete, theme, options.expanded, undefined, [
+        "Web page · read-only",
+        ...(!data.complete ? ["Limit reached · incomplete results"] : []),
+      ]);
     },
     format(payload) {
       const result = payload as WebSearchResult;

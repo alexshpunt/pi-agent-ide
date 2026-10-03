@@ -1,3 +1,4 @@
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 
@@ -6,6 +7,7 @@ import { SearchResultPanel } from "#src/search-renderer.js";
 import type { SearchToolDetails } from "#src/search-result.js";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
+initTheme("dark");
 const SELECTED_BACKGROUND = "\u001B[48;5;25m";
 
 const RESET_BACKGROUND = "\u001B[49m";
@@ -49,7 +51,7 @@ test("wraps a full search match line with one aligned line-number gutter", () =>
 
   expect(body.length).toBeGreaterThan(1);
   expect(body.every((line) => visibleWidth(line) === 36)).toBe(true);
-  expect(rendered.join("\n")).toContain("\u001B[48;5;25mMATCH");
+  expect(rendered.join("\n")).toMatch(/\u001B\[48;5;25m(?:\u001B\[[\d;]+m)*MATCH/u);
   expect(first).toMatch(/^│\s+42\s+│/u);
   expect(body.slice(1).every((line) => !/^│\s+42\s+│/u.test(line))).toBe(true);
   expect(plain.join("\n")).toContain("prefix");

@@ -316,3 +316,10 @@ function truncatePart(
   const tailWidth = width - 1;
   return `…${sliceByColumn(value, visibleWidth(value) - tailWidth, tailWidth, true)}`;
 }
+export {
+  ResultPanel,
+  sourceRows,
+  type ResultPanelRow,
+  type ResultPanelModel,
+  type SourcePreview,
+} from "./result-panel.js";

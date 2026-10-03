@@ -37,6 +37,7 @@ test("real Pi searches converted web pages without a prior Read", async () => {
       testName: "web-url-search",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
+      rawMode: false,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
       tools: ["search"],
       conversation: [
@@ -72,7 +73,10 @@ test("real Pi searches converted web pages without a prior Read", async () => {
     expect(output).not.toContain("redirected=1");
     expect(result.tuiRenderedOutput).toContain(url);
     expect(result.tuiRenderedOutput).toContain("Extensions");
-    expect(result.tuiRenderedOutput).toContain("limit reached");
+    expect(result.tuiRenderedOutput).toContain("Limit reached");
+    expect(result.tuiRenderedOutput).toContain("╭─ 1+ match in 1 source");
+    expect(result.tuiRenderedOutput).toContain("WEB");
+    expect(result.tuiRenderedOutput).toContain("read-only");
     expect(getSystemPrompt(result)).toContain("no prior read is required");
     expect(getToolExecution(result, "web-regex").isError).toBe(false);
     const regexOutput = getToolResultText(result, "web-regex");

@@ -5,13 +5,13 @@ export const readParameters = Type.Object({
   path: Type.Optional(
     Type.String({
       description:
-        "What to read: a supported resource such as a file or directory path, URL, returned temp: reference, SEARCH# reference, or registered protocol source. Supply a path; an empty call cannot select a source.",
+        "What to read: a supported resource such as a file or directory path, URL, returned temp: reference, SEARCH# or RESULT# reference, or registered protocol source. Supply a path; an empty call cannot select a source.",
     }),
   ),
   offset: Type.Optional(
     Type.Number({
       description:
-        "For raw: sources, use a zero-based byte offset; negative offsets count from the file end. For other sources: first line to return, numbered from 1. Omit or use 0 to start at line 1; -1 starts at the last line, -10 at the tenth line from the end. For path#anchor or a SEARCH selection, count from its containing line instead: 0 or 1 starts there, 2 starts one line later, -1 one line earlier. For image and sequence views, offset is a zero-based row-major grid cell index and requires limit.",
+        "For raw: sources, use a zero-based byte offset; negative offsets count from the file end. For other sources: first line to return, numbered from 1. Omit or use 0 to start at line 1; -1 starts at the last line, -10 at the tenth line from the end. For path#anchor, SEARCH or RESULT# selections, count from its containing line instead: 0 or 1 starts there, 2 starts one line later, -1 one line earlier. For image and sequence views, offset is a zero-based row-major grid cell index and requires limit.",
     }),
   ),
   limit: Type.Optional(

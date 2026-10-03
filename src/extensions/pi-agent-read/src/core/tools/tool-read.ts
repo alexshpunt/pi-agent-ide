@@ -600,8 +600,15 @@ async function resolveTextTargets(
         { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 1 } },
       ];
       for (const range of ranges) {
-        const rangeLimit = Math.max(1, range.end.lineNumber - range.start.lineNumber);
+        const sourceTarget = request.path?.startsWith("RESULT#") ? request.path : undefined;
+        const rangeLimit = Math.max(
+          1,
+          range.end.lineNumber -
+            range.start.lineNumber +
+            (sourceTarget !== undefined && range.end.column > 0 ? 1 : 0),
+        );
         let rangePipeline: ReadPipelineContext = {
+          sourceTarget,
           request: {
             ...request,
             path: target.source,

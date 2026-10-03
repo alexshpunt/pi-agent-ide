@@ -31,7 +31,8 @@
     "pi-agent-invariant": "workspace:^",
     "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
-    "pi-agent-text-editor": "workspace:^"
+    "pi-agent-text-editor": "workspace:^",
+    "pi-agent-tool-ui": "workspace:^"
   },
   "pi": {
     "extensions": [

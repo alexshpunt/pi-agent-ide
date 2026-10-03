@@ -25,6 +25,7 @@ import { createAstOverflowHandler, reduceAstReadOutput } from "./overflow-handle
 import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.js";
 import { createAstScopeAnchorResolver } from "./scope-resolver.js";
 import { createAstSearchResolver } from "./search-resolver.js";
+import { registerSelect } from "./tool-select.js";
 
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "AST" });
 
@@ -36,7 +37,7 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
     protocol: READ_PROTOCOL,
     apiVersion: READ_API_VERSION,
     id: "ast",
-    setup(api) {
+    async setup(api) {
       api.addResolver({ resolver: createAstOutlineResolver(), renderResult: renderReadResult });
       api.addHandler({
         stage: "read",
@@ -57,6 +58,7 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
       api.describe(
         'ast:<path> — compact declaration outline. views: ["ast"] — scope boundaries alongside source text. Oversized code reads may return an outline with source line numbers; offset/limit read a smaller source range.',
       );
+      await registerSelect(pi, api);
     },
   } satisfies ReadPlugin;
   const editorPlugin = {
