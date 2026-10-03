@@ -88,7 +88,7 @@ const none=await tools.select({path:missing.data,operation:${enclosing}});
 if(none.status!=="success" || none.data.totalItems!==0) throw Error("Empty Search not supported");
 for(const [path,operation,code] of [
  ["a.ts",${enclosing},"AMBIGUOUS_SEED"],
- [a,{kind:"part",part:"body"},"UNSUPPORTED_PART_INPUT"],
+ [a,{kind:"part",part:"body"},"UNSUPPORTED_PART"],
  ["other.py",${enclosing},"UNSUPPORTED_LANGUAGE"],
  [{target:"RESULT#forged"},${enclosing},"SELECT_FAILED"],
  [{source:"a.ts",range:a.data.matches[0].range},${enclosing},"SELECT_FAILED"]

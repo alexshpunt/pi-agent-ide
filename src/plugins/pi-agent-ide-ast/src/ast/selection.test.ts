@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { ResultRange, ResolvedResultTargets } from "pi-agent-resource";
 import { expect, test } from "vitest";
-import { selectFunctionRegions } from "./selection.js";
+import { selectStructuralRegions } from "./selection.js";
 import { publicRange } from "#src/selection-region.js";
 import type { SelectOperation } from "#src/select-schema.js";
 
@@ -50,7 +50,7 @@ for (const extension of [".js", ".ts"])
   test.each(forms)(
     `selects %s and its exact body in ${extension}`,
     async (_name, source, expected) => {
-      const owners = await selectFunctionRegions(
+      const owners = await selectStructuralRegions(
         input(source, "probe()", extension),
         enclosing,
         process.cwd(),
@@ -59,7 +59,7 @@ for (const extension of [".js", ".ts"])
       const owner = owners.regions[0];
       if (!owner) throw Error("Missing owner");
       expect(owner.origins[0]?.expanded).toBe(true);
-      const selected = await selectFunctionRegions(
+      const selected = await selectStructuralRegions(
         { complete: true, targets: [{ ...owner.target, ranges: [owner.range] }] },
         body,
         process.cwd(),
@@ -70,7 +70,11 @@ for (const extension of [".js", ".ts"])
 
 test("preserves CRLF, emoji UTF-16 columns, EOF and exact function boundaries on one line", async () => {
   const source = '"😀"; function a() {\r\n probe();\r\n} function b() { other(); }';
-  const selected = await selectFunctionRegions(input(source, "probe()"), enclosing, process.cwd());
+  const selected = await selectStructuralRegions(
+    input(source, "probe()"),
+    enclosing,
+    process.cwd(),
+  );
   const owner = selected.regions[0];
   if (!owner) throw Error("Missing owner");
   expect(publicRange(owner.range)).toEqual({
@@ -86,7 +90,7 @@ test("preserves CRLF, emoji UTF-16 columns, EOF and exact function boundaries on
     endLine: 2,
     endColumn: 8,
   });
-  const eof = await selectFunctionRegions(input(source, "other()"), enclosing, process.cwd());
+  const eof = await selectStructuralRegions(input(source, "other()"), enclosing, process.cwd());
   expect(eof.regions[0]?.range.end.column).toBe(source.split("\n").at(-1)?.length);
 });
 
@@ -94,7 +98,7 @@ test("uses source line coordinates for bare CR endings without normalizing bytes
   const source = "function a() {\r probe();\r}\r";
   const seed = input(source, "probe()").targets[0];
   if (!seed) throw Error("Missing seed");
-  const selected = await selectFunctionRegions(
+  const selected = await selectStructuralRegions(
     {
       complete: true,
       targets: [
@@ -112,7 +116,7 @@ test("uses source line coordinates for bare CR endings without normalizing bytes
 });
 test("keeps outer callback calls and nested parameter defaults with their actual owners", async () => {
   const source = "function outer() { retry(() => probe()); function inner(v = retry()) {} }";
-  const outer = await selectFunctionRegions(
+  const outer = await selectStructuralRegions(
     input(source, "retry(() => probe())"),
     enclosing,
     process.cwd(),
@@ -124,7 +128,7 @@ test("keeps outer callback calls and nested parameter defaults with their actual
   };
   const seedTarget = input(source, "retry()").targets[0];
   if (!seedTarget) throw Error("Missing nested seed");
-  const nested = await selectFunctionRegions(
+  const nested = await selectStructuralRegions(
     {
       complete: true,
       targets: [{ ...seedTarget, ranges: [nestedSeed] }],
@@ -140,7 +144,7 @@ test("deduplicates owners without losing origins and keeps sparse files separate
   const a = input(source, "first()");
   const b = input(source, "second()");
   const secondFile = input("function separate() { first(); }", "first()", ".js");
-  const selected = await selectFunctionRegions(
+  const selected = await selectStructuralRegions(
     { complete: false, targets: [...a.targets, ...b.targets, ...secondFile.targets] },
     enclosing,
     process.cwd(),
@@ -152,18 +156,18 @@ test("deduplicates owners without losing origins and keeps sparse files separate
 
 test("returns valid absence for bodyless TS declarations and top-level calls", async () => {
   const source = "declare function task(value: number): void;";
-  const owner = await selectFunctionRegions(input(source, "task"), enclosing, process.cwd());
+  const owner = await selectStructuralRegions(input(source, "task"), enclosing, process.cwd());
   expect(owner.regions).toHaveLength(1);
   const exact = owner.regions[0];
   if (!exact) throw Error("Missing declaration");
-  const selected = await selectFunctionRegions(
+  const selected = await selectStructuralRegions(
     { complete: true, targets: [{ ...exact.target, ranges: [exact.range] }] },
     body,
     process.cwd(),
   );
   expect(selected).toEqual({ regions: [], missingInputs: 1 });
   expect(
-    await selectFunctionRegions(input("probe();", "probe()"), enclosing, process.cwd()),
+    await selectStructuralRegions(input("probe();", "probe()"), enclosing, process.cwd()),
   ).toEqual({ regions: [], missingInputs: 1 });
 });
 
@@ -171,10 +175,10 @@ test.each([
   "interface Task { run(value: number): void; }",
   "abstract class Task { abstract run(value: number): void; }",
 ])("reports a supported bodyless method as absence: %s", async (source) => {
-  const selected = await selectFunctionRegions(input(source, "run"), enclosing, process.cwd());
+  const selected = await selectStructuralRegions(input(source, "run"), enclosing, process.cwd());
   const owner = selected.regions[0];
   if (!owner) throw Error("Missing method");
-  const result = await selectFunctionRegions(
+  const result = await selectStructuralRegions(
     { complete: true, targets: [{ ...owner.target, ranges: [owner.range] }] },
     body,
     process.cwd(),
@@ -184,29 +188,29 @@ test.each([
 
 test("uses nested method ownership instead of its containing function", async () => {
   const source = "function outer() { const task = { run() { retry(); } }; }";
-  const result = await selectFunctionRegions(input(source, "retry()"), enclosing, process.cwd());
+  const result = await selectStructuralRegions(input(source, "retry()"), enclosing, process.cwd());
   expect(result.regions.map((region) => region.text)).toEqual(["run() { retry(); }"]);
 });
 test("rejects partial part inputs, ambiguous whole seeds, unsupported languages and invalid syntax", async () => {
   await expect(
-    selectFunctionRegions(input("function f() { probe(); }", "probe()"), body, process.cwd()),
-  ).rejects.toThrow("exact supported function");
+    selectStructuralRegions(input("function f() { probe(); }", "probe()"), body, process.cwd()),
+  ).rejects.toThrow("Unsupported part body for call");
   const source = "function a() {} function b() {}";
   await expect(
-    selectFunctionRegions(input(source, source), enclosing, process.cwd()),
-  ).rejects.toThrow("separate functions");
+    selectStructuralRegions(input(source, source), enclosing, process.cwd()),
+  ).rejects.toThrow("separate constructs");
   await expect(
-    selectFunctionRegions(input("probe()", "probe()", ".py"), enclosing, process.cwd()),
+    selectStructuralRegions(input("probe()", "probe()", ".py"), enclosing, process.cwd()),
   ).rejects.toThrow("JavaScript and TypeScript");
   await expect(
-    selectFunctionRegions(
+    selectStructuralRegions(
       input("function broken( { probe();", "probe()"),
       enclosing,
       process.cwd(),
     ),
   ).rejects.toThrow("syntax provider reports errors");
   await expect(
-    selectFunctionRegions(
+    selectStructuralRegions(
       input("function f() {}", "f"),
       enclosing,
       process.cwd(),

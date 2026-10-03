@@ -77,7 +77,7 @@ export function selectPresentation(
       rows.push({
         kind: "note",
         expandedOnly: true,
-        text: `${start.lineNumber}:${start.column}–${end.lineNumber}:${end.column} · ${region.origins.length} origin(s)${region.origins.some((o) => o.expanded) ? " · expanded" : ""}`,
+        text: `${region.syntax ? `${region.syntax.object}${region.syntax.part ? `/${region.syntax.part}` : ""} · ` : ""}${start.lineNumber}:${start.column}–${end.lineNumber}:${end.column} · ${region.origins.length} origin(s)${region.origins.some((o) => o.expanded) ? " · expanded" : ""}`,
       });
       for (const origin of region.origins.slice(0, 20)) {
         const r = origin.range;

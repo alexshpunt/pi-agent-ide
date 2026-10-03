@@ -9,7 +9,7 @@ import {
   withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";
 import { selectPresentation } from "./select-presentation.js";
-import { selectFunctionRegions } from "./ast/selection.js";
+import { selectStructuralRegions } from "./ast/selection.js";
 import { publicRange } from "./selection-region.js";
 import { selectTextRegions } from "./text-selection.js";
 import { selectGeometryRegions } from "./geometry-selection.js";
@@ -25,10 +25,13 @@ import {
 function operationLabel(operation: SelectParameters["operation"]): string {
   switch (operation.kind) {
     case "object": {
-      return "enclosing function";
+      return `enclosing ${operation.object} · level ${operation.level ?? 1}`;
     }
     case "part": {
-      return "function body";
+      return `part ${operation.part}`;
+    }
+    case "navigate": {
+      return `${operation.relation}${operation.relation === "siblings" ? ` ${operation.direction ?? "all"}` : ""}${operation.object ? ` · ${operation.object}` : ""}`;
     }
     case "between": {
       return `between ${JSON.stringify(operation.start)} … ${JSON.stringify(operation.end)} · ${operation.extent}`;
@@ -83,7 +86,8 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "select-code",
-      description: "Derive text/function boundaries and combine verified source-range sets",
+      description:
+        "Derive text and AST boundaries, navigate constructs and combine source-range sets",
       triggers: [{ tool: "select" }],
     }),
   ]);
@@ -104,8 +108,9 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
           openWorldHint: false,
         },
         description:
-          "Use select to derive verified text boundaries and positions, combine source-local range sets, or find the nearest enclosing JavaScript/TypeScript function and its exact body, without JSX/TSX. Text operations apply per region; range/lines require one source. Geometry matches by source and snapshot, not array position; within retains whole candidates, intersection clips, difference subtracts, and merge explicitly joins overlaps or optional adjacency without filling gaps. Points use included starts and excluded ends. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Line/function expansion and merge retain input associations. Results keep strict snapshots, both inputs’ completeness and individually consumable items; preview truncation does not clip the whole target. No ownBody or general AST traversal is implemented.",
-        promptSnippet: "Derive text/function boundaries and combine verified source-range sets",
+          "Use select to derive verified text boundaries and positions, combine source-local range sets, and navigate normalized JavaScript/TypeScript constructs and named parts, without JSX/TSX. AST enclosing matches the full seed and counts levels within the requested category. Navigation skips parser-only wrappers; filters do not change relationships. Navigation requires exact named syntax nodes; parts require a node with that supported part. Supported optional parts may be absent; unsupported parts are errors with available names. syntax describes the result category, not edit authority. Text operations apply per region; range/lines require one source. Geometry matches by source and snapshot, not array position; within retains whole candidates, intersection clips, difference subtracts, and merge explicitly joins overlaps or optional adjacency without filling gaps. Points use included starts and excluded ends. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Expansion and merge retain input associations. Results keep strict snapshots, completeness and individually consumable items; preview truncation does not clip the whole target. ownBody, semantic identity and separator-aware list edits are not implemented.",
+        promptSnippet:
+          "Derive text and AST boundaries, navigate constructs and combine source-range sets",
         promptGuidelines: [
           "Use Search for predicate matches and existing captures; use Select when a target needs new text or structural boundaries.",
           "Compare the enclosing owner of each inner match with the original function when checking a condition in that function's own body.",
@@ -173,8 +178,10 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
             await targets.verify(verified, signal);
             const selected = isGeometryOperation(operation)
               ? selectGeometryRegions(input, operation, scopes, signal)
-              : operation.kind === "object" || operation.kind === "part"
-                ? await selectFunctionRegions(input, operation, context.cwd, signal)
+              : operation.kind === "object" ||
+                  operation.kind === "part" ||
+                  operation.kind === "navigate"
+                ? await selectStructuralRegions(input, operation, context.cwd, signal)
                 : selectTextRegions(input, operation, signal);
             await targets.verify(verified, signal);
             signal?.throwIfAborted();
@@ -200,6 +207,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
                   source: region.target.source,
                   range: publicRange(region.range),
                   origins: region.origins,
+                  ...(region.syntax ? { syntax: region.syntax } : {}),
                   preview,
                   textTruncated: preview.length < region.text.length,
                 };

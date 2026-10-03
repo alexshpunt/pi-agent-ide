@@ -4,12 +4,70 @@ Use Search to find text or code by a predicate. Use Select when an existing targ
 
 ## AST operations
 
-The function/body operations support JavaScript (.js/.mjs/.cjs) and TypeScript (.ts/.mts/.cts), without JSX/TSX. Syntax errors and unavailable providers are errors, not evidence that a function is absent. Text operations do not require a parser or a particular source language.
+AST operations support JavaScript (.js/.mjs/.cjs) and TypeScript (.ts/.mts/.cts), without JSX/TSX. Syntax errors and unavailable providers are errors, not evidence of absence. Text operations do not require a parser.
 
-- `operation: {kind:"object", object:"function", relation:"enclosing", level:1, extent:"around"}` returns the nearest function containing the entire input range. An exact function selects itself. It can expand outside a Read/Search window and reports each input range and whether expansion occurred. A seed spanning separate functions is rejected rather than choosing from its first character.
-- `operation: {kind:"part", part:"body"}` requires an exact supported function target. A block body includes braces; an expression-bodied arrow returns its expression. A declaration without a body produces no selection, reported by missingInputs.
+### Enclosing constructs
 
-Function declarations/expressions, arrow functions, class/object methods and their async/generator forms are supported, including TypeScript signatures without bodies. A function's parameters belong to that function, including default expressions. No ownBody subtraction, other nesting levels or general AST traversal is implemented.
+Use `{kind:"object", object:"function"}` to find the nearest function containing the entire seed. An exact function selects itself. Set level:2 for the next outer function; levels count only the requested category. The optional relation/extent spellings remain enclosing/around. Enclosing can expand outside a Read/Search window and reports each input association and expansion. Seeds crossing separate constructs are rejected instead of choosing from their first character.
+
+Supported object categories:
+
+- function: declarations, expressions, arrows, class/object methods, async/generator forms and bodyless TS signatures. Default parameter expressions belong to their function.
+- call: calls and new expressions.
+- class, if, switch, loop (for/for-in/for-of/while/do), try and catch.
+- binding: a variable declarator, not the surrounding const/let/var statement. assignment: ordinary and compound assignment expressions.
+- object/array: literals and destructuring patterns; property: key/value pairs and shorthand object properties.
+- return and throw.
+
+These are syntax categories, not resolved symbol identities. Parser-only wrappers, punctuation, type nodes and comments do not become extra public construct categories. Class fields, JSX/TSX and other unlisted forms are not promised as constructs. ownBody is not implemented.
+
+### Navigate
+
+Use `{kind:"navigate", relation:"parent"}` on an exact named syntax node. Returned constructs skip parser-only wrappers. Exact part/capture targets can be used directly; if a text range cuts through a node, first use object/enclosing. When several nested nodes have identical bounds, the supported construct takes precedence; otherwise the innermost exact named node is the starting node. A whole-file seed is not implicitly split into constructs.
+
+- parent returns the nearest normalized construct ancestor, excluding the starting node.
+- ancestors returns all normalized ancestors in source order, excluding the starting node.
+- children returns the nearest nested constructs. descendants returns all nested constructs. Neither includes the starting node.
+- siblings requires an exact normalized construct. direction previous/next returns its immediate neighbor under the same normalized parent; omit direction or use all for every other sibling. Top-level constructs share the document root. Missing parents/neighbors are valid absence.
+
+Set object to filter results by category after navigation. A filter never changes topology: parent with object:function does not jump past an intervening call; children with object:call does not jump through an if. previous/next do not skip a different-category neighbor. Use ancestors/descendants when deeper matching constructs are wanted.
+
+Ancestors and descendants can overlap. Choose the intended disjoint targets before editing; edit tools still reject overlapping writes. JavaScript chooses items by syntax.object or source/range; the item's stored target supplies source authority.
+
+### Named parts
+
+Use `{kind:"part", part:"arguments"}` on an exact construct. Parts retain provider boundaries and delimiters: a function block body includes braces, parameter/argument lists include parentheses, return/type annotations include their colon, and an else/finalizer clause includes its keyword. A single unparenthesized arrow parameter has no invented parentheses; an expression arrow body is its exact expression.
+
+| Construct                                 | Supported parts                                            |
+| ----------------------------------------- | ---------------------------------------------------------- |
+| function                                  | name, parameters, returnType, body                         |
+| call/new                                  | callee, arguments                                          |
+| class                                     | name, body                                                 |
+| if                                        | condition, then, else                                      |
+| switch                                    | condition, body                                            |
+| classic for                               | initializer, condition, update, body                       |
+| for-in / for-of                           | left, iterable, body                                       |
+| while / do                                | condition, body                                            |
+| try                                       | body, handler, finalizer                                   |
+| catch                                     | parameter, body                                            |
+| finally clause returned by part/finalizer | body                                                       |
+| binding                                   | name, type, value                                          |
+| assignment                                | left, right                                                |
+| property                                  | key, value; shorthand selects the same identifier for both |
+| return / throw                            | value                                                      |
+
+A supported optional part that is absent produces no selection and increments missingInputs: anonymous function name, optional else, bodyless TS declaration, missing annotation, bare return, optional catch parameter, or new without arguments. Unsupported parts return an error listing available names. Objects and arrays do not invent a body or arguments part; use navigation for nested constructs and AST Search for scalar elements. Separator-aware list-element selection belongs to a later stage.
+
+Structural items include parser-derived syntax.object and, for part selections, syntax.part where a normalized owner exists. These labels are descriptive, not editable authority. Read takes the item's target string; its displayed line context never widens the exact part's source scope.
+
+```js
+const found = await tools.search({ path: "client.ts", query: "ast:send($$$ARGS)" });
+const call = await tools.select({ path: found, operation: { kind: "object", object: "call" } });
+const args = await tools.select({ path: call, operation: { kind: "part", part: "arguments" } });
+await tools.read({ path: args.data.target });
+const number = await tools.search({ path: args, query: "10" });
+await tools.replace({ path: number, text: "20" });
+```
 
 ## Text operations
 

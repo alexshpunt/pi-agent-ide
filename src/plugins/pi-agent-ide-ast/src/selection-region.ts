@@ -17,6 +17,7 @@ export interface SelectedRegion {
   readonly range: ResultRange;
   readonly text: string;
   readonly origins: SelectionItem["origins"];
+  readonly syntax?: SelectionItem["syntax"];
 }
 
 /** Coordinates use one-based lines and exclusive UTF-16 character ends. */

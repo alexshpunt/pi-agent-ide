@@ -158,6 +158,118 @@ const geometryOperationSchema = Type.Union([
   ),
 ]);
 
+const astObjectSchema = Type.Union([
+  Type.Literal("function"),
+  Type.Literal("call"),
+  Type.Literal("class"),
+  Type.Literal("if"),
+  Type.Literal("switch"),
+  Type.Literal("loop"),
+  Type.Literal("try"),
+  Type.Literal("catch"),
+  Type.Literal("binding"),
+  Type.Literal("assignment"),
+  Type.Literal("object"),
+  Type.Literal("property"),
+  Type.Literal("array"),
+  Type.Literal("return"),
+  Type.Literal("throw"),
+]);
+const astPartSchema = Type.Union([
+  Type.Literal("name"),
+  Type.Literal("body"),
+  Type.Literal("parameters"),
+  Type.Literal("returnType"),
+  Type.Literal("type"),
+  Type.Literal("callee"),
+  Type.Literal("arguments"),
+  Type.Literal("condition"),
+  Type.Literal("then"),
+  Type.Literal("else"),
+  Type.Literal("initializer"),
+  Type.Literal("update"),
+  Type.Literal("iterable"),
+  Type.Literal("left"),
+  Type.Literal("right"),
+  Type.Literal("value"),
+  Type.Literal("key"),
+  Type.Literal("handler"),
+  Type.Literal("finalizer"),
+  Type.Literal("parameter"),
+]);
+const objectFilter = Type.Optional({
+  ...astObjectSchema,
+  description:
+    "Filter results by construct category after navigation. The filter does not change parent/child/sibling relationships.",
+});
+const structuralOperationSchema = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal("object"),
+      object: astObjectSchema,
+      relation: Type.Optional(Type.Literal("enclosing")),
+      level: Type.Optional(
+        Type.Integer({
+          minimum: 1,
+          description: "Default 1 (nearest). Count only constructs of the requested category.",
+        }),
+      ),
+      extent: Type.Optional(Type.Literal("around")),
+    },
+    {
+      additionalProperties: false,
+      description:
+        "Select the requested containing construct. level=1 is nearest and includes an exact seed; higher levels count only that category. Match the entire seed, not its first character.",
+    },
+  ),
+  Type.Object(
+    { kind: Type.Literal("part"), part: astPartSchema },
+    {
+      additionalProperties: false,
+      description:
+        "Select an exact supported construct's named part, including delimiters belonging to its syntax node. A supported optional part may be absent; unsupported parts are errors with available names. Use an enclosing object first for partial input.",
+    },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("navigate"),
+      relation: Type.Union([
+        Type.Literal("parent"),
+        Type.Literal("ancestors"),
+        Type.Literal("children"),
+        Type.Literal("descendants"),
+      ]),
+      object: objectFilter,
+    },
+    {
+      additionalProperties: false,
+      description:
+        "Navigate from an exact named syntax node, including constructs, part targets and the document root. Skip parser-only wrappers in results. Exclude the starting node; ancestors/descendants return results in source order. parent/children never skip recognized constructs to satisfy a filter. Use enclosing first for ranges that cut through a node.",
+    },
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal("navigate"),
+      relation: Type.Literal("siblings"),
+      object: objectFilter,
+      direction: Type.Optional(
+        Type.Union([Type.Literal("previous"), Type.Literal("next"), Type.Literal("all")], {
+          description:
+            "Default all. previous/next select the immediate sibling before category filtering, not the next matching category.",
+        }),
+      ),
+    },
+    {
+      additionalProperties: false,
+      description:
+        "Select siblings of an exact supported construct under the same normalized parent. Exclude the input; return source order. A missing neighbor is valid absence.",
+    },
+  ),
+]);
+/** Normalized JS/TS constructs, independent of parser-only wrapper nodes. */
+export type AstObject = Static<typeof astObjectSchema>;
+/** Named construct parts. Availability depends on the actual node form. */
+export type AstPart = Static<typeof astPartSchema>;
 /** Callable text and structural transformations; future catalog entries are not exposed here. */
 export const selectSchema = Type.Object(
   {
@@ -167,23 +279,7 @@ export const selectSchema = Type.Object(
         "Pass a compatible source result, its data or RESULT# target, a returned-item array, or a file path. Preview text and reconstructed coordinates are not source targets.",
     },
     operation: Type.Union([
-      Type.Object(
-        {
-          kind: Type.Literal("object"),
-          object: Type.Literal("function"),
-          relation: Type.Literal("enclosing"),
-          level: Type.Literal(1),
-          extent: Type.Literal("around"),
-        },
-        { additionalProperties: false },
-      ),
-      Type.Object(
-        {
-          kind: Type.Literal("part"),
-          part: Type.Literal("body"),
-        },
-        { additionalProperties: false },
-      ),
+      structuralOperationSchema,
       textOperationSchema,
       geometryOperationSchema,
     ]),
@@ -196,7 +292,7 @@ export type SelectParameters = Static<typeof selectSchema>;
 /** Supported source transformations. */
 export type SelectOperation = SelectParameters["operation"];
 /** AST operations require the existing syntax provider. */
-export type StructuralSelectOperation = Extract<SelectOperation, { kind: "object" | "part" }>;
+export type StructuralSelectOperation = Static<typeof structuralOperationSchema>;
 /** Geometry operations compare verified source-local sets. */
 export type GeometrySelectOperation = Static<typeof geometryOperationSchema>;
 /** Text operations work independently of a source language or parser. */
@@ -235,6 +331,19 @@ export const selectionDataSchema = Type.Object(
           target: Type.String(),
           source: Type.String(),
           range: rangeSchema,
+          syntax: Type.Optional(
+            Type.Object(
+              {
+                object: astObjectSchema,
+                part: Type.Optional(astPartSchema),
+              },
+              {
+                additionalProperties: false,
+                description:
+                  "Parser-derived normalized construct category and selected part. This describes the target; it is not edit authority.",
+              },
+            ),
+          ),
           origins: Type.Array(
             Type.Object(
               {
