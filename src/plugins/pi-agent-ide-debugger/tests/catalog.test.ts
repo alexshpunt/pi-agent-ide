@@ -49,6 +49,17 @@ test("only verified matrix entries are advertised as debugger recipes", () => {
   }
 });
 
+test("Java uses its own backend without changing Kotlin selection", () => {
+  expect(debuggerRecipeForLanguage("java")).toMatchObject({
+    id: "java-debug",
+    languages: ["java"],
+    debugger: { platforms: ["linux", "win32"] },
+  });
+  expect(debuggerRecipeForLanguage("kotlin")).toMatchObject({
+    id: "kotlin-debug-adapter",
+    languages: ["kotlin"],
+  });
+});
 test("verified Windows debugger recipes declare Windows support", () => {
   for (const language of ["python", "javascript", "typescript"]) {
     expect(debuggerRecipeForLanguage(language)?.debugger?.platforms).toContain("win32");

@@ -74,19 +74,17 @@ test.runIf(selected === "java")(
         expect.objectContaining({
           kind: "debugger",
           languageId: "java",
-          toolId: "kotlin-debug-adapter",
+          toolId: "java-debug",
         }),
       );
-      expect(
-        doctor.actions.filter(({ id }) => id.startsWith("debugger-kotlin-debug-adapter")),
-      ).toEqual([]);
+      expect(doctor.actions.filter(({ id }) => id.startsWith("debugger-java-debug"))).toEqual([]);
       expect(
         doctor.sections
           .find(({ pluginId }) => pluginId === "debugger")
           ?.findings.filter(({ status }) => status !== "pass"),
       ).toEqual([]);
     } finally {
-      manager.dispose();
+      await manager.dispose();
       await rm(cwd, { recursive: true, force: true });
     }
   },

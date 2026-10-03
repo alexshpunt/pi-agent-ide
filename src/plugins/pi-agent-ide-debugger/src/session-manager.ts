@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { resolvePythonDebuggerCommand } from "./adapter-executables.js";
+import { JavaDebugRuntime } from "./java-runtime.js";
 import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import {
   DapClient,
@@ -100,6 +101,7 @@ export interface DebugSession {
   controlClient?: DapClient;
   clients?: DapClient[];
   adapterProcess?: ChildProcess;
+  javaRuntime?: JavaDebugRuntime;
   adapterTemporaryDirectory?: string;
   targetReady?: Promise<void>;
   resolveTargetReady?: () => void;
@@ -263,7 +265,52 @@ export class DebugSessionManager {
 
   /** Launch the debuggee, configure breakpoints, and wait for a stop or termination. */
   async start(session: DebugSession, signal?: AbortSignal): Promise<DebugSession> {
+    if (session.options.adapter === "java") return this.#startJava(session, signal);
     return this.#start(session, signal, 2);
+  }
+
+  async #startJava(session: DebugSession, signal?: AbortSignal): Promise<DebugSession> {
+    if (session.status !== "configured") throw new Error(`Session is already ${session.status}`);
+    const runtime = new JavaDebugRuntime();
+    session.javaRuntime = runtime;
+    const startupSignal = AbortSignal.any([
+      ...(signal === undefined ? [] : [signal]),
+      AbortSignal.timeout(30_000),
+    ]);
+    const abortStartup = (): void => {
+      void runtime.close();
+    };
+    session.status = "running";
+    this.#notify(session);
+    try {
+      const { client, attach } = await runtime.start(session.options, startupSignal);
+      session.client = client;
+      session.controlClient = client;
+      startupSignal.addEventListener("abort", abortStartup, { once: true });
+      session.clients = [client];
+      await initializeClient(client, "java", startupSignal);
+      await Promise.all([
+        client.waitForAnyEvent(["initialized"], 30_000, startupSignal),
+        client.request("attach", attach, { signal: startupSignal }),
+      ]);
+      await this.#configureBreakpoints(session, client, startupSignal);
+      // java-debug installs its event listeners before configurationDone resumes the JVM.
+      await client.request("configurationDone", undefined, { signal: startupSignal });
+      await this.#waitForStop(session, startupSignal);
+      if (this.snapshot(session).status === "terminated") await runtime.close();
+      return session;
+    } catch (error) {
+      await runtime.close();
+      session.javaRuntime = undefined;
+      session.client = undefined;
+      session.controlClient = undefined;
+      session.clients = undefined;
+      session.status = "configured";
+      this.#notify(session);
+      throw error;
+    } finally {
+      startupSignal.removeEventListener("abort", abortStartup);
+    }
   }
 
   async #start(
@@ -309,7 +356,7 @@ export class DebugSessionManager {
       await initialized;
       await this.#configureBreakpoints(session, client, signal);
       const configurationDone = client.request("configurationDone", undefined, { signal });
-      if (session.options.adapter === "java" || session.options.adapter === "kotlin") {
+      if (session.options.adapter === "kotlin") {
         // kotlin-debug-adapter deliberately keeps this response pending for the session lifetime.
         void configurationDone.catch(() => {});
       } else {
@@ -372,6 +419,7 @@ export class DebugSessionManager {
     session.status = "running";
     this.#notify(session);
     await this.#waitForStop(session, signal);
+    if (this.snapshot(session).status === "terminated") await session.javaRuntime?.close();
     return session;
   }
 
@@ -424,6 +472,7 @@ export class DebugSessionManager {
         .catch(() => {});
       for (const client of session.clients ?? [session.client]) client.close();
     }
+    await session.javaRuntime?.close();
     await terminateOwnedAdapterProcess(session.adapterProcess);
     await removeAdapterTemporaryDirectory(session);
     session.status = "terminated";
@@ -432,18 +481,21 @@ export class DebugSessionManager {
   }
 
   /** Stop all owned adapter processes during Pi shutdown. */
-  dispose(): void {
+  async dispose(): Promise<void> {
+    const javaCleanup: Promise<void>[] = [];
     for (const session of this.#sessions.values()) {
       for (const client of session.clients ??
         (session.client === undefined ? [] : [session.client])) {
         client.close();
       }
+      if (session.javaRuntime !== undefined) javaCleanup.push(session.javaRuntime.close());
       void terminateOwnedAdapterProcess(session.adapterProcess);
       if (session.adapterTemporaryDirectory !== undefined) {
         rmSync(session.adapterTemporaryDirectory, { recursive: true, force: true });
       }
     }
     this.#sessions.clear();
+    await Promise.all(javaCleanup);
   }
 
   async #startRubyAdapter(session: DebugSession): Promise<DapClient> {
@@ -1193,7 +1245,7 @@ async function adapterRecipe(
       launch: { ...common, type: "python", console: "internalConsole", justMyCode: false },
     };
   }
-  if (options.adapter === "java" || options.adapter === "kotlin") {
+  if (options.adapter === "kotlin") {
     if (options.mainClass === undefined) {
       throw new Error("Java and Kotlin debug sessions require mainClass");
     }
