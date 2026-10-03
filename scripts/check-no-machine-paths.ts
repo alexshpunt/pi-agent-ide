@@ -20,8 +20,6 @@ const forbidden: {
   {
     label: "root home path",
     pattern: new RegExp(`/${["ro", "ot"].join("")}/`, "u"),
-    // This local Pi setting intentionally excludes the global checkout.
-    allowedFiles: [".pi/settings.json"],
   },
   {
     label: "personal home path",
@@ -36,7 +34,6 @@ const forbidden: {
   {
     label: "current checkout path",
     pattern: new RegExp(escapeRegExp(process.cwd()), "u"),
-    allowedFiles: [".pi/settings.json"],
   },
 ];
 const failures: string[] = [];
