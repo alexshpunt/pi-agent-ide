@@ -151,4 +151,20 @@ export interface SearchToolDetails {
 }
 
 export { searchSchema } from "#src/api/search-parameters.js";
+export {
+  fuzzyLimits,
+  isFuzzyResultData,
+  FuzzyVocabulary,
+  isFuzzyQuery,
+  rankFuzzyIdentifiers,
+  fuzzyCandidateData,
+  formatFuzzyCandidate,
+} from "#src/api/fuzzy.js";
+export type {
+  FuzzyIdentifier,
+  FuzzyResultData,
+  FuzzyCandidate,
+  FuzzyResult,
+  FuzzyCandidateData,
+} from "#src/api/fuzzy.js";
 export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";

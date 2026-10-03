@@ -1,4 +1,10 @@
 import path from "node:path";
+import {
+  fuzzyLimits,
+  isFuzzyResultData,
+  type FuzzyCandidate,
+  type FuzzyResultData,
+} from "pi-agent-search/api/search";
 import { pathToFileURL } from "node:url";
 
 import type { TextSearchMatch } from "#src/search-session.js";
@@ -31,6 +37,14 @@ export interface SearchResultFile {
   readonly lines: readonly SearchResultLine[];
 }
 
+/** Bounded user-only source previews; not part of Search's agent-facing projection. */
+export interface FuzzySearchPresentation {
+  readonly fileCount: number;
+  readonly groups: readonly {
+    readonly identifier: string;
+    readonly files: readonly SearchResultFile[];
+  }[];
+}
 export interface SearchToolDetails {
   readonly sessionId?: string;
   readonly query: string;
@@ -38,6 +52,8 @@ export interface SearchToolDetails {
   readonly fileCount: number;
   readonly complete: boolean;
   readonly files: readonly SearchResultFile[];
+  readonly fuzzy?: FuzzyResultData;
+  readonly fuzzyPresentation?: FuzzySearchPresentation;
 }
 
 interface MutableSearchResultLine {
@@ -78,6 +94,65 @@ export function createSearchToolDetails(
   };
 }
 
+/** Keep short highlighted source windows for the TUI without changing agent results. */
+export function createFuzzyPresentation(
+  candidates: readonly FuzzyCandidate[],
+  cwd: string,
+): FuzzySearchPresentation {
+  return {
+    fileCount: new Set(
+      candidates.flatMap((candidate) => candidate.matches.map((match) => match.source)),
+    ).size,
+    groups: candidates.map((candidate) => {
+      const preview = createSearchToolDetails(
+        candidate.identifier,
+        candidate.matches.slice(0, fuzzyLimits.previewMatches),
+        candidate.complete,
+        cwd,
+      );
+      const files = preview.files.map((file) => {
+        const lines = file.lines.map((line) => {
+          const from = Math.max(0, (line.ranges[0]?.from ?? 0) - 64);
+          const to = Math.min(line.text.length, (line.ranges[0]?.to ?? 0) + 64);
+          const prefix = from > 0 ? "…" : "";
+          const ranges = line.ranges
+            .filter((range) => range.from >= from && range.to <= to)
+            .map((range) => ({
+              from: range.from - from + prefix.length,
+              to: range.to - from + prefix.length,
+            }));
+          return {
+            ...line,
+            text: prefix + line.text.slice(from, to) + (to < line.text.length ? "…" : ""),
+            ranges,
+            matchCount: ranges.length,
+          };
+        });
+        return {
+          ...file,
+          lines,
+          matchCount: lines.reduce((count, line) => count + line.matchCount, 0),
+        };
+      });
+      return { identifier: candidate.identifier, files };
+    }),
+  };
+}
+
+function isFuzzyPresentation(value: unknown): value is FuzzySearchPresentation {
+  return (
+    isRecord(value) &&
+    isCount(value.fileCount) &&
+    Array.isArray(value.groups) &&
+    value.groups.every(
+      (group) =>
+        isRecord(group) &&
+        typeof group.identifier === "string" &&
+        Array.isArray(group.files) &&
+        group.files.every(isSearchResultFile),
+    )
+  );
+}
 export function isSearchToolDetails(value: unknown): value is SearchToolDetails {
   if (
     !isRecord(value) ||
@@ -86,6 +161,8 @@ export function isSearchToolDetails(value: unknown): value is SearchToolDetails 
     !isCount(value.fileCount) ||
     typeof value.complete !== "boolean" ||
     (value.sessionId !== undefined && typeof value.sessionId !== "string") ||
+    (value.fuzzy !== undefined && !isFuzzyResultData(value.fuzzy)) ||
+    (value.fuzzyPresentation !== undefined && !isFuzzyPresentation(value.fuzzyPresentation)) ||
     !Array.isArray(value.files) ||
     !value.files.every(isSearchResultFile)
   ) {

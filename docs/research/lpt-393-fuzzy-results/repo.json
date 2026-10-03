@@ -1,0 +1,122 @@
+{
+  "scope": "repo",
+  "request": {
+    "query": "planSearchPresentations",
+    "path": "src"
+  },
+  "node": "v24.20.0",
+  "baselineRssBytes": 149012480,
+  "baselineHeapBytes": 52543264,
+  "peakNodeRssKiB": 253136,
+  "runs": [
+    {
+      "repetition": 0,
+      "invocation": "first in this process",
+      "resolveMs": 197.02866299999994,
+      "registrationMs": 5.886676999999963,
+      "totalMs": 202.9153399999999,
+      "ordinaryMs": 11.027428999999984,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "planSearchPresentation",
+          "matchCount": 10,
+          "complete": true
+        }
+      ],
+      "rssBytes": 192319488,
+      "heapBytes": 42126184
+    },
+    {
+      "repetition": 1,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 153.16502000000014,
+      "registrationMs": 2.6196299999999155,
+      "totalMs": 155.78465000000006,
+      "ordinaryMs": 13.262361000000055,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "planSearchPresentation",
+          "matchCount": 10,
+          "complete": true
+        }
+      ],
+      "rssBytes": 193245184,
+      "heapBytes": 43182040
+    },
+    {
+      "repetition": 2,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 140.010812,
+      "registrationMs": 2.463557999999921,
+      "totalMs": 142.4743699999999,
+      "ordinaryMs": 13.206528999999819,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "planSearchPresentation",
+          "matchCount": 10,
+          "complete": true
+        }
+      ],
+      "rssBytes": 194007040,
+      "heapBytes": 44272152
+    },
+    {
+      "repetition": 3,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 155.73641399999997,
+      "registrationMs": 2.2927649999999176,
+      "totalMs": 158.02917899999989,
+      "ordinaryMs": 13.180634999999938,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "planSearchPresentation",
+          "matchCount": 10,
+          "complete": true
+        }
+      ],
+      "rssBytes": 194613248,
+      "heapBytes": 45255216
+    },
+    {
+      "repetition": 4,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 155.2331959999999,
+      "registrationMs": 2.0157530000001316,
+      "totalMs": 157.24894900000004,
+      "ordinaryMs": 12.454251000000113,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "planSearchPresentation",
+          "matchCount": 10,
+          "complete": true
+        }
+      ],
+      "rssBytes": 195268608,
+      "heapBytes": 46803240
+    },
+    {
+      "repetition": 5,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 147.09523799999988,
+      "registrationMs": 2.65529800000013,
+      "totalMs": 149.750536,
+      "ordinaryMs": 11.426179999999931,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "planSearchPresentation",
+          "matchCount": 10,
+          "complete": true
+        }
+      ],
+      "rssBytes": 195883008,
+      "heapBytes": 47151672
+    }
+  ],
+  "note": "First invocation is not a flushed OS cache. Resolve includes ordinary search, name collection and exact verification. Registration includes bounded snapshots. RSS includes imported runtime modules; it is not the vocabulary size and does not include child-process RSS."
+}
