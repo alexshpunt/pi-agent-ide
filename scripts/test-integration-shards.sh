@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Run integration tests in parallel shards. Each shard gets its own
-# pi-test shared-runner host, so shards do not fight over one Pi pool.
+# Run integration tests in parallel shards with standalone Pi processes.
+# Shared pools retain every fixture configuration and exhaust CI memory.
 #
 # Usage: SHARDS=4 bash scripts/test-integration-shards.sh [vitest args...]
 set -uo pipefail
@@ -22,7 +22,7 @@ for shard in $(seq 1 "$shards"); do
   if [[ -n "$report_dir" ]]; then
     report_args=(--reporter=default --reporter=junit "--outputFile.junit=${report_dir}/integration-${shard}.xml")
   fi
-  pnpm exec pi-test run -- \
+  env -u PI_INTEGRATION_TEST_RUNNER pnpm exec \
     vitest run --config vitest.integration.config.mjs "--shard=${shard}/${shards}" "${report_args[@]}" "$@" \
     > "${log_dir}/integration-shard-${shard}.log" 2>&1 &
   pids+=($!)

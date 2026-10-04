@@ -54,4 +54,11 @@ test("keeps unit failure evidence before success-only integration", () => {
   const candidate = find("Build and install reproducible release candidate");
   expect(candidate.index).toBeGreaterThan(integration.index);
   expect(candidate.step.if).toMatch(/^success\(\)/u);
+  const shardScript = readFileSync(
+    path.join(findRepositoryRoot(import.meta.url), "scripts/test-integration-shards.sh"),
+    "utf8",
+  );
+  // Fixtures have distinct configurations; retained shared hosts must not accumulate in CI.
+  expect(shardScript).toContain("env -u PI_INTEGRATION_TEST_RUNNER pnpm exec");
+  expect(shardScript).not.toContain("pnpm exec pi-test run");
 });
