@@ -59,6 +59,7 @@ The root runner uses native rendering by default. The published harness's raw re
 Tests that need an unchanged conversation use `#integration/support/pi-runtime/native-pi-coding-agent-test.js`. The root `pi-coding-agent-test` alias uses the same native adapter and keeps its existing surrounding read calls. Both adapters forward explicit launch options; the native adapter also reads the system prompt from Pi 0.99's transcript system messages using the SDK.
 
 `pnpm test:integration:shards` runs four independent Pi pools. Each run prints its own log directory under `.tmp/integration-shards.*`, so parallel audits do not overwrite each other's logs. Set `LOG_DIR` to choose another parent directory.
+CI uses the same four shards without changing test or job timeouts. Set `REPORT_DIR` to write a separate `integration-N.xml` JUnit report for each shard. CI retains all shard reports and logs, and builds the release candidate only after every shard passes.
 
 `--no-extensions` also disables Pi's native built-ins. Native fixtures explicitly load `builtin:codemode`, `builtin:tool-search`, and `builtin:mcp`; ordinary fixtures do not. `native-host.integration.test.ts` checks the version inside the launched process, deferred discovery, nested execution, and isolation from personal MCP servers.
 

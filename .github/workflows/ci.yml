@@ -198,7 +198,9 @@ jobs:
         if: success()
         env:
           PI_DEBUGGER_CORE_EXCLUDE_ADAPTER: kotlin
-        run: pnpm test:integration:report
+          SHARDS: "4"
+          REPORT_DIR: .agents/tmp/test-results
+        run: pnpm test:integration:shards
 
       - name: Smoke test nightly package
         if: success() && inputs.nightly
@@ -233,6 +235,16 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+      - name: Upload integration shard logs
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: integration-shard-logs
+          path: .tmp/integration-shards.*/*.log
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -244,11 +256,11 @@ jobs:
 
       - name: Report integration tests
         id: integration-report
-        if: always() && hashFiles('.agents/tmp/test-results/integration.xml') != ''
+        if: always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != ''
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Integration tests
-          path: .agents/tmp/test-results/integration.xml
+          path: .agents/tmp/test-results/integration-*.xml
           reporter: java-junit
           fail-on-error: false
 

@@ -13,10 +13,17 @@ mkdir -p "$log_parent"
 log_dir="$(mktemp -d "$log_parent/integration-shards.XXXXXX")"
 echo "Integration logs: $log_dir"
 
+report_dir="${REPORT_DIR:-}"
+if [[ -n "$report_dir" ]]; then mkdir -p "$report_dir"; fi
+
 pids=()
 for shard in $(seq 1 "$shards"); do
+  report_args=()
+  if [[ -n "$report_dir" ]]; then
+    report_args=(--reporter=default --reporter=junit "--outputFile.junit=${report_dir}/integration-${shard}.xml")
+  fi
   pnpm exec pi-test run -- \
-    vitest run --config vitest.integration.config.mjs "--shard=${shard}/${shards}" "$@" \
+    vitest run --config vitest.integration.config.mjs "--shard=${shard}/${shards}" "${report_args[@]}" "$@" \
     > "${log_dir}/integration-shard-${shard}.log" 2>&1 &
   pids+=($!)
 done

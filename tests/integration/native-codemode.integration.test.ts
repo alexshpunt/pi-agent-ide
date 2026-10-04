@@ -406,7 +406,8 @@ test("a multi-file batch formats each final file once", async () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { content: string });
-    expect(formats.map((event) => event.content)).toEqual(["first\nsecond\n", "third\n"]);
+    // Independent files may finish in either order; each final content must appear once.
+    expect(formats.map((event) => event.content).sort()).toEqual(["first\nsecond\n", "third\n"]);
     expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(2);
     expect((await events(cwd)).filter((event) => event.type === "guard")).toHaveLength(1);
   });
