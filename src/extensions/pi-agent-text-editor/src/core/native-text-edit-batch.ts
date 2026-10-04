@@ -24,6 +24,8 @@ import { isWholeFileInvocation } from "./file-operation-tools.js";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
 import { Type } from "typebox";
 import {
+  ResourceScheduler,
+  resourceAccesses,
   connectResultTargets,
   resultError,
   withStructuredResult,
@@ -72,6 +74,8 @@ interface ScriptBatch {
   readonly targets: Map<string, string>;
   readonly postEdits: ReturnType<typeof createPostEditScope>;
   tail: Promise<void>;
+  readonly scheduler: ResourceScheduler;
+  readonly callOrder: Map<string, number>;
   pending: PendingBatch;
   closed: boolean;
 }
@@ -192,7 +196,7 @@ class NativeTextEditBatchCoordinator {
       execute: async (id) => {
         const script = this.invocations.get(id);
         if (!script) throw new Error("Flush requires an active native Codemode script");
-        const work = script.tail.then(async () => {
+        const work = script.scheduler.run(undefined, async () => {
           await this.commit(script);
           const reports = script.reports.slice(script.reportCursor);
           script.reportCursor = script.reports.length;
@@ -241,8 +245,10 @@ class NativeTextEditBatchCoordinator {
           errors: [],
           cancellation: new AbortController(),
           targets: new Map(),
-          postEdits: createPostEditScope(),
+          postEdits: createPostEditScope(context.cwd),
           tail: Promise.resolve(),
+          scheduler: new ResourceScheduler(),
+          callOrder: new Map(),
           pending: pendingBatch(),
           closed: false,
         });
@@ -299,7 +305,7 @@ class NativeTextEditBatchCoordinator {
         this.invocations.set(event.toolCallId, script);
         return;
       }
-      const work = script.tail.then(() => this.commit(script));
+      const work = script.scheduler.run(undefined, () => this.commit(script));
       script.tail = work.then(
         () => undefined,
         () => undefined,
@@ -362,44 +368,47 @@ class NativeTextEditBatchCoordinator {
         }
       } else await this.commit(script);
       try {
-        await this.core.enqueueFileOperation(() =>
-          script.postEdits.finish((outcome) => {
-            const index = script.results.findLastIndex(
-              (item) => item.data.path === outcome.after.source,
-            );
-            if (index < 0) return;
-            const previous = requiredValue(script.results[index]).data;
-            const updated = new MutationPresentation({
-              ...previous,
-              afterContent: outcome.after.content,
-              afterDocument: outcome.after,
-              formatting: outcome.postEditContributions
-                .map((item) => item.data)
-                .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
-              diffStatuses: outcome.postEditContributions
-                .map((item) => item.data)
-                .filter(isDiffStatusContribution)
-                .flatMap((item) => item.diffStatuses),
-            });
-            const previousResult = requiredValue(script.results[index]);
-            script.results[index] = updated;
-            for (const [slot, presentation] of script.presentations.entries()) {
-              const results = presentation.result.details.results;
-              if (!results?.includes(previousResult)) continue;
-              script.presentations[slot] = {
-                ...presentation,
-                result: {
-                  ...presentation.result,
-                  details: {
-                    ...presentation.result.details,
-                    results: results.map((result) =>
-                      result === previousResult ? updated : result,
-                    ),
+        await this.core.enqueueFileOperation(
+          () =>
+            script.postEdits.finish((outcome) => {
+              const index = script.results.findLastIndex(
+                (item) => item.data.path === outcome.after.source,
+              );
+              if (index < 0) return;
+              const previous = requiredValue(script.results[index]).data;
+              const updated = new MutationPresentation({
+                ...previous,
+                afterContent: outcome.after.content,
+                afterDocument: outcome.after,
+                formatting: outcome.postEditContributions
+                  .map((item) => item.data)
+                  .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
+                diffStatuses: outcome.postEditContributions
+                  .map((item) => item.data)
+                  .filter(isDiffStatusContribution)
+                  .flatMap((item) => item.diffStatuses),
+              });
+              const previousResult = requiredValue(script.results[index]);
+              script.results[index] = updated;
+              for (const [slot, presentation] of script.presentations.entries()) {
+                const results = presentation.result.details.results;
+                if (!results?.includes(previousResult)) continue;
+                script.presentations[slot] = {
+                  ...presentation,
+                  result: {
+                    ...presentation.result,
+                    details: {
+                      ...presentation.result.details,
+                      results: results.map((result) =>
+                        result === previousResult ? updated : result,
+                      ),
+                    },
                   },
-                },
-              };
-            }
-          }),
+                };
+              }
+            }),
+          undefined,
+          { cwd: script.context.cwd, sources: script.postEdits.sources() },
         );
       } catch (error) {
         script.errors.push(error instanceof Error ? error.message : String(error));
@@ -484,13 +493,24 @@ class NativeTextEditBatchCoordinator {
   ): Promise<AgentToolResult<FileMutationBatchResult>> | undefined {
     const script = this.invocations.get(id);
     if (!script) return undefined;
-    const work = script.tail.then(() =>
-      this.accept(script, id, registration, input, signal, context),
+    script.callOrder.set(id, script.callOrder.size);
+    const sources = [...mutationSources(registration, input).values()].map((source) =>
+      source.startsWith("file://")
+        ? fileURLToPath(source)
+        : path.resolve(context.cwd, source.startsWith("@") ? source.slice(1) : source),
     );
-    script.tail = work.then(
-      () => undefined,
-      () => undefined,
+    const effectiveSignal =
+      signal === undefined
+        ? script.cancellation.signal
+        : AbortSignal.any([signal, script.cancellation.signal]);
+    const work = script.scheduler.run(
+      Promise.all(sources.map((source) => resourceAccesses(source, context.cwd, "write"))).then(
+        (sets) => sets.flat(),
+      ),
+      () => this.accept(script, id, registration, input, effectiveSignal, context),
+      effectiveSignal,
     );
+    script.tail = Promise.allSettled([script.tail, work]).then(() => undefined);
     return work;
   }
 
@@ -519,7 +539,7 @@ class NativeTextEditBatchCoordinator {
       path: String(normalized[registration.source.field]),
     };
     const batch = script.pending;
-    const requests = new Map(batch.requests);
+    const requests = new Map<string, TextResourceEditRequest>();
     for (const source of mutationSources(registration, entry).values())
       requests.set(source, {
         source,
@@ -534,7 +554,7 @@ class NativeTextEditBatchCoordinator {
       async (texts, resolveAnchor) => {
         try {
           for (const [source, expected] of batch.snapshots)
-            if (texts.get(source) !== expected)
+            if (requests.has(source) && texts.get(source) !== expected)
               throw new Error(`Snapshot source ${source} changed before the edit batch.`);
           planning.plan = await planRegisteredTextBatch(
             new Map([[registration.name, registration]]),
@@ -544,7 +564,7 @@ class NativeTextEditBatchCoordinator {
             context,
             signal,
             () => {},
-            batch.plan.changes,
+            new Map([...batch.plan.changes].filter(([source]) => requests.has(source))),
           );
           return { changes: planning.plan.changes, result: planning.plan };
         } catch (error) {
@@ -573,12 +593,16 @@ class NativeTextEditBatchCoordinator {
       batch.snapshots.set(resource.path, resource.beforeContent);
       batch.existence.set(resource.path, resource.existed ?? true);
     }
-    batch.requests.clear();
     for (const [source, request] of requests) batch.requests.set(source, request);
     batch.entries.push(entry);
+    const order = (left: { callId: string }, right: { callId: string }) =>
+      requiredValue(script.callOrder.get(left.callId)) -
+      requiredValue(script.callOrder.get(right.callId));
+    batch.entries.sort(order);
     batch.plan = {
-      ...planning.plan,
-      mutations: [...batch.plan.mutations, ...planning.plan.mutations],
+      changes: new Map([...batch.plan.changes, ...planning.plan.changes]),
+      mutations: [...batch.plan.mutations, ...planning.plan.mutations].sort(order),
+      failures: [...batch.plan.failures, ...planning.plan.failures],
     };
     const target = ["replace", "insert", "write", "copy", "move"].includes(registration.name)
       ? this.resultTargets.reserve(context.cwd)

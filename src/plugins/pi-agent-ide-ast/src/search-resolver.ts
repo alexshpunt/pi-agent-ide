@@ -40,6 +40,10 @@ export function createAstSearchResolver(
   return {
     id: "ast",
     supportsResultScope: true,
+    readResources: (request, context) =>
+      request.query.startsWith("ast:")
+        ? (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd])
+        : [],
     renderResult: renderSearchResult as SearchResolver["renderResult"],
     async tryResolve(request, context) {
       if (!request.query.startsWith("ast:")) {

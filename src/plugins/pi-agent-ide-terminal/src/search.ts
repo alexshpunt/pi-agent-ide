@@ -40,6 +40,8 @@ export async function registerTerminalSearch(
 
 function terminalSearchResolver(manager: TerminalSessionManager) {
   return {
+    readResources: (request: SearchRequest) =>
+      request.path?.startsWith("shell:") ? [request.path] : [],
     id: "terminal",
     toScriptData(payload: unknown) {
       const result = parsePayload(payload);

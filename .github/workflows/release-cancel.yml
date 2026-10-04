@@ -48,4 +48,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           RELEASE_VERSION: ${{ inputs.version }}
           CONFIRM_CANCEL: ${{ inputs.confirmation }}
-        run: node --experimental-strip-types scripts/release/cancel.ts
+        run: |
+          git config user.name pi-agent-ide-release[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          node --experimental-strip-types scripts/release/cancel.ts

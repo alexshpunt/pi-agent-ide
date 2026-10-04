@@ -2,6 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
+import { ResourceScheduler, resourceAccesses } from "pi-agent-resource";
+import { requiredValue } from "pi-agent-invariant";
 import { applyTextChanges } from "#src/core/text-change-engine.js";
 import { ApplyUndoStore } from "#src/core/apply/apply-undo-store.js";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
@@ -16,9 +18,22 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-function filesystemEditor(): TransactionEditor & Pick<TextEditorCore, "restoreApplyUndo"> {
+function filesystemEditor(): TransactionEditor &
+  Pick<TextEditorCore, "restoreApplyUndo" | "enqueueFileOperation"> {
   const undo = new ApplyUndoStore();
+  const scheduler = new ResourceScheduler();
   return {
+    enqueueFileOperation(action, signal, scope) {
+      const accesses =
+        scope === undefined
+          ? undefined
+          : Promise.all(
+              scope.sources.map((source) => resourceAccesses(source, scope.cwd, "write")),
+            ).then((sets) => sets.flat());
+      return scheduler.run(accesses, action, signal, {
+        allowNestedWrites: scope?.allowNestedEdits === true,
+      });
+    },
     async editTexts(sources, _context, operation) {
       const texts = new Map<string, string>();
       for (const source of sources) {
@@ -77,6 +92,52 @@ function replace(document: string, from: number, to: number, text: string, inser
   return { kind: "replace", selection: { document, from, to, text }, text: insert };
 }
 
+test("a transaction keeps its resources until its undo receipt is captured", async () => {
+  const { cwd, core, run } = await fixture({ "a.txt": "abc", "b.txt": "xyz" });
+  const record = core.recordApplyUndo;
+  let signalCapture!: () => void;
+  let releaseCapture!: () => void;
+  const capturing = new Promise<void>((resolve) => {
+    signalCapture = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseCapture = resolve;
+  });
+  core.recordApplyUndo = async (before) => {
+    signalCapture();
+    await release;
+    return record(before);
+  };
+  const pending = run([snapshot(cwd, "a", "a.txt", "abc")], [replace("a", 0, 1, "a", "A")]);
+  await capturing;
+  let conflictingRan = false;
+  const conflicting = core.enqueueFileOperation(
+    async () => {
+      conflictingRan = true;
+      await writeFile(path.join(cwd, "a.txt"), "later");
+    },
+    undefined,
+    { cwd, sources: [path.join(cwd, "a.txt")] },
+  );
+  try {
+    await core.enqueueFileOperation(
+      async () => {
+        await writeFile(path.join(cwd, "b.txt"), "independent");
+      },
+      undefined,
+      { cwd, sources: [path.join(cwd, "b.txt")] },
+    );
+    expect(conflictingRan).toBe(false);
+  } finally {
+    releaseCapture();
+    await Promise.allSettled([pending, conflicting]);
+  }
+  const outcome = await pending;
+  expect(outcome.transaction).toBeDefined();
+  await expect(core.restoreApplyUndo(requiredValue(outcome.transaction))).rejects.toMatchObject({
+    code: "APPLY_UNDO_STALE",
+  });
+});
 test("an invalid selection fails only its operation", async () => {
   const { cwd, run } = await fixture({ "a.txt": "abc", "b.txt": "xyz" });
   const outcome = await run(
@@ -168,6 +229,7 @@ test("a failed file operation leaves known state for later dependent work", asyn
 test("an execution failure rolls back only that operation", async () => {
   const { cwd, core } = await fixture({ "source.txt": "source", "independent.txt": "old" });
   const editor: TransactionEditor = {
+    enqueueFileOperation: core.enqueueFileOperation,
     editTexts: core.editTexts,
     recordApplyUndo: core.recordApplyUndo,
     async postProcessFile() {
@@ -194,6 +256,7 @@ test("an execution failure rolls back only that operation", async () => {
 test("incomplete rollback blocks dependent work but allows independent work", async () => {
   const { cwd, core } = await fixture({ "source.txt": "source", "other.txt": "old" });
   const editor: TransactionEditor = {
+    enqueueFileOperation: core.enqueueFileOperation,
     editTexts: core.editTexts,
     recordApplyUndo: core.recordApplyUndo,
     async postProcessFile() {

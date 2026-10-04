@@ -19,6 +19,61 @@ function resolver(text: string) {
 }
 
 describe("web search", () => {
+  it("offers mixed candidate groups after zero hits without refetching converted URL content", async () => {
+    const text = [
+      "const hintStrings = this.hintStrings(2);",
+      "if (hintStrings.length) marker.hintString = hintStrings[0];",
+      "hintStrings(linkCount) {}",
+      "generateHintString(number) {}",
+      "this.generateHintString(2);",
+    ].join("\n");
+    let conversions = 0;
+    let fetches = 0;
+    const search = createWebSearchResolver(
+      createWebResolver(
+        {
+          convert: async () => {
+            conversions++;
+            return [{ type: "text", text }];
+          },
+        },
+        {
+          fetch: async () => {
+            fetches++;
+            return new Response("raw", { headers: { "content-type": "text/html" } });
+          },
+          autoBrowserFallback: false,
+        },
+      ),
+    );
+    const result = await search.tryResolve(
+      { query: "generateHintStrings", path: "https://example.test/hints.js" },
+      context,
+    );
+    if (result.kind !== "resolved") throw new Error("Expected URL search result");
+    const data = search.toScriptData?.(result.payload, undefined) as {
+      matches: unknown[];
+      fuzzy?: {
+        candidates: { identifier: string; matchCount: number; selection: { all?: unknown } }[];
+      };
+    };
+    expect(data.matches).toEqual([]);
+    expect(data.fuzzy?.candidates).toEqual([
+      expect.objectContaining({ identifier: "hintStrings", matchCount: 5 }),
+      expect.objectContaining({ identifier: "generateHintString", matchCount: 2 }),
+    ]);
+    expect(data.fuzzy?.candidates.every((candidate) => candidate.selection.all === undefined)).toBe(
+      true,
+    );
+    const formatted = await search.format(result.payload, context);
+    const block = formatted.content[0];
+    if (block?.type !== "text") throw new Error("Expected candidate text");
+    expect(block.text).toContain("No matches in https://example.test/hints.js");
+    expect(block.text).toContain("hintStrings");
+    expect(block.text).toContain("generateHintString");
+    expect(fetches).toBe(1);
+    expect(conversions).toBe(1);
+  });
   it("searches converted content and keeps the requested URL", async () => {
     const search = resolver("Extensions\nmore extensions");
     const result = await search.tryResolve(

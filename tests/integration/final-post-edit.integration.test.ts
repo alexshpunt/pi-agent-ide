@@ -79,7 +79,8 @@ ${fail ? 'throw new Error("planned failure");' : ""}
           .trim()
           .split("\n")
           .map((line) => JSON.parse(line) as { content: string });
-      expect((await events("format-events.jsonl")).map((event) => event.content)).toEqual([
+      // Independent files may finish in either order; each final content must appear once.
+      expect((await events("format-events.jsonl")).map((event) => event.content).sort()).toEqual([
         "final",
         "second",
       ]);

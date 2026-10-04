@@ -1,0 +1,127 @@
+import type {
+  ExtensionAPI,
+  ExtensionToolContext,
+  ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import { describe, expect, test, vi } from "vitest";
+
+import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
+import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
+
+test.runIf(process.platform !== "win32")(
+  "releases a wait using only the manager API available before reload",
+  async () => {
+    const manager = new TerminalSessionManager();
+    const context = { cwd: process.cwd() } as ExtensionToolContext;
+    let execute: (() => Promise<unknown>) | undefined;
+    const registerTool: ExtensionAPI["registerTool"] = (definition) => {
+      const tool = definition as ToolDefinition;
+      execute = async () =>
+        tool.execute(
+          "retained-manager",
+          {
+            command: "IFS= read -r answer; printf 'received:%s' \"$answer\"",
+            timeoutSeconds: 30,
+          },
+          undefined,
+          undefined,
+          context,
+        );
+    };
+    const notifyWaitTransition = vi.fn();
+    const release = registerTerminalTools(
+      { registerTool },
+      manager,
+      resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+      {
+        bind: vi.fn(),
+        notifyWaitTransition,
+      },
+    );
+    try {
+      if (execute === undefined) throw new Error("Terminal tool was not registered");
+      // An old retained manager has no steering-specific method or new private fields.
+      expect(manager).not.toHaveProperty("releaseForegroundWaits");
+      const waiting = execute();
+      const source = manager.list()[0]?.source;
+      if (source === undefined) throw new Error("Terminal session was not started");
+      const pid = manager.get(source)?.process?.pid;
+      release();
+      const result = (await waiting) as {
+        details: {
+          source: string;
+          pid: number;
+          background: boolean;
+          status: string;
+          waitReason: string;
+        };
+      };
+      expect(result.details).toMatchObject({
+        source,
+        pid,
+        background: true,
+        status: "running",
+        waitReason: "steering",
+      });
+      expect(notifyWaitTransition).not.toHaveBeenCalled();
+      manager.write(source, "hello");
+      manager.sendKeys(source, "Enter");
+      const completed = await manager.wait(source);
+      expect(completed.output).toContain("received:hello");
+      expect(formatAgentTerminalSnapshot(manager.snapshot(completed))).not.toContain("next:");
+      release();
+    } finally {
+      await manager.dispose();
+    }
+  },
+);
+describe("terminal command guidance", () => {
+  test.each([
+    ["win32", {}, "Windows PowerShell", "powershell.exe", "Write PowerShell syntax", "$env:NAME"],
+    [
+      "win32",
+      { SHELL: "pwsh.exe" },
+      "PowerShell",
+      "pwsh.exe",
+      "Write PowerShell syntax",
+      "$env:NAME",
+    ],
+    [
+      "win32",
+      { SHELL: "cmd.exe" },
+      "Command Prompt",
+      "cmd.exe",
+      "Write Command Prompt syntax",
+      "%NAME%",
+    ],
+    ["linux", { SHELL: "/bin/bash" }, "Bash", "/bin/bash", "Write Bash syntax", "$NAME"],
+  ] as const)(
+    "identifies %s shell %j in the command schema",
+    (platform, environment, name, executable, syntax, variable) => {
+      let tool: { schema: string; description: string; promptSnippet?: string } | undefined;
+      const registerTool: ExtensionAPI["registerTool"] = (definition) => {
+        tool = {
+          schema: JSON.stringify(definition.parameters),
+          description: definition.description,
+          promptSnippet: definition.promptSnippet,
+        };
+      };
+      const profile = resolveShellProfile(platform, environment);
+      registerTerminalTools({ registerTool }, {} as TerminalSessionManager, profile, {
+        bind: vi.fn(),
+        notifyWaitTransition: vi.fn(),
+      });
+
+      if (!tool) throw new Error("Terminal tool was not registered");
+      const guidance = tool.schema;
+      expect(guidance).toContain(name);
+      expect(guidance).toContain(executable);
+      expect(guidance).toContain(syntax);
+      expect(guidance).toContain(variable);
+      expect(tool.description).toContain(executable);
+      expect(tool.promptSnippet).toContain(name);
+    },
+  );
+});

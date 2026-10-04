@@ -2,7 +2,7 @@ import { requiredValue } from "pi-agent-invariant";
 import type { ResultTargetStore } from "pi-agent-resource";
 import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -43,6 +43,7 @@ interface SearchSnapshot {
 interface StoredSearchSession extends TextSearchSession, SearchSnapshot {
   readonly refresh?: SearchSelectionRegistration["refresh"];
   readonly recipe: SearchRecipe;
+  readonly snapshotByteBudget?: number;
   readonly cwd: string;
   readonly refreshedComplete?: SearchSnapshot;
 }
@@ -155,6 +156,7 @@ export class SearchSessionStore {
     private readonly resultTargets?: ResultTargetStore,
   ) {}
 
+  /** Capture current files; an optional byte budget also bounds reads if a file grows during capture. */
   public async register(
     query: string,
     sourceMatches: readonly TextSearchMatch[],
@@ -166,11 +168,12 @@ export class SearchSessionStore {
       regex: true,
     },
     refresh?: SearchSelectionRegistration["refresh"],
+    snapshotByteBudget?: number,
   ): Promise<TextSearchSession> {
     const matches = sourceMatches
       .map((match) => ({ ...match, source: path.resolve(match.source) }))
       .sort(compareMatches);
-    const contentBySource = await snapshotContents(matches, signal);
+    const contentBySource = await snapshotContents(matches, signal, snapshotByteBudget);
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
     const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
@@ -181,6 +184,7 @@ export class SearchSessionStore {
       complete,
       contentBySource,
       ...registerResultReferences(this.resultTargets, matches, contentBySource, cwd, complete),
+      ...(snapshotByteBudget === undefined ? {} : { snapshotByteBudget }),
       recipe,
       ...(refresh !== undefined && { refresh }),
       cwd: path.resolve(cwd),
@@ -199,9 +203,19 @@ export class SearchSessionStore {
     signal?: AbortSignal,
     recipe?: SearchRecipe,
     refresh?: SearchSelectionRegistration["refresh"],
+    snapshotByteBudget?: number,
   ): Promise<TextSearchSession | undefined> {
     try {
-      return await this.register(query, sourceMatches, complete, cwd, signal, recipe, refresh);
+      return await this.register(
+        query,
+        sourceMatches,
+        complete,
+        cwd,
+        signal,
+        recipe,
+        refresh,
+        snapshotByteBudget,
+      );
     } catch (error) {
       if (error instanceof SearchSnapshotChangedError) return undefined;
       throw error;
@@ -420,7 +434,7 @@ export class SearchSessionStore {
     const refreshed: SearchSnapshot = {
       matches,
       complete: result.complete,
-      contentBySource: await snapshotContents(matches, signal),
+      contentBySource: await snapshotContents(matches, signal, session.snapshotByteBudget),
     };
     this.#sessions.set(session.id, { ...session, refreshedComplete: refreshed });
     return refreshed;
@@ -548,25 +562,77 @@ function matchedSourceText(
 async function snapshotContents(
   matches: readonly TextSearchMatch[],
   signal?: AbortSignal,
+  byteBudget?: number,
 ): Promise<ReadonlyMap<string, string>> {
-  const contentBySource = new Map<string, string>();
-  for (const source of new Set(matches.map((match) => match.source))) {
-    const content = await readFile(source, {
-      encoding: "utf8",
-      ...(signal !== undefined && { signal }),
-    });
-    const document = createTextDocument(source, content);
-    for (const match of matches.filter((candidate) => candidate.source === source)) {
-      const line = document.lines[match.lineNumber - 1]?.content;
-      if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText) {
-        throw new SearchSnapshotChangedError(source);
-      }
+  const sources = [...new Set(matches.map((match) => match.source))];
+  if (byteBudget !== undefined) {
+    const contents = new Map<string, string>();
+    let remaining = byteBudget;
+    for (const source of sources) {
+      const content = await readBoundedSnapshot(source, remaining, signal);
+      remaining -= Buffer.byteLength(content);
+      validateSnapshot(source, content, matches);
+      contents.set(source, content);
     }
-    contentBySource.set(source, content);
+    return contents;
+  }
+  const snapshots = await Promise.allSettled(
+    sources.map(async (source) => {
+      const content = await readFile(source, {
+        encoding: "utf8",
+        ...(signal !== undefined && { signal }),
+      });
+      validateSnapshot(source, content, matches);
+      return [source, content] as const;
+    }),
+  );
+  const contentBySource = new Map<string, string>();
+  for (const snapshot of snapshots) {
+    if (snapshot.status === "rejected") throw snapshot.reason;
+    contentBySource.set(...snapshot.value);
   }
   return contentBySource;
 }
 
+function validateSnapshot(
+  source: string,
+  content: string,
+  matches: readonly TextSearchMatch[],
+): void {
+  const document = createTextDocument(source, content);
+  for (const match of matches.filter((candidate) => candidate.source === source)) {
+    const line = document.lines[match.lineNumber - 1]?.content;
+    if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText)
+      throw new SearchSnapshotChangedError(source);
+  }
+}
+async function readBoundedSnapshot(
+  source: string,
+  budget: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  signal?.throwIfAborted();
+  const file = await open(source, "r");
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.size > budget)
+      throw new Error("Candidate snapshot byte budget reached.");
+    const buffer = Buffer.alloc(Math.min(info.size + 1, budget + 1));
+    let length = 0;
+    while (length < buffer.length) {
+      signal?.throwIfAborted();
+      const read = await file.read(buffer, length, buffer.length - length, length);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    signal?.throwIfAborted();
+    if (length > info.size || length > budget)
+      throw new Error("Candidate file grew during snapshot capture.");
+    return buffer.subarray(0, length).toString("utf8");
+  } finally {
+    await file.close();
+  }
+}
 async function readCurrent(source: string, signal?: AbortSignal): Promise<string | undefined> {
   try {
     return await readFile(source, { encoding: "utf8", ...(signal !== undefined && { signal }) });

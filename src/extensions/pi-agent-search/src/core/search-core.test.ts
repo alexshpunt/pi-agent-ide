@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { resourceScheduler } from "pi-agent-resource";
 import { createSearchCore } from "#src/core/search-core.js";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "#src/api/plugin-protocol.js";
 import type {
@@ -47,6 +48,92 @@ async function setup(attempt: SearchResolutionAttempt | Error) {
   return { core, specialized, fallback };
 }
 
+test("search waits for conflicting writes without blocking a disjoint query", async () => {
+  const core = createSearchCore();
+  const observed: string[] = [];
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "concurrency",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "memory",
+          readResources: (request) => [request.query],
+          tryResolve(request) {
+            observed.push(request.query);
+            return { kind: "resolved", payload: request.query };
+          },
+          format: () => ({ content: [{ type: "text", text: "found" }], details: {} }),
+        },
+      });
+    },
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const writer = resourceScheduler.run([{ resource: "memory:blocked", mode: "write" }], () => gate);
+  const blocked = core.execute({ query: "memory:blocked" }, { cwd: process.cwd() });
+  try {
+    await core.execute({ query: "memory:other" }, { cwd: process.cwd() });
+    expect(observed).toEqual(["memory:other"]);
+  } finally {
+    release();
+    await Promise.allSettled([writer, blocked]);
+  }
+  expect(observed).toEqual(["memory:other", "memory:blocked"]);
+});
+test.each([false, true])("search readers overlap with a declared scope=%s", async (declared) => {
+  const core = createSearchCore();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let timedOut = false;
+  const watchdog = setTimeout(() => {
+    timedOut = true;
+    release();
+  }, 1000);
+  const entered: string[] = [];
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "reader-overlap",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "reader-overlap",
+          ...(declared && { readResources: (request: SearchRequest) => [request.query] }),
+          async tryResolve(request) {
+            entered.push(request.query);
+            if (request.query === "memory:first") await gate;
+            else release();
+            return { kind: "resolved", payload: request.query };
+          },
+          format: () => ({ content: [{ type: "text", text: "found" }], details: {} }),
+          toScriptData: () => ({ kind: "custom", resolverId: "reader-overlap", value: "found" }),
+        },
+      });
+    },
+  });
+  try {
+    const results = await Promise.all(
+      ["memory:first", "memory:second"].map((query) =>
+        core.execute({ query }, { cwd: process.cwd() }),
+      ),
+    );
+    expect(timedOut).toBe(false);
+    expect(entered).toEqual(["memory:first", "memory:second"]);
+    expect(results.map((result) => result.details.resolverId)).toEqual([
+      "reader-overlap",
+      "reader-overlap",
+    ]);
+  } finally {
+    clearTimeout(watchdog);
+    release();
+  }
+});
 test("script search keeps resolver data and formatted reference data separately", async () => {
   const { core } = await setup({ kind: "resolved", payload: [{ path: "a.ts", line: 4 }] });
   const result = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() }, "script");

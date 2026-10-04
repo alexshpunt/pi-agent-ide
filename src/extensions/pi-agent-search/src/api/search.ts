@@ -29,6 +29,14 @@ export type SearchResolutionAttempt =
 export interface SearchResolver {
   /** Handle exact source ranges instead of widening a structured input to a path. */
   readonly supportsResultScope?: boolean;
+  /** Complete read scope for resolving and formatting. Empty means no resource reads;
+   * undefined means unknown scope, compatible with reads but conflicting with every write.
+   * Declaring a scope must not read resource contents.
+   */
+  readonly readResources?: (
+    request: SearchRequest,
+    context: SearchContext,
+  ) => readonly string[] | undefined | Promise<readonly string[] | undefined>;
   /** Required for native data calls; project only documented JSON domain fields. */
   readonly toScriptData?: (payload: unknown, formattedDetails: unknown) => unknown;
   readonly id: string;
@@ -155,4 +163,20 @@ export interface SearchToolDetails {
 export { searchSchema } from "#src/api/search-parameters.js";
 export { renderSearchMatches } from "./presentation.js";
 export { containsSearchMatch } from "./search-scope.js";
+export {
+  fuzzyLimits,
+  isFuzzyResultData,
+  FuzzyVocabulary,
+  isFuzzyQuery,
+  rankFuzzyIdentifiers,
+  fuzzyCandidateData,
+  formatFuzzyCandidate,
+} from "#src/api/fuzzy.js";
+export type {
+  FuzzyIdentifier,
+  FuzzyResultData,
+  FuzzyCandidate,
+  FuzzyResult,
+  FuzzyCandidateData,
+} from "#src/api/fuzzy.js";
 export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";

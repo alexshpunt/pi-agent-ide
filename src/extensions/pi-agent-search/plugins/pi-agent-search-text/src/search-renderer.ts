@@ -21,6 +21,7 @@ interface SearchRenderContext {
 }
 
 type SearchPanelRow =
+  | { readonly kind: "candidate"; readonly identifier: string }
   | { readonly kind: "file"; readonly file: SearchResultFile }
   | { readonly kind: "line"; readonly file: SearchResultFile; readonly line: SearchResultLine }
   | { readonly kind: "summary"; readonly text: string }
@@ -77,6 +78,7 @@ function searchModel(details: SearchToolDetails, expanded: boolean) {
         count: row.file.matchCount,
       };
     if (row.kind === "line") return { kind: "line", ...row.line };
+    if (row.kind === "candidate") return { kind: "note", text: row.identifier };
     if (row.kind === "summary") return { kind: "note", text: row.text };
     if (row.kind === "omitted")
       return {
@@ -88,9 +90,12 @@ function searchModel(details: SearchToolDetails, expanded: boolean) {
   return { summary: searchSummary(details), rows };
 }
 function searchViewport(details: SearchToolDetails, expanded: boolean): readonly SearchPanelRow[] {
-  const rows =
+  const hasCandidates = details.fuzzy?.status === "ready" && details.fuzzy.candidates.length > 0;
+  const rows: SearchPanelRow[] =
     details.files.length === 0
-      ? [{ kind: "empty" } satisfies SearchPanelRow]
+      ? hasCandidates
+        ? []
+        : [{ kind: "empty" } satisfies SearchPanelRow]
       : details.files.flatMap((file): SearchPanelRow[] => [
           { kind: "file", file },
           ...(file.uniqueLineCount === undefined
@@ -107,7 +112,41 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
               ]),
         ]);
 
-  if (expanded || rows.length <= COMPACT_SEARCH_ROWS) {
+  if (details.fuzzy !== undefined) {
+    if (details.fuzzy.status === "skipped")
+      rows.push({
+        kind: "summary",
+        text: "Fuzzy search unavailable",
+      });
+    else if (details.fuzzy.candidates.length > 0) {
+      rows.push(
+        ...details.fuzzy.candidates.flatMap((candidate): SearchPanelRow[] => {
+          const files =
+            details.fuzzyPresentation?.groups.find(
+              (group) => group.identifier === candidate.identifier,
+            )?.files ?? [];
+          const previewCount = files.reduce((count, file) => count + file.matchCount, 0);
+          return [
+            { kind: "candidate", identifier: candidate.identifier },
+            ...(files.length === 0
+              ? []
+              : [
+                  {
+                    kind: "summary",
+                    text: `Shown ${String(previewCount)} of ${String(candidate.matchCount)}${candidate.selection.complete ? "" : "+"}`,
+                  } as const,
+                  ...files.flatMap((file): SearchPanelRow[] => [
+                    { kind: "file", file },
+                    ...file.lines.map((line): SearchPanelRow => ({ kind: "line", file, line })),
+                  ]),
+                ]),
+          ];
+        }),
+      );
+    }
+  }
+
+  if (details.fuzzy !== undefined || expanded || rows.length <= COMPACT_SEARCH_ROWS) {
     return rows;
   }
 
@@ -131,6 +170,22 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
 }
 
 function searchSummary(details: SearchToolDetails): string {
+  if (
+    details.matchCount === 0 &&
+    details.fuzzy?.status === "ready" &&
+    details.fuzzy.candidates.length > 0 &&
+    details.fuzzyPresentation !== undefined
+  ) {
+    const count = details.fuzzy.candidates.reduce(
+      (total, candidate) => total + candidate.matchCount,
+      0,
+    );
+    const suffix = details.fuzzy.candidates.every((candidate) => candidate.selection.complete)
+      ? ""
+      : "+";
+    const files = details.fuzzyPresentation.fileCount;
+    return `0 exact · ${String(count)}${suffix} fuzzy ${plural(count, "match", "matches")} · ${String(files)}${suffix} ${plural(files, "file", "files")}`;
+  }
   if (details.matchCount === 0) {
     return details.complete ? "No matches" : "No matches · incomplete";
   }

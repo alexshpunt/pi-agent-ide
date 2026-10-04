@@ -33,22 +33,20 @@ export function renderSearchMatches(
           endLine === match.lineNumber
             ? [match.lineText]
             : [match.lineText, ...match.matchedText.split(/\r\n|\n|\r/u).slice(1)];
-        return lines
-          .slice(0, 20)
-          .map((text, index) => ({
-            source: match.source,
-            label,
-            ...(link === undefined ? {} : { link }),
-            ...(!local ? { badge: /^https?:/iu.test(match.source) ? "WEB" : "SH" } : {}),
-            lineNumber: match.lineNumber + index,
-            text,
-            ranges: [
-              {
-                from: index ? 0 : match.startColumn,
-                to: match.lineNumber + index === endLine ? match.endColumn : text.length,
-              },
-            ],
-          }));
+        return lines.slice(0, 20).map((text, index) => ({
+          source: match.source,
+          label,
+          ...(link === undefined ? {} : { link }),
+          ...(!local ? { badge: /^https?:/iu.test(match.source) ? "WEB" : "SH" } : {}),
+          lineNumber: match.lineNumber + index,
+          text,
+          ranges: [
+            {
+              from: index ? 0 : match.startColumn,
+              to: match.lineNumber + index === endLine ? match.endColumn : text.length,
+            },
+          ],
+        }));
       }),
     ),
   );

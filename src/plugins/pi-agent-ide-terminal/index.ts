@@ -10,6 +10,7 @@ import { terminalProcessProvider } from "#src/plugins/pi-agent-ide-terminal/src/
 import { registerTerminalResources } from "#src/plugins/pi-agent-ide-terminal/src/resources.js";
 import { registerTerminalSearch } from "#src/plugins/pi-agent-ide-terminal/src/search.js";
 import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
+import { observeQueuedSteering } from "#src/plugins/pi-agent-ide-terminal/src/steering.js";
 import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
 import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
 import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
@@ -27,6 +28,7 @@ export default async function registerTerminal(
       description: "Foreground and background commands, shell resources, and processes",
       triggers: [
         { tool: "bash" },
+        { tool: "powershell" },
         ...["read", "write", "insert", "delete"].map((tool) => ({
           tool,
           resourcePrefixes: ["shell:", "process:"],
@@ -42,7 +44,7 @@ export default async function registerTerminal(
   const removeProcessProvider = agentIdeProcessRegistry(pi).add(terminalProcessProvider(manager));
 
   await Promise.all([registerTerminalResources(pi, manager), registerTerminalSearch(pi, manager)]);
-  registerTerminalTools(
+  const releaseForegroundWaits = registerTerminalTools(
     pi,
     manager,
     profile,
@@ -50,9 +52,17 @@ export default async function registerTerminal(
     toolPresentation(context?.preferences["ui.terminal"]),
   );
 
-  pi.on("session_start", (_event, context) => ui.bind(context));
+  let removeSteeringObserver = (): void => {};
+  pi.on("session_start", (_event, context) => {
+    ui.bind(context);
+    removeSteeringObserver();
+    removeSteeringObserver = observeQueuedSteering((session) => {
+      if (session.sessionManager === context.sessionManager) releaseForegroundWaits();
+    });
+  });
   pi.on("agent_settled", (_event, context) => ui.onAgentSettled(context));
   pi.on("session_shutdown", async (event) => {
+    removeSteeringObserver();
     ui.dispose();
     removeProcessProvider();
     if (event.reason !== "quit") {

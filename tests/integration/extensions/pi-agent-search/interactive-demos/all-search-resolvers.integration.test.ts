@@ -214,7 +214,7 @@ test("uses literal-first fallback and Boolean text search through real Pi", asyn
     expect(flagResult).toContain("wt -C /repo switch @");
     expect(flagResult).toContain("wt --config custom.toml list");
 
-    expect(getToolExecution(result, "boolean-invalid").isError).toBe(false);
+    expect(getToolExecution(result, "boolean-invalid").isError).toBe(true);
     expect(getToolResultText(result, "boolean-invalid")).toContain(
       "Invalid Boolean search query at column 20: expected a term after OR.",
     );
@@ -226,7 +226,9 @@ test("uses literal-first fallback and Boolean text search through real Pi", asyn
     expect(combinedResult).not.toContain("providerError handled ignored");
 
     for (const call of searchCalls) {
-      expect(getToolExecution(result, call.id).isError, call.id).toBe(false);
+      expect(getToolExecution(result, call.id).isError, call.id).toBe(
+        call.id === "boolean-invalid",
+      );
     }
   });
 });

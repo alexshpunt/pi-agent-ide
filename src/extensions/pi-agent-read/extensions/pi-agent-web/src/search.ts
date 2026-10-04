@@ -2,6 +2,13 @@ import type { ResourceResolver } from "pi-agent-resource";
 import {
   selectionData,
   renderSearchMatches,
+  FuzzyVocabulary,
+  fuzzyLimits,
+  isFuzzyQuery,
+  rankFuzzyIdentifiers,
+  fuzzyCandidateData,
+  formatFuzzyCandidate,
+  type FuzzyResult,
   type SearchRequest,
   type SearchResolver,
   type SearchSelectionMatch,
@@ -11,12 +18,15 @@ interface WebSearchResult {
   readonly source: string;
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
+  readonly fuzzy?: FuzzyResult;
 }
 
 /** Search the same converted HTTP(S) content as Read, without treating URLs as files. */
 export function createWebSearchResolver(web: ResourceResolver): SearchResolver {
   return {
     id: "web",
+    readResources: (request) =>
+      request.path !== undefined && /^https?:/iu.test(request.path) ? [request.path] : [],
     async tryResolve(request, context) {
       const source = request.path;
       if (source === undefined || !/^https?:/iu.test(source)) return { kind: "not-handled" };
@@ -65,14 +75,35 @@ export function createWebSearchResolver(web: ResourceResolver): SearchResolver {
           });
         }
       }
+      const fuzzy =
+        matches.length === 0 && isFuzzyQuery(request.query)
+          ? searchFuzzyText(text, source, request.query, context.signal)
+          : undefined;
       return {
         kind: "resolved",
-        payload: { source, matches, complete: true } satisfies WebSearchResult,
+        payload: {
+          source,
+          matches,
+          complete: true,
+          ...(fuzzy === undefined ? {} : { fuzzy }),
+        } satisfies WebSearchResult,
       };
     },
     toScriptData(payload) {
       const result = payload as WebSearchResult;
-      return selectionData(result.matches, result.complete);
+      return {
+        ...selectionData(result.matches, result.complete),
+        ...(result.fuzzy === undefined
+          ? {}
+          : {
+              fuzzy: {
+                ...result.fuzzy,
+                candidates: result.fuzzy.candidates.map((candidate) =>
+                  fuzzyCandidateData(candidate),
+                ),
+              },
+            }),
+      };
     },
     renderResult(result, options, theme) {
       const data = result.details as WebSearchResult;
@@ -88,6 +119,15 @@ export function createWebSearchResolver(web: ResourceResolver): SearchResolver {
           ? `No matches in ${result.source}`
           : `${result.matches.length}${result.complete ? "" : "+"} matches in ${result.source}${result.complete ? "" : " (limit reached)"}`;
       const rows = [heading];
+      if (result.fuzzy?.status === "skipped")
+        rows.push(`Possible-name fallback skipped: ${result.fuzzy.message}`);
+      if (result.fuzzy?.candidates.length)
+        rows.push(
+          "Possible names — spelling suggestions, not equivalent behavior.",
+          ...result.fuzzy.candidates.map((candidate) =>
+            formatFuzzyCandidate(fuzzyCandidateData(candidate)),
+          ),
+        );
       let bytes = Buffer.byteLength(heading);
       for (const match of result.matches) {
         const row = `${result.source}:${match.lineNumber}:${match.startColumn + 1} ${previewMatch(match)}`;
@@ -103,6 +143,69 @@ export function createWebSearchResolver(web: ResourceResolver): SearchResolver {
   };
 }
 
+function searchFuzzyText(
+  text: string,
+  source: string,
+  query: string,
+  signal?: AbortSignal,
+): FuzzyResult | undefined {
+  signal?.throwIfAborted();
+  const start = performance.now();
+  const vocabulary = new FuzzyVocabulary();
+  vocabulary.addText(text);
+  if (vocabulary.limited)
+    return {
+      status: "skipped",
+      message: "name collection reached its byte or unique-name budget",
+      candidates: [],
+    };
+  const candidates = [];
+  for (const name of rankFuzzyIdentifiers(query, vocabulary.names)) {
+    signal?.throwIfAborted();
+    if (performance.now() - start > fuzzyLimits.timeoutMs)
+      return { status: "skipped", message: "extra search reached its time budget", candidates: [] };
+    const pattern = new RegExp(name.identifier.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "gu");
+    const matches: SearchSelectionMatch[] = [];
+    let complete = true;
+    let bytes = 0;
+    scan: for (const [index, lineText] of text.split(/\r\n|\n|\r/u).entries()) {
+      if (performance.now() - start > fuzzyLimits.timeoutMs)
+        return {
+          status: "skipped",
+          message: "extra search reached its time budget",
+          candidates: [],
+        };
+      signal?.throwIfAborted();
+      for (const match of lineText.matchAll(pattern)) {
+        const startColumn = match.index;
+        const endColumn = startColumn + match[0].length;
+        if (
+          /[\p{L}\p{N}_$]/u.test(lineText[startColumn - 1] ?? "") ||
+          /[\p{L}\p{N}_$]/u.test(lineText[endColumn] ?? "")
+        )
+          continue;
+        bytes += Buffer.byteLength(lineText);
+        if (
+          matches.length === fuzzyLimits.matchesPerCandidate ||
+          bytes > fuzzyLimits.verificationBytes
+        ) {
+          complete = false;
+          break scan;
+        }
+        matches.push({
+          source,
+          lineNumber: index + 1,
+          startColumn,
+          endColumn,
+          matchedText: match[0],
+          lineText,
+        });
+      }
+    }
+    if (matches.length > 0) candidates.push({ ...name, matches, complete });
+  }
+  return candidates.length === 0 ? undefined : { status: "ready", candidates };
+}
 function previewMatch(match: SearchSelectionMatch): string {
   const from = Math.max(0, match.startColumn - 64);
   const to = Math.min(match.lineText.length, match.startColumn + 192);

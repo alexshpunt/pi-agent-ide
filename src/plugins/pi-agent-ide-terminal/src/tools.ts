@@ -24,49 +24,54 @@ import type {
   TerminalSessionSnapshot,
 } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
-const runParameters = Type.Object(
-  {
-    command: Type.String({
-      minLength: 1,
-      description: "Command written in the syntax of the configured system shell",
-    }),
-    background: Type.Optional(
-      Type.Boolean({
-        description: "Return immediately while the terminal session continues. Defaults to false.",
+const createRunParameters = (profile: ShellProfile) =>
+  Type.Object(
+    {
+      command: Type.String({
+        minLength: 1,
+        description: `Command for ${profile.displayName} (${profile.executable}). ${shellSyntaxGuidance(profile)}`,
       }),
-    ),
-    timeoutSeconds: Type.Optional(
-      Type.Number({
-        minimum: 0.1,
-        maximum: 86_400,
-        description:
-          "Maximum foreground wait in seconds before returning the live session as background. Defaults to 60.",
-      }),
-    ),
-    cwd: Type.Optional(
-      Type.String({
-        description: "Working directory. Relative paths resolve from the current workspace.",
-      }),
-    ),
-    cols: Type.Optional(
-      Type.Integer({ minimum: 20, maximum: 300, description: "Virtual terminal width in cells" }),
-    ),
-    rows: Type.Optional(
-      Type.Integer({ minimum: 5, maximum: 120, description: "Virtual terminal height in cells" }),
-    ),
-  },
-  { additionalProperties: false },
-);
+      background: Type.Optional(
+        Type.Boolean({
+          description:
+            "Return immediately while the terminal session continues. Defaults to false.",
+        }),
+      ),
+      timeoutSeconds: Type.Optional(
+        Type.Number({
+          minimum: 0.1,
+          maximum: 86_400,
+          description:
+            "Maximum foreground wait in seconds before returning the live session as background. Defaults to 60.",
+        }),
+      ),
+      cwd: Type.Optional(
+        Type.String({
+          description: "Working directory. Relative paths resolve from the current workspace.",
+        }),
+      ),
+      cols: Type.Optional(
+        Type.Integer({ minimum: 20, maximum: 300, description: "Virtual terminal width in cells" }),
+      ),
+      rows: Type.Optional(
+        Type.Integer({ minimum: 5, maximum: 120, description: "Virtual terminal height in cells" }),
+      ),
+    },
+    { additionalProperties: false },
+  );
 
-/** Register terminal process lifecycle tools with platform-specific shell guidance. */
+/** Register shell tools and return a callback that releases their active waits on steering. */
 export function registerTerminalTools(
-  pi: ExtensionAPI,
+  pi: Pick<ExtensionAPI, "registerTool">,
   manager: TerminalSessionManager,
   profile: ShellProfile,
   ui: Pick<TerminalUi, "bind" | "notifyWaitTransition">,
   presentation: "full" | "compact" | "disabled" = "compact",
-): void {
+): () => void {
+  // Keep wait cancellation in this registration, not in a PTY manager retained from older code.
+  const foregroundWaits = new Set<AbortController>();
   const toolName = process.platform === "win32" ? "powershell" : "bash";
+  const runParameters = createRunParameters(profile);
   pi.registerTool(
     defineTool<typeof runParameters, TerminalSessionSnapshot>({
       name: toolName,
@@ -86,7 +91,7 @@ export function registerTerminalTools(
       promptGuidelines: [
         `Do not use ${toolName} commands or scripts to edit files. Use Apply or the standalone editing tools instead. Commands that inherently generate files, such as formatters and code generators, are allowed.`,
       ],
-      description: `Use ${toolName} to execute a command in the user's configured ${profile.displayName} shell (${profile.executable}). Every call creates an addressable terminal session. Set background to true to continue without waiting. A foreground wait automatically returns the live session as background on timeout, a stable interactive prompt, or turn abort. Background completion is delivered automatically and wakes the agent. Silent background sessions are treated as potentially stale after two minutes and wake an idle agent for inspection. Sessions survive extension reloads and keep the same shell: source. Output uses the shared Read limits, keeps the tail, and links a complete log file when truncated. ${shellSyntaxGuidance(profile)}`,
+      description: `Use ${toolName} to execute a command in the user's configured ${profile.displayName} shell (${profile.executable}). Every call creates an addressable terminal session. Set background to true to continue without waiting. A foreground wait automatically returns the live session as background on timeout, a stable interactive prompt, or turn abort. Background completion is delivered automatically and wakes the agent. Silent background sessions wake an idle agent once for inspection after two minutes, with no further stale reminders for that session. Sessions survive extension reloads and keep the same shell: source. Output uses the shared Read limits, keeps the tail, and links a complete log file when truncated.`,
       parameters: runParameters,
       outputSchema: shellOutputSchema,
       async execute(_toolCallId, input, signal, onUpdate, context) {
@@ -106,10 +111,22 @@ export function registerTerminalTools(
           return terminalResult(manager.snapshot(session));
         }
         if (session.status === "failed") return terminalResult(manager.snapshot(session));
-        const outcome = await manager.waitForForeground(session.source, {
-          signal,
-          timeoutMs: (input.timeoutSeconds ?? 60) * 1_000,
-        });
+        const steering = new AbortController();
+        foregroundWaits.add(steering);
+        let outcome;
+        try {
+          outcome = await manager.waitForForeground(session.source, {
+            signal:
+              signal === undefined ? steering.signal : AbortSignal.any([signal, steering.signal]),
+            timeoutMs: (input.timeoutSeconds ?? 60) * 1_000,
+          });
+        } finally {
+          foregroundWaits.delete(steering);
+        }
+        if (outcome.reason === "aborted" && steering.signal.aborted && signal?.aborted !== true) {
+          outcome.session.waitReason = "steering";
+          return terminalResult(manager.snapshot(outcome.session));
+        }
         if (outcome.reason === "aborted") ui.notifyWaitTransition(outcome.session);
         return terminalResult(manager.snapshot(outcome.session));
       },
@@ -130,6 +147,9 @@ export function registerTerminalTools(
       },
     }),
   );
+  return () => {
+    for (const wait of foregroundWaits) wait.abort();
+  };
 }
 
 function terminalPreview(snapshot: TerminalSessionSnapshot) {

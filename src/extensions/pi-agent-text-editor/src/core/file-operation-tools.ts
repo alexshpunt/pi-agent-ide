@@ -32,26 +32,35 @@ export async function executeWholeFileTool(
   context: Pick<ExtensionContext, "cwd">,
   verifySource?: () => Promise<void>,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
-  const outcome = await core.enqueueFileOperation(async (): Promise<FileOperationResult> => {
-    try {
-      await verifySource?.();
-    } catch (error) {
-      signal?.throwIfAborted();
-      return {
-        kind: "file-operation",
-        operation,
-        ok: false,
-        effect: "not-applied",
-        path: typeof input.path === "string" ? input.path : undefined,
-        target: typeof input.target === "string" ? input.target : undefined,
-        error: {
-          code: "RESULT_INPUT_REJECTED",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      };
-    }
-    return executeFileOperation(operation, input, context.cwd, signal);
-  }, signal);
+  const outcome = await core.enqueueFileOperation(
+    async (): Promise<FileOperationResult> => {
+      try {
+        await verifySource?.();
+      } catch (error) {
+        signal?.throwIfAborted();
+        return {
+          kind: "file-operation",
+          operation,
+          ok: false,
+          effect: "not-applied",
+          path: typeof input.path === "string" ? input.path : undefined,
+          target: typeof input.target === "string" ? input.target : undefined,
+          error: {
+            code: "RESULT_INPUT_REJECTED",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+      return executeFileOperation(operation, input, context.cwd, signal);
+    },
+    signal,
+    {
+      cwd: context.cwd,
+      sources: [input.path, input.target].filter(
+        (value): value is string => typeof value === "string",
+      ),
+    },
+  );
   if (outcome.ok && operation !== "copy" && outcome.path !== undefined)
     forgetDeferredPostEdit(outcome.path);
   let postProcessingError: string | undefined;

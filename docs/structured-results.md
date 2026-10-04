@@ -44,6 +44,14 @@ Targets belong to the active session/runtime and worktree. A new session, reload
 
 Scoped text Search runs each range separately through ripgrep and maps matches back to source UTF-16 coordinates. AST and LSP providers can inspect full documents internally but return only provider ranges wholly contained in one declared region. AST matches expose associated `captures.NAME` arrays of source targets, including every node of a multi capture. LSP matches expose `role` and the originating `symbol` with its provider declaration identity and exact range. Use `navigation: "references"` explicitly to follow symbols represented in the seed scope to references outside it, within the workspace. It preserves inherited completeness and deduplicates by source/range identity. Text Boolean queries and text include/exclude globs remain unsupported for result scopes; AST/LSP keep their provider filters. Unsupported provider/scope combinations fail without falling back to a wider search. Replace rejects incomplete input and contradictory snapshot versions before writing, preserves ordinary resource and mutation guards, and treats an empty set as an explicit successful no-op. Preview edits, deleted diff text, bytes, images and derived views without an exact filesystem mapping cannot supply arbitrary edit targets.
 
+### Possible-name groups
+
+After a complete zero result, eligible local and URL identifier searches can add `fuzzy: { status, message?, candidates }`. The original `matches` stays empty. Each candidate has `identifier`, a mechanical `kind` and `reason`, captured `matchCount` and `fileCount`, and a separate `selection` using the normal match/range/reference fields.
+
+Candidate selections show at most three locations. Their `truncated` flag describes that display window; `complete` describes the exact alternative's capture. Limited capture has lower-bound counts and no complete `all` reference. URL candidates use URL ranges, never editable Search references. A `skipped` branch explains its budget or extra-branch failure without changing the completed ordinary zero into an error.
+
+Registered local candidate selections also expose immutable whole-scope and per-match targets. Their stored scope retains all captured matches even when the candidate preview shows only three. The original zero result remains an empty edit scope. Structured result-scoped queries do not run fuzzy discovery.
+
 ## Native editor commits
 
 Sequential local edits share original snapshots. Child success with `effect: "pending"` means accepted, not written. Await an explicit flush when the script needs the final receipt:

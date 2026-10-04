@@ -13,6 +13,8 @@ export function createLspSearchResolver(
   return {
     id: "symbols",
     supportsResultScope: true,
+    // Workspace symbol backends may read beyond the requested path.
+    readResources: (request) => (request.query.startsWith("symbols:") ? undefined : []),
     toScriptData(payload) {
       return (payload as { readonly data: unknown }).data;
     },

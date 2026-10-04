@@ -45,6 +45,7 @@ async function runComposition(
     tools: [
       "read",
       "search",
+      "select",
       "replace",
       "insert",
       "write",
@@ -67,6 +68,57 @@ async function runComposition(
     ],
   }).run("Compose ordinary tools through source-aware results without rebuilding coordinates");
 }
+
+test("merged resource scheduling retains separate pending mutation targets", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "first.txt"), "😀 old\r\nprotected first");
+    await writeFile(path.join(cwd, "second.txt"), "old\r\nprotected second");
+    const run = await runComposition(cwd, "merged-concurrent-result-targets", [
+      `const changes = await Promise.all([tools.replace({path:"first.txt",start:"old",text:"fresh"}), tools.replace({path:"second.txt",start:"old",text:"fresh"})]);
+for (const changed of changes) if (changed.status !== "success" || changed.data.effect !== "pending" || !changed.data.target) throw Error(JSON.stringify(changed));
+const first = await tools.search({path:changes[0],query:"fresh"});
+const second = await tools.search({path:changes[1],query:"fresh"});
+if (first.status !== "success" || second.status !== "success" || first.data.matches.length !== 1 || second.data.matches.length !== 1 || first.data.matches[0].source === second.data.matches[0].source) throw Error("Concurrent targets crossed sources");
+text(await tools.replace({path:first,text:"FIRST"}));
+text(await tools.replace({path:second,text:"SECOND"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "first.txt"), "utf8")).toBe("😀 FIRST\r\nprotected first");
+    expect(await readFile(path.join(cwd, "second.txt"), "utf8")).toBe("SECOND\r\nprotected second");
+  });
+});
+
+test("merged fuzzy candidates compose without widening an exact zero or clipping their stored scope", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "hints.txt"), "hintStrings\r\n".repeat(4) + "hintStrings");
+    await writeFile(path.join(cwd, "outside.txt"), "hintStrings\r\nprotected");
+    const run = await runComposition(cwd, "merged-fuzzy-source-targets", [
+      `const read = await tools.read({path:"hints.txt",offset:1,limit:1});
+const scopedZero = await tools.search({path:read,query:"hintStringz"});
+if (scopedZero.status !== "success" || scopedZero.data.matches.length !== 0 || scopedZero.data.fuzzy !== undefined) throw Error("A structured zero widened into fuzzy discovery");
+const zero = await tools.search({path:"hints.txt",query:"hintStringz"});
+if (zero.status !== "success" || zero.data.matches.length !== 0) throw Error(JSON.stringify(zero));
+const unchanged = await tools.replace({path:zero,text:"BAD"});
+if (unchanged.status !== "success" || unchanged.data.effect !== "not-applied") throw Error("Exact zero acquired candidate authority");
+const candidate = zero.data.fuzzy?.candidates.find(item => item.identifier === "hintStrings");
+if (!candidate || candidate.matchCount !== 5 || candidate.selection.matches.length !== 3 || !candidate.selection.target) throw Error("Missing full registered fuzzy candidate");
+const selected = await tools.select({path:candidate.selection,operation:{kind:"sliceText",from:0,to:11}});
+if (selected.status !== "success" || selected.data.totalItems !== 5) throw Error("Candidate preview clipped source authority");
+text(await tools.replace({path:selected,text:"UPDATED"}));
+const stale = await tools.replace({path:candidate.selection,text:"BAD"});
+if (stale.status !== "error" || stale.data.effect !== "not-applied") throw Error("Fuzzy targets refreshed after an edit");`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "hints.txt"), "utf8")).toBe(
+      "UPDATED\r\n".repeat(4) + "UPDATED",
+    );
+    expect(await readFile(path.join(cwd, "outside.txt"), "utf8")).toBe("hintStrings\r\nprotected");
+  });
+});
 
 test.each(["copy", "move"] as const)(
   "%s maps same-file destination after source shifts",

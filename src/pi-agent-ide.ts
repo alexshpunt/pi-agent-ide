@@ -116,6 +116,20 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     group: "ui",
     default: false,
   });
+  flags.register({
+    id: "pi-agent-ide-code-review",
+    name: "Jev code review",
+    description:
+      "Review saved edit fragments against project YAML rules in the background. Sends code to a connected Jev provider.",
+    default: false,
+  });
+  flags.register({
+    id: "pi-agent-ide-code-review-capture",
+    name: "Capture code-review rules",
+    description:
+      "Use the packaged skill to propose reusable rules from user review feedback. Save only after confirmation.",
+    default: false,
+  });
   registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
   const presetDisabled = disabledByPreset(BUILTIN_EXTENSIONS, config.preset ?? "full");
   const { enabled } = selectBuiltinExtensions(
