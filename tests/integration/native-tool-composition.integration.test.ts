@@ -53,7 +53,6 @@ async function runComposition(
       "move",
       "delete",
       "undo",
-      "apply",
       "codemode",
     ],
     conversation: [
@@ -547,49 +546,6 @@ text(fileRemoval);`,
       false,
     );
     await expect(readFile(path.join(cwd, "whole.txt"))).rejects.toThrow("ENOENT");
-  });
-});
-
-test("Apply undo exposes restored files and reports restored absence without a live target", async () => {
-  await withTempWorkspace(async (cwd) => {
-    await writeFile(path.join(cwd, "existing.txt"), "fresh before\r\nold body");
-    const run = await runComposition(
-      cwd,
-      "apply-undo-restored-files-and-absence",
-      [
-        `const {transaction:receipt} = await tools.fixture_apply_receipt({});
-const restored = await tools.undo({transaction:receipt});
-if (restored.status !== "success" || !restored.data.target || restored.data.files.find(file=>file.source.endsWith("created.txt"))?.state !== "absent") throw Error(JSON.stringify(restored));
-const found = await tools.search({path:restored,query:"fresh"});
-if (found.status !== "success" || found.data.matches.length !== 1 || !found.data.matches[0].source.endsWith("existing.txt")) throw Error("Undo scope included an absent file or only the old diff range");
-text(await tools.replace({path:found,text:"NEW"}));`,
-      ],
-      [path.resolve("tests/integration/support/apply-receipt-probe.ts")],
-      [
-        assistantMessage(
-          [
-            toolCall({
-              id: "setup-apply",
-              name: "apply",
-              arguments: {
-                source:
-                  'const f = open("existing.txt"); f.replace(f.find("old body"), "new body"); createFile("created.txt", "temporary");',
-              },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-      ],
-    );
-    expect(
-      getToolExecution(run, "setup-apply").isError,
-      getToolResultText(run, "setup-apply"),
-    ).toBe(false);
-    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
-      false,
-    );
-    expect(await readFile(path.join(cwd, "existing.txt"), "utf8")).toBe("NEW before\r\nold body");
-    await expect(readFile(path.join(cwd, "created.txt"))).rejects.toThrow("ENOENT");
   });
 });
 

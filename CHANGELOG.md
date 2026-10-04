@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Remove Apply and its grouped undo receipts. Use the ordinary tools through native Codemode instead.
+- Fix empty-file creation in native Codemode so successful writes return truthful effects and usable targets.
+
 ## 0.6.4 — 2026-10-03
 
 ### Native Pi integration

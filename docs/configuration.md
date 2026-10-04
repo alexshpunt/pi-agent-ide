@@ -8,13 +8,9 @@ Default removes the selected scope’s override. Module descriptions show effect
 
 Feature overrides are stored under `flags` in `extensions.json`, keyed by their CLI name. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
 
-The Features tab includes **Disable Apply** (`pi-agent-ide-no-apply`). Enable it and reload to remove only the `apply` tool; standalone tools remain available. It defaults to off. The obsolete `old-tools` switch has been removed.
-
 Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Capture full displays**. Both default to off. Its text settings control the default sequence duration, frame interval, image scale, and a comma-separated list of exact executable file names that may be captured without arbitrary-window access. Press Enter to edit a text value, Enter again to commit it, then Ctrl+S to save.
 
-The UI tab contains separate presentation settings for Apply previews, diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
-
-Apply previews never execute arguments and do not indicate successful edits; operation results are shown separately. In compact mode, completed source is formatted before recognized helper calls are projected into concise operation headers. Incomplete code uses the recoverable source preview. Headers keep supplied anchors and compact long argument expressions with their source size; those sizes are not counts of applied edits. Full mode shows the complete display copy. Execution always receives the original source.
+The UI tab contains separate presentation settings for diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
 
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
@@ -28,17 +24,16 @@ Pi Agent IDE enables every built-in extension by default. Project and global con
 
 Tools use fixed native exposure; there are no IDE exposure overrides or named profiles.
 
-| Namespace      | Tools                            | Exposure     |
-| -------------- | -------------------------------- | ------------ |
-| `ide_read`     | `read`, `diff`                   | `direct`     |
-| `ide_search`   | `search`                         | `direct`     |
-| `ide_edit`     | `apply`                          | `model-only` |
-| `ide_edit`     | Standalone editing tools         | `direct`     |
-| `ide_terminal` | `bash` (`powershell` on Windows) | `direct`     |
-| `ide_git`      | `stage`, `unstage`               | `deferred`   |
-| `ide_debug`    | `debug`                          | `deferred`   |
+| Namespace      | Tools                            | Exposure   |
+| -------------- | -------------------------------- | ---------- |
+| `ide_read`     | `read`, `diff`                   | `direct`   |
+| `ide_search`   | `search`                         | `direct`   |
+| `ide_edit`     | Standalone editing tools         | `direct`   |
+| `ide_terminal` | `bash` (`powershell` on Windows) | `direct`   |
+| `ide_git`      | `stage`, `unstage`               | `deferred` |
+| `ide_debug`    | `debug`                          | `deferred` |
 
-Apply stays directly declared, including in Codemode-only mode. Nested calls and Codemode scripts cannot call it. Direct tools keep their normal calls and can also run through Codemode while active.
+Direct tools keep their normal calls and can also run through Codemode while active. Select derives exact boundaries; edits consume its snapshot-bound targets.
 
 Git staging and debugger tools are not declared ahead of time. Short agent guidance names the enabled capabilities and tells the agent to find them through native `tool_search`. IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
 
@@ -80,7 +75,7 @@ Built-in entry modules are imported only after selection. Disabled built-ins, in
 
 ## Animations and post-edit processing
 
-Apply stages guarded text and file operations against immutable snapshots. An explicit `apply()` validates and commits the current multi-file transaction. Invalid, stale, ambiguous, or overlapping changes fail before writing. A later execution failure triggers rollback and reports whether restoration completed. A script may commit several transactions; reads after a commit see its changes. Configured formatting runs once per surviving changed file at the end of the outer Apply call, and diagnostics start after post-processing. Copied and moved UTF-8 text targets also receive configured post-processing; binary contents stay unchanged.
+Standalone editing tools validate source snapshots before writing. Native Codemode composes those same tools and can commit pending local edits with `tools.flush({})`. Accepted child calls are not proof of persistence. Ordinary script errors keep accepted edits; aborts discard only pending work. Formatting runs once per surviving changed file at script end, followed by diagnostics. Text copy/move destinations receive post-processing; binary contents stay unchanged.
 
 Automatic diagnostic findings are grouped for five seconds from the first finding. The UI tab’s **Immediate diagnostic notices** option (`pi-agent-ide-no-diagnostic-buffer`) disables this delay. Combined notices keep each file and reporting tool identifiable. Empty completed diagnostic reads tell the agent that checks finished without findings, but do not draw an empty diagnostic panel. Pending, unavailable and incomplete checks are not reported as clean.
 
@@ -261,7 +256,7 @@ Missing fields use these defaults. Invalid values stop the editor from loading. 
 
 ### Diff presentation
 
-Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, or Disabled diff panels. Compact is the default and shows a focused sliding window. Full shows every available diff row. Disabled hides diff rows but keeps mutation totals, status, failures, and warnings visible. Expanding a tool call temporarily shows the full diff. The setting applies to standalone mutations, the `diff` tool, and Apply results.
+Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, or Disabled diff panels. Compact is the default and shows a focused sliding window. Full shows every available diff row. Disabled hides diff rows but keeps mutation totals, status, failures, and warnings visible. Expanding a tool call temporarily shows the full diff. The setting applies to standalone mutations, native Codemode edit panels, and the `diff` tool.
 
 ## Extension config behavior
 

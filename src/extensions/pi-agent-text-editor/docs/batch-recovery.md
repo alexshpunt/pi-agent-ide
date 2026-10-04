@@ -18,7 +18,7 @@ Await `tools.flush({})` to commit pending local edits and inspect their final ef
 
 Local replace/insert acceptances carry reserved RESULT# handles. A successful commit maps each call's actual inserted ranges through all batch peers, checks the written snapshot and confirms its handle. Search or a dependent replace can consume the result directly; the dependency boundary commits first. Original child receipts remain pending. Failed, cancelled, unsupported or uncertain writes do not grant targets. Immediate resource-owned mutations share the same post-edit scope and final parent presentation. Final formatting that changes source bytes makes earlier targets stale; targets are never rebound to formatted text.
 
-This is not a transaction over arbitrary JavaScript. Native Codemode stores and other completed tool effects are not rolled back. Apply and standalone editor batching keep their existing execution paths.
+This is not a transaction over arbitrary JavaScript. Native Codemode stores and other completed tool effects are not rolled back. Standalone editor batching keeps its existing execution path.
 
 ## Execution states
 

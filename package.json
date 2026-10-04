@@ -192,7 +192,6 @@
     "lint:paths": "oxnode scripts/check-no-parent-paths.ts",
     "lint:fix": "oxlint --fix --deny-warnings .",
     "package:public": "oxnode scripts/build-public-package.ts",
-    "profile:apply": "vitest run --config dev/performance/vitest.config.mjs --reporter=verbose",
     "test": "pnpm test:unit",
     "security:scan": "oxnode scripts/security-scan.ts",
     "snapshot:system-prompt": "oxnode scripts/snapshot-system-prompt.ts --output .tmp/prompt-snapshots/system-prompt.txt",

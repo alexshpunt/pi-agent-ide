@@ -54,7 +54,7 @@ Not every invocation of an editor-named tool is a text edit. Direct transactions
 
 `createPostEditScope()` already collects final processing per resource. Its writes remain immediate, so using it alone would not fix the failing snapshot test. It is a possible reuse point for formatting and notifications after a combined write, not a replacement for the batch planner.
 
-**Evidence:** [`post-edit-scope.ts`](../../src/extensions/pi-agent-text-editor/src/core/post-edit-scope.ts), `createPostEditScope`; [`Apply execution`](../../src/extensions/pi-agent-text-editor/src/core/apply/execution.ts), `finish`. This is an internal reuse observation, not a request to make Apply callable from Codemode.
+**Evidence:** [`post-edit-scope.ts`](../../src/extensions/pi-agent-text-editor/src/core/post-edit-scope.ts), `createPostEditScope`; [`Apply execution`](https://github.com/alexshpunt/pi-agent-ide/blob/c4ccbf9e8620976b5130e6f351f2678ce1d1a067/src/extensions/pi-agent-text-editor/src/core/apply/execution.ts), `finish`. This is an internal reuse observation, not a request to make Apply callable from Codemode.
 
 ### Some failure boundaries still need proof
 

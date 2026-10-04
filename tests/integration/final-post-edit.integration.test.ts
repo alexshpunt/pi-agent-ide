@@ -10,12 +10,16 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import {
+  enableNativeCodemode,
+  withTempWorkspace,
+} from "#integration/support/pi-runtime/fixtures.js";
 
 test.each([false, true])(
-  "Apply processes final files once, even after a later failure=%s",
+  "Native Codemode processes final files once, even after a later failure=%s",
   async (fail) => {
     await withTempWorkspace(async (cwd) => {
+      await enableNativeCodemode(cwd);
       await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
       await writeFile(
         path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
@@ -27,25 +31,27 @@ test.each([false, true])(
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         extensions: [
+          "builtin:codemode",
           path.resolve("src/pi-agent-ide.ts"),
           path.resolve("tests/integration/support/final-post-edit-extension.ts"),
         ],
-        tools: ["apply", "read"],
+        tools: ["codemode", "read", "write", "replace", "copy", "move", "delete"],
         conversation: [
           assistantMessage(
             [
               toolCall({
                 id: "edit",
-                name: "apply",
+                name: "codemode",
                 arguments: {
-                  source: `
-createFile("a.note", "first");
-createFile("b.note", "second");
-flush();
-if(read({path:"a.note"}).content!=="first") throw new Error("formatted too early");
-const a = open("a.note");
-a.replace(a.find("first"), "final");
-flush();
+                  code: `
+const check = result => { if(result.status!=="success") throw Error(JSON.stringify(result)); return result; };
+check(await tools.write({path:"a.note",content:"first"}));
+check(await tools.write({path:"b.note",content:"second"}));
+check(await tools.flush({}));
+const seen=check(await tools.read({path:"a.note"}));
+if(seen.data.lines[0].content!=="first") throw Error("formatted too early");
+check(await tools.replace({path:"a.note",start:"first",text:"final"}));
+check(await tools.flush({}));
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,
                 },
@@ -93,6 +99,7 @@ ${fail ? 'throw new Error("planned failure");' : ""}
 
 test("whole-file operations finalize only surviving text targets and preserve binary bytes", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
@@ -107,24 +114,26 @@ test("whole-file operations finalize only surviving text targets and preserve bi
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [
+        "builtin:codemode",
         path.resolve("src/pi-agent-ide.ts"),
         path.resolve("tests/integration/support/final-post-edit-extension.ts"),
       ],
-      tools: ["apply", "read"],
+      tools: ["codemode", "read", "write", "replace", "copy", "move", "delete"],
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "files",
-              name: "apply",
+              name: "codemode",
               arguments: {
-                source: `
-copyFile("source.note", "temporary.note");
-moveFile("temporary.note", "final.note");
-copyFile("source.note", "discard.note");
-deleteFile("discard.note");
-copyFile("binary.note", "binary-copy.note");
-flush();
+                code: `
+const check = result => { if(result.status!=="success") throw Error(JSON.stringify(result)); return result; };
+check(await tools.copy({path:"source.note",target:"temporary.note"}));
+check(await tools.move({path:"temporary.note",target:"final.note"}));
+check(await tools.copy({path:"source.note",target:"discard.note"}));
+check(await tools.delete({path:"discard.note"}));
+check(await tools.copy({path:"binary.note",target:"binary-copy.note"}));
+check(await tools.flush({}));
 `,
               },
             }),

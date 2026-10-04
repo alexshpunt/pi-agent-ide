@@ -101,18 +101,6 @@ test("whole-file copy reports the source as unchanged and the target as applied"
   expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
 });
 
-test("transaction undo reports restored files rather than treating the receipt as a file", () => {
-  const outcome = mutationOutcome(
-    semanticResult({ ok: true, source: "APPLY#0123456789AB", restored: ["note.txt"] }),
-    "undo",
-  );
-  expect(outcome).toMatchObject({
-    status: "success",
-    data: { effect: "applied", files: [{ source: "note.txt", effect: "applied" }] },
-  });
-  expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
-});
-
 test("a failed copy is an error, not partial success from its unchanged source", () => {
   const outcome = mutationOutcome(
     semanticResult({

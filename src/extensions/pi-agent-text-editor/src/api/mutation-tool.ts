@@ -66,7 +66,7 @@ export interface TextSemanticMutationResult {
   readonly source: string;
   /** Compact agent-facing outcome. */
   readonly summary: string;
-  /** Structured receipt shared by standalone tools and Apply. */
+  /** Structured receipt for standalone tools and native Codemode. */
   readonly data: Readonly<Record<string, unknown>>;
 }
 

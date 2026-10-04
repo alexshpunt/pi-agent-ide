@@ -2,7 +2,7 @@
 
 Use standalone `replace`, `insert`, `delete`, `copy`, and `move` whenever each intended change is known in advance and does not depend on another change. Submit several independent edits together as separate tool calls in one assistant response, whether they affect one file or several files.
 
-Use `apply` only when the work requires computation, conditions, selection composition, checkpoints, or one coherent cross-file transaction. Do not replace a straightforward standalone batch with a JavaScript Apply program. Read `docs:apply` before writing an Apply script.
+Use native Codemode for computed or dependent tool composition. Call the same standalone tools and Select; Codemode does not add grouped rollback or change their source guards. Keep straightforward independent changes in one standalone batch.
 
 Use `write` only to create a file or deliberately replace its complete contents. Use `diff` for read-only comparison.
 
@@ -39,7 +39,7 @@ New targets are strict snapshots. Obtain fresh targets after source bytes change
 
 ## Choosing line separation
 
-Use `separation: "blank-line"` for a separate paragraph or section; use the default line mode for adjacent code lines, list items, or a continuation of the current block. For example, inserting `X` after `A` in `A\nB` with blank-line separation produces `A\n\nX\n\nB`. In Apply, pass `{ separation: "blank-line" }` as the third argument to a linewise `insertAfter` or `insertBefore`.
+Use `separation: "blank-line"` for a separate paragraph or section; use the default line mode for adjacent code lines, list items, or a continuation of the current block. For example, inserting `X` after `A` in `A\nB` with blank-line separation produces `A\n\nX\n\nB`.
 
 ## Standalone mutation behavior
 

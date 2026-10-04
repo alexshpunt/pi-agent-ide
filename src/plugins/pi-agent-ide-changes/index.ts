@@ -1,4 +1,3 @@
-import { Value } from "typebox/value";
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
@@ -21,11 +20,7 @@ import { extensionGitExecutor } from "#src/changes/git-changes-backend.js";
 import { createCurrentChangePresenter } from "#src/current-change-presenter.js";
 import { IndexMutationQueue } from "#src/index-mutation-queue.js";
 import { LastTextTransactionStore } from "#src/last-text-transaction-store.js";
-import {
-  registerIndexChangeTools,
-  createIndexChangeExecutor,
-  indexChangeSchema,
-} from "#src/tool-index-change.js";
+import { registerIndexChangeTools } from "#src/tool-index-change.js";
 import { createUndoMutationTool } from "#src/tool-text-undo.js";
 
 export default async function registerGitChanges(pi: ExtensionAPI): Promise<void> {
@@ -65,18 +60,7 @@ export default async function registerGitChanges(pi: ExtensionAPI): Promise<void
       api.onDidEdit((completion) => {
         transactions.observe(completion);
       });
-      api.addMutationTool(
-        createUndoMutationTool(executor, transactions, indexQueue, api.restoreApplyUndo),
-      );
-      for (const action of ["stage", "unstage"] as const) {
-        const execute = createIndexChangeExecutor(action, executor, indexQueue);
-        api.addScriptIndexOperation({
-          name: action,
-          parameters: indexChangeSchema,
-          execute: (input, signal, context) =>
-            execute(Value.Decode(indexChangeSchema, input), signal, context),
-        });
-      }
+      api.addMutationTool(createUndoMutationTool(executor, transactions, indexQueue));
       api.addTextPresenter({ presenter });
     },
   } satisfies TextEditorPlugin;

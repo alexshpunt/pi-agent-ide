@@ -418,7 +418,12 @@ export async function executeRegisteredTextBatch(
         return [];
       }
 
-      const ownAfter = applyTextChanges(resource.before.content, edit.changes).content;
+      // The core already validated the write; a created empty resource has no text delta.
+      const ownAfter = applyTextChanges(
+        resource.before.content,
+        edit.changes,
+        resource.before.content.length === 0,
+      ).content;
       return [
         buildSuccessfulTextMutationResult(
           resource,

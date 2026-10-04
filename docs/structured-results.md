@@ -1,6 +1,6 @@
 # Native IDE results
 
-Read, Search, text mutations, Apply, diff, Git index tools, and debugger creation declare an `outputSchema` and return `structuredContent`. Native Codemode receives that object. Normal calls keep their readable content and existing renderers. Renderer `details` are not a script API.
+Read, Search, text mutations, diff, Git index tools, and debugger creation declare an `outputSchema` and return `structuredContent`. Native Codemode receives that object. Normal calls keep their readable content and existing renderers. Renderer `details` are not a script API.
 
 The shared envelope is:
 
@@ -17,9 +17,8 @@ Check `status` before using data. Domain errors with structured results resolve 
 
 - **Read:** `kind` is `text`, `bytes`, `native`, or `resources`. Text has original numbered `lines`, line endings, optional editable `anchors`, and source-level `references`. Bytes have exact `bytes: number[]`, byte offset, selected length, and total size. Native content has ordered text/image `blocks`; pass an image block to `image(...)`. Multi-source selections keep separate child resources.
 - **Search:** `matches` have a source, exact line/column range, optional matched text, and optional `references.line` / `references.match` selectors. Columns are zero-based UTF-16 offsets. `complete` describes the backend search; `truncated` describes the public window. `all` selectors exist only for complete registered selections. File searches return paths. Other resolvers return their documented JSON domain data under `kind: "custom"`.
-- **Mutations:** `operationId` identifies the call. `effect` and per-source `files` distinguish `pending`, `applied`, `not-applied`, and `unknown`. Recovery candidates, semantic action fields, and transaction receipts are included when available. `files[].state` reports present/absent/unknown when known. `changes` records exact removed/inserted text and before-snapshot UTF-16 offsets; it is inspection data, not a selector. If that record exceeds 512 KiB serialized, it is omitted with `changesUnavailable`, without clipping text or losing applied effects. Full before/after documents are not copied into receipts.
+- **Mutations:** `operationId` identifies the call. `effect` and per-source `files` distinguish `pending`, `applied`, `not-applied`, and `unknown`. Recovery candidates and semantic action fields are included when available. `files[].state` reports present/absent/unknown when known. `changes` records exact removed/inserted text and before-snapshot UTF-16 offsets; it is inspection data, not a selector. If that record exceeds 512 KiB serialized, it is omitted with `changesUnavailable`, without clipping text or losing applied effects. Full before/after documents are not copied into receipts.
 - **Flush:** `operations` link final effects and errors to accepted child call IDs. It also returns per-source effects. An empty flush succeeds with no operations. A failed flush retains writes that happened and never replays accepted edits.
-- **Apply:** `operations` keep read and mutation outcomes in call order, including failed work. `files` and `transactions` retain committed checkpoints after a later failure. `values` contain only output explicitly requested by the script, not hidden snapshots.
 - **Diff:** returns source identities, equality, added/removed counts, and bounded unified diff text. It does not repeat both source documents.
 - **Git index tools:** return action, change selector, file, index state, observed effect, and whether it was already in the requested state.
 - **Debugger:** creation returns session, source, and breakpoint resource references plus configuration and status. Debugger mutation actions return selected breakpoint or evaluation fields, not full session snapshots.
@@ -84,4 +83,4 @@ Standard Read Resources use the core text/bytes/native projection. Read handlers
 
 The shared validation helpers live in `pi-agent-resource`. Read and Search export their data/output schemas through their existing public tool APIs. Text mutation schemas and `structuredMutation` are exported through `pi-agent-text-editor/api/mutation-result`.
 
-Shell command results keep their separate native process contract. This change does not add a shared result store, cross-session handles, binary editing, or a new Apply interpreter.
+Shell command results keep their separate native process contract. This change does not add a shared result store, cross-session handles, binary editing, or grouped rollback.

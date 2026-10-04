@@ -2,7 +2,6 @@ import { requiredValue } from "pi-agent-invariant";
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import { Value } from "typebox/value";
 import type {
   TextAnchorRecoveryCandidateRange,
   TextAnchorRecoveryRange,
@@ -83,7 +82,6 @@ import { renderTextAnchor, type TextAnchor } from "pi-agent-text";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
 import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception";
 import type { Static, TSchema } from "typebox";
-import type { ScriptMutationOutcome } from "#src/core/apply/mutation-outcome.js";
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
 import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
 import { mutationOutputSchema, structuredMutation } from "./structured-result.js";
@@ -1180,140 +1178,6 @@ export async function captureScriptMutation<T>(core: TextEditorCore, action: () 
     unsubscribe();
   }
 }
-/**
- * Runs the configured mutation pipeline and returns plain script data.
- * onPresentation retains rich edit annotations on the host without sending classes to the guest.
- */
-export async function executeScriptMutation<TParameters extends TSchema>(
-  core: TextEditorCore,
-  definition: TextMutationToolRegistration<TParameters>,
-  arguments_: unknown,
-  signal: AbortSignal | undefined,
-  context: ExtensionContext,
-  lastResolvedSource?: string,
-  onPresentation?: (source: string, result: FileMutationResult) => void,
-): Promise<ScriptMutationOutcome> {
-  const parameters = prepareGuardedArguments(
-    definition.parameters,
-    arguments_,
-    definition.source.inherited ? definition.source.field : undefined,
-    lastResolvedSource,
-    definition.anchors ?? [],
-    definition.wholeFileOperation !== undefined,
-  );
-  if (!Value.Check(definition.parameters, parameters)) {
-    throw Object.assign(new Error(`Invalid arguments for ${definition.name}`), {
-      code: "INVALID_ARGUMENTS",
-      details: { operation: definition.name, effect: "not-applied" },
-    });
-  }
-  const captured = await captureScriptMutation(core, () =>
-    executeTextMutationPipeline(
-      core,
-      definition,
-      parameters,
-      signal,
-      context,
-      undefined,
-      lastResolvedSource,
-    ),
-  );
-  const source =
-    captured.kind === "completed" ? captured.value.source : mutationSource(definition, parameters);
-  const observedFiles: ScriptMutationOutcome["files"] = captured.completions.map((completion) => ({
-    source: completion.resourceSource,
-    before: completion.existed ? completion.before.content : null,
-    after: completion.after.content,
-    action: definition.name === "write" ? "overwritten" : "edited",
-    changes: [],
-    formatting: { status: "not-reported" },
-  }));
-  const failed = (
-    code: string,
-    message: string,
-    effect: ScriptMutationOutcome["effect"],
-    completed: readonly string[] = [],
-  ): ScriptMutationOutcome => ({
-    operation: definition.name,
-    ok: false,
-    effect: effect === "unknown" ? "unknown" : observedFiles.length > 0 ? "applied" : effect,
-    completed: [...new Set([...completed, ...observedFiles.map((file) => file.source)])],
-    files: observedFiles,
-    errors: [{ source, code, message }],
-  });
-  if (captured.kind === "failed")
-    return failed("EXECUTION_FAILED", errorMessage(captured.error), "unknown");
-  const { pipeline } = captured.value;
-  if (pipeline.kind === "failed")
-    return {
-      ...failed(pipeline.failure.code, pipeline.failure.message, "not-applied"),
-      recoveries: await scriptAnchorRecoveries(pipeline.failure.cause),
-    };
-  const outcome = pipeline.state.result;
-  if (!isResourcesEditOutcome(outcome))
-    return failed("INVALID_RESULT", "Invalid mutation outcome", "unknown");
-  if (outcome.kind === "failed")
-    return {
-      ...failed(
-        outcome.failure.code,
-        outcome.failure.message,
-        outcome.completed.length > 0 ? "unknown" : "not-applied",
-        outcome.completed,
-      ),
-      recoveries: await scriptAnchorRecoveries(outcome.failure.cause),
-    };
-  const mutation = outcome.result as ExecutedTextMutation;
-  if (mutation.semanticAction !== undefined) {
-    return {
-      operation: definition.name,
-      ok: true,
-      effect: "applied",
-      files: [],
-      completed: [mutation.semanticAction.source],
-      metadata: {
-        semanticAction: {
-          ...mutation.semanticAction.data,
-          source: mutation.semanticAction.source,
-        },
-      },
-      errors: [],
-    };
-  }
-  const files = outcome.resources.flatMap((resource) => {
-    const edit = mutation.edits.get(resource.source);
-    if (edit === undefined) return [];
-    const presentation = withPipelineStatuses(
-      buildSuccessfulTextMutationResult(resource, resource.source, edit),
-      pipeline.state.metadata,
-    );
-    onPresentation?.(resource.after.source, presentation);
-    const data = presentation.data;
-    return [
-      {
-        source: resource.after.source,
-        before:
-          captured.completions.find(
-            (completion) => completion.resourceSource === resource.after.source,
-          )?.existed === false
-            ? null
-            : resource.before.content,
-        after: resource.after.content,
-        action: edit.action,
-        changes: data.rawChanges ?? [],
-        formatting: data.formatting ?? { status: "not-reported" as const },
-      },
-    ];
-  });
-  return {
-    operation: definition.name,
-    ok: true,
-    effect: files.length > 0 ? "applied" : "not-applied",
-    files,
-    completed: files.map((file) => file.source),
-    ...(pipeline.state.metadata !== undefined && { metadata: pipeline.state.metadata }),
-    errors: [],
-  };
-}
 export function mutationSources(
   definition: TextMutationToolRegistration,
   parameters: Readonly<Record<string, unknown>>,
@@ -1528,24 +1392,6 @@ async function resolveAnchorRecovery(error: TextMutationAnchorResolutionError) {
   return error.resolution.recovery;
 }
 
-async function scriptAnchorRecoveries(
-  cause: unknown,
-): Promise<NonNullable<ScriptMutationOutcome["recoveries"]>> {
-  if (cause instanceof TextMutationAnchorAggregateError)
-    return (await Promise.all(cause.failures.map(scriptAnchorRecoveries))).flat();
-  if (!(cause instanceof TextMutationAnchorResolutionError)) return [];
-  const recovery = await resolveAnchorRecovery(cause);
-  return [
-    {
-      path: cause.source,
-      field: cause.field,
-      anchor: cause.anchor,
-      status: recovery?.kind ?? "unavailable",
-      candidates: recovery?.kind === "candidates" ? recovery.candidates : [],
-      total: recovery?.kind === "candidates" ? recovery.total : 0,
-    },
-  ];
-}
 async function anchorFailureToolResult(
   core: TextEditorCore,
   failure: TextResourceEditFailure,

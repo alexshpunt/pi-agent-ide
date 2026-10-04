@@ -29,7 +29,6 @@ import { connectResultTargets } from "pi-agent-resource";
 import { createResultTargetAnchors } from "#src/core/result-target-anchors.js";
 import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js";
 import { createTextTool } from "#src/core/text-mutation.js";
-import { registerApply } from "#src/core/apply/tool.js";
 import { registerDiff } from "#src/core/diff-tool.js";
 import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
@@ -127,7 +126,6 @@ export default async function registerTextEditorCore(
   });
 
   await core.waitForPendingPlugins();
-  if (pi.getFlag("pi-agent-ide-no-apply") !== true) await registerApply(pi, core);
   registerDiff(pi, core, () => readApi);
   return core;
 }

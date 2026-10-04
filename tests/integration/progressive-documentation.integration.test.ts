@@ -40,7 +40,9 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
     readonly ids: readonly string[];
   };
   expect(listDetails.kind).toBe("list");
-  expect(listDetails.ids).toEqual(expect.arrayContaining(["apply", "editing", "read-resources"]));
+  expect(listDetails.ids).toEqual(
+    expect.arrayContaining(["editing", "read-resources", "select-code"]),
+  );
   expect(getToolResultMessage(result, "guide").details).toMatchObject({
     documentation: { kind: "document", id: "editing" },
   });
@@ -49,8 +51,7 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
     documentation: { kind: "error", code: "UNKNOWN_DOCUMENTATION", id: "missing" },
   });
   const prompt = getProviderSystemPrompt(result);
-  for (const id of ["apply", "editing", "read-resources", "search-code"])
-    expect(prompt).toContain(id);
+  for (const id of ["editing", "read-resources", "search-code"]) expect(prompt).toContain(id);
 });
 
 test("attaches each relevant guide once and keeps guides independent", async () => {
@@ -72,29 +73,16 @@ test("attaches each relevant guide once and keeps guides independent", async () 
   expect(documentationDetails(result, "search-again")).toBeUndefined();
 });
 
-test("attaches the Apply guide after executing it", async () => {
+test("rejects the retired Apply guide", async () => {
   const workspace = await createWorkspace();
-  const result = await run(
-    workspace,
-    [
-      {
-        id: "apply-first",
-        name: "apply",
-        arguments: { source: 'const file = open("example.ts"); file.find("marker");' },
-      },
-      {
-        id: "apply-again",
-        name: "apply",
-        arguments: { source: 'const file = open("example.ts"); file.find("marker");' },
-      },
-    ],
-    ["apply"],
-  );
-
-  expectGuideAttachment(result, "apply-first");
-  expect(documentationDetails(result, "apply-again")).toBeUndefined();
-  expect(getToolExecution(result, "apply-first").isError).toBe(false);
-  expect(getToolExecution(result, "apply-again").isError).toBe(false);
+  const result = await run(workspace, [
+    { id: "retired", name: "read", arguments: { path: "docs:apply" } },
+  ]);
+  expect(getToolExecution(result, "retired").isError).toBe(true);
+  expect(documentationDetails(result, "retired")).toMatchObject({
+    kind: "error",
+    code: "UNKNOWN_DOCUMENTATION",
+  });
 });
 
 test("an explicit guide read allows the first matching tool call", async () => {

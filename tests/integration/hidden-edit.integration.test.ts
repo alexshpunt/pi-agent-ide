@@ -23,11 +23,10 @@ const guidance = [
   "Use standalone mutation tools in one assistant-response batch",
 ];
 
-test.each(["direct", "native", "apply-only"] as const)(
+test.each(["direct", "native"] as const)(
   "edit is unreachable while guarded editing still works (%s)",
   async (profile) => {
     const native = profile === "native";
-    const applyOnly = profile === "apply-only";
     const root = path.resolve(".tmp/hidden-edit");
     await mkdir(root, { recursive: true });
     const cwd = await mkdtemp(path.join(root, "case-"));
@@ -54,7 +53,8 @@ test.each(["direct", "native", "apply-only"] as const)(
         tools: [
           "edit",
           "edit_availability_probe",
-          ...(applyOnly ? ["apply"] : ["read", "insert", "apply"]),
+          "read",
+          "insert",
           ...(native ? ["codemode", "tool_search"] : []),
         ],
         conversation: [
@@ -68,21 +68,8 @@ test.each(["direct", "native", "apply-only"] as const)(
               ]
             : []),
           call("direct-edit", "edit", {}),
-          ...(applyOnly
-            ? [
-                call("apply", "apply", {
-                  source:
-                    'const file = open("subject.txt"); file.replace(file.find("alpha"), "alpha\\nrecovered");',
-                }),
-              ]
-            : [
-                call("read", "read", { path: "subject.txt", views: ["anchors"] }),
-                call("insert", "insert", {
-                  path: "subject.txt",
-                  anchor: "1#BE76",
-                  text: "recovered",
-                }),
-              ]),
+          call("read", "read", { path: "subject.txt", views: ["anchors"] }),
+          call("insert", "insert", { path: "subject.txt", anchor: "1#BE76", text: "recovered" }),
           assistantMessage([text("Done")]),
         ],
       }).run("Check that edit is withdrawn, then use the guarded editor.");
@@ -133,12 +120,8 @@ test.each(["direct", "native", "apply-only"] as const)(
         expect(script.matches.some((tool: { name: string }) => tool.name === "edit")).toBe(false);
         expect(script.description).toBeUndefined();
       }
-      if (applyOnly) {
-        expect(getToolExecution(result, "apply").isError).toBe(false);
-      } else {
-        expect(getToolExecution(result, "read").isError).toBe(false);
-        expect(getToolExecution(result, "insert").isError).toBe(false);
-      }
+      expect(getToolExecution(result, "read").isError).toBe(false);
+      expect(getToolExecution(result, "insert").isError).toBe(false);
       expect(await readFile(path.join(cwd, "subject.txt"), "utf8")).toBe(
         "alpha\nrecovered\nbeta\n",
       );

@@ -1,5 +1,7 @@
 # Apply and Read latency research
 
+This is historical research. Apply was removed in LPT-403; source paths below refer to [the last pre-removal revision](https://github.com/alexshpunt/pi-agent-ide/tree/c4ccbf9e8620976b5130e6f351f2678ce1d1a067).
+
 This report records the LPT-238 investigation. It describes the current code on `develop` at `bf7f36db` and the retained benchmark evidence available on 17 September 2026. No product behavior was changed.
 
 ## Summary

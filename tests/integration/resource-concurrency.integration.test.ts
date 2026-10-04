@@ -134,7 +134,7 @@ test.each([false, true])(
   },
 );
 
-test("independent Apply invocations commit concurrently through real Pi", async () => {
+test("independent standalone replacements commit concurrently through real Pi", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
@@ -149,7 +149,7 @@ test("independent Apply invocations commit concurrently through real Pi", async 
       ["first.txt", "second.txt"].map((name) => writeFile(path.join(cwd, name), "original")),
     );
     const result = await new PiIntegrationTest({
-      testName: "independent-apply-commits",
+      testName: "independent-standalone-commits",
       artifactsDir: testArtifactsDir(import.meta.filename),
       rawMode: false,
       cwd,
@@ -158,15 +158,17 @@ test("independent Apply invocations commit concurrently through real Pi", async 
         "builtin:codemode",
         path.resolve("tests/integration/fixtures/resource-concurrency-probe.ts"),
       ],
-      tools: ["apply"],
+      tools: ["replace"],
       conversation: [
         assistantMessage(
           ["first.txt", "second.txt"].map((name) =>
             toolCall({
-              id: `apply-${name}`,
-              name: "apply",
+              id: `replace-${name}`,
+              name: "replace",
               arguments: {
-                source: `const file = open(${JSON.stringify(name)}); file.replace(file.find("original"), ${JSON.stringify(`updated:${name}`)});`,
+                path: name,
+                start: "original",
+                text: `updated:${name}`,
               },
             }),
           ),
@@ -174,9 +176,9 @@ test("independent Apply invocations commit concurrently through real Pi", async 
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Commit independent Apply invocations concurrently");
-    expect(getToolExecution(result, "apply-first.txt").isError).toBe(false);
-    expect(getToolExecution(result, "apply-second.txt").isError).toBe(false);
+    }).run("Commit independent standalone replacements concurrently");
+    expect(getToolExecution(result, "replace-first.txt").isError).toBe(false);
+    expect(getToolExecution(result, "replace-second.txt").isError).toBe(false);
     expect(await readFile(path.join(cwd, "first.txt"), "utf8")).toBe("updated:first.txt");
     expect(await readFile(path.join(cwd, "second.txt"), "utf8")).toBe("updated:second.txt");
   });

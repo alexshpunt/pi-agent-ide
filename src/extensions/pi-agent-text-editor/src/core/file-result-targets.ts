@@ -18,9 +18,7 @@ export async function attachFileMutationTargets(
   const sources =
     semantic.kind === "file-operation" && typeof semantic.target === "string"
       ? [semantic.target]
-      : semantic.kind === "apply-undo" && Array.isArray(semantic.restored)
-        ? semantic.restored.filter((source): source is string => typeof source === "string")
-        : undefined;
+      : undefined;
   if (sources === undefined) return result;
   const states: { source: string; state: "present" | "absent" }[] = [];
   const targets: ResultSourceTarget[] = [];

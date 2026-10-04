@@ -33,11 +33,6 @@ function presentationPreference(id: string, name: string, description: string): 
 /** Registered presentation preferences. */
 export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
   presentationPreference(
-    "ui.applyPreview",
-    "Apply preview",
-    "Choose how Apply source previews are displayed.",
-  ),
-  presentationPreference(
     "ui.diffs",
     "Diffs",
     "Choose how mutation and comparison diffs are displayed.",

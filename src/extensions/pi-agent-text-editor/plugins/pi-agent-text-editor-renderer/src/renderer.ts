@@ -271,21 +271,6 @@ function createRenderer(
       );
       state.panel?.setPreviewResources([]);
 
-      if (registration.name === "undo" && typeof state.input?.transaction === "string") {
-        const restored = restoredApplyPathCount(result.details);
-        const succeeded = restored !== undefined && !context.isError;
-        return new Text(
-          theme.fg(
-            succeeded ? "success" : "error",
-            succeeded
-              ? `✓ Undo applied · ${String(restored)} ${restored === 1 ? "file" : "files"}`
-              : "✗ Undo not applied",
-          ),
-          0,
-          0,
-        );
-      }
-
       if (!context.isError && result.details.metadata?.emptyTargets === true) {
         return new Text(theme.fg("muted", "No changes · empty target set"), 0, 0);
       }
@@ -750,14 +735,6 @@ function sourceLabel(value: unknown): string | undefined {
   );
 }
 
-/** Render a written call header without preparing previews or reading files. */
-export function renderWrittenMutationHeader(
-  registration: AnyTextMutationToolRegistration,
-  input: Readonly<Record<string, unknown>>,
-  theme: Theme,
-): string {
-  return renderHeader(registration, input, undefined, theme, undefined, false);
-}
 function renderHeader(
   registration: AnyTextMutationToolRegistration,
   input: Readonly<Record<string, unknown>>,
@@ -767,8 +744,6 @@ function renderHeader(
   expanded: boolean,
 ): string {
   const source = registration.source;
-  if (registration.name === "undo" && typeof input.transaction === "string")
-    return `${theme.fg("toolTitle", theme.bold("undo"))} ${theme.fg("muted", "· Apply transaction")}`;
   const path = sourceLabel(input[source.field]);
   const previewResources = preview?.kind === "completed" ? preview.resources : [];
   const displayedPath =
@@ -879,24 +854,6 @@ function semanticRange(start: string, end: string): string {
   return startLine !== undefined && endLine !== undefined
     ? `lines ${startLine}–${endLine}`
     : `${start}–${end}`;
-}
-
-function restoredApplyPathCount(details: unknown): number | undefined {
-  if (details === null || typeof details !== "object" || !("metadata" in details)) return undefined;
-  const metadata = details.metadata;
-  if (metadata === null || typeof metadata !== "object" || !("semanticAction" in metadata))
-    return undefined;
-  const action = metadata.semanticAction;
-  if (
-    action === null ||
-    typeof action !== "object" ||
-    !("kind" in action) ||
-    action.kind !== "apply-undo" ||
-    !("restored" in action) ||
-    !Array.isArray(action.restored)
-  )
-    return undefined;
-  return action.restored.length;
 }
 
 function wholeFileOperationSucceeded(details: unknown): boolean | undefined {

@@ -1,12 +1,12 @@
 # Can native tools replace Apply?
 
-LPT-403 audits the code at `c4ccbf9`. It does not remove Apply or change production behavior.
+The tables record the pre-removal audit at `c4ccbf9`. LPT-403 then fixed empty-file creation and removed Apply under the approved native contract. Historical differences below are evidence, not current API promises.
 
 ## Answer
 
-**Native tools cover the usual editing workflows, but they are not a complete behavioral replacement for Apply today.** Removing Apply is a product decision, not just deleting a duplicate entry point.
+**Native tools replace the agreed practical workflows, not every historical Apply guarantee.** The user chose to retire grouped undo and aggregate transfers, keep native batching semantics, fix empty creation, and remove the duplicate tool.
 
-The audit found three major differences. User review has now dropped grouped undo and aggregate transfers from the required replacement contract; the empty-file bug still needs a separate fix before removal:
+The audit found three major differences. The first two were dropped from the required replacement contract; the third was fixed before removal:
 
 1. Native batches do not produce grouped undo receipts. `undo last` cannot restore an Apply checkpoint containing several files, file creation/deletion, moves, or binary files.
 2. Native text copy/move pairs ranges. Apply concatenates sources and broadcasts the result. JavaScript can build the same destination text, but that alone does not preserve source guards or a coherent multi-file move.
@@ -16,7 +16,7 @@ Other differences are intentional or can be handled by composition. In particula
 
 This audit does **not** require preserving every historical Apply behavior. The user chose the native contract and important practical scenarios, not full historical compatibility. The tables below keep the observed differences visible; the approved removal contract at the end says which ones still matter.
 
-## How to read the matrix
+## How to read the historical matrix
 
 - **Covered**: an existing native mechanism covers the operation. This is not a claim of identical execution guarantees.
 - **Compose**: ordinary tools plus JavaScript can express the operation; the stated caveats still apply.
@@ -138,18 +138,21 @@ The user reviewed the matrix and chose:
 4. **Keep the native error/checkpoint/target model.** Ordinary errors keep accepted surviving edits; checkpoints are global/automatic; targets never silently refresh. Remove old Apply promises from removal-facing docs and examples.
 5. **Check the native contract and important practical scenarios.** Do not chase full compatibility with every historical helper or convenience rule. The unproven areas above remain honest limitations, not automatically mandatory new features.
 
-### What still prevents removal now
+### Removal implementation
 
-- Direct empty native creation still has the observed receipt bug. A separate fix must check the actual empty-file bytes and a truthful final success/effect, not just disappearance of the error message.
-- The removal stage must check the practical native workflows it will support, including strict source guards, line boundaries, large-input handling and honest failure effects. Reuse existing evidence and run only missing targeted checks; do not infer stronger rollback guarantees than the remaining tools actually provide.
-- Registration, docs, examples and tests must be reviewed for old Apply-only assumptions when deletion is approved.
+- Fixed empty native creation. The standalone and Codemode regressions check actual zero-byte content, truthful applied effects and a usable point target. See [empty creation tests](../../tests/integration/native-empty-write.integration.test.ts).
+- Removed Apply registration, runtime, grouped undo receipts, private plugin APIs, preview settings and dependencies. Ordinary editing, Diff, Git change undo and per-file last undo remain.
+- Migrated practical shared integration scenarios to native tools. The removal checks cover post-edit processing, scoped semantic/AST operations, module settings, user hooks, CRLF insertion, native result schemas, discovery and hidden-tool boundaries, resource scheduling and progressive guides.
+- Kept the native contract: strict snapshots, equal-pair transfers, global checkpoints and final processing once per surviving resource. Ordinary errors keep accepted edits; cancellation discards only pending work. There is no grouped rollback or silent syntax repair.
 
-Grouped undo and aggregate transfers are **no longer removal blockers** under this decision. Full behavioral equivalence is still false, but it is no longer the product requirement. This task remains an audit: no production fix or Apply deletion was made.
+Historical audit checks below were not rerun after removal: they deliberately depend on the old Apply runtime, and P3 reproduces the old empty-write defect. Their source stays in Git history. The original serial removal check passed 58 contracts and failed one outdated hook expectation; targeted retries verify the corrected native Read/error and blocked-commit behavior. Final live and check evidence is recorded in the task Workpad. No full suite was run for this removal.
 
-[apply-runtime]: ../../src/extensions/pi-agent-text-editor/src/core/apply/runtime.ts
-[apply-execution]: ../../src/extensions/pi-agent-text-editor/src/core/apply/execution.ts
-[apply-transaction]: ../../src/extensions/pi-agent-text-editor/src/core/apply/transaction.ts
-[apply-transaction-tests]: ../../src/extensions/pi-agent-text-editor/tests/core/apply-transaction.test.ts
+Full historical equivalence remains false by design. That is not the accepted product requirement.
+
+[apply-runtime]: https://github.com/alexshpunt/pi-agent-ide/blob/c4ccbf9e8620976b5130e6f351f2678ce1d1a067/src/extensions/pi-agent-text-editor/src/core/apply/runtime.ts
+[apply-execution]: https://github.com/alexshpunt/pi-agent-ide/blob/c4ccbf9e8620976b5130e6f351f2678ce1d1a067/src/extensions/pi-agent-text-editor/src/core/apply/execution.ts
+[apply-transaction]: https://github.com/alexshpunt/pi-agent-ide/blob/c4ccbf9e8620976b5130e6f351f2678ce1d1a067/src/extensions/pi-agent-text-editor/src/core/apply/transaction.ts
+[apply-transaction-tests]: https://github.com/alexshpunt/pi-agent-ide/blob/c4ccbf9e8620976b5130e6f351f2678ce1d1a067/src/extensions/pi-agent-text-editor/tests/core/apply-transaction.test.ts
 [native-batch]: ../../src/extensions/pi-agent-text-editor/src/core/native-text-edit-batch.ts
 [file-operations]: ../../src/extensions/pi-agent-text-editor/src/core/file-operations.ts
 [transfer-core]: ../../src/extensions/pi-agent-text-editor/src/core/result-transfer.ts
@@ -161,7 +164,7 @@ Grouped undo and aggregate transfers are **no longer removal blockers** under th
 [search-query]: ../../src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/search-query.ts
 [diff-core]: ../../src/extensions/pi-agent-text-editor/src/core/diff-tool.ts
 [diff-tests]: ../../src/extensions/pi-agent-text-editor/tests/core/diff-tool.test.ts
-[paired-tests]: ../../tests/integration/apply-native-parity.integration.test.ts
+[paired-tests]: https://github.com/alexshpunt/pi-agent-ide/blob/8336931d17056149fe1d4fd3f0340061533438c9/tests/integration/apply-native-parity.integration.test.ts
 [composition-tests]: ../../tests/integration/native-tool-composition.integration.test.ts
 [structural-tests]: ../../tests/integration/native-structural-search.integration.test.ts
 [select-tests]: ../../tests/integration/native-select.integration.test.ts

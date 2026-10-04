@@ -46,7 +46,6 @@ import {
   isTextAnchorResolverRegistration,
   isTextEditorToolId,
   type PromptDescriptionSource,
-  type ScriptIndexOperation,
   type ResourceResolverRegistration,
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
@@ -78,11 +77,6 @@ import {
 } from "#src/core/text-change-engine.js";
 import { previewTextMutation } from "#src/core/text-mutation.js";
 import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.js";
-import {
-  ApplyUndoStore,
-  type ApplyUndoBeforeState,
-  type ApplyUndoResult,
-} from "#src/core/apply/apply-undo-store.js";
 
 import type {
   TextAnchorInspectionOutcome,
@@ -222,7 +216,6 @@ interface PluginContributionDraft {
   readonly editCompletionListeners?: TextEditCompletionListener[];
   readonly mutationGuards?: TextMutationGuardRegistration[];
   readonly toolRenderers?: TextEditorToolRendererRegistration[];
-  readonly scriptIndexOperations?: ScriptIndexOperation[];
 }
 
 interface PluginContributionController {
@@ -336,12 +329,6 @@ export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
 export interface TextEditorCore {
-  /** Record the complete pre-Apply state and return a session-scoped undo receipt. */
-  recordApplyUndo(before: readonly ApplyUndoBeforeState[]): Promise<string>;
-  /** Atomically restore one Apply receipt. */
-  restoreApplyUndo(transaction: string, signal?: AbortSignal): Promise<ApplyUndoResult>;
-  /** Return whether an Apply receipt is still active in this session. */
-  hasApplyUndo(transaction: string): boolean;
   /** Finalize a surviving local text file after a whole-file operation; binary files are untouched. */
   postProcessFile(source: string, context: ResourceResolverContext): Promise<void>;
   /** Reserve complete file sets. Only an explicit transaction owner may enqueue covered nested edits. */
@@ -402,8 +389,6 @@ export interface TextEditorCore {
   onMutationTool(listener: TextMutationToolListener): () => void;
   onDidEdit(listener: TextEditCompletionListener): () => void;
   getToolRenderer(tool: TextEditorToolId): TextEditorToolRendererRegistration | undefined;
-  /** Return a configured index operation for the Apply host. */
-  getScriptIndexOperation(name: string): ScriptIndexOperation | undefined;
   registerPlugin(plugin: TextEditorPlugin): Promise<void>;
   registerPostEditHandler(registration: TextPostEditHandlerRegistration): () => void;
   registerTool(tool: TextEditorToolId): void;
@@ -435,18 +420,8 @@ export function createTextEditorCore(
   const mutationTools = new Map<string, AnyTextMutationToolRegistration>();
   const mutationListeners = new Set<TextMutationToolListener>();
   const editCompletionListeners = new Set<TextEditCompletionListener>();
-  const applyUndoStore = new ApplyUndoStore();
-  editCompletionListeners.add((completion) => {
-    applyUndoStore.observeTextChange(
-      path.resolve(completion.cwd, completion.resourceSource),
-      completion.before.content,
-      completion.after.content,
-      completion.postProcessing ?? "complete",
-    );
-  });
   const mutationGuards: TextMutationGuardRegistration[] = [];
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
-  const scriptIndexOperations = new Map<string, ScriptIndexOperation>();
   let registrationQueue = Promise.resolve();
   const scheduler = resourceScheduler;
   const enqueueMutation = <T>(
@@ -465,17 +440,6 @@ export function createTextEditorCore(
     );
 
     const incomingMutationNames = new Set<string>();
-    const incomingIndexNames = new Set<string>();
-    for (const operation of draft.scriptIndexOperations ?? []) {
-      if (
-        !["stage", "unstage"].includes(operation.name) ||
-        typeof operation.execute !== "function" ||
-        scriptIndexOperations.has(operation.name) ||
-        incomingIndexNames.has(operation.name)
-      )
-        throw new Error(`Invalid or duplicate script index operation ${operation.name}`);
-      incomingIndexNames.add(operation.name);
-    }
 
     for (const registration of draft.mutationTools ?? []) {
       assertTextMutationToolRegistration(registration);
@@ -529,8 +493,6 @@ export function createTextEditorCore(
 
     handlers.push(...draft.handlers);
     semanticHandlers.push(...(draft.semanticHandlers ?? []));
-    for (const operation of draft.scriptIndexOperations ?? [])
-      scriptIndexOperations.set(operation.name, operation);
     mutationGuards.push(...(draft.mutationGuards ?? []));
     promptContributions.push(...draft.promptContributions);
     writablePromptContributions.push(...draft.writablePromptContributions);
@@ -566,20 +528,6 @@ export function createTextEditorCore(
   };
 
   const core: TextEditorCore = {
-    recordApplyUndo(before) {
-      return applyUndoStore.record(before);
-    },
-    restoreApplyUndo(transaction, signal) {
-      const accesses = Promise.all(
-        applyUndoStore
-          .sources(transaction)
-          .map((source) => resourceAccesses(source, process.cwd(), "write")),
-      ).then((sets) => sets.flat());
-      return enqueueMutation(() => applyUndoStore.restore(transaction), signal, accesses);
-    },
-    hasApplyUndo(transaction) {
-      return applyUndoStore.has(transaction);
-    },
     async postProcessFile(source, context) {
       await enqueueMutation(
         async () => {
@@ -652,9 +600,6 @@ export function createTextEditorCore(
     onDidEdit(listener): () => void {
       editCompletionListeners.add(listener);
       return () => editCompletionListeners.delete(listener);
-    },
-    getScriptIndexOperation(name) {
-      return scriptIndexOperations.get(name);
     },
     getSemanticMutationHandler(tool, input): TextSemanticMutationHandler | undefined {
       const matches = semanticHandlers.filter(
@@ -883,7 +828,6 @@ export function createTextEditorCore(
         (listener) => core.onDidEdit(listener),
         (request) => previewTextMutation(core, request),
         (section) => recoverySection(projectConfig, section),
-        (transaction, signal) => core.restoreApplyUndo(transaction, signal),
       );
       const ready = registrationQueue.then(async () => {
         try {
@@ -1993,7 +1937,6 @@ function createPluginContributionController(
   onDidEdit: (listener: TextEditCompletionListener) => () => void,
   previewMutation: (request: TextMutationPreviewRequest) => Promise<TextMutationPreviewOutcome>,
   recoveryConfig: (section: string) => TextEditorRecoveryConfigSection,
-  restoreApplyUndo: TextEditorPluginApi["restoreApplyUndo"],
 ): PluginContributionController {
   const setupDraft: PluginContributionDraft = {
     resolvers: [],
@@ -2009,7 +1952,6 @@ function createPluginContributionController(
     editCompletionListeners: [],
     mutationGuards: [],
     toolRenderers: [],
-    scriptIndexOperations: [],
   };
   let state: "active" | "closed" | "setup" = "setup";
   const assertAvailable = (): void => {
@@ -2091,7 +2033,6 @@ function createPluginContributionController(
     },
   });
   const api: TextEditorPluginApi = {
-    restoreApplyUndo,
     addMutationTool(registration): void {
       assertAvailable();
       assertTextMutationToolRegistration(registration);
@@ -2109,22 +2050,6 @@ function createPluginContributionController(
         writablePromptContributions: [],
         tools: [],
         mutationTools: [registration],
-      });
-    },
-    addScriptIndexOperation(operation): void {
-      assertAvailable();
-      if (state === "setup") {
-        requiredValue(setupDraft.scriptIndexOperations).push(operation);
-        return;
-      }
-      registerContributions({
-        resolvers: [],
-        anchorResolvers: [],
-        handlers: [],
-        promptContributions: [],
-        writablePromptContributions: [],
-        tools: [],
-        scriptIndexOperations: [operation],
       });
     },
     addToolRenderer(registration): void {

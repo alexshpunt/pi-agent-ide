@@ -94,8 +94,6 @@ export const mutationDataSchema = Type.Object(
     ),
     operations: Type.Optional(Type.Array(operation)),
     parentToolCallId: Type.Optional(Type.String()),
-    transaction: Type.Optional(Type.String()),
-    transactions: Type.Optional(Type.Array(Type.String())),
     recovery: Type.Optional(
       Type.Array(
         Type.Object({
@@ -244,7 +242,7 @@ export function mutationOutcome(
           ? "unknown"
           : "applied";
     const source = typeof semantic.source === "string" ? semantic.source : undefined;
-    if (source && !Array.isArray(semantic.restored))
+    if (source)
       files.push({
         source,
         ...(semantic.kind === "file-operation" && semantic.ok === true
@@ -260,9 +258,6 @@ export function mutationOutcome(
             ? "not-applied"
             : semanticEffect,
       });
-    if (Array.isArray(semantic.restored))
-      for (const source of semantic.restored)
-        if (typeof source === "string") files.push({ source, effect: semanticEffect });
     if (typeof semantic.target === "string")
       files.push({
         source: semantic.target,
@@ -399,7 +394,6 @@ export function mutationOutcome(
               candidates: [...item.candidates],
             })),
           }),
-      ...(typeof semantic?.transaction === "string" ? { transaction: semantic.transaction } : {}),
       ...(checkedAction ? { action: checkedAction } : {}),
     },
     errors,

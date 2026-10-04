@@ -25,3 +25,12 @@ export async function createFixture(
   await writeFile(file, content, "utf8");
   return file;
 }
+
+/** Enable native tool composition in an isolated test workspace. */
+export async function enableNativeCodemode(directory: string): Promise<void> {
+  await mkdir(path.join(directory, ".pi"), { recursive: true });
+  await writeFile(
+    path.join(directory, ".pi/settings.json"),
+    JSON.stringify({ codemode: { mode: "on" } }),
+  );
+}

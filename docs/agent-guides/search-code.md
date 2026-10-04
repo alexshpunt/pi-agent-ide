@@ -36,7 +36,7 @@ Check `complete` before treating zero matches as absence. Inherited incompletene
 
 ## AST search
 
-Use `ast:<pattern>` for syntax-aware matching. `$NAME` captures one syntax node and `$$$BODY` captures several nodes. Returned search references can select multiline matches for read, replace, copy, move, delete, and Apply. An incomplete result does not provide a complete all-selection. Text replacement through an AST selection does not update imports or references automatically.
+Use `ast:<pattern>` for syntax-aware matching. `$NAME` captures one syntax node and `$$$BODY` captures several nodes. Returned search references can select multiline matches for read, replace, copy, move, and delete. An incomplete result does not provide a complete all-selection. Text replacement through an AST selection does not update imports or references automatically.
 
 Pass `found.data.matches[index].captures.NAME` to Search or replace to use an AST capture without Select. Each name contains an array of source targets associated with that parent match. Multi captures retain all provider nodes, including punctuation; an absent or empty capture is not an invented source range. Use ordinary JavaScript to choose nodes. AST matches and captures must be wholly contained in one requested region; they are not clipped at a scope boundary.
 
