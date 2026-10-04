@@ -20,11 +20,13 @@ test.runIf(process.platform !== "win32")(
     await mkdir(root, { recursive: true });
     const cwd = await mkdtemp(path.join(root, "case-"));
     try {
+      // Keep the wait blocked on stdin until Pi shuts down. Completion delivery has its own test;
+      // a short sleep can finish during an existing turn and never request an extra response.
       const code = `
       const empty = await tools.bash({command: "true"});
       const failed = await tools.bash({command: "printf bad; exit 7"});
       const large = await tools.bash({command: ${JSON.stringify('node -e \'process.stdout.write("HEAD" + "я".repeat(700000) + "TAIL")\'')}});
-      const waiting = await tools.bash({command: "sleep 0.3; printf done", timeoutSeconds: 0.1});
+      const waiting = await tools.bash({command: "read -r line", timeoutSeconds: 0.1});
       text({empty, failed, waiting, large: {...large, output: undefined, bytes: large.output.length * 2 - 8, head: large.output.slice(0,4), tail: large.output.slice(-4), broken: large.output.includes("�")}});
     `;
       const result = await new PiIntegrationTest({
@@ -54,7 +56,6 @@ test.runIf(process.platform !== "win32")(
             { stopReason: "toolUse" },
           ),
           assistantMessage([text("Done")]),
-          assistantMessage([text("Background completed")]),
         ],
       }).run("Filter shell output inside a native script and show a bounded direct preview.");
       expect(getToolExecution(result, "script").isError).toBe(false);
