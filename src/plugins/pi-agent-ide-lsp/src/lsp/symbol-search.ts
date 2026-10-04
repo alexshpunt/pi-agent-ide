@@ -113,7 +113,9 @@ export async function searchSymbols(
     (await Promise.all(roots.map((root) => manager.prepareWorkspaceSymbols(cwd, root)))).flat(),
   );
   if (clients.size === 0)
-    throw new Error("LSP symbol search is unavailable: no configured provider for this scope.");
+    throw new Error(
+      "LSP symbol search is unavailable: no provider supports workspace/symbol in this scope.",
+    );
   const contents = new Map<string, ReturnType<typeof createTextDocument>>();
   const toMatch = async (location: LspLocation): Promise<SearchSelectionMatch> => {
     signal?.throwIfAborted();

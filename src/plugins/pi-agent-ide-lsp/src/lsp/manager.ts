@@ -242,9 +242,11 @@ export class LspManager {
         const opened = await this.openFile(filePath, cwd, capability).catch(() => null);
 
         if (opened) {
-          await prepareProjectQuery(opened.client, filePath);
-          clients.add(opened.client);
           remainingExtensions.delete(extension);
+          if (opened.client.hasWorkspaceSymbolCapability) {
+            await prepareProjectQuery(opened.client, filePath);
+            clients.add(opened.client);
+          }
         }
       }
     };
@@ -252,7 +254,7 @@ export class LspManager {
     const selected = path.resolve(cwd, scope);
     if ((await stat(selected)).isFile()) {
       const opened = await this.openFile(selected, cwd, capability);
-      if (opened === null) return [];
+      if (opened === null || !opened.client.hasWorkspaceSymbolCapability) return [];
       await prepareProjectQuery(opened.client, selected);
       return [opened.client];
     }
