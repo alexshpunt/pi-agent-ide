@@ -318,7 +318,7 @@ jobs:
 
       - name: Verify Windows Pi 0.99.1 source and native tools
         shell: bash
-        run: pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
+        run: env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
 
       - name: Verify Windows installed package and host boundaries
         shell: bash
@@ -328,7 +328,7 @@ jobs:
           archive="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
           test -n "$archive"
           node --experimental-strip-types --input-type=module -e 'import { installTestPackage, verifyInstalledPackage } from "./scripts/release-candidate.ts"; installTestPackage(".tmp/windows-install", process.argv[1]); verifyInstalledPackage(".tmp/windows-install");' "$archive"
-          PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
+          PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
 
       - name: Setup Windows native tools
         if: ${{ hashFiles('validation/language-toolchains/build-windows-checks.mjs') != '' }}

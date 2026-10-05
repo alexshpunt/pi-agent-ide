@@ -18,7 +18,12 @@ test("keeps unit failure evidence before success-only integration", () => {
       path.join(findRepositoryRoot(import.meta.url), ".github/workflows/ci.yml"),
       "utf8",
     ),
-  ) as { jobs: { validate: { steps: WorkflowStep[] } } };
+  ) as {
+    jobs: {
+      validate: { steps: WorkflowStep[] };
+      "validate-windows-core": { steps: WorkflowStep[] };
+    };
+  };
   const steps = workflow.jobs.validate.steps;
   const find = (name: string) => {
     const index = steps.findIndex((entry) => entry.name === name);
@@ -61,4 +66,15 @@ test("keeps unit failure evidence before success-only integration", () => {
   // Fixtures have distinct configurations; retained shared hosts must not accumulate in CI.
   expect(shardScript).toContain("env -u PI_INTEGRATION_TEST_RUNNER pnpm exec");
   expect(shardScript).not.toContain("pnpm exec pi-test run");
+  const windowsSteps = workflow.jobs["validate-windows-core"].steps.filter((entry) =>
+    [
+      "Verify Windows Pi 0.99.1 source and native tools",
+      "Verify Windows installed package and host boundaries",
+    ].includes(entry.name),
+  );
+  expect(windowsSteps).toHaveLength(2);
+  for (const step of windowsSteps) {
+    expect(step.run).toContain("env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest");
+    expect(step.run).not.toContain("pi-test run");
+  }
 });
