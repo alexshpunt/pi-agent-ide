@@ -330,6 +330,17 @@ jobs:
           node --experimental-strip-types --input-type=module -e 'import { installTestPackage, verifyInstalledPackage } from "./scripts/release-candidate.ts"; installTestPackage(".tmp/windows-install", process.argv[1]); verifyInstalledPackage(".tmp/windows-install");' "$archive"
           PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
 
+      - name: Retain Windows host traces
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: windows-host-traces
+          path: |
+            .tmp/test-runs/tests/integration/native-host.integration.test.ts/
+            .tmp/test-runs/tests/integration/lazy-builtins.integration.test.ts/
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Setup Windows native tools
         if: ${{ hashFiles('validation/language-toolchains/build-windows-checks.mjs') != '' }}
         shell: pwsh

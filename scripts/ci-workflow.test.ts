@@ -72,6 +72,13 @@ test("keeps unit failure evidence before success-only integration", () => {
       "Verify Windows installed package and host boundaries",
     ].includes(entry.name),
   );
+  const windowsTraces = workflow.jobs["validate-windows-core"].steps.find(
+    (entry) => entry.name === "Retain Windows host traces",
+  );
+  expect(windowsTraces?.if).toBe("always()");
+  expect(windowsTraces?.with?.["include-hidden-files"]).toBe(true);
+  expect(windowsTraces?.with?.path).toContain("native-host.integration.test.ts/");
+  expect(windowsTraces?.with?.path).toContain("lazy-builtins.integration.test.ts/");
   expect(windowsSteps).toHaveLength(2);
   for (const step of windowsSteps) {
     expect(step.run).toContain("env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest");
