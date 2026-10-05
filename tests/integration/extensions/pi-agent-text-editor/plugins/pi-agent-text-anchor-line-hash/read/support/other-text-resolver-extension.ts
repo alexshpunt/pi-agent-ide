@@ -44,7 +44,7 @@ export default async function registerOtherTextResolver(pi: ExtensionAPI): Promi
         },
       } satisfies ResourceResolver;
       api.addResolver({ resolver, priority: -10 });
-      api.describe("Loads text through the integration-test resolver.");
+      api.describe({ path: "Loads text through the integration-test resolver." });
     },
   } satisfies ReadPlugin;
 

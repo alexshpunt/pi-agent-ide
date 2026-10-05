@@ -112,6 +112,35 @@ export function createIdeTextResults(pi: ExtensionAPI) {
         writable: true,
       };
     }
+    const renderResult = definition.renderResult;
+    if (renderResult) {
+      const renderer: typeof renderResult = (result, options, theme, context) =>
+        renderResult(
+          {
+            ...result,
+            content: result.content.map((block) =>
+              block.type === "text"
+                ? {
+                    ...block,
+                    text: block.text.replace(
+                      /^<system-result\b[^>]*><uuid>[a-f\d-]{36}<\/uuid><\/system-result>\n/u,
+                      "",
+                    ),
+                  }
+                : block,
+            ),
+          },
+          options,
+          theme,
+          context,
+        );
+      descriptors.renderResult = {
+        value: renderer,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      };
+    }
     Object.defineProperties(publicDefinition, descriptors);
     pi.registerTool(publicDefinition);
   };

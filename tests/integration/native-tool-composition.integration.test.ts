@@ -524,14 +524,16 @@ test("whole-file operations preserve binary bytes without granting a text target
     const run = await runComposition(cwd, "file-operation-binary-and-refusal", [
       `const copied=await tools.copy({path:"source.bin",target:"copy.bin"});
 await rejects(()=>tools.search({path:copied,query:"BAD"}),/no reusable text selection/);
-await rejects(()=>tools.move({path:"source.bin",target:"existing.bin"}));
+const moved = await tools.move({path:"copy.bin",target:"existing.bin"});
+await rejects(()=>tools.search({path:moved,query:"BAD"}),/no reusable text selection/);
 text(copied);`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    for (const name of ["source.bin", "copy.bin", "existing.bin"])
+    for (const name of ["source.bin", "existing.bin"])
       expect(await readFile(path.join(cwd, name))).toEqual(bytes);
+    await expect(readFile(path.join(cwd, "copy.bin"))).rejects.toThrow("ENOENT");
   });
 });
 
