@@ -198,7 +198,9 @@ jobs:
         if: success()
         env:
           PI_DEBUGGER_CORE_EXCLUDE_ADAPTER: kotlin
-        run: pnpm test:integration:report
+          SHARDS: "4"
+          REPORT_DIR: .agents/tmp/test-results
+        run: pnpm test:integration:shards
 
       - name: Smoke test nightly package
         if: success() && inputs.nightly
@@ -233,6 +235,16 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+      - name: Upload integration shard logs
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: integration-shard-logs
+          path: .tmp/integration-shards.*/*.log
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -244,11 +256,11 @@ jobs:
 
       - name: Report integration tests
         id: integration-report
-        if: always() && hashFiles('.agents/tmp/test-results/integration.xml') != ''
+        if: always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != ''
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Integration tests
-          path: .agents/tmp/test-results/integration.xml
+          path: .agents/tmp/test-results/integration-*.xml
           reporter: java-junit
           fail-on-error: false
 
@@ -306,7 +318,7 @@ jobs:
 
       - name: Verify Windows Pi 0.99.1 source and native tools
         shell: bash
-        run: pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
+        run: env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
 
       - name: Verify Windows installed package and host boundaries
         shell: bash
@@ -316,7 +328,7 @@ jobs:
           archive="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
           test -n "$archive"
           node --experimental-strip-types --input-type=module -e 'import { installTestPackage, verifyInstalledPackage } from "./scripts/release-candidate.ts"; installTestPackage(".tmp/windows-install", process.argv[1]); verifyInstalledPackage(".tmp/windows-install");' "$archive"
-          PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
+          PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
 
       - name: Setup Windows native tools
         if: ${{ hashFiles('validation/language-toolchains/build-windows-checks.mjs') != '' }}

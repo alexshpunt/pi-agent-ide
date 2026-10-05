@@ -140,7 +140,7 @@ The user reviewed the matrix and chose:
 
 ### Removal implementation
 
-- Fixed empty native creation. The standalone and Codemode regressions check actual zero-byte content, truthful applied effects and a usable point target. See [empty creation tests](../../tests/integration/native-empty-write.integration.test.ts).
+- Fixed empty native creation. The standalone and Codemode regressions check actual zero-byte content, truthful applied effects and a usable point target. See [empty creation tests](https://github.com/alexshpunt/pi-agent-ide/blob/5c318fd2081a3bc4e187efb06c7e9eeae4a22317/tests/integration/native-empty-write.integration.test.ts).
 - Removed Apply registration, runtime, grouped undo receipts, private plugin APIs, preview settings and dependencies. Ordinary editing, Diff, Git change undo and per-file last undo remain.
 - Migrated practical shared integration scenarios to native tools. The removal checks cover post-edit processing, scoped semantic/AST operations, module settings, user hooks, CRLF insertion, native result schemas, discovery and hidden-tool boundaries, resource scheduling and progressive guides.
 - Kept the native contract: strict snapshots, equal-pair transfers, global checkpoints and final processing once per surviving resource. Ordinary errors keep accepted edits; cancellation discards only pending work. There is no grouped rollback or silent syntax repair.
