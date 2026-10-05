@@ -8,10 +8,6 @@
     "#tests/*": "./tests/*"
   },
   "exports": {
-    "./api/apply-renderer": {
-      "types": "./src/api/apply-renderer.ts",
-      "default": "./src/api/apply-renderer.ts"
-    },
     "./api/anchor-inspection": {
       "types": "./src/api/anchor-inspection.ts",
       "default": "./src/api/anchor-inspection.ts"
@@ -96,7 +92,6 @@
     "pi-agent-text": "workspace:^",
     "pi-agent-tool-call-interception": "workspace:^",
     "pi-agent-tool-ui": "workspace:*",
-    "run": "2.1.4",
     "typebox": "^1.1.38",
     "typebox-guard": "npm:typebox@^1.1.38"
   },

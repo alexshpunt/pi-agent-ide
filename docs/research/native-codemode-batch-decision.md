@@ -1,5 +1,7 @@
 # Solution decision: accumulate sequential Codemode text edits
 
+This records the original batching decision. LPT-403 later removed Apply without changing the native batching policy.
+
 ## Question
 
 Should sequential editor calls in native Codemode share only original coordinates, or also one combined write, and where should that batch end?

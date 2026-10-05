@@ -1,9 +1,12 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { ResultPanel } from "pi-agent-tool-ui";
+import { runScopedSearch } from "#src/scoped-search.js";
 
 import { searchFiles } from "#src/file-search.js";
 import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.js";
 import { renderSearchResult } from "#src/search-renderer.js";
-import { createSearchToolDetails } from "#src/search-result.js";
+import { createFuzzyPresentation, createSearchToolDetails } from "#src/search-result.js";
 import { planSearchPresentation } from "#src/search-presentation.js";
 
 import type {
@@ -12,14 +15,26 @@ import type {
   TextSearchSession,
 } from "#src/search-session.js";
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
-import { selectionData } from "pi-agent-search/api/search";
+import {
+  selectionData,
+  fuzzyLimits,
+  isFuzzyQuery,
+  fuzzyCandidateData,
+  formatFuzzyCandidate,
+  type FuzzyResult,
+} from "pi-agent-search/api/search";
+import type { SearchToolDetails } from "#src/search-result.js";
+import { searchFuzzy, searchFuzzyAlternative } from "#src/fuzzy-search.js";
 
+const SEARCH_ANCHOR_LEGEND =
+  "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)";
 interface TextPayload {
   readonly request: SearchRequest;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
   readonly recipe: SearchRecipe;
   readonly notices: readonly string[];
+  readonly fuzzy?: FuzzyResult;
 }
 
 interface FilePayload {
@@ -61,14 +76,36 @@ export function createFileResolver(): SearchResolver {
       const result = await searchFiles(query, request, context.cwd, context.signal);
       return { kind: "resolved", payload: { query, ...result } satisfies FilePayload };
     },
-    format(payload) {
+    renderResult(result, options, theme) {
+      const data = result.details as FilePayload & { cwd: string };
+      return new ResultPanel(
+        {
+          summary: `${data.files.length}${data.complete ? "" : "+"} ${data.files.length === 1 ? "file" : "files"}`,
+          rows: data.files.length
+            ? data.files.map((file) => ({
+                kind: "source",
+                label: file,
+                link: pathToFileURL(path.resolve(data.cwd, file)).href,
+              }))
+            : [{ kind: "note", text: "No files found" }],
+        },
+        theme,
+        options.expanded,
+      );
+    },
+    format(payload, context) {
       const result = payload as FilePayload;
       const heading = result.complete
         ? `${String(result.files.length)} files`
         : `${String(result.files.length)}+ files (limit reached)`;
       return {
         content: [{ type: "text", text: [heading, ...result.files].join("\n") }],
-        details: { query: result.query, files: result.files, complete: result.complete },
+        details: {
+          query: result.query,
+          files: result.files,
+          complete: result.complete,
+          cwd: context.cwd,
+        },
       };
     },
   };
@@ -81,40 +118,53 @@ function createMatchResolver(
 ): SearchResolver {
   return {
     readResources: (request, context) =>
-      queryBody(request) === undefined ? [] : [request.path ?? context.cwd],
+      queryBody(request) === undefined
+        ? []
+        : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
     id,
+    supportsResultScope: true,
     toScriptData(payload, details) {
       const result = payload as TextPayload;
-      const sessionId = (details as { sessionId?: string }).sessionId;
+      const formatted = details as SearchToolDetails & {
+        target?: string;
+        matchTargets?: readonly string[];
+      };
+      const sessionId = formatted.sessionId;
       return {
-        ...selectionData(result.matches, result.complete, sessionId),
+        ...selectionData(result.matches, result.complete, sessionId, formatted),
         notices: [...result.notices],
+        ...(formatted.fuzzy === undefined ? {} : { fuzzy: formatted.fuzzy }),
       };
     },
     async tryResolve(request, context) {
       const recipe = queryBody(request);
       if (recipe === undefined) return { kind: "not-handled" };
-      const result = await runSearchRecipe(recipe, context.cwd, context.signal);
+      const result =
+        context.scope === undefined
+          ? await runSearchRecipe(recipe, context.cwd, context.signal)
+          : await runScopedSearch(recipe, context.scope, context.cwd, context.signal);
+      const fuzzy =
+        context.scope === undefined &&
+        id === "text" &&
+        result.complete &&
+        result.matches.length === 0 &&
+        isFuzzyQuery(request.query)
+          ? await searchFuzzy({ ...request, query: request.query }, context.cwd, context.signal)
+          : undefined;
       return {
         kind: "resolved",
         payload: {
           request: { ...request, query: result.query },
           ...result,
           recipe: { ...recipe, originalQuery: request.query },
+          ...(fuzzy === undefined ? {} : { fuzzy }),
         } satisfies TextPayload,
       };
     },
     async format(payload, context) {
       const result = payload as TextPayload;
 
-      if (result.matches.length === 0) {
-        return {
-          content: [{ type: "text", text: [...result.notices, "No matches found."].join("\n") }],
-          details: createSearchToolDetails(result.request.query, [], result.complete, context.cwd),
-        };
-      }
-
-      const detailBudget = result.request.limit ?? 50;
+      const scope = context.scope;
       const session = await sessions.registerIfCurrent(
         result.request.query,
         result.matches,
@@ -122,7 +172,88 @@ function createMatchResolver(
         context.cwd,
         context.signal,
         result.recipe,
+        scope === undefined
+          ? undefined
+          : (signal) => runScopedSearch(result.recipe, scope, context.cwd, signal),
       );
+      if (result.fuzzy !== undefined) {
+        const details = createSearchToolDetails(
+          result.request.query,
+          [],
+          result.complete,
+          context.cwd,
+        );
+        const groups = [];
+        let registrationLimited = false;
+        const deadline = AbortSignal.timeout(fuzzyLimits.timeoutMs);
+        const registrationSignal =
+          context.signal === undefined ? deadline : AbortSignal.any([context.signal, deadline]);
+        for (const candidate of result.fuzzy.candidates) {
+          const recipe: SearchRecipe = {
+            ...result.request,
+            query: candidate.identifier,
+            regex: false,
+            caseSensitive: true,
+            wholeWord: true,
+          };
+          let session: TextSearchSession | undefined;
+          try {
+            session = await sessions.registerIfCurrent(
+              candidate.identifier,
+              candidate.matches,
+              candidate.complete,
+              context.cwd,
+              registrationSignal,
+              recipe,
+              (signal) => searchFuzzyAlternative(recipe, context.cwd, signal),
+              fuzzyLimits.vocabularyBytes,
+            );
+          } catch {
+            context.signal?.throwIfAborted();
+          }
+          if (session === undefined) registrationLimited = true;
+          groups.push(fuzzyCandidateData(candidate, session?.id, session));
+        }
+        const message = registrationLimited
+          ? "Some candidate files changed or could not be registered; locations are shown without stable references."
+          : result.fuzzy.message;
+        const fuzzy = {
+          status: result.fuzzy.status,
+          ...(message === undefined ? {} : { message }),
+          candidates: groups,
+        };
+        const rows = [...result.notices, "No matches found."];
+        if (groups.some((candidate) => candidate.selection.matches[0]?.references !== undefined))
+          rows.push(SEARCH_ANCHOR_LEGEND);
+        if (fuzzy.status === "ready" && fuzzy.message !== undefined) rows.push(fuzzy.message);
+        if (fuzzy.status === "skipped")
+          rows.push(`Possible-name fallback skipped: ${fuzzy.message}`);
+        if (groups.length > 0)
+          rows.push(
+            "Possible names — spelling suggestions, not equivalent behavior.",
+            ...groups.map(formatFuzzyCandidate),
+          );
+        return {
+          content: [{ type: "text", text: rows.join("\n\n") }],
+          details: {
+            ...details,
+            ...(session?.target === undefined ? {} : { target: session.target, matchTargets: [] }),
+            fuzzyPresentation: createFuzzyPresentation(result.fuzzy.candidates, context.cwd),
+            fuzzy,
+          } satisfies SearchToolDetails,
+        };
+      }
+
+      const detailBudget = result.request.limit ?? 50;
+      if (result.matches.length === 0) {
+        return {
+          content: [{ type: "text", text: [...result.notices, "No matches found."].join("\n") }],
+          details: {
+            ...createSearchToolDetails(result.request.query, [], result.complete, context.cwd),
+            ...(session?.target === undefined ? {} : { target: session.target, matchTargets: [] }),
+          },
+        };
+      }
       const display = session ?? {
         query: result.request.query,
         matches: result.matches,
@@ -138,14 +269,19 @@ function createMatchResolver(
             ].join("\n"),
           },
         ],
-        details: createSearchToolDetails(
-          display.query,
-          display.matches,
-          display.complete,
-          context.cwd,
-          session?.id,
-          detailBudget,
-        ),
+        details: {
+          ...createSearchToolDetails(
+            display.query,
+            display.matches,
+            display.complete,
+            context.cwd,
+            session?.id,
+            detailBudget,
+          ),
+          ...(session?.target === undefined
+            ? {}
+            : { target: session.target, matchTargets: session.matchTargets }),
+        },
       };
     },
     renderResult: renderSearchResult as SearchResolver["renderResult"],
@@ -166,12 +302,7 @@ function formatSearchSession(
       ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${summary}`
       : `${summary} (limit reached; no all anchors were registered)`
     : `${summary} (files changed during search; results shown without anchors)`;
-  const lines = anchorsRegistered
-    ? [
-        "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)",
-        heading,
-      ]
-    : [heading];
+  const lines = anchorsRegistered ? [SEARCH_ANCHOR_LEGEND, heading] : [heading];
   const indices = new Map(session.matches.map((match, index) => [match, index + 1]));
   const presentation = planSearchPresentation(session.matches, detailBudget);
 

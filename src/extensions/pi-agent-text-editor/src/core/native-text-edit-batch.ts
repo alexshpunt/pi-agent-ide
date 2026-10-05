@@ -11,6 +11,7 @@ import { getLastResolvedResource } from "#src/api/last-resolved-resource.js";
 import { isMutationAnchorValue } from "#src/api/mutation-tool.js";
 import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.js";
 import type { TextBatchEntry } from "./text-edit-batch.js";
+import type { TextEditCompletion } from "#src/api/edit-completion.js";
 import type { TextEditorCore, TextResourceEditRequest } from "./text-editor-core.js";
 import { BatchExecutionJournal } from "./text-edit-batch-execution.js";
 import {
@@ -25,10 +26,16 @@ import { Type } from "typebox";
 import {
   ResourceScheduler,
   resourceAccesses,
+  connectResultTargets,
   resultError,
   withStructuredResult,
+  type ResultTargetStore,
   type StructuredResult,
 } from "pi-agent-resource";
+import { createPostEditScope } from "./post-edit-scope.js";
+import { committedMutationTargets } from "./mutation-result-targets.js";
+import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.js";
+import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.js";
 import { captureScriptMutation } from "./text-mutation.js";
 import {
   NATIVE_EDIT_BATCH_EVENT,
@@ -61,8 +68,11 @@ interface ScriptBatch {
   readonly context: ExtensionContext;
   readonly summaries: BatchSummary[];
   readonly results: FileMutationResult[];
+  readonly presentations: NativeEditBatchEvent[];
   readonly errors: string[];
   readonly cancellation: AbortController;
+  readonly targets: Map<string, string>;
+  readonly postEdits: ReturnType<typeof createPostEditScope>;
   tail: Promise<void>;
   readonly scheduler: ResourceScheduler;
   readonly callOrder: Map<string, number>;
@@ -156,11 +166,14 @@ function isBatchable(
 class NativeTextEditBatchCoordinator {
   private readonly scripts = new Map<string, ScriptBatch>();
   private readonly invocations = new Map<string, ScriptBatch>();
+  private readonly scopedInvocations = new Map<string, ScriptBatch>();
+  private readonly resultTargets: ResultTargetStore;
 
   constructor(
     private readonly core: TextEditorCore,
     private readonly pi: ExtensionAPI,
   ) {
+    this.resultTargets = connectResultTargets(pi);
     pi.registerTool({
       name: "flush",
       exposure: "codemode",
@@ -227,9 +240,12 @@ class NativeTextEditBatchCoordinator {
           summaries: [],
           reports: [],
           reportCursor: 0,
+          presentations: [],
           results: [],
           errors: [],
           cancellation: new AbortController(),
+          targets: new Map(),
+          postEdits: createPostEditScope(context.cwd),
           tail: Promise.resolve(),
           scheduler: new ResourceScheduler(),
           callOrder: new Map(),
@@ -248,6 +264,7 @@ class NativeTextEditBatchCoordinator {
       const registration = this.core
         .getMutationTools()
         .find((tool) => tool.name === event.toolName);
+      if (registration) this.scopedInvocations.set(event.toolCallId, script);
       const input: Record<string, unknown> = event.input;
       let ownsSource = false;
       if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
@@ -258,6 +275,14 @@ class NativeTextEditBatchCoordinator {
         for (const descriptor of [registration.source, ...(registration.source.targets ?? [])]) {
           const value = input[descriptor.field];
           if (typeof value === "string" && value.length > 0) {
+            if (
+              ["replace", "write", "copy", "move", "delete", "undo"].includes(registration.name) &&
+              value.startsWith("RESULT#")
+            ) {
+              // The executor validates result handles and returns a structured rejection.
+              ownsSource = true;
+              continue;
+            }
             const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
             if (result.kind !== "not-handled") ownsSource = true;
           }
@@ -295,6 +320,7 @@ class NativeTextEditBatchCoordinator {
     });
     pi.on("tool_result", async (event) => {
       this.invocations.delete(event.toolCallId);
+      this.scopedInvocations.delete(event.toolCallId);
       const script = this.scripts.get(event.toolCallId);
       if (!script) return;
       script.closed = true;
@@ -334,11 +360,77 @@ class NativeTextEditBatchCoordinator {
             },
           });
           script.errors.push(error.message);
+          for (const entry of script.pending.entries) {
+            const target = script.targets.get(entry.callId);
+            if (target) this.resultTargets.reject(target, error.message);
+          }
           script.pending = pendingBatch();
         }
       } else await this.commit(script);
+      try {
+        await this.core.enqueueFileOperation(
+          () =>
+            script.postEdits.finish((outcome) => {
+              const index = script.results.findLastIndex(
+                (item) => item.data.path === outcome.after.source,
+              );
+              if (index < 0) return;
+              const previous = requiredValue(script.results[index]).data;
+              const updated = new MutationPresentation({
+                ...previous,
+                afterContent: outcome.after.content,
+                afterDocument: outcome.after,
+                formatting: outcome.postEditContributions
+                  .map((item) => item.data)
+                  .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
+                diffStatuses: outcome.postEditContributions
+                  .map((item) => item.data)
+                  .filter(isDiffStatusContribution)
+                  .flatMap((item) => item.diffStatuses),
+              });
+              const previousResult = requiredValue(script.results[index]);
+              script.results[index] = updated;
+              for (const [slot, presentation] of script.presentations.entries()) {
+                const results = presentation.result.details.results;
+                if (!results?.includes(previousResult)) continue;
+                script.presentations[slot] = {
+                  ...presentation,
+                  result: {
+                    ...presentation.result,
+                    details: {
+                      ...presentation.result.details,
+                      results: results.map((result) =>
+                        result === previousResult ? updated : result,
+                      ),
+                    },
+                  },
+                };
+              }
+            }),
+          undefined,
+          { cwd: script.context.cwd, sources: script.postEdits.sources() },
+        );
+      } catch (error) {
+        script.errors.push(error instanceof Error ? error.message : String(error));
+      }
+      // Nested panels are frozen on message_end. Publish final snapshots before history is saved.
+      for (const presentation of script.presentations) {
+        const results = presentation.result.details.results ?? [];
+        this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, {
+          ...presentation,
+          result: {
+            ...presentation.result,
+            content: [new FileMutationAgentResult(results).toTextContent()],
+          },
+        } satisfies NativeEditBatchEvent);
+      }
       this.scripts.delete(event.toolCallId);
-      if (script.summaries.length === 0 && script.errors.length === 0) return;
+      if (
+        script.results.length === 0 &&
+        script.summaries.length === 0 &&
+        script.errors.length === 0
+      )
+        return;
       const failed = script.errors.length > 0;
       const content = event.content.map((block) =>
         failed && block.type === "text"
@@ -373,11 +465,25 @@ class NativeTextEditBatchCoordinator {
       }
       this.scripts.clear();
       this.invocations.clear();
+      this.scopedInvocations.clear();
     };
     pi.on("agent_end", clear);
     pi.on("session_shutdown", clear);
   }
 
+  /** Keep every mutation in the script's shared post-edit scope, including non-batched calls. */
+  runPostEdits<T>(id: string, work: () => T): T {
+    const script = this.scopedInvocations.get(id);
+    return script ? script.postEdits.run(work) : work();
+  }
+
+  /** Include non-batched mutations in the script's final post-edit presentation. */
+  recordMutation(id: string, result: AgentToolResult<FileMutationBatchResult>): void {
+    const script = this.scopedInvocations.get(id);
+    if (!script || !result.details.results?.some((item) => item.data.ok === true)) return;
+    script.results.push(...result.details.results);
+    script.presentations.push({ parentToolCallId: script.id, calls: [id], result });
+  }
   execute(
     id: string,
     registration: AnyTextMutationToolRegistration,
@@ -498,11 +604,16 @@ class NativeTextEditBatchCoordinator {
       mutations: [...batch.plan.mutations, ...planning.plan.mutations].sort(order),
       failures: [...batch.plan.failures, ...planning.plan.failures],
     };
+    const target = ["replace", "insert", "write", "copy", "move"].includes(registration.name)
+      ? this.resultTargets.reserve(context.cwd)
+      : undefined;
+    if (target) script.targets.set(id, target);
     const details = {
       results: [],
       source: entry.path,
       resolvedBy: preview.resources.find((resource) => resource.path === entry.path)?.resolvedBy,
       nativeEditBatch: { parentToolCallId: script.id, state: "accepted" },
+      ...(target ? { metadata: { resultTarget: target } } : {}),
     };
     return {
       content: [
@@ -513,6 +624,51 @@ class NativeTextEditBatchCoordinator {
       ],
       details,
     };
+  }
+
+  private async settleTargets(
+    script: ScriptBatch,
+    batch: PendingBatch,
+    journal: BatchExecutionJournal,
+    completions: readonly TextEditCompletion[],
+    signal: AbortSignal,
+  ): Promise<void> {
+    let mapped: ReturnType<typeof committedMutationTargets>;
+    try {
+      mapped = committedMutationTargets(
+        batch.plan.mutations.map(({ callId, mutation }) => ({ callId, edits: mutation.edits })),
+        completions,
+      );
+    } catch (error) {
+      for (const entry of batch.entries) {
+        const target = script.targets.get(entry.callId);
+        if (target)
+          this.resultTargets.reject(target, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    const calls = journal.snapshot();
+    for (const entry of batch.entries) {
+      const reference = script.targets.get(entry.callId);
+      if (!reference) continue;
+      const targets = mapped.get(entry.callId);
+      if (calls.find((call) => call.callId === entry.callId)?.state !== "completed" || !targets) {
+        this.resultTargets.reject(
+          reference,
+          "This operation did not produce confirmed filesystem targets.",
+        );
+        continue;
+      }
+      try {
+        await this.resultTargets.verify({ targets, complete: true }, signal);
+        this.resultTargets.confirm(reference, targets, script.context.cwd);
+      } catch (error) {
+        this.resultTargets.reject(
+          reference,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
   }
 
   private async commit(script: ScriptBatch): Promise<boolean> {
@@ -543,9 +699,13 @@ class NativeTextEditBatchCoordinator {
         ...operations.flatMap((operation) => {
           const entry = requiredValue(batch.entries.find((entry) => entry.callId === operation.id));
           const registration = requiredValue(registrations.get(entry.op));
+          const mutation = batch.plan.mutations.find(
+            (item) => item.callId === operation.id,
+          )?.mutation;
           return [...mutationSources(registration, entry).values()].map((source) => ({
             source,
-            effect: operation.effect,
+            effect:
+              mutation?.edits.has(source) === false ? ("not-applied" as const) : operation.effect,
           }));
         }),
         ...observedSources.map((source) => ({ source, effect: "applied" as const })),
@@ -587,34 +747,40 @@ class NativeTextEditBatchCoordinator {
     };
     try {
       signal.throwIfAborted();
-      const captured = await captureScriptMutation(this.core, () =>
-        executeRegisteredTextBatch(
-          this.core,
-          registrations,
-          {
-            edits: batch.entries,
-            expectedContent: batch.snapshots,
-            expectedExistence: batch.existence,
-          },
-          signal,
-          undefined,
-          script.context,
-          journal.reporter(),
-          () => {},
-          batch.plan,
+      const captured = await script.postEdits.run(() =>
+        captureScriptMutation(this.core, () =>
+          executeRegisteredTextBatch(
+            this.core,
+            registrations,
+            {
+              edits: batch.entries,
+              expectedContent: batch.snapshots,
+              expectedExistence: batch.existence,
+            },
+            signal,
+            undefined,
+            script.context,
+            journal.reporter(),
+            () => {},
+            batch.plan,
+          ),
         ),
       );
       observedSources = captured.completions.map((completion) => completion.resourceSource);
       if (captured.kind === "failed") throw captured.error;
       script.results.push(...(captured.value.details.results ?? []));
-      this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, {
+      await this.settleTargets(script, batch, journal, captured.completions, signal);
+      const presentation = {
         parentToolCallId: script.id,
         calls: batch.entries.map((entry) => entry.callId),
         result: captured.value,
-      } satisfies NativeEditBatchEvent);
+      } satisfies NativeEditBatchEvent;
+      script.presentations.push(presentation);
+      this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, presentation);
       return record(mutationOutcome(captured.value, "flush", captured.completions));
     } catch (error) {
       journal.markRunningUnknown(error);
+      await this.settleTargets(script, batch, journal, [], signal);
       return record({ status: "error", errors: [resultError(error)] });
     }
   }
@@ -622,6 +788,20 @@ class NativeTextEditBatchCoordinator {
 
 const coordinators = new WeakMap<TextEditorCore, NativeTextEditBatchCoordinator>();
 
+/** Run immediate mutation paths under the same deferred post-edit boundary as native batches. */
+export function runNativePostEditScope<T>(core: TextEditorCore, id: string, work: () => T): T {
+  const coordinator = coordinators.get(core);
+  return coordinator ? coordinator.runPostEdits(id, work) : work();
+}
+
+/** Retain immediate child results so final formatting is visible on the parent script. */
+export function recordNativeTextMutation(
+  core: TextEditorCore,
+  id: string,
+  result: AgentToolResult<FileMutationBatchResult>,
+): void {
+  coordinators.get(core)?.recordMutation(id, result);
+}
 /** Attach accumulating editor batches to native Codemode's public parent/child lifecycle. */
 export function registerNativeTextEditBatching(pi: ExtensionAPI, core: TextEditorCore): void {
   coordinators.set(core, new NativeTextEditBatchCoordinator(core, pi));

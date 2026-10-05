@@ -1,17 +1,22 @@
 import { Type } from "typebox";
+import { resultInputSchema } from "pi-agent-resource";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 
 export const writeSchema = Type.Object(
   {
-    path: Type.String({ description: "Path to the file to create or overwrite" }),
+    path: {
+      ...resultInputSchema,
+      description:
+        "Path to create or overwrite, or one whole-file source result. Partial scopes and multiple files are rejected.",
+    },
     content: Type.String({ description: "File content" }),
   },
   { additionalProperties: false },
 );
 
 interface WriteParameters {
-  readonly path: string;
+  readonly path: unknown;
   readonly content: string;
 }
 
@@ -27,7 +32,7 @@ export const writeMutationTool: TextMutationToolRegistration<typeof writeSchema>
   mutate: (context, parameters: WriteParameters) => ({
     edits: new Map([
       [
-        parameters.path,
+        context.sourceFor("path"),
         {
           changes: [context.sourceDocument.replaceAll(parameters.content)],
           action: "overwritten",

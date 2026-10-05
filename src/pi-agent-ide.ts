@@ -103,12 +103,6 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     default: false,
   });
   flags.register({
-    id: "pi-agent-ide-no-apply",
-    name: "Disable Apply",
-    description: "Hide the Apply tool. Standalone read, search and editing tools remain available.",
-    default: false,
-  });
-  flags.register({
     id: "pi-agent-ide-no-diagnostic-buffer",
     name: "Immediate diagnostic notices",
     description:

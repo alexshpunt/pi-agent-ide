@@ -25,9 +25,10 @@ import {
 import { setTextAnchorRecoveryReader } from "#src/core/text-anchor-recovery.js";
 import { setTextEditBatchRenderArgumentSink } from "#src/core/text-edit-batch-registrar.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { connectResultTargets } from "pi-agent-resource";
+import { createResultTargetAnchors } from "#src/core/result-target-anchors.js";
 import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js";
 import { createTextTool } from "#src/core/text-mutation.js";
-import { registerApply } from "#src/core/apply/tool.js";
 import { registerDiff } from "#src/core/diff-tool.js";
 import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
@@ -48,6 +49,7 @@ export default async function registerTextEditorCore(
     interceptionRendering.clear();
   });
   const mutationTools = new Set<string>();
+  const resultTargets = connectResultTargets(pi);
   const core = createTextEditorCore((registration, editor) => {
     mutationTools.add(registration.name);
     pi.registerTool(
@@ -56,10 +58,19 @@ export default async function registerTextEditorCore(
         registration,
         interceptionRendering,
         () => getLastResolvedResource(pi)?.source,
+        resultTargets,
       ),
     );
   });
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "result-targets",
+    setup(api) {
+      api.addAnchorResolver(createResultTargetAnchors(resultTargets));
+    },
+  });
   pi.on("tool_result", (event) => {
     rememberLastResolvedResource(pi, event.details);
 
@@ -115,7 +126,6 @@ export default async function registerTextEditorCore(
   });
 
   await core.waitForPendingPlugins();
-  if (pi.getFlag("pi-agent-ide-no-apply") !== true) await registerApply(pi, core);
   registerDiff(pi, core, () => readApi);
   return core;
 }

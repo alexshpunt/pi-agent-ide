@@ -26,7 +26,7 @@ Pass a comma-separated active-tool allowlist when reviewing a focused configurat
 
 ```bash
 pnpm dev:export-agent-interface -- \
-  --tools read,search,apply \
+  --tools read,search,select,replace \
   --output .tmp/prompt-snapshots/pi-agent-ide-focused.md
 ```
 

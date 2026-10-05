@@ -1,0 +1,152 @@
+{
+  "scope": "file",
+  "request": {
+    "query": "generateHintStrings",
+    "path": "tests/integration/extensions/pi-agent-search/fixtures/fuzzy-vimium/link_hints.js"
+  },
+  "node": "v24.20.0",
+  "baselineRssBytes": 147570688,
+  "baselineHeapBytes": 52466544,
+  "peakNodeRssKiB": 156064,
+  "runs": [
+    {
+      "repetition": 0,
+      "invocation": "first in this process",
+      "resolveMs": 48.63072999999986,
+      "registrationMs": 4.892467000000124,
+      "totalMs": 53.52319699999998,
+      "ordinaryMs": 6.71617399999991,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "hintStrings",
+          "matchCount": 5,
+          "complete": true
+        },
+        {
+          "identifier": "generateHintString",
+          "matchCount": 2,
+          "complete": true
+        }
+      ],
+      "rssBytes": 152731648,
+      "heapBytes": 43699128
+    },
+    {
+      "repetition": 1,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 30.852624000000105,
+      "registrationMs": 2.1712270000000444,
+      "totalMs": 33.02385100000015,
+      "ordinaryMs": 7.320789000000104,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "hintStrings",
+          "matchCount": 5,
+          "complete": true
+        },
+        {
+          "identifier": "generateHintString",
+          "matchCount": 2,
+          "complete": true
+        }
+      ],
+      "rssBytes": 152862720,
+      "heapBytes": 49453640
+    },
+    {
+      "repetition": 2,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 30.69540700000016,
+      "registrationMs": 1.7809270000000197,
+      "totalMs": 32.47633400000018,
+      "ordinaryMs": 7.036112000000003,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "hintStrings",
+          "matchCount": 5,
+          "complete": true
+        },
+        {
+          "identifier": "generateHintString",
+          "matchCount": 2,
+          "complete": true
+        }
+      ],
+      "rssBytes": 152862720,
+      "heapBytes": 53448504
+    },
+    {
+      "repetition": 3,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 25.92471099999989,
+      "registrationMs": 1.7080989999999474,
+      "totalMs": 27.632809999999836,
+      "ordinaryMs": 6.778381999999965,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "hintStrings",
+          "matchCount": 5,
+          "complete": true
+        },
+        {
+          "identifier": "generateHintString",
+          "matchCount": 2,
+          "complete": true
+        }
+      ],
+      "rssBytes": 152862720,
+      "heapBytes": 57350904
+    },
+    {
+      "repetition": 4,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 30.013942999999927,
+      "registrationMs": 2.700010999999904,
+      "totalMs": 32.71395399999983,
+      "ordinaryMs": 7.596590999999989,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "hintStrings",
+          "matchCount": 5,
+          "complete": true
+        },
+        {
+          "identifier": "generateHintString",
+          "matchCount": 2,
+          "complete": true
+        }
+      ],
+      "rssBytes": 155746304,
+      "heapBytes": 61306432
+    },
+    {
+      "repetition": 5,
+      "invocation": "repeat; fresh name scan",
+      "resolveMs": 30.76448000000005,
+      "registrationMs": 2.2739610000000994,
+      "totalMs": 33.03844100000015,
+      "ordinaryMs": 7.54132699999991,
+      "status": "ready",
+      "candidates": [
+        {
+          "identifier": "hintStrings",
+          "matchCount": 5,
+          "complete": true
+        },
+        {
+          "identifier": "generateHintString",
+          "matchCount": 2,
+          "complete": true
+        }
+      ],
+      "rssBytes": 159809536,
+      "heapBytes": 65303264
+    }
+  ],
+  "note": "First invocation is not a flushed OS cache. Resolve includes ordinary search, name collection and exact verification. Registration includes bounded snapshots. RSS includes imported runtime modules; it is not the vocabulary size and does not include child-process RSS."
+}

@@ -1,5 +1,6 @@
 import { diffChars } from "diff";
 import { Type } from "typebox";
+import { resultInputSchema } from "pi-agent-resource";
 
 import { CHANGE_ANCHOR_KIND } from "#src/change-anchor.js";
 import { ChangeService } from "#src/changes/change-service.js";
@@ -11,11 +12,11 @@ import type { TextMutationToolRegistration } from "pi-agent-text-editor/api/muta
 
 export const undoSchema = Type.Object(
   {
-    file: Type.Optional(
-      Type.String({
-        description: "File to restore; may be omitted to inherit the previous batched source",
-      }),
-    ),
+    file: Type.Optional({
+      ...resultInputSchema,
+      description:
+        "File to restore or one whole-file source result; partial and multi-file scopes are rejected. May be omitted to inherit the previous source.",
+    }),
     change: Type.Optional(
       Type.String({
         description:
@@ -23,55 +24,26 @@ export const undoSchema = Type.Object(
         pattern: "^(?:CHANGE#[0-9A-F]{4,64}|last)$",
       }),
     ),
-    transaction: Type.Optional(
-      Type.String({
-        description: "APPLY# receipt returned by a successful Apply transaction",
-        pattern: "^APPLY#[0-9A-F]{12}$",
-      }),
-    ),
   },
   { additionalProperties: false },
 );
 
 interface UndoParameters {
-  readonly file?: string;
+  readonly file?: unknown;
   readonly change?: string;
-  readonly transaction?: string;
 }
 
 export function createUndoMutationTool(
   executor: GitCommandExecutor,
   transactions: LastTextTransactionStore,
   queue: IndexMutationQueue,
-  restoreApplyUndo: (
-    transaction: string,
-    signal?: AbortSignal,
-  ) => Promise<{ readonly transaction: string; readonly restored: readonly string[] }>,
 ): TextMutationToolRegistration<typeof undoSchema> {
   return {
     name: "undo",
     description:
-      "Use undo to revert an APPLY# transaction receipt, a selected uncommitted Git change, or the latest text-editor transaction for one file. Apply receipts restore every touched path atomically; CHANGE# restores that change to HEAD in both worktree and index; last restores one file's latest text edit.",
+      "Use undo to revert a selected uncommitted Git change or the latest text-editor transaction for one file. CHANGE# restores that change to HEAD in both worktree and index; last restores one file's latest text edit.",
 
-    promptSnippet: "Restore an Apply transaction, Git change, or latest text edit",
-    direct: {
-      matches: (input) =>
-        input !== null &&
-        typeof input === "object" &&
-        "transaction" in input &&
-        typeof input.transaction === "string",
-      async execute(context, input) {
-        if ((input as UndoParameters).change !== undefined)
-          throw new Error("transaction cannot be combined with change");
-        const transaction = String((input as UndoParameters).transaction);
-        const restored = await restoreApplyUndo(transaction, context.signal);
-        return {
-          source: transaction,
-          summary: `Restored ${String(restored.restored.length)} paths from ${transaction}.`,
-          data: { kind: "apply-undo", ok: true, transaction, restored: restored.restored },
-        };
-      },
-    },
+    promptSnippet: "Restore a Git change or latest text edit",
     parameters: undoSchema,
     intent: "restore",
     source: { field: "file", inherited: true },
@@ -84,8 +56,7 @@ export function createUndoMutationTool(
       },
     ],
     async mutate(context, parameters: UndoParameters) {
-      if (parameters.change === undefined)
-        throw new Error("change is required when transaction is omitted");
+      if (parameters.change === undefined) throw new Error("change is required");
       const source = context.sourceFor("file");
       let restoredText: string;
       let afterWrite: (() => Promise<void>) | undefined;

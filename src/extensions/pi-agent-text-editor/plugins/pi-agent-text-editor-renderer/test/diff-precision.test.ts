@@ -113,6 +113,15 @@ describe("precise inline changes", () => {
     });
   });
 
+  test("keeps disjoint replacement lines without spending the detailed comparison budget", () => {
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(101);
+    const before = Array.from({ length: 200 }, () => "aaaa").join("\n");
+    const after = Array.from({ length: 200 }, () => "zzzz").join("\n");
+    const model = createDiffModel(before, after);
+    expect(model.omittedChanges?.unavailable).not.toBe(true);
+    expect(model).toMatchObject({ added: 200, modified: 0, removed: 200 });
+    expect(model.rows).toHaveLength(400);
+  });
   test("keeps the reported test-file write visible", () => {
     const model = createDiffModel(writeAlignment.before, writeAlignment.after);
     expect(model.omittedChanges?.unavailable).not.toBe(true);
@@ -127,8 +136,14 @@ describe("precise inline changes", () => {
 
   test("reports unavailable when the line comparison time budget expires", () => {
     vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(101);
-    const before = Array.from({ length: 11_000 }, (_, index) => `old${index}();`).join("\n");
-    const after = Array.from({ length: 11_000 }, (_, index) => `new${index}();`).join("\n");
+    const before = [
+      "shared();",
+      ...Array.from({ length: 11_000 }, (_, index) => `old${index}();`),
+    ].join("\n");
+    const after = [
+      "shared();",
+      ...Array.from({ length: 11_000 }, (_, index) => `new${index}();`),
+    ].join("\n");
     const model = createDiffModel(before, after);
     expect(model.omittedChanges?.unavailable).toBe(true);
   });

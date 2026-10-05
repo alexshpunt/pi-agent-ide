@@ -218,9 +218,9 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
       apiVersion: SEARCH_API_VERSION,
       id: "symbols",
       setup(api): void {
-        api.addResolver({ resolver: createLspSearchResolver(managerFor) });
+        api.addResolver({ resolver: createLspSearchResolver(managerFor, api.registerSelection) });
         api.describe(
-          "Use `symbols:<query>` to locate named workspace declarations and references through configured language servers when the file is unknown.",
+          'Use `symbols:<query>` to locate named workspace declarations and references through configured language servers when the file is unknown. Results contain exact source targets, roles, and originating symbols. Default search stays within path. Use navigation: "references" explicitly to follow symbols represented inside path to references outside it, within the workspace.',
         );
       },
     }),

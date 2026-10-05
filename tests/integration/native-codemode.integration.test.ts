@@ -124,6 +124,7 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
       ).toEqual([initial, initial, initial]);
       expect(recorded.filter((event) => event.type === "guard")).toHaveLength(1);
       expect(recorded.filter((event) => event.type === "edit")).toHaveLength(1);
+      expect(recorded.filter((event) => event.type === "post-edit")).toHaveLength(1);
       const details = batchDetails(run);
       expect(details.editorBatches).toEqual([
         {
@@ -405,7 +406,8 @@ test("a multi-file batch formats each final file once", async () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as { content: string });
-    expect(formats.map((event) => event.content)).toEqual(["first\nsecond\n", "third\n"]);
+    // Independent files may finish in either order; each final content must appear once.
+    expect(formats.map((event) => event.content).sort()).toEqual(["first\nsecond\n", "third\n"]);
     expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(2);
     expect((await events(cwd)).filter((event) => event.type === "guard")).toHaveLength(1);
   });

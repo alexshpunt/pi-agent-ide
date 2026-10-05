@@ -49,7 +49,7 @@ export function isFileOperationResult(value: unknown): value is FileOperationRes
   );
 }
 
-/** Compact operation summary shared by standalone and Apply output. */
+/** Compact whole-file operation summary. */
 export function formatFileOperation(value: FileOperationResult): string {
   return [
     `${value.operation}: ${value.effect}`,

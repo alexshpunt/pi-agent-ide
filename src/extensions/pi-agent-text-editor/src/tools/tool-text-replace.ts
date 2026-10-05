@@ -1,9 +1,7 @@
 import { Type } from "typebox";
+import { resultInputSchema } from "pi-agent-resource";
 
-import {
-  sourcePathProperty,
-  sourceRangeProperties,
-} from "#src/tools/text-tool-schema-properties.js";
+import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.js";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import {
@@ -17,9 +15,11 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 
 export const replaceSchema = Type.Object(
   {
-    path: sourcePathProperty(
-      "Source resource reference or file path. A returned SEARCH# reference can select replacement ranges.",
-    ),
+    path: Type.Optional({
+      ...resultInputSchema,
+      description:
+        "Source path, SEARCH# selector, or source-aware Read/Search/Select/mutation result with a live target, RESULT# reference, or array of returned targets. Omit start/end when the result selects the intended text. Changed or expired result targets are rejected without writing.",
+    }),
     ...sourceRangeProperties(),
     text: Type.String({
       description:
@@ -29,7 +29,7 @@ export const replaceSchema = Type.Object(
   { additionalProperties: false },
 );
 interface ReplaceParameters {
-  readonly path?: string;
+  readonly path?: unknown;
   readonly start?: string;
   readonly end?: string;
   readonly text: string;

@@ -42,7 +42,7 @@ export const moduleLabels = {
   "search.text": ["Text search", "Find text and files and register reusable search selections."],
   "editor.core": [
     "Editing tools",
-    "Apply guarded text and whole-file changes, including Apply scripts.",
+    "Make guarded text and whole-file changes, directly or through native Codemode.",
   ],
   "editor.renderer": ["Edit previews", "Display changes in the shared colored diff panels."],
   "editor.anchor.constant": [

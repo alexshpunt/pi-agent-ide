@@ -8,11 +8,7 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import {
-  readParameters,
-  type ReadScriptData,
-  type ReadToolResult,
-} from "pi-agent-read/api/tools/read";
+import { readParameters, type ReadScriptData } from "pi-agent-read/api/tools/read";
 import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import { createUnifiedDiff, type DiffStats } from "#src/core/mutation-result/diff.js";
@@ -49,7 +45,7 @@ interface ComparisonText {
   readonly sources: readonly string[];
   readonly content: string;
 }
-/** Full comparison data for Apply; this is not an edit receipt. */
+/** Full comparison data; this is not an edit receipt. */
 export interface DiffOutcome {
   readonly kind: "diff";
   readonly ok: true;
@@ -125,17 +121,6 @@ export function comparisonText(data: ReadScriptData, requested: string): Compari
   };
 }
 
-/** Recognize comparison results without confusing them with mutations. */
-export function isDiffOutcome(value: unknown): value is DiffOutcome {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "kind" in value &&
-    value.kind === "diff" &&
-    "ok" in value &&
-    value.ok === true
-  );
-}
 /** Reuse the editor panel's existing before/after presentation contract, without executing edits. */
 export function diffPresentation(value: DiffOutcome, cwd = process.cwd()) {
   const displaySource = (source: string) =>
@@ -159,12 +144,8 @@ export function diffText(value: DiffOutcome): string {
     ? `No differences: ${value.before.source} → ${value.after.source}`
     : value.diff;
 }
-/** Presentation remains separate from complete comparison data. */
-export function diffReadResult(value: DiffOutcome): ReadToolResult {
-  return { content: [{ type: "text", text: diffText(value) }], details: {} };
-}
 
-/** Standalone diff uses the same read service and configured editor renderer as Apply. */
+/** Compare sources through the shared read service and configured editor renderer. */
 export function registerDiff(
   pi: ExtensionAPI,
   editor: TextEditorCore,
@@ -186,7 +167,7 @@ export function registerDiff(
     outputSchema: diffOutputSchema,
     promptSnippet: "Compare two text-readable sources",
     description:
-      "Use diff to compare two sources. before and after accept a source string or a read request {path, offset?, limit?, views?}. Use any source that read can resolve as text. Omit limit to compare complete resolved text; read presentation limits do not clip comparison inputs. Multiple resolved resources are joined with one newline separator in resolver order. Diff line numbers are relative to each selected text, not the original file when a window is selected. Native non-text content is rejected. Output uses the existing text diff and a shared output budget; oversized output has a full temporary reference. The same diff function is available inside Apply.",
+      "Use diff to compare two sources. before and after accept a source string or a read request {path, offset?, limit?, views?}. Use any source that read can resolve as text. Omit limit to compare complete resolved text; read presentation limits do not clip comparison inputs. Multiple resolved resources are joined with one newline separator in resolver order. Diff line numbers are relative to each selected text, not the original file when a window is selected. Native non-text content is rejected. Output uses the existing text diff and a shared output budget; oversized output has a full temporary reference.",
     renderCall(_args, theme) {
       return new Text(theme.fg("toolTitle", theme.bold("Diff")), 0, 0);
     },

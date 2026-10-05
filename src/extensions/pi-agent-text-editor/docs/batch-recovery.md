@@ -8,7 +8,7 @@ Text mutation recovery belongs to `pi-agent-text-editor` and has three internal 
 
 ## Native Codemode
 
-Sequential local text edits in one native Codemode script accumulate against original file snapshots. Each child returns acceptance, not a written-file result. Planning checks anchors and overlapping changes without writing. A boundary commits the accepted plan once through the normal editor queue, guards, Resource writes, and post-edit processing.
+Sequential local text edits in one native Codemode script accumulate against original file snapshots. Each child returns acceptance, not a written-file result. Planning checks anchors and overlapping changes without writing. A boundary commits the accepted plan once through the normal editor queue, guards and Resource writes. Registered resource post-edit handlers stay deferred until the end of that script, once per surviving resource.
 
 Another tool, a whole-file operation, or a resource-owned selector ends the pending batch before its own execution. Later local edits start a new batch. Ordinary script exceptions still commit accepted independent edits. Agent aborts and script deadlines discard pending writes; already committed batches remain committed.
 
@@ -16,7 +16,9 @@ Commit checks both original content and file existence. A changed source fails i
 
 Await `tools.flush({})` to commit pending local edits and inspect their final effects inside the script. Its operations carry accepted child call IDs. Successful acceptance returns `pending`; successful flush returns observed file and operation effects. A failed flush preserves applied effects and does not replay edits. The parent keeps the same small receipts under `editorBatchResults`.
 
-This is not a transaction over arbitrary JavaScript. Native Codemode stores and other completed tool effects are not rolled back. Apply and standalone editor batching keep their existing execution paths.
+Local replace/insert acceptances carry reserved RESULT# handles. A successful commit maps each call's actual inserted ranges through all batch peers, checks the written snapshot and confirms its handle. Search or a dependent replace can consume the result directly; the dependency boundary commits first. Original child receipts remain pending. Failed, cancelled, unsupported or uncertain writes do not grant targets. Immediate resource-owned mutations share the same post-edit scope and final parent presentation. Final formatting that changes source bytes makes earlier targets stale; targets are never rebound to formatted text.
+
+This is not a transaction over arbitrary JavaScript. Native Codemode stores and other completed tool effects are not rolled back. Standalone editor batching keeps its existing execution path.
 
 ## Execution states
 

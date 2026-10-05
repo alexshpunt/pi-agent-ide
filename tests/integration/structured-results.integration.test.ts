@@ -13,7 +13,6 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { Value } from "typebox/value";
-import { applyOutputSchema } from "#src/extensions/pi-agent-text-editor/src/core/apply/structured-result.js";
 import { diffOutputSchema } from "#src/extensions/pi-agent-text-editor/src/core/diff-tool.js";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
@@ -152,36 +151,18 @@ text(saved);
   });
 });
 
-test("Apply preserves checkpoint receipts on later failure and native data stays out of session history", async () => {
+test("diff exposes native data without adding it to session history", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\n");
     await writeFile(path.join(cwd, "other.txt"), "beta\n");
-    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
-    await writeFile(
-      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
-      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
-    );
     const run = await new PiIntegrationTest({
-      testName: "structured-apply-checkpoint",
+      testName: "structured-diff",
       artifactsDir: testArtifactsDir(import.meta.filename),
       rawMode: false,
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply", "diff"],
+      tools: ["diff"],
       conversation: [
-        assistantMessage(
-          [
-            toolCall({
-              id: "apply",
-              name: "apply",
-              arguments: {
-                source:
-                  'const file = open("note.txt"); file.replace(file.find("alpha"), "ALPHA"); flush(); throw new Error("after checkpoint");',
-              },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
         assistantMessage(
           [
             toolCall({
@@ -194,26 +175,12 @@ test("Apply preserves checkpoint receipts on later failure and native data stays
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Verify structured Apply failure and diff");
-    const applied = getToolExecutionResult(run, "apply") as {
-      structuredContent: {
-        status: string;
-        data: { transactions: string[]; files: string[]; operations: unknown[] };
-      };
-    };
-    expect(Value.Check(applyOutputSchema, applied.structuredContent), JSON.stringify(applied)).toBe(
-      true,
-    );
-    expect(applied.structuredContent.status).toBe("partial");
-    expect(applied.structuredContent.data.transactions).toHaveLength(1);
-    expect(applied.structuredContent.data.files).toContainEqual(
-      expect.stringMatching(/[/\\]note\.txt$/u),
-    );
-    expect(getToolExecution(run, "apply").isError).toBe(true);
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\n");
+    }).run("Compare two files without changing either file");
     const diff = getToolExecutionResult(run, "diff") as { structuredContent: unknown };
     expect(Value.Check(diffOutputSchema, diff.structuredContent), JSON.stringify(diff)).toBe(true);
     expect(getToolExecution(run, "diff").isError).toBe(false);
-    expect(getToolResultMessage(run, "apply")).not.toHaveProperty("structuredContent");
+    expect(getToolResultMessage(run, "diff")).not.toHaveProperty("structuredContent");
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\n");
+    expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("beta\n");
   });
 });

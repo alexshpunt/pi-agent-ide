@@ -6,6 +6,8 @@ import type { Static, TSchema } from "typebox";
 export interface TextMutationEdit {
   readonly changes: readonly TextChange[];
   readonly action: "edited" | "overwritten";
+  /** Indices of changes that produce live output targets; omit to select all, or use [] for removals. */
+  readonly resultChanges?: readonly number[];
 }
 
 export interface TextMutation {
@@ -64,7 +66,7 @@ export interface TextSemanticMutationResult {
   readonly source: string;
   /** Compact agent-facing outcome. */
   readonly summary: string;
-  /** Structured receipt shared by standalone tools and Apply. */
+  /** Structured receipt for standalone tools and native Codemode. */
   readonly data: Readonly<Record<string, unknown>>;
 }
 

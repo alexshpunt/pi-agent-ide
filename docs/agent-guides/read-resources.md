@@ -2,7 +2,7 @@
 
 ## Selecting a source
 
-`path` selects a resource. Supported providers include regular files and directories, `file:` URLs, HTTP(S) URLs, PDFs, images, returned `temp:` references, `SEARCH#` references, and enabled protocol resources.
+`path` selects a resource. Supported providers include regular files and directories, `file:` URLs, HTTP(S) URLs, PDFs, images, returned `temp:` references, `SEARCH#` and `RESULT#` references, and enabled protocol resources.
 
 Common protocol resources include:
 
@@ -32,6 +32,14 @@ Temporary resources remain available only in their owning runtime.
 Check `status` before reading `data`. Use text `data.lines` and their `anchors` without parsing display rows. Use source-level `data.references` for actions such as Git changes. Follow `data.continuation` as a complete next Read request; its offset is absolute on its returned source. Check `data.truncated` and `data.fullResult` when present.
 
 Use `data.bytes` for `raw:` reads. Forward a native image from `data.blocks` with `image(block)`. Keep multi-source `data.resources` separate instead of joining unrelated ranges.
+
+## Reusing source windows
+
+Exact filesystem text reads expose `data.target`. Pass the successful result, its data, or that `RESULT#` reference as `search.path` or `replace.path` to reuse the requested window, not just its shortened preview. Read-only derived views, bytes, images, and directory listings do not gain text-edit authority.
+
+Pass a stored `RESULT#` reference as `read.path` to inspect an exact source selection. Read may show surrounding whole-line context, but its returned target intersects that window with the original selection and keeps input completeness. Context does not grant wider edit authority.
+
+Check that a target was returned before composing source operations. Obtain a fresh Read/Search after source bytes change, the session changes, or Pi reloads. New result targets never silently refresh.
 
 ## Views
 

@@ -43,7 +43,7 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools and Apply. A denial or thrown error leaves every Resource unchanged.
+The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools, including calls through native Codemode. A denial or thrown error leaves every Resource unchanged.
 
 ## Check saved edits
 

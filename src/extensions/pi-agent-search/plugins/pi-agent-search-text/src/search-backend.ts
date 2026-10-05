@@ -43,6 +43,7 @@ export async function searchText(
   request: TextSearchRequest,
   cwd: string,
   signal?: AbortSignal,
+  budget?: SearchCaptureBudget,
 ): Promise<TextSearchBackendResult> {
   if (request.query.length === 0) {
     throw new Error("Search query must not be empty.");
@@ -53,42 +54,106 @@ export async function searchText(
   }
 
   if (request.condition !== undefined) return searchBoolean(request, cwd, signal);
-  return searchPattern(request, cwd, signal);
+  return searchPattern(request, cwd, signal, undefined, budget);
 }
 
+/** Reuse ordinary text-search scope, ignores, and glob parsing for the extra scan. */
+export async function ripgrepScope(request: TextSearchRequest, cwd: string) {
+  const target = path.resolve(cwd, stripFilePrefix(request.path ?? "."));
+  const directory = (await stat(target)).isDirectory();
+  return {
+    cwd: directory ? target : path.dirname(target),
+    target: directory ? "." : path.basename(target),
+    arguments: [
+      "--no-config",
+      "--no-ignore-parent",
+      "--color=never",
+      ...splitGlobList(request.include).flatMap((glob) => ["--glob", glob]),
+      ...splitGlobList(request.exclude).flatMap((glob) => ["--glob", `!${glob}`]),
+    ],
+  };
+}
+/** Internal capture bounds for candidate verification; ordinary Search keeps its full capture. */
+export interface SearchCaptureBudget {
+  readonly matches: number;
+  readonly bytes: number;
+}
 type MatchingLine = (source: string, lineNumber: number) => void;
+
+/** Search exactly the supplied source text with the same ripgrep engine as file searches. */
+export async function searchTextContent(
+  request: TextSearchRequest,
+  content: string,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<TextSearchBackendResult> {
+  if (request.condition !== undefined)
+    throw new Error("Boolean scoped search is not available yet.");
+  if (/\r|\n/u.test(request.query)) throw new Error("Search supports one-line patterns only.");
+  const result = await runRipgrep(
+    [
+      "--json",
+      "--no-config",
+      "--color=never",
+      "--with-filename",
+      "--line-number",
+      ...(request.regex === true ? ["--engine", "auto"] : ["--fixed-strings"]),
+      request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
+      ...(request.wholeWord === true ? ["--word-regexp"] : []),
+      "--",
+      request.query,
+      "-",
+    ],
+    cwd,
+    signal,
+    undefined,
+    undefined,
+    // An empty source still has one position. Ripgrep excludes the record delimiter from matches.
+    content.length === 0 ? "\n" : content,
+  );
+  return content.length === 0
+    ? {
+        ...result,
+        matches: result.matches.filter(
+          (match) => match.lineNumber === 1 && match.startColumn === 0 && match.endColumn === 0,
+        ),
+      }
+    : result;
+}
 
 async function searchPattern(
   request: TextSearchRequest,
   cwd: string,
   signal?: AbortSignal,
   onLine?: MatchingLine,
+  budget?: SearchCaptureBudget,
 ): Promise<TextSearchBackendResult> {
-  const target = path.resolve(cwd, stripFilePrefix(request.path ?? "."));
-  const directory = (await stat(target)).isDirectory();
-  const searchCwd = directory ? target : path.dirname(target);
+  const scope = await ripgrepScope(request, cwd);
+  const searchCwd = scope.cwd;
   const commonArguments = [
     "--json",
-    "--no-config",
-    "--no-ignore-parent",
-    "--color=never",
     "--with-filename",
     "--line-number",
     request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
     ...(request.wholeWord === true ? ["--word-regexp"] : []),
-    ...splitGlobList(request.include).flatMap((glob) => ["--glob", glob]),
-    ...splitGlobList(request.exclude).flatMap((glob) => ["--glob", `!${glob}`]),
+    ...scope.arguments,
     "--",
     request.query,
-    directory ? "." : path.basename(target),
+    scope.target,
   ];
 
   if (request.regex !== true) {
-    return runRipgrep(["--fixed-strings", ...commonArguments], searchCwd, signal, onLine);
+    return runRipgrep(["--fixed-strings", ...commonArguments], searchCwd, signal, onLine, budget);
   }
 
   try {
-    return await runRipgrep(["--engine", "auto", ...commonArguments], searchCwd, signal, onLine);
+    return await runRipgrep(
+      ["--engine", "auto", ...commonArguments],
+      searchCwd,
+      signal,
+      onLine,
+      budget,
+    );
   } catch (error) {
     if (!isPcre2MatchLimitError(error)) {
       if (
@@ -108,6 +173,7 @@ async function searchPattern(
         searchCwd,
         signal,
         onLine,
+        budget,
       );
     } catch (fallbackError) {
       if (signal?.aborted) throw fallbackError;
@@ -171,13 +237,29 @@ function runRipgrep(
   cwd: string,
   signal?: AbortSignal,
   onLine?: MatchingLine,
+  budget?: SearchCaptureBudget,
+  input?: string,
 ): Promise<TextSearchBackendResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(resolveRipgrepExecutable(), arguments_, {
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       cwd,
     });
+    let bytes = 0;
+    let limited = false;
+    if (budget !== undefined)
+      child.stdout.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > budget.bytes) {
+          limited = true;
+          child.kill();
+        }
+      });
     const output = createInterface({ input: child.stdout });
+    child.stdin.on("error", () => {
+      /* The process close/error event reports failed searches. */
+    });
+    child.stdin.end(input);
     const matches: TextSearchMatch[] = [];
     let stderr = "";
     let parseError: unknown;
@@ -195,7 +277,7 @@ function runRipgrep(
       stderr += chunk;
     });
     output.on("line", (line) => {
-      if (parseError !== undefined || line.length === 0) {
+      if (limited || parseError !== undefined || line.length === 0) {
         return;
       }
 
@@ -214,6 +296,11 @@ function runRipgrep(
           return;
         }
         for (const match of matchesFromEvent(event as RipgrepMatchEvent, cwd)) {
+          if (budget !== undefined && matches.length === budget.matches) {
+            limited = true;
+            child.kill();
+            break;
+          }
           matches.push(match);
         }
       } catch (error) {
@@ -240,13 +327,13 @@ function runRipgrep(
         return;
       }
 
-      if (code !== 0 && code !== 1) {
+      if (!limited && code !== 0 && code !== 1) {
         reject(new Error(stderr.trim() || `ripgrep exited with code ${String(code)}.`));
         return;
       }
 
       matches.sort(compareMatches);
-      resolve({ matches, complete: true });
+      resolve({ matches, complete: !limited });
     });
 
     signal?.addEventListener("abort", abort, { once: true });
@@ -280,7 +367,7 @@ function matchesFromEvent(event: RipgrepMatchEvent, cwd: string): TextSearchMatc
   const matches: TextSearchMatch[] = [];
 
   for (const submatch of event.data.submatches) {
-    if (submatch.start < 0 || submatch.end <= submatch.start || submatch.end > lineBuffer.length) {
+    if (submatch.start < 0 || submatch.end < submatch.start || submatch.end > lineBuffer.length) {
       continue;
     }
 

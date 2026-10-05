@@ -14,28 +14,78 @@ const references = Type.Object(
   { line: Type.Optional(Type.String()), match: Type.Optional(Type.String()) },
   { additionalProperties: false },
 );
+const sourceMatchFields = {
+  source: Type.String(),
+  target: Type.Optional(Type.String()),
+  range: position,
+  matchedText: Type.Optional(Type.String()),
+  textTruncated: Type.Optional(Type.Boolean()),
+  references: Type.Optional(references),
+};
 const match = Type.Object(
   {
-    source: Type.String(),
-    range: position,
-    matchedText: Type.Optional(Type.String()),
-    textTruncated: Type.Optional(Type.Boolean()),
-    references: Type.Optional(references),
+    ...sourceMatchFields,
+    captures: Type.Optional(
+      Type.Record(
+        Type.String(),
+        Type.Array(Type.Object(sourceMatchFields, { additionalProperties: false })),
+      ),
+    ),
+    role: Type.Optional(Type.Union([Type.Literal("definition"), Type.Literal("reference")])),
+    symbol: Type.Optional(
+      Type.Object(
+        {
+          id: Type.String(),
+          name: Type.String(),
+          kind: Type.String(),
+          source: Type.String(),
+          range: position,
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+const selectionProperties = {
+  target: Type.Optional(Type.String()),
+  kind: Type.Literal("matches"),
+  truncated: Type.Optional(Type.Boolean()),
+  fullResult: Type.Optional(Type.String()),
+  complete: Type.Boolean(),
+  matches: Type.Array(match),
+  all: Type.Optional(references),
+  notices: Type.Optional(Type.Array(Type.String())),
+};
+/** Separate possible-name groups with exact captured ranges and optional Read references. */
+export const fuzzyDataSchema = Type.Object(
+  {
+    status: Type.Union([Type.Literal("ready"), Type.Literal("skipped")]),
+    message: Type.Optional(Type.String()),
+    candidates: Type.Array(
+      Type.Object(
+        {
+          identifier: Type.String(),
+          kind: Type.Union([
+            Type.Literal("normalized"),
+            Type.Literal("component"),
+            Type.Literal("typo"),
+          ]),
+          reason: Type.String(),
+          matchCount: Type.Integer(),
+          fileCount: Type.Integer(),
+          selection: Type.Object(selectionProperties, { additionalProperties: false }),
+        },
+        { additionalProperties: false },
+      ),
+    ),
   },
   { additionalProperties: false },
 );
 /** Resolver adapters supply selected domain fields, never renderer details or raw backend objects. */
 export const searchDataSchema = Type.Union([
   Type.Object(
-    {
-      kind: Type.Literal("matches"),
-      truncated: Type.Optional(Type.Boolean()),
-      fullResult: Type.Optional(Type.String()),
-      complete: Type.Boolean(),
-      matches: Type.Array(match),
-      all: Type.Optional(references),
-      notices: Type.Optional(Type.Array(Type.String())),
-    },
+    { ...selectionProperties, fuzzy: Type.Optional(fuzzyDataSchema) },
     { additionalProperties: false },
   ),
   Type.Object(
@@ -61,13 +111,18 @@ export function selectionData(
   }[],
   complete: boolean,
   sessionId?: string,
+  targets?: { readonly target?: string; readonly matchTargets?: readonly string[] },
 ) {
   return {
     kind: "matches" as const,
+    ...(targets?.target === undefined ? {} : { target: targets.target }),
     truncated: matches.length > 100,
     complete,
     matches: matches.slice(0, 100).map((match, index) => ({
       source: match.source,
+      ...(targets?.matchTargets?.[index] === undefined
+        ? {}
+        : { target: targets.matchTargets[index] }),
       range: {
         startLine: match.lineNumber,
         startColumn: match.startColumn,

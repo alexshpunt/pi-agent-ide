@@ -62,7 +62,7 @@ export function registerIndexChangeTools(
   pi.registerTool(createIndexChangeTool("unstage", executor, queue));
 }
 
-/** Build one guarded index change shared by standalone tools and Apply. */
+/** Build one guarded index change tool. */
 export function createIndexChangeTool(
   action: ChangeIndexAction,
   executor: GitCommandExecutor,
@@ -127,7 +127,7 @@ export function createIndexChangeTool(
   });
 }
 
-/** Shares guarded index execution between standalone tools and Apply without a synthetic tool context. */
+/** Execute a guarded index change without a synthetic tool context. */
 export function createIndexChangeExecutor(
   action: ChangeIndexAction,
   executor: GitCommandExecutor,

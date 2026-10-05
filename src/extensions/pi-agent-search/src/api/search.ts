@@ -1,4 +1,5 @@
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ResolvedResultTargets } from "pi-agent-resource";
 
 export interface SearchRequest {
   readonly query: string;
@@ -8,9 +9,13 @@ export interface SearchRequest {
   readonly caseSensitive?: boolean;
   readonly wholeWord?: boolean;
   readonly limit?: number;
+  /** Explicitly follow scoped LSP symbols to references outside the input scope. */
+  readonly navigation?: "references";
 }
 
 export interface SearchContext {
+  /** Exact backend-owned source scopes for native result composition. */
+  readonly scope?: ResolvedResultTargets;
   readonly cwd: string;
   readonly signal?: AbortSignal;
   readonly onUpdate?: (result: AgentToolResult<unknown>) => void;
@@ -22,6 +27,8 @@ export type SearchResolutionAttempt =
   | { readonly kind: "failed"; readonly error: unknown };
 
 export interface SearchResolver {
+  /** Handle exact source ranges instead of widening a structured input to a path. */
+  readonly supportsResultScope?: boolean;
   /** Complete read scope for resolving and formatting. Empty means no resource reads;
    * undefined means unknown scope, compatible with reads but conflicting with every write.
    * Declaring a scope must not read resource contents.
@@ -105,6 +112,9 @@ export interface SearchSelectionRegistration extends SearchSelectionSnapshot {
 }
 export interface RegisteredSearchSelection {
   readonly id: string;
+  /** Shared immutable source targets, independent of legacy SEARCH refresh handles. */
+  readonly target?: string;
+  readonly matchTargets?: readonly string[];
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
 }
@@ -151,4 +161,22 @@ export interface SearchToolDetails {
 }
 
 export { searchSchema } from "#src/api/search-parameters.js";
+export { renderSearchMatches } from "./presentation.js";
+export { containsSearchMatch } from "./search-scope.js";
+export {
+  fuzzyLimits,
+  isFuzzyResultData,
+  FuzzyVocabulary,
+  isFuzzyQuery,
+  rankFuzzyIdentifiers,
+  fuzzyCandidateData,
+  formatFuzzyCandidate,
+} from "#src/api/fuzzy.js";
+export type {
+  FuzzyIdentifier,
+  FuzzyResultData,
+  FuzzyCandidate,
+  FuzzyResult,
+  FuzzyCandidateData,
+} from "#src/api/fuzzy.js";
 export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";

@@ -1,6 +1,7 @@
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
-import type { FileOperation } from "#src/core/file-operations.js";
+import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
 import { executeFileOperation } from "#src/core/file-operations.js";
+import { forgetDeferredPostEdit } from "./post-edit-scope.js";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.js";
 
@@ -13,7 +14,9 @@ export function isWholeFileInvocation(
     operation === undefined ||
     typeof input.path !== "string" ||
     input.path.length === 0 ||
-    input.path.startsWith("SEARCH#")
+    input.path.startsWith("SEARCH#") ||
+    input.path.startsWith("RESULT#") ||
+    (typeof input.target === "string" && input.target.startsWith("RESULT#"))
   )
     return false;
   if (["start", "end", "targetStart", "targetEnd"].some((field) => field in input)) return false;
@@ -26,10 +29,30 @@ export async function executeWholeFileTool(
   operation: FileOperation,
   input: Readonly<Record<string, unknown>>,
   signal: AbortSignal | undefined,
-  context: ExtensionContext,
+  context: Pick<ExtensionContext, "cwd">,
+  verifySource?: () => Promise<void>,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   const outcome = await core.enqueueFileOperation(
-    () => executeFileOperation(operation, input, context.cwd, signal),
+    async (): Promise<FileOperationResult> => {
+      try {
+        await verifySource?.();
+      } catch (error) {
+        signal?.throwIfAborted();
+        return {
+          kind: "file-operation",
+          operation,
+          ok: false,
+          effect: "not-applied",
+          path: typeof input.path === "string" ? input.path : undefined,
+          target: typeof input.target === "string" ? input.target : undefined,
+          error: {
+            code: "RESULT_INPUT_REJECTED",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+      return executeFileOperation(operation, input, context.cwd, signal);
+    },
     signal,
     {
       cwd: context.cwd,
@@ -38,6 +61,8 @@ export async function executeWholeFileTool(
       ),
     },
   );
+  if (outcome.ok && operation !== "copy" && outcome.path !== undefined)
+    forgetDeferredPostEdit(outcome.path);
   let postProcessingError: string | undefined;
   if (outcome.ok && outcome.target !== undefined) {
     try {

@@ -86,3 +86,13 @@ export {
   isResourceResolutionAttempt,
   isResourceResolver,
 } from "./validation.js";
+
+export {
+  connectResultTargets,
+  verifyResultTargets,
+  ResultTargetStore,
+  resultInputSchema,
+  type ResultRange,
+  type ResultSourceTarget,
+  type ResolvedResultTargets,
+} from "./result-targets.js";

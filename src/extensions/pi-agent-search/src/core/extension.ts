@@ -1,13 +1,13 @@
 import {
   type AgentToolResult,
   type ExtensionAPI,
-  keyText,
   type Theme,
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
+  ResultPanel,
   toolCallHeader,
   type ToolCallHeaderDetail,
   type ToolCallHeaderModel,
@@ -37,6 +37,7 @@ import type { SearchToolDetails } from "#src/api/search.js";
 import { searchSchema } from "#src/api/search-parameters.js";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.js";
 import { resultError, withStructuredResult } from "pi-agent-resource";
+import { connectResultTargets } from "pi-agent-resource";
 
 /** Arguments accepted by the search tool. */
 export type SearchParameters = Static<typeof searchSchema>;
@@ -51,12 +52,15 @@ export function searchCallModel(
       ? []
       : [
           {
-            text: `in ${arguments_.path}`,
+            text: typeof arguments_.path === "string" ? `in ${arguments_.path}` : "in result scope",
             color: "accent" as const,
             underline: true,
             truncate: "start" as const,
           },
         ]),
+    ...(arguments_.navigation === undefined
+      ? []
+      : [{ text: "reference navigation", color: "warning" as const }]),
     ...(arguments_.include === undefined ? [] : [{ text: `include ${arguments_.include}` }]),
     ...(arguments_.exclude === undefined ? [] : [{ text: `exclude ${arguments_.exclude}` }]),
     ...(arguments_.caseSensitive === true ? [{ text: "case sensitive" }] : []),
@@ -95,6 +99,7 @@ export default async function registerSearchCore(
     }),
   ]);
   const core = createSearchCore();
+  const targets = connectResultTargets(pi);
   const interceptionRendering = new ToolCallInterceptionRenderStore();
   const unsubscribe = pi.events.on(SEARCH_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isSearchPluginRegistrationRequest(request)) {
@@ -149,8 +154,13 @@ export default async function registerSearchCore(
           const renderer =
             details?.resolverId === undefined ? undefined : core.renderer(details.resolverId);
 
-          if (renderer !== undefined) {
-            const inner = { ...result, details: details?.payload };
+          if (
+            renderer !== undefined &&
+            details?.payload !== undefined &&
+            !context.isError &&
+            !options.isPartial
+          ) {
+            const inner = { ...result, details: details.payload };
             return renderer(inner, options, theme, context);
           }
 
@@ -169,11 +179,28 @@ export default async function registerSearchCore(
             );
             return await runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
               await core.waitForPendingPlugins();
-              return core.execute(parameters, {
-                cwd: context.cwd,
-                ...(operationSignal !== undefined && { signal: operationSignal }),
-                ...(onUpdate !== undefined && { onUpdate }),
-              });
+              const scoped =
+                parameters.path !== undefined &&
+                (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
+              const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
+              if (scope !== undefined) {
+                await targets.verify(scope, operationSignal);
+                if (/^(?:files|symbol|graph|process):/u.test(parameters.query))
+                  throw new Error("This query provider does not support result scopes yet.");
+              }
+              return core.execute(
+                {
+                  ...parameters,
+                  path:
+                    typeof parameters.path === "string" && !scoped ? parameters.path : undefined,
+                },
+                {
+                  cwd: context.cwd,
+                  ...(scope === undefined ? {} : { scope }),
+                  ...(operationSignal !== undefined && { signal: operationSignal }),
+                  ...(onUpdate !== undefined && { onUpdate }),
+                },
+              );
             });
           } catch (error) {
             if (signal?.aborted) throw error;
@@ -205,7 +232,15 @@ export default async function registerSearchCore(
 function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[] {
   return [
     { label: "query", value: JSON.stringify(arguments_.query) },
-    ...optionalDetail("path", arguments_.path),
+    ...optionalDetail(
+      "path",
+      arguments_.path === undefined
+        ? undefined
+        : typeof arguments_.path === "string"
+          ? arguments_.path
+          : "result scope",
+    ),
+    ...optionalDetail("navigation", arguments_.navigation),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),
     ...optionalDetail(
@@ -235,10 +270,15 @@ function fallbackResult(
   const text = result.content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n");
-  const preview = options.expanded ? text : text.split("\n").slice(0, 8).join("\n");
-  const hint =
-    !options.expanded && text.split("\n").length > 8
-      ? `\n${theme.fg("dim", `${keyText("app.tools.expand")} to expand`)}`
-      : "";
-  return new Text(`${theme.fg("muted", preview)}${hint}`, 0, 0);
+  return new ResultPanel(
+    {
+      summary:
+        result.details && typeof result.details === "object" && "failure" in result.details
+          ? "Search failed"
+          : "Search results",
+      rows: text.split("\n").map((line) => ({ kind: "note", text: line })),
+    },
+    theme,
+    options.expanded,
+  );
 }
