@@ -157,11 +157,25 @@ function createSemanticRows(
       })),
     ];
   }
-  const comparison = lineComputer.computeDiff([...before], [...after], {
-    ignoreTrimWhitespace: true,
-    computeMoves: false,
-    maxComputationTimeMs: DIFF_BUDGET_MS,
-  });
+  // With no shared trimmed line, the whole replacement block is already exact.
+  // Avoid the library's character refinement; detailed pairing below remains bounded.
+  const beforeLines = new Set(before.map((line) => line.trim()));
+  const hasSharedLine = after.some((line) => beforeLines.has(line.trim()));
+  const comparison = hasSharedLine
+    ? lineComputer.computeDiff([...before], [...after], {
+        ignoreTrimWhitespace: true,
+        computeMoves: false,
+        maxComputationTimeMs: DIFF_BUDGET_MS,
+      })
+    : {
+        hitTimeout: false,
+        changes: [
+          {
+            original: { startLineNumber: 1, endLineNumberExclusive: before.length + 1 },
+            modified: { startLineNumber: 1, endLineNumberExclusive: after.length + 1 },
+          },
+        ],
+      };
   if (comparison.hitTimeout || performance.now() >= deadline) return undefined;
   let oldIndex = 0;
   let newIndex = 0;
