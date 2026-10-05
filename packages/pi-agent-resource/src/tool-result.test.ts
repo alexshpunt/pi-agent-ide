@@ -9,6 +9,43 @@ const result = {
   details: { private: true },
 };
 
+test("exposes the common object fields without removing the outcome alternatives", () => {
+  expect(structuredResultSchema(schema)).toMatchObject({
+    type: "object",
+    properties: {
+      status: { anyOf: [{ const: "success" }, { const: "error" }, { const: "partial" }] },
+      data: schema,
+      errors: { type: "array" },
+    },
+    required: ["status", "errors"],
+    additionalProperties: false,
+    anyOf: [{ required: ["status", "data", "errors"] }, { required: ["status", "errors"] }],
+  });
+});
+
+test.each([
+  { status: "success", data: { count: 1 }, errors: [] },
+  { status: "error", errors: [{ code: "FAILED", message: "failed" }] },
+  { status: "partial", data: { count: 1 }, errors: [{ code: "FAILED", message: "failed" }] },
+])("accepts valid public outcomes %#", (outcome) => {
+  expect(Value.Check(structuredResultSchema(schema), outcome)).toBe(true);
+});
+
+test.each([
+  { status: "success", errors: [] },
+  { status: "success", data: { count: 1 }, errors: [{ code: "FAILED", message: "failed" }] },
+  { status: "error", errors: [] },
+  { status: "partial", data: { count: 1 }, errors: [] },
+  { status: "error", errors: [{ code: "FAILED" }] },
+  { status: "error", data: { count: "wrong" }, errors: [{ code: "FAILED", message: "failed" }] },
+  { status: "success", data: { count: 1, extra: true }, errors: [] },
+  { status: "success", data: { count: 1 }, errors: [], extra: true },
+  { data: { count: 1 }, errors: [] },
+  { status: "unknown", errors: [{ code: "FAILED", message: "failed" }] },
+])("rejects invalid public outcomes %#", (outcome) => {
+  expect(Value.Check(structuredResultSchema(schema), outcome)).toBe(false);
+});
+
 test("native outcomes agree with isError and leave renderer details separate", () => {
   for (const status of ["success", "error", "partial"] as const) {
     const outcome = {

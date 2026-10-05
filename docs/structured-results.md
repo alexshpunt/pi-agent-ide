@@ -1,86 +1,51 @@
-# Native IDE results
+# Readable IDE results and private records
 
-Read, Search, text mutations, diff, Git index tools, and debugger creation declare an `outputSchema` and return `structuredContent`. Native Codemode receives that object. Normal calls keep their readable content and existing renderers. Renderer `details` are not a script API.
+IDE tools expose readable text in direct calls and native Codemode. The existing Read views, Search anchors, edit effects and diffs remain the agent-facing output. Select shows its selected text and item references. Agents do not receive the private result records or need to inspect their fields.
 
-The shared envelope is:
+## Composition
 
-```ts
-{ status: "success", data: /* tool data */, errors: [] }
-{ status: "error" | "partial", data?: /* observed data */, errors: [{ code, message, source? }] }
-```
-
-`success` means the requested operation completed, including a search with no matches. `partial` means some work completed while other work failed. Output clipping is reported separately; it does not make a successful read an execution failure. `error` and `partial` set native `isError`.
-
-Check `status` before using data. Domain errors with structured results resolve in native Codemode; they do not automatically throw. Invalid arguments, blocked calls, and cancellation can still reject. A mutation error does not imply rollback. Check its observed effects before retrying.
-
-## Data by tool
-
-- **Read:** `kind` is `text`, `bytes`, `native`, or `resources`. Text has original numbered `lines`, line endings, optional editable `anchors`, and source-level `references`. Bytes have exact `bytes: number[]`, byte offset, selected length, and total size. Native content has ordered text/image `blocks`; pass an image block to `image(...)`. Multi-source selections keep separate child resources.
-- **Search:** `matches` have a source, exact line/column range, optional matched text, and optional `references.line` / `references.match` selectors. Columns are zero-based UTF-16 offsets. `complete` describes the backend search; `truncated` describes the public window. `all` selectors exist only for complete registered selections. File searches return paths. Other resolvers return their documented JSON domain data under `kind: "custom"`.
-- **Mutations:** `operationId` identifies the call. `effect` and per-source `files` distinguish `pending`, `applied`, `not-applied`, and `unknown`. Recovery candidates and semantic action fields are included when available. `files[].state` reports present/absent/unknown when known. `changes` records exact removed/inserted text and before-snapshot UTF-16 offsets; it is inspection data, not a selector. If that record exceeds 512 KiB serialized, it is omitted with `changesUnavailable`, without clipping text or losing applied effects. Full before/after documents are not copied into receipts.
-- **Flush:** `operations` link final effects and errors to accepted child call IDs. It also returns per-source effects. An empty flush succeeds with no operations. A failed flush retains writes that happened and never replays accepted edits.
-- **Diff:** returns source identities, equality, added/removed counts, and bounded unified diff text. It does not repeat both source documents.
-- **Git index tools:** return action, change selector, file, index state, observed effect, and whether it was already in the requested state.
-- **Debugger:** creation returns session, source, and breakpoint resource references plus configuration and status. Debugger mutation actions return selected breakpoint or evaluation fields, not full session snapshots.
-
-## Source result composition
-
-Exact filesystem text Read results and local text/regex, AST, and LSP Search results expose an optional `target: "RESULT#..."`. Each public Search match also has its own target. These handles resolve backend-owned source ranges and snapshots; serializable preview fields do not grant or change write authority.
-
-Native `search.path`, `replace.path`, `delete.path`, and copy/move `path` / `target` accept a successful result envelope, its data, a target handle, or arrays of compatible results/matches. `write.path` and `undo.file` accept only a single whole-file target; partial scopes never widen to a whole file. A whole result retains its complete stored scope even when its public window is shortened. Pass a matches array to narrow the scope explicitly. Read lines projected to strings or arbitrary coordinates are not editable targets.
+Each result starts with a labelled system-result envelope containing a random UUID. It is not part of a file and must not be edited or inserted into file contents.
 
 ```js
-const read = await tools.read({ path: "note.txt", offset: 2, limit: 2 });
-if (read.status !== "success") throw new Error(JSON.stringify(read.errors));
-const found = await tools.search({ path: read, query: "old" });
-if (found.status !== "success") throw new Error(JSON.stringify(found.errors));
-const changed = await tools.replace({ path: found.data.matches.slice(0, 1), text: "new" });
-if (changed.status !== "success") throw new Error(JSON.stringify(changed.errors));
-text(changed);
+const source = await tools.read({ path: "notes.txt" });
+const matches = await tools.search({ path: source, query: "old" });
+const selected = await tools.select({ path: matches, operation: { kind: "trim", side: "both" } });
+text(await tools.replace({ path: selected, text: "new" }));
 ```
 
-Targets belong to the active session/runtime and worktree. A new session, reload or shutdown clears the store. Changing any source bytes makes a non-empty retained target stale; re-read or re-search rather than refreshing implicitly. Existing string `SEARCH#:all` selectors retain their separate refresh policy.
+Pass the unchanged result to a supported source parameter. Direct calls also accept its UUID. Store/load retains the result string across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
 
-Scoped text Search runs each range separately through ripgrep and maps matches back to source UTF-16 coordinates. AST and LSP providers can inspect full documents internally but return only provider ranges wholly contained in one declared region. AST matches expose associated `captures.NAME` arrays of source targets, including every node of a multi capture. LSP matches expose `role` and the originating `symbol` with its provider declaration identity and exact range. Use `navigation: "references"` explicitly to follow symbols represented in the seed scope to references outside it, within the workspace. It preserves inherited completeness and deduplicates by source/range identity. Text Boolean queries and text include/exclude globs remain unsupported for result scopes; AST/LSP keep their provider filters. Unsupported provider/scope combinations fail without falling back to a wider search. Replace rejects incomplete input and contradictory snapshot versions before writing, preserves ordinary resource and mutation guards, and treats an empty set as an explicit successful no-op. Preview edits, deleted diff text, bytes, images and derived views without an exact filesystem mapping cannot supply arbitrary edit targets.
+A result identifies its backend-owned ranges, not the text in its preview. Shortened output does not clip a complete selection or make an incomplete selection complete. Read around a selection may show context without granting authority to edit it.
 
-### Possible-name groups
+## Reference ownership
 
-After a complete zero result, eligible local and URL identifier searches can add `fuzzy: { status, message?, candidates }`. The original `matches` stays empty. Each candidate has `identifier`, a mechanical `kind` and `reason`, captured `matchCount` and `fileCount`, and a separate `selection` using the normal match/range/reference fields.
+The session registry issues UUIDs and maps them to source handles. A guessed or computed hash has no authority unless the registry issued that reference. UUIDs are opaque references, not content hashes or signatures.
 
-Candidate selections show at most three locations. Their `truncated` flag describes that display window; `complete` describes the exact alternative's capture. Limited capture has lower-bound counts and no complete `all` reference. URL candidates use URL ranges, never editable Search references. A `skipped` branch explains its budget or extra-branch failure without changing the completed ordinary zero into an error.
+The registry validates session/worktree ownership, exact full-output identity, successful source status and live snapshots. Copying a valid ID within its session is intentional reuse, not forgery. Altering the body while keeping the envelope is rejected. An ID cannot grant wider ranges than its original selection.
 
-Registered local candidate selections also expose immutable whole-scope and per-match targets. Their stored scope retains all captured matches even when the candidate preview shows only three. The original zero result remains an empty edit scope. Structured result-scoped queries do not run fuzzy discovery.
+Changed files permanently retire old source and derived references. Restoring the old bytes does not revive them. Actual edit completions and script boundaries observe filesystem generations; retained source bytes are verified before use. Reload and session changes clear the registry.
 
-## Native editor commits
+Pending edits reserve source handles without granting authority to unconfirmed writes. A dependent source operation commits the batch before using such a handle. Failed or cancelled edits cannot confirm it. Independent peer edits retain their original snapshots until the common commit.
 
-Sequential local edits share original snapshots. Child success with `effect: "pending"` means accepted, not written. Await an explicit flush when the script needs the final receipt:
+Read-only views, raw bytes, images and directory listings do not acquire text-edit authority. Their IDs can identify the resource for another read. Live shell/debugger references can be used only with their owning resource operations. File deletion supplies no reusable text selection.
 
-```ts
-const found = await tools.search({ query: "old", path: "note.txt" });
-if (found.status !== "success") throw new Error(found.errors[0].message);
-const changed = await tools.replace({ path: found.data.matches[0].references.match, text: "new" });
-if (changed.status !== "success") throw new Error(changed.errors[0].message);
-const saved = await tools.flush({});
-text(saved);
-```
+## Internal records
 
-Resource-owned selectors may commit immediately rather than joining the local batch. Another tool or parent completion also commits pending local edits. The parent Codemode result records automatic commits in `details.editorBatchResults`; those reports contain receipts, not source snapshots. Ordinary script errors keep accepted independent edits. Abort and deadline discard pending edits but do not undo earlier commits.
+Each tool owns its validated record. Read, Search, Select, Diff, terminals, Git and debugger operations keep their own domain adapters. File edit receipts contain only operation, observed effect, file states and an optional verified selection handle. Delete omits selection fields. Flush separately records committed operation effects and errors; it does not reuse a giant resource-action schema.
 
-## Bounds and continuation
+The text registry stores only ownership, a digest of the issued text, source references, resource identities and whether the result can be consumed. It does not copy line arrays, removed file contents, image bytes or debugger records into a second ledger. Source ranges and snapshots remain in the source-target store.
 
-Public structured results must be finite plain JSON and fit within 1 MiB. Text windows keep at most 2,000 lines and 512 KiB of serialized line data. Raw byte windows keep at most 32,768 bytes, within the normal raw-read display budget. Ordinary Search match previews keep the first 100 matches and at most 4 KiB of matched text per match; a whole result's target retains its full registered scope. AST capture arrays retain every captured node for each visible parent match, within the shared JSON budget. Huge indivisible capture data fails explicitly rather than silently dropping nodes.
+The unified registration adapter omits public outputSchema. Pi's supported Codemode execution path therefore returns each tool's existing text instead of structuredContent. Public tool_result hooks register the private source metadata and return the readable text with its envelope. This does not modify Pi, rewrite scripts, add VM methods, or recognize JSON in Codemode output.
 
-Read `continuation` is a complete next request with a resolved source and absolute offset. Follow it rather than recomputing offsets from a rendered annotation. `fullResult` identifies retained complete output when available. A huge indivisible block or invalid adapter returns an explicit error rather than a clipped success. Temporary references belong to their runtime.
+Nested image blocks are delivered on the parent Codemode result; their bytes are not printed as text. Images remain ordinary native image content.
+Read's private native record contains image type and MIME metadata, not another copy of the image bytes. Large images therefore do not overflow the JSON-record budget while their native content stays unchanged.
 
-Native structured content is not copied into stored session messages. Existing compact renderer details stay separate. Scripts that explicitly print large data still store what they print.
-Guides attached to native structured child calls stay on the readable parent result, even when the script prints only selected data. They do not become fields in the public data schema.
+## Errors and writes
 
-## Resolver adapters
+Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the readable file/operation effects and final parent result before retrying. An error does not prove rollback.
 
-Search resolvers must provide `toScriptData(payload, formattedDetails)`. Select documented JSON domain fields or use `selectionData` from `pi-agent-search/api/search`. Missing adapters fail with `STRUCTURED_ADAPTER_REQUIRED`; invalid schema or non-JSON values fail with `INVALID_STRUCTURED_RESULT`. Neither case falls back to display-text parsing or raw payload dumping.
+Flush commits writes, not final formatting. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
 
-Standard Read Resources use the core text/bytes/native projection. Read handlers that return their own result must supply `script: ReadScriptData`; custom content needs an explicit supported projection. Source-level references and line anchors come from presenters, not parsed annotations.
+After an exact-text selector fails, the tool returns current anchors and blocks further exact-text edits for that file. Use a current anchor for the next successful edit. Exact text is then available again.
 
-The shared validation helpers live in `pi-agent-resource`. Read and Search export their data/output schemas through their existing public tool APIs. Text mutation schemas and `structuredMutation` are exported through `pi-agent-text-editor/api/mutation-result`.
-
-Shell command results keep their separate native process contract. This change does not add a shared result store, cross-session handles, binary editing, or grouped rollback.
+See [editing](./agent-guides/editing.md), [Read](./agent-guides/read-resources.md) and [Select](./agent-guides/select-code.md) for their source and boundary contracts.

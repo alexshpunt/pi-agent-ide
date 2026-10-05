@@ -11,6 +11,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { textResultChecks } from "#integration/support/text-result-checks.js";
 
 async function runAstComposition(
   cwd: string,
@@ -33,14 +34,20 @@ async function runAstComposition(
   return new PiIntegrationTest({
     testName: name,
     artifactsDir: testArtifactsDir(import.meta.filename),
-    rawMode: false,
+    rawMode: true,
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
     tools: ["read", "search", "replace", "codemode"],
     conversation: [
       ...scripts.map((code, index) =>
         assistantMessage(
-          [toolCall({ id: `ast-${index}`, name: "codemode", arguments: { code } })],
+          [
+            toolCall({
+              id: `ast-${index}`,
+              name: "codemode",
+              arguments: { code: textResultChecks + code },
+            }),
+          ],
           {
             stopReason: "toolUse",
           },
@@ -65,17 +72,14 @@ test("searches AST inside a Read window and edits a named capture with exact CRL
       'legacyRequest({ timeout: 10 });\r\n"😀"; legacyRequest({ timeout: 20 });\r\nlegacyRequest({ timeout: 30 });';
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runAstComposition(cwd, "ast-window-capture-edit", [
-      `const window = await tools.read({path:"calls.ts",offset:2,limit:1});
-const found = await tools.search({path:window,query:"ast:legacyRequest($OPTIONS)"});
-if(found.status!=="success") throw Error(JSON.stringify(found.errors));
-if(found.data.matches.length!==1 || found.data.matches[0].range.startColumn!==6) throw Error("AST escaped Read or lost UTF-16 coordinates");
-const options=found.data.matches[0].captures.OPTIONS;
-if(options.length!==1 || options[0].matchedText!=="{ timeout: 20 }") throw Error("Capture lost its parent or source");
+      `const window=await tools.read({path:"calls.ts",offset:2,limit:1});
+const found=await tools.search({path:window,query:"ast:legacyRequest($OPTIONS)"});
+check(matches(found).length===1 && found.includes("calls.ts:2:7"),"AST escaped Read or lost UTF16 coordinates");
+const options=capture(found,"OPTIONS");
+check(options.length===1,"Capture lost association");
 const timeout=await tools.search({path:options,query:"20"});
-if(timeout.status!=="success" || timeout.data.matches.length!==1) throw Error("Capture cannot be searched");
-const changed=await tools.replace({path:timeout,text:"99"});
-if(changed.status!=="success") throw Error(JSON.stringify(changed.errors));
-text({matches:found.data.matches.length,capture:options[0].matchedText});`,
+check(matches(timeout).length===1,"Capture cannot be searched");
+text(await tools.replace({path:timeout,text:"99"}));`,
     ]);
     expectScriptsPassed(run, 1);
     expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(source.replace("20", "99"));
@@ -93,19 +97,16 @@ test("keeps sparse multi-file AST scopes and capture groups without matching acr
     await writeFile(path.join(cwd, "b.ts"), "legacyRequest(e, f);\n");
     const run = await runAstComposition(cwd, "ast-sparse-multi-captures", [
       `const seed=await tools.search({path:".",include:"*.ts",query:"regex:legacyRequest[(](a, b|c, d|e, f)[)]"});
-if(seed.status!=="success" || seed.data.matches.length!==3) throw Error("Fixture scopes missing");
-const found=await tools.search({path:seed.data.matches,query:"ast:legacyRequest($$$ARGS)"});
-if(found.status!=="success") throw Error(JSON.stringify(found.errors));
-if(found.data.matches.length!==3) throw Error("Sparse AST scope widened");
-const groups=found.data.matches.map(m=>m.captures.ARGS.map(c=>c.matchedText));
-if(JSON.stringify(groups)!==JSON.stringify([["a",",","b"],["c",",","d"],["e",",","f"]])) throw Error("Multi capture association lost: "+JSON.stringify(groups));
-const inside=await tools.search({path:found.data.matches[0].captures.ARGS,query:"ignored"});
-if(inside.status!=="success" || inside.data.matches.length!==0) throw Error("Capture escaped");
+check(matches(seed).length===3,"Fixture scopes missing");
+const found=await tools.search({path:seed,query:"ast:legacyRequest($$$ARGS)"});
+check(matches(found).length===3,"Sparse AST scope widened");
+const groups=capture(found,"ARGS");
+check(groups.length===3 && found.split("3 node(s)").length-1===3,"Multi-capture association lost");
+for(const group of groups) check(matches(await tools.search({path:group,query:"ignored"})).length===0,"Capture escaped");
 const partial=await tools.search({path:seed,query:"ast:legacyRequest($$$ARGS)",limit:1});
-if(partial.status!=="success" || partial.data.complete!==false) throw Error("Limit reported complete");
-const rejected=await tools.replace({path:partial,text:"BAD"});
-if(rejected.status!=="error" || rejected.data.effect!=="not-applied") throw Error("Incomplete AST became an edit scope");
-text({groups,complete:found.data.complete});`,
+check(partial.includes("Result limit reached"),"Limit reported complete");
+await rejects(()=>tools.replace({path:partial,text:"BAD"}),/[Ii]ncomplete/);
+text({groups:3,complete:true});`,
     ]);
     expectScriptsPassed(run, 1);
     expect(await readFile(path.join(cwd, "a.ts"), "utf8")).toContain("legacyRequest(ignored)");
@@ -147,20 +148,19 @@ test("composes real LSP discovery and explicit external references without mixin
       [
         `const window=await tools.read({path:"service.ts",offset:1,limit:1});
 const strict=await tools.search({path:window,query:"symbols:ping"});
-if(strict.status!=="success") throw Error(JSON.stringify(strict.errors));
-if(strict.data.matches.length!==1 || strict.data.matches[0].range.startLine!==1 || strict.data.matches[0].range.startColumn!==16) throw Error("LSP escaped Read or lost its exact range: "+JSON.stringify(strict.data.matches.map(m=>({range:m.range,text:m.matchedText,role:m.role}))));
+check(matches(strict).length===1 && strict.includes("service.ts:1:17 definition ping"),"LSP escaped Read or lost exact coordinates");
 const nav=await tools.search({path:window,query:"symbols:ping",navigation:"references"});
-if(nav.status!=="success") throw Error(JSON.stringify(nav.errors));
-if(nav.data.matches.some(m=>m.source.endsWith("/other.ts") || m.symbol.source.endsWith("/other.ts"))) throw Error("LSP mixed same-name symbols");
-if(new Set(nav.data.matches.map(m=>m.symbol.id)).size!==1 || !nav.data.matches.every(m=>m.symbol.source.endsWith("/service.ts"))) throw Error("Reference association missing");
-if(!nav.data.matches.some(m=>m.source.endsWith("/consumer.ts") && m.range.startLine===2 && m.range.startColumn===6)) throw Error("Reference UTF-16 mapping lost: "+JSON.stringify(nav.data.matches.map(m=>({source:m.source,range:m.range,symbol:m.symbol.id}))));
-const external=nav.data.matches.filter(m=>m.source.endsWith("/consumer.ts") && m.range.startLine===3);
-if(external.length!==1 || external[0].role!=="reference") throw Error("External reference missing");
-const textHit=await tools.search({path:external,query:"ping"});
-if(textHit.status!=="success" || textHit.data.matches.length!==1) throw Error("LSP target is not searchable");
-const changed=await tools.replace({path:textHit,text:"PING"});
-if(changed.status!=="success") throw Error(JSON.stringify(changed.errors));
-text({strict:strict.data.matches.length,navigation:nav.data.matches.length,external:external[0].range});`,
+text(nav);
+check(!nav.includes("other.ts"),"LSP mixed same-name declarations");
+const rows=nav.split(String.fromCharCode(10)).filter(row=>/SEARCH#.*:match .*reference ping/.test(row));
+check(rows.length>0 && rows.every(row=>row.includes("declared at service.ts:1:17")),"Reference association missing");
+check(nav.includes("consumer.ts:2:7 reference ping"),"Reference UTF16 mapping lost");
+const external=rows.find(row=>row.includes("consumer.ts:3:1"));
+check(external,"External reference missing");
+const selected=await tools.read({path:matches(external)[0]});
+const textHit=await tools.search({path:selected,query:"ping"});
+check(matches(textHit).length===1,"LSP target cannot be searched");
+text(await tools.replace({path:textHit,text:"PING"}));`,
       ],
       true,
     );
@@ -168,8 +168,8 @@ text({strict:strict.data.matches.length,navigation:nav.data.matches.length,exter
     expect(await readFile(path.join(cwd, "consumer.ts"), "utf8")).toBe(
       consumer.replace('ping("outside")', 'PING("outside")'),
     );
-    expect(run.tuiRenderedOutput).toContain("LSP reference navigation");
-    expect(run.tuiRenderedOutput).toContain("reference ping");
+    expect(getToolResultText(run, "ast-0")).toContain("LSP reference navigation");
+    expect(getToolResultText(run, "ast-0")).toContain("reference ping");
   });
 }, 120_000);
 test("retains every node of a capture larger than the ordinary match preview", async () => {
@@ -178,12 +178,11 @@ test("retains every node of a capture larger than the ordinary match preview", a
     await writeFile(path.join(cwd, "large.ts"), `legacyRequest(${arguments_.join(", ")});\n`);
     const run = await runAstComposition(cwd, "ast-large-capture", [
       `const found=await tools.search({path:"large.ts",query:"ast:legacyRequest($$$ARGS)"});
-if(found.status!=="success") throw Error(JSON.stringify(found.errors));
-const args=found.data.matches[0].captures.ARGS;
-if(args.length!==239 || args.at(-1).matchedText!=="arg119" || !args.every(a=>typeof a.target==="string")) throw Error("Capture was silently shortened");
+const args=capture(found,"ARGS");
+check(args.length===1 && found.includes("239 node(s)"),"Capture group silently shortened");
 const last=await tools.search({path:args,query:"arg119"});
-if(last.status!=="success" || last.data.matches.length!==1) throw Error("Last capture node lost source authority");
-text({nodes:args.length,last:last.data.matches[0].matchedText});`,
+check(matches(last).length===1,"Last captured node lost authority");
+text({nodes:239,last:"arg119"});`,
     ]);
     expectScriptsPassed(run, 1);
   });
@@ -195,20 +194,20 @@ test("preserves AST input forms across calls and rejects captures after a depend
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runAstComposition(cwd, "ast-forms-cross-call-stale", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:1});
-for(const input of [window,window.data,window.data.target]) {
+for(const input of [window,uuid(window),"RESULT#"+uuid(window)]) {
  const found=await tools.search({path:input,query:"ast:legacyRequest($OPTIONS)"});
- if(found.status!=="success" || found.data.matches.length!==1) throw Error("Read input forms differ");
- store("ast-capture",found.data.matches[0].captures.OPTIONS);
+ check(matches(found).length===1,"Read input forms differ");
+ store("ast-capture",capture(found,"OPTIONS"));
 }
 text({saved:true});`,
-      `const capture=load("ast-capture");
-const changed=await tools.replace({path:capture,text:"{ timeout: 99 }"});
-if(changed.status!=="success") throw Error(JSON.stringify(changed.errors));
+      `const old=load("ast-capture");
+const changed=await tools.replace({path:old,text:"{ timeout: 99 }"});
 const found=await tools.search({path:changed,query:"ast:{ timeout: $VALUE }"});
-if(found.status!=="success" || found.data.matches.length!==1 || found.data.matches[0].captures.VALUE[0].matchedText!=="99") throw Error("AST cannot consume a pending mutation");
-const stale=await tools.replace({path:capture,text:"BAD"});
-if(stale.status!=="error" || stale.data.effect!=="not-applied" || !stale.errors.some(e=>e.message.includes("stale"))) throw Error("Changed AST capture gained authority");
-text({pendingAst:found.data.matches.length,stale:stale.status});`,
+check(matches(found).length===1,"AST cannot consume mutation");
+const values=await tools.search({path:capture(found,"VALUE"),query:"99"});
+check(matches(values).length===1,"Capture VALUE lost authority");
+await rejects(()=>tools.replace({path:old,text:"BAD"}),/expired|stale/);
+text({pendingAst:1,staleRejected:true});`,
     ]);
     expectScriptsPassed(run, 2);
     expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(source.replace("20", "99"));
@@ -221,8 +220,8 @@ test("never widens an empty AST scope or a range cutting through an AST node", a
       `const seed=await tools.search({path:"calls.ts",query:"timeout"});
 const cut=await tools.search({path:seed,query:"ast:legacyRequest($OPTIONS)"});
 const empty=await tools.search({path:[],query:"ast:legacyRequest($OPTIONS)"});
-for(const found of [cut,empty]) if(found.status!=="success" || !found.data.complete || found.data.matches.length!==0) throw Error("AST scope widened");
-text({cut:cut.data.matches.length,empty:empty.data.matches.length});`,
+for(const found of [cut,empty]) check(matches(found).length===0 && !found.includes("Result limit reached"),"AST scope widened");
+text({cut:0,empty:0});`,
     ]);
     expectScriptsPassed(run, 1);
   });

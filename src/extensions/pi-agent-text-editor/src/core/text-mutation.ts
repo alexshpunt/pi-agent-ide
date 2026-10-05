@@ -84,7 +84,7 @@ import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception"
 import type { Static, TSchema } from "typebox";
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
 import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
-import { mutationOutputSchema, structuredMutation } from "./structured-result.js";
+import { mutationResultSchema, structuredMutation } from "./structured-result.js";
 import type { ResultTargetStore } from "pi-agent-resource";
 
 export function createTextTool<TParameters extends TSchema>(
@@ -118,7 +118,7 @@ export function createTextTool<TParameters extends TSchema>(
       promptGuidelines: [...EDITING_GUIDELINES, ...(definition.promptGuidelines ?? [])],
       description: definition.description,
       parameters: definition.parameters,
-      outputSchema: mutationOutputSchema,
+      outputSchema: mutationResultSchema(definition.name),
       prepareArguments: (arguments_) =>
         // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
         prepareGuardedArguments(
@@ -348,19 +348,17 @@ export function createTextTool<TParameters extends TSchema>(
         (
           {
             replace:
-              "Local data.target selects this call's resulting text; empty replacement selects the resulting position, not the removed text.",
-            insert:
-              "Local data.target selects this call's inserted text, including supplied line separators.",
-            write: "Local data.target selects the whole written file, not only its changed span.",
-            copy: "Local data.target selects only the destination text; a whole-file copy selects the whole destination. The source is unchanged.",
-            move: "Local data.target selects only the destination text; a whole-file move selects the whole destination. Source removals never become output targets.",
-            delete:
-              "Deletion returns a change record and file state, never a live target or an empty-position target.",
-            undo: "Local data.target selects whole restored text files, not only reversed spans. Restored absence is reported in files[].state without a live target.",
+              "This result selects the resulting text; empty replacement selects the resulting position, not the removed text.",
+            insert: "This result selects the inserted text, including supplied line separators.",
+            write: "This result selects the whole written file, not only its changed span.",
+            copy: "This result selects only destination text; a whole-file copy selects the whole destination. The source is unchanged.",
+            move: "This result selects only destination text; a whole-file move selects the whole destination. Source removals never become output targets.",
+            delete: "Deletion reports file effects but provides no reusable text selection.",
+            undo: "This result selects whole restored text files, not only reversed spans. Deleted files provide no text selection.",
           } as Record<string, string>
         )[definition.name] ?? "",
         ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
-          ? "A pending data.target requires confirmed writing. Successful changes without a verified text mapping expose data.targetUnavailable; inspect effects separately."
+          ? "Pass this unchanged result to another source tool for dependent work. Pending edits commit before the next tool consumes them. If the result reports no verified text selection, inspect the file instead."
           : "",
         definition.source.inherited
           ? definition.wholeFileOperation === undefined
@@ -1406,12 +1404,18 @@ async function anchorFailureToolResult(
     const results: FileMutationResult[] = [];
     const anchorRecoveries: NonNullable<FileMutationBatchResult["anchorRecoveries"]>[number][] = [];
     const messages: string[] = [];
+    const exactTextFailures: string[] = [];
     for (const item of recovered) {
       if (item === undefined) {
         continue;
       }
       results.push(...(item.details.results ?? []));
       anchorRecoveries.push(...(item.details.anchorRecoveries ?? []));
+      const failed = item.details.metadata?.exactTextFailures;
+      if (Array.isArray(failed))
+        exactTextFailures.push(
+          ...failed.filter((source): source is string => typeof source === "string"),
+        );
       for (const block of item.content) {
         if (block.type === "text") {
           messages.push(block.text);
@@ -1423,7 +1427,12 @@ async function anchorFailureToolResult(
     }
     return {
       content: [{ type: "text", text: messages.join("\n\n") }],
-      details: { results, anchorRecoveries, effect: "not-applied" },
+      details: {
+        results,
+        anchorRecoveries,
+        effect: "not-applied",
+        metadata: { exactTextFailures },
+      },
     };
   }
   if (!(failure.cause instanceof TextMutationAnchorResolutionError)) {
@@ -1432,15 +1441,10 @@ async function anchorFailureToolResult(
 
   const contextual = failure.cause;
   const resolution = contextual.resolution;
-  const recovery = await resolveAnchorRecovery(contextual);
-  if (recovery?.kind === "timed-out") {
-    return failureToolResult(
-      contextual.source,
-      failure.code,
-      `${failure.message}; recovery timed out`,
-      "not-applied",
-    );
-  }
+  const recovery = await resolveAnchorRecovery(contextual).catch(() => {
+    context.signal?.throwIfAborted();
+    return undefined;
+  });
 
   const windows =
     recovery?.kind === "candidates"
@@ -1451,9 +1455,7 @@ async function anchorFailureToolResult(
       : resolution.rejection?.contextRange === undefined
         ? []
         : [resolution.rejection.contextRange];
-  if (windows.length === 0) {
-    return undefined;
-  }
+  if (windows.length === 0) windows.push({ offset: 1, limit: 40 });
 
   const reads = await Promise.all(
     windows.map((range) =>
@@ -1464,14 +1466,15 @@ async function anchorFailureToolResult(
           cwd: context.cwd,
           ...(context.signal !== undefined && { signal: context.signal }),
         },
-      ),
+      )?.catch(() => {
+        context.signal?.throwIfAborted();
+        return undefined;
+      }),
     ),
   );
   const recoveryTexts: string[] = [];
   for (const read of reads) {
-    if (read === undefined || read.isError === true) {
-      return undefined;
-    }
+    if (read === undefined || read.isError === true) continue;
     recoveryTexts.push(
       ...read.content.filter((block) => block.type === "text").map((block) => block.text),
     );
@@ -1512,6 +1515,9 @@ async function anchorFailureToolResult(
       results: [result],
       effect: "not-applied",
       anchorRecovery: true,
+      ...(resolution.resolverId === "exact-text" && {
+        metadata: { exactTextFailures: [contextual.source] },
+      }),
       ...(recovery?.kind === "candidates" && {
         anchorRecoveries: [
           {
@@ -1542,8 +1548,8 @@ function formatRejectedAnchorMessage(
           ? "is invalid"
           : "could not be resolved";
   const guidance =
-    code === "ambiguous"
-      ? "Use a unique text span or one of the candidate anchors below."
+    failure.resolution.resolverId === "exact-text"
+      ? "Exact-text editing is now blocked for this file until an anchor-based edit succeeds. Find the intended location among the current anchors below, or use Read/Search for another section, and use its anchor. After that edit, exact text is available again."
       : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
   return `[SYSTEM] ${failure.toolName} blocked: ${failure.field} anchor "${failure.anchor}" ${state}. ${guidance} (${reason})${context}`;

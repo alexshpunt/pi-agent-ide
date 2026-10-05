@@ -65,12 +65,8 @@ test("missing Read paths suggest real files without reading them", async () => {
       expect(getToolResultText(run, id)).toContain("Possible matches:");
       expect(getToolResultText(run, id)).toContain("src/read-renderer.ts");
       expect(getToolResultText(run, id)).not.toContain("ignored/read-render.ts");
-      expect(execution.result).toMatchObject({
-        structuredContent: {
-          status: "error",
-          data: { kind: "recovery", candidates: [{ path: "src/read-renderer.ts" }] },
-        },
-      });
+      expect(execution.result).not.toHaveProperty("structuredContent");
+      expect(getToolResultText(run, id)).not.toContain("DO_NOT_READ_CANDIDATE");
     }
     expect(getToolResultText(run, "unrelated")).not.toContain("Possible matches:");
     expect(run.tuiRenderedOutput).toContain("Possible matches:");

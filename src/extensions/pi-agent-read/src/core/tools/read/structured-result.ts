@@ -53,7 +53,7 @@ const bytes = Type.Object(
 const block = Type.Union([
   Type.Object({ type: Type.Literal("text"), text: Type.String() }, { additionalProperties: false }),
   Type.Object(
-    { type: Type.Literal("image"), data: Type.String(), mimeType: Type.String() },
+    { type: Type.Literal("image"), mimeType: Type.String() },
     { additionalProperties: false },
   ),
 ]);
@@ -127,6 +127,7 @@ function publicData(value: ReadScriptData): unknown {
         : {}),
     };
   }
+  // Image bytes belong to native content, not the composable result record.
   if (value.kind === "native")
     return {
       kind: value.kind,
@@ -134,8 +135,7 @@ function publicData(value: ReadScriptData): unknown {
       truncated: false,
       blocks: value.blocks.map((block) => {
         if (block.type === "text") return { type: block.type, text: block.text };
-        if (block.type === "image")
-          return { type: block.type, data: block.data, mimeType: block.mimeType };
+        if (block.type === "image") return { type: block.type, mimeType: block.mimeType };
         throw new TypeError("Custom content requires a structured adapter");
       }),
     };

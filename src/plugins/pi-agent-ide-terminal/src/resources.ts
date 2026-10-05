@@ -185,9 +185,11 @@ export async function registerTerminalResources(
           }
         },
       });
-      api.describe(
-        "shell:<session> — terminal status and a bounded output tail with a full-log path when truncated. image and parameterized sequence views return the virtual terminal screen as ordered PNG frames.",
-      );
+      api.describe({
+        path: "shell:<session> — terminal status and a bounded output tail with a full-log path when truncated.",
+        views:
+          "On shell:<session>, image[:scale=S] returns the virtual terminal screen; sequence[:duration=D,interval=I,scale=S] returns ordered PNG frames. Defaults: D=2 seconds, I=0.5 seconds, S=1. Scale satisfies 0 < S <= 1; sequences require 0 < D <= 10, I > 0, and at most 20 frames (floor(D/I)+1). Terminal captures do not support region or image grid selection; offset/limit do not crop their frames.",
+      });
     },
   } satisfies ReadPlugin;
 
@@ -268,7 +270,7 @@ export async function registerTerminalResources(
           content: [{ type: "text", text: message }],
           details: event.details,
         },
-        mutationDataSchema,
+        mutationDataSchema(event.toolName),
         {
           status: "error",
           errors: [resultError(message, "UNSUPPORTED_OPERATION", requestedSource)],
@@ -302,7 +304,7 @@ export async function registerTerminalResources(
                 changedLines: [],
               } satisfies TerminalActionDetails,
             },
-            mutationDataSchema,
+            mutationDataSchema(event.toolName),
             {
               status: "success",
               errors: [],
@@ -321,7 +323,7 @@ export async function registerTerminalResources(
               ],
               details: { source: requestedSource, deleted: false },
             },
-            mutationDataSchema,
+            mutationDataSchema(event.toolName),
             {
               status: "error",
               errors: [resultError(error, "TERMINAL_DELETE_FAILED", requestedSource)],

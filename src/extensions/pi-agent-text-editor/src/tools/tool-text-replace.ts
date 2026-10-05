@@ -18,7 +18,7 @@ export const replaceSchema = Type.Object(
     path: Type.Optional({
       ...resultInputSchema,
       description:
-        "Source path, SEARCH# selector, or source-aware Read/Search/Select/mutation result with a live target, RESULT# reference, or array of returned targets. Omit start/end when the result selects the intended text. Changed or expired result targets are rejected without writing.",
+        "Source path, SEARCH# selector, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Omit start/end when the result selects the intended text. Changed or expired results are rejected without writing.",
     }),
     ...sourceRangeProperties(),
     text: Type.String({

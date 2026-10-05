@@ -36,12 +36,13 @@ export default async function registerFilesystemPlugin(pi: ExtensionAPI): Promis
         renderResult: renderReadResult,
         recoverFailure: recoverFilesystemPath,
       });
-      api.describe(() =>
-        renderContentDescription(
-          "File path — file content; directory path — entry listing. Relative, absolute and file:// paths accepted.",
-          readHost.listDescriptions(),
-        ),
-      );
+      api.describe({
+        path: () =>
+          renderContentDescription(
+            "File path — file content; directory path — entry listing. Relative, absolute and file:// paths accepted.",
+            readHost.listDescriptions(),
+          ),
+      });
     },
   } satisfies ReadPlugin;
   const textEditorPlugin = {

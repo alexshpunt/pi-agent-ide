@@ -54,7 +54,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
               id: "read-script-secret",
               name: "codemode",
               arguments: {
-                code: 'const result = await tools.read({path:"secret.txt"}); if (result.status !== "error") throw Error("Blocked read must fail"); text(result);',
+                code: 'let blocked=""; try { await tools.read({path:"secret.txt"}); } catch(error) { blocked=String(error); } if(!blocked.includes("fixture secret")) throw Error("Blocked read must reject"); text(blocked);',
               },
             }),
           ],
@@ -108,7 +108,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
     expect(getToolResultText(run, "read-script-secret")).toContain("fixture secret");
     expect(getToolExecution(run, "read-throw").isError).toBe(true);
     expect(getToolResultText(run, "read-throw")).toContain("read hook exploded");
-    // Read errors are returned as data; a blocked batch commit fails the parent script.
+    // A caught Read rejection can continue; a blocked batch commit fails the parent script.
     expect(getToolExecution(run, "edit-locked").isError).toBe(true);
     expect(getToolResultText(run, "edit-locked")).toContain("fixture lock");
     expect(await readFile(path.join(cwd, "locked.txt"), "utf8")).toBe("unchanged");

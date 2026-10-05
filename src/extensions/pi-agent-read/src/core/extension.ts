@@ -60,7 +60,13 @@ export default async function registerReadCore(
   });
 
   const interceptionRendering = new ToolCallInterceptionRenderStore();
-  pi.registerTool(withToolCallInterceptionRendering(core.read.tool, interceptionRendering));
+  const definition = withToolCallInterceptionRendering(core.read.tool, interceptionRendering);
+  pi.registerTool(definition);
+  pi.on("before_agent_start", async () => {
+    await core.waitForPendingPlugins();
+    // Pi snapshots schemas when it wraps definitions. Refresh current plugin metadata for this run.
+    if (pi.getActiveTools().includes("read")) pi.registerTool(definition);
+  });
   pi.on("tool_result", (event) => {
     if (event.toolName !== "read" || !isRecord(event.details)) {
       return;

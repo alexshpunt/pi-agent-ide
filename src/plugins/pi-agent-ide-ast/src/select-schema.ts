@@ -120,7 +120,7 @@ function scopedOperation<const Kind extends "within" | "intersection" | "differe
       scopes: {
         ...resultInputSchema,
         description:
-          "Comparison scopes: verified results, data, targets, item arrays, or a readable source string. Match sets by source, not array position.",
+          "Comparison scopes: unchanged results, issued UUIDs or item references, arrays of those strings, or a readable source path. Match sets by source, not array position.",
       },
     },
     { additionalProperties: false, description },
@@ -287,7 +287,7 @@ export const selectSchema = Type.Object(
     path: {
       ...resultInputSchema,
       description:
-        "Pass a compatible source result, its data or RESULT# target, a returned-item array, or a file path. Preview text and reconstructed coordinates are not source targets.",
+        "File path, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Pass the whole result; do not rebuild it from preview text.",
     },
     operation: Type.Union([
       structuralOperationSchema,

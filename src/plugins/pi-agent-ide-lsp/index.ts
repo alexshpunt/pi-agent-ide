@@ -112,9 +112,9 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
         when: { resolvedBy: "any", contentKind: "text" },
         handler: createSourceMappedTextReadHandler(),
       });
-      api.describe(
-        "symbol:<file>#<selector> — declaration source, e.g. symbol:src/catalog.ts#Catalog/find. graph:<file> — top-level declarations, references and calls; members include selectors. graph:<file>#<selector> — references and incoming/outgoing calls for that declaration or member.",
-      );
+      api.describe({
+        path: "symbol:<file>#<selector> — declaration source, e.g. symbol:src/catalog.ts#Catalog/find. graph:<file> — top-level declarations, references and calls; members include selectors. graph:<file>#<selector> — references and incoming/outgoing calls for that declaration or member.",
+      });
     },
   } satisfies ReadPlugin;
 

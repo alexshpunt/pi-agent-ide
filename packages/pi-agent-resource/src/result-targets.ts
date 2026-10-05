@@ -1,6 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -24,12 +26,8 @@ export interface ResolvedResultTargets {
   readonly complete: boolean;
 }
 
-/** Tool inputs allow returned result objects and JS-selected arrays. The store validates authority. */
-export const resultInputSchema = Type.Union([
-  Type.String(),
-  Type.Object({}, { additionalProperties: true }),
-  Type.Array(Type.Unknown()),
-]);
+/** Public source inputs are paths, unchanged text results, issued IDs or arrays of those strings. */
+export const resultInputSchema = Type.Union([Type.String(), Type.Array(Type.String())]);
 
 const prefix = "RESULT#";
 const event = "pi-agent-resource:result-targets";
@@ -43,14 +41,27 @@ type ResultEntry = { readonly cwd: string } & (
 /** Stores immutable source selections for one extension runtime, isolated by worktree. */
 export class ResultTargetStore {
   readonly #entries = new Map<string, ResultEntry>();
+  readonly #matchReferences = new Map<string, string>();
+  readonly #snapshots = new Map<
+    string,
+    { source: string; cwd: string; stamp: string | undefined }
+  >();
+  readonly #results = new Map<
+    string,
+    { cwd: string; digest: string; consumable: boolean; references: string[]; resources: string[] }
+  >();
 
   /** Forget results when the session closes or the extensions reload. */
   public clear(): void {
     this.#entries.clear();
+    this.#matchReferences.clear();
+    this.#snapshots.clear();
+    this.#results.clear();
   }
 
   /** Register trusted resolver data, not a live Resource or agent-supplied coordinates. */
   public register(targets: readonly ResultSourceTarget[], cwd: string, complete = true): string {
+    for (const target of targets) this.refresh(target.source, cwd);
     const reference = `${prefix}${randomUUID()}`;
     this.#entries.set(reference, {
       state: "ready",
@@ -73,6 +84,7 @@ export class ResultTargetStore {
     const entry = this.#entries.get(reference);
     if (entry?.state !== "pending" || entry.cwd !== path.resolve(cwd))
       throw new Error("Only a pending result in this worktree can be confirmed.");
+    for (const target of targets) this.refresh(target.source, cwd);
     this.#entries.set(reference, {
       state: "ready",
       cwd: entry.cwd,
@@ -90,6 +102,7 @@ export class ResultTargetStore {
 
   /** Traverse supported result shapes and resolve only registered source targets. */
   public resolve(input: unknown, cwd: string): ResolvedResultTargets {
+    input = this.source(input, cwd);
     const references = this.#references(input);
     const targets: ResultSourceTarget[] = [];
     let complete = true;
@@ -102,6 +115,9 @@ export class ResultTargetStore {
       if (entry.state === "pending")
         throw new Error("Result target is pending; its write has not been confirmed.");
       if (entry.state === "rejected") throw new Error(entry.reason);
+      for (const target of entry.targets) this.refresh(target.source, cwd);
+      if (!this.#entries.has(reference))
+        throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
       complete &&= entry.complete;
       targets.push(...entry.targets);
     }
@@ -113,7 +129,7 @@ export class ResultTargetStore {
     const resolved = this.resolve(input, cwd);
     const targets: ResultSourceTarget[] = [];
     const seen = new Set<string>();
-    for (const reference of new Set(this.#references(input))) {
+    for (const reference of new Set(this.#references(this.source(input, cwd)))) {
       for (const target of this.resolve(reference, cwd).targets) {
         for (const range of target.ranges) {
           const identity = JSON.stringify([target.source, range]);
@@ -128,9 +144,148 @@ export class ResultTargetStore {
 
   /** Reject changed source bytes before a consumer uses a retained selection. */
   public async verify(result: ResolvedResultTargets, signal?: AbortSignal): Promise<void> {
-    await verifyResultTargets(result, signal);
+    try {
+      await verifyResultTargets(result, signal);
+    } catch (error) {
+      if (!signal?.aborted) for (const target of result.targets) this.invalidate(target.source);
+      throw error;
+    }
   }
 
+  /** Register readable output without exposing the stored tool data to the agent. */
+  public publish(outcome: unknown, text: string, cwd: string, resources: string[] = []): string {
+    const id = randomUUID();
+    for (const source of resources) this.refresh(source, cwd);
+    let references: string[] = [];
+    try {
+      references = this.#references(outcome);
+    } catch {
+      /* Not every result grants a text selection. */
+    }
+    const shown = `<system-result note="Internal reference; not part of the file. Do not edit."><uuid>${id}</uuid></system-result>\n${text}`;
+    const consumable =
+      outcome !== null &&
+      typeof outcome === "object" &&
+      "status" in outcome &&
+      outcome.status === "success";
+    if (consumable && "data" in outcome) {
+      const data = outcome.data;
+      if (
+        data !== null &&
+        typeof data === "object" &&
+        "matches" in data &&
+        Array.isArray(data.matches)
+      ) {
+        const matches: unknown[] = data.matches;
+        for (const match of matches) {
+          if (
+            match === null ||
+            typeof match !== "object" ||
+            !("target" in match) ||
+            typeof match.target !== "string" ||
+            !this.#entries.has(match.target) ||
+            !("references" in match)
+          )
+            continue;
+          const references = match.references;
+          if (
+            references !== null &&
+            typeof references === "object" &&
+            "match" in references &&
+            typeof references.match === "string" &&
+            /^SEARCH#[A-F\d]+:\d+:match$/u.test(references.match)
+          )
+            this.#matchReferences.set(references.match, match.target);
+        }
+      }
+    }
+    this.#results.set(id, {
+      cwd: path.resolve(cwd),
+      digest: createHash("sha256").update(shown).digest("hex"),
+      consumable,
+      references,
+      resources,
+    });
+    return shown;
+  }
+
+  /** Resolve only issued result strings or IDs. Preview text never defines source authority. */
+  public source(input: unknown, cwd: string, allowResource: boolean | "live" = false): unknown {
+    if (Array.isArray(input)) return input.map((item) => this.source(item, cwd, allowResource));
+    if (typeof input !== "string") return input;
+    const matchTarget = this.#matchReferences.get(input);
+    if (matchTarget) return this.source(matchTarget, cwd, allowResource);
+    const envelope =
+      /^<system-result\b[^>]*><uuid>([a-f\d-]{36})<\/uuid><\/system-result>(?:\n|$)/u.exec(input);
+    const id = envelope?.[1] ?? (input.startsWith(prefix) ? input.slice(prefix.length) : input);
+    const isId = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u.test(id);
+    if (!envelope && !isId) {
+      if (input.startsWith("<system-result")) throw new Error("Invalid system result reference.");
+      return input;
+    }
+    const result = this.#results.get(id);
+    // Existing backend selection handles share RESULT# syntax, but never accept an unknown UUID.
+    if (!result && !envelope && input.startsWith(prefix) && this.#entries.has(input)) return input;
+    if (!result) throw new Error("Result reference expired or unknown; repeat the source tool.");
+    if (result.cwd !== path.resolve(cwd)) throw new Error("Result belongs to another worktree.");
+    if (envelope && createHash("sha256").update(input).digest("hex") !== result.digest)
+      throw new Error("Result text changed; pass the original result or its UUID.");
+    for (const resource of result.resources) this.refresh(resource, cwd);
+    if (!this.#results.has(id))
+      throw new Error("Result reference expired; repeat the source tool.");
+    if (!result.consumable) throw new Error("Only successful source results can be consumed.");
+    for (const reference of result.references) {
+      if (!this.#entries.has(reference)) {
+        this.#results.delete(id);
+        throw new Error("Result reference expired; repeat the source tool.");
+      }
+    }
+    if (result.references.length === 1) return result.references[0];
+    if (result.references.length > 1) return result.references;
+    const resource = result.resources.length === 1 ? result.resources[0] : undefined;
+    if (
+      resource &&
+      (allowResource === true || (allowResource === "live" && /^(?:shell|debug):/u.test(resource)))
+    )
+      return resource;
+    throw new Error("This result has no reusable text selection.");
+  }
+
+  /** Permanently retire every ready selection of a changed file, including derived results. */
+  public invalidate(source: string): void {
+    const removed = new Set<string>();
+    for (const [reference, entry] of this.#entries) {
+      if (
+        entry.state === "ready" &&
+        entry.targets.some((target) => sourcePath(target.source, entry.cwd) === source)
+      ) {
+        this.#entries.delete(reference);
+        removed.add(reference);
+      }
+    }
+    for (const [id, result] of this.#results)
+      if (
+        result.resources.some((resource) => sourcePath(resource, result.cwd) === source) ||
+        result.references.some((reference) => removed.has(reference))
+      )
+        this.#results.delete(id);
+  }
+
+  /** Detect filesystem generations, so restoring old bytes never revives an old reference. */
+  public refresh(source: string, cwd: string): void {
+    const identity = sourcePath(source, cwd);
+    const key = JSON.stringify([path.resolve(cwd), identity]);
+    const stamp = fileStamp(source, cwd);
+    const previous = this.#snapshots.get(key);
+    if (previous && previous.stamp !== stamp) this.invalidate(identity);
+    this.#snapshots.set(key, { source, cwd, stamp });
+  }
+
+  /** Check surviving snapshots at a script boundary, including final formatting. */
+  public refreshAll(): void {
+    for (const snapshot of [...this.#snapshots.values()])
+      this.refresh(snapshot.source, snapshot.cwd);
+  }
   #references(input: unknown): string[] {
     if (typeof input === "string" && input.startsWith(prefix)) return [input];
     if (Array.isArray(input)) return input.flatMap((child) => this.#references(child));
@@ -150,6 +305,25 @@ export class ResultTargetStore {
   }
 }
 
+function sourcePath(source: string, cwd: string): string {
+  const file = source.startsWith("raw:") ? source.slice(4) : source;
+  if (file.startsWith("file:")) {
+    try {
+      return fileURLToPath(file);
+    } catch {
+      /* Unresolved protocol labels have no filesystem stamp. */
+    }
+  }
+  return path.resolve(cwd, file);
+}
+function fileStamp(source: string, cwd: string): string | undefined {
+  try {
+    const stat = statSync(sourcePath(source, cwd), { bigint: true });
+    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+  } catch {
+    return undefined;
+  }
+}
 /** Verify retained source snapshots for tools and provider refresh operations. */
 export async function verifyResultTargets(
   result: ResolvedResultTargets,

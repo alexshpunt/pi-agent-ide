@@ -10,6 +10,7 @@ import { registerModuleSettings } from "#src/composite/module-settings.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
+import { createIdeTextResults } from "#src/composite/text-results.js";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
@@ -22,7 +23,8 @@ Registers the configured built-ins as one Pi Agent IDE extension.
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
   const nestedRendering = createNestedIdeRendering(pi);
-  const availability = createIdeToolAvailability(nestedRendering.api);
+  const textResults = createIdeTextResults(nestedRendering.api);
+  const availability = createIdeToolAvailability(textResults.api);
   pi.on("session_start", (event, context) => {
     const restored =
       event.reason === "reload"
@@ -135,4 +137,5 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     await extension.register(availability.api, { preferences: config.preferences ?? {} });
   }
   nestedRendering.finalize();
+  textResults.finalize();
 }

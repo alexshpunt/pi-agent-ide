@@ -127,10 +127,18 @@ export default async function registerVision(
             return { kind: "continue", context };
           },
         });
-        const defaults = getVisionDefaults();
-        api.describe(
-          `Process metadata: process:PID. Visual capture: window:PID and display: or display:#N. HTTP(S) sources accept image and sequence screenshots. Use named view parameters such as sequence:duration=2,interval=0.5,scale=0.5 and image:scale=0.5,region=0.25,0.25,0.5,0.5. Duration is limited to 10 seconds and sequences to 20 frames. Defaults: duration=${defaults.durationSeconds}, interval=${defaults.intervalSeconds}, scale=${defaults.scale}. Region uses normalized x,y,width,height and runs before scaling. For captures, limit is a square grid cell size in output pixels and offset is one zero-based row-major cell index; limit without offset selects cell 0, while offset without limit is invalid. Omit both for the bounded transformed image.`,
-        );
+        api.describe({
+          path: () =>
+            `process:PID — process metadata. window:PID — capture a window of an IDE-owned or allowlisted process${pi.getFlag("pi-agent-ide-vision-arbitrary-windows") === true ? "; arbitrary windows are enabled" : "; other processes require --pi-agent-ide-vision-arbitrary-windows"}. display: or display:#N — display capture with a zero-based index; ${pi.getFlag("pi-agent-ide-vision-displays") === true ? "enabled" : "requires --pi-agent-ide-vision-displays"}. HTTP(S) URLs accept image or sequence screenshots.`,
+          views: () => {
+            const defaults = getVisionDefaults();
+            return `image or image:scale=S,region=X,Y,W,H — one screenshot. sequence or sequence:duration=D,interval=I,scale=S,region=X,Y,W,H — timed frames. Only one image/sequence view per request. duration and interval are seconds and only valid for sequence: 0 < D <= 10, I > 0, at most 20 frames (floor(D/I)+1). Scale satisfies 0 < S <= 1. Region uses normalized x,y,width,height: x,y >= 0, width,height > 0, and the rectangle must fit in 0..1; crop runs before scaling. Settings are optional; defaults: duration=${defaults.durationSeconds}, interval=${defaults.intervalSeconds}, scale=${defaults.scale}.`;
+          },
+          offset:
+            "For window:, display: and HTTP(S) image/sequence captures, a non-negative integer zero-based row-major grid cell index in the transformed image. Requires limit; omit to select cell 0 when limit is set.",
+          limit:
+            "For window:, display: and HTTP(S) image/sequence captures, a positive integer square grid cell size in output pixels. Omit both offset and limit for the bounded transformed image.",
+        });
       },
     }),
     connectSearchPlugin(pi, {

@@ -303,7 +303,7 @@ class InterceptorImpl implements ToolCallInterceptor {
             content: guardResult.content,
             details,
           },
-          mutationDataSchema,
+          mutationDataSchema(event.toolName),
           {
             status: "error",
             errors: [resultError(message, "INTERCEPTED")],

@@ -42,10 +42,11 @@ import {
   type NativeEditBatchEvent,
 } from "#src/api/native-edit-batch-event.js";
 import {
-  mutationDataSchema,
-  mutationOutputSchema,
+  flushDataSchema,
+  flushOutputSchema,
   mutationOutcome,
   type MutationData,
+  type FlushData,
 } from "./structured-result.js";
 
 interface PendingBatch {
@@ -62,7 +63,7 @@ interface BatchSummary {
 }
 
 interface ScriptBatch {
-  readonly reports: StructuredResult<MutationData>[];
+  readonly reports: StructuredResult<FlushData>[];
   reportCursor: number;
   readonly id: string;
   readonly context: ExtensionContext;
@@ -103,10 +104,7 @@ function receiptEffect(files: MutationData["files"]): MutationData["effect"] {
       : "not-applied";
 }
 
-function receiptStatus(
-  errors: readonly unknown[],
-  operations: NonNullable<MutationData["operations"]>,
-) {
+function receiptStatus(errors: readonly unknown[], operations: FlushData["operations"]) {
   return errors.length === 0
     ? ("success" as const)
     : operations.some(
@@ -192,7 +190,7 @@ class NativeTextEditBatchCoordinator {
         "Use flush to commit pending native Codemode text edits and return their observed effects. Await tools.flush({}) before depending on a completed write. A failed flush retains applied effects and does not replay edits. Call it only inside native Codemode.",
       promptSnippet: "Commit pending native editor changes and inspect their effects",
       parameters: Type.Object({}, { additionalProperties: false }),
-      outputSchema: mutationOutputSchema,
+      outputSchema: flushOutputSchema,
       execute: async (id) => {
         const script = this.invocations.get(id);
         if (!script) throw new Error("Flush requires an active native Codemode script");
@@ -209,15 +207,24 @@ class NativeTextEditBatchCoordinator {
               content: [
                 {
                   type: "text",
-                  text:
+                  text: [
                     errors.length === 0
                       ? `Flushed ${operations.length} editor operations; ${effect}.`
-                      : `Editor flush failed; ${effect}.\n${errors.map((error) => error.message).join("\n")}`,
+                      : `Editor flush failed; ${effect}.`,
+                    ...files.map(
+                      (file) =>
+                        `${file.source}: ${file.effect}${file.state ? ` (${file.state})` : ""}`,
+                    ),
+                    ...operations.map(
+                      (operation) =>
+                        `${operation.operation}: ${operation.effect}${operation.errors.length ? ` — ${operation.errors.map((error) => error.message).join("; ")}` : ""}`,
+                    ),
+                  ].join("\n"),
                 },
               ],
               details: { results: [] },
             },
-            mutationDataSchema,
+            flushDataSchema,
             {
               status: receiptStatus(errors, operations),
               data: { operation: "flush", effect, files, operations },

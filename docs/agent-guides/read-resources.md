@@ -27,19 +27,15 @@ For `raw:` resources, offsets and limits count bytes. A negative offset counts f
 
 Temporary resources remain available only in their owning runtime.
 
-## Native Codemode data
+## Readable results and composition
 
-Check `status` before reading `data`. Use text `data.lines` and their `anchors` without parsing display rows. Use source-level `data.references` for actions such as Git changes. Follow `data.continuation` as a complete next Read request; its offset is absolute on its returned source. Check `data.truncated` and `data.fullResult` when present.
+Read returns the same file text or requested views in direct calls and Codemode. It adds a leading system-result envelope with a UUID. The envelope is an internal reference, not file content; do not edit or insert it into a file. Follow the displayed continuation offset or temp reference for more output. Raw reads show hexadecimal bytes. Nested image reads also deliver their images on the parent Codemode result.
 
-Use `data.bytes` for `raw:` reads. Forward a native image from `data.blocks` with `image(block)`. Keep multi-source `data.resources` separate instead of joining unrelated ranges.
+Pass an unchanged result as `read.path`, `search.path`, `select.path` or a supported edit source parameter. Outside Codemode, its UUID works too. Store/load retains these strings within the session. Read results keep their requested source windows, not just the shortened preview. Read-only derived views, bytes, images and directory listings do not gain text-edit authority.
 
-## Reusing source windows
+Read of a selected result may show surrounding whole-line context, but later tools remain restricted to its original exact selection. Context does not grant wider edit authority.
 
-Exact filesystem text reads expose `data.target`. Pass the successful result, its data, or that `RESULT#` reference as `search.path` or `replace.path` to reuse the requested window, not just its shortened preview. Read-only derived views, bytes, images, and directory listings do not gain text-edit authority.
-
-Pass a stored `RESULT#` reference as `read.path` to inspect an exact source selection. Read may show surrounding whole-line context, but its returned target intersects that window with the original selection and keeps input completeness. Context does not grant wider edit authority.
-
-Check that a target was returned before composing source operations. Obtain a fresh Read/Search after source bytes change, the session changes, or Pi reloads. New result targets never silently refresh.
+Changed snapshots permanently retire their old IDs, even if the file is restored later. Obtain a fresh Read/Search after changes, session switches or reloads. Unsupported and expired references are errors, not empty results.
 
 ## Views
 
