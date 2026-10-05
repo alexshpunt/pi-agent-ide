@@ -188,7 +188,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-first",
             name: "codemode",
             arguments: {
-              code: 'const read = await tools.read({path:"example.ts"}); if (read.status !== "success" || read.data.kind !== "text") throw new Error("Structured read lost"); if (JSON.stringify(read).includes("# Guide:")) throw new Error("Guide leaked into data"); text(read.status); text(await tools.search({query:"marker",path:"example.ts"})); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
+              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read !== "string" || !read.includes("marker")) throw new Error("Readable content lost"); if (read.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); text(await tools.search({query:"marker",path:"example.ts"})); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
             },
           }),
         ],

@@ -56,7 +56,11 @@ import {
 } from "#src/core/tools/read/read-result.js";
 import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
 
-import { readParameters } from "#src/api/read-parameters.js";
+import {
+  type readParameters,
+  describeReadParameters,
+  type ReadParameterText,
+} from "#src/api/read-parameters.js";
 import { readRaw } from "#src/core/tools/read/raw-read.js";
 import { readOutputSchema, structuredRead } from "./read/structured-result.js";
 
@@ -126,6 +130,7 @@ export interface ReadTool {
 export function createReadTool(
   pluginPromptGuidelines?: () => readonly string[],
   presentation: "full" | "compact" | "disabled" = "compact",
+  parameterDescriptions?: () => ReadParameterText,
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
   const resolvers: RegisteredResolver[] = [
@@ -172,7 +177,9 @@ export function createReadTool(
           ...(pluginPromptGuidelines?.() ?? []),
         ];
       },
-      parameters: readParameters,
+      get parameters() {
+        return describeReadParameters(parameterDescriptions?.() ?? {});
+      },
       outputSchema: readOutputSchema,
       renderCall(arguments_, theme, context) {
         const source = typeof arguments_.path === "string" ? arguments_.path : undefined;

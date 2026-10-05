@@ -339,6 +339,9 @@ export function withToolCallInterceptionRendering<TParameters extends TSchema, T
     get promptGuidelines() {
       return definition.promptGuidelines;
     },
+    get parameters() {
+      return definition.parameters;
+    },
     renderCall(arguments_, theme, context) {
       const state = context.state as InterceptionRenderState;
       const annotation = annotations.bind(context.toolCallId, context.invalidate);

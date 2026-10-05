@@ -109,6 +109,7 @@ export function createAstSearchResolver(
       );
       const data = selectionData(selected.matches, selected.complete, session.id, session);
       const captures: Record<string, ReturnType<typeof selectionData>["matches"]>[] = [];
+      const captureGroups: Record<string, { target: string; nodes: number }>[] = [];
       for (const raw of selected.raw.slice(0, data.matches.length)) {
         const groups = Object.entries({
           ...Object.fromEntries(
@@ -117,6 +118,7 @@ export function createAstSearchResolver(
           ...raw.metaVariables?.multi,
         });
         const projected = [];
+        const groupsForMatch: Record<string, { target: string; nodes: number }> = {};
         for (const [name, nodes] of groups) {
           for (const node of nodes) {
             if (
@@ -130,6 +132,23 @@ export function createAstSearchResolver(
             context.cwd,
             context.signal,
           );
+          const group = await registerSelection(
+            {
+              request,
+              matches,
+              complete: selected.complete,
+              refresh: async () => {
+                throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
+              },
+            },
+            context,
+          );
+          groupsForMatch[name] = {
+            target: requiredValue(
+              selectionData(matches, selected.complete, undefined, group).target,
+            ),
+            nodes: matches.length,
+          };
           const nodesData: ReturnType<typeof selectionData>["matches"] = [];
           // Shared Search previews hold 100 nodes. Register every capture chunk without dropping nodes.
           for (let offset = 0; offset < matches.length; offset += 100) {
@@ -150,6 +169,7 @@ export function createAstSearchResolver(
           projected.push([name, nodesData] as const);
         }
         captures.push(Object.fromEntries(projected));
+        captureGroups.push(groupsForMatch);
       }
       if (context.scope !== undefined) await verifyResultTargets(context.scope, context.signal);
       return {
@@ -159,6 +179,7 @@ export function createAstSearchResolver(
             ...data,
             matches: data.matches.map((match, index) => ({ ...match, captures: captures[index] })),
           },
+          captureGroups,
           pattern,
           matches: selected.raw.map((match, index) => ({
             ...match,
@@ -181,7 +202,11 @@ export function createAstSearchResolver(
     },
     format(payload) {
       const result = payload as {
+        readonly data: {
+          matches: { captures?: Record<string, ReturnType<typeof selectionData>["matches"]> }[];
+        };
         readonly pattern: string;
+        readonly captureGroups: Record<string, { target: string; nodes: number }>[];
         readonly sessionId: string;
         readonly matches: readonly AstGrepMatch[];
         readonly complete: boolean;
@@ -195,12 +220,16 @@ export function createAstSearchResolver(
         };
       }
 
-      const lines = result.matches.flatMap((match, index) => [
-        `SEARCH#${result.sessionId}:${String(index + 1)}:match ${match.file}:${String(match.range.start.line + 1)}:${String(
-          match.range.start.column + 1,
-        )} ${match.language}`,
-        `   ${match.lines.trim()}`,
-      ]);
+      const lines = result.matches.flatMap((match, index) => {
+        const rows = [
+          `SEARCH#${result.sessionId}:${index + 1}:match ${match.file}:${match.range.start.line + 1}:${match.range.start.column + 1} ${match.language}`,
+          `   ${match.lines.trim()}`,
+        ];
+        for (const [name, group] of Object.entries(result.captureGroups[index] ?? {})) {
+          rows.push(`   capture ${name}: ${group.target} ${group.nodes} node(s)`);
+        }
+        return rows;
+      });
 
       if (result.complete)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact AST matches.`);

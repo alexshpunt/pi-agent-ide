@@ -107,7 +107,7 @@ test.each([
           call("full", "read", { path: "large.ts" }),
           call("bounded", "read", { path: "large.ts", offset: 2, limit: 3 }),
           call("script", "codemode", {
-            code: 'const result = await tools.read({ path: "large.ts" }); const data = result.data; text({ status: result.status, kind: data?.kind, startLine: data?.startLine, endLine: data?.endLine, truncated: data?.truncated, continuation: data?.continuation, firstLine: data?.lines?.[0]?.content });',
+            code: 'const result = await tools.read({ path: "large.ts" }); if(typeof result !== "string") throw Error("Expected readable overview"); text(result);',
           }),
           assistantMessage([text("Done")]),
         ],
@@ -118,47 +118,15 @@ test.each([
         resolvedBy: "ast-overflow",
       });
       expect(getToolResultText(run, "full")).toContain("omitted bodies are not exact source text");
-      const full = getToolExecutionResult(run, "full") as {
-        structuredContent: {
-          status: string;
-          data: {
-            kind: string;
-            source: string;
-            lines: { content: string; lineEnding: string }[];
-            startLine: number;
-            endLine: number;
-            totalLines: number;
-            truncated: boolean;
-            continuation?: { path: string; offset: number };
-          };
-        };
-      };
-      expect(full.structuredContent.status).toBe("success");
-      const data = full.structuredContent.data;
-      expect(data).toMatchObject({
-        kind: "text",
-        startLine: 1,
-        totalLines: source.trimEnd().split("\n").length,
-      });
-      expect(data.lines.map((line) => line.content + line.lineEnding).join("")).toBe(
-        source.split("\n").slice(0, data.endLine).join("\n") + "\n",
-      );
-      expect(data.truncated).toBe(name === "lines");
-      if (name === "lines") expect(data.continuation).toEqual({ path: data.source, offset: 2001 });
-      else expect(data.continuation).toBeUndefined();
-      const bounded = getToolExecutionResult(run, "bounded") as { structuredContent: unknown };
-      expect(bounded.structuredContent).toMatchObject({
-        status: "success",
-        data: { kind: "text", startLine: 2, endLine: 4, truncated: false },
-      });
+      expect(getToolExecutionResult(run, "full")).not.toHaveProperty("structuredContent");
+      const bounded = getToolResultText(run, "bounded");
+      expect(bounded).toContain(source.split("\n").slice(1, 4).join("\n"));
+      expect(getToolExecutionResult(run, "bounded")).not.toHaveProperty("structuredContent");
       expect(getToolExecution(run, "script").isError).toBe(false);
       const scriptText = getToolResultText(run, "script");
-      expect(scriptText).toContain('"status":"success"');
-      expect(scriptText).toContain('"kind":"text"');
-      expect(scriptText).toContain('"firstLine":"function checkout() {"');
-      expect(scriptText).toContain(`"endLine":${data.endLine}`);
-      expect(scriptText).toContain(`"truncated":${data.truncated}`);
-      expect(scriptText).not.toContain("STRUCTURED_ADAPTER_REQUIRED");
+      expect(scriptText).toContain("omitted bodies are not exact source text");
+      expect(scriptText).toContain("function checkout");
+      expect(scriptText).not.toContain('"kind":"text"');
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

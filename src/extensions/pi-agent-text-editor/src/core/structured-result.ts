@@ -1,7 +1,5 @@
 import { Type, type Static } from "typebox";
-import { Value } from "typebox/value";
 import {
-  MAX_STRUCTURED_BYTES,
   resultError,
   resultErrorSchema,
   structuredResultSchema,
@@ -23,142 +21,55 @@ const file = Type.Object(
   {
     source: Type.String(),
     effect,
-    action: Type.Optional(Type.String()),
     state: Type.Optional(
       Type.Union([Type.Literal("present"), Type.Literal("absent"), Type.Literal("unknown")]),
     ),
   },
   { additionalProperties: false },
 );
-const operation = Type.Object(
-  {
-    id: Type.String(),
-    operation: Type.String(),
-    effect,
-    errors: Type.Array(resultErrorSchema),
-    status: Type.Optional(
-      Type.Union([
-        Type.Literal("success"),
-        Type.Literal("error"),
-        Type.Literal("warning"),
-        Type.Literal("unknown"),
-      ]),
-    ),
-    sources: Type.Optional(Type.Array(Type.String())),
-    warnings: Type.Optional(Type.Array(resultErrorSchema)),
-  },
+const receipt = { effect, files: Type.Array(file) };
+
+/** Validate one file tool's result. Recovery, rendering and resource actions stay in details. */
+export function mutationDataSchema(operation: string) {
+  return Type.Object(
+    {
+      operation: Type.Literal(operation),
+      ...receipt,
+      operationId: Type.Optional(Type.String()),
+      ...(operation === "delete" || operation === "flush"
+        ? {}
+        : {
+            target: Type.Optional(Type.String()),
+            targetUnavailable: Type.Optional(Type.String()),
+          }),
+    },
+    { additionalProperties: false },
+  );
+}
+/** Internal validation schema for a single tool, not an agent-facing return declaration. */
+export function mutationResultSchema(operation: string) {
+  return structuredResultSchema(mutationDataSchema(operation));
+}
+const batchOperation = Type.Object(
+  { id: Type.String(), operation: Type.String(), effect, errors: Type.Array(resultErrorSchema) },
   { additionalProperties: false },
 );
-export const mutationDataSchema = Type.Object(
-  {
-    operation: Type.String(),
-    effect,
-    operationId: Type.Optional(Type.String()),
-    target: Type.Optional(
-      Type.String({
-        description:
-          "Backend-owned resulting-text scope: replace/insert text, write's whole file, copy/move destinations, or undo's whole restored files. Delete never supplies a live target. Pending handles require a confirmed commit.",
-      }),
-    ),
-    targetUnavailable: Type.Optional(
-      Type.String({
-        description:
-          "Why a completed mutation could not provide a safe resulting-text target. The write effect is reported separately.",
-      }),
-    ),
-    files: Type.Array(file),
-    changes: Type.Optional(
-      Type.Array(
-        Type.Object(
-          {
-            source: Type.String(),
-            from: Type.Integer({
-              description:
-                "Inclusive zero-based UTF-16 offset in the pre-edit snapshot; not a live selector.",
-            }),
-            to: Type.Integer({
-              description:
-                "Exclusive zero-based UTF-16 offset in the pre-edit snapshot; not a live selector.",
-            }),
-            removedText: Type.String(),
-            insertedText: Type.String(),
-          },
-          { additionalProperties: false },
-        ),
-      ),
-    ),
-    changesUnavailable: Type.Optional(
-      Type.String({
-        description: "Why the exact change record is omitted; applied effects remain reported.",
-      }),
-    ),
-    operations: Type.Optional(Type.Array(operation)),
-    parentToolCallId: Type.Optional(Type.String()),
-    recovery: Type.Optional(
-      Type.Array(
-        Type.Object({
-          source: Type.String(),
-          field: Type.String(),
-          anchor: Type.String(),
-          total: Type.Integer(),
-          candidates: Type.Array(
-            Type.Object({
-              rank: Type.Integer(),
-              range: Type.Object({
-                start: Type.Object({ lineNumber: Type.Integer(), column: Type.Integer() }),
-                end: Type.Object({ lineNumber: Type.Integer(), column: Type.Integer() }),
-              }),
-            }),
-          ),
-        }),
-      ),
-    ),
-    action: Type.Optional(
-      Type.Object(
-        {
-          source: Type.String(),
-          kind: Type.Optional(Type.String()),
-          status: Type.Optional(Type.String()),
-          command: Type.Optional(Type.String()),
-          deleted: Type.Optional(Type.Boolean()),
-          session: Type.Optional(Type.String()),
-          file: Type.Optional(Type.String()),
-          line: Type.Optional(Type.Integer()),
-          verified: Type.Optional(Type.Boolean()),
-          evaluation: Type.Optional(
-            Type.Object(
-              {
-                expression: Type.String(),
-                result: Type.String(),
-                type: Type.Optional(Type.String()),
-                variablesReference: Type.Integer(),
-              },
-              { additionalProperties: false },
-            ),
-          ),
-          breakpoints: Type.Optional(
-            Type.Array(
-              Type.Object(
-                {
-                  source: Type.String(),
-                  file: Type.String(),
-                  line: Type.Integer(),
-                  verified: Type.Boolean(),
-                },
-                { additionalProperties: false },
-              ),
-            ),
-          ),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-  },
+/** Flush owns the batch journal; individual file tools do not carry it. */
+export const flushDataSchema = Type.Object(
+  { operation: Type.Literal("flush"), ...receipt, operations: Type.Array(batchOperation) },
   { additionalProperties: false },
 );
-export const mutationOutputSchema = structuredResultSchema(mutationDataSchema);
-/** Public receipt fields are defined by the native output schema. */
-export type MutationData = Static<typeof mutationDataSchema>;
+export const flushOutputSchema = structuredResultSchema(flushDataSchema);
+export type FlushData = Static<typeof flushDataSchema>;
+/** Small internal receipt used to collect observed file effects. */
+export interface MutationData {
+  operation: string;
+  effect: Static<typeof effect>;
+  files: Static<typeof file>[];
+  operationId?: string;
+  target?: string;
+  targetUnavailable?: string;
+}
 type MutationFile = MutationData["files"][number];
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -180,16 +91,13 @@ export function mutationOutcome(
       data: {
         operation,
         effect: "pending",
-        ...(typeof details.metadata?.resultTarget === "string"
+        ...(operation !== "delete" && typeof details.metadata?.resultTarget === "string"
           ? { target: details.metadata.resultTarget }
           : {}),
         files:
           typeof detailRecord.source === "string"
             ? [{ source: detailRecord.source, effect: "pending" }]
             : [],
-        ...(typeof native.parentToolCallId === "string"
-          ? { parentToolCallId: native.parentToolCallId }
-          : {}),
       },
     };
   const observed = new Set(completions.map((completion) => completion.resourceSource));
@@ -286,20 +194,6 @@ export function mutationOutcome(
       const file = unique.find((file) => file.source === state.source);
       if (file && (state.state === "present" || state.state === "absent")) file.state = state.state;
     }
-  const changes = (results ?? [])
-    .filter((item) => item.data.ok)
-    .flatMap((item) => {
-      const source = item.data.path;
-      if (source === undefined) return [];
-      return (item.data.rawChanges ?? []).map((change) => ({
-        source,
-        from: change.fromA,
-        to: change.toA,
-        removedText: change.removedText,
-        insertedText: change.insertedText,
-      }));
-    });
-  const changesFit = Buffer.byteLength(JSON.stringify(changes)) <= MAX_STRUCTURED_BYTES / 2;
   const known = unique.some((file) => file.effect === "applied");
   if (result.isError && errors.length === 0)
     errors.push({ code: "MUTATION_FAILED", message: "Mutation failed" });
@@ -318,46 +212,6 @@ export function mutationOutcome(
       : known
         ? "applied"
         : "not-applied";
-  const action =
-    semantic && typeof semantic.source === "string"
-      ? {
-          source: semantic.source,
-          ...(typeof semantic.kind === "string" ? { kind: semantic.kind } : {}),
-          ...(typeof semantic.status === "string" ? { status: semantic.status } : {}),
-          ...(typeof semantic.command === "string" ? { command: semantic.command } : {}),
-          ...(typeof semantic.deleted === "boolean" ? { deleted: semantic.deleted } : {}),
-          ...(typeof semantic.session === "string" ? { session: semantic.session } : {}),
-          ...(typeof semantic.file === "string" ? { file: semantic.file } : {}),
-          ...(typeof semantic.line === "number" ? { line: semantic.line } : {}),
-          ...(typeof semantic.verified === "boolean" ? { verified: semantic.verified } : {}),
-          ...(record(semantic.evaluation)
-            ? {
-                evaluation: {
-                  expression: semantic.evaluation.expression,
-                  result: semantic.evaluation.result,
-                  variablesReference: semantic.evaluation.variablesReference,
-                  ...(typeof semantic.evaluation.type === "string"
-                    ? { type: semantic.evaluation.type }
-                    : {}),
-                },
-              }
-            : {}),
-          ...(Array.isArray(semantic.breakpoints)
-            ? {
-                breakpoints: semantic.breakpoints.filter(record).map((breakpoint) => ({
-                  source: breakpoint.source,
-                  file: breakpoint.file,
-                  line: breakpoint.line,
-                  verified: breakpoint.verified,
-                })),
-              }
-            : {}),
-        }
-      : undefined;
-  const checkedAction =
-    action && Value.Check(mutationDataSchema.properties.action, action) ? action : undefined;
-  if (action && !checkedAction)
-    errors.push(resultError("Action adapter returned invalid fields", "INVALID_STRUCTURED_RESULT"));
   return {
     status:
       errors.length === 0
@@ -369,32 +223,12 @@ export function mutationOutcome(
       operation,
       effect,
       files: unique,
-      ...(changes.length === 0
-        ? {}
-        : changesFit
-          ? { changes }
-          : {
-              changesUnavailable:
-                "Exact change record exceeds the 512 KiB receipt budget; it was not clipped.",
-            }),
-      ...(typeof details.metadata?.resultTarget === "string"
+      ...(operation !== "delete" && typeof details.metadata?.resultTarget === "string"
         ? { target: details.metadata.resultTarget }
         : {}),
-      ...(typeof details.metadata?.targetUnavailable === "string"
+      ...(operation !== "delete" && typeof details.metadata?.targetUnavailable === "string"
         ? { targetUnavailable: details.metadata.targetUnavailable }
         : {}),
-      ...(details.anchorRecoveries === undefined
-        ? {}
-        : {
-            recovery: details.anchorRecoveries.map((item) => ({
-              source: item.path,
-              field: item.field,
-              anchor: item.anchor,
-              total: item.total,
-              candidates: [...item.candidates],
-            })),
-          }),
-      ...(checkedAction ? { action: checkedAction } : {}),
     },
     errors,
   };
@@ -408,5 +242,5 @@ export function structuredMutation(
 ) {
   const outcome = mutationOutcome(result, operation, completions);
   if (outcome.data && operationId !== undefined) outcome.data.operationId = operationId;
-  return withStructuredResult(result, mutationDataSchema, outcome);
+  return withStructuredResult(result, mutationDataSchema(operation), outcome);
 }

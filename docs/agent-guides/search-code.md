@@ -12,13 +12,13 @@ Use `files:<pattern>` for paths. Slash-containing globs match workspace-relative
 
 Use possible-name groups as spelling hints, not synonyms or proof of equivalent behavior. Inspect the candidate source before choosing an edit. The original match list stays empty; each group is a separate exact alternative in the same scope.
 
-Inside native Codemode, use `data.fuzzy.candidates` when returned. Check each group's `selection.complete` separately from `selection.truncated`. Pass a registered local `selection` or its `target` to compatible tools for strict snapshot composition; its preview does not clip the stored candidate scope. Use its `selection.all` only when returned, or its individual match references. A candidate all-reference refreshes that exact alternative, not the fuzzy ranking. For URL groups, read the returned URL and line range; no editable Search references exist. Structured result-scoped queries stay exact and do not run this extra branch.
+Inspect the displayed possible-name groups and their completeness separately. The whole Search result still selects the original empty match set, not a suggested alternative. Use the chosen group's returned references to inspect or edit that alternative. A candidate all-reference refreshes only its exact alternative, not the fuzzy ranking. For URL groups, read the returned URL and line range; no editable Search references exist. Result-scoped queries stay exact and do not run this extra branch.
 
 If the extra branch reports a budget skip, narrow `path` rather than treating the skip as proof that no nearby name exists. Keep quoted exact queries, Boolean queries, and explicit protocols exact.
 
 ## Search resources
 
-Inside native Codemode, check `status` and use `data.matches`, their exact `range`, and `references.line` or `references.match`. Use `data.all` only when returned. Check backend `complete` separately from public-window `truncated`; an empty successful match list is not an error.
+Search returns readable matches and references in direct calls and Codemode. An empty successful search is not an error. Incomplete results say so; do not treat their zero matches as proof of absence.
 
 Local text results expose `SEARCH#HASH:N:line` for its containing line and `SEARCH#HASH:N:match` for the exact match. Complete selections use `:all:line` or `:all:match`. Pass these references directly to read or editing tools; omit the file path when an all-selection spans files.
 
@@ -26,40 +26,35 @@ A single-result reference becomes stale after its file changes. Re-run the searc
 
 ## Searching returned scopes
 
-Pass a source-aware Read/Search/mutation result with a live target, its `data`, a `RESULT#` reference, or an array of returned matches/resources as `path` to search their exact source ranges. Local text, `regex:`, `ast:`, and `symbols:` queries support this input. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
+Pass an unchanged Read/Search/Select/edit result, its UUID or a `RESULT#` reference as `path`. Arrays of registered results also work. Local text, `regex:`, `ast:`, and `symbols:` queries search their exact ranges. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
 
-A replace/insert result searches only that call's resulting text, including an empty resulting position. Copy/move search only destination text; whole-file transfers, write and undo search whole resulting files. Delete and restored absence have no live text target. In native Codemode, passing a pending result commits the batch first. Final formatting runs at script end; targets from before changed formatting become stale, not silently rebound.
+A replace/insert result searches only that call's resulting text, including an empty resulting position. Copy/move search only destination text; whole-file transfers, write and undo search whole resulting files. Delete and restored absence have no live text target. In Codemode, passing a pending result commits the batch first. Final formatting runs at script end; results from before changed formatting become stale, not silently rebound.
 
-Pass `found.data.matches.filter(...)` to narrow a result with JavaScript. A whole result's `target` still selects its complete stored scope; changing its preview does not narrow it. Preserve returned target handles instead of reconstructing coordinates from text.
+Use a displayed item or capture reference for a subset. The whole result retains its complete stored scope; editing copied preview text never narrows that scope.
 
-Check `complete` before treating zero matches as absence. Inherited incompleteness survives non-empty subsets. Empty arrays select no sources; they do not default to the workspace. Result-scoped text Boolean queries and text include/exclude globs remain unsupported. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
+Incomplete scopes cannot authorize edits, even through non-empty subsets. Empty arrays select no sources; they do not default to the workspace. Result-scoped text Boolean queries and text include/exclude globs remain unsupported. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
 
 ## AST search
 
 Use `ast:<pattern>` for syntax-aware matching. `$NAME` captures one syntax node and `$$$BODY` captures several nodes. Returned search references can select multiline matches for read, replace, copy, move, and delete. An incomplete result does not provide a complete all-selection. Text replacement through an AST selection does not update imports or references automatically.
 
-Pass `found.data.matches[index].captures.NAME` to Search or replace to use an AST capture without Select. Each name contains an array of source targets associated with that parent match. Multi captures retain all provider nodes, including punctuation; an absent or empty capture is not an invented source range. Use ordinary JavaScript to choose nodes. AST matches and captures must be wholly contained in one requested region; they are not clipped at a scope boundary.
+Use the displayed `capture NAME: RESULT#...` reference to Search or edit a capture without Select. It belongs to that parent match and retains every captured node, including punctuation. Its node count does not change the selection. An empty capture selects nothing; an absent capture has no reference. AST matches and captures must be wholly contained in one requested region; they are not clipped at a scope boundary.
 
 ```js
 const window = await tools.read({ path: "client.ts", offset: 10, limit: 4 });
-if (window.status !== "success") throw Error(JSON.stringify(window.errors));
 const calls = await tools.search({ path: window, query: "ast:request($OPTIONS)" });
-if (calls.status !== "success") throw Error(JSON.stringify(calls.errors));
-const options = calls.data.matches[0]?.captures.OPTIONS;
-if (options === undefined) throw Error("No captured options");
-const values = await tools.search({ path: options, query: "1000" });
-if (values.status !== "success") throw Error(JSON.stringify(values.errors));
-const changed = await tools.replace({ path: values, text: "2000" });
-text(changed);
+text(calls);
 ```
+
+Use its displayed OPTIONS reference in the next call. Store/load keeps these result strings across Codemode scripts within the same session.
 
 ## Symbols and graphs
 
 Use `symbols:<query>` to locate declarations and references when the source file is unknown. Use `symbol:<file>#<selector>` to read one declaration. Use `graph:<file>` for the file's top-level declarations and relationships, or `graph:<file>#<selector>` for incoming and outgoing references of one declaration.
 
-Pass a result scope to `symbols:` for strict discovery inside its exact ranges. Inspect `matches[].role` (`definition` or `reference`) and `matches[].symbol` for the originating declaration's identity, name, kind, source, and range. Name equality alone does not establish reference identity.
+Pass a result scope to `symbols:` for strict discovery inside its exact ranges. Read the displayed definition/reference and symbol information. Name equality alone does not establish reference identity.
 
-Use `navigation: "references"` only when following symbols represented inside the input scope to references outside it. Navigation stays within the workspace. Path and globs define the seed scope in this mode, not the destination references. Omit navigation for strict discovery. Check `complete`; failed requests and unavailable providers are errors, not proof of absence. Text replacement through an LSP match changes only that range; it is not semantic rename.
+Use `navigation: "references"` only when following symbols represented inside the input scope to references outside it. Navigation stays within the workspace. Path and globs define the seed scope in this mode, not the destination references. Omit navigation for strict discovery. Incomplete, failed or unavailable provider results do not prove absence. Text replacement through an LSP match changes only that range; it is not semantic rename.
 
 Append `#name` to an exact symbol resource only for a native language-server rename across references. If semantic support is unavailable, use a precise text or AST operation instead of pretending it was a semantic rename. Pending or empty language-server output does not prove that no declaration or reference exists.
 

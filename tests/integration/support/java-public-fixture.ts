@@ -23,18 +23,20 @@ export default function javaPublicFixture(pi: ExtensionAPI): void {
           program: "src/main/java/Main.java",
           mainClass: "Main",
         });
-        const resource = created.structuredContent as { data?: { source?: string } } | undefined;
-        source = resource?.data?.source;
+        const shown = created.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n");
+        source = /debug:[a-f\d-]+/u.exec(shown)?.[0];
         if (source === undefined)
           throw new Error("The Java debug call returned no session resource");
         await call("read", { path: source });
         const file = await call("read", { path: `${source}/source`, views: ["anchors"] });
-        const data = file.structuredContent as
-          | {
-              data?: { lines?: { lineNumber: number; anchors?: string[] }[] };
-            }
-          | undefined;
-        const anchor = data?.data?.lines?.find((line) => line.lineNumber === 4)?.anchors?.[0];
+        const fileText = file.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n");
+        const anchor = /(?:^|\n)(4#[A-F\d]+)\|/u.exec(fileText)?.[1];
         if (anchor === undefined) throw new Error("The Java source read returned no line-4 anchor");
         await call("insert", { path: `${source}/source`, anchor, text: "breakpoint" });
         const started = await call("insert", { path: source, text: "start" });

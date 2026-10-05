@@ -4,9 +4,9 @@ Pi Agent IDE explores a small tool surface for coding agents. The goal is to kee
 
 The project is experimental. The behavior below describes the current implementation, not a performance guarantee.
 
-## Native structured results
+## Readable results and composition
 
-IDE tools declare native result schemas. Codemode receives typed data and explicit success/error/partial outcomes instead of display strings. Check status and mutation effects before continuing or retrying. See [Native IDE results](./structured-results.md) for fields, resolver adapters, bounds, and `tools.flush({})`.
+IDE tools return readable text in direct calls and Codemode. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and `tools.flush({})`.
 
 ## Resource references
 
@@ -52,7 +52,7 @@ When `path` is a typed text resource, `read` returns one independent chunk for e
 
 Use `read({path: "raw:sample.bin", offset: 0, limit: 64})` to inspect original local file bytes, including PDF and image headers. In `raw:` mode only, offset is zero-based in bytes (negative from EOF), and limit is a non-negative byte count. The output shows hexadecimal offsets, hex bytes, and printable ASCII. Follow its returned byte offset to continue. No views or text anchors apply.
 
-Inside native Codemode, check the result’s `status` and use `data.kind: "bytes"`, `source`, `byteOffset`, `byteLength`, `totalBytes` and `bytes: number[]`. The script receives the complete selected range; the displayed answer stays bounded. Use `text(result)` to retain the hex view rather than printing the byte array. This is read-only; byte editing and byte diff are not included.
+Codemode receives the same bounded hex view as a direct call. Use `text(result)` or return it to display that view. Follow the displayed offset or continuation reference. This is read-only; byte editing and byte diff are not included.
 
 ### Diagnostic completion
 
@@ -76,16 +76,12 @@ Window and display capture use `node-screenshots` on Linux and macOS. Desktop or
 
 ## Terminal sessions
 
-Native Codemode scripts receive a structured shell result. `output` holds up to 1 MiB of ANSI-free PTY output; empty output is `""`. Longer logs keep their first and last 512 KiB, cut at UTF-8 character boundaries. `truncated` reports missing output, not whether the process has finished. `output_ranges` gives the zero-based, end-exclusive byte ranges joined into `output`, with no added headings or omission marker. `full_output_path` points to the UTF-8 log, which keeps growing while the process runs and stays available until the session is deleted.
-
-The native fields `exit_code` and `wall_time_seconds` describe the process, not tool transport. `exit_code` is absent until known. IDE fields `session`, `source`, `status`, `background`, `wait_reason`, `completion_reason`, `signal`, and `error` describe the persistent session. A wait timeout leaves a running session, not a failed command. Nonzero exits and shell startup failures still return structured data to scripts. Normal model output and stored renderer details keep the shorter terminal preview limits.
+Codemode receives the same readable shell status and output as direct calls. The result includes its session source and a reference to the complete log when output is shortened. A wait timeout leaves a running session, not a failed command. Inspect the reported exit status and effects; failed tools can reject.
 
 ```ts
 const result = await tools.bash({ command: "your-command" });
-text({
-  status: result.status,
-  errors: result.output.split("\n").filter((line) => line.includes("error")),
-});
+text(result);
+text(await tools.read({ path: result }));
 ```
 
 `bash` (Linux/WSL) or `powershell` (Windows) starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.

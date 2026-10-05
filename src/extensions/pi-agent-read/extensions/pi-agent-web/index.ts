@@ -35,9 +35,10 @@ export default async function registerWeb(pi: ExtensionAPI): Promise<void> {
         renderResult: renderWebResult,
         preserveTruncatedOutput: true,
       });
-      api.describe(() =>
-        renderContentDescription("HTTP(S) URL — remote content.", readHost.listDescriptions()),
-      );
+      api.describe({
+        path: () =>
+          renderContentDescription("HTTP(S) URL — remote content.", readHost.listDescriptions()),
+      });
     },
   } satisfies ReadPlugin;
 

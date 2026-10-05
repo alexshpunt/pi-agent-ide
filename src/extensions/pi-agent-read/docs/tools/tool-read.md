@@ -11,7 +11,7 @@ It resolves an opaque source reference to a shared Resource, invokes `Resource.r
 ```text
 tool definition name: read
 plugin API:          flat ReadPluginApi
-prompt section:      Read Extensions
+capability metadata: parameter descriptions
 implementation file: tool-read.ts
 ```
 

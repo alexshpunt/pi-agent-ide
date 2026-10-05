@@ -80,7 +80,7 @@ test("runs hybrid matching and empty protocol recovery through the default IDE",
   expect(output("literal")).not.toContain("fooXbar");
   expect(output("regex")).toContain("⟦fooXbar⟧");
   expect(output("regex")).toContain("Search fallback:");
-  expect(output("quoted")).toBe("No matches found.");
+  expect(output("quoted")).toMatch(/<\/system-result>\nNo matches found\.$/u);
   expect(output("invalid-present")).toContain("⟦call(⟧");
   expect(output("invalid-absent")).toContain("invalid regex skipped");
   expect(output("boolean")).toContain("⟦foo42⟧ keep.me");

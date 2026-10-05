@@ -44,12 +44,12 @@ test.each([false, true])(
                 name: "codemode",
                 arguments: {
                   code: `
-const check = result => { if(result.status!=="success") throw Error(JSON.stringify(result)); return result; };
+const check = result => { if(typeof result!=="string") throw Error("Expected readable result"); return result; };
 check(await tools.write({path:"a.note",content:"first"}));
 check(await tools.write({path:"b.note",content:"second"}));
 check(await tools.flush({}));
 const seen=check(await tools.read({path:"a.note"}));
-if(seen.data.lines[0].content!=="first") throw Error("formatted too early");
+if(!seen.endsWith("first")) throw Error("formatted too early");
 check(await tools.replace({path:"a.note",start:"first",text:"final"}));
 check(await tools.flush({}));
 ${fail ? 'throw new Error("planned failure");' : ""}
@@ -127,7 +127,7 @@ test("whole-file operations finalize only surviving text targets and preserve bi
               name: "codemode",
               arguments: {
                 code: `
-const check = result => { if(result.status!=="success") throw Error(JSON.stringify(result)); return result; };
+const check = result => { if(typeof result!=="string") throw Error("Expected readable result"); return result; };
 check(await tools.copy({path:"source.note",target:"temporary.note"}));
 check(await tools.move({path:"temporary.note",target:"final.note"}));
 check(await tools.copy({path:"source.note",target:"discard.note"}));

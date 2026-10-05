@@ -101,7 +101,7 @@ test("shows pinned Vimium possible names in native Search for files and URLs wit
       },
     },
   });
-  expect(getToolResultText(result, "quoted")).toBe("No matches found.");
+  expect(getToolResultText(result, "quoted")).toMatch(/\nNo matches found\.$/u);
   expect(getToolResultText(result, "web")).toContain("No matches in " + fixture.url);
   expect(getToolResultText(result, "web")).not.toContain("SEARCH#");
   expect(fixture.requests()).toBe(1);
@@ -130,28 +130,33 @@ test("shows pinned Vimium possible names in native Search for files and URLs wit
   expect(result.tuiRenderedOutput).toContain("No matches");
 }, 150_000);
 
-test("composed Search returns separate typed groups whose Read reference refreshes only the exact alternative", async () => {
+test("composed Search shows separate alternatives whose Read reference refreshes only the exact alternative", async () => {
   const fixture = await setup();
-  const code = `
+  const code = String.raw`
 const results = await Promise.all([tools.search({query:"generateHintStrings",path:"link_hints.js"}), tools.search({query:"generateHintStrings",path:${JSON.stringify(fixture.url)}})]);
 for (const found of results) {
-  if (found.status !== "success" || found.data.kind !== "matches" || found.data.matches.length !== 0) throw new Error("Original zero was lost");
-  if ("fuzzyPresentation" in found.data || JSON.stringify(found.data).includes("const hintStrings =")) throw new Error("User preview leaked into agent projection");
-  if (JSON.stringify(found.data.fuzzy.candidates.map(c => [c.identifier,c.matchCount])) !== JSON.stringify([["hintStrings",5],["generateHintString",2]])) throw new Error("Candidate groups were lost: " + JSON.stringify(found));
+  if (typeof found !== "string" || !found.includes("No matches")) throw Error("Original zero was lost");
+  if (found.includes("const hintStrings =")) throw Error("User preview leaked");
+  const groups=found.split("Possible name: ").slice(1);
+  if(groups.length!==2 || !groups[0].startsWith("hintStrings ") || !groups[0].includes("5 matches") || !groups[1].startsWith("generateHintString ") || !groups[1].includes("2 matches")) throw Error("Candidate groups were lost: "+found);
 }
-const local = results[0].data.fuzzy.candidates[0];
-const web = results[1].data.fuzzy.candidates[0];
-if (web.selection.all !== undefined || web.selection.matches.some(m => m.references !== undefined)) throw new Error("URL got editable SEARCH refs");
-const before = await tools.read({path:local.selection.all.line});
-if (before.status !== "success" || !JSON.stringify(before.data).includes("hintStrings")) throw new Error("Candidate Read failed");
-text({originalMatches:0,localCandidates:results[0].data.fuzzy.candidates,webCandidates:results[1].data.fuzzy.candidates});
-const changed = await tools.write({path:"link_hints.js",content:"hintStrings();\\nHintStrings();\\nmyhintStrings();\\ngenerateHintStrings();\\n"});
-if (changed.status !== "success") throw new Error("Fixture edit failed");
+const local = results[0].split("Possible name: ")[1];
+const web = results[1].split("Possible name: ")[1];
+if (web.includes("SEARCH#")) throw Error("URL got editable SEARCH refs");
+const reference=/Read: (SEARCH#[A-F\d]+:all:line)/.exec(local)?.[1];
+if(!reference) throw Error("Candidate Read reference missing");
+const before = await tools.read({path:reference});
+if (!before.includes("hintStrings")) throw Error("Candidate Read failed");
+const first=await tools.search({path:before,query:"hintStrings"});
+const individual=/SEARCH#[A-F\d]+:\d+:match/.exec(first)?.[0];
+if(!individual) throw Error("Candidate individual reference missing");
+text(results[0]); text(results[1]);
+await tools.write({path:"link_hints.js",content:"hintStrings();\nHintStrings();\nmyhintStrings();\ngenerateHintStrings();\n"});
 await tools.flush({});
-const after = await tools.read({path:local.selection.all.line});
-if (after.status !== "success" || !JSON.stringify(after.data).includes("hintStrings();") || JSON.stringify(after.data).includes("HintStrings();") || JSON.stringify(after.data).includes("generateHintStrings();")) throw new Error("Read reranked fuzzy or changed exact semantics: " + JSON.stringify(after));
-const stale = await tools.read({path:local.selection.matches[0].references.line});
-if (stale.status !== "error") throw new Error("Individual candidate reference failed to go stale");
+const after = await tools.read({path:reference});
+if (!after.includes("hintStrings();") || after.includes("HintStrings();") || after.includes("generateHintStrings();")) throw Error("Read reranked fuzzy or changed exact semantics: "+after);
+let stale=false; try { await tools.read({path:individual}); } catch { stale=true; }
+if(!stale) throw Error("Individual candidate reference failed to go stale");
 text("Exact candidate Read and refresh passed");
 `;
   const result = await new PiIntegrationTest({
@@ -160,7 +165,7 @@ text("Exact candidate Read and refresh passed");
     cwd: fixture.cwd,
     extensions: [ide, "builtin:codemode"],
     tools: ["search", "read", "write", "flush", "codemode"],
-    rawMode: false,
+    rawMode: true,
     timeoutMs: 120_000,
     conversation: [call("script", "codemode", { code }), assistantMessage([text("Done")])],
   }).run(
