@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 — 2026-10-05
+
+- Reduced prompt size by keeping internal result structures out of agent-facing tool schemas.
+- Restored readable string results for agents. Structured records stay internal because exposing their layout made tool use more complicated.
+- Preserved tool composition, including Read, Search, Select, editing and Codemode store/load. Results carry registered references instead of exposing internal fields.
+- Made Copy and Move replace existing destination files without a separate overwrite flag.
+
 ## 0.7.0 — 2026-10-05
 
 ### Native tool composition
