@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.7.0 — 2026-10-05
+
+### Native tool composition
+
+- Compose Read, Search, Select and editing tools through source-backed results and exact snapshot targets, including sparse and multi-file selections. Reject stale or incomplete inputs without widening their scope.
+- Search within returned Read and mutation targets. Keep mutation change records and destination targets available for follow-up work, with explicit reasons when a text target cannot be returned.
+- Expose AST captures as source targets and LSP symbol identity and definition/reference roles. Follow references outside a seed scope only when explicitly requested.
+- Remove Apply, its grouped undo receipts and preview settings. Use ordinary tools through native Codemode; per-file text undo and Git change undo remain. Native copy/move pairs selections rather than concatenating and broadcasting them.
+- Fix empty-file creation so successful native writes report truthful applied effects and return usable targets.
+
+### Select
+
+- Add guarded text boundaries, marker pairs, slices, trimming, splitting, line expansion and exact insertion positions, preserving UTF-16 and CRLF boundaries.
+- Add source-local range operations: containment, intersection, subtraction and explicit merging, without filling gaps between selections.
+- Add JavaScript and TypeScript AST enclosing constructs, navigation and named parts. Select call arguments and function parameters with owned separators; refuse ambiguous neighboring comments instead of guessing or repairing syntax.
+
+### Search and presentation
+
+- Suggest bounded possible identifier names after eligible zero-result searches, with separate exact candidate scopes. Keep quoted, Boolean and explicit-protocol queries exact.
+- Unify structural and text search panels and keep agent guidance out of fuzzy user cards.
+- Skip LSP providers that do not support workspace symbols instead of sending unsupported requests.
+
+### Mutation diffs
+
+- Keep whole replacements visible when old and new blocks share no trimmed line. Avoid unnecessary character refinement while preserving the existing time, pairing and size limits, precise small-edit highlights and truthful unavailable state for unfinished comparisons.
+
+### Packaging
+
+- Fix a documentation link to excluded tests so public package validation succeeds.
+
+### Verification
+
+- Run the full integration suite in four standalone CI shards with separate reports and retained logs, without raising timeouts or skipping tests. Close each scenario's Pi process instead of accumulating shared fixture hosts.
+- Check that each final file is formatted once without requiring independent files to finish in a fixed order.
+- Make the shell-result scenario independent of background completion timing while keeping separate completion-delivery coverage.
+- Run Windows source and installed-package checks without a retained shared harness workspace, avoiding locks on the shared cleanup directory.
+- Retry transient Windows test-workspace removal locks a bounded number of times after the Pi process tree exits; persistent locks still fail. Retain Windows host traces on failure without changing test timeouts or assertions.
+
 ## 0.6.4 — 2026-10-03
 
 ### Native Pi integration
