@@ -9,6 +9,7 @@ import {
   withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";
 import { selectPresentation } from "./select-presentation.js";
+
 import { selectStructuralRegions } from "./ast/selection.js";
 import { publicRange } from "./selection-region.js";
 import { selectTextRegions } from "./text-selection.js";
@@ -21,6 +22,22 @@ import {
   type SelectParameters,
   type GeometrySelectOperation,
 } from "./select-schema.js";
+/** Show selected text and opaque item references, never the internal selection record. */
+function selectionText(data: SelectionData): string {
+  const rows = [`${data.totalItems} selection(s)${data.complete ? "" : " · incomplete input"}`];
+  if (data.missingInputs) rows.push(`${data.missingInputs} input(s) without a selection`);
+  for (const item of data.items) {
+    const range = item.range;
+    rows.push(
+      `${item.target} ${item.source}:${range.startLine}:${range.startColumn}–${range.endLine}:${range.endColumn}${item.syntax ? ` ${item.syntax.object}${item.syntax.part ? `/${item.syntax.part}` : ""}` : ""}`,
+      item.preview,
+    );
+    if (item.textTruncated)
+      rows.push("… preview shortened; reference retains the complete selection");
+  }
+  if (data.truncated) rows.push("… more selections retained in the whole result");
+  return rows.join("\n");
+}
 
 function operationLabel(operation: SelectParameters["operation"]): string {
   switch (operation.kind) {
@@ -219,7 +236,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
             };
             return withStructuredResult(
               {
-                content: [{ type: "text", text: JSON.stringify(data) }],
+                content: [{ type: "text", text: selectionText(data) }],
                 details: selectPresentation(
                   selected.regions,
                   verified.complete,

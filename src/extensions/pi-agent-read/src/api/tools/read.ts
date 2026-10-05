@@ -269,6 +269,11 @@ export type ReadHandlerRegistration =
 
 export type PromptDescriptionSource = string | (() => string | undefined);
 
+/** Source and view syntax attached to the matching Read parameter. Callbacks are evaluated for each schema snapshot; undefined omits that contribution. */
+export type ReadParameterDescriptions = {
+  readonly [Parameter in keyof ReadRequest]?: PromptDescriptionSource;
+};
+
 /** Remaining text budget for a format-aware view of already-read data. */
 export interface ReadOutputBudget {
   readonly maxBytes: number;
@@ -325,7 +330,8 @@ export interface ReadToolPluginApi {
   /** Registers a named view whose presenter runs when a request lists the view. */
   addView(registration: ReadViewRegistration): void;
   addFragmentResolver(registration: FragmentResolverRegistration): void;
-  describe(description: PromptDescriptionSource): void;
+  /** Adds one parameter-description map per plugin. This documents capabilities without changing validation or registering them. */
+  describe(descriptions: ReadParameterDescriptions): void;
 
   /** Adds an operational rule to the read tool's system-prompt guidelines. */
   addPromptGuideline(guideline: PromptDescriptionSource): void;

@@ -42,26 +42,15 @@ test("copies bytes, moves the copy, and removes only the moved file", async () =
 });
 
 for (const operation of ["copy", "move"] as const) {
-  test(`${operation} refuses an existing target unless overwrite is explicit`, async () => {
+  test(`${operation} replaces an existing target without a separate flag`, async () => {
     const cwd = await fixture();
-    await writeFile(path.join(cwd, "target"), "keep");
-    const rejected = await executeFileOperation(
-      operation,
-      { path: "source", target: "target" },
-      cwd,
-    );
-    expect(rejected).toMatchObject({ ok: false, effect: "not-applied" });
-    expect(await readFile(path.join(cwd, "target"), "utf8")).toBe("keep");
-    expect(
-      (
-        await executeFileOperation(
-          operation,
-          { path: "source", target: "target", overwrite: true },
-          cwd,
-        )
-      ).ok,
-    ).toBe(true);
+    await writeFile(path.join(cwd, "target"), "old target");
+    const result = await executeFileOperation(operation, { path: "source", target: "target" }, cwd);
+    expect(result).toMatchObject({ ok: true, effect: "applied" });
     expect(await readFile(path.join(cwd, "target"))).toEqual(Buffer.from([0, 255, 10]));
+    if (operation === "move")
+      await expect(lstat(path.join(cwd, "source"))).rejects.toMatchObject({ code: "ENOENT" });
+    else expect(await readFile(path.join(cwd, "source"))).toEqual(Buffer.from([0, 255, 10]));
   });
 }
 
@@ -88,18 +77,10 @@ test("refuses symlink targets, identical paths, and cancelled operations", async
   await symlink(path.join(cwd, "source"), path.join(cwd, "target-link"));
   for (const operation of ["copy", "move"] as const) {
     expect(
-      await executeFileOperation(
-        operation,
-        { path: "source", target: "target-link", overwrite: true },
-        cwd,
-      ),
+      await executeFileOperation(operation, { path: "source", target: "target-link" }, cwd),
     ).toMatchObject({ ok: false, effect: "not-applied" });
     expect(
-      await executeFileOperation(
-        operation,
-        { path: "source", target: "source", overwrite: true },
-        cwd,
-      ),
+      await executeFileOperation(operation, { path: "source", target: "source" }, cwd),
     ).toMatchObject({ ok: false, effect: "not-applied" });
   }
   const controller = new AbortController();

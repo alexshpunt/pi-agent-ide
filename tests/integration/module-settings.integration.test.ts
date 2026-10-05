@@ -42,9 +42,9 @@ test.each([true, false])(
                 arguments: {
                   code: `
 const file = await tools.read({path: "source.ts"});
-if(file.status!=="success"||!file.data.lines.some(line=>line.content.includes("Example"))) throw Error(JSON.stringify(file));
+if(typeof file!=="string"||!file.includes("Example")) throw Error(file);
 let available = false;
-try { const symbol=await tools.read({path:"symbol:source.ts#Example"}); available=symbol.status==="success"; } catch {}
+try { const symbol=await tools.read({path:"symbol:source.ts#Example"}); available=typeof symbol==="string" && symbol.includes("Example"); } catch {}
 if (available !== ${!disabled}) throw new Error("Wrong LSP module state");
 `,
                 },
@@ -111,7 +111,7 @@ test.each([
               id: "format",
               name: "codemode",
               arguments: {
-                code: 'const written=await tools.write({path:"note.fixture",content:"value=2\\n"}); if(written.status!=="success") throw Error(JSON.stringify(written)); text(written);',
+                code: 'const written=await tools.write({path:"note.fixture",content:"value=2\\n"}); if(typeof written!=="string") throw Error("Expected readable write result"); text(written);',
               },
             }),
           ],

@@ -9,6 +9,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { textResultChecks } from "#integration/support/text-result-checks.js";
 import {
   enableNativeCodemode,
   withTempWorkspace,
@@ -40,7 +41,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
               id: "semantic-edit",
               name: "codemode",
               arguments: {
-                code: 'const declaration=await tools.read({path:"symbol:source.ts#Example"}); if(declaration.status!=="success") throw Error(JSON.stringify(declaration)); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(moved.status!=="success") throw Error(JSON.stringify(moved)); text(moved);',
+                code: 'const declaration=await tools.read({path:"symbol:source.ts#Example"}); if(typeof declaration!=="string") throw Error("Expected readable declaration"); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
               },
             }),
           ],
@@ -182,7 +183,9 @@ test("native symbol search honors its file scope before the result limit", async
               id: "scope",
               name: "codemode",
               arguments: {
-                code: 'const hit=await tools.search({query:"symbols:ScopedExample",path:"second.ts",limit:1}); if(hit.status!=="success") throw Error(JSON.stringify(hit)); const matches=hit.data.matches; if(matches.length!==1||!matches[0].source.endsWith("/second.ts")) throw Error(JSON.stringify(hit)); const excluded=await tools.search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}); if(excluded.status!=="success"||excluded.data.matches.length!==0) throw Error(JSON.stringify(excluded)); text(hit);',
+                code:
+                  textResultChecks +
+                  'const hit=await tools.search({query:"symbols:ScopedExample",path:"second.ts",limit:1}); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
               },
             }),
           ],
@@ -217,7 +220,9 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
               id: "ast-edit",
               name: "codemode",
               arguments: {
-                code: 'const found=await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}); if(found.status!=="success"||found.data.matches.length!==2) throw Error(JSON.stringify(found)); const edited=await tools.replace({path:found.data.matches[1],text:"logger.info(42)"}); if(edited.status!=="success") throw Error(JSON.stringify(edited)); text(edited);',
+                code:
+                  textResultChecks +
+                  'const found=await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}); check(matches(found).length===2,"Duplicate AST nodes lost"); const edited=await tools.replace({path:matches(found)[1],text:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
               },
             }),
           ],
@@ -253,14 +258,14 @@ test("native AST edits use fresh selections after checkpoints", async () => {
               name: "codemode",
               arguments: {
                 code: `
-const check=result=>{if(result.status!=="success")throw Error(JSON.stringify(result));return result;};
+const check=result=>{if(typeof result!=="string")throw Error("Expected readable result");return result;};
 const firstSearch=check(await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}));
-check(await tools.replace({path:firstSearch.data.matches[0],text:'logger.info("same")'}));
+check(await tools.replace({path:firstSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:'logger.info("same")'}));
 check(await tools.flush({}));
 check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
 check(await tools.flush({}));
 const secondSearch=check(await tools.search({query:"ast:logger.info($ARG)",path:"nodes.ts"}));
-check(await tools.replace({path:secondSearch.data.matches[0],text:"done()"}));
+check(await tools.replace({path:secondSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:"done()"}));
 check(await tools.flush({}));
 `,
               },

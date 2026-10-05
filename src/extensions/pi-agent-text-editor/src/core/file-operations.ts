@@ -19,11 +19,6 @@ export const transferFileParameters = Type.Object(
   {
     path: filePath,
     target: filePath,
-    overwrite: Type.Optional(
-      Type.Boolean({
-        description: "Allow replacing an existing regular target file. Defaults to false.",
-      }),
-    ),
   },
   { additionalProperties: false },
 );
@@ -76,7 +71,7 @@ export async function executeFileOperation(
       throw Object.assign(new Error("Invalid file operation arguments"), {
         code: "INVALID_ARGUMENTS",
       });
-    const args = input as { path: string; target?: string; overwrite?: boolean };
+    const args = input as { path: string; target?: string };
     source = path.resolve(cwd, args.path);
     target = args.target === undefined ? undefined : path.resolve(cwd, args.target);
     signal?.throwIfAborted();
@@ -95,19 +90,14 @@ export async function executeFileOperation(
           throw Object.assign(new Error("Source and target are the same file"), {
             code: "SAME_FILE",
           });
-        if (args.overwrite !== true)
-          throw Object.assign(new Error("Target exists; use overwrite: true to replace it"), {
-            code: "EEXIST",
-          });
       }
     }
     signal?.throwIfAborted();
     started = true;
     if (operation === "delete") await unlink(source);
     else if (target !== undefined) {
-      if (operation === "copy")
-        await fs.copy(source, target, { overwrite: args.overwrite === true, errorOnExist: true });
-      else await fs.move(source, target, { overwrite: args.overwrite === true });
+      if (operation === "copy") await fs.copy(source, target, { overwrite: true });
+      else await fs.move(source, target, { overwrite: true });
     }
     return {
       kind: "file-operation",

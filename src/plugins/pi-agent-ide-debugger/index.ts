@@ -216,9 +216,11 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
         },
       });
       api.addView({ view: "breakpoints", presenter: breakpointPresenter });
-      api.describe(
-        'views: ["breakpoints"] — current debugger breakpoints beside source lines. Normal files include every current session; debug sources are session-scoped. debug:<session> — debugger state.',
-      );
+      api.describe({
+        path: "debug:<session> — debugger state.",
+        views:
+          "breakpoints — current debugger breakpoints beside source lines. Normal files include every current session; debug sources are session-scoped.",
+      });
     },
   } satisfies ReadPlugin;
   const editorPlugin = {

@@ -52,6 +52,7 @@ export function createLspSearchResolver(
         payload: {
           query,
           hits: found.hits,
+          sessionId: session.id,
           complete: found.complete,
           navigation: request.navigation,
           data: {
@@ -87,6 +88,7 @@ export function createLspSearchResolver(
     format(payload, context) {
       const result = payload as {
         readonly query: string;
+        readonly sessionId: string;
         readonly hits: readonly SymbolHit[];
         readonly complete: boolean;
         readonly navigation?: "references";
@@ -102,8 +104,10 @@ export function createLspSearchResolver(
               .slice(0, 100)
               .map(
                 (hit, index) =>
-                  `${String(index + 1)}. ${path.relative(context.cwd, hit.source)}:${String(hit.lineNumber)}:${String(hit.startColumn + 1)} ${hit.role} ${hit.symbol.name}`,
+                  `SEARCH#${result.sessionId}:${index + 1}:match ${path.relative(context.cwd, hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · declared at ${path.relative(context.cwd, hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`,
               );
+      if (result.complete && result.hits.length)
+        lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (!result.complete) lines.push("Incomplete results; not a complete edit scope.");
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
       return {

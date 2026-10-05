@@ -135,9 +135,11 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
           };
         },
       });
-      api.describe(
-        'diagnostics:<path> — lint and language-server diagnostics. views: ["diagnostics"] — diagnostics alongside source text. Results identify their reporting tool and readiness; pending results and snapshots are not completed checks.',
-      );
+      api.describe({
+        path: "diagnostics:<path> — lint and language-server diagnostics with reporting tool and readiness. Pending results and snapshots are not completed checks.",
+        views:
+          "diagnostics — diagnostics alongside source text, with reporting tool and readiness. Pending results and snapshots are not completed checks.",
+      });
     },
   } satisfies ReadPlugin;
 

@@ -42,9 +42,10 @@ export default async function registerGitChanges(pi: ExtensionAPI): Promise<void
     id: "current-git-changes",
     setup(api) {
       api.addView({ view: "changes", presenter });
-      api.describe(
-        'views: ["changes"] — uncommitted edits in tracked files, staged/unstaged state, and CHANGE# anchors for stage, unstage and undo.',
-      );
+      api.describe({
+        views:
+          "changes — uncommitted edits in tracked files, staged/unstaged state, and CHANGE# anchors for stage, unstage and undo.",
+      });
     },
   } satisfies ReadPlugin;
   const editorPlugin = {

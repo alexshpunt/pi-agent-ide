@@ -108,7 +108,7 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
       );
       const shown = getToolResultText(run, "script-0");
       expect(getToolExecution(run, "script-0").isError, shown).toBe(false);
-      expect(shown).toContain('"effect":"pending"');
+      expect(shown).toContain("not yet applied");
       expect(shown).toContain("Editor batches: 1 committed");
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
         "added\nalpha\nBETA\nomega\n",
@@ -153,7 +153,7 @@ test("read and search finish a batch before dependent work starts", async () => 
     const run = await runScripts(cwd, "native-codemode-read-boundary", [
       `text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added"}));
 const shown = await tools.read({path:"note.txt",views:["anchors"]});
-if (!shown.data.lines.some(line => line.anchors?.includes(${JSON.stringify(anchor(3, "beta"))}))) throw new Error("read saw an uncommitted file");
+if (!shown.includes(${JSON.stringify(anchor(3, "beta"))})) throw new Error("read saw an uncommitted file");
 text(await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(3, "beta"))},text:"BETA"}));
 text(await tools.search({path:"note.txt",query:"BETA"}));`,
     ]);
@@ -182,7 +182,7 @@ test.each([
   },
   {
     name: "stale-anchor",
-    tail: `const rejected = await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(2, "wrong"))},text:"wrong"}); if (rejected.status !== "success") throw new Error(rejected.errors.map(error => error.message).join("\\n"));`,
+    tail: `await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(2, "wrong"))},text:"wrong"});`,
     message: "is stale",
   },
   {
@@ -213,7 +213,7 @@ test("overlapping accepted-snapshot edits reject the second operation", async ()
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-overlap", [
-      'text(await tools.replace({path:"note.txt",start:"alpha",text:"FIRST"})); const rejected = await tools.replace({path:"note.txt",start:"alpha",text:"SECOND"}); if (rejected.status !== "success") throw new Error(rejected.errors.map(error => error.message).join("\\n"));',
+      'text(await tools.replace({path:"note.txt",start:"alpha",text:"FIRST"})); await tools.replace({path:"note.txt",start:"alpha",text:"SECOND"});',
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
     expect(getToolResultText(run, "script-0")).toContain("overlaps an earlier successful mutation");
@@ -335,10 +335,10 @@ test("resource-owning search anchors keep their normal stale-snapshot protection
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-search-anchor-boundary", [
       'const found = await tools.search({path:"note.txt",query:"beta"});\n' +
-        "const selection = found.data.matches[0]?.references?.match;\n" +
+        "const selection = found.match(/SEARCH#[A-F0-9]+:1:match/)?.[0];\n" +
         'if (!selection) throw new Error("missing search selection");\n' +
         'text(await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"}));\n' +
-        'const rejected = await tools.replace({path:selection,text:"wrong"}); if (rejected.status !== "success") throw new Error(rejected.errors.map(error => error.message).join("\\n"));',
+        'await tools.replace({path:selection,text:"wrong"});',
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
     expect(getToolResultText(run, "script-0")).toMatch(/stale|changed/iu);

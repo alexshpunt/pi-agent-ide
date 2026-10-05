@@ -18,7 +18,7 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 export const copySchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Source file path or structured source selection; omit start/end for structured inputs. Use one whole-file result when target is a string without text selectors. Structured source/destination selections pair in declared order, with equal counts and duplicate ranges removed.",
+      "Source file path, unchanged source result or its UUID; omit start/end for result inputs. Use one whole-file result when the destination is a file path without text selectors. Source/destination selections pair in declared order, with equal counts and duplicate ranges removed.",
     ),
     ...sourceRangeProperties(),
     ...targetProperties(),

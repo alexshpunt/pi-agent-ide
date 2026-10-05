@@ -1,24 +1,47 @@
 import { expect, test } from "vitest";
 import { Value } from "typebox/value";
-import { mutationOutcome, mutationOutputSchema, structuredMutation } from "./structured-result.js";
+import { mutationOutcome, mutationResultSchema, structuredMutation } from "./structured-result.js";
 import { FileMutationResult } from "./mutation-result/file-mutation-result.js";
 
+function semanticResult(action: Record<string, unknown>) {
+  return { content: [], details: { results: undefined, metadata: { semanticAction: action } } };
+}
+
+test("each file tool validates only its own result fields", () => {
+  for (const operation of ["write", "replace", "insert", "delete", "copy", "move", "undo"]) {
+    const schema = mutationResultSchema(operation);
+    const outcome = mutationOutcome(semanticResult({ ok: true, source: "note.txt" }), operation);
+    expect(Value.Check(schema, outcome)).toBe(true);
+    for (const field of ["action", "changes", "recovery", "operations", "parentToolCallId"]) {
+      expect(Value.Check(schema, { ...outcome, data: { ...outcome.data, [field]: [] } })).toBe(
+        false,
+      );
+    }
+    expect(Value.Check(schema, { ...outcome, data: { ...outcome.data, operation: "other" } })).toBe(
+      false,
+    );
+    if (operation === "delete")
+      expect(
+        Value.Check(schema, { ...outcome, data: { ...outcome.data, target: "RESULT#invalid" } }),
+      ).toBe(false);
+  }
+});
+
 test("keeps a pending mutation target separate from its unapplied effect", () => {
-  const result = {
+  const pending = {
     content: [],
     details: {
       results: [],
-      source: "note.txt",
       nativeEditBatch: { state: "accepted", parentToolCallId: "script" },
       metadata: { resultTarget: "RESULT#pending" },
     },
   };
-  const outcome = mutationOutcome(result, "replace");
+  const outcome = mutationOutcome(pending, "replace");
   expect(outcome).toMatchObject({
     status: "success",
     data: { effect: "pending", target: "RESULT#pending" },
   });
-  expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
+  expect(Value.Check(mutationResultSchema("replace"), outcome)).toBe(true);
 });
 
 test("an unavailable target does not turn a completed write into a failure", () => {
@@ -38,9 +61,10 @@ test("an unavailable target does not turn a completed write into a failure", () 
     data: { effect: "applied", targetUnavailable: "Mapping changed" },
   });
   expect(outcome.data?.target).toBeUndefined();
-  expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
+  expect(Value.Check(mutationResultSchema("replace"), outcome)).toBe(true);
 });
-test("an oversized change record keeps the applied receipt without clipping removed text", () => {
+
+test("large removed contents stay in the owning edit record, not the result contract", () => {
   const removedText = "界".repeat(400_000);
   const result = structuredMutation(
     {
@@ -71,17 +95,11 @@ test("an oversized change record keeps the applied receipt without clipping remo
   expect(result.isError).toBe(false);
   expect(result.structuredContent).toMatchObject({
     status: "success",
-    data: {
-      effect: "applied",
-      changesUnavailable:
-        "Exact change record exceeds the 512 KiB receipt budget; it was not clipped.",
-    },
+    data: { effect: "applied" },
   });
   expect(result.structuredContent).not.toHaveProperty("data.changes");
+  expect(result.details.results?.[0]?.data.rawChanges?.[0]?.removedText).toBe(removedText);
 });
-function semanticResult(action: Record<string, unknown>) {
-  return { content: [], details: { results: undefined, metadata: { semanticAction: action } } };
-}
 
 test("whole-file copy reports the source as unchanged and the target as applied", () => {
   const outcome = mutationOutcome(
@@ -98,7 +116,7 @@ test("whole-file copy reports the source as unchanged and the target as applied"
       ],
     },
   });
-  expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
+  expect(Value.Check(mutationResultSchema("copy"), outcome)).toBe(true);
 });
 
 test("a failed copy is an error, not partial success from its unchanged source", () => {
@@ -113,5 +131,5 @@ test("a failed copy is an error, not partial success from its unchanged source",
     "copy",
   );
   expect(outcome).toMatchObject({ status: "error", data: { effect: "not-applied" } });
-  expect(Value.Check(mutationOutputSchema, outcome)).toBe(true);
+  expect(Value.Check(mutationResultSchema("copy"), outcome)).toBe(true);
 });

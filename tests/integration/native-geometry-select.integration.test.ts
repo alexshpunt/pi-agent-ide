@@ -11,6 +11,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { textResultChecks } from "#integration/support/text-result-checks.js";
 
 async function runGeometry(cwd: string, name: string, scripts: readonly string[]) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -25,14 +26,20 @@ async function runGeometry(cwd: string, name: string, scripts: readonly string[]
   const run = await new PiIntegrationTest({
     testName: name,
     artifactsDir: testArtifactsDir(import.meta.filename),
-    rawMode: false,
+    rawMode: name !== "geometry-points-merge",
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
     tools: ["read", "search", "select", "replace", "write", "codemode"],
     conversation: [
       ...scripts.map((code, index) =>
         assistantMessage(
-          [toolCall({ id: `geometry-${index}`, name: "codemode", arguments: { code } })],
+          [
+            toolCall({
+              id: `geometry-${index}`,
+              name: "codemode",
+              arguments: { code: textResultChecks + code },
+            }),
+          ],
           { stopReason: "toolUse" },
         ),
       ),
@@ -59,30 +66,29 @@ test("distinguishes containment from clipping and edits difference fragments wit
 const candidates=await tools.search({path:read,query:"regex:<[^>]+>"});
 const masks=await tools.search({path:read,query:"KEEP"});
 const other=await tools.read({path:"other.txt"});
-const kept=await tools.select({path:masks.data.matches,operation:{kind:"within",scopes:candidates.data}});
-const dropped=await tools.select({path:candidates,operation:{kind:"within",scopes:masks.data.target}});
-const clipped=await tools.select({path:candidates.data.target,operation:{kind:"intersection",scopes:masks}});
-if(kept.data.totalItems!==2 || dropped.data.totalItems!==0 || clipped.data.totalItems!==2) throw Error("Containment confused with clipping");
-const remaining=await tools.select({path:[candidates.data,other.data],operation:{kind:"difference",scopes:masks.data.matches}});
-if(remaining.data.totalItems!==5 || remaining.data.items[0].origins[0].source.includes("other.txt")) throw Error("File sets or fragments lost");
-store("geometryOld",remaining.data.target);
-const preview=await tools.read({path:remaining.data.items[0].target});
+const kept=await tools.select({path:masks,operation:{kind:"within",scopes:candidates}});
+const dropped=await tools.select({path:candidates,operation:{kind:"within",scopes:masks}});
+const clipped=await tools.select({path:candidates,operation:{kind:"intersection",scopes:masks}});
+if(items(kept).length!==2 || items(dropped).length!==0 || items(clipped).length!==2) throw Error("Containment confused with clipping");
+const remaining=await tools.select({path:[candidates,other],operation:{kind:"difference",scopes:masks}});
+if(items(remaining).length!==5 || items(remaining)[0].source.includes("other.txt")) throw Error("File sets or fragments lost");
+store("geometryOld",remaining);
+const preview=await tools.read({path:items(remaining)[0].ref});
 const escaped=await tools.search({path:preview,query:"KEEP"});
-if(escaped.data.matches.length!==0) throw Error("Read widened geometry");
+if(matches(escaped).length!==0) throw Error("Read widened geometry");
 const words=await tools.search({path:remaining,query:"regex:abc|xyz|mn|op"});
-if(words.data.matches.length!==4) throw Error("Fragments lost");
+if(matches(words).length!==4) throw Error("Fragments lost");
 text(await tools.replace({path:words,text:"*"}));`,
-      `const refused=await tools.select({path:load("geometryOld"),operation:{kind:"merge"}});
-if(refused.status!=="error" || refused.data?.target) throw Error("Stale geometry survived");
+      `await rejects(()=>tools.select({path:load("geometryOld"),operation:{kind:"merge"}}),/expired|stale/);
 const fresh=await tools.select({path:"other.txt",operation:{kind:"difference",scopes:[]}});
-if(fresh.data.items[0].preview!=="< aaKEEPbb >") throw Error("Empty mask changed candidate");
+if(!fresh.endsWith("< aaKEEPbb >")) throw Error("Empty mask changed candidate");
 text({staleRejected:true,emptyMask:true});`,
     ]);
     expect(await readFile(path.join(cwd, "notes.txt"), "utf8")).toBe(
       "outside\r\n😀 < *KEEP* > gap < *KEEP* >\r\noutside",
     );
     expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("< aaKEEPbb >");
-    expect(run.tuiRenderedOutput).toContain("difference");
+    expect(getToolResultText(run, "geometry-0")).toContain("*KEEP*");
   });
 });
 
@@ -93,8 +99,8 @@ test("merges pending source ranges with explicit adjacency and preserves boundar
 const slice=async(from,to)=>await tools.select({path:written,operation:{kind:"sliceText",from,to}});
 const ranges=await Promise.all([[0,3],[2,5],[5,7],[10,12]].map(([from,to])=>slice(from,to)));
 const overlap=await tools.select({path:ranges,operation:{kind:"merge"}});
-const adjacent=await tools.select({path:ranges.map(r=>r.data),operation:{kind:"merge",adjacent:true}});
-if(overlap.data.totalItems!==3 || adjacent.data.totalItems!==2 || adjacent.data.items[0].origins.length!==3) throw Error("Merge policy lost");
+const adjacent=await tools.select({path:ranges,operation:{kind:"merge",adjacent:true}});
+if(items(overlap).length!==3 || items(adjacent).length!==2 || !adjacent.includes("0123456")) throw Error("Merge policy lost");
 const left=await slice(0,3), right=await slice(3,7), point=await slice(3,3), eof=await slice(16,16);
 const touch=await tools.select({path:left,operation:{kind:"intersection",scopes:right}});
 const excluded=await tools.select({path:point,operation:{kind:"within",scopes:left}});
@@ -103,11 +109,11 @@ const unchanged=await tools.select({path:right,operation:{kind:"difference",scop
 const removePoint=await tools.select({path:point,operation:{kind:"difference",scopes:right}});
 const eofOutside=await tools.select({path:eof,operation:{kind:"within",scopes:written}});
 const points=await tools.select({path:[left,point,eof],operation:{kind:"merge",adjacent:true}});
-if(touch.data.totalItems || excluded.data.totalItems || removePoint.data.totalItems || eofOutside.data.totalItems || included.data.totalItems!==1 || unchanged.data.items[0].preview!=="3456" || points.data.totalItems!==3) throw Error("Point semantics lost");
-store("geometryPoint",included.data.target);
+if(items(touch).length || items(excluded).length || items(removePoint).length || items(eofOutside).length || items(included).length!==1 || !unchanged.endsWith("3456") || items(points).length!==3) throw Error("Point semantics lost");
+store("geometryPoint",included);
 text({overlap:3,adjacent:2,points:3});`,
       `const selected=await tools.select({path:load("geometryPoint"),operation:{kind:"merge"}});
-if(selected.status!=="success" || selected.data.items[0].range.startColumn!==3) throw Error("Cross-call point expired");
+if(items(selected)[0].startColumn!==3) throw Error("Cross-call point expired");
 text(await tools.replace({path:selected,text:"!"}));`,
     ]);
     expect(await readFile(path.join(cwd, "new.txt"), "utf8")).toBe("012!3456789abcdef");
@@ -127,22 +133,20 @@ test("retains all geometry beyond previews and refuses unsafe right inputs even 
       `const source=await tools.read({path:"many.txt"});
 const split=await tools.select({path:source,operation:{kind:"split",delimiter:"|"}});
 const kept=await tools.select({path:split,operation:{kind:"difference",scopes:[]}});
-const tail=await tools.search({path:kept.data.target,query:"v104"});
-if(kept.data.totalItems!==105 || kept.data.items.length!==100 || !kept.data.truncated || !kept.data.complete || tail.data.matches.length!==1) throw Error("Geometry preview clipped authority");
+const tail=await tools.search({path:kept,query:"v104"});
+if(!kept.includes("105 selection(s)") || items(kept).length!==100 || !kept.includes("more selections") || kept.includes("incomplete") || matches(tail).length!==1) throw Error("Geometry preview clipped authority");
 const partial=await tools.search({path:"limited.js",query:"ast:$NAME()",limit:1});
 const incomplete=await tools.select({path:source,operation:{kind:"difference",scopes:partial}});
-const noEdit=await tools.replace({path:incomplete,text:"BAD"});
-if(incomplete.data.complete!==false || noEdit.status!=="error" || noEdit.data.effect!=="not-applied") throw Error("Right completeness laundered");
+check(incomplete.includes("incomplete input"),"Right completeness laundered");
+await rejects(()=>tools.replace({path:incomplete,text:"BAD"}),/[Ii]ncomplete/);
 for(const scopes of ["RESULT#forged",{kind:"diff"}]) {
- const refused=await tools.select({path:[],operation:{kind:"difference",scopes}});
- if(refused.status!=="error" || refused.data?.target) throw Error("Unsupported right input accepted");
+ await rejects(()=>tools.select({path:[],operation:{kind:"difference",scopes}}));
 }
-const old=await tools.read({path:"scope.txt"}); store("oldScope",old.data.target);
+const old=await tools.read({path:"scope.txt"}); store("oldScope",old);
 text(await tools.replace({path:old,text:"changed"}));`,
-      `const refused=await tools.select({path:"many.txt",operation:{kind:"intersection",scopes:load("oldScope")}});
-if(refused.status!=="error" || refused.data?.target) throw Error("Stale unmatched right file accepted");
+      `await rejects(()=>tools.select({path:"many.txt",operation:{kind:"intersection",scopes:load("oldScope")}}),/expired|stale/);
 const empty=await tools.select({path:[],operation:{kind:"within",scopes:"many.txt"}});
-if(empty.status!=="success" || empty.data.totalItems!==0) throw Error("Empty candidate widened");
+if(items(empty).length!==0) throw Error("Empty candidate widened");
 text({staleRightRejected:true,empty:true});`,
     ]);
     expect(await readFile(path.join(cwd, "many.txt"), "utf8")).toBe(
@@ -186,7 +190,7 @@ test("ordinary Select accepts readable comparison scopes without Codemode", asyn
     expect(getToolExecution(run, "ordinary").isError, getToolResultText(run, "ordinary")).toBe(
       false,
     );
-    expect(getToolResultText(run, "ordinary")).toContain('"totalItems":1');
+    expect(getToolResultText(run, "ordinary")).toContain("1 selection(s)");
     expect(run.tuiRenderedOutput).toContain("1 selection in 1 file");
     expect(await readFile(path.join(cwd, "ordinary.txt"), "utf8")).toBe("safe\r\n");
   });

@@ -12,7 +12,7 @@ export const searchSchema = Type.Object(
     path: Type.Optional({
       ...resultInputSchema,
       description:
-        "File, directory, URL, or a source-aware Read/Search/Select/mutation result with a live target, RESULT# reference, or array of returned targets. Result scopes search only their exact ranges unless symbols: navigation explicitly follows external references; plain preview text is not a source.",
+        "File, directory, URL, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Results select only their registered ranges unless symbols: navigation follows external references.",
     }),
     navigation: Type.Optional(
       Type.Literal("references", {

@@ -65,11 +65,12 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
           },
         },
       });
-      api.describe(() =>
-        registry.list().length === 0
-          ? undefined
-          : "docs: and docs:<id> — list or read packaged agent guidance.",
-      );
+      api.describe({
+        path: () =>
+          registry.list().length === 0
+            ? undefined
+            : "docs: lists packaged agent guidance; docs:<id> reads a listed guide.",
+      });
       api.addPromptGuideline(() => renderPromptGuideline(registry.list()));
     },
   });
@@ -123,10 +124,11 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
     ];
     if (documents.length === 0) return;
     remember(documents.map((document) => document.id));
-    // Native callers receive structured data, not this readable attachment.
-    // Keep the guide on the parent result so it reaches the agent even when data is filtered.
-    if (parent !== undefined && event.structuredContent !== undefined)
+    // Keep nested source strings minimal and deliver guidance once on the parent result.
+    if (parent !== undefined) {
       pendingGuides.set(parent, [...(pendingGuides.get(parent) ?? []), ...documents]);
+      return;
+    }
     return {
       content: [
         ...event.content,
@@ -163,7 +165,7 @@ function renderPromptGuideline(documents: readonly AgentDocumentation[]): string
   if (documents.length === 0) return undefined;
   return [
     "Read the matching docs:<id> before using any tool or feature with packaged guidance, including tools discovered later or called through Codemode. Read each guide once per branch. Tool descriptions and docs: listings do not replace the full guide.",
-    "If a result includes a Guide, read it before your next use. The call has already run: do not repeat it just to obtain documentation. Native structured child calls keep their guides on the parent result. Output readable-only child results to retain their guides; filtering those results can hide them.",
+    "If a result includes a Guide, read it before your next use. The call has already run: do not repeat it just to obtain documentation. Nested calls keep their guides on the parent result, even when the script does not print the child output.",
     "Available documents:",
     ...documents.map((document) => `  - ${document.id} — ${document.description}`),
   ].join("\n");

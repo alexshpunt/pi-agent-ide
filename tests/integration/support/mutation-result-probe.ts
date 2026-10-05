@@ -6,11 +6,11 @@ export default function mutationResultProbe(pi: ExtensionAPI): void {
   let target: string | undefined;
   pi.on("tool_result", (event) => {
     if (event.toolName !== "replace" || !event.parentToolCallId) return;
-    const result = event.structuredContent as
-      | { data?: { effect?: string; target?: string } }
-      | undefined;
-    if (result?.data?.effect === "pending" && typeof result.data.target === "string")
-      target = result.data.target;
+    const result = event.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
+    if (result.includes("not yet applied")) target = result;
   });
   pi.registerTool({
     name: "fixture_result",
@@ -19,13 +19,13 @@ export default function mutationResultProbe(pi: ExtensionAPI): void {
     namespace: { name: "fixture", description: "Integration fixtures." },
     description: "Return the real handle observed on the last accepted mutation.",
     parameters: Type.Object({}),
-    outputSchema: Type.Object({ target: Type.String() }),
+    outputSchema: Type.String(),
     async execute() {
       if (!target) throw Error("No accepted target was observed");
       return {
         content: [{ type: "text", text: target }],
         details: {},
-        structuredContent: { target },
+        structuredContent: target,
       };
     },
   });

@@ -18,7 +18,10 @@ interface NormalizedText {
 }
 
 /** Creates the catch-all resolver for unique exact text spans. */
-export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): TextAnchorResolver {
+export function createExactTextAnchorResolver(
+  config: ExactTextRecoveryConfig,
+  requiresAnchor: (source: string, cwd: string) => boolean = () => false,
+): TextAnchorResolver {
   return {
     id: "exact-text",
     description:
@@ -30,7 +33,14 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
       return "selected text";
     },
     tryResolve(value, context) {
-      return Promise.resolve(resolveExactTextAnchor(value, context));
+      return Promise.resolve(
+        requiresAnchor(context.source, context.cwd)
+          ? rejected(
+              "invalid",
+              "Exact-text editing is blocked for this file; use a current returned anchor for the next edit.",
+            )
+          : resolveExactTextAnchor(value, context),
+      );
     },
     recover(value, context) {
       return recoverExactText(value, context, config);

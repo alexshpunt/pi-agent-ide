@@ -63,6 +63,9 @@ export default async function registerTextEditorCore(
     );
   });
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
+  core.onDidEdit((completion) => {
+    resultTargets.refresh(completion.resourceSource, completion.cwd);
+  });
   await core.registerPlugin({
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
@@ -90,9 +93,13 @@ export default async function registerTextEditorCore(
       api.addTargetResolver({ resolver: core.textTargetResolver() });
       api.addFragmentResolver(createReadFragmentResolver(core));
 
-      api.describe(
-        "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# references go directly in path, without a file prefix. offset/limit select context relative to each location; output keeps original line numbers.",
-      );
+      api.describe({
+        path: "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# and RESULT# references go directly in path, without a file prefix. Returned Read/Search/Select/mutation targets select their verified source ranges.",
+        offset:
+          "For path#anchor, SEARCH# or RESULT# selections, count from each containing line: omitted, 0 or 1 starts there; 2 starts one line later; -1 starts one line earlier. Output keeps original line numbers.",
+        limit:
+          "For source selections, limit caps each selected context window separately. Without limit, each selection supplies its natural line count, with at least one line.",
+      });
     },
   });
   setTextAnchorRecoveryReader(core, (request, context) => {

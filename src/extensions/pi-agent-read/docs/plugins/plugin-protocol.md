@@ -4,7 +4,7 @@
 
 This protocol connects independently loaded read plugins to one `pi-agent-read` core instance.
 
-A plugin may register ResourceResolvers, typed text target resolvers, resolver-owned TUI result renderers, pipeline handlers, named views, and one static or lazy prompt description. `pi.events` carries registration and readiness messages only.
+A plugin may register ResourceResolvers, typed text target resolvers, resolver-owned TUI result renderers, pipeline handlers, named views, and one map of static or lazy parameter descriptions. `pi.events` carries registration and readiness messages only.
 
 ## Public surface
 
@@ -12,7 +12,7 @@ The protocol is exported from `pi-agent-read/api/plugin-protocol`:
 
 ```ts
 const READ_PROTOCOL = "pi-agent-read";
-const READ_API_VERSION = 11;
+const READ_API_VERSION = 14;
 const READ_PLUGIN_REGISTER_EVENT = "pi-agent-read/plugin/register";
 const READ_CORE_READY_EVENT = "pi-agent-read/core/ready";
 
@@ -45,7 +45,8 @@ interface ReadToolPluginApi {
   addHandler(registration: ReadHandlerRegistration): void;
   addView(registration: ReadViewRegistration): void;
   addFragmentResolver(registration: FragmentResolverRegistration): void;
-  describe(description: PromptDescriptionSource): void;
+  describe(descriptions: Partial<Record<keyof ReadRequest, PromptDescriptionSource>>): void;
+  addPromptGuideline(guideline: PromptDescriptionSource): void;
 }
 
 interface ReadFragmentContext {
@@ -87,7 +88,7 @@ interface ReadViewRegistration {
 }
 ```
 
-A view may list other views in `includes` when its complete presentation already contains theirs. If a request names both views, read skips the included view instead of returning duplicate annotations. For example, `anchors` includes `lines` because every line anchor already contains its line number.
+A view may list other views in `includes` when its complete presentation already contains theirs. If a request names both views, read skips the included view instead of returning duplicate annotations. Only declare an inclusion when that plugin actually supplies the complete included presentation.
 
 `ResourceResolver` comes from `pi-agent-resource`. Priority is read-registry metadata: lower values run first and the default is `0`.
 
@@ -125,7 +126,7 @@ Core validates:
 - each typed target resolver and its fulfilled attempts;
 - registry-local resolver ID uniqueness;
 - read-specific priority, optional renderer, view, and handler registration fields;
-- one valid prompt description source per plugin.
+- one valid parameter-description map per plugin.
 
 `any` is reserved as a read-handler selector and is rejected as a resolver ID by this registry.
 
@@ -193,7 +194,7 @@ The exact resolver, validation, capability, pipeline, and failure behavior is de
 
 ## Prompt contributions
 
-`api.describe()` contributes one static string or lazy renderer for the read capability. Core evaluates lazy renderers only while `read` is active. `undefined` omits one plugin from that snapshot. Rendering is defined in [`prompt-contributions.md`](/agent/src/extensions/pi-agent-ide/extensions/pi-agent-read/docs/plugins/prompt-contributions.md).
+`api.describe()` contributes syntax to the matching `path`, `views`, `offset` or `limit` description in Read's parameter schema. Each value is static text or a lazy callback; `undefined` omits that parameter contribution from the snapshot. Registration and delivery are defined in [prompt-contributions.md](prompt-contributions.md).
 
 ## Testing contract
 
