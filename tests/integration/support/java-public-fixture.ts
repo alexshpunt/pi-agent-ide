@@ -36,7 +36,7 @@ export default function javaPublicFixture(pi: ExtensionAPI): void {
           .filter((block) => block.type === "text")
           .map((block) => block.text)
           .join("\n");
-        const anchor = /(?:^|\n)\s*(4#[A-F\d]+)\s/u.exec(fileText)?.[1];
+        const anchor = /(?:^|\n)(4#[A-F\d]+)\|/u.exec(fileText)?.[1];
         if (anchor === undefined) throw new Error("The Java source read returned no line-4 anchor");
         await call("insert", { path: `${source}/source`, anchor, text: "breakpoint" });
         const started = await call("insert", { path: source, text: "start" });
