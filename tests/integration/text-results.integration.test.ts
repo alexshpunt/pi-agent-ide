@@ -218,7 +218,6 @@ for (const [result, notice] of [
   if (!found.includes("No matches found")) throw Error("Empty selection searched a notice or neighboring text: "+found);
 }
 await tools.replace({path:zero,text:"BAD"});
-await tools.flush({});
 store("emptyWindow",pastEnd);
 `,
       String.raw`
@@ -450,6 +449,8 @@ const current=await tools.read({path:"note.txt",views:["anchors"]});
 const anchor=/(\\d+#[A-Fa-f0-9]+)[^\\n]*beta/.exec(current)?.[1];
 if(!anchor) throw Error("Read did not show beta's anchor: "+current);
 await tools.replace({path:"note.txt",start:anchor,text:"BETA"});
+const recovered=await tools.read({path:"note.txt"});
+if(!recovered.includes("BETA")) throw Error("Anchored recovery was not applied");
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
 `,
     ]);
