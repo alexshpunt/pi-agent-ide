@@ -23,7 +23,9 @@ export async function readRaw(
   const requested = request.path ?? "";
   try {
     if ((request.views?.length ?? 0) > 0)
-      throw new Error("Raw byte reads do not accept text views");
+      throw new Error(
+        "Raw byte reads do not accept views. Omit views for bytes, or read the file without raw: to use text views.",
+      );
     const offset = request.offset ?? 0;
     const limit = request.limit;
     if (
@@ -97,7 +99,11 @@ export async function readRaw(
       const hasMore = nextOffset < stat.size;
       const header = `${source}\nBytes ${start}..${nextOffset} (end exclusive), ${stat.size} bytes total`;
       const rows = formatRawBytes(bytes, start);
-      const continuation = hasMore ? `\nUse offset=${nextOffset} to continue in bytes.` : "";
+      const continuation = !hasMore
+        ? ""
+        : length < requestedLength
+          ? `\n[Output limited. Read ${JSON.stringify(source)} with offset=${nextOffset} to continue.]`
+          : `\nUse offset=${nextOffset} to continue in bytes.`;
       return {
         content: [{ type: "text", text: `${header}\n${rows}${continuation}` }],
         details: {

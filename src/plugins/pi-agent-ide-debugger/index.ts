@@ -608,7 +608,7 @@ function renderBreakpointList(session: DebugSession): string {
   return [...session.breakpoints.values()]
     .map(
       (breakpoint) =>
-        `${breakpoint.verified ? "●" : "○"} ${breakpoint.file}:${breakpoint.line} · ${breakpoint.source}`,
+        `${breakpoint.verified ? "●" : "○"} ${breakpoint.file}:${breakpoint.line} · ${breakpoint.source} (${breakpoint.verified ? "verified" : "pending"})`,
     )
     .join("\n");
 }

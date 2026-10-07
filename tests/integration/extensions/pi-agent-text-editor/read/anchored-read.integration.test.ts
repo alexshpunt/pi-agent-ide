@@ -28,7 +28,13 @@ afterAll(() => anchoredExtensions.dispose());
 
 const tempRoot = path.resolve(".agents/tmp/pi-agent-text-editor");
 const toolId = "read";
-const fixtureLines = ["alpha intro", "bravo marker", "charlie note", "bravo repeat", "delta tail"];
+const fixtureLines = [
+  "alpha intro",
+  "bravo marker",
+  "charlie note",
+  "bravo repeat",
+  "delta tail",
+] as const;
 
 test("starts reading at an exact text anchor", async () => {
   await withTempDirectory(async (directory) => {
@@ -150,7 +156,7 @@ test("reads a file whose name contains # as a whole", async () => {
   });
 });
 
-test("continuation hints stay valid for the same anchored source", async () => {
+test("continuation hints name the original source with an absolute offset", async () => {
   await withTempDirectory(async (directory) => {
     await writeFixture(directory);
     const first = await runReadCalls({
@@ -161,12 +167,15 @@ test("continuation hints stay valid for the same anchored source", async () => {
 
     const firstDetails = getToolResultMessage<ReadResultDetails>(first, "first").details;
     expect(firstDetails.startLine).toBe(2);
-    expect(getToolResultText(first, "first")).toContain("Use offset=2 to continue.");
+    expect(typeof firstDetails.source).toBe("string");
+    expect(getToolResultText(first, "first")).toContain(
+      `Read ${JSON.stringify(firstDetails.source)} with offset=3 to continue.`,
+    );
 
     const second = await runReadCalls({
       cwd: directory,
       testName: "anchored-read-hint-second",
-      calls: [{ id: "second", path: "notes.md#bravo marker", offset: 2, limit: 2 }],
+      calls: [{ id: "second", path: "notes.md", offset: 3, limit: 2 }],
     });
 
     const secondDetails = getToolResultMessage<ReadResultDetails>(second, "second").details;
