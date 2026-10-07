@@ -370,17 +370,19 @@ export function createTextTool<TParameters extends TSchema>(
             copy: "This result selects only destination text; a whole-file copy selects the whole destination. The source is unchanged.",
             move: "Use the Move result to work with the inserted destination text, including any added line separators. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
             delete: "Delete returns no reusable text selection.",
-            undo: "This result selects whole restored text files, not only reversed spans. Deleted files provide no text selection.",
+            undo: "The result selects the whole restored text file, not only the reversed span.",
           } as Record<string, string>
         )[definition.name] ?? "",
         definition.name === "replace"
           ? "Pass the unchanged result to another source tool to use its selection. If it has no text selection, read the file again."
           : definition.name === "write"
             ? "For file writes, pass this unchanged result to another source tool for dependent work. If the result reports no verified text selection, inspect the file instead."
-            : ["insert", "copy", "move", "undo"].includes(definition.name)
-              ? "Pass this unchanged result to another source tool for dependent work. Pending edits commit before the next tool consumes them. If the result reports no verified text selection, inspect the file instead."
-              : "",
-        definition.source.inherited && definition.name !== "delete"
+            : definition.name === "undo"
+              ? "Pass the unchanged result to another source tool for dependent work. If no verified text selection is returned, read the file again."
+              : ["insert", "copy", "move"].includes(definition.name)
+                ? "Pass this unchanged result to another source tool for dependent work. Pending edits commit before the next tool consumes them. If the result reports no verified text selection, inspect the file instead."
+                : "",
+        definition.source.inherited && !["delete", "undo"].includes(definition.name)
           ? definition.wholeFileOperation === undefined
             ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
             : `When ${definition.source.field} is omitted, the tool can reuse the file identified by a supplied text anchor.`
