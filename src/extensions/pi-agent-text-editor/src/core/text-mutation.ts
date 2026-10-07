@@ -1542,14 +1542,14 @@ function formatRejectedAnchorMessage(
       : code === "missing"
         ? "was not found"
         : code === "invalid"
-          ? "is invalid"
+          ? "was rejected"
           : "could not be resolved";
   const guidance =
     failure.resolution.resolverId === "exact-text"
-      ? "Exact-text editing is now blocked for this file until an anchor-based edit succeeds. Find the intended location among the current anchors below, or use Read/Search for another section, and use its anchor. After that edit, exact text is available again."
+      ? "Exact-text edits are blocked for this file. Use a current anchor below for the intended edit, or get one with Read/Search. Exact text is available again after that edit succeeds."
       : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
-  return `[SYSTEM] ${failure.toolName} blocked: ${failure.field} anchor "${failure.anchor}" ${state}. ${guidance} (${reason})${context}`;
+  return `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} "${failure.anchor}" ${state}. ${guidance} (${reason})${context}`;
 }
 
 function recoveryWindows(
