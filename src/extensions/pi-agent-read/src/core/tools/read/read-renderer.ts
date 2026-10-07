@@ -239,6 +239,25 @@ export class ReadResultPanel implements Component {
       compactInput.hasHiddenRows,
     );
     const lines = [renderTopBorder(this.state, innerWidth, this.state.theme)];
+    const diagnosticStatus = this.state.details.diagnosticStatus;
+    if (diagnosticStatus) {
+      for (const line of diagnosticStatus.split(/\r\n|\r|\n/u)) {
+        for (const row of wrapTextWithAnsi(
+          this.state.theme.fg("muted", normalizeText(line)),
+          contentWidth,
+        )) {
+          lines.push(framed(row, innerWidth, this.state.theme));
+        }
+      }
+    }
+    for (const warning of this.state.details.viewWarnings ?? []) {
+      for (const row of wrapTextWithAnsi(
+        this.state.theme.fg("warning", normalizeText(warning)),
+        contentWidth,
+      )) {
+        lines.push(framed(row, innerWidth, this.state.theme));
+      }
+    }
 
     for (const row of rows) {
       for (const wrappedRow of wrapTextWithAnsi(row, contentWidth)) {
@@ -538,7 +557,25 @@ function cleanText(
     );
   }
 
-  const text = textBlocks(result);
+  const rendered = textBlocks(result);
+  const warning = details.viewWarnings?.join("\n");
+  let text =
+    warning === undefined
+      ? rendered
+      : rendered === warning
+        ? ""
+        : rendered.startsWith(`${warning}\n`)
+          ? rendered.slice(warning.length + 1)
+          : rendered;
+  const diagnosticStatus = details.diagnosticStatus;
+  if (diagnosticStatus !== undefined) {
+    text =
+      text === diagnosticStatus
+        ? ""
+        : text.startsWith(`${diagnosticStatus}\n`)
+          ? text.slice(diagnosticStatus.length + 1)
+          : text;
+  }
 
   if (
     details.truncation === undefined &&

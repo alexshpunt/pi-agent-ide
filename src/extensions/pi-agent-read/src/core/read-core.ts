@@ -368,7 +368,7 @@ function renderParameterDescriptions(
   return Object.fromEntries(
     Object.entries(entries).map(([parameter, descriptions]) => [
       parameter,
-      [...new Set(descriptions)].join("\n"),
+      [...new Set(descriptions.flatMap((description) => description.split("\n")))].join("\n"),
     ]),
   );
 }
