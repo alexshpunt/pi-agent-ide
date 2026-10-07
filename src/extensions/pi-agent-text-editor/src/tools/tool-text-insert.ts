@@ -27,12 +27,12 @@ export const insertSchema = Type.Object(
     text: Type.String({
       minLength: 1,
       description:
-        "New text only. The tool supplies the line boundary; do not prefix a newline just to start a new line. For example, 'NEW' inserts one line, while '\\nNEW' intentionally adds a blank line before it. A missing trailing newline is supplied before following text; additional newlines remain intentional blank lines. When appending after an unterminated final line, the tool supplies the separator before the new text without removing trailing newlines from the payload. Payload line endings follow the destination file's LF/CRLF style.",
+        "Supply non-empty new text. The tool adds missing line breaks between the insertion and existing text. Add a leading newline only for an intentional blank line, not to start a new line. Payload newlines are kept, with line endings converted to the file's LF/CRLF style. No trailing newline is added at EOF.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
         description:
-          "Defaults to line. Use blank-line to add only missing blank lines between the inserted block and existing neighboring content; explicit payload newlines remain intact.",
+          "Defaults to line: separate inserted text from existing lines without adding extra blank lines. Use blank-line to add only missing blank lines between the insertion and existing text.",
       }),
     ),
     before: Type.Optional(
