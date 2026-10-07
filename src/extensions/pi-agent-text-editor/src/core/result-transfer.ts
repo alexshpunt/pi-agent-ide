@@ -46,7 +46,7 @@ export async function prepareResultTransfer(
     const selected = store.resolveOrdered(input[field], cwd);
     if (!selected.complete)
       throw new Error(
-        "Incomplete result targets cannot establish a complete transfer; repeat Search.",
+        "Incomplete result targets cannot establish a complete transfer. Run Search again with a higher limit or a narrower query, then use the complete result.",
       );
     await store.verify(selected, signal);
     input[field] = store.register(selected.targets, cwd);

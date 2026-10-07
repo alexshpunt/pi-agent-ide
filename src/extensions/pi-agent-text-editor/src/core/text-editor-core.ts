@@ -932,6 +932,10 @@ export function createTextEditorCore(
   return core;
 }
 
+function readFailureMessage(source: string, error: unknown): string {
+  return `Unable to read ${source}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
 async function inspectTextResource(
   request: TextAnchorInspectionRequest,
   resolvers: readonly RegisteredResolver[],
@@ -980,7 +984,7 @@ async function inspectTextResource(
     try {
       content = await resource.read(request.signal === undefined ? {} : { signal: request.signal });
     } catch (error) {
-      return { kind: "failed", reason: `Unable to read ${resource.source}`, cause: error };
+      return { kind: "failed", reason: readFailureMessage(resource.source, error), cause: error };
     }
 
     if (!isAgentContent(content) || content.length !== 1 || content[0].type !== "text") {
@@ -1442,7 +1446,7 @@ async function prepareTextResource(
               code: "READ_FAILED",
               source: attempt.resource.source,
               resolverId: resolver.id,
-              message: `Unable to read ${attempt.resource.source}`,
+              message: readFailureMessage(attempt.resource.source, error),
               cause: error,
             },
           };
@@ -1734,7 +1738,7 @@ async function editTextResource<Result>(
           code: "READ_FAILED",
           source: resource.source,
           resolverId: resolver.id,
-          message: `Unable to read ${resource.source}`,
+          message: readFailureMessage(resource.source, error),
           cause: error,
         },
       };

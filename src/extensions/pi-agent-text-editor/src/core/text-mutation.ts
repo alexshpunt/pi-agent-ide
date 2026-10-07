@@ -161,7 +161,7 @@ export function createTextTool<TParameters extends TSchema>(
                   );
                   if (!selected.complete)
                     throw new Error(
-                      "Incomplete result targets cannot establish a complete edit; repeat Search.",
+                      "Incomplete result targets cannot establish a complete edit. Run Search again with a higher limit or a narrower query, then use the complete result.",
                     );
                   await resultTargets.verify(selected, signal);
                   if (definition.name === "write" || definition.name === "undo")

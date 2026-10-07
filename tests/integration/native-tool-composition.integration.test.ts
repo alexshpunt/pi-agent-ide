@@ -36,6 +36,7 @@ async function runComposition(
     testName: name,
     artifactsDir: testArtifactsDir(import.meta.filename),
     rawMode: ![
+      "insert-missing-source-cause",
       "copy-structured-scope-header",
       "move-structured-scope-header",
       "immediate-mutation-final-formatting",
@@ -78,6 +79,22 @@ async function runComposition(
     ],
   }).run("Compose ordinary tools through source-aware results without rebuilding coordinates");
 }
+
+test("insert reports the missing-source cause without creating a file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runComposition(cwd, "insert-missing-source-cause", [
+      `const error = await rejects(()=>tools.insert({path:"missing.txt",anchor:"KEEP",text:"NEW"}));
+check(error.includes("ENOENT"),"The source read failure cause was lost");
+text(error);`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    await expect(readFile(path.join(cwd, "missing.txt"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+});
 
 test("insert leaves an empty selection alone without writing", async () => {
   await withTempWorkspace(async (cwd) => {
