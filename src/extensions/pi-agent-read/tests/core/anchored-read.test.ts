@@ -1,3 +1,4 @@
+import { DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import type { ResourceResolver } from "pi-agent-resource";
 import { expect, test } from "vitest";
 
@@ -91,23 +92,56 @@ test("widens the window upward with negative offsets and clamps at line one", as
   expect(clamped.details.endLine).toBe(1);
 });
 
-test("states continuation offsets relative to the origin", async () => {
+test("names the original source and absolute next line after an anchored window", async () => {
   const read = createReadTool();
   read.registerContributions("fixture-plugin", {
     resolvers: [{ resolver: failingTextResolver(TEN_LINES) }],
     fragments: [fragmentResolver({ originLine: 5 })],
   });
-
-  const result = await executeRead(read, "notes.txt#l5", { limit: 2 });
-
-  expect(result.details.startLine).toBe(5);
-  expect(result.details.endLine).toBe(6);
-  expect(result.content[0]?.type).toBe("text");
-  expect(result.content[0]?.type === "text" && result.content[0].text).toContain(
-    "[4 more lines in source. Use offset=3 to continue.]",
-  );
+  try {
+    const result = await executeRead(read, "notes.txt#l5", { limit: 2 });
+    expect(result.details.startLine).toBe(5);
+    expect(result.details.endLine).toBe(6);
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: 'l5\nl6\n\n[4 more lines in source. Read "notes.txt" with offset=7 to continue.]',
+    });
+    const next = await executeRead(read, "notes.txt", { offset: 7 });
+    expect(next.content).toEqual([{ type: "text", text: "l7\nl8\nl9\nl10" }]);
+  } finally {
+    await read.dispose();
+  }
 });
 
+test("automatic caps name the original source rather than an anchor-relative continuation", async () => {
+  const content = Array.from({ length: DEFAULT_MAX_LINES + 10 }, (_, i) => `line ${i + 1}`).join(
+    "\n",
+  );
+  const read = createReadTool();
+  read.registerContributions("fixture", {
+    resolvers: [{ resolver: failingTextResolver(content) }],
+    fragments: [fragmentResolver({ originLine: 5 })],
+  });
+  try {
+    const result = await read.execute({ path: "notes.txt#l5" }, { cwd: "/workspace" });
+    const block = result.content[0];
+    expect(block?.type === "text" && block.text).toContain(
+      `[Showing lines 5-${DEFAULT_MAX_LINES + 4} of ${DEFAULT_MAX_LINES + 10} (${DEFAULT_MAX_LINES}-line limit). Read "notes.txt" with offset=${DEFAULT_MAX_LINES + 5} to continue.]`,
+    );
+    const next = await executeRead(read, "notes.txt", { offset: DEFAULT_MAX_LINES + 5 });
+    const nextBlock = next.content[0];
+    expect(
+      nextBlock?.type === "text" && nextBlock.text.startsWith(`line ${DEFAULT_MAX_LINES + 5}\n`),
+    ).toBe(true);
+    expect(result.script).toMatchObject({
+      kind: "text",
+      startLine: 5,
+      endLine: DEFAULT_MAX_LINES + 10,
+    });
+  } finally {
+    await read.dispose();
+  }
+});
 test("reports fragment failures with the resolver message", async () => {
   const read = createReadTool();
   read.registerContributions("fixture-plugin", {

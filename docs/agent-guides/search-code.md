@@ -20,6 +20,12 @@ If the extra branch reports a budget skip, narrow `path` rather than treating th
 
 Search returns readable matches and references in direct calls and Codemode. An empty successful search is not an error. Incomplete results say so; do not treat their zero matches as proof of absence.
 
+If Search fails, fix the reported input, scope or provider problem before retrying. Keep the intended search scope; do not treat the failure as zero matches.
+
+If Search is interrupted or cancelled, do not treat it as zero matches or completed coverage. Do not use its unfinished result as an edit scope. Retry only when the search is still wanted, and use the new result.
+
+If a result has no local edit references, use its locations to inspect the source, not as an edit scope. For changed local files, repeat Search or Read to obtain a current selection before editing.
+
 Local text results expose `SEARCH#HASH:N:line` for its containing line and `SEARCH#HASH:N:match` for the exact match. Complete selections use `:all:line` or `:all:match`. Pass these references directly to read or editing tools; omit the file path when an all-selection spans files.
 
 A single-result reference becomes stale after its file changes. Re-run the search before reuse. A complete `:all` reference refreshes its original query when selected files change. Compacted output retains complete all-selections.
@@ -32,7 +38,7 @@ A replace/insert result searches only that call's resulting text, including an e
 
 Use a displayed item or capture reference for a subset. The whole result retains its complete stored scope; editing copied preview text never narrows that scope.
 
-Incomplete scopes cannot authorize edits, even through non-empty subsets. Empty arrays select no sources; they do not default to the workspace. Result-scoped text Boolean queries and text include/exclude globs remain unsupported. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
+Incomplete registered result scopes cannot authorize edits, even through non-empty subsets. A numbered local text Search reference remains editable while its file snapshot is current, even if collection was incomplete. Use it only for its containing line or exact match, not as a complete match set. Empty arrays select no sources; they do not default to the workspace. Result-scoped text Boolean queries and text include/exclude globs remain unsupported. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
 
 ## AST search
 

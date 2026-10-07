@@ -125,7 +125,8 @@ export default async function registerSearchCore(
           openWorldHint: false,
         },
         label: "search",
-        description: "Use search to locate workspace text, file paths, and code structures.",
+        description:
+          "Use search to find text, file paths, syntax patterns, language symbols, web-page text, and running processes.",
         promptSnippet:
           "Search files and text with literals or regular expressions, plus syntax trees and language symbols",
         get promptGuidelines(): string[] {

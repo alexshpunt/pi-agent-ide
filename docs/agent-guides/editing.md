@@ -50,11 +50,9 @@ An ordinary `delete.path` without selectors deletes a complete regular file. A r
 
 Inside Codemode, await independent edits on disjoint resources concurrently and overlapping resources in order. Pass a pending edit result directly to another source tool for dependent work; that boundary commits the batch before consuming the result.
 
-Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the parent result for actual committed effects: an acceptance is not proof of writing, and an error is not proof of rollback.
+Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the parent result for actual committed effects: an acceptance is not proof of writing, and an error is not proof of rollback. Read the affected files when the result cannot confirm their final state.
 
-Formatting and registered post-edit handlers run once per surviving resource at script end, not at dependency boundaries. Reads inside the script see written but not yet formatted text. If final processing changes bytes, repeat Read/Search. Standalone edits finish post-edit work immediately.
-
-Ordinary script errors keep accepted edits. Abort or deadline discards pending writes, not batches that already committed. Inspect final results and retry only unapplied edits.
+After an interruption, read the affected files before retrying. Retry only unapplied edits.
 
 ## Specialized resources
 

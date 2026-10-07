@@ -52,6 +52,7 @@ export default async function registerVision(
       setup(api) {
         for (const view of ["image", "sequence"]) {
           api.addView({
+            contentKind: "any",
             view,
             presenter: { id: `vision-${view}`, present: (document) => document },
           });
