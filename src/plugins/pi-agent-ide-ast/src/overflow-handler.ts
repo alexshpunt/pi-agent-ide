@@ -22,8 +22,8 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
     if (!isSupportedOutlinePath(source)) return undefined;
     const format = (outline: SourceViewBlock): string =>
       [
-        `AST overview of ${outline.path}, source lines 1-${outline.totalLines}: the requested text exceeded the read buffer.`,
-        "Source line numbers are on the left. Detail is reduced to fit the buffer; omitted bodies are not exact source text. Read a small source range when needed.",
+        `Code overview of ${outline.path}, source lines 1-${outline.totalLines}: the requested text exceeded the output limit.`,
+        `Some source text is omitted. Read ${JSON.stringify(source)} with offset and limit for exact source text.`,
         ...outline.renderedLines.map(
           (line) => `${line.sourceLine?.lineNumber ?? "…"} | ${line.text}`,
         ),

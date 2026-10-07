@@ -294,7 +294,7 @@ test("ignores unknown views and reports them in the result note and details", as
 
     expect(block?.type).toBe("text");
     if (block?.type === "text") {
-      expect(block.text.startsWith("note: ignored unknown views: typo")).toBe(true);
+      expect(block.text.startsWith("Unknown view ignored: typo.")).toBe(true);
     }
 
     const details = message.details as { ignoredViews?: string[] } | undefined;

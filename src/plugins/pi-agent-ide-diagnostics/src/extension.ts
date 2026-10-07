@@ -130,15 +130,16 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
                   { ...first, text: `${status}\n${first.text}` },
                   ...updated.content.slice(1),
                 ],
+                details: { ...updated.details, diagnosticStatus: status },
               };
             },
           };
         },
       });
       api.describe({
-        path: "diagnostics:<path> — lint and language-server diagnostics with reporting tool and readiness. Pending results and snapshots are not completed checks.",
+        path: "diagnostics:<path> — lint and language-server diagnostics with reporting tool and readiness.",
         views:
-          "diagnostics — diagnostics alongside source text, with reporting tool and readiness. Pending results and snapshots are not completed checks.",
+          "diagnostics — diagnostics alongside source text, with reporting tool and readiness.",
       });
     },
   } satisfies ReadPlugin;

@@ -139,6 +139,66 @@ test("multi-target reads overlap and keep selection order", async () => {
     await read.dispose();
   }
 });
+test.each([
+  { rows: 1100, width: 0, cause: "2000-line limit" },
+  { rows: 35, width: 1000, cause: "50.0KB limit" },
+])(
+  "unmapped $cause results explain how to retry the same selection",
+  async ({ rows, width, cause }) => {
+    const read = createReadTool();
+    const content = Array.from(
+      { length: rows },
+      (_, index) => `row ${index + 1}${"x".repeat(width)}\n`,
+    ).join("");
+    read.registerContributions("fixture", {
+      resolvers: [{ resolver: textResolver(content) }],
+      targetResolvers: [
+        {
+          resolver: {
+            id: "targets",
+            tryResolve: () => ({
+              kind: "resolved",
+              targets: ["one.txt", "two.txt"].map((source) => ({
+                source,
+                ranges: [
+                  { start: { lineNumber: 1, column: 0 }, end: { lineNumber: rows + 1, column: 0 } },
+                ],
+              })),
+            }),
+          },
+        },
+      ],
+    });
+    try {
+      const result = await read.execute({ path: "selection" }, { cwd: process.cwd() });
+      expect(result.details.truncation?.truncated).toBe(true);
+      const block = result.content[0];
+      expect(block?.type).toBe("text");
+      if (block?.type !== "text") throw new Error("Expected a text cap result");
+      expect(block.text).toContain(
+        `output lines (${cause}). No single source-line continuation is available. Retry Read with a smaller limit, keeping the same source and views.]`,
+      );
+      expect(result.script).toMatchObject({
+        kind: "resources",
+        resources: [
+          { source: "one.txt", content, totalLines: rows },
+          { source: "two.txt", content, totalLines: rows },
+        ],
+      });
+      const retry = await read.execute({ path: "selection", limit: 10 }, { cwd: process.cwd() });
+      expect(retry.details.truncation).toBeUndefined();
+      expect(retry.script).toMatchObject({
+        kind: "resources",
+        resources: [
+          { source: "one.txt", startLine: 1, endLine: 10 },
+          { source: "two.txt", startLine: 1, endLine: 10 },
+        ],
+      });
+    } finally {
+      await read.dispose();
+    }
+  },
+);
 test("script multi-target reads keep every selected resource", async () => {
   const read = createReadTool();
   read.registerContributions("fixture", {
@@ -466,7 +526,9 @@ test("ignores unknown views and reports them in a note and details", async () =>
 
   expect(block?.type).toBe("text");
   if (block?.type !== "text") throw new Error("Expected a text block");
-  expect(block.text).toBe("note: ignored unknown views: typo, ghost\nknown|alpha");
+  expect(block.text).toBe(
+    "Unknown views ignored: typo, ghost. Remove these entries or choose supported views from the views parameter.\nknown|alpha",
+  );
   expect(result.details.ignoredViews).toEqual(["typo", "ghost"]);
   expect(result.details.failure).toBeUndefined();
 });
@@ -585,7 +647,7 @@ test("truncates large text at Pi's line and byte limits and tells the agent how 
       type: "text",
       text: `${lineLimited.slice(0, DEFAULT_MAX_LINES).join("\n")}\n\n[Showing lines 1-${DEFAULT_MAX_LINES} of ${
         DEFAULT_MAX_LINES + 1
-      }. Use offset=${DEFAULT_MAX_LINES + 1} to continue.]`,
+      } (${DEFAULT_MAX_LINES}-line limit). Read "large-lines.txt" with offset=${DEFAULT_MAX_LINES + 1} to continue.]`,
     },
   ]);
   expect(lineResult.details.truncation).toMatchObject({
@@ -608,7 +670,7 @@ test("truncates large text at Pi's line and byte limits and tells the agent how 
       type: "text",
       text: `${byteLimited[0]}\n\n[Showing lines 1-1 of 3 (${
         DEFAULT_MAX_BYTES / 1024
-      }.0KB limit). Use offset=2 to continue.]`,
+      }.0KB limit). Read "large-bytes.txt" with offset=2 to continue.]`,
     },
   ]);
   expect(byteResult.details.truncation).toMatchObject({
@@ -676,6 +738,9 @@ test("saves opt-in truncated output and reads the temporary protocol without pre
     expect(firstBlock?.type).toBe("text");
     if (firstBlock?.type === "text") {
       expect(firstBlock.text).toContain(temporarySource);
+      expect(firstBlock.text).toContain(
+        `Read "dynamic:report" with offset=${DEFAULT_MAX_LINES + 1} and views=["final"] to continue.`,
+      );
     }
 
     const remainder = await read.tool.execute(
@@ -744,6 +809,33 @@ test("does not return a partial line when the first line exceeds the byte limit"
   expect(result.details.lines).toEqual([]);
 });
 
+test.each([
+  { content: "", request: {}, notice: "[Empty source.]", totalLines: 0 },
+  {
+    content: "alpha\nbravo\ncharlie",
+    request: { limit: 0 },
+    notice: "[No lines selected: limit=0.]",
+    totalLines: 3,
+  },
+  {
+    content: "alpha\nbravo\ncharlie",
+    request: { offset: 10 },
+    notice: "[Offset 10 is beyond the end of the source (3 lines).]",
+    totalLines: 3,
+  },
+])("explains an empty text read: $notice", async ({ content, request, notice, totalLines }) => {
+  const read = createReadTool();
+  read.registerContributions("fixture", { resolvers: [{ resolver: textResolver(content) }] });
+  try {
+    const result = await read.execute({ path: "notes.txt", ...request }, { cwd: process.cwd() });
+    expect(result.isError).not.toBe(true);
+    expect(result.content).toEqual([{ type: "text", text: notice }]);
+    expect(result.details.lines).toEqual([]);
+    expect(result.script).toMatchObject({ kind: "text", content: "", lines: [], totalLines });
+  } finally {
+    await read.dispose();
+  }
+});
 test("reports unread source lines when an explicit limit stops early", async () => {
   const read = createReadTool();
   read.registerContributions("fixture-plugin", {
@@ -761,12 +853,58 @@ test("reports unread source lines when an explicit limit stops early", async () 
   expect(result.content).toEqual([
     {
       type: "text",
-      text: "alpha\nbravo\n\n[1 more lines in source. Use offset=3 to continue.]",
+      text: 'alpha\nbravo\n\n[1 more line in source. Read "notes.txt" with offset=3 to continue.]',
     },
   ]);
   expect(result.details.truncation).toBeUndefined();
 });
 
+test.each([undefined, 1])(
+  "explains each selected source only when limit=%s was explicitly requested",
+  async (limit) => {
+    const read = createReadTool();
+    read.registerContributions("fixture", {
+      resolvers: [{ resolver: textResolver("alpha\nbeta\ngamma") }],
+      targetResolvers: [
+        {
+          resolver: {
+            id: "targets",
+            tryResolve: () => ({
+              kind: "resolved",
+              targets: ["one.txt", "two.txt"].map((source) => ({
+                source,
+                ranges: [
+                  { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 3, column: 0 } },
+                ],
+              })),
+            }),
+          },
+        },
+      ],
+    });
+    try {
+      const result = await read.execute({ path: "selection", limit }, { cwd: process.cwd() });
+      const chunks = ["one.txt", "two.txt"].map((source) =>
+        limit === undefined
+          ? "alpha\nbeta"
+          : `alpha\n\n[2 more lines in source. Read "${source}" with offset=2 to continue.]`,
+      );
+      expect(result.content).toEqual([{ type: "text", text: chunks.join("\n") }]);
+      expect(result.details.truncation).toBeUndefined();
+      expect(result.script).toMatchObject({
+        kind: "resources",
+        resources: ["one.txt", "two.txt"].map((source) => ({
+          kind: "text",
+          source,
+          content: limit === undefined ? "alpha\nbeta\n" : "alpha\n",
+          endLine: limit === undefined ? 2 : 1,
+        })),
+      });
+    } finally {
+      await read.dispose();
+    }
+  },
+);
 test("rejects a malformed resolver registration", () => {
   const read = createReadTool();
 
