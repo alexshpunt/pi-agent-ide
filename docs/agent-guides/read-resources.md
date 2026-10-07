@@ -11,3 +11,7 @@ Read-only views, bytes, images and directory listings do not grant text-edit aut
 Search a Read result to look only inside its selection. Use Select to derive new boundaries before editing.
 
 Read `docs:select-code` for selection workflows and `docs:editing` for using results in mutations.
+
+## Comparing text sources
+
+When a Diff source resolves to several resources, their text is joined with one newline separator in resolver order. Diff line numbers refer to each compared text, not original source line numbers when a window is selected.
