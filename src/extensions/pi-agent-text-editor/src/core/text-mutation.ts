@@ -342,11 +342,13 @@ export function createTextTool<TParameters extends TSchema>(
     get(): string {
       return [
         definition.description,
+        core.renderToolPromptGuideline(definition.name) ?? "",
         (
           {
             replace:
               "This result selects the resulting text; empty replacement selects the resulting position, not the removed text.",
-            insert: "This result selects the inserted text, including supplied line separators.",
+            insert:
+              "For text edits, this result selects the inserted text, including supplied line separators. Specialized resources return their own action result.",
             write: "This result selects the whole written file, not only its changed span.",
             copy: "This result selects only destination text; a whole-file copy selects the whole destination. The source is unchanged.",
             move: "This result selects only destination text; a whole-file move selects the whole destination. Source removals never become output targets.",

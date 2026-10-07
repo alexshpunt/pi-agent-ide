@@ -164,8 +164,22 @@ export function createIdeTextResults(pi: ExtensionAPI) {
         record !== null && typeof record === "object" && "data" in record
           ? record
           : { status: event.isError ? "error" : "success", data: record };
+      const data = outcome.data;
+      const targetUnavailable =
+        data !== null &&
+        typeof data === "object" &&
+        "effect" in data &&
+        data.effect === "applied" &&
+        "targetUnavailable" in data &&
+        typeof data.targetUnavailable === "string"
+          ? data.targetUnavailable
+          : undefined;
+      const readable =
+        targetUnavailable === undefined
+          ? original
+          : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
-      const shown = store.publish(outcome, original, context.cwd, resources);
+      const shown = store.publish(outcome, readable, context.cwd, resources);
       const parent = parents.get(event.toolCallId);
       parents.delete(event.toolCallId);
       if (parent !== undefined) {

@@ -202,6 +202,11 @@ export class DapClient {
     return response;
   }
 
+  /** Consume an already buffered control event without waiting for a new one. */
+  takeEvent(events: readonly string[]): DapEvent | undefined {
+    const index = this.#events.findIndex((event) => events.includes(event.event));
+    return index < 0 ? undefined : this.#events.splice(index, 1)[0];
+  }
   /** Wait for a matching event. Only the newest 128 control events can be replayed. */
   waitForEvent(event: string, timeoutMs = 30_000): Promise<DapEvent> {
     return this.waitForAnyEvent([event], timeoutMs);

@@ -250,8 +250,11 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
         const postWriteResults =
           details.results?.filter(
             (result, index) =>
-              callIdsByResult[index] === id &&
-              result.data.errors?.some((error) => error.code === "POST_WRITE_FAILED"),
+              (callIdsByResult[index] === id ||
+                (callIdsByResult.length === 0 && batch.calls.length === 1)) &&
+              result.data.errors?.some(
+                (error) => error.code === "POST_WRITE_FAILED" || error.code === "POST_EDIT_FAILED",
+              ),
           ) ?? [];
         call.postWriteFailure = postWriteResults.length > 0;
         if (call.postWriteFailure) {

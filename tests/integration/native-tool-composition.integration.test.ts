@@ -944,6 +944,62 @@ test.each([false, true])(
     });
   },
 );
+test("a saved Insert explains why formatting removed its reusable target", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+    );
+    await writeFile(path.join(cwd, "format.txt"), "old body\nTAIL\n");
+    const run = await new PiIntegrationTest({
+      testName: "insert-unavailable-formatted-target",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [
+        path.resolve("tests/integration/fixtures/forward-text-result.ts"),
+        path.resolve("src/pi-agent-ide.ts"),
+        path.resolve("tests/integration/support/native-post-edit-probe.ts"),
+      ],
+      tools: ["insert", "search"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "insert",
+              name: "insert",
+              arguments: { path: "format.txt", anchor: "old body", text: "format_me" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "reuse",
+              name: "search",
+              arguments: { path: "$previous-result", query: "FORMATTED" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Finished without replaying the saved Insert.")]),
+      ],
+    }).run("Report applied bytes without granting an unverified target");
+    expect(getToolExecution(run, "insert").isError).toBe(false);
+    expect(getToolExecution(run, "reuse").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "format.txt"), "utf8")).toBe(
+      "old body\nFORMATTED\nTAIL\n",
+    );
+    const result = getToolExecutionResult(run, "insert") as {
+      details?: { metadata?: { targetUnavailable?: string } };
+    };
+    const reason = result.details?.metadata?.targetUnavailable;
+    expect(reason).toBeDefined();
+    expect(getToolResultText(run, "insert")).toContain(reason);
+  });
+});
 test("retains separate sparse and multi-file ranges in a mutation result", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "a.txt"), "old one\nNEW gap\nold two\n");
