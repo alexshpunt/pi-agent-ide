@@ -28,8 +28,7 @@ export { type ChangedRange, computeChangedRanges } from "#src/core/mutation-resu
 export {
   mutationDataSchema,
   mutationResultSchema,
-  flushDataSchema,
-  type FlushData,
+  type BatchMutationData,
   structuredMutation,
   type MutationData,
 } from "#src/core/structured-result.js";

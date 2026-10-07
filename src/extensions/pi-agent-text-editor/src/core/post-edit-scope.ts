@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { requiredValue } from "pi-agent-invariant";
 import { ResourceScheduler, resourceAccesses } from "pi-agent-resource";
 import type { TextResourceEditOutcome } from "./text-editor-core.js";
 
@@ -64,7 +65,11 @@ export function createPostEditScope(cwd = process.cwd()) {
     sources(): readonly string[] {
       return [...pending.keys()];
     },
-    async finish(onCompleted?: (outcome: Completed) => void): Promise<Completed[]> {
+    /** Report each final resource outcome; a failed finalization does not undo its write. */
+    async finish(
+      onCompleted?: (outcome: Completed) => void,
+      onFailed?: (source: string, error: unknown) => void,
+    ): Promise<Completed[]> {
       const work = [...pending];
       pending.clear();
       const completed: Completed[] = [];
@@ -76,9 +81,15 @@ export function createPostEditScope(cwd = process.cwd()) {
             scheduler.run(resourceAccesses(source, cwd, "write"), finalize),
           ),
         );
-        for (const outcome of outcomes) {
+        for (const [index, outcome] of outcomes.entries()) {
+          const source = requiredValue(work[index])[0];
           if (outcome.status === "rejected") {
             errors.push(outcome.reason);
+            try {
+              onFailed?.(source, outcome.reason);
+            } catch (error) {
+              errors.push(error);
+            }
             continue;
           }
           completed.push(outcome.value);
@@ -86,6 +97,11 @@ export function createPostEditScope(cwd = process.cwd()) {
             onCompleted?.(outcome.value);
           } catch (error) {
             errors.push(error);
+            try {
+              onFailed?.(source, error);
+            } catch (failure) {
+              errors.push(failure);
+            }
           }
         }
       });

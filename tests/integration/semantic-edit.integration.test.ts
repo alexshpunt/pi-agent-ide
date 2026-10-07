@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -63,6 +64,57 @@ test("Native tools move an exact LSP declaration without matching unrelated text
   });
 });
 
+test("Copy warns that declaration fallback leaves imports and references unchanged", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
+    await writeFile(
+      path.join(cwd, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
+    );
+    await writeFile(path.join(cwd, "helper.ts"), "export const value = 1;\n");
+    const source = 'import { value } from "./helper";\nexport function greet() { return value; }\n';
+    const consumer = 'import { greet } from "./source";\nexport const result = greet();\n';
+    await writeFile(path.join(cwd, "source.ts"), source);
+    await writeFile(path.join(cwd, "consumer.ts"), consumer);
+    await writeFile(path.join(cwd, "destination.ts"), "// destination\n");
+    const run = await new PiIntegrationTest({
+      testName: "semantic-copy-warning",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["copy", "codemode"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "copy-declaration",
+              name: "copy",
+              arguments: {
+                path: "symbol:source.ts#greet",
+                target: "destination.ts",
+                targetStart: "end",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Copy only the declaration text; do not rewrite imports or references");
+    const execution = getToolExecution(run, "copy-declaration");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    const output = getToolResultText(run, "copy-declaration");
+    expect(output).toContain("Text fallback: imports and references unchanged");
+    expect(run.tuiRenderedOutput).toContain("Text fallback: imports and references unchanged");
+    expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toBe(source);
+    expect(await readFile(path.join(cwd, "consumer.ts"), "utf8")).toBe(consumer);
+    const copied = await readFile(path.join(cwd, "destination.ts"), "utf8");
+    expect(copied).toContain("export function greet() { return value; }");
+    expect(copied).not.toContain("import { value }");
+  });
+});
 test("standalone declaration edits and moves preserve earlier effects", async () => {
   await withTempWorkspace(async (cwd) => {
     await enableNativeCodemode(cwd);
@@ -239,7 +291,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
   });
 });
 
-test("native AST edits use fresh selections after checkpoints", async () => {
+test("native AST edits use fresh selections after automatic commits", async () => {
   await withTempWorkspace(async (cwd) => {
     await enableNativeCodemode(cwd);
     await writeFile(path.join(cwd, "nodes.ts"), 'const emoji = "😀"; console.log("same");\n');
@@ -261,12 +313,9 @@ test("native AST edits use fresh selections after checkpoints", async () => {
 const check=result=>{if(typeof result!=="string")throw Error("Expected readable result");return result;};
 const firstSearch=check(await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:firstSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:'logger.info("same")'}));
-check(await tools.flush({}));
 check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
-check(await tools.flush({}));
 const secondSearch=check(await tools.search({query:"ast:logger.info($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:secondSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:"done()"}));
-check(await tools.flush({}));
 `,
               },
             }),
@@ -275,7 +324,7 @@ check(await tools.flush({}));
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Refresh the editor handle and structural query after each checkpoint");
+    }).run("Refresh the structural query after edits");
     const execution = getToolExecution(run, "refresh");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "nodes.ts"), "utf8")).toBe(

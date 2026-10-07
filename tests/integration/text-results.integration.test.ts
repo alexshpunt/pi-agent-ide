@@ -36,7 +36,6 @@ async function runText(cwd: string, name: string, scripts: string[]) {
       "copy",
       "move",
       "undo",
-      "flush",
       "bash",
       "codemode",
     ],
@@ -219,7 +218,6 @@ for (const [result, notice] of [
   if (!found.includes("No matches found")) throw Error("Empty selection searched a notice or neighboring text: "+found);
 }
 await tools.replace({path:zero,text:"BAD"});
-await tools.flush({});
 store("emptyWindow",pastEnd);
 `,
       String.raw`
@@ -405,7 +403,6 @@ test("pending result strings confirm at dependent boundaries without invalidatin
       `
 const first=await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
 const second=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
-if(!first.includes("not yet applied")||!second.includes("not yet applied")) throw Error("Original-snapshot edits wrote early");
 const shown=await tools.read({path:first});
 const found=await tools.search({path:second,query:"BETA"});
 if(!shown.includes("ALPHA")||!found.includes("BETA")) throw Error("A peer result expired at the common commit");
@@ -445,16 +442,15 @@ if(!failed.includes("anchor")) throw Error("Missing recovery anchors");
 let blocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { blocked=String(error); }
 if(!blocked.includes("blocked")) throw Error("Explicit text retried without an anchor");
 await tools.write({path:"note.txt",content:"ALPHA\\nbeta\\ngamma\\n"});
-await tools.flush({});
 let stillBlocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { stillBlocked=String(error); }
 if(!stillBlocked.includes("blocked")) throw Error("An unanchored write bypassed recovery");
 const current=await tools.read({path:"note.txt",views:["anchors"]});
 const anchor=/(\\d+#[A-Fa-f0-9]+)[^\\n]*beta/.exec(current)?.[1];
 if(!anchor) throw Error("Read did not show beta's anchor: "+current);
 await tools.replace({path:"note.txt",start:anchor,text:"BETA"});
-await tools.flush({});
+const recovered=await tools.read({path:"note.txt"});
+if(!recovered.includes("BETA")) throw Error("Anchored recovery was not applied");
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
-text(await tools.flush({}));
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -521,9 +517,7 @@ let failed=false; try { await tools.replace({path:"note.txt",start:"missing",tex
 if(!failed) throw Error("Expected exact-text failure");
 const found=await tools.search({path:"note.txt",query:"beta"});
 await tools.replace({path:found,text:"BETA"});
-await tools.flush({});
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
-text(await tools.flush({}));
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(

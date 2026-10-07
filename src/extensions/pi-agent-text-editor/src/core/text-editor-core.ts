@@ -937,6 +937,10 @@ export function createTextEditorCore(
   return core;
 }
 
+function readFailureMessage(source: string, error: unknown): string {
+  return `Unable to read ${source}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
 async function inspectTextResource(
   request: TextAnchorInspectionRequest,
   resolvers: readonly RegisteredResolver[],
@@ -985,7 +989,7 @@ async function inspectTextResource(
     try {
       content = await resource.read(request.signal === undefined ? {} : { signal: request.signal });
     } catch (error) {
-      return { kind: "failed", reason: `Unable to read ${resource.source}`, cause: error };
+      return { kind: "failed", reason: readFailureMessage(resource.source, error), cause: error };
     }
 
     if (!isAgentContent(content) || content.length !== 1 || content[0].type !== "text") {
@@ -1321,23 +1325,18 @@ async function editTextResources<Result>(
         rollbackFailures.push(writtenSource);
       }
     }
+    const cause: unknown = failure.status === "rejected" ? failure.reason : undefined;
     const originallyMissing = written.filter(
       (writtenSource) => !requiredValue(prepared.get(writtenSource)).existed,
     );
-    const rollbackReason =
-      rollbackFailures.length === 0 ? "" : `; rollback failed for ${rollbackFailures.join(", ")}`;
-    const missingReason =
-      originallyMissing.length === 0
-        ? ""
-        : `; restoring text did not confirm the original missing-file state for ${originallyMissing.join(", ")}`;
     return {
       kind: "failed",
       failure: {
         code: "WRITE_FAILED",
         source,
         resolverId: item.resolverId,
-        message: `Unable to write ${source}${rollbackReason}${missingReason}`,
-        cause: failure.status === "rejected" ? failure.reason : undefined,
+        message: `Unable to write ${source}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        cause,
         rollback: { failed: rollbackFailures, originallyMissing },
       },
       completed: [],
@@ -1469,7 +1468,7 @@ async function prepareTextResource(
               code: "READ_FAILED",
               source: attempt.resource.source,
               resolverId: resolver.id,
-              message: `Unable to read ${attempt.resource.source}`,
+              message: readFailureMessage(attempt.resource.source, error),
               cause: error,
             },
           };
@@ -1779,7 +1778,7 @@ async function editTextResource<Result>(
           code: "READ_FAILED",
           source: resource.source,
           resolverId: resolver.id,
-          message: `Unable to read ${resource.source}`,
+          message: readFailureMessage(resource.source, error),
           cause: error,
         },
       };

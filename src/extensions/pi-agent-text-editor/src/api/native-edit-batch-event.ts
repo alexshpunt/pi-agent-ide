@@ -5,6 +5,10 @@ import type { FileMutationBatchResult } from "./mutation-result.js";
 export interface NativeEditBatchEvent {
   readonly parentToolCallId: string;
   readonly calls: readonly string[];
+  /** Successful Copy calls that retained identical destination text without a write. */
+  readonly unchangedCopyCalls?: readonly string[];
+  /** Per-call Copy receipts keep destination authority and rollback evidence. */
+  readonly copyResults?: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>>;
   readonly result: AgentToolResult<FileMutationBatchResult>;
 }
 

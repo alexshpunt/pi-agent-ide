@@ -4,11 +4,13 @@ import {
   assistantMessage,
   getToolExecution,
   getToolExecutionDetails,
+  getToolExecutionResult,
   PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
 } from "pi-coding-agent-test";
+import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
 import {
   enableNativeCodemode,
@@ -47,11 +49,9 @@ test.each([false, true])(
 const check = result => { if(typeof result!=="string") throw Error("Expected readable result"); return result; };
 check(await tools.write({path:"a.note",content:"first"}));
 check(await tools.write({path:"b.note",content:"second"}));
-check(await tools.flush({}));
 const seen=check(await tools.read({path:"a.note"}));
 if(!seen.endsWith("first")) throw Error("formatted too early");
 check(await tools.replace({path:"a.note",start:"first",text:"final"}));
-check(await tools.flush({}));
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,
                 },
@@ -97,6 +97,97 @@ ${fail ? 'throw new Error("planned failure");' : ""}
   },
 );
 
+test.each(["path", "result"] as const)(
+  "failed final processing keeps applied effects without an old final snapshot for %s input",
+  async (input) => {
+    await withTempWorkspace(async (cwd) => {
+      await enableNativeCodemode(cwd);
+      await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+      await writeFile(
+        path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+        JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+      );
+      await writeFile(path.join(cwd, "a.note"), "anchor\nTAIL\n");
+      await writeFile(path.join(cwd, "b.note"), "anchor\nTAIL\n");
+      const run = await new PiIntegrationTest({
+        testName: `final-post-edit-failed-resource-${input}`,
+        rawMode: false,
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        extensions: [
+          "builtin:codemode",
+          path.resolve("src/pi-agent-ide.ts"),
+          path.resolve("tests/integration/support/final-post-edit-extension.ts"),
+          path.resolve("tests/integration/support/post-edit-external-change.ts"),
+        ],
+        tools: ["codemode", "insert", "read", "post_edit_external_change"],
+        conversation: [
+          assistantMessage(
+            [
+              toolCall({
+                id: "edit",
+                name: "codemode",
+                arguments: {
+                  code: `
+${input === "result" ? 'const selected = await tools.read({path:"a.note",offset:1,limit:1});' : ""}
+await Promise.all([
+  ${input === "result" ? 'tools.insert({path:selected,text:"A"})' : 'tools.insert({path:"a.note",anchor:"anchor",text:"A"})'},
+  tools.insert({path:"b.note",anchor:"anchor",text:"B"})
+]);
+await tools.read({path:"a.note"});
+await tools.post_edit_external_change({path:"a.note",content:"EXTERNAL\\n"});
+`,
+                },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("Finished without replaying confirmed writes.")]),
+        ],
+      }).run("Keep final-processing failure separate from applied writes");
+      expect(getToolExecution(run, "edit").isError).toBe(true);
+      expect(await readFile(path.join(cwd, "a.note"), "utf8")).toBe("EXTERNAL\n");
+      expect(await readFile(path.join(cwd, "b.note"), "utf8")).toBe("ANCHOR\nB\nTAIL\n");
+      expect(getToolExecutionResult(run, "edit")).toMatchObject({
+        details: {
+          editorBatchResults: expect.arrayContaining([
+            expect.objectContaining({
+              data: expect.objectContaining({ effect: "applied" }) as unknown,
+            }),
+          ]) as unknown,
+        },
+      });
+      const saved = await PiRun.open(run.artifacts.run);
+      const entry = saved.session
+        ?.split("\n")
+        .find((line) => line.includes('"customType":"ide-nested-results"'));
+      const panel = JSON.parse(entry ?? "{}") as {
+        data: {
+          calls: Array<{
+            name: string;
+            args: { path?: string };
+            result?: {
+              isError?: boolean;
+              details?: { results?: Array<{ data: Record<string, unknown> }> };
+            };
+          }>;
+        };
+      };
+      const failure = panel.data.calls.find(
+        (call) =>
+          call.name === "insert" &&
+          call.result?.details?.results?.some(
+            (item) => typeof item.data.path === "string" && item.data.path.endsWith("a.note"),
+          ),
+      );
+      expect(failure?.result?.isError).toBe(true);
+      const data = failure?.result?.details?.results?.[0]?.data;
+      expect(data).toMatchObject({ ok: false, errors: [{ code: "POST_EDIT_FAILED" }] });
+      expect(data).not.toHaveProperty("afterContent");
+      expect(data).not.toHaveProperty("afterDocument");
+    });
+  },
+);
 test("whole-file operations finalize only surviving text targets and preserve binary bytes", async () => {
   await withTempWorkspace(async (cwd) => {
     await enableNativeCodemode(cwd);
@@ -133,7 +224,6 @@ check(await tools.move({path:"temporary.note",target:"final.note"}));
 check(await tools.copy({path:"source.note",target:"discard.note"}));
 check(await tools.delete({path:"discard.note"}));
 check(await tools.copy({path:"binary.note",target:"binary-copy.note"}));
-check(await tools.flush({}));
 `,
               },
             }),

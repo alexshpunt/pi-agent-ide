@@ -75,7 +75,7 @@ Built-in entry modules are imported only after selection. Disabled built-ins, in
 
 ## Animations and post-edit processing
 
-Standalone editing tools validate source snapshots before writing. Native Codemode composes those same tools and can commit pending local edits with `tools.flush({})`. Accepted child calls are not proof of persistence. Ordinary script errors keep accepted edits; aborts discard only pending work. Formatting runs once per surviving changed file at script end, followed by diagnostics. Text copy/move destinations receive post-processing; binary contents stay unchanged.
+Standalone editing tools validate source snapshots before writing. Native Codemode commits eligible pending local edits before a dependent tool or when the script ends. Accepted child calls are not proof of persistence. Ordinary script errors keep accepted edits; aborts discard only pending work. Batched edits finish formatting and diagnostics at script end. Write commits earlier pending edits and finishes its own post-edit processing before returning. Text copy/move destinations receive post-processing; binary contents stay unchanged.
 
 Automatic diagnostic findings are grouped for five seconds from the first finding. The UI tab’s **Immediate diagnostic notices** option (`pi-agent-ide-no-diagnostic-buffer`) disables this delay. Combined notices keep each file and reporting tool identifiable. Empty completed diagnostic reads tell the agent that checks finished without findings, but do not draw an empty diagnostic panel. Pending, unavailable and incomplete checks are not reported as clean.
 
