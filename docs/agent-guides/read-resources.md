@@ -27,6 +27,10 @@ For `raw:` resources, offsets and limits count bytes. A negative offset counts f
 
 Temporary resources remain available only in their owning runtime.
 
+## Comparing text sources
+
+When a Diff source resolves to several resources, their text is joined with one newline separator in resolver order. Diff line numbers refer to each compared text, not original source line numbers when a window is selected.
+
 ## Readable results and composition
 
 Read returns the same file text or requested views in direct calls and Codemode. It adds a leading system-result envelope with a UUID. The envelope is an internal reference, not file content; do not edit or insert it into a file. Follow the displayed continuation offset or temp reference for more output. Raw reads show hexadecimal bytes. Nested image reads also deliver their images on the parent Codemode result.
