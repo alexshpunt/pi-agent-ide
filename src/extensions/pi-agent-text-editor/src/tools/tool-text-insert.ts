@@ -15,13 +15,13 @@ export const insertSchema = Type.Object(
     path: Type.Optional(
       Type.String({
         description:
-          "Source resource reference or file path. A returned SEARCH# reference can select insertion positions.",
+          "Pass a file path, source resource reference, unchanged Read/Search/Select/edit result, or its UUID. Result inputs select only their registered ranges.",
       }),
     ),
     anchor: Type.Optional(
       Type.String({
         description:
-          "Registered anchor or unique exact text locating the insertion. Required unless path already supplies a SEARCH selection. Inserts after the last containing line by default, or before the first containing line when before is true. This includes SEARCH :match and multiline exact text; the selected text is kept. Multiple matches on the same insertion line produce one insertion.",
+          "Use a registered anchor or unique exact text to locate the insertion. Omit anchor when path already supplies the intended selection; otherwise it is required.",
       }),
     ),
     text: Type.String({
@@ -38,7 +38,7 @@ export const insertSchema = Type.Object(
     before: Type.Optional(
       Type.Boolean({
         description:
-          "Defaults to false: insert after the last containing line. True: insert before the first containing line. The anchor's text and its lines are kept.",
+          "Defaults to false: insert after the last containing line of each selection. With true, insert before its first containing line. Selected text is kept. Multiple selections on the same insertion line produce one insertion.",
       }),
     ),
   },
