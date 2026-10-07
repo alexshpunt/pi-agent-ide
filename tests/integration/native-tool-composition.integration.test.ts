@@ -1089,7 +1089,7 @@ test("whole-file structured delete removes text, while a string path removes the
       `const source = await tools.read({path:"whole.txt"});
 const textRemoval=await tools.delete({path:source});
 const empty=await tools.read({path:"whole.txt"});
-check(body(empty)==="","Text delete did not preserve an empty file");
+check(body(empty)==="[Empty source.]","Read did not explain the source emptied by text delete");
 await rejects(()=>tools.replace({path:textRemoval,text:"BAD"}),/no reusable text selection/);
 text(await tools.delete({path:"whole.txt"}));`,
     ]);

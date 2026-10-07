@@ -33,10 +33,42 @@ export const diffDataSchema = Type.Object(
 );
 export const diffOutputSchema = structuredResultSchema(diffDataSchema);
 
-const source = Type.Union([Type.String({ minLength: 1 }), readParameters]);
+const comparisonReadParameters = {
+  ...readParameters,
+  properties: {
+    ...readParameters.properties,
+    path: {
+      ...readParameters.properties.path,
+      description:
+        "Text-readable source accepted by Read, such as a file path, URL, temp: reference, SEARCH# or RESULT# reference, or registered resource. Supply a path.",
+    },
+    offset: {
+      ...readParameters.properties.offset,
+      description:
+        "First text line to compare, numbered from 1. Omit or use 0 to start at line 1; negative offsets count from the end. For path#anchor, SEARCH# or RESULT# selections, count from the containing line: omitted, 0 or 1 starts there, 2 starts one line later, -1 one line earlier.",
+    },
+    limit: {
+      ...readParameters.properties.limit,
+      description:
+        "Maximum text lines to compare from the selected starting position. Omit to compare all resolved text in the selected range. Read's display limits do not shorten the comparison inputs.",
+    },
+  },
+};
+const source = Type.Union([Type.String({ minLength: 1 }), comparisonReadParameters]);
 /** Each side accepts a source string or the same request object as read. */
 export const diffParameters = Type.Object(
-  { before: source, after: source },
+  {
+    before: {
+      ...source,
+      description:
+        "Source for the removed (-) side. Supply a non-empty source reference string or a Read request object. Strings identify sources, not literal text.",
+    },
+    after: {
+      ...source,
+      description:
+        "Source for the added (+) side. Supply a non-empty source reference string or a Read request object. Strings identify sources, not literal text.",
+    },
+  },
   { additionalProperties: false },
 );
 export type DiffRequest = Static<typeof diffParameters>;
@@ -107,13 +139,21 @@ export function comparisonText(data: ReadScriptData, requested: string): Compari
     };
   }
   if (data.kind === "bytes")
-    throw Object.assign(new Error(`Byte sources are not text: ${data.source}`), {
-      code: "UNSUPPORTED_CONTENT",
-    });
+    throw Object.assign(
+      new Error(
+        `Byte sources are not text: ${data.source}\nIf this is a text file, use its path without raw:.`,
+      ),
+      {
+        code: "UNSUPPORTED_CONTENT",
+      },
+    );
   if (data.blocks.length === 0 || data.blocks.some((block) => block.type !== "text"))
-    throw Object.assign(new Error(`Source is not text: ${data.source}`), {
-      code: "UNSUPPORTED_CONTENT",
-    });
+    throw Object.assign(
+      new Error(`Source is not text: ${data.source}\nUse a source that Read resolves to text.`),
+      {
+        code: "UNSUPPORTED_CONTENT",
+      },
+    );
   return {
     source: data.source,
     sources: [data.source],
@@ -166,8 +206,7 @@ export function registerDiff(
     parameters: diffParameters,
     outputSchema: diffOutputSchema,
     promptSnippet: "Compare two text-readable sources",
-    description:
-      "Use diff to compare two sources. before and after accept a source string or a read request {path, offset?, limit?, views?}. Use any source that read can resolve as text. Omit limit to compare complete resolved text; read presentation limits do not clip comparison inputs. Multiple resolved resources are joined with one newline separator in resolver order. Diff line numbers are relative to each selected text, not the original file when a window is selected. Native non-text content is rejected. Output uses the existing text diff and a shared output budget; oversized output has a full temporary reference.",
+    description: "Use diff to compare two text-readable sources without changing them.",
     renderCall(_args, theme) {
       return new Text(theme.fg("toolTitle", theme.bold("Diff")), 0, 0);
     },
@@ -195,7 +234,10 @@ export function registerDiff(
         const full = diffText(comparison);
         const bounded = truncateHead(full);
         const temporarySource = bounded.truncated ? await read.saveTemporary(full) : undefined;
-        const footer = temporarySource === undefined ? "" : `\nFull diff: ${temporarySource}`;
+        const footer =
+          temporarySource === undefined
+            ? ""
+            : `\nDiff output is truncated; the comparison used the complete resolved inputs.\nUse read with path "${temporarySource}" for the full diff.`;
         return withStructuredResult(
           {
             content: [
@@ -205,7 +247,7 @@ export function registerDiff(
                   temporarySource === undefined
                     ? full
                     : truncateHead(full, {
-                        maxLines: DEFAULT_MAX_LINES - 2,
+                        maxLines: DEFAULT_MAX_LINES - footer.split("\n").length,
                         maxBytes: DEFAULT_MAX_BYTES - Buffer.byteLength(footer),
                       }).content + footer,
               },
