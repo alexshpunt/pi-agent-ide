@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
@@ -83,6 +84,28 @@ interface ScriptBatch {
   closed: boolean;
 }
 
+function replaceScriptResult(
+  script: ScriptBatch,
+  previous: FileMutationResult,
+  updated: FileMutationResult,
+): void {
+  const index = script.results.indexOf(previous);
+  if (index >= 0) script.results[index] = updated;
+  for (const [slot, presentation] of script.presentations.entries()) {
+    const results = presentation.result.details.results;
+    if (!results?.includes(previous)) continue;
+    script.presentations[slot] = {
+      ...presentation,
+      result: {
+        ...presentation.result,
+        details: {
+          ...presentation.result.details,
+          results: results.map((result) => (result === previous ? updated : result)),
+        },
+      },
+    };
+  }
+}
 function mergedFiles(files: MutationData["files"]): MutationData["files"] {
   const merged = new Map<string, MutationData["files"][number]>();
   for (const file of files) {
@@ -294,7 +317,9 @@ class NativeTextEditBatchCoordinator {
           const value = input[descriptor.field];
           if (typeof value === "string" && value.length > 0) {
             if (
-              ["replace", "write", "copy", "move", "delete", "undo"].includes(registration.name) &&
+              ["replace", "write", "copy", "move", "delete", "undo", "insert"].includes(
+                registration.name,
+              ) &&
               value.startsWith("RESULT#")
             ) {
               // The executor validates result handles and returns a structured rejection.
@@ -343,14 +368,39 @@ class NativeTextEditBatchCoordinator {
       const script = this.scripts.get(event.toolCallId);
       if (!script) return;
       script.closed = true;
+      const texts = event.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text);
+      let executionError = texts.findLast((text) => text.startsWith("Script error:\n")) ?? "";
+      const executionDetails = event.details;
+      if (
+        event.isError &&
+        executionDetails !== null &&
+        typeof executionDetails === "object" &&
+        "fullOutputPath" in executionDetails &&
+        typeof executionDetails.fullOutputPath === "string"
+      ) {
+        try {
+          const output = await readFile(executionDetails.fullOutputPath, "utf8");
+          // A timeout has one engine error line followed by the call summary, not a JavaScript stack.
+          const matches = [
+            ...output.matchAll(
+              /(?:^|\n)(Script error:\nScript (?:aborted|timed out):[^\n]*\n\n(?:Tool calls made before the failure[^\n]*|No tool calls were made\.))/gu,
+            ),
+          ];
+          const match = matches.at(-1);
+          executionError =
+            match !== undefined &&
+            !output.slice(match.index + match[0].length).includes("Script error:\n")
+              ? (match[1] ?? "")
+              : "";
+        } catch {
+          // Use the returned output when its complete artifact is unavailable.
+        }
+      }
       const interrupted =
         script.context.signal?.aborted ||
-        (event.isError &&
-          event.content.some(
-            (block) =>
-              block.type === "text" &&
-              /^Script error:\nScript (?:aborted|timed out):/u.test(block.text),
-          ));
+        (event.isError && /^Script error:\nScript (?:aborted|timed out):/u.test(executionError));
       if (interrupted) script.cancellation.abort();
       await script.tail;
       if (interrupted) {
@@ -416,43 +466,55 @@ class NativeTextEditBatchCoordinator {
       try {
         await this.core.enqueueFileOperation(
           () =>
-            script.postEdits.finish((outcome) => {
-              const index = script.results.findLastIndex(
-                (item) => item.data.path === outcome.after.source,
-              );
-              if (index < 0) return;
-              const previous = requiredValue(script.results[index]).data;
-              const updated = new MutationPresentation({
-                ...previous,
-                afterContent: outcome.after.content,
-                afterDocument: outcome.after,
-                formatting: outcome.postEditContributions
-                  .map((item) => item.data)
-                  .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
-                diffStatuses: outcome.postEditContributions
-                  .map((item) => item.data)
-                  .filter(isDiffStatusContribution)
-                  .flatMap((item) => item.diffStatuses),
-              });
-              const previousResult = requiredValue(script.results[index]);
-              script.results[index] = updated;
-              for (const [slot, presentation] of script.presentations.entries()) {
-                const results = presentation.result.details.results;
-                if (!results?.includes(previousResult)) continue;
-                script.presentations[slot] = {
-                  ...presentation,
-                  result: {
-                    ...presentation.result,
-                    details: {
-                      ...presentation.result.details,
-                      results: results.map((result) =>
-                        result === previousResult ? updated : result,
-                      ),
-                    },
-                  },
-                };
-              }
-            }),
+            script.postEdits.finish(
+              (outcome) => {
+                const index = script.results.findLastIndex(
+                  (item) => item.data.path === outcome.after.source,
+                );
+                if (index < 0) return;
+                const previous = requiredValue(script.results[index]).data;
+                const updated = new MutationPresentation({
+                  ...previous,
+                  afterContent: outcome.after.content,
+                  afterDocument: outcome.after,
+                  formatting: outcome.postEditContributions
+                    .map((item) => item.data)
+                    .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
+                  diffStatuses: outcome.postEditContributions
+                    .map((item) => item.data)
+                    .filter(isDiffStatusContribution)
+                    .flatMap((item) => item.diffStatuses),
+                });
+                replaceScriptResult(script, requiredValue(script.results[index]), updated);
+              },
+              (source, error) => {
+                const reason = error instanceof Error ? error.message : String(error);
+                const failure = { code: "POST_EDIT_FAILED", message: reason, source };
+                for (const previous of script.results.filter(
+                  (result) => result.data.path === source,
+                )) {
+                  replaceScriptResult(
+                    script,
+                    previous,
+                    new MutationPresentation({
+                      ok: false,
+                      path: source,
+                      errors: [{ path: source, code: failure.code, reason }],
+                      fileChangedStatement:
+                        "The edit was saved, but final processing failed. Final text is not confirmed. Run Read/Search before editing this resource again.",
+                    }),
+                  );
+                }
+                for (const [index, report] of script.reports.entries()) {
+                  if (!report.data?.files.some((file) => file.source === source)) continue;
+                  script.reports[index] = {
+                    ...report,
+                    status: report.status === "success" ? "partial" : report.status,
+                    errors: [...report.errors, failure],
+                  };
+                }
+              },
+            ),
           undefined,
           { cwd: script.context.cwd, sources: script.postEdits.sources() },
         );
@@ -684,7 +746,7 @@ class NativeTextEditBatchCoordinator {
               ? unchangedCopy
                 ? "No changes: destination already has this text."
                 : `Copy destination: ${typeof normalized.target === "string" ? normalized.target : entry.path}`
-              : `Accepted ${registration.name} for ${entry.path}; not yet applied. Use flush for a committed receipt, or pass this result to a source tool for dependent work. Normal script completion also commits pending edits.`,
+              : `Accepted ${registration.name} for ${entry.path}. Check the final Codemode result for applied changes.`,
         },
       ],
       details,

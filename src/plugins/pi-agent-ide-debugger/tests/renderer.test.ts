@@ -25,6 +25,7 @@ function snapshot(overrides: Partial<DebugSessionSnapshot> = {}): DebugSessionSn
         id: "1234567890",
         source: "debug:abcdef123456/breakpoint/1234567890",
         file: "/workspace/pricing.py",
+        requestedLine: 42,
         line: 42,
         verified: true,
       },

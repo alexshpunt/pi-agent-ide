@@ -904,10 +904,20 @@ function wholeFileOperationSucceeded(details: unknown): boolean | undefined {
     : undefined;
 }
 
-function userFacingFailure(agentOutput: string, details: FileMutationBatchResult): string {
-  if (details.effect === "unknown") return "Effects unknown · edit failed";
-  if (details.effect === "applied") return "Changed · edit failed";
-  if (details.metadata?.rollback === "restored") return "Rolled back · edit failed";
+function userFacingFailure(
+  agentOutput: string,
+  details: FileMutationBatchResult | undefined,
+): string {
+  const rollback = details?.results?.find((result) => result.data.rollback !== undefined)?.data
+    .rollback;
+  if (rollback !== undefined) {
+    return rollback.failedSources.length === 0
+      ? "Rolled back · write failed"
+      : "State unknown · rollback failed";
+  }
+  if (details?.effect === "unknown") return "Effects unknown · edit failed";
+  if (details?.effect === "applied") return "Saved · post-write step failed";
+  if (details?.metadata?.rollback === "restored") return "Rolled back · edit failed";
   if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }
