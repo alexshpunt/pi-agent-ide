@@ -205,7 +205,7 @@ jobs:
       - name: Verify normal configured startup
         if: success()
         run: |
-          pnpm exec pi install --local "$GITHUB_WORKSPACE"
+          pnpm exec pi install --approve --local "$GITHUB_WORKSPACE"
           pnpm exec oxnode scripts/dev/check-normal-startup.ts src/pi-agent-ide.ts
 
       - name: Capture agent interface
