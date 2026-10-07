@@ -206,6 +206,7 @@ export function mutationOutcome(
   )
     errors.push({ code: "UNKNOWN_RESULT", message: "Mutation effects were not reported" });
   const effect =
+    details.effect === "unknown" ||
     unique.some((file) => file.effect === "unknown") ||
     errors.some((error) => error.code === "UNKNOWN_RESULT")
       ? "unknown"

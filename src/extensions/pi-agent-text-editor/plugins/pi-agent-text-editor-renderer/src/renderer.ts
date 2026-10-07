@@ -292,7 +292,7 @@ function createRenderer(
         )
         .map((item) => item.text)
         .join("\n");
-      const displayedOutput = context.isError ? userFacingFailure(output) : output;
+      const displayedOutput = context.isError ? userFacingFailure(output, result.details) : output;
       return new Text(
         displayedOutput.length === 0
           ? ""
@@ -868,7 +868,10 @@ function wholeFileOperationSucceeded(details: unknown): boolean | undefined {
     : undefined;
 }
 
-function userFacingFailure(agentOutput: string): string {
+function userFacingFailure(agentOutput: string, details: FileMutationBatchResult): string {
+  if (details.effect === "unknown") return "Effects unknown · edit failed";
+  if (details.effect === "applied") return "Changed · edit failed";
+  if (details.metadata?.rollback === "restored") return "Rolled back · edit failed";
   if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }

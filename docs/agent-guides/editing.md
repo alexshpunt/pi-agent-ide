@@ -42,6 +42,8 @@ Use `separation: "blank-line"` for a separate paragraph or section; use default 
 
 ## Writes and failures
 
+When Write changes or creates a file, it saves the file and finishes post-edit processing before returning, including in Codemode. If an existing file already matches the supplied content, Write returns its whole-file selection without writing or running post-edit handlers. Earlier pending edits commit before Write. Other eligible text edits keep their pending-batch behavior.
+
 Independent calls share the original snapshots. Combine overlapping edits into one mutation. A rejected call does not cancel successful peers; retry only unapplied changes.
 
 An omitted path can inherit the file identified by an anchor, the last read, or the preceding edit in the batch. Supply the path when that would be ambiguous.

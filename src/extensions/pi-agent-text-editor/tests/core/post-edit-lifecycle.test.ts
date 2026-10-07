@@ -67,6 +67,56 @@ test("waits for post-edit work after writing and rereads the final text", async 
   });
 });
 
+test("keeps a saved resource separate from interrupted post-edit work", async () => {
+  const core = createTextEditorCore();
+  const cancellation = new AbortController();
+  let text = "before\n";
+  await core.registerPlugin(
+    resourcePlugin(
+      mutableResolver(
+        () => text,
+        (next) => {
+          text = next;
+        },
+      ),
+    ),
+  );
+  core.registerPostEditHandler({
+    id: "cancel-after-save",
+    handler() {
+      expect(text).toBe("saved\n");
+      cancellation.abort();
+      cancellation.signal.throwIfAborted();
+    },
+  });
+  const completions: unknown[] = [];
+  core.onDidEdit((completion) => {
+    completions.push(completion);
+  });
+  const result = await core.editText(
+    "notes.md",
+    { cwd: "/workspace", signal: cancellation.signal },
+    () => ({
+      text: "saved\n",
+      result: undefined,
+    }),
+  );
+  expect(result.kind).toBe("completed");
+  expect(text).toBe("saved\n");
+  expect(completions).toEqual([expect.objectContaining({ postProcessing: "interrupted" })]);
+  if (result.kind === "completed")
+    expect(result.postEditContributions).toContainEqual(
+      expect.objectContaining({
+        data: {
+          diffStatuses: [
+            expect.objectContaining({
+              tone: "warning",
+            }),
+          ],
+        },
+      }),
+    );
+});
 test("presents the content reread after post-edit work", async () => {
   const core = createTextEditorCore();
   let text = "before";
