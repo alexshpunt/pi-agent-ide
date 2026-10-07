@@ -28,6 +28,8 @@ export interface TextBatchDetails extends FileMutationBatchResult {
   readonly displayResults?: readonly FileMutationResult[];
   /** Original call id for each user-facing result. */
   readonly callIdsByDisplayResult?: readonly string[];
+  /** Per-call Copy receipts retain destination authority and their own failure evidence. */
+  readonly copyResults?: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>>;
 }
 
 function resultPath(result: FileMutationResult): string | undefined {
@@ -54,6 +56,8 @@ export function splitTextBatchResult(
 
   return new Map(
     calls.map((call) => {
+      const copyResult = details?.copyResults?.get(call.id);
+      if (copyResult) return [call.id, copyResult];
       const agentResults = coalesceResults(agentResultsByCall.get(call.id) ?? []);
       const displayResults = coalesceResults(displayResultsByCall.get(call.id) ?? []);
       return [

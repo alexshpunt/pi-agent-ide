@@ -24,6 +24,8 @@ interface ChildPanel {
   renderArgs?: unknown;
   omitted?: boolean;
   batched?: boolean;
+  unchangedCopy?: boolean;
+  copyRollback?: "restored" | "failed";
   result?: { content: AgentToolResult<unknown>["content"]; details: unknown; isError: boolean };
 }
 interface BatchReport {
@@ -238,12 +240,37 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
       const group = groups.get(batch.parentToolCallId);
       if (!group) return;
       const details = compactMutationDetails(batch.result.details);
+      const lastChangedCall = batch.calls.findLast((id) => !batch.unchangedCopyCalls?.includes(id));
       for (const id of batch.calls) {
         const call = group.calls.find((call) => call.id === id);
         if (!call) continue;
-        // Native history keeps every call; user presentation keeps the final batch diff only.
-        call.batched = id !== batch.calls.at(-1);
-        if (call.batched) call.result = undefined;
+        const copyResult = batch.copyResults?.get(id);
+        const rollback = copyResult?.details.metadata?.copyRollback;
+        if (
+          call.name === "copy" &&
+          copyResult &&
+          (rollback === "restored" || rollback === "failed")
+        ) {
+          call.copyRollback = rollback;
+          call.batched = false;
+          retainResult(group, call, {
+            content: copyResult.content,
+            details: compactMutationDetails(copyResult.details),
+            isError: true,
+          });
+          continue;
+        }
+        // Keep no-op Copy outcomes; changed peers share the final batch diff.
+        call.unchangedCopy =
+          call.name === "copy" && batch.unchangedCopyCalls?.includes(id) === true;
+        call.batched = !call.unchangedCopy && id !== lastChangedCall;
+        if (call.unchangedCopy) {
+          retainResult(group, call, {
+            content: [{ type: "text", text: "No changes: destination already has this text." }],
+            details: {},
+            isError: false,
+          });
+        } else if (call.batched) call.result = undefined;
         else {
           // A multi-file batch has no single source: let the existing renderer label each file.
           if (new Set(details.mutationRender?.map((resource) => resource.path)).size > 1)
@@ -271,6 +298,9 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
             const call = group.calls.find((call) => call.id === operation.id);
             if (!call) continue;
             const errors = operation.errors.map((error) => error.message);
+            if (call.copyRollback !== undefined) continue;
+            if (call.unchangedCopy && errors.length === 0 && operation.effect === "not-applied")
+              continue;
             if (errors.length > 0 || operation.effect !== "applied") {
               call.batched = false;
               delete call.renderArgs;

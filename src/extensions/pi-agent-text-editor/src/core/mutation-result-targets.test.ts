@@ -57,11 +57,23 @@ function completion(before: string, after: string, resolvedBy = "filesystem"): T
     intent: "edit",
   };
 }
-function mutation(callId: string, from: number, to: number, insert: string): OwnedMutationChanges {
+function mutation(
+  callId: string,
+  from: number,
+  to: number,
+  insert: string,
+  allowUnchanged?: true,
+): OwnedMutationChanges {
   return {
     callId,
     edits: new Map([
-      ["/workspace/note.txt", { action: "edited", changes: [{ from, to, insert }] }],
+      [
+        "/workspace/note.txt",
+        {
+          action: "edited",
+          changes: [{ from, to, insert, ...(allowUnchanged ? { allowUnchanged } : {}) }],
+        },
+      ],
     ]),
   };
 }
@@ -132,6 +144,29 @@ test("move outputs omit removals but include their shifts in destination coordin
   ]);
 });
 
+test("unchanged Copy uses a guarded snapshot without inventing a write completion", () => {
+  const source = "/workspace/note.txt";
+  const before = "😀 alpha\r\nalpha outside";
+  const snapshots = new Map([[source, before]]);
+  const copied = mutation("copy", 3, 8, "alpha", true);
+  expect(committedMutationTargets([copied], [], snapshots).get("copy")).toEqual([
+    {
+      source,
+      expectedContent: before,
+      ranges: [{ start: { lineNumber: 1, column: 3 }, end: { lineNumber: 1, column: 8 } }],
+    },
+  ]);
+  expect(committedMutationTargets([copied], []).size).toBe(0);
+  expect(committedMutationTargets([mutation("replace", 3, 8, "alpha")], [], snapshots).size).toBe(
+    0,
+  );
+  expect(committedMutationTargets([mutation("copy", 3, 8, "beta", true)], [], snapshots).size).toBe(
+    0,
+  );
+  expect(
+    committedMutationTargets([copied], [completion(before, before, "custom")], snapshots).size,
+  ).toBe(0);
+});
 test("does not guess coordinates after formatting or unsupported resource writes", () => {
   const mutations = [mutation("edit", 0, 3, "new")];
   expect(() => committedMutationTargets(mutations, [completion("old", "formatted")])).toThrow(
