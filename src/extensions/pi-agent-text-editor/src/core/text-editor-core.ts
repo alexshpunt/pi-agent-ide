@@ -260,6 +260,11 @@ export interface TextResourceEditFailure {
   readonly resolverId?: string;
   readonly message: string;
   readonly cause?: unknown;
+  /** Failed restoration and prior absence prevent a confirmed unchanged-resource claim. */
+  readonly rollback?: {
+    readonly failed: readonly string[];
+    readonly originallyMissing: readonly string[];
+  };
 }
 
 export type TextResourceEditOutcome<Result> =
@@ -1316,45 +1321,67 @@ async function editTextResources<Result>(
         rollbackFailures.push(writtenSource);
       }
     }
+    const originallyMissing = written.filter(
+      (writtenSource) => !requiredValue(prepared.get(writtenSource)).existed,
+    );
+    const rollbackReason =
+      rollbackFailures.length === 0 ? "" : `; rollback failed for ${rollbackFailures.join(", ")}`;
+    const missingReason =
+      originallyMissing.length === 0
+        ? ""
+        : `; restoring text did not confirm the original missing-file state for ${originallyMissing.join(", ")}`;
     return {
       kind: "failed",
       failure: {
         code: "WRITE_FAILED",
         source,
         resolverId: item.resolverId,
-        message:
-          rollbackFailures.length === 0
-            ? `Unable to write ${source}; completed writes were rolled back`
-            : `Unable to write ${source}; rollback failed for ${rollbackFailures.join(", ")}`,
+        message: `Unable to write ${source}${rollbackReason}${missingReason}`,
         cause: failure.status === "rejected" ? failure.reason : undefined,
+        rollback: { failed: rollbackFailures, originallyMissing },
       },
-      completed: rollbackFailures,
+      completed: [],
     };
   }
   const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
 
-  await collectPostEditNotifications(async () => {
-    for (const source of written) {
-      const text = requiredValue(applied.get(source)).content;
-      const item = requiredValue(prepared.get(source));
-      outcomes.push(
-        await finalizeTextResource({
-          requestedSource: item.requestedSource,
-          outcomeSource: item.requestedSource,
-          resource: item.resource,
-          resolvedBy: item.resolverId,
-          existed: item.existed,
-          before: item.before,
-          requestedText: text,
-          context,
-          presenters,
-          postEditHandlers,
-          editCompletionListeners,
-          result: mutation.result,
-        }),
-      );
-    }
-  });
+  let finalizingSource = written[0] ?? sources[0] ?? "";
+  try {
+    await collectPostEditNotifications(async () => {
+      for (const source of written) {
+        finalizingSource = source;
+        const text = requiredValue(applied.get(source)).content;
+        const item = requiredValue(prepared.get(source));
+        outcomes.push(
+          await finalizeTextResource({
+            requestedSource: item.requestedSource,
+            outcomeSource: item.requestedSource,
+            resource: item.resource,
+            resolvedBy: item.resolverId,
+            existed: item.existed,
+            before: item.before,
+            requestedText: text,
+            context,
+            presenters,
+            postEditHandlers,
+            editCompletionListeners,
+            result: mutation.result,
+          }),
+        );
+      }
+    });
+  } catch (error) {
+    return {
+      kind: "failed",
+      failure: {
+        code: "POST_WRITE_FAILED",
+        source: finalizingSource,
+        message: error instanceof Error ? error.message : String(error),
+        cause: error,
+      },
+      completed: written,
+    };
+  }
   return { kind: "completed", resources: outcomes, result: mutation.result };
 }
 
@@ -1561,6 +1588,18 @@ async function finalizeTextResource<Result>(
     }
   }
 
+  if (!skipPostEdit && !deferred && request.context.signal?.aborted)
+    postEditContributions.push({
+      id: "post-edit-interruption",
+      data: {
+        diffStatuses: [
+          {
+            text: "Post-edit processing was interrupted. Read the saved file before retrying.",
+            tone: "warning",
+          },
+        ],
+      },
+    });
   let finalText = request.requestedText;
 
   if (!skipPostEdit && request.resource.read !== undefined) {
@@ -1587,7 +1626,13 @@ async function finalizeTextResource<Result>(
     before: request.postProcessingFinal ? requestedAfter : request.before,
     after: finalAfter,
     intent: request.context.intent ?? "edit",
-    postProcessing: deferred ? "deferred" : request.postProcessingFinal ? "final" : "complete",
+    postProcessing: deferred
+      ? "deferred"
+      : request.context.signal?.aborted
+        ? "interrupted"
+        : request.postProcessingFinal
+          ? "final"
+          : "complete",
   };
 
   for (const listener of request.editCompletionListeners) {

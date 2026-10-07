@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ResultRange, ResultSourceTarget } from "pi-agent-resource";
 import type { ResultTargetStore } from "pi-agent-resource";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
@@ -138,6 +140,57 @@ export function describeUnavailableCopyTarget(
       },
     ],
   };
+}
+
+/** Publish a successful Write's verified final whole-file snapshot, including no-ops. */
+export async function attachWriteTarget(
+  result: AgentToolResult<FileMutationBatchResult>,
+  store: ResultTargetStore,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<AgentToolResult<FileMutationBatchResult>> {
+  if (result.isError) return result;
+  const file = result.details.results?.[0]?.data;
+  if (file?.path === undefined || file.afterContent === undefined) return result;
+  try {
+    const content = file.afterContent;
+    const lines = content.split(/\r\n|\r|\n/u);
+    const targets: ResultSourceTarget[] = [
+      {
+        source: path.resolve(
+          cwd,
+          file.path.startsWith("file://") ? fileURLToPath(file.path) : file.path,
+        ),
+        expectedContent: content,
+        ranges: [
+          {
+            start: { lineNumber: 1, column: 0 },
+            end: { lineNumber: lines.length, column: lines.at(-1)?.length ?? 0 },
+          },
+        ],
+      },
+    ];
+    await store.verify({ targets, complete: true }, signal);
+    return {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: { ...result.details.metadata, resultTarget: store.register(targets, cwd) },
+      },
+    };
+  } catch (error) {
+    signal?.throwIfAborted();
+    return {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: {
+          ...result.details.metadata,
+          targetUnavailable: error instanceof Error ? error.message : String(error),
+        },
+      },
+    };
+  }
 }
 /** Publish immediate results only when their committed range mapping is verified. */
 export async function attachCommittedMutationTarget(

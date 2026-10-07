@@ -327,7 +327,7 @@ function createRenderer(
             ? "Copy failed · changes rolled back"
             : rollback === "failed"
               ? "Copy failed · rollback failed; read destination before retrying"
-              : userFacingFailure(output)
+              : userFacingFailure(output, result.details)
         : output;
       return new Text(
         displayedOutput.length === 0
@@ -904,7 +904,10 @@ function wholeFileOperationSucceeded(details: unknown): boolean | undefined {
     : undefined;
 }
 
-function userFacingFailure(agentOutput: string): string {
+function userFacingFailure(agentOutput: string, details: FileMutationBatchResult): string {
+  if (details.effect === "unknown") return "Effects unknown · edit failed";
+  if (details.effect === "applied") return "Changed · edit failed";
+  if (details.metadata?.rollback === "restored") return "Rolled back · edit failed";
   if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }

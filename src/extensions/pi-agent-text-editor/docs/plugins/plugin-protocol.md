@@ -156,6 +156,8 @@ The displayed text is the resulting file region, labelled with its line range. I
 
 Post-edit integrations can contribute `formatting: { status, formatter? }`. Status is `disabled`, `unavailable`, `skipped-syntax`, `unchanged`, `changed`, `failed`, or `not-reported`. A missing report remains unknown. Formatter failure does not turn a saved edit into an unapplied edit. Formatting metadata does not claim diagnostics or tests passed.
 
+Formatter status labels retain `formattingStatus` alongside their formatter identity. The result fills this from matching formatting metadata for success/error labels that do not already carry it. This lets the TUI keep changed formatting separate from already-formatted content without parsing display text. The agent gets one report for the selected formatting outcome; other handler messages stay visible. A caught formatter failure without an identity still carries its failed state. These labels do not change saving, rollback or handler execution.
+
 ## Setup validation
 
 Core validates protocol version, plugin ID, resolver shapes, priorities, duplicate IDs, the single-major rule, handler registrations, and description multiplicity, and mutation metadata before committing the setup draft. A failed setup installs nothing.

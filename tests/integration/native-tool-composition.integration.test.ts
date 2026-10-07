@@ -733,16 +733,13 @@ text(await tools.replace({path:matches(found)[0],text:"NEW"}));`,
   });
 });
 
-test.each(["write", "copy", "move"] as const)(
+test.each(["copy", "move"] as const)(
   "%s output expires after final formatting, not during composition",
   async (operation) => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "format.txt"), "old body\r\n");
       await writeFile(path.join(cwd, "source.txt"), "format_me outside\r\nformat_me");
-      const script =
-        operation === "write"
-          ? 'const changed = await tools.write({path:"format.txt",content:"format_me\\r\\n"});'
-          : `const source = await tools.search({path:"source.txt",query:"format_me"});
+      const script = `const source = await tools.search({path:"source.txt",query:"format_me"});
 const destination = await tools.search({path:"format.txt",query:"old body"});
 const changed = await tools.${operation}({path:matches(source).slice(1),target:destination});`;
       const run = await runComposition(
@@ -776,6 +773,34 @@ check(typeof refused==="string","Pre-format scope rebound after the script"); te
   },
 );
 
+test("Write finishes formatting before composition and selects the final whole file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "format.txt"), "old body\r\n");
+    const run = await runComposition(
+      cwd,
+      "write-immediate-formatting-result",
+      [
+        `const changed = await tools.write({path:"format.txt",content:"format_me\\r\\n"});
+const saved = await tools.read({path:changed});
+check(body(saved)==="FORMATTED\\r\\n","Write did not select the final formatted file");
+const found = await tools.search({path:changed,query:"FORMATTED"});
+check(matches(found).length===1,"Search could not consume the final Write target");
+check(matches(await tools.search({path:changed,query:"format_me"})).length===0,"Write selected pre-format text"); text(found);`,
+      ],
+      [path.resolve("tests/integration/support/native-post-edit-probe.ts")],
+    );
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "format.txt"), "utf8")).toBe("FORMATTED\r\n");
+    const events = (await readFile(path.join(cwd, "post-edit-events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line: string) => JSON.parse(line) as { content: string });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.content).toBe("format_me\r\n");
+  });
+});
 test("composes a pending replace result through scoped Search and another edit", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(
@@ -801,11 +826,11 @@ text(changed); text(found); text(next);`,
   });
 });
 
-test("composes the whole written file through a pending write result", async () => {
+test("composes the whole written file through a completed write result", async () => {
   await withTempWorkspace(async (cwd) => {
     const run = await runComposition(cwd, "write-result-search-replace", [
       `const written = await tools.write({path:"written.txt",content:"😀 fresh first\\r\\nfresh second"});
-if (typeof written !== "string" || !written.includes("not yet applied") || !written) throw Error("Write did not reserve a whole-file target");
+if (typeof written !== "string" || !written) throw Error("Write did not return a whole-file target");
 const found = await tools.search({path:written,query:"fresh"});
 if (typeof found !== "string" || matches(found).length !== 2 || matchRows(found)[0].column !== 3) throw Error("Write result lost its source mapping");
 const changed = await tools.replace({path:matches(found)[0],text:"NEW"});
@@ -827,6 +852,13 @@ test("accepts only whole-file structured write inputs without widening windows",
       `const window = await tools.read({path:"whole.txt",offset:2,limit:1});
 const refused = await rejects(()=>tools.write({path:window,content:"WRONG"}));
 check(typeof refused==="string","Write widened a partial source scope");
+const empty = await tools.search({path:"whole.txt",query:"NEVERMATCH427382"});
+check(typeof await rejects(()=>tools.write({path:empty,content:"WRONG"}))==="string","Write accepted an empty file selection");
+await tools.write({path:"peer.txt",content:"peer"});
+const whole = await tools.read({path:"whole.txt"});
+const peer = await tools.read({path:"peer.txt"});
+check(typeof await rejects(()=>tools.write({path:[whole,peer],content:"WRONG"}))==="string","Write accepted multiple files");
+check(body(await tools.read({path:"peer.txt"}))==="peer","Rejected Write changed its peer file");
 const current = await tools.read({path:"whole.txt"});
 if (body(current)!==["keep","old","neighbor"].join(String.fromCharCode(13,10))) throw Error("Refused write changed source bytes");
 const written = await tools.write({path:current,content:"fresh whole\\r\\n"});
@@ -1353,7 +1385,7 @@ text(stale);`,
       .map((line) => JSON.parse(line) as { content: string });
     expect(events).toHaveLength(1);
     expect(events[0]?.content).toBe("final format_me\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Fixture formatting finished");
+    expect(getToolResultText(run, "compose-0")).toContain("Formatted (fixture).");
     expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");
   });
 });
@@ -1491,7 +1523,7 @@ text(changed);`,
       false,
     );
     expect(await readFile(path.join(cwd, "format.txt"), "utf8")).toBe("FORMATTED body\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Fixture formatting finished");
+    expect(getToolResultText(run, "compose-0")).toContain("Formatted (fixture).");
     expect(run.tuiRenderedOutput).toContain("Formatted (fixture)");
     expect(run.tuiRenderedOutput).toMatch(/│\s+1 ~ FORMATTED body/u);
     expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");

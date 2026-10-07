@@ -399,12 +399,27 @@ export async function executeRegisteredTextBatch(
     if (outcome.failure.code === "WRITE_FAILED") {
       for (const { callId, mutation } of executionPlan?.mutations ?? []) {
         if (mutation.operation !== "copy") continue;
-        const unrestored = outcome.completed.filter((source) => mutation.edits.has(source));
+        const unrestored = (outcome.failure.rollback?.failed ?? outcome.completed).filter(
+          (source) => mutation.edits.has(source),
+        );
         const destination = unrestored[0] ?? mutation.edits.keys().next().value;
         copyResults.set(
           callId,
           buildFailedCopyWriteResult(
-            { ...outcome.failure, source: destination ?? outcome.failure.source },
+            {
+              ...outcome.failure,
+              source: destination ?? outcome.failure.source,
+              ...(outcome.failure.rollback !== undefined && {
+                rollback: {
+                  failed: outcome.failure.rollback.failed.filter((source) =>
+                    mutation.edits.has(source),
+                  ),
+                  originallyMissing: outcome.failure.rollback.originallyMissing.filter((source) =>
+                    mutation.edits.has(source),
+                  ),
+                },
+              }),
+            },
             unrestored,
           ),
         );
