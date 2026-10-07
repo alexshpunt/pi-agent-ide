@@ -134,7 +134,8 @@ const debugParameters = Type.Object(
     }),
     source: Type.Optional(
       Type.String({
-        description: "Source file used for anchored breakpoints. Defaults to program.",
+        description:
+          "Source file used for anchored breakpoints. Defaults to program. Relative paths resolve from cwd.",
       }),
     ),
     args: Type.Optional(
@@ -147,7 +148,10 @@ const debugParameters = Type.Object(
       }),
     ),
     cwd: Type.Optional(
-      Type.String({ description: "Working directory. Relative paths resolve from the workspace." }),
+      Type.String({
+        description:
+          "Working directory. Defaults to the workspace. Relative paths resolve from the workspace.",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -384,9 +388,9 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
         openWorldHint: false,
       },
       label: "Debug session",
-      promptSnippet: "Create a local DAP debug session before setting anchored breakpoints",
+      promptSnippet: "Configure a local debugger session",
       description:
-        "Use debug to create a configured local debugger session. This does not launch the program yet. The returned debug: resource survives extension reloads.",
+        "Use debug to configure a local debugger session without launching the adapter or program.",
       parameters: debugParameters,
       outputSchema: debugOutputSchema,
       async execute(_toolCallId, input, _signal, _onUpdate, context) {
@@ -409,7 +413,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
               content: [
                 {
                   type: "text",
-                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${details.sourceResource} with views ["anchors"], then insert a breakpoint at an anchor.`,
+                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${session.source} to inspect the configured session. To set a breakpoint, read ${details.sourceResource} with views ["anchors"], then insert "breakpoint" at an anchor.`,
                 },
               ],
               details,
