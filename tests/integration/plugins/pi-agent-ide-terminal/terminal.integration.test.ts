@@ -3,6 +3,7 @@ import path from "node:path";
 
 import {
   assistantMessage,
+  getToolCallNames,
   getToolExecution,
   getToolExecutionDetails,
   getToolResultText,
@@ -195,48 +196,57 @@ test.runIf(process.platform !== "win32")(
     ).toBeLessThan(2_000);
   },
 );
-test.runIf(process.platform !== "win32")(
-  "delivers a background completion into a new agent turn",
-  async () => {
-    await mkdir(workspace, { recursive: true });
-    const result = await new PiIntegrationTest({
-      testName: "terminal-background-delivery",
-      artifactsDir: testArtifactsDir(
-        import.meta.filename,
-        path.join(root, ".agents/tmp/test-runs"),
+test("delivers a background completion into a new agent turn", async () => {
+  const windows = process.platform === "win32";
+  const tool = windows ? "powershell" : "bash";
+  await mkdir(workspace, { recursive: true });
+  const result = await new PiIntegrationTest({
+    testName: "terminal-background-delivery",
+    artifactsDir: testArtifactsDir(import.meta.filename, path.join(root, ".agents/tmp/test-runs")),
+    cwd: workspace,
+    extensions: [extension],
+    tools: [tool],
+    rawMode: false,
+    transport: "tui",
+    environment: { SHELL: windows ? "powershell.exe" : "/bin/bash" },
+    conversation: [
+      assistantMessage(
+        [
+          toolCall({
+            id: "run-background",
+            chunks: { kind: "fixed", size: 2_000 },
+            delayMs: 0,
+            name: tool,
+            arguments: {
+              command: windows
+                ? "Start-Sleep -Seconds 4; Write-Output 'background-terminal-ok'"
+                : "sleep 4; printf 'background-terminal-ok'",
+              background: true,
+            },
+          }),
+        ],
+        { stopReason: "toolUse" },
       ),
-      cwd: workspace,
-      extensions: [extension],
-      tools: ["bash"],
-      rawMode: false,
-      environment: { SHELL: "/bin/bash" },
-      conversation: [
-        assistantMessage(
-          [
-            toolCall({
-              id: "run-background",
-              name: "bash",
-              arguments: {
-                command: "sleep 2.1; printf 'background-terminal-ok'",
-                background: true,
-              },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-        assistantMessage([text("I will continue while it runs.", { delayMs: 350 })]),
-        assistantMessage([text("I received the background completion.")]),
-      ],
-    }).run("Start background terminal work and handle its completion");
+      assistantMessage([text("I will continue while it runs.", { delayMs: 0 })]),
+      assistantMessage([text("I received the background completion.")]),
+    ],
+  }).run("Start background terminal work and handle its completion");
 
-    expect(getToolResultText(result, "run-background")).toContain("status: running");
-    const trace = JSON.stringify(result.traceEvents);
-    expect(trace).toContain("terminal-completion");
-    expect(trace).toContain("background-terminal-ok");
-    expect(result.providerRequests.length).toBeGreaterThanOrEqual(3);
-    expect(result.tuiRenderedOutput).toContain("background-terminal-ok");
-  },
-);
+  expect(getToolExecutionDetails(getToolExecution(result, "run-background"))).toMatchObject({
+    status: "running",
+    background: true,
+  });
+  expect(getToolCallNames(result)).toEqual([tool]);
+  const settled = result.traceEvents.findIndex((event) => event.type === "agent_settled");
+  const completion = result.traceEvents.findIndex((event) =>
+    JSON.stringify(event).includes('"customType":"terminal-completion"'),
+  );
+  expect(settled).toBeGreaterThanOrEqual(0);
+  expect(completion).toBeGreaterThan(settled);
+  expect(JSON.stringify(result.traceEvents)).toContain("background-terminal-ok");
+  expect(result.providerRequests.length).toBeGreaterThanOrEqual(3);
+  if (!windows) expect(result.tuiRenderedOutput).toContain("background-terminal-ok");
+});
 
 test.runIf(process.platform !== "win32")(
   "reports a background command timeout as soon as it exits",

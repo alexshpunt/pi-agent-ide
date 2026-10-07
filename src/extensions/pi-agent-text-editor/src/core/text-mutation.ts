@@ -342,8 +342,10 @@ export function createTextTool<TParameters extends TSchema>(
     get(): string {
       return [
         definition.description,
-        definition.intent !== "restore"
-          ? "In native Codemode, local text edits share original snapshots and return acceptance before writing. Another tool, whole-file operation, or resource-owned selector commits the batch first; script completion also commits it. Formatting and registered resource post-edit handlers run at script end, not at flush or dependency boundaries. Earlier targets become stale if final processing changes bytes. Ordinary script errors keep accepted edits; aborts and deadlines discard pending edits."
+        definition.intent !== "restore" &&
+        definition.name !== "replace" &&
+        definition.name !== "delete"
+          ? "In native Codemode, local text edits share original snapshots and return acceptance before writing. Flush, non-batched tool calls and normal script completion commit pending edits. Formatting and registered resource post-edit handlers run at script end, not at flush or dependency boundaries. Earlier targets become stale if final processing changes bytes. Ordinary script errors keep accepted edits; aborts and deadlines discard only pending edits. Already committed edits remain."
           : "",
         (
           {
@@ -352,15 +354,17 @@ export function createTextTool<TParameters extends TSchema>(
             insert: "This result selects the inserted text, including supplied line separators.",
             write: "This result selects the whole written file, not only its changed span.",
             copy: "This result selects only destination text; a whole-file copy selects the whole destination. The source is unchanged.",
-            move: "This result selects only destination text; a whole-file move selects the whole destination. Source removals never become output targets.",
-            delete: "Deletion reports file effects but provides no reusable text selection.",
+            move: "Use the Move result to work with the inserted destination text, including any added line separators. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
+            delete: "Delete returns no reusable text selection.",
             undo: "This result selects whole restored text files, not only reversed spans. Deleted files provide no text selection.",
           } as Record<string, string>
         )[definition.name] ?? "",
-        ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
-          ? "Pass this unchanged result to another source tool for dependent work. Pending edits commit before the next tool consumes them. If the result reports no verified text selection, inspect the file instead."
-          : "",
-        definition.source.inherited
+        definition.name === "replace"
+          ? "Pass the unchanged result to another source tool to use its selection. If it has no text selection, read the file again."
+          : ["insert", "write", "copy", "move", "undo"].includes(definition.name)
+            ? "Pass this unchanged result to another source tool for dependent work. Pending edits commit before the next tool consumes them. If the result reports no verified text selection, inspect the file instead."
+            : "",
+        definition.source.inherited && definition.name !== "delete"
           ? definition.wholeFileOperation === undefined
             ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
             : `When ${definition.source.field} is omitted, the tool can reuse the file identified by a supplied text anchor.`
