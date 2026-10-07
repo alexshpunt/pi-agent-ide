@@ -56,7 +56,7 @@ interface InsertParameters {
 export const insertMutationTool: TextMutationToolRegistration<typeof insertSchema> = {
   name: "insert",
   description:
-    "Use insert to add new text before or after selected lines while keeping existing text. Insertion is line-based, including for exact-text and SEARCH :match anchors.",
+    "Use insert to add new text before or after selected lines while keeping existing text. Insertion is line-based, including for exact-text and SEARCH :match anchors. An empty result selection makes no changes and is not an error.",
 
   promptSnippet:
     "Make precise file edits by inserting text before or after exact matches or anchors",

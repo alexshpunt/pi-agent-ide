@@ -283,7 +283,9 @@ class NativeTextEditBatchCoordinator {
           const value = input[descriptor.field];
           if (typeof value === "string" && value.length > 0) {
             if (
-              ["replace", "write", "copy", "move", "delete", "undo"].includes(registration.name) &&
+              ["replace", "write", "copy", "move", "delete", "undo", "insert"].includes(
+                registration.name,
+              ) &&
               value.startsWith("RESULT#")
             ) {
               // The executor validates result handles and returns a structured rejection.

@@ -79,6 +79,59 @@ async function runComposition(
   }).run("Compose ordinary tools through source-aware results without rebuilding coordinates");
 }
 
+test("insert leaves an empty selection alone without writing", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const file = path.join(cwd, "empty-insert.txt");
+    await writeFile(file, "keep\n");
+    const run = await runComposition(
+      cwd,
+      "insert-empty-selection",
+      [
+        `const before = await tools.fixture_file_state({path:"empty-insert.txt"});
+const empty = await tools.search({path:"empty-insert.txt",query:"absent"});
+text(await tools.insert({path:empty,text:"NEW"}));
+const after = await tools.fixture_file_state({path:"empty-insert.txt"});
+check(before===after,"Empty insertion wrote the file");`,
+      ],
+      [path.resolve("tests/integration/support/file-state-probe.ts")],
+    );
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(file, "utf8")).toBe("keep\n");
+  });
+});
+
+test("insert still rejects empty text with an empty selection", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "empty-insert.txt"), "keep\n");
+    const run = await runComposition(cwd, "insert-empty-selection-invalid-text", [
+      `const empty = await tools.search({path:"empty-insert.txt",query:"absent"});
+const rejected = await rejects(()=>tools.insert({path:empty,text:""}));
+check(typeof rejected==="string","Empty insert text was accepted");`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "empty-insert.txt"), "utf8")).toBe("keep\n");
+  });
+});
+
+test("insert treats a selected point as an insertion target", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "point-insert.txt"), "keep\n");
+    const run = await runComposition(cwd, "insert-point-selection", [
+      `const source = await tools.read({path:"point-insert.txt"});
+const point = await tools.select({path:source,operation:{kind:"position",edge:"before"}});
+text(await tools.insert({path:point,text:"NEW"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "point-insert.txt"), "utf8")).toBe("keep\nNEW");
+  });
+});
+
 test("merged resource scheduling retains separate pending mutation targets", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "first.txt"), "😀 old\r\nprotected first");

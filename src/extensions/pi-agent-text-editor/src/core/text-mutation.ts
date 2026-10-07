@@ -147,7 +147,7 @@ export function createTextTool<TParameters extends TSchema>(
             const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
               let input = asMutationParameters<TParameters>(parameters);
               if (
-                ["replace", "write", "delete", "undo"].includes(definition.name) &&
+                ["replace", "write", "delete", "undo", "insert"].includes(definition.name) &&
                 isResultInput(input[definition.source.field])
               ) {
                 try {
