@@ -101,7 +101,14 @@ test("returns bounded metadata and preview without downloading an unsupported at
   const result = await read(f);
   const text = result.map((block) => (block.type === "text" ? block.text : "")).join("\n");
 
-  expect(text).toContain("Binary response");
+  expect(text).toContain("Unsupported binary response");
+  expect(text).toContain(
+    "Read cannot convert this Content-Type. Showing response metadata and a byte preview, not document text.",
+  );
+  expect(text).not.toContain("the remaining body was not downloaded");
+  expect(text.match(/application\/octet-stream/gu)).toHaveLength(1);
+  expect(text.match(/178163117/gu)).toHaveLength(1);
+  expect(text).toContain('content-disposition: attachment; filename="tool.AppImage"');
   expect(text).toContain(source);
   expect(text).toContain("tool.AppImage");
   expect(text).toContain("application/octet-stream");
@@ -114,6 +121,29 @@ test("returns bounded metadata and preview without downloading an unsupported at
   expect(f.host.convert).not.toHaveBeenCalled();
   expect(f.browser.load).not.toHaveBeenCalled();
 });
+
+test.each(["", "PK-small-preview"])(
+  "does not claim an unreturned remainder for a complete binary body %j",
+  async (body) => {
+    const f = fixture(
+      vi.fn(
+        async () =>
+          new Response(body, {
+            headers: { "content-type": "application/zip", "content-length": String(body.length) },
+          }),
+      ),
+    );
+    const result = await read(f);
+    const text = result.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+    expect(text).toContain(`Preview: first ${body.length} bytes (hex).`);
+    expect(text).not.toContain("remaining body");
+    expect(text).not.toContain("Headers:");
+    if (body.length === 0) expect(text).toContain("(empty body)");
+    else expect(text).toContain("|PK-small-preview|");
+    expect(f.host.convert).not.toHaveBeenCalled();
+    expect(f.browser.load).not.toHaveBeenCalled();
+  },
+);
 
 test.each(["status", "empty"])(
   "reports both failures when browser is missing after %s",
