@@ -86,6 +86,24 @@ export function createIndexChangeTool(
 ) {
   const execute = createIndexChangeExecutor(action, executor, queue);
   const pastTense = action === "stage" ? "Staged" : "Unstaged";
+  const parameters =
+    action === "stage"
+      ? {
+          ...indexChangeSchema,
+          properties: {
+            file: {
+              ...indexChangeSchema.properties.file,
+              description:
+                "Path to the tracked text file, absolute or relative to the current working directory.",
+            },
+            change: {
+              ...indexChangeSchema.properties.change,
+              description:
+                'Use the complete current CHANGE#HASH anchor shown by read with views: ["changes"].',
+            },
+          },
+        }
+      : unstageChangeSchema;
 
   return defineTool<typeof indexChangeSchema, IndexChangeToolDetails>({
     name: action,
@@ -104,10 +122,10 @@ export function createIndexChangeTool(
 
     promptSnippet: `${pastTense.slice(0, -1)} a selected Git change`,
     description:
-      action === "unstage"
-        ? "Use unstage to remove one selected Git change from the index. Worktree content is kept."
-        : "Use stage to add one current Git change to the index. Select the change with a CHANGE# anchor; worktree content is kept.",
-    parameters: action === "unstage" ? unstageChangeSchema : indexChangeSchema,
+      action === "stage"
+        ? "Use stage to add one selected Git change to the index without changing the worktree file."
+        : "Use unstage to remove one selected Git change from the index. Worktree content is kept.",
+    parameters,
     outputSchema: indexOutputSchema,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       try {
@@ -167,7 +185,11 @@ export function createIndexChangeExecutor(
         const creation = await ChangeService.create(executor, context.cwd, signal);
 
         if (creation.status !== "ready") {
-          throw new Error(creation.message);
+          throw new Error(
+            action === "stage"
+              ? `Cannot stage ${parameters.file}: ${creation.message}`
+              : creation.message,
+          );
         }
 
         const result = await creation.service.changeIndex(
@@ -182,10 +204,31 @@ export function createIndexChangeExecutor(
         );
 
         if (result.status === "unavailable") {
-          throw new Error(result.message);
+          if (action === "stage" && result.reason === "stale-selector") {
+            throw new Error(
+              `${result.message}. Read ${parameters.file} with views: ["changes"] and use a current CHANGE# anchor.`,
+            );
+          }
+          if (action === "stage" && result.reason === "index-write-failed" && !signal?.aborted) {
+            throw new Error(
+              `${result.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
+            );
+          }
+          throw new Error(
+            action === "stage" && result.reason !== "index-write-failed"
+              ? `Cannot stage ${parameters.file}: ${result.message}`
+              : result.message,
+          );
         }
 
         if (result.status === "not-applicable") {
+          if (action === "stage") {
+            const reason =
+              result.reason === "clean"
+                ? "the worktree text matches HEAD"
+                : "the file is not present in HEAD";
+            throw new Error(`Cannot stage ${parameters.file}: ${reason}.`);
+          }
           throw new Error(`${action} is not applicable to ${file}: ${result.reason}`);
         }
 
