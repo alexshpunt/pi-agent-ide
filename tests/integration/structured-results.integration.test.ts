@@ -51,8 +51,7 @@ test("native scripts compose Search and Read, report flush effects and keep empt
 const found=await tools.search({query:"beta",path:"note.txt"});
 const shown=await tools.read({path:found});
 if(typeof shown!=="string"||!shown.includes("beta")) throw Error("Selected text missing");
-const accepted=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
-if(!accepted.includes("not yet applied")) throw Error("Acceptance claimed a write");
+await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 const saved=await tools.flush({});
 if(!saved.includes("applied")||!saved.includes("note.txt")) throw Error("Flush lost file effects");
 const after=await tools.read({path:"note.txt"});

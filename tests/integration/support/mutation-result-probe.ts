@@ -5,12 +5,12 @@ import { Type } from "typebox";
 export default function mutationResultProbe(pi: ExtensionAPI): void {
   let target: string | undefined;
   pi.on("tool_result", (event) => {
-    if (event.toolName !== "replace" || !event.parentToolCallId) return;
+    if (event.toolName !== "replace" || !event.parentToolCallId || event.isError) return;
     const result = event.content
       .filter((block) => block.type === "text")
       .map((block) => block.text)
       .join("\n");
-    if (result.includes("not yet applied")) target = result;
+    target = result;
   });
   pi.registerTool({
     name: "fixture_result",

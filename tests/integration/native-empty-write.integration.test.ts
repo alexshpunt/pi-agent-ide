@@ -37,7 +37,6 @@ for (const mode of ["standalone", "codemode"] as const) {
                 code:
                   textResultChecks +
                   `const written=await tools.write({path:"empty.txt",content:""});
-check(written.includes("not yet applied"),"Write did not report acceptance");
 const committed=await tools.flush({});
 check(committed.includes("applied") && committed.includes("empty.txt"),"Flush lost file effect");
 const read=await tools.read({path:written});

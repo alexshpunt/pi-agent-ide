@@ -85,7 +85,7 @@ test("merged resource scheduling retains separate pending mutation targets", asy
     await writeFile(path.join(cwd, "second.txt"), "old\r\nprotected second");
     const run = await runComposition(cwd, "merged-concurrent-result-targets", [
       `const changes = await Promise.all([tools.replace({path:"first.txt",start:"old",text:"fresh"}), tools.replace({path:"second.txt",start:"old",text:"fresh"})]);
-for (const changed of changes) if (typeof changed !== "string" || !changed.includes("not yet applied") || !changed) throw Error(JSON.stringify(changed));
+for (const changed of changes) if (typeof changed !== "string" || !changed) throw Error(JSON.stringify(changed));
 const first = await tools.search({path:changes[0],query:"fresh"});
 const second = await tools.search({path:changes[1],query:"fresh"});
 if (typeof first !== "string" || typeof second !== "string" || matches(first).length !== 1 || matches(second).length !== 1 || matchRows(first)[0].source === matchRows(second)[0].source) throw Error("Concurrent targets crossed sources");
@@ -243,7 +243,7 @@ test("composes a pending replace result through scoped Search and another edit",
     );
     const run = await runComposition(cwd, "replace-result-search-replace", [
       `const changed = await tools.replace({path:"changed.txt",start:"old block",text:"fresh chunk"});
-if (typeof changed !== "string" || !changed.includes("not yet applied")) throw Error("Expected a pending native edit");
+if (typeof changed !== "string") throw Error("Expected a pending native edit");
 const found = await tools.search({path:changed,query:"fresh"});
 if (typeof found !== "string") throw Error(JSON.stringify(found));
 if (matches(found).length !== 1 || matchRows(found)[0].column !== 3) throw Error("Search escaped the new text or lost its source position");
@@ -264,7 +264,7 @@ test("composes the whole written file through a pending write result", async () 
   await withTempWorkspace(async (cwd) => {
     const run = await runComposition(cwd, "write-result-search-replace", [
       `const written = await tools.write({path:"written.txt",content:"😀 fresh first\\r\\nfresh second"});
-if (typeof written !== "string" || !written.includes("not yet applied") || !written) throw Error("Write did not reserve a whole-file target");
+if (typeof written !== "string" || !written) throw Error("Write did not reserve a whole-file target");
 const found = await tools.search({path:written,query:"fresh"});
 if (typeof found !== "string" || matches(found).length !== 2 || matchRows(found)[0].column !== 3) throw Error("Write result lost its source mapping");
 const changed = await tools.replace({path:matches(found)[0],text:"NEW"});
@@ -395,7 +395,7 @@ test.each(["copy", "move"] as const)(
       await writeFile(path.join(cwd, "destination.txt"), "anchor\r\nONE outside");
       const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
         `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:"anchor"});
-if (typeof changed !== "string" || !changed.includes("not yet applied") || !changed) throw Error("Legacy transfer did not reserve an output");
+if (typeof changed !== "string" || !changed) throw Error("Legacy transfer did not reserve an output");
 const final = await tools.flush({});
 check(final.includes("source.txt") && final.includes("destination.txt"),"Transfer lost file effects");
 const sourceEffect=final.split(String.fromCharCode(10)).find(line=>line.includes("source.txt"));
@@ -712,7 +712,7 @@ test("composes inserted text without searching identical neighbors", async () =>
     await writeFile(path.join(cwd, "inserted.txt"), "same before\r\nanchor\r\nsame after");
     const run = await runComposition(cwd, "insert-result-search-replace", [
       `const changed = await tools.insert({path:"inserted.txt",anchor:"anchor",text:"same new"});
-if (typeof changed !== "string" || !changed.includes("not yet applied")) throw Error("Expected pending insert");
+if (typeof changed !== "string") throw Error("Expected pending insert");
 const found = await tools.search({path:changed,query:"same"});
 if (typeof found !== "string" || matches(found).length !== 1 || matchRows(found)[0].line !== 3) throw Error("Lost inserted scope");
 text(await tools.replace({path:found,text:"ONLY"}));`,

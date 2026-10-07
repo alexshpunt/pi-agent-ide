@@ -342,9 +342,6 @@ export function createTextTool<TParameters extends TSchema>(
     get(): string {
       return [
         definition.description,
-        definition.intent !== "restore"
-          ? "In native Codemode, local text edits share original snapshots and return acceptance before writing. Another tool, whole-file operation, or resource-owned selector commits the batch first; script completion also commits it. Formatting and registered resource post-edit handlers run at script end, not at flush or dependency boundaries. Earlier targets become stale if final processing changes bytes. Ordinary script errors keep accepted edits; aborts and deadlines discard pending edits."
-          : "",
         (
           {
             replace:
@@ -358,7 +355,7 @@ export function createTextTool<TParameters extends TSchema>(
           } as Record<string, string>
         )[definition.name] ?? "",
         ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
-          ? "Pass this unchanged result to another source tool for dependent work. Pending edits commit before the next tool consumes them. If the result reports no verified text selection, inspect the file instead."
+          ? "Pass this unchanged result to another source tool for dependent work. If the result reports no verified text selection, inspect the file instead."
           : "",
         definition.source.inherited
           ? definition.wholeFileOperation === undefined

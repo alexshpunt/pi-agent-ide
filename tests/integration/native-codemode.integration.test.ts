@@ -108,7 +108,6 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
       );
       const shown = getToolResultText(run, "script-0");
       expect(getToolExecution(run, "script-0").isError, shown).toBe(false);
-      expect(shown).toContain("not yet applied");
       expect(shown).toContain("Editor batches: 1 committed");
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
         "added\nalpha\nBETA\nomega\n",
