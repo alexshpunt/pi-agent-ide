@@ -7,7 +7,7 @@ export const searchSchema = Type.Object(
     query: Type.String({
       minLength: 1,
       description:
-        "Text to find, a Boolean expression, or a prefixed query described below, such as files:*.ts. Quote text to keep it literal, or use regex:<pattern> for regular-expression matching.",
+        "Text to find or a Boolean expression. Quote text to keep it literal. Use regex:<pattern> for regular expressions, files:<pattern> for file paths, ast:<pattern> for syntax patterns, symbols:<query> for language symbols, or process:<query> for running processes.",
     }),
     path: Type.Optional({
       ...resultInputSchema,
