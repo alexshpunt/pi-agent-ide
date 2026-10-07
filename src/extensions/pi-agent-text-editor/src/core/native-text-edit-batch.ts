@@ -545,7 +545,7 @@ class NativeTextEditBatchCoordinator {
       content: [
         {
           type: "text",
-          text: `Accepted ${registration.name} for ${entry.path}; not yet applied. The editor batch commits before another tool or when this script ends.`,
+          text: `Accepted ${registration.name} for ${entry.path}; not yet applied. Pass this result to a source tool for dependent work. Normal script completion also commits pending edits.`,
         },
       ],
       details,
