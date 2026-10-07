@@ -1331,7 +1331,7 @@ async function buildToolResult(
       outcome.completed.length === 0 ? "" : ` Completed writes: ${outcome.completed.join(", ")}.`;
     const effect = outcome.completed.length === 0 ? "not-applied" : "applied";
     const message = `${outcome.failure.message.replace(/[.!?]+$/u, "")}.${completed}`;
-    return failureToolResult(source, outcome.failure.code, message, effect);
+    return buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect);
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
@@ -1581,6 +1581,15 @@ export async function buildFailedTextMutationResult(
   context: ExtensionContext,
   effect: "applied" | "not-applied" | "unknown" = "not-applied",
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
+  if (failure.rollback !== undefined) {
+    return failureToolResult(
+      failure.source,
+      failure.code,
+      failure.message,
+      failure.rollback.failedSources.length === 0 ? "not-applied" : "unknown",
+      failure.rollback,
+    );
+  }
   return effect === "not-applied"
     ? ((await anchorFailureToolResult(core, failure, context)) ??
         failureToolResult(failure.source, failure.code, failure.message, effect))
@@ -1592,11 +1601,19 @@ function failureToolResult(
   code: string,
   reason: string,
   effect: "not-applied" | "applied" | "unknown",
+  rollback?: TextResourceEditFailure["rollback"],
 ): { content: [{ type: "text"; text: string }]; details: FileMutationBatchResult } {
   const result = new FileMutationResult({
     ok: false,
     path: source,
     errors: [{ path: source, code, reason }],
+    ...(rollback !== undefined && {
+      rollback,
+      fileChangedStatement:
+        rollback.failedSources.length === 0
+          ? "Attempted writes were rolled back."
+          : `Rollback failed for ${rollback.failedSources.join(", ")}. Current contents are unknown. Run Read/Search before editing these resources again.`,
+    }),
   });
 
   return {

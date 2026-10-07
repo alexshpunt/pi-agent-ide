@@ -236,6 +236,8 @@ export interface FileMutationData {
 
   staleDiagnostic?: StaleAnchorDiagnostic | undefined;
   fileChangedStatement?: string | undefined;
+  /** Failed rollback resources; an empty list means all attempted writes were restored. */
+  rollback?: { readonly failedSources: readonly string[] } | undefined;
 
   // ── Transient engine fields ──
   snapshot?: MutationSnapshot | undefined;

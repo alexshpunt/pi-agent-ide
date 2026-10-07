@@ -566,22 +566,22 @@ async function failTextBatch(
   context: ExtensionContext,
   reporter: BatchExecutionReporter,
 ): Promise<AgentToolResult<TextBatchDetails>> {
-  const cause = error;
   const failure = isTextResourceEditFailure(error)
     ? error
     : {
         code: "INVALID_REQUEST" as const,
         source: "",
-        message: errorMessage(cause),
-        cause,
+        message: errorMessage(error),
+        cause: error,
       };
+  const cause = Object.assign(new Error(failure.message), { code: failure.code });
   const failedCallId = callIds[0];
   const failedResult = await buildFailedTextMutationResult(core, failure, context);
 
   for (const callId of callIds) {
     reporter.fail(callId, {
       error: cause,
-      effect: "not-applied",
+      effect: failedResult.details.effect ?? "not-applied",
       ...(callId === failedCallId && { result: failedResult }),
     });
   }

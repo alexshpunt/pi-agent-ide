@@ -292,7 +292,7 @@ function createRenderer(
         )
         .map((item) => item.text)
         .join("\n");
-      const displayedOutput = context.isError ? userFacingFailure(output) : output;
+      const displayedOutput = context.isError ? userFacingFailure(output, result.details) : output;
       return new Text(
         displayedOutput.length === 0
           ? ""
@@ -868,7 +868,17 @@ function wholeFileOperationSucceeded(details: unknown): boolean | undefined {
     : undefined;
 }
 
-function userFacingFailure(agentOutput: string): string {
+function userFacingFailure(
+  agentOutput: string,
+  details: FileMutationBatchResult | undefined,
+): string {
+  const rollback = details?.results?.find((result) => result.data.rollback !== undefined)?.data
+    .rollback;
+  if (rollback !== undefined) {
+    return rollback.failedSources.length === 0
+      ? "Rolled back · write failed"
+      : "State unknown · rollback failed";
+  }
   if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }

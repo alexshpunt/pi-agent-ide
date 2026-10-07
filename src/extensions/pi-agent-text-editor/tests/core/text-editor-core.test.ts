@@ -234,7 +234,11 @@ test("rolls back earlier resources when a later write fails", async () => {
     }),
   );
 
-  expect(outcome).toMatchObject({ kind: "failed", completed: ["second.txt"] });
+  expect(outcome).toMatchObject({
+    kind: "failed",
+    completed: [],
+    failure: { rollback: { failedSources: ["second.txt"] } },
+  });
   expect(values.get("first.txt")).toBe("first before");
   expect(values.get("second.txt")).toBe("second before changed");
   expect(writes.get("first.txt")).toEqual(["first before changed", "first before"]);

@@ -260,6 +260,8 @@ export interface TextResourceEditFailure {
   readonly resolverId?: string;
   readonly message: string;
   readonly cause?: unknown;
+  /** Present after rollback was attempted. An empty list means every attempt succeeded. */
+  readonly rollback?: { readonly failedSources: readonly string[] };
 }
 
 export type TextResourceEditOutcome<Result> =
@@ -1320,19 +1322,18 @@ async function editTextResources<Result>(
         rollbackFailures.push(writtenSource);
       }
     }
+    const cause: unknown = failure.status === "rejected" ? failure.reason : undefined;
     return {
       kind: "failed",
       failure: {
         code: "WRITE_FAILED",
         source,
         resolverId: item.resolverId,
-        message:
-          rollbackFailures.length === 0
-            ? `Unable to write ${source}; completed writes were rolled back`
-            : `Unable to write ${source}; rollback failed for ${rollbackFailures.join(", ")}`,
-        cause: failure.status === "rejected" ? failure.reason : undefined,
+        message: `Unable to write ${source}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        cause,
+        rollback: { failedSources: rollbackFailures },
       },
-      completed: rollbackFailures,
+      completed: [],
     };
   }
   const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];

@@ -24,6 +24,7 @@ interface ChildPanel {
   renderArgs?: unknown;
   omitted?: boolean;
   batched?: boolean;
+  rollback?: boolean;
   result?: { content: AgentToolResult<unknown>["content"]; details: unknown; isError: boolean };
 }
 interface BatchReport {
@@ -248,10 +249,12 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
           // A multi-file batch has no single source: let the existing renderer label each file.
           if (new Set(details.mutationRender?.map((resource) => resource.path)).size > 1)
             call.renderArgs = {};
+          call.rollback =
+            details.results?.some((result) => result.data.rollback !== undefined) === true;
           retainResult(group, call, {
             content: batch.result.content,
             details,
-            isError: batch.result.isError === true,
+            isError: batch.result.isError === true || call.rollback,
           });
         }
       }
@@ -271,6 +274,8 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
             const call = group.calls.find((call) => call.id === operation.id);
             if (!call) continue;
             const errors = operation.errors.map((error) => error.message);
+            // Keep the final rollback result and its custom error panel.
+            if (call.rollback) continue;
             if (errors.length > 0 || operation.effect !== "applied") {
               call.batched = false;
               delete call.renderArgs;
