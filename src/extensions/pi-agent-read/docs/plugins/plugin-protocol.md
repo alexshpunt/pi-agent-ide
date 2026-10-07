@@ -82,6 +82,7 @@ interface TextTargetResolverRegistration {
 
 interface ReadViewRegistration {
   readonly view: string;
+  readonly contentKind?: "text" | "any";
   readonly includes?: readonly string[];
   readonly presenter: TextLinePresenter;
   readonly priority?: number;
@@ -89,6 +90,8 @@ interface ReadViewRegistration {
 ```
 
 A view may list other views in `includes` when its complete presentation already contains theirs. If a request names both views, read skips the included view instead of returning duplicate annotations. Only declare an inclusion when that plugin actually supplies the complete included presentation.
+
+Views require text by default. Set `contentKind: "any"` for a view handled by a native-content reader, such as image capture. Read explains when a requested text-only view cannot apply to native content. Its warnings stay outside source lines and script data; renderers receive them in `ReadResultDetails.viewWarnings`.
 
 `ResourceResolver` comes from `pi-agent-resource`. Priority is read-registry metadata: lower values run first and the default is `0`.
 

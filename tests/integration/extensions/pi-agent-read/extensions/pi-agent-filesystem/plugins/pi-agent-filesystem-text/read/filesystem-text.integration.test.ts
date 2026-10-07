@@ -44,7 +44,7 @@ test("reads relative, absolute, empty, and ranged UTF-8 text when loaded before 
       ),
     ).toBe("absolute text\n");
     expect(getToolResultText(await runRead(directory, "empty.txt", "filesystem-text-empty"))).toBe(
-      "",
+      "[Empty source.]",
     );
     expect(
       getToolResultText(

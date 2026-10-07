@@ -11,18 +11,20 @@ export function sourcePathProperty(description: string) {
   return Type.Optional(Type.String({ description }));
 }
 
-/** Build the inclusive source-range selectors shared by text mutation schemas. */
-export function sourceRangeProperties() {
+/** Build shared source-range selectors, with optional tool-specific descriptions. */
+export function sourceRangeProperties(descriptions: Partial<Record<"start" | "end", string>> = {}) {
   return {
     start: Type.Optional(
       Type.String({
         description:
+          descriptions.start ??
           "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects only its line. Omit when path already selects text through a supported resource reference. With end, selects a whole-line range.",
       }),
     ),
     end: Type.Optional(
       Type.String({
         description:
+          descriptions.end ??
           "Optional anchor or unique exact text. Range includes start's first line through end's last line, even for SEARCH :match. Mixed types allowed; boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start. The end line is included, not a stopping point before it.",
       }),
     ),

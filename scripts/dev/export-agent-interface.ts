@@ -40,6 +40,8 @@ interface Options {
   readonly output: string;
   readonly declarationsOutput?: string;
   readonly tools?: readonly string[];
+  /** Select the runner transport. Omit for the existing TUI runner. */
+  readonly transport?: "tui" | "rpc";
 }
 
 function outputPaths(options: Options): { initial: string; declarations: string } {
@@ -73,6 +75,7 @@ export async function exportAgentInterface(options: Options): Promise<void> {
     isolateUserResources: true,
     extensions: [path.resolve(cwd, options.extension), "builtin:codemode", "builtin:tool-search"],
     ...(options.tools === undefined ? {} : { tools: [...options.tools] }),
+    ...(options.transport === undefined ? {} : { transport: options.transport }),
     conversation: [
       ...(discovery
         ? [
@@ -239,6 +242,7 @@ function parseArguments(arguments_: readonly string[]): Options {
   let output = ".tmp/prompt-snapshots/pi-agent-ide.md";
   let declarationsOutput: string | undefined;
   let tools: readonly string[] | undefined;
+  let transport: "tui" | "rpc" | undefined;
   for (let index = 0; index < arguments_.length; index += 1) {
     const flag = arguments_[index];
     const value = arguments_[index + 1];
@@ -246,6 +250,7 @@ function parseArguments(arguments_: readonly string[]): Options {
     else if (flag === "--extension" && value !== undefined) extension = value;
     else if (flag === "--output" && value !== undefined) output = value;
     else if (flag === "--declarations-output" && value !== undefined) declarationsOutput = value;
+    else if (flag === "--transport" && (value === "tui" || value === "rpc")) transport = value;
     else if (flag === "--tools" && value !== undefined)
       tools = value
         .split(",")
@@ -260,6 +265,7 @@ function parseArguments(arguments_: readonly string[]): Options {
     output,
     ...(declarationsOutput === undefined ? {} : { declarationsOutput }),
     ...(tools === undefined ? {} : { tools }),
+    ...(transport === undefined ? {} : { transport }),
   };
 }
 
