@@ -50,7 +50,7 @@ An omitted path can inherit the file identified by an anchor, the last read, or 
 
 An ordinary `delete.path` without selectors deletes a complete regular file. A result input removes only selected text. Ordinary copy/move paths without selectors transfer whole files and replace an existing regular destination file.
 
-Inside Codemode, await independent edits on disjoint resources concurrently and overlapping resources in order. Pass a pending edit result directly to another source tool for dependent work; that boundary commits the batch before consuming the result. Await `tools.flush({})` when you need a committed receipt. Its text reports file and operation effects. A failed flush never replays edits.
+Inside Codemode, await independent edits on disjoint resources concurrently and overlapping resources in order. Pass a pending edit result directly to another source tool for dependent work; that boundary commits the batch before consuming the result.
 
 Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the parent result for actual committed effects: an acceptance is not proof of writing, and an error is not proof of rollback. Read the affected files when the result cannot confirm their final state.
 

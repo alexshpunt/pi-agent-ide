@@ -227,6 +227,24 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
   },
 );
 
+test("editor batches commit automatically without a checkpoint tool", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-automatic-commits", [
+      `if (ALL_TOOLS.some(tool => tool.name === "flush")) throw Error("Unexpected editor checkpoint tool");
+await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
+const shown = await tools.read({path:"note.txt"});
+if (!shown.includes("ALPHA")) throw Error("Read did not see the committed edit");
+const changed = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+await tools.replace({path:changed,text:"FINAL"+String.fromCharCode(10)});
+text(await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"}));`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nFINAL\nGAMMA\nomega\n");
+  });
+});
 test("read and search finish a batch before dependent work starts", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);

@@ -24,13 +24,11 @@ import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.
 import { isWholeFileInvocation } from "./file-operation-tools.js";
 import { isResultInput } from "./result-transfer.js";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
-import { Type } from "typebox";
 import {
   ResourceScheduler,
   resourceAccesses,
   connectResultTargets,
   resultError,
-  withStructuredResult,
   type ResultTargetStore,
   type StructuredResult,
 } from "pi-agent-resource";
@@ -43,13 +41,7 @@ import {
   NATIVE_EDIT_BATCH_EVENT,
   type NativeEditBatchEvent,
 } from "#src/api/native-edit-batch-event.js";
-import {
-  flushDataSchema,
-  flushOutputSchema,
-  mutationOutcome,
-  type MutationData,
-  type FlushData,
-} from "./structured-result.js";
+import { mutationOutcome, type MutationData, type BatchMutationData } from "./structured-result.js";
 
 interface PendingBatch {
   readonly entries: TextBatchEntry[];
@@ -65,8 +57,7 @@ interface BatchSummary {
 }
 
 interface ScriptBatch {
-  readonly reports: StructuredResult<FlushData>[];
-  reportCursor: number;
+  readonly reports: StructuredResult<BatchMutationData>[];
   readonly id: string;
   readonly context: ExtensionContext;
   readonly summaries: BatchSummary[];
@@ -129,7 +120,7 @@ function receiptEffect(files: MutationData["files"]): MutationData["effect"] {
       : "not-applied";
 }
 
-function receiptStatus(errors: readonly unknown[], operations: FlushData["operations"]) {
+function receiptStatus(errors: readonly unknown[], operations: BatchMutationData["operations"]) {
   return errors.length === 0
     ? ("success" as const)
     : operations.some(
@@ -198,73 +189,6 @@ class NativeTextEditBatchCoordinator {
     private readonly pi: ExtensionAPI,
   ) {
     this.resultTargets = connectResultTargets(pi);
-    pi.registerTool({
-      name: "flush",
-      exposure: "codemode",
-      namespace: {
-        name: "ide_edit",
-        description: "Edit files and live IDE resources with guarded operations.",
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
-      label: "Flush",
-      description:
-        "Use flush to commit pending native Codemode text edits and return their observed effects. Await tools.flush({}) before depending on a completed write. A failed flush retains applied effects and does not replay edits. Call it only inside native Codemode.",
-      promptSnippet: "Commit pending native editor changes and inspect their effects",
-      parameters: Type.Object({}, { additionalProperties: false }),
-      outputSchema: flushOutputSchema,
-      execute: async (id) => {
-        const script = this.invocations.get(id);
-        if (!script) throw new Error("Flush requires an active native Codemode script");
-        const work = script.scheduler.run(undefined, async () => {
-          await this.commit(script);
-          const reports = script.reports.slice(script.reportCursor);
-          script.reportCursor = script.reports.length;
-          const files = mergedFiles(reports.flatMap((report) => report.data?.files ?? []));
-          const errors = reports.flatMap((report) => report.errors);
-          const operations = reports.flatMap((report) => report.data?.operations ?? []);
-          const effect = receiptEffect(files);
-          return withStructuredResult(
-            {
-              content: [
-                {
-                  type: "text",
-                  text: [
-                    errors.length === 0
-                      ? `Flushed ${operations.length} editor operations; ${effect}.`
-                      : `Editor flush failed; ${effect}.`,
-                    ...files.map(
-                      (file) =>
-                        `${file.source}: ${file.effect}${file.state ? ` (${file.state})` : ""}`,
-                    ),
-                    ...operations.map(
-                      (operation) =>
-                        `${operation.operation}: ${operation.effect}${operation.errors.length ? ` — ${operation.errors.map((error) => error.message).join("; ")}` : ""}`,
-                    ),
-                  ].join("\n"),
-                },
-              ],
-              details: { results: [] },
-            },
-            flushDataSchema,
-            {
-              status: receiptStatus(errors, operations),
-              data: { operation: "flush", effect, files, operations },
-              errors,
-            },
-          );
-        });
-        script.tail = work.then(
-          () => undefined,
-          () => undefined,
-        );
-        return work;
-      },
-    });
     pi.on("tool_call", async (event, context) => {
       if (event.toolName === "codemode" && event.parentToolCallId === undefined) {
         this.scripts.set(event.toolCallId, {
@@ -272,7 +196,6 @@ class NativeTextEditBatchCoordinator {
           context,
           summaries: [],
           reports: [],
-          reportCursor: 0,
           presentations: [],
           results: [],
           errors: [],
@@ -291,10 +214,6 @@ class NativeTextEditBatchCoordinator {
       const script =
         event.parentToolCallId === undefined ? undefined : this.scripts.get(event.parentToolCallId);
       if (!script) return;
-      if (event.toolName === "flush") {
-        this.invocations.set(event.toolCallId, script);
-        return;
-      }
       const registration = this.core
         .getMutationTools()
         .find((tool) => tool.name === event.toolName);
@@ -419,7 +338,7 @@ class NativeTextEditBatchCoordinator {
             status: "error",
             errors: [error],
             data: {
-              operation: "flush",
+              operation: "batch",
               effect: "not-applied",
               operations,
               files: [...script.pending.snapshots.keys()].map((source) => ({
@@ -871,7 +790,7 @@ class NativeTextEditBatchCoordinator {
         errors,
         data: {
           ...outcome.data,
-          operation: "flush",
+          operation: "batch",
           effect: receiptEffect(files),
           files,
           operations,
@@ -941,7 +860,7 @@ class NativeTextEditBatchCoordinator {
       } satisfies NativeEditBatchEvent;
       script.presentations.push(presentation);
       this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, presentation);
-      return record(mutationOutcome(value, "flush", captured.completions));
+      return record(mutationOutcome(value, "batch", captured.completions));
     } catch (error) {
       journal.markRunningUnknown(error);
       await this.settleTargets(script, batch, journal, [], signal);

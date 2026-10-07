@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
@@ -426,22 +427,33 @@ check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Peer 
     expect(run.tuiRenderedOutput).not.toMatch(/│\s+2 ~ alpha/u);
   });
 });
-test("native unchanged Copy flush succeeds without reporting an applied change", async () => {
+test("native unchanged Copy commits without reporting an applied change", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "source.txt"), "alpha\n");
     await writeFile(path.join(cwd, "destination.txt"), "alpha\n");
-    const run = await runComposition(cwd, "copy-identical-flush", [
+    const run = await runComposition(cwd, "copy-identical-commit", [
       `const copied=await tools.copy({path:"source.txt",start:"alpha",target:"destination.txt",targetStart:"alpha",targetEnd:"alpha"});
-const receipt=await tools.flush({});
-check(receipt.includes("copy: not-applied"),"No-op Copy reported an applied operation");
-check(!receipt.split(String.fromCharCode(10)).some(line=>line.includes("destination.txt: applied")),"No-op Copy reported a destination write");
-check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Flush lost unchanged destination");
+check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Commit lost unchanged destination");
 text(await tools.replace({path:copied,text:"NEW\\n"}));`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+    const details = getToolExecutionDetails(getToolExecution(run, "compose-0")) as {
+      editorBatchResults: {
+        data: {
+          operations: { operation: string; effect: string }[];
+          files: { effect: string }[];
+        };
+      }[];
+    };
+    const receipt = details.editorBatchResults[0];
+    if (!receipt) throw new Error("Missing automatic commit receipt");
+    expect(receipt.data.operations.map(({ operation, effect }) => ({ operation, effect }))).toEqual(
+      [{ operation: "copy", effect: "not-applied" }],
+    );
+    expect(receipt.data.files.some(({ effect }) => effect === "applied")).toBe(false);
     expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("NEW\n");
   });
 });
@@ -1015,7 +1027,6 @@ await rejects(()=>tools.copy({path:"RESULT#forged",target:destination}));
 const empty=await tools.copy({path:[],target:[]});
 check(empty.includes("No changes: empty selection."),"Empty pairing changed sources");
 await tools.replace({path:"source.txt",start:"ONE",text:"NEW"});
-await tools.flush({});
 await rejects(()=>tools.move({path:source,target:destination}),/expired|stale/);
 text({refusals:4,empty:true});`,
     ]);
@@ -1038,10 +1049,6 @@ test.each(["copy", "move"] as const)(
       const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
         `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:"anchor"});
 if (typeof changed !== "string" || !changed) throw Error("Legacy transfer did not return a reusable result");
-const final = await tools.flush({});
-check(final.includes("source.txt") && final.includes("destination.txt"),"Transfer lost file effects");
-const sourceEffect=final.split(String.fromCharCode(10)).find(line=>line.includes("source.txt"));
-check(sourceEffect.includes(${JSON.stringify(operation === "copy" ? "not-applied" : "applied")}),"Transfer reported incorrect source effect");
 const found = await tools.search({path:changed,query:"ONE"});
 if (typeof found !== "string" || matches(found).length !== 1 || !matchRows(found)[0].source.endsWith("destination.txt")) throw Error("Pending output included removals or neighbors");
 text(await tools.replace({path:found,text:"NEW"}));`,
@@ -1049,6 +1056,21 @@ text(await tools.replace({path:found,text:"NEW"}));`,
       expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
         false,
       );
+      const details = getToolExecutionDetails(getToolExecution(run, "compose-0")) as {
+        editorBatchResults: { data: { files: { source: string; effect: string }[] } }[];
+      };
+      expect(details.editorBatchResults).toHaveLength(1);
+      const receipt = details.editorBatchResults[0];
+      if (!receipt) throw new Error("Missing automatic commit receipt");
+      expect(
+        receipt.data.files.map(({ source, effect }) => ({
+          source: path.basename(source),
+          effect,
+        })),
+      ).toEqual([
+        { source: "source.txt", effect: operation === "copy" ? "not-applied" : "applied" },
+        { source: "destination.txt", effect: "applied" },
+      ]);
       expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
         "anchor\r\nNEW\r\nONE outside",
       );
@@ -1092,7 +1114,6 @@ test("delete receipts describe removals without publishing a live point", async 
 const found = await tools.search({path:window,query:"old"});
 const removed = await tools.delete({path:found});
 await rejects(()=>tools.search({path:removed,query:"old"}),/no reusable text selection/);
-await tools.flush({});
 const receipt = await tools.read({path:"removed.txt"});
 if (!receipt.includes("😀 "+String.fromCharCode(13,10))) throw Error("Delete widened its selected range");
 text(removed);`,
@@ -1138,7 +1159,6 @@ test("undo accepts only a whole-file source and returns the whole restored file"
     await writeFile(path.join(cwd, "restore.txt"), "fresh before\r\nold body\r\nfresh after");
     const run = await runComposition(cwd, "undo-whole-restored-output", [
       `const changed = await tools.replace({path:"restore.txt",start:"old body",text:"new body"});
-await tools.flush({});
 const window = await tools.read({path:"restore.txt",offset:2,limit:1});
 const refused = await rejects(()=>tools.undo({file:window,change:"last"}));
 check(typeof refused==="string","Undo widened its input");
