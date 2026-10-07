@@ -25,17 +25,22 @@ import {
 /** Show selected text and opaque item references, never the internal selection record. */
 function selectionText(data: SelectionData): string {
   const rows = [`${data.totalItems} selection(s)${data.complete ? "" : " · incomplete input"}`];
-  if (data.missingInputs) rows.push(`${data.missingInputs} input(s) without a selection`);
+  if (!data.complete)
+    rows.push("Obtain complete source selections before checking absence or editing.");
+  if (data.missingInputs) rows.push(`${data.missingInputs} input range(s) produced no selection`);
   for (const item of data.items) {
     const range = item.range;
     rows.push(
       `${item.target} ${item.source}:${range.startLine}:${range.startColumn}–${range.endLine}:${range.endColumn}${item.syntax ? ` ${item.syntax.object}${item.syntax.part ? `/${item.syntax.part}` : ""}` : ""}`,
       item.preview,
     );
+    if (range.startLine === range.endLine && range.startColumn === range.endColumn)
+      rows.push("Zero-width position; no text selected.");
     if (item.textTruncated)
-      rows.push("… preview shortened; reference retains the complete selection");
+      rows.push("… preview shortened; pass this item reference to consume the full selection");
   }
-  if (data.truncated) rows.push("… more selections retained in the whole result");
+  if (data.truncated)
+    rows.push("… more selections retained; pass the whole result to consume all selections");
   return rows.join("\n");
 }
 
@@ -128,7 +133,7 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
           openWorldHint: false,
         },
         description:
-          "Use select to derive verified text boundaries and positions, combine source-local range sets, and navigate normalized JavaScript/TypeScript constructs and named parts, without JSX/TSX. AST enclosing matches the full seed and counts levels within the requested category. Navigation skips parser-only wrappers; filters do not change relationships. Navigation requires exact named syntax nodes; parts require a node with that supported part. Supported optional parts may be absent; unsupported parts are errors with available names. syntax describes the result category, not edit authority. Text operations apply per region; range/lines require one source. Geometry matches by source and snapshot, not array position; within retains whole candidates, intersection clips, difference subtracts, and merge explicitly joins overlaps or optional adjacency without filling gaps. Points use included starts and excluded ends. Bounds are strict UTF-16; surrogate-pair and CRLF splits are errors. Expansion and merge retain input associations. Results keep strict snapshots, completeness and individually consumable items; preview truncation does not clip the whole target. elementExtent derives exact JS/TS argument/parameter boundaries, optionally including owned commas/whitespace; adjacent comments refuse around extents. It does not repair destination syntax. ownBody and semantic identity are not implemented.",
+          "Use select to derive text ranges or positions, navigate JavaScript/TypeScript constructs and their parts (without JSX/TSX), and combine source-local selections. Pass the returned result or an item reference to Read, Search or an edit tool. Select does not change files.",
         promptSnippet:
           "Derive text and AST boundaries, navigate constructs and combine source-range sets",
         promptGuidelines: [
@@ -252,7 +257,10 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
             return withStructuredResult<ResultPanelModel | undefined, never>(
               {
                 content: [
-                  { type: "text", text: error instanceof Error ? error.message : String(error) },
+                  {
+                    type: "text",
+                    text: `${error instanceof Error ? error.message : String(error)}\nResolve the reported error before retrying. Do not treat a failed selection as an empty result.`,
+                  },
                 ],
                 details: undefined,
               },
