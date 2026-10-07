@@ -261,7 +261,8 @@ function formatUnsupportedBinaryResponse(
   preview: Uint8Array,
 ): string {
   const lines = [
-    "Binary response",
+    "Unsupported binary response",
+    "Read cannot convert this Content-Type. Showing response metadata and a byte preview, not document text.",
     `URL: ${requestedUrl.href}`,
     `HTTP: ${response.status} ${response.statusText}`.trimEnd(),
     `Content-Type: ${mediaType ?? "unknown"}`,
@@ -271,18 +272,15 @@ function formatUnsupportedBinaryResponse(
   if (filename !== undefined) lines.push(`Filename: ${filename}`);
   const length = response.headers.get("content-length");
   if (length !== null) lines.push(`Content-Length: ${length}`);
-  lines.push("", "Headers:");
-  for (const [name, value] of [...response.headers].sort(([left], [right]) =>
-    left.localeCompare(right),
-  )) {
-    if (isSensitiveRedirectHeader(name)) continue;
-    lines.push(`${name}: ${value}`);
-  }
-  lines.push(
-    "",
-    `Preview: first ${preview.length} bytes (hex); the remaining body was not downloaded`,
-    formatHexPreview(preview),
-  );
+  const headers = [...response.headers]
+    .filter(
+      ([name]) =>
+        !isSensitiveRedirectHeader(name) && name !== "content-type" && name !== "content-length",
+    )
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => `${name}: ${value}`);
+  if (headers.length > 0) lines.push("", "Headers:", ...headers);
+  lines.push("", `Preview: first ${preview.length} bytes (hex).`, formatHexPreview(preview));
   return lines.join("\n");
 }
 

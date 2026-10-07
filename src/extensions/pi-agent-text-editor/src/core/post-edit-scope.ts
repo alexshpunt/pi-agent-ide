@@ -5,7 +5,10 @@ import type { TextResourceEditOutcome } from "./text-editor-core.js";
 
 type Completed = Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>;
 type Finalize = () => Promise<Completed>;
-const active = new AsyncLocalStorage<Map<string, Finalize>>();
+const active = new AsyncLocalStorage<{
+  readonly pending: Map<string, Finalize>;
+  readonly immediate: boolean;
+}>();
 const notifications = new AsyncLocalStorage<Array<() => void>>();
 
 /** Schedule observers only after every file in the current finalization has settled. */
@@ -28,27 +31,32 @@ export async function collectPostEditNotifications<T>(work: () => Promise<T>): P
 
 /** Replace intermediate post-processing with the latest written state of this resource. */
 export function deferPostEdit(source: string, finalize: Finalize): boolean {
-  const pending = active.getStore();
-  if (!pending) return false;
-  pending.set(source, finalize);
+  const scope = active.getStore();
+  if (!scope) return false;
+  if (scope.immediate) {
+    scope.pending.delete(source);
+    return false;
+  }
+  scope.pending.set(source, finalize);
   return true;
 }
 
 /** Optional read enrichment must not start checks on an intermediate edited snapshot. */
 export function hasDeferredPostEdit(source: string): boolean {
-  return active.getStore()?.has(source) ?? false;
+  return active.getStore()?.pending.has(source) ?? false;
 }
 
 /** Stop deferred processing when a later operation removes or moves the resource. */
 export function forgetDeferredPostEdit(source: string): void {
-  active.getStore()?.delete(source);
+  active.getStore()?.pending.delete(source);
 }
 /** Writes stay immediate; finishing drains each surviving final resource once. */
 export function createPostEditScope(cwd = process.cwd()) {
   const pending = new Map<string, Finalize>();
   return {
-    run<T>(operation: () => T): T {
-      return active.run(pending, operation);
+    /** Immediate processing replaces older deferred work for the same written resource. */
+    run<T>(operation: () => T, immediate = false): T {
+      return active.run({ pending, immediate }, operation);
     },
     forget(source: string): void {
       pending.delete(source);

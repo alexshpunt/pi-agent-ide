@@ -37,13 +37,12 @@ for (const mode of ["standalone", "codemode"] as const) {
                 code:
                   textResultChecks +
                   `const written=await tools.write({path:"empty.txt",content:""});
-const committed=await tools.flush({});
-check(committed.includes("applied") && committed.includes("empty.txt"),"Flush lost file effect");
+check(written.includes("empty.txt"),"Write lost its file effect");
 const read=await tools.read({path:written});
-check(body(read)==="","Read did not preserve the empty source");
+check(body(read)==="[Empty source.]","Read did not explain the empty source");
 const point=await tools.select({path:read,operation:{kind:"position",edge:"after"}});
 check(items(point).length===1 && items(point)[0].startColumn===0,"Empty source boundary lost");
-text(committed); text(point);`,
+text(written); text(point);`,
               },
             });
       const run = await new PiIntegrationTest({

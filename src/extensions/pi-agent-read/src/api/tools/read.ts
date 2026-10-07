@@ -107,6 +107,8 @@ export interface FragmentResolverRegistration {
  */
 export interface ReadViewRegistration {
   readonly view: string;
+  /** Text views require source lines; native handlers may register views for any content. */
+  readonly contentKind?: "text" | "any";
   /** Requested views whose complete presentation this view already provides. */
   readonly includes?: readonly string[];
   readonly presenter: TextLinePresenter;
@@ -164,6 +166,8 @@ export interface UnsupportedContentDetails {
 }
 
 export interface ReadResultDetails extends UnsupportedContentDetails {
+  /** Diagnostic readiness shown separately from canonical source lines. */
+  readonly diagnosticStatus?: string;
   /** Explicit diagnostic checks; completed empty reports need no content panel. */
   readonly diagnosticCheck?: {
     readonly complete: boolean;
@@ -185,6 +189,8 @@ export interface ReadResultDetails extends UnsupportedContentDetails {
   readonly lines?: readonly ReadTextLine[];
   /** Requested view names that no registration backed; they were ignored. */
   readonly ignoredViews?: readonly string[];
+  /** Situational presentation messages, kept outside source lines and script data. */
+  readonly viewWarnings?: readonly string[];
   readonly failure?: ReadFailure;
 }
 
@@ -357,6 +363,7 @@ const fragmentResolverRegistrationSchema = Type.Object({
 });
 const viewRegistrationSchema = Type.Object({
   view: Type.String({ pattern: "\\S" }),
+  contentKind: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("any")])),
   includes: Type.Optional(Type.Array(Type.String({ pattern: "\\S" }))),
   presenter: Type.Object({ id: Type.String(), present: functionSchema }),
   priority: Type.Optional(Type.Number()),

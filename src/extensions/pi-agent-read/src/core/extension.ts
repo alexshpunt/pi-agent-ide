@@ -32,7 +32,7 @@ export default async function registerReadCore(
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "read-resources",
-      description: "Resource selection, windows, views, raw bytes, and continuation",
+      description: "Read results, selection boundaries, and composition",
       triggers: [{ tool: "read" }],
     }),
   ]);

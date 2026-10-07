@@ -236,14 +236,60 @@ test("rolls back earlier resources when a later write fails", async () => {
 
   expect(outcome).toMatchObject({
     kind: "failed",
+    failure: { rollback: { failed: ["second.txt"], originallyMissing: [] } },
     completed: [],
-    failure: { rollback: { failedSources: ["second.txt"] } },
   });
   expect(values.get("first.txt")).toBe("first before");
   expect(values.get("second.txt")).toBe("second before changed");
   expect(writes.get("first.txt")).toEqual(["first before changed", "first before"]);
 });
 
+test("preserves every confirmed write when later presentation fails", async () => {
+  const core = createTextEditorCore();
+  const firstWrites: AgentContent[] = [];
+  const secondWrites: AgentContent[] = [];
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "failed-presentation",
+    setup(api) {
+      api.addResolver({ resolver: textResolver("first", "first.txt", "first", firstWrites) });
+      api.addResolver({ resolver: textResolver("second", "second.txt", "second", secondWrites) });
+      api.addTextPresenter({
+        presenter: {
+          id: "failed-diff",
+          present(document, context) {
+            if (context.purpose === "edit-diff") throw new Error("fixture presentation failed");
+            return document;
+          },
+        },
+      });
+    },
+  });
+  const outcome = await core.editTexts(
+    [
+      { source: "first.txt", read: true },
+      { source: "second.txt", read: true },
+    ],
+    { cwd: "/workspace" },
+    async (texts) => ({
+      changes: new Map(
+        [...texts].map(([source, content]) => [
+          source,
+          [{ from: 0, to: content.length, insert: `${content} changed` }],
+        ]),
+      ),
+      result: undefined,
+    }),
+  );
+  expect(outcome).toMatchObject({
+    kind: "failed",
+    failure: { code: "POST_WRITE_FAILED", source: "first.txt" },
+    completed: ["first.txt", "second.txt"],
+  });
+  expect(firstWrites).toEqual([[{ type: "text", text: "first changed" }]]);
+  expect(secondWrites).toEqual([[{ type: "text", text: "second changed" }]]);
+});
 test("reads and writes through the same resource", async () => {
   const core = createTextEditorCore();
   const writes: AgentContent[] = [];

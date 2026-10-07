@@ -42,6 +42,8 @@ Use `separation: "blank-line"` for a separate paragraph or section; use default 
 
 ## Writes and failures
 
+When Write changes or creates a file, it saves the file and finishes post-edit processing before returning, including in Codemode. If an existing file already matches the supplied content, Write returns its whole-file selection without writing or running post-edit handlers. Earlier pending edits commit before Write. Other eligible text edits keep their pending-batch behavior.
+
 Independent calls share the original snapshots. Combine overlapping edits into one mutation. A rejected call does not cancel successful peers; retry only unapplied changes.
 
 An omitted path can inherit the file identified by an anchor, the last read, or the preceding edit in the batch. Supply the path when that would be ambiguous.
@@ -50,11 +52,9 @@ An ordinary `delete.path` without selectors deletes a complete regular file. A r
 
 Inside Codemode, await independent edits on disjoint resources concurrently and overlapping resources in order. Pass a pending edit result directly to another source tool for dependent work; that boundary commits the batch before consuming the result. Await `tools.flush({})` when you need a committed receipt. Its text reports file and operation effects. A failed flush never replays edits.
 
-Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the parent result for actual committed effects: an acceptance is not proof of writing, and an error is not proof of rollback.
+Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the parent result for actual committed effects: an acceptance is not proof of writing, and an error is not proof of rollback. Read the affected files when the result cannot confirm their final state.
 
-Formatting and registered post-edit handlers run once per surviving resource at script end, not at flush or dependency boundaries. Reads inside the script see written but not yet formatted text. If final processing changes bytes, repeat Read/Search. Standalone edits finish post-edit work immediately.
-
-Ordinary script errors keep accepted edits. Abort or deadline discards pending writes, not batches that already committed. Inspect final results and retry only unapplied edits.
+After an interruption, read the affected files before retrying. Retry only unapplied edits.
 
 ## Specialized resources
 

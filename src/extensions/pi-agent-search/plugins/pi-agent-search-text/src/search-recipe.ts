@@ -66,7 +66,7 @@ export async function runSearchRecipe(
       notices.push(
         fallback.mode === "regex"
           ? "Search fallback: no literal matches; tried unquoted terms as regex."
-          : "Search fallback: no matches in earlier modes; tried separate words.",
+          : "Search fallback: no matches in earlier modes; tried separate words. Use these matches as location hints; refine the query before editing.",
       );
     } catch (error) {
       if (fallback.mode !== "regex" || !isRegexSyntaxError(error) || signal?.aborted) throw error;

@@ -8,9 +8,12 @@ export const writeSchema = Type.Object(
     path: {
       ...resultInputSchema,
       description:
-        "Path to create or overwrite, or one whole-file source result. Partial scopes and multiple files are rejected.",
+        "File path or one whole-file source result. Partial file scopes and multiple files are rejected. Use shell:<session> to send input to a running terminal.",
     },
-    content: Type.String({ description: "File content" }),
+    content: Type.String({
+      description:
+        "Complete file contents, or exact terminal input. Terminal input does not add Enter.",
+    }),
   },
   { additionalProperties: false },
 );
@@ -23,7 +26,7 @@ interface WriteParameters {
 export const writeMutationTool: TextMutationToolRegistration<typeof writeSchema> = {
   name: "write",
   description:
-    "Use write to create a new file or deliberately replace a file's entire contents. Supply the complete new text; existing contents are overwritten.",
+    "Use write to create or deliberately overwrite a whole file, or send input to a running terminal.",
 
   promptSnippet: "Create or overwrite files",
   parameters: writeSchema,
@@ -34,7 +37,10 @@ export const writeMutationTool: TextMutationToolRegistration<typeof writeSchema>
       [
         context.sourceFor("path"),
         {
-          changes: [context.sourceDocument.replaceAll(parameters.content)],
+          changes:
+            context.sourceDocument.content === parameters.content
+              ? []
+              : [context.sourceDocument.replaceAll(parameters.content)],
           action: "overwritten",
         },
       ],

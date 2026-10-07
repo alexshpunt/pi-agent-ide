@@ -251,7 +251,17 @@ function createRenderer(
           options.expanded,
           theme,
         );
-        return new Text("", 0, 0);
+        return new Text(
+          registration.name === "copy" &&
+            typeof result.details.metadata?.targetUnavailable === "string"
+            ? theme.fg(
+                "muted",
+                "No verified text selection. Read the destination before further edits.",
+              )
+            : "",
+          0,
+          0,
+        );
       }
 
       clearTypingRuntime(state);
@@ -272,14 +282,28 @@ function createRenderer(
       state.panel?.setPreviewResources([]);
 
       if (!context.isError && result.details.metadata?.emptyTargets === true) {
-        return new Text(theme.fg("muted", "No changes · empty target set"), 0, 0);
+        return new Text(
+          theme.fg(
+            "muted",
+            registration.name === "copy"
+              ? "No changes: empty selection."
+              : "No changes · empty target set",
+          ),
+          0,
+          0,
+        );
       }
       const wholeFileSucceeded = wholeFileOperationSucceeded(result.details);
       if (wholeFileSucceeded !== undefined) {
         return new Text(
           theme.fg(
             wholeFileSucceeded ? "success" : "error",
-            wholeFileSucceeded ? "✓ Applied" : "✗ Not applied",
+            wholeFileSucceeded
+              ? registration.name === "copy" &&
+                typeof result.details.metadata?.targetUnavailable === "string"
+                ? "✓ Applied · no verified text selection; read destination before further edits"
+                : "✓ Applied"
+              : "✗ Not applied",
           ),
           0,
           0,
@@ -292,7 +316,19 @@ function createRenderer(
         )
         .map((item) => item.text)
         .join("\n");
-      const displayedOutput = context.isError ? userFacingFailure(output, result.details) : output;
+      const rollback =
+        registration.name === "copy" ? result.details.metadata?.copyRollback : undefined;
+      const uncertainExecution =
+        registration.name === "copy" && result.details.metadata?.copyExecution === "uncertain";
+      const displayedOutput = context.isError
+        ? uncertainExecution
+          ? "Copy failed · effects uncertain; read destination before retrying"
+          : rollback === "restored"
+            ? "Copy failed · changes rolled back"
+            : rollback === "failed"
+              ? "Copy failed · rollback failed; read destination before retrying"
+              : userFacingFailure(output, result.details)
+        : output;
       return new Text(
         displayedOutput.length === 0
           ? ""
@@ -879,9 +915,9 @@ function userFacingFailure(
       ? "Rolled back · write failed"
       : "State unknown · rollback failed";
   }
-  if (details?.effect === "applied") {
-    return "Saved · post-write step failed";
-  }
+  if (details?.effect === "unknown") return "Effects unknown · edit failed";
+  if (details?.effect === "applied") return "Saved · post-write step failed";
+  if (details?.metadata?.rollback === "restored") return "Rolled back · edit failed";
   if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }
