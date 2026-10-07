@@ -202,6 +202,37 @@ jobs:
           REPORT_DIR: .agents/tmp/test-results
         run: pnpm test:integration:shards
 
+      - name: Capture agent interface
+        if: success()
+        run: >-
+          pnpm dev:export-agent-interface --
+          --transport rpc
+          --tools read,search,select,diff,write,replace,insert,delete,copy,move,undo,bash,codemode,tool_search
+
+      - name: Retain agent interface
+        if: always() && hashFiles('.tmp/prompt-snapshots/*.md') != ''
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: agent-interface
+          path: .tmp/prompt-snapshots/*.md
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain editor TUI traces
+        if: always() && steps.integration-tests.outcome == 'success'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: editor-tui-traces
+          path: |
+            .tmp/test-runs/tests/integration/native-codemode.integration.test.ts/**/run.jsonl
+            .tmp/test-runs/tests/integration/native-codemode.integration.test.ts/**/tui-rendered.log
+            .tmp/test-runs/tests/integration/native-nested-rendering.integration.test.ts/**/run.jsonl
+            .tmp/test-runs/tests/integration/native-nested-rendering.integration.test.ts/**/tui-rendered.log
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Smoke test nightly package
         if: success() && inputs.nightly
         shell: bash
