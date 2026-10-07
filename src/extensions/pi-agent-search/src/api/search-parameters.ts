@@ -28,7 +28,7 @@ export const searchSchema = Type.Object(
       Type.Integer({
         minimum: 1,
         maximum: 1000,
-        description: "Maximum detailed results returned to the agent (default 50)",
+        description: "Maximum displayed items, including compact file summaries (default 50).",
       }),
     ),
   },
