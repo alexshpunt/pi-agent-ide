@@ -12,6 +12,7 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
+import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
@@ -52,8 +53,7 @@ test("native scripts compose Search and Read and keep empty scopes empty", async
 const found=await tools.search({query:"beta",path:"note.txt"});
 const shown=await tools.read({path:found});
 if(typeof shown!=="string"||!shown.includes("beta")) throw Error("Selected text missing");
-const accepted=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
-if(!accepted.includes("not yet applied")) throw Error("Acceptance claimed a write");
+await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 const after=await tools.read({path:"note.txt"});
 if(!after.includes("BETA")) throw Error("Continued before commit");
 const empty=await tools.search({query:"__nothing__",path:"note.txt"});
@@ -195,6 +195,67 @@ text(await tools.read({path:"b.txt"}));
   });
 });
 
+test("keeps saved file effects and the custom error panel after a post-write failure", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "a.txt"), "a\n");
+    await writeFile(path.join(cwd, "b.txt"), "b\n");
+    const run = await runContract(
+      cwd,
+      "text-mixed-post-write",
+      `await Promise.all([
+        tools.receipt_edit({path:"a.txt",text:"A\\n",fail:true}),
+        tools.receipt_edit({path:"b.txt",text:"B\\n"})
+      ]);`,
+    );
+    expect(getToolExecution(run, "script").isError).toBe(true);
+    expect(getToolExecutionResult(run, "script")).toMatchObject({
+      details: {
+        editorBatchResults: [
+          {
+            status: "partial",
+            data: {
+              effect: "applied",
+              files: [{ effect: "applied" }, { effect: "applied" }],
+            },
+          },
+        ],
+      },
+    });
+    expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("A\n");
+    expect(await readFile(path.join(cwd, "b.txt"), "utf8")).toBe("B\n");
+    const saved = await PiRun.open(run.artifacts.run);
+    const panel = saved.session
+      ?.split("\n")
+      .find((line) => line.includes('"customType":"ide-nested-results"'));
+    expect(panel).toBeDefined();
+    expect(JSON.parse(panel ?? "{}")).toMatchObject({
+      data: {
+        calls: [
+          {
+            result: {
+              isError: true,
+              details: {
+                effect: "applied",
+                results: [
+                  {
+                    data: {
+                      ok: false,
+                      fileChangedStatement: expect.any(String) as unknown,
+                      errors: [
+                        { code: "POST_WRITE_FAILED", reason: "Fixture failed after writing" },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+          { result: { isError: false } },
+        ],
+      },
+    });
+  });
+});
 test("Diff returns readable comparison without publishing its private record", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\n");

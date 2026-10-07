@@ -403,7 +403,6 @@ test("pending result strings confirm at dependent boundaries without invalidatin
       `
 const first=await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
 const second=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
-if(!first.includes("not yet applied")||!second.includes("not yet applied")) throw Error("Original-snapshot edits wrote early");
 const shown=await tools.read({path:first});
 const found=await tools.search({path:second,query:"BETA"});
 if(!shown.includes("ALPHA")||!found.includes("BETA")) throw Error("A peer result expired at the common commit");

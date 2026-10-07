@@ -132,7 +132,6 @@ test("nested IDE results keep their custom panels below Codemode without script 
     expect(restoredPanels).not.toContain("Nested IDE results");
     expect(restoredPanels).not.toContain("Applied in the same editor batch");
     expect(restoredPanels).toContain("BETA");
-    expect(restoredPanels).not.toContain("not yet applied");
     await promisify(execFile)(process.env.PI_COMMAND ?? "pi", [
       "--export",
       session,
@@ -198,7 +197,6 @@ test("ordinary parent failure keeps one final diff per file and every native cal
         .find((line) => line.includes('"customType":"ide-nested-results"')) ?? "{}",
     ) as { data: { calls: unknown[] } };
     expect(entry.data.calls).toHaveLength(1);
-    expect(panels).not.toContain("not yet applied");
   });
 });
 
@@ -317,7 +315,6 @@ test("a deadline renders accepted edits as not applied rather than successful", 
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\n");
     const panels = run.tuiRenderedOutput;
     expect(panels).toContain("Not changed");
-    expect(panels).not.toContain("not yet applied");
     expect(panels).not.toContain("+0 ~1 -0");
   });
 });

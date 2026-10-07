@@ -37,6 +37,7 @@ async function runComposition(
     testName: name,
     artifactsDir: testArtifactsDir(import.meta.filename),
     rawMode: ![
+      "insert-missing-source-cause",
       "copy-structured-scope-header",
       "move-structured-scope-header",
       "immediate-mutation-final-formatting",
@@ -90,6 +91,74 @@ async function runComposition(
   }).run("Compose ordinary tools through source-aware results without rebuilding coordinates");
 }
 
+test("insert reports the missing-source cause without creating a file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runComposition(cwd, "insert-missing-source-cause", [
+      `const error = await rejects(()=>tools.insert({path:"missing.txt",anchor:"KEEP",text:"NEW"}));
+check(error.includes("ENOENT"),"The source read failure cause was lost");
+text(error);`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    await expect(readFile(path.join(cwd, "missing.txt"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+});
+
+test("insert leaves an empty selection alone without writing", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const file = path.join(cwd, "empty-insert.txt");
+    await writeFile(file, "keep\n");
+    const run = await runComposition(
+      cwd,
+      "insert-empty-selection",
+      [
+        `const before = await tools.fixture_file_state({path:"empty-insert.txt"});
+const empty = await tools.search({path:"empty-insert.txt",query:"absent"});
+text(await tools.insert({path:empty,text:"NEW"}));
+const after = await tools.fixture_file_state({path:"empty-insert.txt"});
+check(before===after,"Empty insertion wrote the file");`,
+      ],
+      [path.resolve("tests/integration/support/file-state-probe.ts")],
+    );
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(file, "utf8")).toBe("keep\n");
+  });
+});
+
+test("insert still rejects empty text with an empty selection", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "empty-insert.txt"), "keep\n");
+    const run = await runComposition(cwd, "insert-empty-selection-invalid-text", [
+      `const empty = await tools.search({path:"empty-insert.txt",query:"absent"});
+const rejected = await rejects(()=>tools.insert({path:empty,text:""}));
+check(typeof rejected==="string","Empty insert text was accepted");`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "empty-insert.txt"), "utf8")).toBe("keep\n");
+  });
+});
+
+test("insert treats a selected point as an insertion target", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "point-insert.txt"), "keep\n");
+    const run = await runComposition(cwd, "insert-point-selection", [
+      `const source = await tools.read({path:"point-insert.txt"});
+const point = await tools.select({path:source,operation:{kind:"position",edge:"before"}});
+text(await tools.insert({path:point,text:"NEW"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "point-insert.txt"), "utf8")).toBe("keep\nNEW");
+  });
+});
 test("copy result composes without exposing internal write stages", async () => {
   await withTempWorkspace(async (cwd) => {
     const source = "alpha\nbeta\n";
@@ -638,7 +707,7 @@ test("merged resource scheduling retains separate pending mutation targets", asy
     await writeFile(path.join(cwd, "second.txt"), "old\r\nprotected second");
     const run = await runComposition(cwd, "merged-concurrent-result-targets", [
       `const changes = await Promise.all([tools.replace({path:"first.txt",start:"old",text:"fresh"}), tools.replace({path:"second.txt",start:"old",text:"fresh"})]);
-for (const changed of changes) if (typeof changed !== "string" || !changed.includes("not yet applied") || !changed) throw Error(JSON.stringify(changed));
+for (const changed of changes) if (typeof changed !== "string" || !changed) throw Error(JSON.stringify(changed));
 const first = await tools.search({path:changes[0],query:"fresh"});
 const second = await tools.search({path:changes[1],query:"fresh"});
 if (typeof first !== "string" || typeof second !== "string" || matches(first).length !== 1 || matches(second).length !== 1 || matchRows(first)[0].source === matchRows(second)[0].source) throw Error("Concurrent targets crossed sources");
@@ -821,7 +890,7 @@ test("composes a pending replace result through scoped Search and another edit",
     );
     const run = await runComposition(cwd, "replace-result-search-replace", [
       `const changed = await tools.replace({path:"changed.txt",start:"old block",text:"fresh chunk"});
-if (typeof changed !== "string" || !changed.includes("not yet applied")) throw Error("Expected a pending native edit");
+if (typeof changed !== "string") throw Error("Expected a pending native edit");
 const found = await tools.search({path:changed,query:"fresh"});
 if (typeof found !== "string") throw Error(JSON.stringify(found));
 if (matches(found).length !== 1 || matchRows(found)[0].column !== 3) throw Error("Search escaped the new text or lost its source position");
@@ -1309,7 +1378,7 @@ test("composes inserted text without searching identical neighbors", async () =>
     await writeFile(path.join(cwd, "inserted.txt"), "same before\r\nanchor\r\nsame after");
     const run = await runComposition(cwd, "insert-result-search-replace", [
       `const changed = await tools.insert({path:"inserted.txt",anchor:"anchor",text:"same new"});
-if (typeof changed !== "string" || !changed.includes("not yet applied")) throw Error("Expected pending insert");
+if (typeof changed !== "string") throw Error("Expected pending insert");
 const found = await tools.search({path:changed,query:"same"});
 if (typeof found !== "string" || matches(found).length !== 1 || matchRows(found)[0].line !== 3) throw Error("Lost inserted scope");
 text(await tools.replace({path:found,text:"ONLY"}));`,
@@ -1503,6 +1572,62 @@ test.each([false, true])(
     });
   },
 );
+test("a saved Insert explains why formatting removed its reusable target", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+    );
+    await writeFile(path.join(cwd, "format.txt"), "old body\nTAIL\n");
+    const run = await new PiIntegrationTest({
+      testName: "insert-unavailable-formatted-target",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [
+        path.resolve("tests/integration/fixtures/forward-text-result.ts"),
+        path.resolve("src/pi-agent-ide.ts"),
+        path.resolve("tests/integration/support/native-post-edit-probe.ts"),
+      ],
+      tools: ["insert", "search"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "insert",
+              name: "insert",
+              arguments: { path: "format.txt", anchor: "old body", text: "format_me" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "reuse",
+              name: "search",
+              arguments: { path: "$previous-result", query: "FORMATTED" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Finished without replaying the saved Insert.")]),
+      ],
+    }).run("Report applied bytes without granting an unverified target");
+    expect(getToolExecution(run, "insert").isError).toBe(false);
+    expect(getToolExecution(run, "reuse").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "format.txt"), "utf8")).toBe(
+      "old body\nFORMATTED\nTAIL\n",
+    );
+    const result = getToolExecutionResult(run, "insert") as {
+      details?: { metadata?: { targetUnavailable?: string } };
+    };
+    const reason = result.details?.metadata?.targetUnavailable;
+    expect(reason).toBeDefined();
+    expect(getToolResultText(run, "insert")).toContain(reason);
+  });
+});
 test("retains separate sparse and multi-file ranges in a mutation result", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "a.txt"), "old one\nNEW gap\nold two\n");

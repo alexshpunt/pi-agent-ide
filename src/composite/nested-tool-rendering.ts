@@ -24,6 +24,8 @@ interface ChildPanel {
   renderArgs?: unknown;
   omitted?: boolean;
   batched?: boolean;
+  rollback?: boolean;
+  postWriteFailure?: boolean;
   unchangedCopy?: boolean;
   copyRollback?: "restored" | "failed";
   result?: { content: AgentToolResult<unknown>["content"]; details: unknown; isError: boolean };
@@ -240,9 +242,33 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
       if (!group) return;
       const details = compactMutationDetails(batch.result.details);
       const lastChangedCall = batch.calls.findLast((id) => !batch.unchangedCopyCalls?.includes(id));
+      const callIdsByResult: readonly unknown[] =
+        "callIdsByResult" in details && Array.isArray(details.callIdsByResult)
+          ? details.callIdsByResult
+          : [];
       for (const id of batch.calls) {
         const call = group.calls.find((call) => call.id === id);
         if (!call) continue;
+        const postWriteResults =
+          details.results?.filter(
+            (result, index) =>
+              (callIdsByResult[index] === id ||
+                (callIdsByResult.length === 0 && batch.calls.length === 1)) &&
+              result.data.errors?.some(
+                (error) => error.code === "POST_WRITE_FAILED" || error.code === "POST_EDIT_FAILED",
+              ),
+          ) ?? [];
+        call.postWriteFailure = postWriteResults.length > 0;
+        if (call.postWriteFailure) {
+          call.batched = false;
+          delete call.renderArgs;
+          retainResult(group, call, {
+            content: batch.result.content,
+            details: { results: postWriteResults, effect: "applied" },
+            isError: true,
+          });
+          continue;
+        }
         const copyResult = batch.copyResults?.get(id);
         const rollback = copyResult?.details.metadata?.copyRollback;
         if (
@@ -274,10 +300,12 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
           // A multi-file batch has no single source: let the existing renderer label each file.
           if (new Set(details.mutationRender?.map((resource) => resource.path)).size > 1)
             call.renderArgs = {};
+          call.rollback =
+            details.results?.some((result) => result.data.rollback !== undefined) === true;
           retainResult(group, call, {
             content: batch.result.content,
             details,
-            isError: batch.result.isError === true,
+            isError: batch.result.isError === true || call.rollback,
           });
         }
       }
@@ -297,7 +325,8 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
             const call = group.calls.find((call) => call.id === operation.id);
             if (!call) continue;
             const errors = operation.errors.map((error) => error.message);
-            if (call.copyRollback !== undefined) continue;
+            // Keep precise failure effects and their custom error panels.
+            if (call.rollback || call.postWriteFailure || call.copyRollback !== undefined) continue;
             if (call.unchangedCopy && errors.length === 0 && operation.effect === "not-applied")
               continue;
             if (errors.length > 0 || operation.effect !== "applied") {

@@ -691,15 +691,15 @@ async function failTextBatch(
   reporter: BatchExecutionReporter,
   copyResults: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>> = new Map(),
 ): Promise<AgentToolResult<TextBatchDetails>> {
-  const cause = error;
   const failure = isTextResourceEditFailure(error)
     ? error
     : {
         code: "INVALID_REQUEST" as const,
         source: "",
-        message: errorMessage(cause),
-        cause,
+        message: errorMessage(error),
+        cause: error,
       };
+  const cause = Object.assign(new Error(failure.message), { code: failure.code });
   const failedCallId = callIds[0];
   const failedResult = await buildFailedTextMutationResult(core, failure, context);
   const results: FileMutationResult[] = [];
@@ -709,7 +709,7 @@ async function failTextBatch(
     const result = copyResult ?? (callId === failedCallId ? failedResult : undefined);
     reporter.fail(callId, {
       error: cause,
-      effect: copyResult?.details.effect ?? "not-applied",
+      effect: copyResult?.details.effect ?? failedResult.details.effect ?? "not-applied",
       ...(result !== undefined && { result }),
     });
     for (const item of result?.details.results ?? []) {

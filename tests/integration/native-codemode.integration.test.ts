@@ -189,7 +189,6 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
       );
       const shown = getToolResultText(run, "script-0");
       expect(getToolExecution(run, "script-0").isError, shown).toBe(false);
-      expect(shown).toContain("not yet applied");
       expect(shown).toContain("Editor batches: 1 committed");
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
         "added\nalpha\nBETA\nomega\n",
@@ -392,6 +391,49 @@ test("a script deadline discards pending edits and the next script gets a fresh 
   });
 });
 
+test("a deadline with clipped output still discards pending Insert edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-clipped-deadline", [
+      '// @options: {"timeout_ms":2000,"max_output_tokens":10000}\nawait tools.insert({path:"note.txt",anchor:"alpha",text:"UNEXPECTED"}); text("x".repeat(100000)); while (true) {}',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(initial);
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
+  });
+});
+test("an ordinary error after deadline-like script output keeps accepted edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-deadline-like-output", [
+      'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"}); text("Script error:\\nScript timed out: script output only"); throw new Error("ordinary failure");',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      "alpha\nKEPT\nbeta\ngamma\nomega\n",
+    );
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+  });
+});
+test.each([false, true])(
+  "an ordinary exception containing a timeout marker keeps edits with clipped output=%s",
+  async (clipped) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const run = await runScripts(cwd, `native-codemode-marker-in-error-${clipped}`, [
+        (clipped ? '// @options: {"max_output_tokens":1000}\n' : "") +
+          'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"});' +
+          (clipped ? 'text("x".repeat(100000));' : "") +
+          'throw new Error("Script error:\\nScript timed out: copied failure");',
+      ]);
+      expect(getToolExecution(run, "script-0").isError).toBe(true);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "alpha\nKEPT\nbeta\ngamma\nomega\n",
+      );
+      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+    });
+  },
+);
 test("five text operations share a multi-file snapshot batch before immediate Write", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);

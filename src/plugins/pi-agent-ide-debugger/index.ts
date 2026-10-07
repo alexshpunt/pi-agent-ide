@@ -233,6 +233,11 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
     id: "debugger",
     setup(api) {
       api.addResolver({ resolver: editorResolver });
+      api
+        .tool("insert")
+        .describe(
+          'For debug:<session>, omit anchor and put start, continue, step over, step into, step out, or evaluate <expression> in text. Evaluate requires a stopped frame. For debug:<session>/source, use a fresh Read/Search line anchor and text "breakpoint"; the result reports pending or verified readiness. These actions do not edit source text.',
+        );
       api.tool("insert").addSemanticHandler({
         matches: (input) => matchesDebugInsert(input, manager),
         execute: async (context, input) => {
@@ -254,7 +259,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
             );
             return {
               source: breakpoint.source,
-              summary: `Breakpoint ${breakpoint.source} created at ${path.relative(session.options.cwd, breakpoint.file)}:${breakpoint.line}.`,
+              summary: `Breakpoint ${breakpoint.source} registered at ${path.relative(session.options.cwd, breakpoint.file)}:${breakpoint.line} (${breakpoint.verified ? "verified" : "pending"}).`,
               data: {
                 kind: "debug-breakpoint",
                 session: session.source,
@@ -485,6 +490,7 @@ function createDebugResourceResolver(manager: DebugSessionManager, id: string): 
         resource: {
           source,
           async read() {
+            await manager.refresh(session);
             const sourceFile = manager.sourceFile(source);
             if (sourceFile !== undefined) {
               return [debugSourceContent(sourceFile, await manager.readSource(source))];
