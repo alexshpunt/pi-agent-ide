@@ -287,6 +287,27 @@ export class FileMutationAgentResult {
 
   // ── Success formatting ────────────────────────────────────────────────
 
+  private formatFormatting(formatting: FileMutationResult["data"]["formatting"]): string {
+    const by = formatting?.formatter === undefined ? "" : ` (${formatting.formatter})`;
+    switch (formatting?.status) {
+      case "changed": {
+        return `Formatted${by}.`;
+      }
+      case "unchanged": {
+        return `Already formatted${by}.`;
+      }
+      case "unavailable": {
+        return "No formatter is available for this file.";
+      }
+      case "failed": {
+        return `Formatting failed${by}. Read the saved file before retrying.`;
+      }
+      default: {
+        return `Formatting: ${formatting?.status ?? "not-reported"}${by}.`;
+      }
+    }
+  }
+
   private formatSuccess(fmr: FileMutationResult): string {
     const operations = fmr.data.operations ?? [];
     const verbs: Record<string, string> = {
@@ -295,7 +316,6 @@ export class FileMutationAgentResult {
       delete: "Deleted selected text",
       copy: "Copied selected text",
       move: "Moved selected text",
-      write: "Wrote file content",
       undo: "Restored file content",
       stage: "Staged selected changes",
       unstage: "Unstaged selected changes",
@@ -304,15 +324,24 @@ export class FileMutationAgentResult {
       operations.length === 0
         ? "Changes applied."
         : operations
-            .map(
-              ({ operation, changes }) =>
-                `${verbs[operation] ?? `Applied ${operation}`}: ${changes} text change(s) in this file.`,
+            .map(({ operation, changes }) =>
+              operation === "write"
+                ? "Saved file."
+                : `${verbs[operation] ?? `Applied ${operation}`}: ${changes} text change(s) in this file.`,
             )
             .join("\n"),
-      `Formatting: ${fmr.data.formatting?.status ?? "not-reported"}${fmr.data.formatting?.formatter === undefined ? "" : ` (${fmr.data.formatting.formatter})`}.`,
+      this.formatFormatting(fmr.data.formatting),
     ];
 
-    for (const status of fmr.data.diffStatuses ?? []) blocks.push(status.text);
+    for (const status of fmr.data.diffStatuses ?? []) {
+      if (
+        status.formattingStatus !== undefined &&
+        status.formattingStatus === fmr.data.formatting?.status &&
+        status.formatter === fmr.data.formatting.formatter
+      )
+        continue;
+      blocks.push(status.text);
+    }
     for (const diff of fmr.diffs) {
       const path = /^--- (.+)$/m.exec(diff)?.[1] ?? fmr.path ?? "<unknown file>";
       blocks.push(renderFinalStateFragment(fmr, path).join("\n"));

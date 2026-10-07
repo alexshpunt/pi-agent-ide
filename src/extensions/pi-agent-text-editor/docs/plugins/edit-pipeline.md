@@ -68,7 +68,9 @@ Resource failures become `TextResourceEditFailure` outcomes. A thrown caller mut
 
 Core builds the mutation plan from that engine result. The plan contains each original document, final document, existence state, and applied changes. Committed mutation guards run in registration order before the first write. A guard may accept the plan or return a structured, not-applied rejection. A thrown guard is a plugin failure; an expected rejection uses `MUTATION_REJECTED`.
 
-Resource resolution, reads, anchor and target validation, change application, and guards all finish before persistence. Failures in those steps write nothing. If a write fails after another Resource was written, core attempts to restore the failed Resource and every earlier write from their saved snapshots. `WRITE_FAILED` states whether rollback completed and lists any Resources that could not be restored. Failures after all writes and final rereads may instead report that the effect was already applied.
+Resource resolution, reads, anchor and target validation, change application, and guards all finish before persistence. Failures in those steps write nothing. If any write fails, core waits for every attempted write and tries to restore all attempted Resources from their saved text. A `WRITE_FAILED` outcome records failed restorations in `failure.rollback.failed` and previously absent Resources in `failure.rollback.originallyMissing`; neither list counts as completed writes. Restoration failures or prior absence leave effects unknown. Restoring empty text does not prove that a newly created Resource is absent again. Failures after all writes and final rereads may instead report an already applied effect.
+
+If finalization throws after writes succeed, core reports `POST_WRITE_FAILED` and keeps those confirmed writes in `completed`. It does not roll them back or treat the exception as invalid input. A later edit-stage handler failure leaves overall effects unknown, even when completion events confirm individual changed files. The result keeps those file effects without turning an uncertain overall outcome into success.
 
 ## Ordering
 
