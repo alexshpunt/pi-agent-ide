@@ -99,9 +99,9 @@ test("reads clean titled Markdown and resolves redirected relative links from th
 test("preserves text, JSON, empty text, and text ranges", async () => {
   expect(getToolResultText(await runRead("/text", "web-text"))).toBe("first\nsecond\nthird\n");
   expect(getToolResultText(await runRead("/json", "web-json"))).toBe('{"ok":true}\n');
-  expect(getToolResultText(await runRead("/empty", "web-empty"))).toBe("");
+  expect(getToolResultText(await runRead("/empty", "web-empty"))).toBe("[Empty source.]");
   expect(getToolResultText(await runRead("/text", "web-text-range", { offset: 2, limit: 1 }))).toBe(
-    "second\n\n[1 more lines in source. Use offset=3 to continue.]",
+    `second\n\n[1 more line in source. Read "${baseUrl}/text" with offset=3 to continue.]`,
   );
 });
 
@@ -150,7 +150,13 @@ test("returns a bounded preview for unsupported binary content", async () => {
   const result = getToolResultMessage(run, "read");
   expect(result.isError).toBe(false);
   expect(result).toMatchObject({ details: { resolvedBy: "web" } });
-  expect(getToolResultText(run)).toContain("the remaining body was not downloaded");
+  const output = getToolResultText(run);
+  expect(output).toContain("Unsupported binary response");
+  expect(output).toContain("Read cannot convert this Content-Type.");
+  expect(output).toContain("Preview: first 2 bytes (hex).");
+  expect(output).toContain("c3 28");
+  expect(output).not.toContain("the remaining body was not downloaded");
+  expect(output.match(/application\/octet-stream/gu)).toHaveLength(1);
 });
 
 test("recovers HTTP 403 through real Chromium within one read call", async () => {

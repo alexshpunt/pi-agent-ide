@@ -58,8 +58,6 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
       api.describe({
         path: "ast:<path> — compact declaration outline for a code file.",
         views: "ast — scope boundaries alongside source text.",
-        offset:
-          "Oversized code reads may return an outline with source line numbers; offset/limit select a smaller source range.",
       });
       await registerSelect(pi, api);
     },

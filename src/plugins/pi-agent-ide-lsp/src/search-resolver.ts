@@ -108,7 +108,6 @@ export function createLspSearchResolver(
               );
       if (result.complete && result.hits.length)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
-      if (!result.complete) lines.push("Incomplete results; not a complete edit scope.");
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
       return {
         content: [{ type: "text", text: [heading, ...lines].join("\n") }],

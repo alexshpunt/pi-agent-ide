@@ -200,7 +200,11 @@ export function formatFuzzyCandidate(candidate: FuzzyCandidateData): string {
     `Possible name: ${candidate.identifier} (${candidate.reason})`,
     `${candidate.matchCount}${suffix} ${candidate.matchCount === 1 && candidate.selection.complete ? "match" : "matches"} in ${candidate.fileCount}${suffix} ${candidate.fileCount === 1 && candidate.selection.complete ? "file" : "files"}`,
     `Exact alternative: ${JSON.stringify(candidate.identifier)} (case-sensitive, whole identifier)`,
-    ...(candidate.selection.complete ? [] : ["Capture limit reached; no complete all reference."]),
+    ...(candidate.selection.complete
+      ? []
+      : [
+          "Capture limit reached; no complete all reference. Inspect the returned location; do not treat this candidate as a complete match set.",
+        ]),
     ...(read
       ? [`Read: ${read}${reference || !first ? "" : ` · line ${first.range.startLine}`}`]
       : []),
