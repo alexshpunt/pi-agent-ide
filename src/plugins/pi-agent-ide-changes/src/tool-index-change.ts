@@ -45,6 +45,22 @@ export const indexChangeSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const unstageChangeSchema = Type.Object(
+  {
+    file: {
+      ...indexChangeSchema.properties.file,
+      description:
+        "Path to a tracked text file in the current Git worktree. Relative paths resolve from the workspace.",
+    },
+    change: {
+      ...indexChangeSchema.properties.change,
+      description:
+        'Select one complete current CHANGE#HASH anchor returned by read with views: ["changes"].',
+    },
+  },
+  { additionalProperties: false },
+);
+
 interface IndexChangeToolDetails {
   readonly action: ChangeIndexAction;
   readonly change: string;
@@ -87,8 +103,11 @@ export function createIndexChangeTool(
     label: action,
 
     promptSnippet: `${pastTense.slice(0, -1)} a selected Git change`,
-    description: `Use ${action} to ${action === "stage" ? "add one current Git change to the index" : "remove one current Git change from the index"}. Select the change with a CHANGE# anchor; worktree content is kept.`,
-    parameters: indexChangeSchema,
+    description:
+      action === "unstage"
+        ? "Use unstage to remove one selected Git change from the index. Worktree content is kept."
+        : "Use stage to add one current Git change to the index. Select the change with a CHANGE# anchor; worktree content is kept.",
+    parameters: action === "unstage" ? unstageChangeSchema : indexChangeSchema,
     outputSchema: indexOutputSchema,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       try {

@@ -152,9 +152,10 @@ check(items(split).length===100 && split.includes("105 selection(s)") && split.i
 const tail=await tools.search({path:split,query:"item104"});
 check(matches(tail).length===1,"Full target lost beyond preview");
 const point=await tools.select({path:tail,operation:{kind:"position",edge:"after"}});
-store("textPoint",point);
 const blank=await tools.select({path:point,operation:{kind:"split",delimiter:","}});
-check(items(blank).length===1 && blank.endsWith(String.fromCharCode(10)),"Zero-width split lost");
+const boundary=items(blank)[0];
+check(items(blank).length===1 && boundary.startLine===boundary.endLine && boundary.startColumn===boundary.endColumn,"Zero-width split lost");
+store("textPoint",blank);
 text({segments:105,shown:100,point:true});`,
       `const selected=await tools.select({path:load("textPoint"),operation:{kind:"sliceText",from:0,to:0}});
 text(await tools.replace({path:selected,text:"!"}));

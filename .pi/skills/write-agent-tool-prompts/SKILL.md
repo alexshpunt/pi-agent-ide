@@ -22,36 +22,56 @@ Keep conditions precise. An imperative does not make every available action mand
 
 State facts as facts: defaults, accepted values, limits, effects and result formats. Keep `end is optional` declarative. Replace weak behavioral language, not every occurrence of a modal word mechanically.
 
-## Keep prompt layers separate
+## Put each detail where the agent needs it
 
 ### Available tools
 
 Use promptSnippet as a short capability index. Keep it to one distinguishing phrase. Do not put parameter contracts or workflows there.
 
-### Tool descriptions and schemas
+### Tool descriptions
 
-Schemas own what the tool does: callable inputs, defaults, limits, effects and errors. Begin each IDE-owned top-level schema description with `Use <tool> to ...` and state its operation. Keep use cases and recommendations about choosing neighboring tools out of that description. Preserve factual references needed to use returned resources or anchors.
+Explain how to use the tool and what it helps the agent do. Begin each IDE-owned description with `Use <tool> to ...`. Keep the description useful for an ordinary call, not a summary of every argument, exception and backend mechanism.
 
-Place parameter-specific instructions beside that parameter. Use direct instructions with explicit conditions. Preserve the full callable contract without implementation jargon. Do not move required parameter semantics into guidelines or the capability index.
+Leave parameter syntax, defaults, units and accepted values in the relevant schema fields. Do not preload output limits, internal bookkeeping or explanations of situations that have not happened.
 
-### Guidelines
+### Schema fields
 
-Guidelines exclusively own when and how to choose or combine tools and cross-tool workflows. Use imperatives for source selection, grouping independent calls and recovery from partial success. Keep tool effects, input defaults, limits and errors in schemas. Keep each rule general enough for ordinary project work; keep benchmark names, fixture patterns and scoring goals out of prompts.
+Put each argument's calling details beside that argument: accepted forms, defaults, units, constraints and effects needed to make a valid, intentional call. Keep required input information available before the call; progressive disclosure is not a reason to hide it.
 
-State each semantic contract once. When text appears in more than one layer, keep it only in the owning layer unless the second sentence adds a distinct workflow decision.
+Describe supported inputs, not their implementation. Do not repeat field explanations in the tool description, system prompt or unrelated fields.
+
+### System prompt rules
+
+Use general rules for choosing and combining tools. Keep cross-tool workflows here when they guide ordinary work. Do not turn these rules into a catalog of parameters, internal mechanisms or possible failures.
+
+### Progressive disclosure
+
+Explain implementation details and complex cases only when they become relevant. Use the matching guide for a detailed workflow and the actual tool result for a situation the agent has encountered.
+
+If output reaches a limit, explain it in that result and provide the actual continuation offset or saved-output reference. Do not announce the output cap in the initial tool description. If a call fails, explain that failure and its recovery there instead of teaching every error path before the first call.
+
+Give the agent enough information for its next action, not a tour of the internals. State each detail once at the relevant layer unless another occurrence adds a different, necessary instruction.
 
 ## Preserve conceptual boundaries
 
 Distinguish the operation from its selector: edits change content, while anchors locate it. Distinguish source from view: path selects content, views annotate it. Use public parameter names where needed and plain language elsewhere.
 
+## Track each tool and state
+
+Create one tool subtask under the prompt-review task. Build its agent-facing finite-state machine (FSM) from the implementation and supported behavior before creating state subtasks. Record each state and the conditions for entering it. Keep independent dimensions, such as warnings and source readiness, separate instead of pretending they are mutually exclusive outcomes.
+
+After building the FSM, create one state subtask under that tool subtask for every identified state. Use real parent-child links so no state is lost between reviews. Keep these task shells limited to the state, its conditions, and two reference fields: `Current agent prompt` and `Tool schema`. Leave both reference fields as `TBD` by default. Do not add proposed wording, fixes or an implementation plan when creating the shells.
+
+Immediately before starting a state subtask, capture the current effective agent prompt and tool schema from the configured runtime and fill its reference fields. Include relevant result guidance for that state. Use this fresh baseline for the review; do not treat an earlier capture as the current interface. Agree the proposed change in chat before applying it. Creating the state backlog does not approve its later rewrites.
+
 ## Review each iteration
 
 1. Read the implementation and identify the behavior the wording promises.
-2. Separate facts from behavioral rules. Express every rule as a direct, conditional instruction.
+2. Put usage in the description, argument details in their schema fields, and situational explanations in progressive guidance. Express behavioral rules as direct, conditional instructions.
 3. Check supported capabilities against the implementation and executable tests. Preserve useful contracts while removing duplicates.
 4. Capture the effective system prompt and tool schemas from the real configured Pi runtime.
 5. Read the complete captured prompt and every schema after each iteration. Judge them as instructions an agent must act on, not isolated source strings.
-6. Check that each tool explains when to use it, parameters match runtime behavior, and workflow rules reached the model.
+6. Check that descriptions explain tool use without duplicating fields or anticipating every failure. Check that parameter details match runtime behavior and situational guidance gives the next action when needed.
 7. Keep correctness and tool-choice outcomes separate in experiments. Retain every attempt; use the eval repository's repeat-confirmation rules before claiming improvement.
 
 Keep historical snapshots as evidence. Generate a fresh review artifact instead of silently replacing the historical baseline.

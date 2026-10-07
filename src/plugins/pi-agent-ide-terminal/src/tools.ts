@@ -34,7 +34,7 @@ const createRunParameters = (profile: ShellProfile) =>
       background: Type.Optional(
         Type.Boolean({
           description:
-            "Return immediately while the terminal session continues. Defaults to false.",
+            "Set true to return after an initial output preview instead of waiting for completion. Defaults to false.",
         }),
       ),
       timeoutSeconds: Type.Optional(
@@ -42,7 +42,7 @@ const createRunParameters = (profile: ShellProfile) =>
           minimum: 0.1,
           maximum: 86_400,
           description:
-            "Maximum foreground wait in seconds before returning the live session as background. Defaults to 60.",
+            "Set the foreground wait limit in seconds. On expiry, the live session returns in background without stopping the process. Ignored when background is true. Defaults to 60.",
         }),
       ),
       cwd: Type.Optional(
@@ -91,7 +91,7 @@ export function registerTerminalTools(
       promptGuidelines: [
         `Do not use ${toolName} commands or scripts to edit files. Use the standalone editing tools instead. Commands that inherently generate files, such as formatters and code generators, are allowed.`,
       ],
-      description: `Use ${toolName} to execute a command in the user's configured ${profile.displayName} shell (${profile.executable}). Every call creates an addressable terminal session. Set background to true to continue without waiting. A foreground wait automatically returns the live session as background on timeout, a stable interactive prompt, or turn abort. Background completion is delivered automatically and wakes the agent. Silent background sessions wake an idle agent once for inspection after two minutes, with no further stale reminders for that session. Sessions survive extension reloads and keep the same shell: source. Output uses the shared Read limits, keeps the tail, and links a complete log file when truncated.`,
+      description: `Use ${toolName} to execute a command in the user's configured shell. Each call creates a new terminal session and returns its shell: source for inspection and interaction.`,
       parameters: runParameters,
       outputSchema: shellOutputSchema,
       async execute(_toolCallId, input, signal, onUpdate, context) {
