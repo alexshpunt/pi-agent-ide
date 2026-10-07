@@ -1607,6 +1607,10 @@ function failureToolResult(
     ok: false,
     path: source,
     errors: [{ path: source, code, reason }],
+    ...(effect === "applied" && {
+      fileChangedStatement:
+        "The edit was saved, but a post-write step failed. Run Read/Search before editing this resource again.",
+    }),
     ...(rollback !== undefined && {
       rollback,
       fileChangedStatement:

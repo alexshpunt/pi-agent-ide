@@ -879,6 +879,9 @@ function userFacingFailure(
       ? "Rolled back · write failed"
       : "State unknown · rollback failed";
   }
+  if (details?.effect === "applied") {
+    return "Saved · post-write step failed";
+  }
   if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }

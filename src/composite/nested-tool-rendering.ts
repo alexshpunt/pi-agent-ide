@@ -25,6 +25,7 @@ interface ChildPanel {
   omitted?: boolean;
   batched?: boolean;
   rollback?: boolean;
+  postWriteFailure?: boolean;
   result?: { content: AgentToolResult<unknown>["content"]; details: unknown; isError: boolean };
 }
 interface BatchReport {
@@ -239,9 +240,30 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
       const group = groups.get(batch.parentToolCallId);
       if (!group) return;
       const details = compactMutationDetails(batch.result.details);
+      const callIdsByResult: readonly unknown[] =
+        "callIdsByResult" in details && Array.isArray(details.callIdsByResult)
+          ? details.callIdsByResult
+          : [];
       for (const id of batch.calls) {
         const call = group.calls.find((call) => call.id === id);
         if (!call) continue;
+        const postWriteResults =
+          details.results?.filter(
+            (result, index) =>
+              callIdsByResult[index] === id &&
+              result.data.errors?.some((error) => error.code === "POST_WRITE_FAILED"),
+          ) ?? [];
+        call.postWriteFailure = postWriteResults.length > 0;
+        if (call.postWriteFailure) {
+          call.batched = false;
+          delete call.renderArgs;
+          retainResult(group, call, {
+            content: batch.result.content,
+            details: { results: postWriteResults, effect: "applied" },
+            isError: true,
+          });
+          continue;
+        }
         // Native history keeps every call; user presentation keeps the final batch diff only.
         call.batched = id !== batch.calls.at(-1);
         if (call.batched) call.result = undefined;
@@ -274,8 +296,8 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
             const call = group.calls.find((call) => call.id === operation.id);
             if (!call) continue;
             const errors = operation.errors.map((error) => error.message);
-            // Keep the final rollback result and its custom error panel.
-            if (call.rollback) continue;
+            // Keep precise failure effects and their custom error panels.
+            if (call.rollback || call.postWriteFailure) continue;
             if (errors.length > 0 || operation.effect !== "applied") {
               call.batched = false;
               delete call.renderArgs;
