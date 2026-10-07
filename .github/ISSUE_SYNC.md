@@ -17,9 +17,10 @@ Merging them into `develop` does not turn on the issue trigger.
 ## Reruns and failures
 
 The script derives a stable Linear UUID from the immutable GitHub repository and
-issue IDs. It looks up that UUID, including archived issues, before creating an
-issue. If creation loses its response or overlaps another run, it checks the same
-UUID again. It never generates a new UUID on retry or overwrites an existing issue.
+issue IDs. Linear only accepts client IDs in UUID v4 format, so the fixed source
+hash uses that format. The script looks up that UUID, including archived issues,
+before creating an issue. If creation loses its response or overlaps another run,
+it checks the same UUID again. It never generates a new UUID on retry or overwrites an existing issue.
 Do not change the UUID namespace or source-ID format: that would break this link.
 
 API errors and missing authentication fail the Actions job. The job log and
