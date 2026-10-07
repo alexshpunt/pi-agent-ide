@@ -39,6 +39,16 @@ async function runComposition(
       "copy-structured-scope-header",
       "move-structured-scope-header",
       "immediate-mutation-final-formatting",
+      "copy-identical-structured",
+      "copy-identical-legacy",
+      "copy-empty-result-presentation",
+      "copy-no-op-after-peer-edit",
+      "copy-rollback-reporting",
+      "copy-rollback-standalone",
+      "copy-rollback-native-restored",
+      "copy-rollback-native-unrestored",
+      "copy-execution-failure",
+      "file-operation-binary-and-refusal",
     ].includes(name),
     cwd,
     extensions: [
@@ -79,6 +89,537 @@ async function runComposition(
   }).run("Compose ordinary tools through source-aware results without rebuilding coordinates");
 }
 
+test("copy result composes without exposing internal write stages", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const source = "alpha\nbeta\n";
+    await writeFile(path.join(cwd, "source.txt"), source);
+    await writeFile(path.join(cwd, "target.txt"), "head\ntail\nalpha outside\n");
+    const run = await runComposition(cwd, "copy-result-composition", [
+      `const copied = await tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"});
+check(!/\\b(?:accepted|pending)\\b/iu.test(copied),"Copy exposed internal write stages");
+text(copied);
+await tools.replace({path:copied,text:"CHANGED\\n"});`,
+    ]);
+    const result = getToolResultText(run, "compose-0");
+    expect(getToolExecution(run, "compose-0").isError, result).toBe(false);
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(source);
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+      "head\nCHANGED\ntail\nalpha outside\n",
+    );
+  });
+});
+
+test.each(["structured", "legacy"] as const)(
+  "identical selected-text copy keeps its destination without writing (%s)",
+  async (route) => {
+    await withTempWorkspace(async (cwd) => {
+      const target = path.join(cwd, "format.txt");
+      const source = "format_me\n";
+      const destination = "head\nformat_me\ntail\nformat_me outside\n";
+      await writeFile(path.join(cwd, "source.txt"), source);
+      await writeFile(target, destination);
+      const copy =
+        route === "structured"
+          ? `const source=await tools.search({path:"source.txt",query:"format_me"});
+const destination=await tools.search({path:"format.txt",query:"format_me"});
+await rejects(()=>tools.replace({path:matches(destination)[0],text:"format_me"}),/must change/);
+await rejects(()=>tools.move({path:source,target:matches(destination)[0]}),/must change/);
+const copied=await tools.copy({path:source,target:matches(destination)[0]});`
+          : `const copied=await tools.copy({path:"source.txt",start:"format_me",target:"format.txt",targetStart:"format_me\\n",targetEnd:"format_me\\n"});`;
+      const run = await runComposition(
+        cwd,
+        `copy-identical-${route}`,
+        [
+          `const before=await tools.fixture_copy_stat({});\n` +
+            copy +
+            `
+check(copied.includes("No changes: destination already has this text."),"No-op Copy did not explain its outcome");
+text(copied);
+check(matches(await tools.search({path:copied,query:"format_me"})).length===1,"No-op Copy lost or widened its destination");
+check(matches(await tools.search({path:copied,query:"outside"})).length===0,"No-op Copy includes neighbors");
+check(await tools.fixture_copy_stat({})===before,"No-op Copy wrote its destination");`,
+        ],
+        [
+          path.resolve("tests/integration/support/native-post-edit-probe.ts"),
+          path.resolve("tests/integration/support/copy-no-op-probe.ts"),
+        ],
+      );
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(source);
+      expect(await readFile(target, "utf8")).toBe(destination);
+      expect(run.tuiRenderedOutput).toContain("No changes: destination already has this text.");
+      await expect(readFile(path.join(cwd, "post-edit-events.jsonl"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    });
+  },
+);
+
+test.each([1, 2])("standalone identical-text Copy reports its no-op (%i calls)", async (count) => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+    const targets = Array.from({ length: count }, (_, index) => `destination-${index}.txt`);
+    for (const target of targets)
+      await writeFile(path.join(cwd, target), "head\nalpha\ntail\nalpha outside\n");
+    const run = await runComposition(
+      cwd,
+      `copy-identical-standalone-${count}`,
+      [
+        `for (let index=0;index<${count};index++) {
+const copied=await tools.fixture_copy_result({id:"copy-direct-"+index});
+check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Standalone no-op Copy lost destination scope");
+check(matches(await tools.search({path:copied,query:"outside"})).length===0,"Standalone no-op Copy includes neighbors");
+text(await tools.replace({path:copied,text:"NEW\\n"}));
+}`,
+      ],
+      [path.resolve("tests/integration/support/copy-no-op-probe.ts")],
+      [
+        assistantMessage(
+          targets.map((target, index) =>
+            toolCall({
+              id: `copy-direct-${index}`,
+              name: "copy",
+              arguments: {
+                path: "source.txt",
+                start: "alpha",
+                target,
+                targetStart: "alpha\n",
+                targetEnd: "alpha\n",
+              },
+            }),
+          ),
+          { stopReason: "toolUse" },
+        ),
+      ],
+    );
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    for (const [index, target] of targets.entries()) {
+      expect(
+        getToolExecution(run, `copy-direct-${index}`).isError,
+        getToolResultText(run, `copy-direct-${index}`),
+      ).toBe(false);
+      expect(getToolResultText(run, `copy-direct-${index}`)).toContain(
+        "No changes: destination already has this text.",
+      );
+      expect(await readFile(path.join(cwd, target), "utf8")).toBe(
+        "head\nNEW\ntail\nalpha outside\n",
+      );
+    }
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+  });
+});
+test.each([false, true])(
+  "standalone changed Copy retains destination authority (rejected peer: %s)",
+  async (rejectedPeer) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+      await writeFile(path.join(cwd, "target.txt"), "head\ntail\nalpha outside\n");
+      await writeFile(path.join(cwd, "bad.txt"), "head\ntail\n");
+      const calls = [
+        toolCall({
+          id: "copy-direct",
+          name: "copy",
+          arguments: {
+            path: "source.txt",
+            start: "alpha",
+            target: "target.txt",
+            targetStart: "head",
+          },
+        }),
+      ];
+      if (rejectedPeer)
+        calls.push(
+          toolCall({
+            id: "copy-bad",
+            name: "copy",
+            arguments: {
+              path: "source.txt",
+              start: "ABSENT",
+              target: "bad.txt",
+              targetStart: "head",
+            },
+          }),
+        );
+      const run = await runComposition(
+        cwd,
+        `copy-changed-standalone-${rejectedPeer}`,
+        [
+          `const copied=await tools.fixture_copy_result({id:"copy-direct"});
+check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Copy lost destination authority");
+check(matches(await tools.search({path:copied,query:"outside"})).length===0,"Copy widened authority");
+text(await tools.replace({path:copied,text:"NEW\\n"}));`,
+        ],
+        [path.resolve("tests/integration/support/copy-no-op-probe.ts")],
+        [assistantMessage(calls, { stopReason: "toolUse" })],
+      );
+      for (const id of ["copy-direct", "compose-0"])
+        expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+      if (rejectedPeer) expect(getToolExecution(run, "copy-bad").isError).toBe(true);
+      expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+      expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+        "head\nNEW\ntail\nalpha outside\n",
+      );
+      expect(await readFile(path.join(cwd, "bad.txt"), "utf8")).toBe("head\ntail\n");
+    });
+  },
+);
+test("standalone no-op Copy keeps its peer's changed result", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+    await writeFile(path.join(cwd, "target.txt"), "old\nalpha\n");
+    const run = await runComposition(
+      cwd,
+      "copy-no-op-after-standalone-peer-edit",
+      [
+        `const copied=await tools.fixture_copy_result({id:"copy-direct"});
+check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Standalone peer edit lost Copy scope");
+text(await tools.replace({path:copied,text:"NEW\\n"}));`,
+      ],
+      [path.resolve("tests/integration/support/copy-no-op-probe.ts")],
+      [
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-direct",
+              name: "replace",
+              arguments: { path: "target.txt", start: "old", text: "new" },
+            }),
+            toolCall({
+              id: "copy-direct",
+              name: "copy",
+              arguments: {
+                path: "source.txt",
+                start: "alpha",
+                target: "target.txt",
+                targetStart: "alpha\n",
+                targetEnd: "alpha\n",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+      ],
+    );
+    for (const id of ["replace-direct", "copy-direct", "compose-0"])
+      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    expect(getToolResultText(run, "replace-direct")).toContain("Replaced selected text:");
+    expect(getToolResultText(run, "replace-direct")).not.toContain("Copied selected text:");
+    expect(getToolResultText(run, "copy-direct")).toContain(
+      "No changes: destination already has this text.",
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("new\nNEW\n");
+  });
+});
+test("empty Copy explains its no-op in the agent result and TUI", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "source\n");
+    await writeFile(path.join(cwd, "destination.txt"), "destination\n");
+    const run = await runComposition(cwd, "copy-empty-result-presentation", [
+      `const source=await tools.search({path:"source.txt",query:"ABSENT"});
+const destination=await tools.search({path:"destination.txt",query:"ABSENT"});
+const copied=await tools.copy({path:source,target:destination});
+check(copied.includes("No changes: empty selection."),"Empty Copy did not explain its outcome");
+text(copied);
+check(matches(await tools.search({path:copied,query:"source"})).length===0,"Empty Copy gained source authority");`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(run.tuiRenderedOutput).toContain("No changes: empty selection.");
+    expect(run.tuiRenderedOutput).not.toContain("empty target set");
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("source\n");
+    expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("destination\n");
+  });
+});
+test("a final no-op Copy keeps an earlier peer's real diff visible", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+    await writeFile(path.join(cwd, "target.txt"), "old\nalpha\n");
+    const run = await runComposition(cwd, "copy-no-op-after-peer-edit", [
+      `await tools.replace({path:"target.txt",start:"old",text:"new"});
+const copied=await tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"alpha\\n",targetEnd:"alpha\\n"});
+text(copied);
+check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Peer edit lost Copy scope");`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("new\nalpha\n");
+    expect(run.tuiRenderedOutput).toContain("No changes: destination already has this text.");
+    expect(getToolResultText(run, "compose-0")).not.toContain("Copied selected text:");
+    expect(run.tuiRenderedOutput).toMatch(/│\s+1 ~ new/u);
+    expect(run.tuiRenderedOutput).not.toMatch(/│\s+2 ~ alpha/u);
+  });
+});
+test("native unchanged Copy flush succeeds without reporting an applied change", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+    await writeFile(path.join(cwd, "destination.txt"), "alpha\n");
+    const run = await runComposition(cwd, "copy-identical-flush", [
+      `const copied=await tools.copy({path:"source.txt",start:"alpha",target:"destination.txt",targetStart:"alpha",targetEnd:"alpha"});
+const receipt=await tools.flush({});
+check(receipt.includes("copy: not-applied"),"No-op Copy reported an applied operation");
+check(!receipt.split(String.fromCharCode(10)).some(line=>line.includes("destination.txt: applied")),"No-op Copy reported a destination write");
+check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Flush lost unchanged destination");
+text(await tools.replace({path:copied,text:"NEW\\n"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+    expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("NEW\n");
+  });
+});
+test("unchanged Copy points remain reusable insertion positions", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "source\n");
+    await writeFile(path.join(cwd, "destination.txt"), "left right\n");
+    const run = await runComposition(cwd, "copy-identical-points", [
+      `const source=await tools.select({path:await tools.read({path:"source.txt"}),operation:{kind:"sliceText",from:0,to:0}});
+const destination=await tools.select({path:await tools.read({path:"destination.txt"}),operation:{kind:"sliceText",from:5,to:5}});
+const copied=await tools.copy({path:source,target:destination});
+text(await tools.replace({path:copied,text:"NEW "}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("source\n");
+    expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("left NEW right\n");
+  });
+});
+
+test("mixed Copy pairs map an unchanged range after a same-file length change", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "longword\nalpha\n");
+    await writeFile(path.join(cwd, "destination.txt"), "x alpha\nalpha outside\n");
+    const run = await runComposition(cwd, "copy-mixed-no-op-shift", [
+      `const source=await tools.search({path:"source.txt",query:"regex:longword|alpha"});
+const destination=await tools.search({path:await tools.read({path:"destination.txt",limit:1}),query:"regex:x|alpha"});
+const copied=await tools.copy({path:source,target:destination});
+check(matches(await tools.search({path:copied,query:"regex:longword|alpha"})).length===2,"Copy lost shifted destination");
+text(await tools.replace({path:copied,text:"NEW"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(getToolResultText(run, "compose-0")).toContain(
+      "Copied selected text: 1 text change(s) in this file.",
+    );
+    expect(getToolResultText(run, "compose-0")).not.toContain("Copied selected text: 2");
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("longword\nalpha\n");
+    expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
+      "NEW NEW\nalpha outside\n",
+    );
+  });
+});
+test("mixed unchanged and changed Copy pairs compose only their destinations", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\nbeta\n");
+    await writeFile(path.join(cwd, "first.txt"), "alpha\nalpha outside\n");
+    await writeFile(path.join(cwd, "second.txt"), "old\nbeta outside\n");
+    const run = await runComposition(cwd, "copy-mixed-no-op", [
+      `const source=await tools.search({path:"source.txt",query:"regex:alpha|beta"});
+const first=await tools.search({path:"first.txt",query:"alpha"});
+const second=await tools.search({path:"second.txt",query:"old"});
+const copied=await tools.copy({path:source,target:[matches(first)[0],second]});
+check(matches(await tools.search({path:copied,query:"regex:alpha|beta"})).length===2,"Mixed Copy lost a destination");
+text(await tools.replace({path:copied,text:"CHANGED"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\nbeta\n");
+    expect(await readFile(path.join(cwd, "first.txt"), "utf8")).toBe("CHANGED\nalpha outside\n");
+    expect(await readFile(path.join(cwd, "second.txt"), "utf8")).toBe("CHANGED\nbeta outside\n");
+  });
+});
+test("Copy reports restored and unverified destinations after write failures", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runComposition(
+      cwd,
+      "copy-rollback-reporting",
+      [
+        `for (const target of ["c07-probe:restored", "c07-probe:unrestored"]) {
+  let failed=false;
+  try { await tools.copy({path:"c07-probe:source",start:"alpha",target,targetStart:"head"}); }
+  catch(error) { failed=true; text(String(error)); }
+  check(failed,"Copy accepted a rejected write");
+}
+const state=await tools.fixture_copy_rollback_state({});
+check(state.values["c07-probe:source"]==="alpha\\n","Copy changed its source");
+check(state.values["c07-probe:restored"]==="head\\ntail\\n","Rollback did not restore the destination");
+check(state.values["c07-probe:unrestored"]==="head\\nalpha\\ntail\\n","Probe did not retain the failed write");
+check(state.attempts.length===4,"Copy skipped or replayed a write attempt");
+check(state.effects[0]?.effect==="not-applied" && state.effects[0]?.isError,"Restored Copy effect was wrong");
+check(state.effects[1]?.effect==="unknown" && state.effects[1]?.isError,"Failed rollback was presented as a known effect");`,
+      ],
+      [path.resolve("tests/integration/support/copy-rollback-probe.ts")],
+    );
+    const result = getToolResultText(run, "compose-0");
+    expect(getToolExecution(run, "compose-0").isError, result).toBe(false);
+    expect(result).not.toContain("No file was changed.");
+    expect(result).not.toContain("Completed writes:");
+    expect(result).toContain("Path: c07-probe:unrestored");
+    expect(run.tuiRenderedOutput).toContain("Copy failed · changes rolled back");
+    expect(run.tuiRenderedOutput).toContain(
+      "Copy failed · rollback failed; read destination before retrying",
+    );
+  });
+});
+test("standalone Copy retains each rollback outcome in one assistant turn", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runComposition(
+      cwd,
+      "copy-rollback-standalone",
+      [
+        `const state=await tools.fixture_copy_rollback_state({});
+check(state.values["c07-probe:source"]==="alpha\\n","Batch Copy changed its source");
+check(state.values["c07-probe:restored"]==="head\\ntail\\n","Batch rollback did not restore its destination");
+check(state.values["c07-probe:unrestored"]==="head\\nalpha\\ntail\\n","Batch probe did not retain the failed write");
+check(state.attempts.length===4,"Batch Copy skipped or replayed a write");
+check(state.effects.find(item=>item.target==="c07-probe:restored")?.effect==="not-applied","Restored batch Copy effect was wrong");
+check(state.effects.find(item=>item.target==="c07-probe:unrestored")?.effect==="unknown","Failed batch rollback was presented as a known effect");`,
+      ],
+      [path.resolve("tests/integration/support/copy-rollback-probe.ts")],
+      [
+        assistantMessage(
+          [
+            toolCall({
+              id: "copy-restored",
+              name: "copy",
+              arguments: {
+                path: "rollback-source.txt",
+                start: "alpha",
+                target: "rollback-restored.txt",
+                targetStart: "head",
+              },
+            }),
+            toolCall({
+              id: "copy-unrestored",
+              name: "copy",
+              arguments: {
+                path: "rollback-source.txt",
+                start: "alpha",
+                target: "rollback-unrestored.txt",
+                targetStart: "head",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+      ],
+    );
+    for (const id of ["copy-restored", "copy-unrestored"]) {
+      expect(getToolExecution(run, id).isError).toBe(true);
+      expect(getToolResultText(run, id)).not.toContain("No file was changed.");
+    }
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    // The state check scrolls these earlier cards out of the final viewport.
+    expect(run.terminalOutput).toContain("Copy failed · changes rolled back");
+    expect(run.terminalOutput).toContain(
+      "Copy failed · rollback failed; read destination before retrying",
+    );
+  });
+});
+
+test.each(["restored", "unrestored"] as const)(
+  "native Copy reports its rollback effect: %s",
+  async (outcome) => {
+    await withTempWorkspace(async (cwd) => {
+      const run = await runComposition(
+        cwd,
+        `copy-rollback-native-${outcome}`,
+        [
+          `const copied=await tools.copy({path:"rollback-source.txt",start:"alpha",target:${JSON.stringify(`rollback-${outcome}.txt`)},targetStart:"head"});
+text(copied);
+await rejects(()=>tools.search({path:copied,query:"alpha"}),/WRITE_FAILED|Unable to write/);
+const state=await tools.fixture_copy_rollback_state({});
+check(state.values["c07-probe:source"]==="alpha\\n","Native Copy changed its source");
+check(state.values[${JSON.stringify(`c07-probe:${outcome}`)}]===${JSON.stringify(outcome === "restored" ? "head\ntail\n" : "head\nalpha\ntail\n")},"Native rollback state was wrong");
+check(state.attempts.length===2,"Native Copy skipped or replayed a write");`,
+        ],
+        [path.resolve("tests/integration/support/copy-rollback-probe.ts")],
+      );
+      expect(getToolExecution(run, "compose-0").isError).toBe(true);
+      expect(getToolExecutionResult(run, "compose-0")).toMatchObject({
+        details: {
+          editorBatchResults: [
+            {
+              data: {
+                operations: [
+                  { operation: "copy", effect: outcome === "restored" ? "not-applied" : "unknown" },
+                ],
+              },
+            },
+          ],
+        },
+      });
+      expect(run.tuiRenderedOutput).toContain(
+        outcome === "restored"
+          ? "Copy failed · changes rolled back"
+          : "Copy failed · rollback failed; read destination before retrying",
+      );
+    });
+  },
+);
+test("Copy does not deny actual writes when receipt creation fails", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runComposition(
+      cwd,
+      "copy-execution-failure",
+      [
+        `const failure=await rejects(()=>tools.copy({path:"c09-probe:source",start:"alpha",target:"c09-probe:target",targetStart:"head"}),/Probe receipt failed after write/);
+text(failure);
+const state=await tools.fixture_copy_execution_state({});
+check(state.values["c09-probe:source"]==="alpha\\n","Copy changed its source");
+check(state.values["c09-probe:target"]==="head\\nalpha\\ntail\\n","Probe lost the applied destination");
+check(state.writes.length===1&&state.writes[0].source==="c09-probe:target","Copy replayed its write or wrote the source");`,
+      ],
+      [path.resolve("tests/integration/support/copy-execution-probe.ts")],
+    );
+    const result = getToolResultText(run, "compose-0");
+    expect(getToolExecution(run, "compose-0").isError, result).toBe(false);
+    expect(result).not.toContain("No file was changed.");
+    expect(result).toContain(
+      "Copy failed. Its effects are uncertain. Read the affected destinations before retrying.",
+    );
+    expect(run.tuiRenderedOutput).toContain(
+      "Copy failed · effects uncertain; read destination before retrying",
+    );
+  });
+});
+
+test("Copy recovers its source selection without clearing that file's exact-text gate", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\nbeta\n");
+    await writeFile(path.join(cwd, "target.txt"), "head\ntail\n");
+    const run = await runComposition(cwd, "copy-source-anchor-recovery", [
+      `await rejects(()=>tools.copy({path:"source.txt",start:"ABSENT",target:"target.txt",targetStart:"head"}),/was not found/);
+await rejects(()=>tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}),/blocked/);
+const source=await tools.search({path:"source.txt",query:"alpha"});
+const copied=await tools.copy({path:source,target:"target.txt",targetStart:"head"});
+check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Recovered Copy lost destination scope");
+check((await tools.read({path:"source.txt"})).endsWith("alpha\\nbeta\\n"),"Copy edited its recovery source");
+await rejects(()=>tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}),/blocked/);
+await tools.replace({path:source,text:"ALPHA"});
+await tools.read({path:"source.txt"});
+text(await tools.copy({path:"source.txt",start:"ALPHA",target:"target.txt",targetStart:"tail"}));`,
+    ]);
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("ALPHA\nbeta\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("head\nalpha\ntail\nALPHA\n");
+  });
+});
 test("merged resource scheduling retains separate pending mutation targets", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "first.txt"), "😀 old\r\nprotected first");
@@ -371,7 +912,7 @@ await rejects(()=>tools.copy({path:source,target:matches(destination)[0]}));
 await rejects(()=>tools.move({path:source,target:source}),/[Oo]verlap/);
 await rejects(()=>tools.copy({path:"RESULT#forged",target:destination}));
 const empty=await tools.copy({path:[],target:[]});
-check(empty.includes("Empty result target set; no changes"),"Empty pairing changed sources");
+check(empty.includes("No changes: empty selection."),"Empty pairing changed sources");
 await tools.replace({path:"source.txt",start:"ONE",text:"NEW"});
 await tools.flush({});
 await rejects(()=>tools.move({path:source,target:destination}),/expired|stale/);
@@ -395,7 +936,7 @@ test.each(["copy", "move"] as const)(
       await writeFile(path.join(cwd, "destination.txt"), "anchor\r\nONE outside");
       const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
         `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:"anchor"});
-if (typeof changed !== "string" || !changed.includes("not yet applied") || !changed) throw Error("Legacy transfer did not reserve an output");
+if (typeof changed !== "string" || !changed) throw Error("Legacy transfer did not return a reusable result");
 const final = await tools.flush({});
 check(final.includes("source.txt") && final.includes("destination.txt"),"Transfer lost file effects");
 const sourceEffect=final.split(String.fromCharCode(10)).find(line=>line.includes("source.txt"));
@@ -523,6 +1064,7 @@ test("whole-file operations preserve binary bytes without granting a text target
     await writeFile(path.join(cwd, "existing.bin"), bytes);
     const run = await runComposition(cwd, "file-operation-binary-and-refusal", [
       `const copied=await tools.copy({path:"source.bin",target:"copy.bin"});
+check(copied.includes("No verified text selection. Read the destination before further edits."),"Binary Copy did not explain unavailable authority");
 await rejects(()=>tools.search({path:copied,query:"BAD"}),/no reusable text selection/);
 const moved = await tools.move({path:"copy.bin",target:"existing.bin"});
 await rejects(()=>tools.search({path:moved,query:"BAD"}),/no reusable text selection/);
@@ -530,6 +1072,9 @@ text(copied);`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
+    );
+    expect(run.tuiRenderedOutput).toContain(
+      "no verified text selection; read destination before further edits",
     );
     for (const name of ["source.bin", "existing.bin"])
       expect(await readFile(path.join(cwd, name))).toEqual(bytes);
@@ -746,6 +1291,38 @@ text(await tools.replace({path:found,text:"ONLY"}));`,
   });
 });
 
+test("Copy reports final formatting and retires its earlier destination selection", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "format_me\n");
+    await writeFile(path.join(cwd, "format.txt"), "head\ntail\n");
+    const run = await runComposition(
+      cwd,
+      "copy-final-post-edit",
+      [
+        `const copied=await tools.copy({path:"source.txt",start:"format_me",target:"format.txt",targetStart:"head"});
+store("copiedBeforeFormatting",copied);
+const found=await tools.search({path:copied,query:"format_me"});
+check(matches(found).length===1,"Copy formatted before script end");
+text(found);`,
+        `text(await rejects(()=>tools.search({path:load("copiedBeforeFormatting"),query:"FORMATTED"})));
+text(await tools.search({path:"format.txt",query:"FORMATTED"}));`,
+      ],
+      [path.resolve("tests/integration/support/native-post-edit-probe.ts")],
+    );
+    for (const id of ["compose-0", "compose-1"])
+      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("format_me\n");
+    expect(await readFile(path.join(cwd, "format.txt"), "utf8")).toBe("head\nFORMATTED\ntail\n");
+    const events = (await readFile(path.join(cwd, "post-edit-events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { content: string });
+    expect(events).toHaveLength(1);
+    expect(events[0]?.content).toBe("head\nformat_me\ntail\n");
+    expect(getToolResultText(run, "compose-0")).toContain("Fixture formatting finished");
+    expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");
+  });
+});
 test("runs post-edit handlers once after all dependent calls and then expires old targets", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "format.txt"), "old body\n");

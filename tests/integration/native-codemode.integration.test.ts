@@ -364,6 +364,33 @@ test("a deadline cancels a boundary commit waiting on a slow guard", async () =>
   });
 });
 
+test.each([
+  { name: "pending-deadline", committed: false, deadline: true, remains: false },
+  { name: "committed-deadline", committed: true, deadline: true, remains: true },
+  { name: "ordinary-error", committed: false, deadline: false, remains: true },
+])("Copy preserves the interruption boundary: $name", async (scenario) => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+    await writeFile(path.join(cwd, "target.txt"), "head\ntail\n");
+    const run = await runScripts(cwd, `copy-interruption-${scenario.name}`, [
+      `${scenario.deadline ? '// @options: {"timeout_ms":2000}\n' : ""}
+text(await tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}));
+${scenario.committed ? 'await tools.read({path:"target.txt"});' : ""}
+${scenario.deadline ? "while(true) {}" : 'throw Error("ordinary Copy script error");'}`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+      scenario.remains ? "head\nalpha\ntail\n" : "head\ntail\n",
+    );
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(
+      scenario.remains ? 1 : 0,
+    );
+    expect(getToolResultText(run, "script-0")).toContain(
+      scenario.remains ? "Editor batches: 1 committed" : "no pending edits were written",
+    );
+  });
+});
 test("agent abort discards accepted but unwritten edits", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);

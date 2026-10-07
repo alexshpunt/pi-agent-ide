@@ -168,7 +168,12 @@ export async function prepareResultTransfer(
         for (const span of sources)
           append(span, { from: span.from, to: span.to, insert: "" }, false);
       }
-      for (const transfer of planned) append(transfer.target, transfer.change, true);
+      for (const transfer of planned)
+        append(
+          transfer.target,
+          operation === "copy" ? { ...transfer.change, allowUnchanged: true } : transfer.change,
+          true,
+        );
       return { edits };
     },
   };
