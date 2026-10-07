@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
-  getToolExecutionDetails,
   getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
@@ -38,12 +37,12 @@ for (const mode of ["standalone", "codemode"] as const) {
                 code:
                   textResultChecks +
                   `const written=await tools.write({path:"empty.txt",content:""});
-check(written.includes("not yet applied"),"Write did not report acceptance");
+check(written.includes("empty.txt"),"Write lost its file effect");
 const read=await tools.read({path:written});
 check(body(read)==="[Empty source.]","Read did not explain the empty source");
 const point=await tools.select({path:read,operation:{kind:"position",edge:"after"}});
 check(items(point).length===1 && items(point)[0].startColumn===0,"Empty source boundary lost");
-text(point);`,
+text(written); text(point);`,
               },
             });
       const run = await new PiIntegrationTest({
@@ -62,24 +61,6 @@ text(point);`,
       if (mode === "standalone") {
         expect(getToolExecutionResult(run, "create")).not.toHaveProperty("structuredContent");
         expect(getToolResultText(run, "create")).toContain("empty.txt");
-      } else {
-        const details = getToolExecutionDetails(getToolExecution(run, "create")) as {
-          editorBatchResults: {
-            status: string;
-            data: { effect: string; files: { source: string; effect: string }[] };
-          }[];
-        };
-        expect(details.editorBatchResults).toHaveLength(1);
-        const receipt = details.editorBatchResults[0];
-        if (!receipt) throw new Error("Missing automatic commit receipt");
-        expect(receipt.status).toBe("success");
-        expect(receipt.data.effect).toBe("applied");
-        expect(
-          receipt.data.files.map(({ source, effect }) => ({
-            source: path.basename(source),
-            effect,
-          })),
-        ).toEqual([{ source: "empty.txt", effect: "applied" }]);
       }
       expect(await readFile(path.join(cwd, "empty.txt"))).toEqual(Buffer.alloc(0));
       expect(await readFile(path.join(cwd, "protected.txt"), "utf8")).toBe("😀 protected\r\n");

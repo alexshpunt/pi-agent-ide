@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -63,6 +64,57 @@ test("Native tools move an exact LSP declaration without matching unrelated text
   });
 });
 
+test("Copy warns that declaration fallback leaves imports and references unchanged", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
+    await writeFile(
+      path.join(cwd, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
+    );
+    await writeFile(path.join(cwd, "helper.ts"), "export const value = 1;\n");
+    const source = 'import { value } from "./helper";\nexport function greet() { return value; }\n';
+    const consumer = 'import { greet } from "./source";\nexport const result = greet();\n';
+    await writeFile(path.join(cwd, "source.ts"), source);
+    await writeFile(path.join(cwd, "consumer.ts"), consumer);
+    await writeFile(path.join(cwd, "destination.ts"), "// destination\n");
+    const run = await new PiIntegrationTest({
+      testName: "semantic-copy-warning",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["copy", "codemode"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "copy-declaration",
+              name: "copy",
+              arguments: {
+                path: "symbol:source.ts#greet",
+                target: "destination.ts",
+                targetStart: "end",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Copy only the declaration text; do not rewrite imports or references");
+    const execution = getToolExecution(run, "copy-declaration");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    const output = getToolResultText(run, "copy-declaration");
+    expect(output).toContain("Text fallback: imports and references unchanged");
+    expect(run.tuiRenderedOutput).toContain("Text fallback: imports and references unchanged");
+    expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toBe(source);
+    expect(await readFile(path.join(cwd, "consumer.ts"), "utf8")).toBe(consumer);
+    const copied = await readFile(path.join(cwd, "destination.ts"), "utf8");
+    expect(copied).toContain("export function greet() { return value; }");
+    expect(copied).not.toContain("import { value }");
+  });
+});
 test("standalone declaration edits and moves preserve earlier effects", async () => {
   await withTempWorkspace(async (cwd) => {
     await enableNativeCodemode(cwd);

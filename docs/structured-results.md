@@ -44,7 +44,7 @@ Read's private native record contains image type and MIME metadata, not another 
 
 Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the readable file/operation effects and final parent result before retrying. An error does not prove rollback.
 
-Automatic batch boundaries commit writes, not final formatting. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
+Automatic batch boundaries save pending edits, not their final formatting. Write finishes its own post-edit processing before returning. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
 
 After an exact-text selector fails, the tool returns current anchors and blocks further exact-text edits for that file. Use a current anchor for the next successful edit. Exact text is then available again.
 

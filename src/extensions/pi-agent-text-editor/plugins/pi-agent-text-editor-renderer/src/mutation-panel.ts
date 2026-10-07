@@ -317,6 +317,17 @@ function renderTail(
         : `Formatted ${grouped.formatted.length} files by ${by}`;
     statuses.unshift(theme.fg("success", label.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")));
   }
+  if (grouped.alreadyFormatted.length > 0) {
+    const by =
+      grouped.unchangedFormatters.length === 1
+        ? grouped.unchangedFormatters[0]
+        : `${grouped.unchangedFormatters.length} formatters`;
+    const label =
+      resources.length === 1
+        ? `Already formatted (${by})`
+        : `Already formatted ${grouped.alreadyFormatted.length} files by ${by}`;
+    statuses.unshift(theme.fg("success", label.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")));
+  }
   const text = [counts, ...statuses]
     .filter((item) => item !== undefined)
     .join(theme.fg("dim", " · "));

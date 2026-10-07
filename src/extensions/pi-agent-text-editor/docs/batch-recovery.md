@@ -8,7 +8,7 @@ Text mutation recovery belongs to `pi-agent-text-editor` and has three internal 
 
 ## Native Codemode
 
-Sequential local text edits in one native Codemode script accumulate against original file snapshots. Each child returns acceptance, not a written-file result. Planning checks anchors and overlapping changes without writing. A boundary commits the accepted plan once through the normal editor queue, guards and Resource writes. Registered resource post-edit handlers stay deferred until the end of that script, once per surviving resource.
+Eligible local text edits in one native Codemode script accumulate against original file snapshots. Each batched child returns acceptance, not a written-file result. Write is immediate: it commits earlier pending edits, then saves its file and finishes its own post-edit processing before returning. Planning checks anchors and overlapping changes without writing. A boundary commits the accepted plan once through the normal editor queue, guards and Resource writes. For batched edits, registered resource post-edit handlers stay deferred until the end of that script, once per surviving resource.
 
 Another tool, a whole-file operation, or a resource-owned selector ends the pending batch before its own execution. Later local edits start a new batch. Ordinary script exceptions still commit accepted independent edits. Agent aborts and script deadlines discard pending writes; already committed batches remain committed.
 
