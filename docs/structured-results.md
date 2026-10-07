@@ -31,7 +31,7 @@ Read-only views, raw bytes, images and directory listings do not acquire text-ed
 
 ## Internal records
 
-Each tool owns its validated record. Read, Search, Select, Diff, terminals, Git and debugger operations keep their own domain adapters. File edit receipts contain only operation, observed effect, file states and an optional verified selection handle. Delete omits selection fields. Flush separately records committed operation effects and errors; it does not reuse a giant resource-action schema.
+Each tool owns its validated record. Read, Search, Select, Diff, terminals, Git and debugger operations keep their own domain adapters. File edit receipts contain only operation, observed effect, file states and an optional verified selection handle. Delete omits selection fields. The parent Codemode result retains committed operation effects and errors.
 
 The text registry stores only ownership, a digest of the issued text, source references, resource identities and whether the result can be consumed. It does not copy line arrays, removed file contents, image bytes or debugger records into a second ledger. Source ranges and snapshots remain in the source-target store.
 
@@ -44,7 +44,7 @@ Read's private native record contains image type and MIME metadata, not another 
 
 Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the readable file/operation effects and final parent result before retrying. An error does not prove rollback.
 
-Flush commits writes, not final formatting. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
+Automatic batch boundaries commit writes, not final formatting. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
 
 After an exact-text selector fails, the tool returns current anchors and blocks further exact-text edits for that file. Use a current anchor for the next successful edit. Exact text is then available again.
 

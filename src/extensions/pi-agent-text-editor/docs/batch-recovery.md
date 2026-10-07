@@ -14,7 +14,7 @@ Another tool, a whole-file operation, or a resource-owned selector ends the pend
 
 Commit checks both original content and file existence. A changed source fails instead of replaying mutations. The parent result preserves native child receipts and adds final file effects and `editorBatches` states keyed by child call ID. A failed commit makes the parent a tool error. Accepted child calls alone are not proof of persistence.
 
-Await `tools.flush({})` to commit pending local edits and inspect their final effects inside the script. Its operations carry accepted child call IDs. Successful acceptance returns `pending`; successful flush returns observed file and operation effects. A failed flush preserves applied effects and does not replay edits. The parent keeps the same small receipts under `editorBatchResults`.
+Successful acceptance returns `pending`. Automatic commits record observed file and operation effects with accepted child call IDs. A failed commit preserves applied effects and does not replay edits. The parent keeps these receipts under `editorBatchResults`.
 
 Local replace/insert acceptances carry reserved RESULT# handles. A successful commit maps each call's actual inserted ranges through all batch peers, checks the written snapshot and confirms its handle. Search or a dependent replace can consume the result directly; the dependency boundary commits first. Original child receipts remain pending. Failed, cancelled, unsupported or uncertain writes do not grant targets. Immediate resource-owned mutations share the same post-edit scope and final parent presentation. Final formatting that changes source bytes makes earlier targets stale; targets are never rebound to formatted text.
 

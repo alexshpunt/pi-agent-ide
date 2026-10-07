@@ -239,7 +239,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
   });
 });
 
-test("native AST edits use fresh selections after checkpoints", async () => {
+test("native AST edits use fresh selections after automatic commits", async () => {
   await withTempWorkspace(async (cwd) => {
     await enableNativeCodemode(cwd);
     await writeFile(path.join(cwd, "nodes.ts"), 'const emoji = "😀"; console.log("same");\n');
@@ -261,12 +261,9 @@ test("native AST edits use fresh selections after checkpoints", async () => {
 const check=result=>{if(typeof result!=="string")throw Error("Expected readable result");return result;};
 const firstSearch=check(await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:firstSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:'logger.info("same")'}));
-check(await tools.flush({}));
 check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
-check(await tools.flush({}));
 const secondSearch=check(await tools.search({query:"ast:logger.info($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:secondSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:"done()"}));
-check(await tools.flush({}));
 `,
               },
             }),
@@ -275,7 +272,7 @@ check(await tools.flush({}));
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Refresh the editor handle and structural query after each checkpoint");
+    }).run("Refresh the structural query after edits");
     const execution = getToolExecution(run, "refresh");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "nodes.ts"), "utf8")).toBe(

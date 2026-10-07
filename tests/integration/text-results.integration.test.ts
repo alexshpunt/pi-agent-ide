@@ -35,7 +35,6 @@ async function runText(cwd: string, name: string, scripts: string[]) {
       "copy",
       "move",
       "undo",
-      "flush",
       "bash",
       "codemode",
     ],
@@ -150,16 +149,13 @@ if(!failed.includes("anchor")) throw Error("Missing recovery anchors");
 let blocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { blocked=String(error); }
 if(!blocked.includes("blocked")) throw Error("Explicit text retried without an anchor");
 await tools.write({path:"note.txt",content:"ALPHA\\nbeta\\ngamma\\n"});
-await tools.flush({});
 let stillBlocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { stillBlocked=String(error); }
 if(!stillBlocked.includes("blocked")) throw Error("An unanchored write bypassed recovery");
 const current=await tools.read({path:"note.txt",views:["anchors"]});
 const anchor=/(\\d+#[A-Fa-f0-9]+)[^\\n]*beta/.exec(current)?.[1];
 if(!anchor) throw Error("Read did not show beta's anchor: "+current);
 await tools.replace({path:"note.txt",start:anchor,text:"BETA"});
-await tools.flush({});
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
-text(await tools.flush({}));
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -226,9 +222,7 @@ let failed=false; try { await tools.replace({path:"note.txt",start:"missing",tex
 if(!failed) throw Error("Expected exact-text failure");
 const found=await tools.search({path:"note.txt",query:"beta"});
 await tools.replace({path:found,text:"BETA"});
-await tools.flush({});
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
-text(await tools.flush({}));
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(

@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolExecutionResult,
   getToolResultMessage,
   getToolResultText,
@@ -31,7 +32,7 @@ async function runContract(cwd: string, name: string, code: string) {
       "builtin:codemode",
       path.resolve("tests/integration/fixtures/structured-results-fixture.ts"),
     ],
-    tools: ["read", "search", "replace", "select", "receipt_edit", "flush", "codemode", "diff"],
+    tools: ["read", "search", "replace", "select", "receipt_edit", "codemode", "diff"],
     conversation: [
       assistantMessage([toolCall({ id: "script", name: "codemode", arguments: { code } })], {
         stopReason: "toolUse",
@@ -41,20 +42,18 @@ async function runContract(cwd: string, name: string, code: string) {
   }).run("Verify readable results and private source authority");
 }
 
-test("native scripts compose Search and Read, report flush effects and keep empty scopes empty", async () => {
+test("native scripts compose Search and Read and keep empty scopes empty", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runContract(
       cwd,
-      "text-search-read-flush",
+      "text-search-read-edit",
       `
 const found=await tools.search({query:"beta",path:"note.txt"});
 const shown=await tools.read({path:found});
 if(typeof shown!=="string"||!shown.includes("beta")) throw Error("Selected text missing");
 const accepted=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 if(!accepted.includes("not yet applied")) throw Error("Acceptance claimed a write");
-const saved=await tools.flush({});
-if(!saved.includes("applied")||!saved.includes("note.txt")) throw Error("Flush lost file effects");
 const after=await tools.read({path:"note.txt"});
 if(!after.includes("BETA")) throw Error("Continued before commit");
 const empty=await tools.search({query:"__nothing__",path:"note.txt"});
@@ -152,28 +151,47 @@ text(await tools.replace({path:selected,text:'{"value":"changed"}'}));
     ).toBe(true);
   });
 });
-test("flush reports applied effects after a post-write failure and never replays edits", async () => {
+test("automatic commits report partial writes and do not replay failed batches", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "a.txt"), "a\n");
     await writeFile(path.join(cwd, "b.txt"), "b\n");
     const run = await runContract(
       cwd,
-      "text-partial-flush",
+      "text-partial-commit",
       `
-const a=await tools.receipt_edit({path:"a.txt",text:"A\\n",fail:true});
-const b=await tools.receipt_edit({path:"b.txt",text:"B\\n"});
-if(typeof a!=="string"||typeof b!=="string") throw Error("Private records leaked");
-let failed=""; try { await tools.flush({}); } catch(error) { failed=String(error); }
-if(!failed.includes("applied")||!failed.includes("a.txt")||!failed.includes("b.txt")) throw Error("Partial writes hidden: "+failed);
-const empty=await tools.flush({});
-if(!empty.includes("0 editor operations")) throw Error("Flush replayed old edits");
+await tools.receipt_edit({path:"a.txt",text:"A\\n",fail:true});
+await tools.receipt_edit({path:"b.txt",text:"B\\n"});
+let failed=""; try { await tools.read({path:"a.txt"}); } catch(error) { failed=String(error); }
+if(!failed.includes("Editor batch failed")) throw Error("Failed commit did not block dependent work");
 text(failed);
+text(await tools.read({path:"a.txt"}));
+text(await tools.read({path:"b.txt"}));
 `,
     );
     expect(getToolExecution(run, "script").isError).toBe(true);
     expect(getToolResultText(run, "script")).toContain("Editor batches: 1 committed");
+    const details = getToolExecutionDetails(getToolExecution(run, "script")) as {
+      editorBatchResults: {
+        status: string;
+        data: { operation: string; effect: string; files: { source: string; effect: string }[] };
+      }[];
+    };
+    expect(details.editorBatchResults).toHaveLength(1);
+    const receipt = details.editorBatchResults[0];
+    if (!receipt) throw new Error("Missing automatic commit receipt");
+    expect(receipt.status).toBe("partial");
+    expect(receipt.data.operation).toBe("batch");
+    expect(receipt.data.effect).toBe("applied");
+    expect(
+      receipt.data.files.map(({ source, effect }) => ({ source: path.basename(source), effect })),
+    ).toEqual([
+      { source: "a.txt", effect: "applied" },
+      { source: "b.txt", effect: "applied" },
+    ]);
     expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("A\n");
     expect(await readFile(path.join(cwd, "b.txt"), "utf8")).toBe("B\n");
+    expect(await readFile(path.join(cwd, "a.txt.writes"), "utf8")).toBe("write\n");
+    expect(await readFile(path.join(cwd, "b.txt.writes"), "utf8")).toBe("write\n");
   });
 });
 

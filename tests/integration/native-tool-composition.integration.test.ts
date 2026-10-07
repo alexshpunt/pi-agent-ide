@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
@@ -373,7 +374,6 @@ await rejects(()=>tools.copy({path:"RESULT#forged",target:destination}));
 const empty=await tools.copy({path:[],target:[]});
 check(empty.includes("Empty result target set; no changes"),"Empty pairing changed sources");
 await tools.replace({path:"source.txt",start:"ONE",text:"NEW"});
-await tools.flush({});
 await rejects(()=>tools.move({path:source,target:destination}),/expired|stale/);
 text({refusals:4,empty:true});`,
     ]);
@@ -396,10 +396,6 @@ test.each(["copy", "move"] as const)(
       const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
         `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:"anchor"});
 if (typeof changed !== "string" || !changed.includes("not yet applied") || !changed) throw Error("Legacy transfer did not reserve an output");
-const final = await tools.flush({});
-check(final.includes("source.txt") && final.includes("destination.txt"),"Transfer lost file effects");
-const sourceEffect=final.split(String.fromCharCode(10)).find(line=>line.includes("source.txt"));
-check(sourceEffect.includes(${JSON.stringify(operation === "copy" ? "not-applied" : "applied")}),"Transfer reported incorrect source effect");
 const found = await tools.search({path:changed,query:"ONE"});
 if (typeof found !== "string" || matches(found).length !== 1 || !matchRows(found)[0].source.endsWith("destination.txt")) throw Error("Pending output included removals or neighbors");
 text(await tools.replace({path:found,text:"NEW"}));`,
@@ -407,6 +403,21 @@ text(await tools.replace({path:found,text:"NEW"}));`,
       expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
         false,
       );
+      const details = getToolExecutionDetails(getToolExecution(run, "compose-0")) as {
+        editorBatchResults: { data: { files: { source: string; effect: string }[] } }[];
+      };
+      expect(details.editorBatchResults).toHaveLength(1);
+      const receipt = details.editorBatchResults[0];
+      if (!receipt) throw new Error("Missing automatic commit receipt");
+      expect(
+        receipt.data.files.map(({ source, effect }) => ({
+          source: path.basename(source),
+          effect,
+        })),
+      ).toEqual([
+        { source: "source.txt", effect: operation === "copy" ? "not-applied" : "applied" },
+        { source: "destination.txt", effect: "applied" },
+      ]);
       expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
         "anchor\r\nNEW\r\nONE outside",
       );
@@ -450,7 +461,6 @@ test("delete receipts describe removals without publishing a live point", async 
 const found = await tools.search({path:window,query:"old"});
 const removed = await tools.delete({path:found});
 await rejects(()=>tools.search({path:removed,query:"old"}),/no reusable text selection/);
-await tools.flush({});
 const receipt = await tools.read({path:"removed.txt"});
 if (!receipt.includes("😀 "+String.fromCharCode(13,10))) throw Error("Delete widened its selected range");
 text(removed);`,
@@ -496,7 +506,6 @@ test("undo accepts only a whole-file source and returns the whole restored file"
     await writeFile(path.join(cwd, "restore.txt"), "fresh before\r\nold body\r\nfresh after");
     const run = await runComposition(cwd, "undo-whole-restored-output", [
       `const changed = await tools.replace({path:"restore.txt",start:"old body",text:"new body"});
-await tools.flush({});
 const window = await tools.read({path:"restore.txt",offset:2,limit:1});
 const refused = await rejects(()=>tools.undo({file:window,change:"last"}));
 check(typeof refused==="string","Undo widened its input");
