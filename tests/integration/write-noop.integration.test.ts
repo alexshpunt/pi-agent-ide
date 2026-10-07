@@ -142,7 +142,12 @@ for (const mode of ["standalone", "codemode"] as const) {
                     textResultChecks +
                     `const unchanged=await tools.write({path:"same.note",content:${JSON.stringify(content)}});
 const saved=await tools.read({path:unchanged});
-check(body(saved)===${JSON.stringify(content)},"No-op lost its whole-file target");
+${
+  content.length === 0
+    ? `const readBoundary=items(await tools.select({path:saved,operation:{kind:"position",edge:"after"}}));
+check(readBoundary.length===1 && readBoundary[0].startColumn===0 && readBoundary[0].endColumn===0,"Empty no-op Read lost its source boundary");`
+    : `check(body(saved)===${JSON.stringify(content)},"No-op lost its whole-file target");`
+}
 const found=await tools.search({path:unchanged,query:"same"});
 check(matches(found).length===${content.length === 0 ? 0 : 2},"No-op lost its searchable whole-file target");
 const point=await tools.select({path:unchanged,operation:{kind:"position",edge:"after"}});
