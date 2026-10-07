@@ -51,7 +51,12 @@ import {
   runNativePostEditScope,
   recordNativeTextMutation,
 } from "#src/core/native-text-edit-batch.js";
-import { attachCommittedMutationTarget, attachWriteTarget } from "./mutation-result-targets.js";
+import {
+  attachCommittedMutationTarget,
+  attachWriteTarget,
+  describeUnavailableCopyTarget,
+  unchangedCopySources,
+} from "./mutation-result-targets.js";
 import { wholeFileResultSource } from "./result-input.js";
 import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import { isResultInput, prepareResultTransfer } from "./result-transfer.js";
@@ -142,6 +147,7 @@ export function createTextTool<TParameters extends TSchema>(
       }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
         let plannedEdits: ReadonlyMap<string, TextMutationEdit> | undefined;
+        const copyPlan = { snapshots: new Map<string, string>(), unchanged: false };
         const captured = await runNativePostEditScope(
           core,
           toolCallId,
@@ -150,7 +156,7 @@ export function createTextTool<TParameters extends TSchema>(
               const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
                 let input = asMutationParameters<TParameters>(parameters);
                 if (
-                  ["replace", "write", "delete", "undo"].includes(definition.name) &&
+                  ["replace", "write", "delete", "undo", "insert"].includes(definition.name) &&
                   isResultInput(input[definition.source.field])
                 ) {
                   try {
@@ -164,7 +170,7 @@ export function createTextTool<TParameters extends TSchema>(
                     );
                     if (!selected.complete)
                       throw new Error(
-                        "Incomplete result targets cannot establish a complete edit; repeat Search.",
+                        "Incomplete result targets cannot establish a complete edit. Run Search again with a higher limit or a narrower query, then use the complete result.",
                       );
                     await resultTargets.verify(selected, signal);
                     if (definition.name === "write" || definition.name === "undo")
@@ -216,7 +222,15 @@ export function createTextTool<TParameters extends TSchema>(
                     verifyFileSource = prepared.verifyFileSource;
                     if (prepared.empty)
                       return {
-                        content: [{ type: "text", text: "Empty result target set; no changes." }],
+                        content: [
+                          {
+                            type: "text",
+                            text:
+                              definition.name === "copy"
+                                ? "No changes: empty selection."
+                                : "Empty result target set; no changes.",
+                          },
+                        ],
                         details: {
                           results: [],
                           effect: "not-applied",
@@ -241,6 +255,14 @@ export function createTextTool<TParameters extends TSchema>(
                   mutate: async (mutationContext, arguments_) => {
                     const mutation = await directDefinition.mutate(mutationContext, arguments_);
                     plannedEdits = mutation.edits;
+                    if (definition.name === "copy") {
+                      for (const source of mutation.edits.keys())
+                        copyPlan.snapshots.set(source, mutationContext.documentFor(source).content);
+                      copyPlan.unchanged =
+                        mutation.edits.size > 0 &&
+                        unchangedCopySources(mutation, copyPlan.snapshots).size ===
+                          mutation.edits.size;
+                    }
                     return mutation;
                   },
                 };
@@ -323,17 +345,29 @@ export function createTextTool<TParameters extends TSchema>(
             "EXECUTION_FAILED",
             errorMessage(captured.error),
             "unknown",
+            undefined,
+            definition.name === "copy",
           );
           return structuredMutation(failed, definition.name, captured.completions, toolCallId);
         }
-        recordNativeTextMutation(core, toolCallId, captured.value);
+        const completedValue =
+          copyPlan.unchanged && captured.completions.length === 0 && !captured.value.isError
+            ? {
+                ...captured.value,
+                content: [
+                  { type: "text" as const, text: "No changes: destination already has this text." },
+                ],
+                details: { ...captured.value.details, effect: "not-applied" as const },
+              }
+            : captured.value;
+        recordNativeTextMutation(core, toolCallId, completedValue);
         const value =
           resultTargets &&
           ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
             ? definition.name === "write"
-              ? await attachWriteTarget(captured.value, resultTargets, context.cwd, signal)
+              ? await attachWriteTarget(completedValue, resultTargets, context.cwd, signal)
               : await attachCommittedMutationTarget(
-                  captured.value,
+                  completedValue,
                   captured.completions,
                   resultTargets,
                   toolCallId,
@@ -342,9 +376,15 @@ export function createTextTool<TParameters extends TSchema>(
                   definition.name === "undo",
                   plannedEdits,
                   definition.name === "copy" || definition.name === "move",
+                  copyPlan.snapshots,
                 )
-            : captured.value;
-        return structuredMutation(value, definition.name, captured.completions, toolCallId);
+            : completedValue;
+        return structuredMutation(
+          definition.name === "copy" ? describeUnavailableCopyTarget(value) : value,
+          definition.name,
+          captured.completions,
+          toolCallId,
+        );
       },
     }),
     annotations,
@@ -354,33 +394,32 @@ export function createTextTool<TParameters extends TSchema>(
     get(): string {
       return [
         definition.description,
-        definition.intent !== "restore" &&
-        definition.name !== "write" &&
-        definition.name !== "replace" &&
-        definition.name !== "delete"
-          ? "In native Codemode, local text edits share original snapshots and return acceptance before writing. Flush, non-batched tool calls and normal script completion commit pending edits. Formatting and registered resource post-edit handlers run at script end, not at flush or dependency boundaries. Earlier targets become stale if final processing changes bytes. Ordinary script errors keep accepted edits; aborts and deadlines discard only pending edits. Already committed edits remain."
-          : "",
+        core.renderToolPromptGuideline(definition.name) ?? "",
         (
           {
             replace:
               "This result selects the resulting text; empty replacement selects the resulting position, not the removed text.",
-            insert: "This result selects the inserted text, including supplied line separators.",
+            insert:
+              "For text edits, this result selects the inserted text, including supplied line separators. Specialized resources return their own action result.",
             write:
               "For file writes, this result selects the whole file, not only its changed span.",
-            copy: "This result selects only destination text; a whole-file copy selects the whole destination. The source is unchanged.",
+            copy: "This result selects only the copied destination text; a whole-file copy selects the whole destination. Copy edits only the destination.",
             move: "Use the Move result to work with the inserted destination text, including any added line separators. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
             delete: "Delete returns no reusable text selection.",
-            undo: "This result selects whole restored text files, not only reversed spans. Deleted files provide no text selection.",
+            undo: "The result selects the whole restored text file, not only the reversed span.",
           } as Record<string, string>
         )[definition.name] ?? "",
         definition.name === "replace"
           ? "Pass the unchanged result to another source tool to use its selection. If it has no text selection, read the file again."
           : definition.name === "write"
             ? "For file writes, pass this unchanged result to another source tool for dependent work. If the result reports no verified text selection, inspect the file instead."
-            : ["insert", "copy", "move", "undo"].includes(definition.name)
-              ? "Pass this unchanged result to another source tool for dependent work. Pending edits commit before the next tool consumes them. If the result reports no verified text selection, inspect the file instead."
-              : "",
-        definition.source.inherited && definition.name !== "delete"
+            : definition.name === "undo"
+              ? "Pass the unchanged result to another source tool for dependent work. If no verified text selection is returned, read the file again."
+              : ["insert", "copy", "move"].includes(definition.name)
+                ? "Pass this unchanged result to another source tool for dependent work." +
+                  " If the result reports no verified text selection, inspect the file instead."
+                : "",
+        definition.source.inherited && !["delete", "undo"].includes(definition.name)
           ? definition.wholeFileOperation === undefined
             ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
             : `When ${definition.source.field} is omitted, the tool can reuse the file identified by a supplied text anchor.`
@@ -1238,6 +1277,21 @@ type CompletedTextResource = Extract<
   { readonly kind: "completed" }
 >;
 
+/** Count real Copy changes without counting retained identical destination ranges. */
+export function textMutationOperationReceipts(
+  operation: string,
+  edit: TextMutationEdit,
+  before: string,
+): readonly MutationOperationReceipt[] {
+  const changes =
+    operation === "copy"
+      ? edit.changes.filter(
+          (change) =>
+            !change.allowUnchanged || before.slice(change.from, change.to) !== change.insert,
+        ).length
+      : edit.changes.length;
+  return operation === "copy" && changes === 0 ? [] : [{ operation, changes }];
+}
 /** Builds a mutation receipt; peer ranges are supplied only for per-call batch display results. */
 export function buildSuccessfulTextMutationResult(
   resource: CompletedTextResource,
@@ -1359,6 +1413,9 @@ async function buildToolResult(
       return recovery;
     }
 
+    if (operation === "copy" && outcome.failure.code === "WRITE_FAILED") {
+      return buildFailedCopyWriteResult(outcome.failure, outcome.completed);
+    }
     const completed =
       outcome.completed.length === 0 ? "" : ` Completed writes: ${outcome.completed.join(", ")}.`;
     const effect =
@@ -1368,13 +1425,7 @@ async function buildToolResult(
           ? "unknown"
           : "not-applied";
     const message = `${outcome.failure.message.replace(/[.!?]+$/u, "")}.${completed}`;
-    return failureToolResult(
-      source,
-      outcome.failure.code,
-      message,
-      effect,
-      outcome.failure.rollback,
-    );
+    return buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect);
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
@@ -1428,7 +1479,7 @@ async function buildToolResult(
             mutation.resultPresentations.get(resultSource) ?? "plain",
 
             1,
-            [{ operation, changes: edit.changes.length }],
+            textMutationOperationReceipts(operation, edit, resource.before.content),
           ),
         ];
   });
@@ -1607,14 +1658,16 @@ function formatRejectedAnchorMessage(
       : code === "missing"
         ? "was not found"
         : code === "invalid"
-          ? "is invalid"
+          ? "was rejected"
           : "could not be resolved";
   const guidance =
     failure.resolution.resolverId === "exact-text"
-      ? "Exact-text editing is now blocked for this file until an anchor-based edit succeeds. Find the intended location among the current anchors below, or use Read/Search for another section, and use its anchor. After that edit, exact text is available again."
+      ? failure.toolName === "copy"
+        ? "Use an anchor below, or get a fresh Read/Search selection and pass it to Copy."
+        : "Exact-text edits are blocked for this file. Use a current anchor below for the intended edit, or get one with Read/Search. Exact text is available again after that edit succeeds."
       : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
-  return `[SYSTEM] ${failure.toolName} blocked: ${failure.field} anchor "${failure.anchor}" ${state}. ${guidance} (${reason})${context}`;
+  return `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} "${failure.anchor}" ${state}. ${guidance} (${reason})${context}`;
 }
 
 function recoveryWindows(
@@ -1646,38 +1699,86 @@ export async function buildFailedTextMutationResult(
   context: ExtensionContext,
   effect: "applied" | "not-applied" | "unknown" = "not-applied",
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
+  if (failure.rollback !== undefined) {
+    return failureToolResult(
+      failure.source,
+      failure.code,
+      failure.message,
+      failure.rollback.failed.length === 0 && failure.rollback.originallyMissing.length === 0
+        ? "not-applied"
+        : "unknown",
+      failure.rollback,
+    );
+  }
   return effect === "not-applied"
     ? ((await anchorFailureToolResult(core, failure, context)) ??
         failureToolResult(failure.source, failure.code, failure.message, effect, failure.rollback))
     : failureToolResult(failure.source, failure.code, failure.message, effect, failure.rollback);
 }
 
+/** Report Copy rollback evidence without claiming that an unverified destination is unchanged. */
+export function buildFailedCopyWriteResult(
+  failure: TextResourceEditFailure,
+  unrestoredSources: readonly string[],
+): AgentToolResult<FileMutationBatchResult> {
+  const rollbackFailed =
+    failure.rollback === undefined
+      ? unrestoredSources.length > 0
+      : failure.rollback.failed.length > 0 || failure.rollback.originallyMissing.length > 0;
+  const effect = rollbackFailed ? "unknown" : "not-applied";
+  const result = new FileMutationResult({
+    ok: false,
+    path: failure.source,
+    errors: [{ path: failure.source, code: failure.code, reason: failure.message }],
+    fileChangedStatement: rollbackFailed
+      ? "Rollback failed. Read the listed destinations before retrying."
+      : "Copy failed. Destination changes were rolled back.",
+  });
+  return {
+    content: [new FileMutationAgentResult(result).toTextContent()],
+    details: {
+      results: [result],
+      effect,
+      metadata: { copyRollback: rollbackFailed ? "failed" : "restored" },
+    },
+  };
+}
 function failureToolResult(
   source: string,
   code: string,
   reason: string,
   effect: "not-applied" | "applied" | "unknown",
   rollback?: TextResourceEditFailure["rollback"],
+  copyExecutionFailure = false,
 ): { content: [{ type: "text"; text: string }]; details: FileMutationBatchResult } {
   const uncertain =
     rollback !== undefined && (rollback.failed.length > 0 || rollback.originallyMissing.length > 0);
   const fileChangedStatement =
     rollback === undefined
       ? effect === "applied"
-        ? "The file was changed before the operation failed. Read the file before retrying."
+        ? "The edit was saved, but a post-write step failed. Run Read/Search before editing this resource again."
         : effect === "unknown"
           ? "The operation failed, and its effects are unknown. Read the affected resources before retrying."
           : undefined
       : rollback.originallyMissing.length > 0
         ? "The file may now exist. Read the path before retrying."
         : uncertain
-          ? "The file may have changed. Read the file before retrying."
-          : "The original content was restored. Read the file before retrying.";
+          ? `Rollback failed for ${rollback.failed.join(", ")}. Current contents are unknown. Run Read/Search before editing these resources again.`
+          : "Attempted writes were rolled back.";
   const result = new FileMutationResult({
     ok: false,
     path: source,
     errors: [{ path: source, code, reason }],
     ...(fileChangedStatement === undefined ? {} : { fileChangedStatement }),
+    ...(rollback !== undefined && {
+      rollback: {
+        failedSources: [...new Set([...rollback.failed, ...rollback.originallyMissing])],
+      },
+    }),
+    ...(copyExecutionFailure && {
+      fileChangedStatement:
+        "Copy failed. Its effects are uncertain. Read the affected destinations before retrying.",
+    }),
   });
 
   return {
@@ -1688,6 +1789,7 @@ function failureToolResult(
       ...(rollback === undefined
         ? {}
         : { metadata: { rollback: uncertain ? "uncertain" : "restored" } }),
+      ...(copyExecutionFailure && { metadata: { copyExecution: "uncertain" } }),
     },
   };
 }

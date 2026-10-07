@@ -226,18 +226,21 @@ export class ResultTargetStore {
     const result = this.#results.get(id);
     // Existing backend selection handles share RESULT# syntax, but never accept an unknown UUID.
     if (!result && !envelope && input.startsWith(prefix) && this.#entries.has(input)) return input;
-    if (!result) throw new Error("Result reference expired or unknown; repeat the source tool.");
+    if (!result)
+      throw new Error(
+        "Result reference expired or unknown. Run Read/Search again and use the new result.",
+      );
     if (result.cwd !== path.resolve(cwd)) throw new Error("Result belongs to another worktree.");
     if (envelope && createHash("sha256").update(input).digest("hex") !== result.digest)
       throw new Error("Result text changed; pass the original result or its UUID.");
     for (const resource of result.resources) this.refresh(resource, cwd);
     if (!this.#results.has(id))
-      throw new Error("Result reference expired; repeat the source tool.");
+      throw new Error("Result reference expired. Run Read/Search again and use the new result.");
     if (!result.consumable) throw new Error("Only successful source results can be consumed.");
     for (const reference of result.references) {
       if (!this.#entries.has(reference)) {
         this.#results.delete(id);
-        throw new Error("Result reference expired; repeat the source tool.");
+        throw new Error("Result reference expired. Run Read/Search again and use the new result.");
       }
     }
     if (result.references.length === 1) return result.references[0];

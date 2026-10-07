@@ -15,30 +15,30 @@ export const insertSchema = Type.Object(
     path: Type.Optional(
       Type.String({
         description:
-          "Source resource reference or file path. A returned SEARCH# reference can select insertion positions.",
+          "Pass a file path, source resource reference, unchanged Read/Search/Select/edit result, or its UUID. Result inputs select only their registered ranges.",
       }),
     ),
     anchor: Type.Optional(
       Type.String({
         description:
-          "Registered anchor or unique exact text locating the insertion. Required unless path already supplies a SEARCH selection. Inserts after the last containing line by default, or before the first containing line when before is true. This includes SEARCH :match and multiline exact text; the selected text is kept. Multiple matches on the same insertion line produce one insertion.",
+          "For text edits, use a registered anchor or unique exact text to locate the insertion. Omit anchor when path already supplies the intended selection; otherwise it is required. For live resources, follow the action rules above.",
       }),
     ),
     text: Type.String({
       minLength: 1,
       description:
-        "New text only. The tool supplies the line boundary; do not prefix a newline just to start a new line. For example, 'NEW' inserts one line, while '\\nNEW' intentionally adds a blank line before it. A missing trailing newline is supplied before following text; additional newlines remain intentional blank lines. When appending after an unterminated final line, the tool supplies the separator before the new text without removing trailing newlines from the payload. Payload line endings follow the destination file's LF/CRLF style.",
+        "For text edits, supply non-empty new text. The tool adds missing line breaks between the insertion and existing text. Add a leading newline only for an intentional blank line, not to start a new line. Payload newlines are kept, with line endings converted to the file's LF/CRLF style. No trailing newline is added at EOF.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
         description:
-          "Defaults to line. Use blank-line to add only missing blank lines between the inserted block and existing neighboring content; explicit payload newlines remain intact.",
+          "For text edits, defaults to line: separate inserted text from existing lines without adding extra blank lines. Use blank-line to add only missing blank lines between the insertion and existing text.",
       }),
     ),
     before: Type.Optional(
       Type.Boolean({
         description:
-          "Defaults to false: insert after the last containing line. True: insert before the first containing line. The anchor's text and its lines are kept.",
+          "For text edits, defaults to false: insert after the last containing line of each selection. With true, insert before its first containing line. Selected text is kept. Multiple selections on the same insertion line produce one insertion.",
       }),
     ),
   },
@@ -56,10 +56,9 @@ interface InsertParameters {
 export const insertMutationTool: TextMutationToolRegistration<typeof insertSchema> = {
   name: "insert",
   description:
-    "Use insert to add new text before or after selected lines while keeping existing text. Insertion is line-based, including for exact-text and SEARCH :match anchors.",
+    "Use insert to edit text or act on a live resource. For text edits, add new text before or after selected lines while keeping existing text. Insertion is line-based, including for exact-text and SEARCH :match anchors. An empty result selection makes no changes and is not an error.",
 
-  promptSnippet:
-    "Make precise file edits by inserting text before or after exact matches or anchors",
+  promptSnippet: "Insert file text, send terminal keys, or perform debugger actions",
   parameters: insertSchema,
   source: { field: "path", inherited: true },
   anchors: [

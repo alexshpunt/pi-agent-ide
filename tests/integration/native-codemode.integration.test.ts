@@ -189,7 +189,6 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
       );
       const shown = getToolResultText(run, "script-0");
       expect(getToolExecution(run, "script-0").isError, shown).toBe(false);
-      expect(shown).toContain("not yet applied");
       expect(shown).toContain("Editor batches: 1 committed");
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
         "added\nalpha\nBETA\nomega\n",
@@ -228,6 +227,24 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
   },
 );
 
+test("editor batches commit automatically without a checkpoint tool", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-automatic-commits", [
+      `if (ALL_TOOLS.some(tool => tool.name === "flush")) throw Error("Unexpected editor checkpoint tool");
+await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
+const shown = await tools.read({path:"note.txt"});
+if (!shown.includes("ALPHA")) throw Error("Read did not see the committed edit");
+const changed = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+await tools.replace({path:changed,text:"FINAL"+String.fromCharCode(10)});
+text(await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"}));`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nFINAL\nGAMMA\nomega\n");
+  });
+});
 test("read and search finish a batch before dependent work starts", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
@@ -374,6 +391,49 @@ test("a script deadline discards pending edits and the next script gets a fresh 
   });
 });
 
+test("a deadline with clipped output still discards pending Insert edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-clipped-deadline", [
+      '// @options: {"timeout_ms":2000,"max_output_tokens":10000}\nawait tools.insert({path:"note.txt",anchor:"alpha",text:"UNEXPECTED"}); text("x".repeat(100000)); while (true) {}',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(initial);
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
+  });
+});
+test("an ordinary error after deadline-like script output keeps accepted edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-deadline-like-output", [
+      'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"}); text("Script error:\\nScript timed out: script output only"); throw new Error("ordinary failure");',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      "alpha\nKEPT\nbeta\ngamma\nomega\n",
+    );
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+  });
+});
+test.each([false, true])(
+  "an ordinary exception containing a timeout marker keeps edits with clipped output=%s",
+  async (clipped) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const run = await runScripts(cwd, `native-codemode-marker-in-error-${clipped}`, [
+        (clipped ? '// @options: {"max_output_tokens":1000}\n' : "") +
+          'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"});' +
+          (clipped ? 'text("x".repeat(100000));' : "") +
+          'throw new Error("Script error:\\nScript timed out: copied failure");',
+      ]);
+      expect(getToolExecution(run, "script-0").isError).toBe(true);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "alpha\nKEPT\nbeta\ngamma\nomega\n",
+      );
+      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+    });
+  },
+);
 test("five text operations share a multi-file snapshot batch before immediate Write", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
@@ -453,6 +513,33 @@ test("a deadline cancels a boundary commit waiting on a slow guard", async () =>
   });
 });
 
+test.each([
+  { name: "pending-deadline", committed: false, deadline: true, remains: false },
+  { name: "committed-deadline", committed: true, deadline: true, remains: true },
+  { name: "ordinary-error", committed: false, deadline: false, remains: true },
+])("Copy preserves the interruption boundary: $name", async (scenario) => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+    await writeFile(path.join(cwd, "target.txt"), "head\ntail\n");
+    const run = await runScripts(cwd, `copy-interruption-${scenario.name}`, [
+      `${scenario.deadline ? '// @options: {"timeout_ms":2000}\n' : ""}
+text(await tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}));
+${scenario.committed ? 'await tools.read({path:"target.txt"});' : ""}
+${scenario.deadline ? "while(true) {}" : 'throw Error("ordinary Copy script error");'}`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+      scenario.remains ? "head\nalpha\ntail\n" : "head\ntail\n",
+    );
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(
+      scenario.remains ? 1 : 0,
+    );
+    expect(getToolResultText(run, "script-0")).toContain(
+      scenario.remains ? "Editor batches: 1 committed" : "no pending edits were written",
+    );
+  });
+});
 test("agent abort discards accepted but unwritten edits", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);

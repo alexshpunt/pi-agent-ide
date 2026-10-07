@@ -51,7 +51,12 @@ export interface DebugBreakpoint {
   readonly id: string;
   readonly source: string;
   readonly file: string;
-  readonly line: number;
+  /** Requested source line, kept when the adapter relocates the breakpoint. */
+  readonly requestedLine: number;
+  /** Current line reported by the adapter. */
+  line: number;
+  /** Adapter identity used by later binding-change events. */
+  adapterId?: number;
   verified: boolean;
 }
 
@@ -145,7 +150,11 @@ interface EvaluateBody {
   readonly variablesReference?: number;
 }
 interface SetBreakpointsBody {
-  readonly breakpoints?: readonly { readonly verified?: boolean; readonly line?: number }[];
+  readonly breakpoints?: readonly {
+    readonly id?: number;
+    readonly verified?: boolean;
+    readonly line?: number;
+  }[];
 }
 
 /** Owns debug sessions and keeps DAP references scoped to their current stop. */
@@ -245,6 +254,7 @@ export class DebugSessionManager {
       id,
       source: `${session.source}/breakpoint/${id}`,
       file,
+      requestedLine: line,
       line,
       verified: false,
     };
@@ -353,6 +363,8 @@ export class DebugSessionManager {
       }
       const initialized = client.waitForAnyEvent(["initialized"], 30_000, signal);
       const launch = client.request(recipe.request, recipe.launch, { signal });
+      // Configuration can fail before launch is awaited; cleanup must not leave a rejected request unhandled.
+      void launch.catch(() => {});
       await initialized;
       await this.#configureBreakpoints(session, client, signal);
       const configurationDone = client.request("configurationDone", undefined, { signal });
@@ -403,12 +415,41 @@ export class DebugSessionManager {
     }
   }
 
+  /** Refresh execution state from events that arrived after a control wait ended. */
+  async refresh(session: DebugSession): Promise<void> {
+    if (session.client === undefined) return;
+    for (
+      let event = session.client.takeEvent(["breakpoint"]);
+      event !== undefined;
+      event = session.client.takeEvent(["breakpoint"])
+    ) {
+      this.#updateBreakpoint(session, event);
+    }
+    if (session.status === "terminated") return;
+    for (;;) {
+      const event = session.client.takeEvent([
+        ...(session.status === "running" ? ["stopped"] : []),
+        "terminated",
+        "exited",
+      ]);
+      if (event === undefined) return;
+      if (event.event === "stopped") await this.#captureStop(session, event);
+      else {
+        session.status = "terminated";
+        session.stop = undefined;
+        this.#notify(session);
+        await session.javaRuntime?.close();
+        return;
+      }
+    }
+  }
   /** Continue or step and wait for the next observable execution state. */
   async command(
     session: DebugSession,
     command: "continue" | "next" | "stepIn" | "stepOut",
     signal?: AbortSignal,
   ): Promise<DebugSession> {
+    await this.refresh(session);
     if (session.status !== "stopped" || session.stop === undefined) {
       throw new Error(`Cannot ${command} while session is ${session.status}`);
     }
@@ -429,10 +470,13 @@ export class DebugSessionManager {
     expression: string,
     signal?: AbortSignal,
   ): Promise<DebugEvaluation> {
+    await this.refresh(session);
     if (session.status !== "stopped" || session.stop?.frame === undefined) {
       throw new Error(`Cannot evaluate while session is ${session.status}`);
     }
     const trimmed = expression.trim();
+    const stop = session.stop;
+    const frameId = session.stop.frame.id;
     if (trimmed.length === 0) throw new Error("Debug evaluation requires an expression");
     const response = await requiredClient(session).request<EvaluateBody>(
       "evaluate",
@@ -442,6 +486,8 @@ export class DebugSessionManager {
     if (typeof response.result !== "string") {
       throw new Error("Debug adapter returned no evaluation result");
     }
+    session.stop = { ...stop, variables: await this.#readVariables(session, frameId) };
+    this.#notify(session);
     return {
       expression: trimmed,
       result: response.result,
@@ -759,13 +805,16 @@ export class DebugSessionManager {
       "setBreakpoints",
       {
         source: { path: file, name: path.basename(file) },
-        breakpoints: breakpoints.map(({ line }) => ({ line })),
+        breakpoints: breakpoints.map(({ requestedLine }) => ({ line: requestedLine })),
         sourceModified: false,
       },
       { signal },
     );
     for (const [index, breakpoint] of breakpoints.entries()) {
-      breakpoint.verified = response.breakpoints?.[index]?.verified === true;
+      const bound = response.breakpoints?.[index];
+      breakpoint.verified = bound?.verified === true;
+      breakpoint.line = bound?.line ?? breakpoint.requestedLine;
+      breakpoint.adapterId = bound?.id;
     }
   }
 
@@ -800,19 +849,7 @@ export class DebugSessionManager {
       return;
     }
     if (event.event === "breakpoint") {
-      const changed = asRecord(body.breakpoint);
-      const changedSource = asRecord(changed.source);
-      for (const breakpoint of session.breakpoints.values()) {
-        if (
-          changed.verified === true &&
-          typeof changed.line === "number" &&
-          changed.line === breakpoint.line &&
-          typeof changedSource.path === "string" &&
-          sameFilePath(changedSource.path, breakpoint.file)
-        ) {
-          breakpoint.verified = true;
-        }
-      }
+      this.#updateBreakpoint(session, event);
       await this.#waitForStop(session, signal);
       return;
     }
@@ -887,6 +924,22 @@ export class DebugSessionManager {
     if (session.options.adapter === "shell") this.#notify(session);
   }
 
+  #updateBreakpoint(session: DebugSession, event: DapEvent): void {
+    const changed = asRecord(asRecord(event.body).breakpoint);
+    const source = asRecord(changed.source);
+    for (const breakpoint of session.breakpoints.values()) {
+      const matches =
+        typeof changed.id === "number" && breakpoint.adapterId !== undefined
+          ? changed.id === breakpoint.adapterId
+          : typeof source.path === "string" &&
+            sameFilePath(source.path, breakpoint.file) &&
+            changed.line === breakpoint.requestedLine;
+      if (!matches) continue;
+      if (typeof changed.line === "number") breakpoint.line = changed.line;
+      breakpoint.verified = changed.verified === true;
+    }
+    this.#notify(session);
+  }
   async #captureStop(session: DebugSession, event: DapEvent, notify = true): Promise<void> {
     const client = requiredClient(session);
     const body = asRecord(event.body);
@@ -902,27 +955,7 @@ export class DebugSessionManager {
         }
       }
     }
-    const variables: DebugVariable[] = [];
-    if (frame !== undefined) {
-      const scopes =
-        (await client.request<ScopesBody>("scopes", { frameId: frame.id })).scopes ?? [];
-      const localScopes =
-        session.options.adapter === "r"
-          ? scopes
-          : scopes.filter((item) =>
-              [item.name.toLowerCase(), item.presentationHint?.toLowerCase()].some(
-                (value) => value?.includes("local") === true || value === "variables",
-              ),
-            );
-      for (const scope of localScopes) {
-        const values = await client.request<VariablesBody>("variables", {
-          variablesReference: scope.variablesReference,
-          start: 0,
-          count: 100,
-        });
-        variables.push(...(values.variables ?? []));
-      }
-    }
+    const variables = frame === undefined ? [] : await this.#readVariables(session, frame.id);
     session.stopGeneration++;
     session.stop = {
       generation: session.stopGeneration,
@@ -936,6 +969,28 @@ export class DebugSessionManager {
     if (notify) this.#notify(session);
   }
 
+  async #readVariables(session: DebugSession, frameId: number): Promise<DebugVariable[]> {
+    const client = requiredClient(session);
+    const scopes = (await client.request<ScopesBody>("scopes", { frameId })).scopes ?? [];
+    const localScopes =
+      session.options.adapter === "r"
+        ? scopes
+        : scopes.filter((item) =>
+            [item.name.toLowerCase(), item.presentationHint?.toLowerCase()].some(
+              (value) => value?.includes("local") === true || value === "variables",
+            ),
+          );
+    const variables: DebugVariable[] = [];
+    for (const scope of localScopes) {
+      const values = await client.request<VariablesBody>("variables", {
+        variablesReference: scope.variablesReference,
+        start: 0,
+        count: 100,
+      });
+      variables.push(...(values.variables ?? []));
+    }
+    return variables;
+  }
   #notify(session: DebugSession): void {
     const snapshot = this.snapshot(session);
     for (const listener of this.#changeListeners) listener(snapshot);

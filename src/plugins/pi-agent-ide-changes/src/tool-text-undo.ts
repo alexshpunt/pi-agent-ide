@@ -15,22 +15,20 @@ export const undoSchema = Type.Object(
     file: Type.Optional({
       ...resultInputSchema,
       description:
-        "File to restore or one whole-file source result; partial and multi-file scopes are rejected. May be omitted to inherit the previous source.",
+        "File path or one whole-file source result. Partial and multi-file selections are rejected. Omit file to use the supplied CHANGE anchor's file or the last resolved source.",
     }),
-    change: Type.Optional(
-      Type.String({
-        description:
-          "Complete CHANGE#HASH anchor shown by read, or last for this file's latest text-editor transaction",
-        pattern: "^(?:CHANGE#[0-9A-F]{4,64}|last)$",
-      }),
-    ),
+    change: Type.String({
+      description:
+        'Use a complete current CHANGE#HASH anchor from read with views: ["changes"] to restore that change to HEAD in both worktree and index. Use last to restore the file\'s latest saved text-editor transaction.',
+      pattern: "^(?:CHANGE#[0-9A-F]{4,64}|last)$",
+    }),
   },
   { additionalProperties: false },
 );
 
 interface UndoParameters {
   readonly file?: unknown;
-  readonly change?: string;
+  readonly change: string;
 }
 
 export function createUndoMutationTool(
@@ -41,7 +39,7 @@ export function createUndoMutationTool(
   return {
     name: "undo",
     description:
-      "Use undo to revert a selected uncommitted Git change or the latest text-editor transaction for one file. CHANGE# restores that change to HEAD in both worktree and index; last restores one file's latest text edit.",
+      "Use undo to restore one selected uncommitted Git change or a file's latest text-editor transaction.",
 
     promptSnippet: "Restore a Git change or latest text edit",
     parameters: undoSchema,
@@ -56,7 +54,6 @@ export function createUndoMutationTool(
       },
     ],
     async mutate(context, parameters: UndoParameters) {
-      if (parameters.change === undefined) throw new Error("change is required");
       const source = context.sourceFor("file");
       let restoredText: string;
       let afterWrite: (() => Promise<void>) | undefined;
