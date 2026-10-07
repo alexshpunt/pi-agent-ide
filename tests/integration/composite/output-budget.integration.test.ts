@@ -515,7 +515,7 @@ test("keeps full mutation effects and selections behind bounded useful previews"
     'const value = await tools.write({path:"large.txt",content:Array.from({length:4000}, (_,index)=>`row_${index}: ${"content ".repeat(12)}`).join("\\n")}); store("written",value); text(value);',
     'const selected = await tools.select({path:load("written"), operation:{kind:"lines",first:4000,last:4000}}); text(await tools.read({path:selected}));',
     'text(await tools.copy({path:"large.txt",target:"copy.txt"})); text(await tools.move({path:"copy.txt",target:"moved.txt"}));',
-    'text(await tools.replace({path:"moved.txt",start:"row_3999:",text:"last_row:"})); text(await tools.flush({})); text(await tools.insert({path:"moved.txt",anchor:"last_row:",text:"inserted"}));',
+    'const replaced=await tools.replace({path:"moved.txt",start:"row_3999:",text:"last_row:"}); text(await tools.read({path:replaced,limit:1})); text(await tools.insert({path:"moved.txt",anchor:"last_row:",text:"inserted"}));',
     'text(await tools.undo({file:"moved.txt",change:"last"})); text(await tools.diff({before:"large.txt",after:"moved.txt"})); text(await tools.delete({path:"moved.txt"}));',
     'text(await tools.read({path:"large.txt",limit:1000000})); text(await tools.read({path:"large.txt",limit:1000000}));',
   ];
@@ -843,7 +843,6 @@ test("bounds malformed argument failures before they enter provider context", as
     unstage: { file: "unused.txt", change: payload },
     debug: { adapter: payload, program: [] },
     bash: { command: [payload] },
-    flush: { unexpected: payload },
   };
   try {
     const resultFor = await runBatches(
@@ -854,20 +853,15 @@ test("bounds malformed argument failures before they enter provider context", as
         extensions: [extension, "builtin:codemode"],
         transport: "rpc",
         isolateUserResources: true,
-        tools: [...Object.keys(cases).filter((name) => name !== "flush"), "codemode"],
+        tools: [...Object.keys(cases), "codemode"],
       },
       Object.entries(cases).map(([name, args]) =>
         assistantMessage(
           [
             toolCall({
               id: `invalid-${name}`,
-              name: name === "flush" ? "codemode" : name,
-              arguments:
-                name === "flush"
-                  ? {
-                      code: `try { await tools.flush(${JSON.stringify(args)}); } catch (error) { text(String(error)); }`,
-                    }
-                  : args,
+              name,
+              arguments: args,
             }),
           ],
           { stopReason: "toolUse" },
@@ -876,9 +870,7 @@ test("bounds malformed argument failures before they enter provider context", as
       4,
     );
     for (const [index, name] of Object.keys(cases).entries()) {
-      expect(getToolResultMessage(resultFor(index), `invalid-${name}`).isError, name).toBe(
-        name !== "flush",
-      );
+      expect(getToolResultMessage(resultFor(index), `invalid-${name}`).isError, name).toBe(true);
       expect(getToolResultText(resultFor(index), `invalid-${name}`).length, name).toBeGreaterThan(
         0,
       );
@@ -907,7 +899,6 @@ for (const nested of [false, true]) {
       unstage: { file: hugePath, change: "CHANGE#ABCD" },
       debug: { adapter: "debugpy", program: hugePath },
       bash: { command: "printf '%s' '" + "x".repeat(100000) + "'", timeoutSeconds: 10 },
-      flush: {},
     };
     try {
       await writeFile(path.join(cwd, "small.txt"), "small\n");
@@ -916,13 +907,12 @@ for (const nested of [false, true]) {
           [
             toolCall({
               id: `budget-${name}`,
-              name: nested || name === "flush" ? "codemode" : name,
-              arguments:
-                nested || name === "flush"
-                  ? {
-                      code: `try { text(await tools.${name}(${JSON.stringify(args)})); } catch (error) { text(String(error)); }`,
-                    }
-                  : args,
+              name: nested ? "codemode" : name,
+              arguments: nested
+                ? {
+                    code: `try { text(await tools.${name}(${JSON.stringify(args)})); } catch (error) { text(String(error)); }`,
+                  }
+                : args,
             }),
           ],
           { stopReason: "toolUse" },
@@ -935,7 +925,7 @@ for (const nested of [false, true]) {
           cwd,
           extensions: [extension, "builtin:codemode"],
           transport: "rpc",
-          tools: [...Object.keys(cases).filter((name) => name !== "flush"), "codemode"],
+          tools: [...Object.keys(cases), "codemode"],
           isolateUserResources: true,
         },
         calls,
@@ -951,10 +941,10 @@ for (const nested of [false, true]) {
         expect(output.length).toBeGreaterThan(0);
         expect(output).not.toContain("Tool codemode not found");
         expect(getToolCallNames(result)).toContain(name);
-        if (nested || name === "flush")
+        if (nested)
           expect(getToolResultMessage(result, `budget-${name}`).isError, name).toBe(false);
         expectBounded(output);
-        if (!nested && !["bash", "flush"].includes(name))
+        if (!nested && name !== "bash")
           expect(getToolResultMessage(result, `budget-${name}`).isError, name).toBe(true);
       }
     } finally {
