@@ -202,6 +202,12 @@ jobs:
           REPORT_DIR: .agents/tmp/test-results
         run: pnpm test:integration:shards
 
+      - name: Verify normal configured startup
+        if: success()
+        run: |
+          pnpm exec pi install --local "$GITHUB_WORKSPACE"
+          pnpm exec oxnode scripts/dev/check-normal-startup.ts src/pi-agent-ide.ts
+
       - name: Capture agent interface
         if: success()
         run: >-
