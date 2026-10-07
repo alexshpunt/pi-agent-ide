@@ -96,6 +96,7 @@ Pass candidates in `path` and comparison results in `operation.scopes`. Both acc
 Points belong to a nonempty range at its included start, not its excluded end. Equal points match. Intersection with a contained point keeps it; touching ranges do not create points. Difference removes covered candidate points but point scopes do not cut text. Merge absorbs covered points without extending ranges. EOF points are outside a range ending at EOF.
 
 Empty scopes make within/intersection empty and difference unchanged. Incomplete inputs cannot establish absence or authorize edits. Select never writes or formats.
+Repeat the operation after interruption. Do not treat cancellation as an empty result.
 
 ```js
 const candidates = await tools.search({ path: "notes.txt", query: "regex:<[^>]+>" });
