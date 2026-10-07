@@ -141,7 +141,7 @@ await rejects(()=>tools.replace({path:partial,text:"BAD"}),/[Ii]ncomplete/);
 const call=items(all)[0].ref;
 await rejects(()=>tools.select({path:call,operation:{kind:"part",part:"body"}}),/callee, arguments/);
 const functions=await tools.select({path:call,operation:{kind:"object",object:"function",relation:"enclosing",level:2,extent:"around"}});
-if(items(functions).length!==0||!functions.includes("1 input(s) without a selection"))throw Error("Absence became error");
+if(items(functions).length!==0||!functions.includes("0 selection(s)")||!functions.includes("1 input range(s) produced no selection"))throw Error("Absence did not remain an explained empty success");
 text({fullCount:105,absent:0,unsupportedRejected:true});`,
     ]);
     expect((await readFile(path.join(cwd, "many.js"), "utf8")).endsWith("call104(); }")).toBe(true);

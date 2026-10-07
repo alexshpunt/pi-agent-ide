@@ -104,7 +104,7 @@ const groups=capture(found,"ARGS");
 check(groups.length===3 && found.split("3 node(s)").length-1===3,"Multi-capture association lost");
 for(const group of groups) check(matches(await tools.search({path:group,query:"ignored"})).length===0,"Capture escaped");
 const partial=await tools.search({path:seed,query:"ast:legacyRequest($$$ARGS)",limit:1});
-check(partial.includes("Result limit reached"),"Limit reported complete");
+check(matches(partial).length===1 && /[Ii]ncomplete/.test(partial),"Limited Search must report one match and incomplete coverage");
 await rejects(()=>tools.replace({path:partial,text:"BAD"}),/[Ii]ncomplete/);
 text({groups:3,complete:true});`,
     ]);
