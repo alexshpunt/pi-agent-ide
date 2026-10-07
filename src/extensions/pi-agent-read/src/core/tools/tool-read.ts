@@ -51,7 +51,7 @@ import {
   projectReadState,
   withReadCancellation,
 } from "#src/core/tools/read/read-result.js";
-import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
+import { TempResourceStore } from "pi-agent-resource";
 
 import {
   type readParameters,
@@ -113,6 +113,8 @@ export interface ReadToolContributions {
 export interface ReadTool {
   /** Shares the read runtime's temporary resource store with composed operations. */
   saveTemporary(text: string): Promise<string>;
+  /** Sets the saver used before agent-facing text is truncated. */
+  setOutputSaver(saver: (text: string) => Promise<string>): void;
   readonly tool: ToolDefinition<typeof readParameters, ReadResultDetails>;
   execute(
     request: ReadPipelineContext["request"],
@@ -130,6 +132,7 @@ export function createReadTool(
   parameterDescriptions?: () => ReadParameterText,
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
+  let outputSaver: ((text: string) => Promise<string>) | undefined;
   const resolvers: RegisteredResolver[] = [
     {
       resolver: temporaryResources.resolver,
@@ -151,6 +154,9 @@ export function createReadTool(
 
   return {
     saveTemporary: (text) => temporaryResources.save(text),
+    setOutputSaver(saver) {
+      outputSaver = saver;
+    },
     tool: {
       name: toolId,
       exposure: "direct",
@@ -221,6 +227,8 @@ export function createReadTool(
             fragments,
             targetResolvers,
             resourceGuards,
+            "agent",
+            outputSaver,
           );
           return structuredRead(withReadCancellation(result, parameters.path, signal));
         } catch (error) {
@@ -247,6 +255,7 @@ export function createReadTool(
         targetResolvers,
         resourceGuards,
         audience,
+        outputSaver,
       );
       return withReadCancellation(result, request.path, context.signal);
     },
@@ -366,12 +375,16 @@ async function executeRead(
   }[],
   resourceGuards: readonly RegisteredResourceGuard[],
   audience: "agent" | "script" = "agent",
+  outputSaver?: (text: string) => Promise<string>,
 ): Promise<ReadToolResult> {
   if (request.path?.startsWith("raw:"))
     return readRaw(request, resolverContext, audience, resourceGuards);
   resolverContext = { ...resolverContext, audience };
   const limitOutput: typeof limitReadOutput =
-    audience === "script" ? async (result) => result : limitReadOutput;
+    audience === "script"
+      ? async (result) => result
+      : (result, request, fallback, options) =>
+          limitReadOutput(result, request, outputSaver ?? fallback, options);
   const resolverSnapshot = [...resolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
@@ -417,6 +430,7 @@ async function executeRead(
       viewWarnings,
       audience,
       resourceGuards,
+      outputSaver,
     );
     if (targeted !== undefined) return targeted;
   }
@@ -569,9 +583,13 @@ async function resolveTextTargets(
   viewWarnings: ReadViewWarnings,
   audience: "agent" | "script",
   resourceGuards: readonly RegisteredResourceGuard[],
+  outputSaver?: (text: string) => Promise<string>,
 ): Promise<ReadToolResult | undefined> {
   const limitOutput: typeof limitReadOutput =
-    audience === "script" ? async (result) => result : limitReadOutput;
+    audience === "script"
+      ? async (result) => result
+      : (result, request, fallback, options) =>
+          limitReadOutput(result, request, outputSaver ?? fallback, options);
   for (const { resolver } of targetResolvers) {
     let rawAttempt: unknown;
     try {

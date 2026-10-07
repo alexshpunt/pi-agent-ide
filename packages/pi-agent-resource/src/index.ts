@@ -1,5 +1,6 @@
 export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.js";
 export { resourceAccesses } from "./resource-access.js";
+export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.js";
 export {
   assertJsonData,
   MAX_STRUCTURED_BYTES,

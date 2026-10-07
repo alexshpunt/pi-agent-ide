@@ -201,6 +201,10 @@ function createPluginContributionController(
       assertAvailable();
       return read.saveTemporary(text);
     },
+    setOutputSaver(saver) {
+      assertAvailable();
+      read.setOutputSaver(saver);
+    },
     read(request, context, audience) {
       assertAvailable();
       return read.execute(request, context, audience);
