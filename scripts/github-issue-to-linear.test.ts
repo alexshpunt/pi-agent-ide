@@ -36,7 +36,9 @@ function api() {
       return Response.json({ data: { issueCreate: { success: true, issue: stored } } });
     }
     if (archived) expect(query).toContain("includeArchived: true");
-    expect(variables.id).toMatch(/^[a-f0-9-]{14}5[a-f0-9-]{21}$/u);
+    expect(variables.id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u,
+    );
     return Response.json({ data: { issues: { nodes: stored ? [stored] : [] } } });
   });
   return {
@@ -58,7 +60,7 @@ describe("GitHub issues to Linear", () => {
     expect(result).toMatchObject({ created: true, issue: { identifier: "LPT-900" } });
     expect(server.inputs).toHaveLength(1);
     expect(server.inputs[0]).toMatchObject({
-      id: "89d3ea20-c2eb-57c2-b4c0-1b0d0425f3d3",
+      id: "89d3ea20-c2eb-47c2-b4c0-1b0d0425f3d3",
       title: event.issue.title,
       teamId: "dd4e96d8-1474-43b6-a4c4-73ebea149ad4",
       projectId: "5362922a-2e3b-4853-851d-0f9969fa35d4",
