@@ -1,8 +1,64 @@
 import { expect, test } from "vitest";
 import { searchText } from "#src/search-backend.js";
+import { searchFuzzy } from "#src/fuzzy-search.js";
 import { SearchSessionStore } from "#src/search-session.js";
 import { createTextResolver } from "#src/resolvers.js";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
+
+test("fuzzy alternatives collect names and verify exact matches on their original owner", async () => {
+  const { environment, calls } = fixture();
+  const probes: string[] = [];
+  environment.byteSize = async (source) => {
+    probes.push(source);
+    return Buffer.byteLength("café needle\n");
+  };
+  const originalRun = environment.runLines;
+  environment.runLines = async (args, cwd, onLine, signal) => {
+    if (args.includes("--only-matching")) {
+      calls.push([...args]);
+      onLine("needle");
+      return { code: 0, stderr: "" };
+    }
+    return originalRun(args, cwd, onLine, signal);
+  };
+  const result = await searchFuzzy(
+    { query: "nedle", path: "memory://owner/work" },
+    "/local",
+    undefined,
+    environment,
+  );
+  expect(result).toMatchObject({
+    status: "ready",
+    candidates: [
+      {
+        identifier: "needle",
+        matches: [{ source: "memory://owner/work/note.txt", matchedText: "needle" }],
+      },
+    ],
+  });
+  expect(calls[0]).toContain("--only-matching");
+  expect(calls[1]).toContain("--fixed-strings");
+  expect(calls[1]).toContain("needle");
+  expect(probes.length).toBeGreaterThan(0);
+  expect(probes.every((source) => source === "memory://owner/work/note.txt")).toBe(true);
+});
+
+test("fuzzy search refuses an owner that cannot bound its source snapshots before scanning", async () => {
+  const { environment, calls } = fixture();
+  expect(
+    await searchFuzzy(
+      { query: "nedle", path: "memory://owner/work" },
+      "/local",
+      undefined,
+      environment,
+    ),
+  ).toMatchObject({
+    status: "skipped",
+    candidates: [],
+    message: "source owner cannot bound candidate snapshots",
+  });
+  expect(calls).toEqual([]);
+});
 
 // A non-filesystem owner proves no source is normalized or read through local fs.
 function fixture(): {

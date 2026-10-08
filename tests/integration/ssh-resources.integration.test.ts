@@ -225,8 +225,10 @@ for (const path of ${JSON.stringify([applyCreated, applyCopy, uploaded, download
     expect(getToolExecution(run, "edit-conflict").isError).toBe(true);
     for (const id of ["copy-bytes", "move-bytes", "read-moved-bytes", "delete-moved-bytes"])
       expect(getToolExecution(run, id).isError).toBe(false);
-    expect(getToolExecution(run, "copy-existing").isError).toBe(true);
-    expect(getToolResultText(run, "copy-existing")).toContain("EEXIST");
+    expect(
+      getToolExecution(run, "copy-existing").isError,
+      getToolResultText(run, "copy-existing"),
+    ).toBe(false);
     expect(getToolResultText(run, "read-moved-bytes")).toContain("00 ff ef bb bf 0d 0a 41");
     await expect(readFile(path.join(fixture.workspace, "copied.bin"))).rejects.toMatchObject({
       code: "ENOENT",

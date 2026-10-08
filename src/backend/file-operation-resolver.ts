@@ -63,8 +63,6 @@ export function createSshFileOperationResolver(
         destination.identity.inode === entry.identity.inode
       )
         throw new SshBackendError("SAME_FILE", source.location.source, "not-applied");
-      if (input.overwrite !== true)
-        throw new SshBackendError("EEXIST", target.location.source, "not-applied");
     }
     await source.backend[operation](
       source.location.path,

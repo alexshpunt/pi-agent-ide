@@ -100,7 +100,6 @@ async function prepareTransfer(
       "revision" in targetInfo ? targetInfo.revision : localRevision(targetInfo),
       captured,
     );
-    if (input.overwrite !== true) throw new SshBackendError("EEXIST", target, "not-applied");
     if (
       remoteSource &&
       remoteTarget &&

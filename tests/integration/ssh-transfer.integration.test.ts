@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.js";
@@ -40,7 +40,7 @@ test("streamed transfers preserve external edits and clean unpublished staging f
         return range;
       };
       await expect(
-        operate("copy", { path: source, target, overwrite: true }, { cwd: fixture.workspace }),
+        operate("copy", { path: source, target }, { cwd: fixture.workspace }),
       ).rejects.toMatchObject({ code: "CONFLICT", effect: "not-applied" });
       expect(await readFile(targetPath, "utf8")).toBe(
         changed === "target" ? "external edit" : "before target",
@@ -56,6 +56,74 @@ test("streamed transfers preserve external edits and clean unpublished staging f
   }
 }, 60000);
 
+test("Copy and Move replace regular destinations across SSH owners without an overwrite flag", async () => {
+  const fixture = await startSshFixture();
+  const registry = new SshBackendRegistry(
+    ["left", "right"].map((id) => ({
+      id,
+      host: "fixture",
+      workspace: fixture.workspace,
+      configFile: fixture.config,
+    })),
+  );
+  const operate = createSshFileOperationResolver(registry);
+  const local = path.join(fixture.root, "local.bin");
+  const remote = path.join(fixture.workspace, "remote.bin");
+  const other = path.join(fixture.workspace, "other.bin");
+  const left = remoteLocation("left", remote).source;
+  const right = remoteLocation("right", other).source;
+  const sameTarget = remoteLocation("left", other).source;
+  const bytes = Buffer.from([0, 255, 239, 187, 191, 13, 10]);
+  try {
+    for (const operation of ["copy", "move"] as const) {
+      for (const [source, target, actualSource, actualTarget] of [
+        [local, left, local, remote],
+        [left, local, remote, local],
+        [left, right, remote, other],
+        [left, sameTarget, remote, other],
+      ] as const) {
+        await writeFile(actualSource, bytes);
+        await writeFile(actualTarget, "old destination");
+        expect(
+          await operate(operation, { path: source, target }, { cwd: fixture.root }),
+        ).toMatchObject({
+          ok: true,
+          effect: "applied",
+        });
+        expect(await readFile(actualTarget)).toEqual(bytes);
+        if (operation === "move") {
+          await expect(readFile(actualSource)).rejects.toMatchObject({ code: "ENOENT" });
+        } else {
+          expect(await readFile(actualSource)).toEqual(bytes);
+        }
+      }
+    }
+    await writeFile(remote, bytes);
+    for (const target of [left, remoteLocation("right", remote).source]) {
+      await expect(
+        operate("copy", { path: left, target }, { cwd: fixture.root }),
+      ).rejects.toMatchObject({
+        code: "SAME_FILE",
+        effect: "not-applied",
+      });
+    }
+    const link = path.join(fixture.workspace, "link.bin");
+    await symlink(remote, link);
+    await expect(
+      operate(
+        "copy",
+        { path: left, target: remoteLocation("left", link).source },
+        { cwd: fixture.root },
+      ),
+    ).rejects.toMatchObject({
+      code: "INVALID_FILE_TYPE",
+      effect: "not-applied",
+    });
+    expect(await readFile(remote)).toEqual(bytes);
+  } finally {
+    await fixture.stop();
+  }
+}, 90000);
 function checksum(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
 }

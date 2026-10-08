@@ -94,13 +94,13 @@ test("trusted hooks guard remote read paths and mixed moves, then see final nati
 
       { id: "throw", name: "read", arguments: { path: `${root}/throw.txt` } },
       { id: "local", name: "read", arguments: { path: "secret.json" } },
-      { id: "mixed", name: "move", arguments: { path: local, target: locked, overwrite: true } },
+      { id: "mixed", name: "move", arguments: { path: local, target: locked } },
 
       {
         id: "code-mixed",
         name: "codemode",
         arguments: {
-          code: `text(await tools.move({path:${JSON.stringify(local)},target:${JSON.stringify(locked)},overwrite:true}));`,
+          code: `text(await tools.move({path:${JSON.stringify(local)},target:${JSON.stringify(locked)}}));`,
         },
       },
       {
@@ -109,13 +109,12 @@ test("trusted hooks guard remote read paths and mixed moves, then see final nati
         arguments: {
           path: path.join(cwd, "source.bin"),
           target: `${root}/target.bin`,
-          overwrite: true,
         },
       },
       {
         id: "formatted-copy",
         name: "copy",
-        arguments: { path: copySource, target: copiedText, overwrite: true },
+        arguments: { path: copySource, target: copiedText },
       },
       { id: "review", name: "write", arguments: { path: review, content: "review café\n" } },
       { id: "after-fail", name: "write", arguments: { path: failed, content: "explode café\n" } },
@@ -289,7 +288,7 @@ test("scripted whole-file copies report the prior destination and final formatte
           toolCall({
             id: "ordinary-copy",
             name: "copy",
-            arguments: { path: local, target: `${root}/ordinary.fixture`, overwrite: true },
+            arguments: { path: local, target: `${root}/ordinary.fixture` },
           }),
         ]),
         assistantMessage([
@@ -297,7 +296,7 @@ test("scripted whole-file copies report the prior destination and final formatte
             id: "code-copy",
             name: "codemode",
             arguments: {
-              code: `text(await tools.copy({path:${JSON.stringify(local)},target:${JSON.stringify(`${root}/code.fixture`)},overwrite:true}));`,
+              code: `text(await tools.copy({path:${JSON.stringify(local)},target:${JSON.stringify(`${root}/code.fixture`)}}));`,
             },
           }),
         ]),

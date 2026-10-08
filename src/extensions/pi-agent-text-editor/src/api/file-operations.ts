@@ -4,11 +4,12 @@ import type { ResourceResolverContext } from "pi-agent-resource";
 export const fileOperations = ["delete", "move", "copy"] as const;
 export type FileOperation = (typeof fileOperations)[number];
 
-/** Original paths for an owning provider, before local path resolution. */
+/** Original paths for an owning provider, before local path resolution.
+ * Copy and Move replace existing regular destinations; reject symlinks and same-file transfers.
+ */
 export interface FileOperationInput {
   readonly path: string;
   readonly target?: string;
-  readonly overwrite?: boolean;
 }
 
 /** Explicit operation effect; unknown means a mutation may have happened.
