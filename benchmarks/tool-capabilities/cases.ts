@@ -54,6 +54,89 @@ add(
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
+const overviewFixtures = [
+  { name: "lines", rows: 2100, padding: "  consume(value);" },
+  { name: "bytes", rows: 1000, padding: `  consume("${"界".repeat(30)}");` },
+].map(({ name, rows, padding }) => ({
+  name,
+  rows,
+  files: {
+    "large.ts": [
+      'function outsideBefore() { return "NEEDLE"; }',
+      "function checkout() {",
+      ...Array<string>(100).fill(padding),
+      '  consume("NEEDLE");',
+      ...Array<string>(rows - 100).fill(padding),
+      "}",
+      'function outsideAfter() { return "NEEDLE"; }',
+      "",
+    ].join("\n"),
+  },
+}));
+for (const { name, rows, files } of overviewFixtures) {
+  add(
+    `read-overview-search-${name}`,
+    ["read.overview-source", "compose.overview-search", "compose.overview-window"],
+    `Read all of large.ts so it returns a compact overview. Search for NEEDLE by passing that unchanged Read result or its UUID, not the file path. Then read large.ts with offset=2 and limit=${rows + 3}, and forward that new overview to Search for NEEDLE and outsideBefore. Report the source line of the body match and whether outsideBefore was found in the window. Do not edit anything.`,
+    [
+      { tool: "read", args: { path: "large.ts" }, contains: "Some source text is omitted." },
+      {
+        tool: "search",
+        args: { query: "NEEDLE" },
+        reuse: reuse(0),
+        contains: "3 matches in 1 file",
+      },
+      {
+        tool: "read",
+        args: { path: "large.ts", offset: 2, limit: rows + 3 },
+        contains: "outsideBefore",
+      },
+      {
+        tool: "search",
+        args: { query: "NEEDLE" },
+        reuse: reuse(2),
+        contains: "large.ts:103:12-18",
+      },
+      {
+        tool: "search",
+        args: { query: "outsideBefore" },
+        reuse: reuse(2),
+        contains: "No matches found",
+      },
+    ],
+    { files, expected: files },
+  );
+}
+const storedOverview = overviewFixtures[0];
+if (storedOverview === undefined) throw new Error("Missing overview fixture");
+add(
+  "read-overview-store",
+  ["compose.overview-store-load"],
+  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged overview result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. Finally try Search using the saved overview again and confirm stale-input rejection.",
+  [
+    {
+      tool: "read",
+      args: { path: "large.ts", offset: 2, limit: 2103 },
+      contains: "Some source text is omitted.",
+    },
+    {
+      tool: "search",
+      args: { query: "NEEDLE" },
+      reuse: { ...reuse(0), newParent: true },
+      contains: "large.ts:103:12-18",
+    },
+    { tool: "replace", args: { text: "FOUND" }, reuse: reuse(1) },
+    { tool: "search", args: { query: "NEEDLE" }, reuse: reuse(0), error: true },
+  ],
+  {
+    modes: ["codemode"],
+    files: storedOverview.files,
+    expected: {
+      "large.ts": storedOverview.files["large.ts"].replace('consume("NEEDLE")', 'consume("FOUND")'),
+    },
+  },
+);
+
 add(
   "search-anchor-insert",
   ["search.text", "compose.search-insert", "edit.insert"],

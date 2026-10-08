@@ -5,6 +5,11 @@ const groups: [string[], string[]][] = [
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  [
+    ["read.overview-source", "compose.overview-search", "compose.overview-window"],
+    ["read-overview-search-lines", "read-overview-search-bytes"],
+  ],
+  [["compose.overview-store-load"], ["read-overview-store"]],
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
