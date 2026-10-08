@@ -20,6 +20,7 @@ runs:
         sudo apt-get update
         sudo apt-get install --yes bubblewrap build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc openssh-server iproute2
         sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
+        sudo install --directory --mode=0755 /run/sshd
         curl --fail --location --silent --show-error \
           https://storage.googleapis.com/dart-archive/channels/stable/release/3.13.3/sdk/dartsdk-linux-x64-release.zip \
           --output /tmp/dart-sdk.zip
@@ -100,6 +101,15 @@ runs:
         for executable in node typescript-language-server tsc ast-grep eslint_d; do
           sudo ln --symbolic --force "$(command -v "$executable")" "/usr/local/bin/$executable"
         done
+
+    - name: Verify Bubblewrap sandbox
+      shell: bash
+      run: |
+        if ! bwrap --unshare-user --ro-bind / / /bin/true; then
+          sudo install --mode=0644 scripts/ci/bwrap.apparmor /etc/apparmor.d/pi-agent-ide-bwrap
+          sudo apparmor_parser --replace /etc/apparmor.d/pi-agent-ide-bwrap
+          bwrap --unshare-user --ro-bind / / /bin/true
+        fi
 
     - name: Install dependencies
       shell: bash

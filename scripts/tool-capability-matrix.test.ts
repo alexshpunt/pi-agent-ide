@@ -294,7 +294,7 @@ test("a timed-out case cannot touch the checkout and cleanup leaves unrelated fi
       ],
       { timeoutMs: 500 },
     );
-    expect(run.timedOut).toBe(true);
+    expect(run.timedOut, run.stderr || run.stdout).toBe(true);
     await cleanupTrial(parent, first.root);
     await expect(access(first.root)).rejects.toThrow(/ENOENT/);
     expect(await readFile(sentinel, "utf8")).toBe("untouched");

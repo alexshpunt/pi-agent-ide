@@ -294,6 +294,16 @@ export async function attachCommittedMutationTarget(
     };
   const edits = new Map<string, TextMutationEdit>();
   for (const item of result.details.results ?? []) {
+    const completion = completions.findLast(
+      (candidate) =>
+        candidate.source === item.data.path || candidate.resourceSource === item.data.path,
+    );
+    if (
+      completion &&
+      completion.resolvedBy !== "filesystem" &&
+      !completion.resourceSource.startsWith("ssh://")
+    )
+      continue;
     if (!item.data.ok || !item.data.path || !item.data.rawChanges) return result;
     const planned = plannedEdits?.get(item.data.path);
     edits.set(

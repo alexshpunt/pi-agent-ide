@@ -124,8 +124,10 @@ test.runIf(process.platform !== "win32")(
         if (!source) throw Error("Missing live session");
         try {
           const sent = await tools.write({path: source, content: "hello"});
-          await tools.insert({path: source, text: "Enter"});
+          const keys = await tools.insert({path: source, text: "Enter"});
           const observed = await tools.read({path: sent});
+          const afterKeys = await tools.read({path: keys});
+          if (!afterKeys.includes("resource:hello")) throw Error("Key receipt lost its live owner");
           if (!observed.includes("resource:hello")) throw Error("Input receipt lost its live owner");
           let refused = false;
           try { await tools.replace({path: sent, text: "not a file"}); }

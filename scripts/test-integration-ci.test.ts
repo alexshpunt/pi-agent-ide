@@ -25,6 +25,10 @@ test.each([
   const cwd = await mkdtemp(path.join(parent, "workspace-"));
   try {
     await mkdir(path.join(cwd, "scripts"));
+    await mkdir(path.join(cwd, "node_modules/.bin"), { recursive: true });
+    await writeFile(path.join(cwd, "node_modules/.bin/pi"), "#!/bin/sh\nprintf 'fixture-pi'\n", {
+      mode: 0o755,
+    });
     await mkdir(path.join(cwd, "node_modules/vitest"), { recursive: true });
     await copyFile(
       path.join(root, "scripts/test-integration-ci.sh"),
@@ -32,7 +36,7 @@ test.each([
     );
     await writeFile(
       path.join(cwd, "node_modules/vitest/vitest.mjs"),
-      `#!${process.execPath}\nconsole.log(JSON.stringify({arguments:process.argv.slice(2),runner:process.env.PI_INTEGRATION_TEST_RUNNER ?? null})); process.exit(${fixture.exit});\n`,
+      `#!${process.execPath}\nimport { execFileSync } from 'node:child_process';\nconsole.log(JSON.stringify({arguments:process.argv.slice(2),runner:process.env.PI_INTEGRATION_TEST_RUNNER ?? null,pi:execFileSync('pi', [], {encoding:'utf8'})})); process.exit(${fixture.exit});\n`,
       { mode: 0o755 },
     );
     let exit = 0;
@@ -54,8 +58,10 @@ test.each([
     ) as {
       arguments: string[];
       runner: string | null;
+      pi: string;
     };
     expect(captured.runner).toBeNull();
+    expect(captured.pi).toBe("fixture-pi");
     expect(captured.arguments).toContain(
       `--outputFile.junit=.agents/tmp/test-results/integration-${fixture.report}.xml`,
     );

@@ -41,6 +41,55 @@ test.each([
   expect(result.details.metadata?.targetUnavailable).toBeUndefined();
 });
 
+test.each([
+  ["shell:owned", "terminal-input"],
+  ["debug:owned", "debugger-input"],
+])(
+  "key input to %s never publishes file authority or a missing-file notice",
+  async (source, resolvedBy) => {
+    const store = new ResultTargetStore();
+    const core = createTextEditorCore();
+    const reader = vi.fn(async () => {
+      throw Error("This action is not a file read");
+    });
+    setMutationSnapshotReader(core, reader);
+    const receipt = {
+      content: [{ type: "text" as const, text: "Keys sent." }],
+      details: {
+        effect: "applied" as const,
+        results: [
+          new FileMutationResult({
+            ok: true,
+            path: source,
+            rawChanges: [
+              {
+                editIndex: 0,
+                fromA: 0,
+                toA: 0,
+                fromB: 0,
+                toB: 5,
+                removedText: "",
+                insertedText: "input",
+              },
+            ],
+          }),
+        ],
+      },
+    };
+    const result = await attachCommittedMutationTarget(
+      receipt,
+      [{ ...completion("", "input", resolvedBy), source, resourceSource: source }],
+      core,
+      store,
+      "insert",
+      "/workspace",
+    );
+    expect(result).toBe(receipt);
+    expect(reader).not.toHaveBeenCalled();
+    expect(result.details.metadata?.resultTarget).toBeUndefined();
+    expect(result.details.metadata?.targetUnavailable).toBeUndefined();
+  },
+);
 test("a whole-file result includes the saved final line separator", async () => {
   const store = new ResultTargetStore();
   const core = createTextEditorCore();

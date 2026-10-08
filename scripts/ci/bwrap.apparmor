@@ -1,0 +1,8 @@
+# Allow the CI Bubblewrap executable to create the user namespaces needed by its sandbox.
+# This profile is installed only on the disposable Linux test runner.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile pi_agent_ide_bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+}

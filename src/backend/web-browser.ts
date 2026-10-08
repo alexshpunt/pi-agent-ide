@@ -71,7 +71,7 @@ export async function probeSshBrowser(
     target,
     new URL("about:blank"),
     source,
-    { signal, timeoutMs: 5_000 },
+    { signal, timeoutMs: 30_000 },
     "probe",
   );
   if (!Value.Check(Type.Object({ ready: Type.Literal(true) }), result))
