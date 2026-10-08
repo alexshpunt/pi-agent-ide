@@ -12,6 +12,13 @@
     "strict": true,
     "target": "ES2023"
   },
-  "include": ["dev/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "benchmarks/**/*.ts",
+    "dev/**/*.ts",
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ],
   "exclude": [".worktrees/**", "**/dist/**", "**/node_modules/**"]
 }

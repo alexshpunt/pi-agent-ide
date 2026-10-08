@@ -1,0 +1,1259 @@
+{
+  "pi": "1.1.0",
+  "tools": [
+    {
+      "name": "bash",
+      "namespace": "ide_terminal",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "background": {
+            "type": "boolean"
+          },
+          "cols": {
+            "maximum": 300,
+            "minimum": 20,
+            "type": "integer"
+          },
+          "command": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "rows": {
+            "maximum": 120,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "timeoutSeconds": {
+            "maximum": 86400,
+            "minimum": 0.1,
+            "type": "number"
+          }
+        },
+        "required": ["command"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "copy",
+      "namespace": "ide_edit",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "start": {
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "targetEnd": {
+            "type": "string"
+          },
+          "targetStart": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "debug",
+      "namespace": "ide_debug",
+      "exposure": "deferred",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "adapter": {
+            "enum": [
+              "dart",
+              "debugpy",
+              "delve",
+              "java",
+              "elixir",
+              "julia",
+              "kotlin",
+              "lldb-dap",
+              "lua",
+              "netcoredbg",
+              "node",
+              "php",
+              "powershell",
+              "r",
+              "ruby",
+              "shell"
+            ],
+            "type": "string"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "mainClass": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "program": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": ["adapter", "program"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "delete",
+      "namespace": "ide_edit",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "start": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "diff",
+      "namespace": "ide_read",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "limit": {
+                    "type": "number"
+                  },
+                  "offset": {
+                    "type": "number"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "views": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "limit": {
+                    "type": "number"
+                  },
+                  "offset": {
+                    "type": "number"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "views": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "required": ["before", "after"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "insert",
+      "namespace": "ide_edit",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "string"
+          },
+          "before": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "separation": {
+            "anyOf": [
+              {
+                "const": "line",
+                "type": "string"
+              },
+              {
+                "const": "blank-line",
+                "type": "string"
+              }
+            ]
+          },
+          "text": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["text"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "move",
+      "namespace": "ide_edit",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "start": {
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "targetEnd": {
+            "type": "string"
+          },
+          "targetStart": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "read",
+      "namespace": "ide_read",
+      "exposure": "direct",
+      "parameters": {
+        "properties": {
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "path": {
+            "type": "string"
+          },
+          "views": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "replace",
+      "namespace": "ide_edit",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "start": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": ["text"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "search",
+      "namespace": "ide_search",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "caseSensitive": {
+            "type": "boolean"
+          },
+          "exclude": {
+            "type": "string"
+          },
+          "include": {
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "navigation": {
+            "const": "references",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "wholeWord": {
+            "type": "boolean"
+          }
+        },
+        "required": ["query"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "select",
+      "namespace": "ide_select",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "extent": {
+                        "anyOf": [
+                          {
+                            "const": "inside",
+                            "type": "string"
+                          },
+                          {
+                            "const": "around",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "const": "elementExtent",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "extent"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "extent": {
+                        "const": "around",
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "object",
+                        "type": "string"
+                      },
+                      "level": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "object": {
+                        "anyOf": [
+                          {
+                            "const": "function",
+                            "type": "string"
+                          },
+                          {
+                            "const": "call",
+                            "type": "string"
+                          },
+                          {
+                            "const": "class",
+                            "type": "string"
+                          },
+                          {
+                            "const": "if",
+                            "type": "string"
+                          },
+                          {
+                            "const": "switch",
+                            "type": "string"
+                          },
+                          {
+                            "const": "loop",
+                            "type": "string"
+                          },
+                          {
+                            "const": "try",
+                            "type": "string"
+                          },
+                          {
+                            "const": "catch",
+                            "type": "string"
+                          },
+                          {
+                            "const": "binding",
+                            "type": "string"
+                          },
+                          {
+                            "const": "assignment",
+                            "type": "string"
+                          },
+                          {
+                            "const": "object",
+                            "type": "string"
+                          },
+                          {
+                            "const": "property",
+                            "type": "string"
+                          },
+                          {
+                            "const": "array",
+                            "type": "string"
+                          },
+                          {
+                            "const": "return",
+                            "type": "string"
+                          },
+                          {
+                            "const": "throw",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "relation": {
+                        "const": "enclosing",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "object"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "part",
+                        "type": "string"
+                      },
+                      "part": {
+                        "anyOf": [
+                          {
+                            "const": "name",
+                            "type": "string"
+                          },
+                          {
+                            "const": "body",
+                            "type": "string"
+                          },
+                          {
+                            "const": "parameters",
+                            "type": "string"
+                          },
+                          {
+                            "const": "returnType",
+                            "type": "string"
+                          },
+                          {
+                            "const": "type",
+                            "type": "string"
+                          },
+                          {
+                            "const": "callee",
+                            "type": "string"
+                          },
+                          {
+                            "const": "arguments",
+                            "type": "string"
+                          },
+                          {
+                            "const": "condition",
+                            "type": "string"
+                          },
+                          {
+                            "const": "then",
+                            "type": "string"
+                          },
+                          {
+                            "const": "else",
+                            "type": "string"
+                          },
+                          {
+                            "const": "initializer",
+                            "type": "string"
+                          },
+                          {
+                            "const": "update",
+                            "type": "string"
+                          },
+                          {
+                            "const": "iterable",
+                            "type": "string"
+                          },
+                          {
+                            "const": "left",
+                            "type": "string"
+                          },
+                          {
+                            "const": "right",
+                            "type": "string"
+                          },
+                          {
+                            "const": "value",
+                            "type": "string"
+                          },
+                          {
+                            "const": "key",
+                            "type": "string"
+                          },
+                          {
+                            "const": "handler",
+                            "type": "string"
+                          },
+                          {
+                            "const": "finalizer",
+                            "type": "string"
+                          },
+                          {
+                            "const": "parameter",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["kind", "part"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "navigate",
+                        "type": "string"
+                      },
+                      "object": {
+                        "anyOf": [
+                          {
+                            "const": "function",
+                            "type": "string"
+                          },
+                          {
+                            "const": "call",
+                            "type": "string"
+                          },
+                          {
+                            "const": "class",
+                            "type": "string"
+                          },
+                          {
+                            "const": "if",
+                            "type": "string"
+                          },
+                          {
+                            "const": "switch",
+                            "type": "string"
+                          },
+                          {
+                            "const": "loop",
+                            "type": "string"
+                          },
+                          {
+                            "const": "try",
+                            "type": "string"
+                          },
+                          {
+                            "const": "catch",
+                            "type": "string"
+                          },
+                          {
+                            "const": "binding",
+                            "type": "string"
+                          },
+                          {
+                            "const": "assignment",
+                            "type": "string"
+                          },
+                          {
+                            "const": "object",
+                            "type": "string"
+                          },
+                          {
+                            "const": "property",
+                            "type": "string"
+                          },
+                          {
+                            "const": "array",
+                            "type": "string"
+                          },
+                          {
+                            "const": "return",
+                            "type": "string"
+                          },
+                          {
+                            "const": "throw",
+                            "type": "string"
+                          }
+                        ],
+                        "~optional": true
+                      },
+                      "relation": {
+                        "anyOf": [
+                          {
+                            "const": "parent",
+                            "type": "string"
+                          },
+                          {
+                            "const": "ancestors",
+                            "type": "string"
+                          },
+                          {
+                            "const": "children",
+                            "type": "string"
+                          },
+                          {
+                            "const": "descendants",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["kind", "relation"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "direction": {
+                        "anyOf": [
+                          {
+                            "const": "previous",
+                            "type": "string"
+                          },
+                          {
+                            "const": "next",
+                            "type": "string"
+                          },
+                          {
+                            "const": "all",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "const": "navigate",
+                        "type": "string"
+                      },
+                      "object": {
+                        "anyOf": [
+                          {
+                            "const": "function",
+                            "type": "string"
+                          },
+                          {
+                            "const": "call",
+                            "type": "string"
+                          },
+                          {
+                            "const": "class",
+                            "type": "string"
+                          },
+                          {
+                            "const": "if",
+                            "type": "string"
+                          },
+                          {
+                            "const": "switch",
+                            "type": "string"
+                          },
+                          {
+                            "const": "loop",
+                            "type": "string"
+                          },
+                          {
+                            "const": "try",
+                            "type": "string"
+                          },
+                          {
+                            "const": "catch",
+                            "type": "string"
+                          },
+                          {
+                            "const": "binding",
+                            "type": "string"
+                          },
+                          {
+                            "const": "assignment",
+                            "type": "string"
+                          },
+                          {
+                            "const": "object",
+                            "type": "string"
+                          },
+                          {
+                            "const": "property",
+                            "type": "string"
+                          },
+                          {
+                            "const": "array",
+                            "type": "string"
+                          },
+                          {
+                            "const": "return",
+                            "type": "string"
+                          },
+                          {
+                            "const": "throw",
+                            "type": "string"
+                          }
+                        ],
+                        "~optional": true
+                      },
+                      "relation": {
+                        "const": "siblings",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "relation"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "endColumn": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "endLine": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "const": "range",
+                        "type": "string"
+                      },
+                      "startColumn": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "startLine": {
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "startLine", "startColumn", "endLine", "endColumn"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "first": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "const": "lines",
+                        "type": "string"
+                      },
+                      "last": {
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "first", "last"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "end": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "extent": {
+                        "anyOf": [
+                          {
+                            "const": "inside",
+                            "type": "string"
+                          },
+                          {
+                            "const": "around",
+                            "type": "string"
+                          },
+                          {
+                            "const": "lines",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "const": "between",
+                        "type": "string"
+                      },
+                      "start": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "start", "end", "extent"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "from": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "const": "sliceText",
+                        "type": "string"
+                      },
+                      "to": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "from"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "trim",
+                        "type": "string"
+                      },
+                      "side": {
+                        "anyOf": [
+                          {
+                            "const": "start",
+                            "type": "string"
+                          },
+                          {
+                            "const": "end",
+                            "type": "string"
+                          },
+                          {
+                            "const": "both",
+                            "type": "string"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["kind", "side"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "delimiter": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "split",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "delimiter"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "linesOf",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "edge": {
+                        "anyOf": [
+                          {
+                            "const": "before",
+                            "type": "string"
+                          },
+                          {
+                            "const": "after",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "kind": {
+                        "const": "position",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind", "edge"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "from": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "kind": {
+                        "const": "columns",
+                        "type": "string"
+                      },
+                      "to": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["kind", "from", "to"],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "within",
+                        "type": "string"
+                      },
+                      "scopes": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["kind", "scopes"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "intersection",
+                        "type": "string"
+                      },
+                      "scopes": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["kind", "scopes"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": {
+                        "const": "difference",
+                        "type": "string"
+                      },
+                      "scopes": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["kind", "scopes"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "adjacent": {
+                        "type": "boolean"
+                      },
+                      "kind": {
+                        "const": "merge",
+                        "type": "string"
+                      }
+                    },
+                    "required": ["kind"],
+                    "type": "object"
+                  }
+                ]
+              }
+            ]
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          }
+        },
+        "required": ["path", "operation"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "stage",
+      "namespace": "ide_git",
+      "exposure": "deferred",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "change": {
+            "pattern": "^CHANGE#[0-9A-F]{4,64}$",
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": ["file", "change"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "undo",
+      "namespace": "ide_edit",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "change": {
+            "pattern": "^(?:CHANGE#[0-9A-F]{4,64}|last)$",
+            "type": "string"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          }
+        },
+        "required": ["change"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "unstage",
+      "namespace": "ide_git",
+      "exposure": "deferred",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "change": {
+            "pattern": "^CHANGE#[0-9A-F]{4,64}$",
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": ["file", "change"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "write",
+      "namespace": "ide_edit",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          }
+        },
+        "required": ["path", "content"],
+        "type": "object"
+      }
+    }
+  ]
+}

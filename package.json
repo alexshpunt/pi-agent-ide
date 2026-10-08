@@ -103,6 +103,7 @@
     "#pi-agent-text-editor-renderer/*": "./src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/*",
     "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*",
     "#test-fixtures/pdf": "./packages/pi-agent-pdf/test/pdf-fixture.ts",
+    "#capabilities/*": "./benchmarks/tool-capabilities/*",
     "#scripts/*": "./scripts/*"
   },
   "exports": {
@@ -180,9 +181,10 @@
     }
   },
   "scripts": {
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:catalog && pnpm check:package",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:catalog && pnpm check:capabilities && pnpm check:package",
     "check:boundaries": "oxnode scripts/check-package-boundaries.ts",
     "check:catalog": "oxnode scripts/generate-tool-catalog.ts --check",
+    "check:capabilities": "node benchmarks/tool-capabilities/cli.ts --check",
     "check:package": "oxnode scripts/build-public-package.ts",
     "check:paths": "oxnode scripts/check-no-machine-paths.ts",
     "dev:modular": "oxnode dev/modular/run.ts",
@@ -196,6 +198,7 @@
     "security:scan": "oxnode scripts/security-scan.ts",
     "snapshot:system-prompt": "oxnode scripts/snapshot-system-prompt.ts --output .tmp/prompt-snapshots/system-prompt.txt",
     "validate:tools:prepare": "oxnode scripts/prepare-tool-capability-workspace.ts",
+    "validate:tools:models": "node benchmarks/tool-capabilities/cli.ts",
     "test:unit": "vitest run",
     "test:unit:report": "vitest run --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/unit.xml",
     "test:integration": "pi-test run -- vitest run --config vitest.integration.config.mjs",
@@ -203,7 +206,7 @@
     "test:integration:live": "oxnode scripts/live-integration-test.ts",
     "test:integration:live:test": "oxnode scripts/live-integration-test.ts --named-test",
     "test:integration:report": "vitest run --config vitest.integration.config.mjs --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/integration.xml",
-    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts dev",
+    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts dev benchmarks",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check ."
   },
