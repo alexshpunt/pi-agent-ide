@@ -251,6 +251,20 @@ add(
 );
 
 add(
+  "write-silent",
+  ["codemode.silent-write"],
+  "In one Codemode script, await write to create silent.txt containing exactly SILENT_WRITE_BODY plus a newline. Do not print, return, or log the Write result. Finish the script without output, then report completion.",
+  [
+    {
+      tool: "write",
+      args: { path: "silent.txt", content: "SILENT_WRITE_BODY\n" },
+      parentExcludes: "SILENT_WRITE_BODY",
+    },
+  ],
+  { modes: ["codemode"], expected: { "silent.txt": "SILENT_WRITE_BODY\n" } },
+);
+
+add(
   "replace-read-search",
   ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
   "Follow replace → read → search in that order. Use replace with the exact OLD fragment in task.txt to change it to NEW. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",

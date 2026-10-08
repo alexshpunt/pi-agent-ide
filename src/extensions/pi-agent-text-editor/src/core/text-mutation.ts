@@ -376,7 +376,7 @@ export function createTextTool<TParameters extends TSchema>(
             : captured.value;
         // Live-resource actions have their own receipts, not filesystem editor batches.
         if (captured.completions.every((completion) => completion.resolvedBy === "filesystem"))
-          recordNativeTextMutation(core, toolCallId, completedValue);
+          recordNativeTextMutation(core, toolCallId, definition.name, completedValue);
         const value =
           resultTargets &&
           ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)

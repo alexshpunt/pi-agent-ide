@@ -44,6 +44,41 @@ const events = [
 const task = { steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }] };
 
 describe("capability route evidence", () => {
+  test("silent Write requires a completed parent without the child file body", () => {
+    const route = { steps: [{ tool: "write", parentExcludes: "FILE_BODY" }] };
+    const child = [
+      { type: "tool_execution_start", toolCallId: "parent", toolName: "codemode" },
+      {
+        type: "tool_execution_start",
+        toolCallId: "child",
+        parentToolCallId: "parent",
+        toolName: "write",
+      },
+      {
+        type: "tool_execution_end",
+        toolCallId: "child",
+        isError: false,
+        result: { content: [{ type: "text", text: "FILE_BODY" }] },
+      },
+    ];
+    const parent = (output: string) => ({
+      type: "tool_execution_end",
+      toolCallId: "parent",
+      isError: false,
+      result: { content: [{ type: "text", text: output }] },
+    });
+    expect(validateRoute(route, [...child, parent("Script completed")], "codemode").passed).toBe(
+      true,
+    );
+    expect(
+      validateRoute(route, [...child, parent("Script completed FILE_BODY")], "codemode").passed,
+    ).toBe(false);
+    expect(validateRoute(route, child, "codemode").passed).toBe(false);
+    expect(
+      validateRoute(route, [...child, { ...parent("Script failed"), isError: true }], "codemode")
+        .passed,
+    ).toBe(false);
+  });
   test("requires actual result reuse, not just the same tool names", () => {
     expect(validateRoute(task, events, "direct")).toEqual({ passed: true, reasons: [] });
     const bypass = events.map((event) =>
