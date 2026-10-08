@@ -91,7 +91,9 @@ export function createFileResolver(): SearchResolver {
             ? data.files.map((file) => ({
                 kind: "source",
                 label: file,
-                link: pathToFileURL(path.resolve(data.cwd, file)).href,
+                link: file.startsWith("ssh://")
+                  ? file
+                  : pathToFileURL(path.resolve(data.cwd, file)).href,
               }))
             : [{ kind: "note", text: "No files found" }],
         },
@@ -151,12 +153,16 @@ function createMatchResolver(
           : await runScopedSearch(recipe, context.scope, context.cwd, context.signal);
       const fuzzy =
         context.scope === undefined &&
-        context.environment === undefined &&
         id === "text" &&
         result.complete &&
         result.matches.length === 0 &&
         isFuzzyQuery(request.query)
-          ? await searchFuzzy({ ...request, query: request.query }, context.cwd, context.signal)
+          ? await searchFuzzy(
+              { ...request, query: request.query },
+              context.cwd,
+              context.signal,
+              context.environment,
+            )
           : undefined;
       return {
         kind: "resolved",
@@ -214,8 +220,9 @@ function createMatchResolver(
               context.cwd,
               registrationSignal,
               recipe,
-              (signal) => searchFuzzyAlternative(recipe, context.cwd, signal),
+              (signal) => searchFuzzyAlternative(recipe, context.cwd, signal, context.environment),
               fuzzyLimits.vocabularyBytes,
+              context.environment,
             );
           } catch {
             context.signal?.throwIfAborted();

@@ -65,8 +65,8 @@ test("structured transfers pair ranges in declared order and remove only repeate
   const mutation = await prepared.mutate?.(f.context);
   const edit = mutation?.edits.get(f.destination);
   expect(edit?.changes).toEqual([
-    { from: 0, to: 3, insert: "last" },
-    { from: 4, to: 7, insert: "first" },
+    { from: 0, to: 3, insert: "last", allowUnchanged: true },
+    { from: 4, to: 7, insert: "first", allowUnchanged: true },
   ]);
   expect(mutation?.edits.has(f.source)).toBe(false);
   expect(applyTextChanges("ONE TWO", edit?.changes ?? []).content).toBe("last first");

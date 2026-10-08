@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { ResultRange, ResultTargetStore } from "pi-agent-resource";
 import type { ReadPostReadHandler, ReadToolPluginApi } from "#src/api/tools/read.js";
 
@@ -6,7 +7,7 @@ export function createReadResultTargetHandler(
   store: ResultTargetStore,
   read: ReadToolPluginApi["read"],
 ): ReadPostReadHandler {
-  return (context) => {
+  return async (context) => {
     const state = context.state;
     if (
       state?.contentKind !== "text" ||
@@ -14,6 +15,18 @@ export function createReadResultTargetHandler(
       context.sourceText !== state.text.content
     )
       return { kind: "continue", context };
+    if (state.resolvedBy === "filesystem") {
+      try {
+        const current = await readFile(state.source, {
+          encoding: "utf8",
+          signal: context.resolverContext.signal,
+        });
+        if (current !== state.text.content) return { kind: "continue", context };
+      } catch {
+        context.resolverContext.signal?.throwIfAborted();
+        return { kind: "continue", context };
+      }
+    }
     const input =
       context.sourceTarget === undefined
         ? undefined

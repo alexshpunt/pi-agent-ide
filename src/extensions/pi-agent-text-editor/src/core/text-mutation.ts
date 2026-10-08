@@ -297,8 +297,12 @@ export function createTextTool<TParameters extends TSchema>(
                     return failureToolResult(
                       "transaction" in input ? String(input.transaction) : "",
                       code,
-                      error instanceof Error ? error.message : String(error),
-                      "unknown",
+                      error instanceof ResourceError
+                        ? `${error.code}: ${error.source}`
+                        : error instanceof Error
+                          ? error.message
+                          : String(error),
+                      declaredMutationEffect(error),
                     );
                   }
                 }
@@ -1766,6 +1770,16 @@ export function buildFailedCopyWriteResult(
       metadata: { copyRollback: rollbackFailed ? "failed" : "restored" },
     },
   };
+}
+function declaredMutationEffect(error: unknown): "applied" | "not-applied" | "unknown" {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    (error.effect === "applied" || error.effect === "not-applied" || error.effect === "unknown")
+  )
+    return error.effect;
+  return "unknown";
 }
 function failureToolResult(
   source: string,

@@ -26,6 +26,7 @@ export function createSshSearchEnvironmentProvider(
       basename: (source) => path.posix.basename(own(source).path),
       isDirectory: async (source, signal) =>
         (await backend.stat(own(source).path, { signal })).kind === "directory",
+      byteSize: async (source, signal) => (await backend.stat(own(source).path, { signal })).size,
       readText: async (source, signal) =>
         (await backend.read(own(source).path, { signal })).bytes.toString("utf8"),
       async execute(command, arguments_, cwd, signal) {

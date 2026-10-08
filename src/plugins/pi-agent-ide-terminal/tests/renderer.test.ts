@@ -123,7 +123,7 @@ describe("terminal renderer", () => {
   test("a completed terminal keeps its historical wait reason without suggesting more input", () => {
     const running = snapshot({ waitReason: "timeout" });
     expect(formatAgentTerminalSnapshot(running)).toContain(
-      "then use write or insert to send input",
+      "use write or insert when input is needed",
     );
     const completed = formatAgentTerminalSnapshot({ ...running, status: "completed", exitCode: 0 });
     expect(completed).toContain("reason: timeout");

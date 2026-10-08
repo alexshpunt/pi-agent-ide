@@ -26,6 +26,8 @@ export interface SearchEnvironment {
   dirname(source: string): string;
   basename(source: string): string;
   isDirectory(source: string, signal?: AbortSignal): Promise<boolean>;
+  /** Read source size on this owner before bounded candidate snapshot capture. */
+  byteSize?(source: string, signal?: AbortSignal): Promise<number>;
   readText(source: string, signal?: AbortSignal): Promise<string>;
   /** Run exact argv on this owner, with bounded output and cancellation.
    * Missing execution support must reject structural queries, never run locally.

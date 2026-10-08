@@ -392,13 +392,13 @@ describe("mutation renderer lifecycle", () => {
       kind: "text-mutation",
       effect: "unknown",
       code: "POST_WRITE_FAILED",
-      expected: "? Outcome unknown · edit failed",
+      expected: "Effects unknown · edit failed",
     },
     {
       kind: "text-mutation",
       effect: "applied",
       code: "POST_WRITE_FAILED",
-      expected: "✓ Applied · edit failed",
+      expected: "Saved · post-write step failed",
     },
     {
       kind: "direct-mutation",

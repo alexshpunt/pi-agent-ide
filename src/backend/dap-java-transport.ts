@@ -43,8 +43,10 @@ export async function prepareSshJavaDebugger(
   try {
     const ready = await readReady(transport, cwd, startup);
     startup.throwIfAborted();
+    const client = DapClient.fromTransport(transport);
+    transport.readable.resume();
     return {
-      client: DapClient.fromTransport(transport),
+      client,
       adapterID: "java",
       request: "attach",
       launch: {

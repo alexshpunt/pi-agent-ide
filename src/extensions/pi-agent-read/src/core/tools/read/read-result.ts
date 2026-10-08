@@ -204,6 +204,16 @@ export function failureResult(failure: ReadFailure): ReadToolResult {
       message: `${safe.code}: ${failure.source ?? safe.source}`,
       cause: new ResourceError(safe.code, safe.source, safe.effect),
     };
+  } else if (
+    failure.cause instanceof Error &&
+    "code" in failure.cause &&
+    !["ENOENT", "EACCES", "EPERM"].includes(String(failure.cause.code))
+  ) {
+    failure = {
+      ...failure,
+      message: `${failure.code}: ${failure.source ?? "source"}`,
+      cause: undefined,
+    };
   }
   return {
     content: [

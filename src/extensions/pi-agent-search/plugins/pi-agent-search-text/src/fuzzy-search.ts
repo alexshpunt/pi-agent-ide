@@ -6,6 +6,7 @@ import {
   rankFuzzyIdentifiers,
   type FuzzyResult,
   type FuzzyCandidate,
+  type SearchEnvironment,
 } from "pi-agent-search/api/search";
 import { ripgrepScope, searchText, type TextSearchRequest } from "#src/search-backend.js";
 import { resolveRipgrepExecutable } from "#src/ripgrep.js";
@@ -15,12 +16,15 @@ export async function searchFuzzy(
   request: TextSearchRequest,
   cwd: string,
   parent?: AbortSignal,
+  environment?: SearchEnvironment,
 ): Promise<FuzzyResult | undefined> {
   const deadline = AbortSignal.timeout(fuzzyLimits.timeoutMs);
   const signal = parent === undefined ? deadline : AbortSignal.any([parent, deadline]);
   try {
     signal.throwIfAborted();
-    const vocabulary = await collectNames(request, cwd, signal);
+    if (environment !== undefined && environment.byteSize === undefined)
+      return skipped("source owner cannot bound candidate snapshots");
+    const vocabulary = await collectNames(request, cwd, signal, environment);
     if (vocabulary.limited)
       return skipped("name collection reached its byte or unique-name budget");
     const candidates: FuzzyCandidate[] = [];
@@ -32,6 +36,7 @@ export async function searchFuzzy(
         { ...request, query: name.identifier },
         cwd,
         signal,
+        environment,
       );
       if (result.matches.length === 0) {
         if (!result.complete)
@@ -41,7 +46,10 @@ export async function searchFuzzy(
       for (const match of result.matches) {
         if (sources.has(match.source)) continue;
         sources.add(match.source);
-        snapshotBytes += (await stat(match.source)).size;
+        snapshotBytes +=
+          environment === undefined
+            ? (await stat(match.source)).size
+            : await ownedByteSize(environment, match.source, signal);
         if (snapshotBytes > fuzzyLimits.vocabularyBytes)
           return skipped("candidate source snapshots exceeded the byte budget");
       }
@@ -62,6 +70,7 @@ export async function searchFuzzyAlternative(
   request: TextSearchRequest,
   cwd: string,
   parent?: AbortSignal,
+  environment?: SearchEnvironment,
 ) {
   const deadline = AbortSignal.timeout(fuzzyLimits.timeoutMs);
   const signal = parent === undefined ? deadline : AbortSignal.any([parent, deadline]);
@@ -70,6 +79,7 @@ export async function searchFuzzyAlternative(
     cwd,
     signal,
     { matches: fuzzyLimits.matchesPerCandidate, bytes: fuzzyLimits.verificationBytes },
+    environment,
   );
   // ripgrep's word boundary includes letters/digits/underscore, but treats dollar as punctuation.
   return {
@@ -80,6 +90,15 @@ export async function searchFuzzyAlternative(
     ),
   };
 }
+async function ownedByteSize(
+  environment: SearchEnvironment,
+  source: string,
+  signal: AbortSignal,
+): Promise<number> {
+  if (environment.byteSize === undefined)
+    throw new Error("Source owner cannot bound candidate snapshots");
+  return environment.byteSize(source, signal);
+}
 function skipped(message: string): FuzzyResult {
   return { status: "skipped", message, candidates: [] };
 }
@@ -88,8 +107,40 @@ async function collectNames(
   request: TextSearchRequest,
   cwd: string,
   signal: AbortSignal,
+  environment?: SearchEnvironment,
 ): Promise<FuzzyVocabulary> {
-  const scope = await ripgrepScope(request, cwd);
+  const scope = await ripgrepScope(request, cwd, environment, signal);
+  if (environment !== undefined) {
+    const vocabulary = new FuzzyVocabulary();
+    const controller = new AbortController();
+    const ownedSignal = AbortSignal.any([signal, controller.signal]);
+    try {
+      const result = await environment.runLines(
+        [
+          "--only-matching",
+          "--no-filename",
+          "--case-sensitive",
+          ...scope.arguments,
+          "--",
+          "[A-Za-z_$][A-Za-z0-9_$]*",
+          scope.target,
+        ],
+        scope.cwd,
+        (name) => {
+          if (controller.signal.aborted) return;
+          if (vocabulary.account(Buffer.byteLength(name) + 1)) vocabulary.add(name);
+          if (vocabulary.limited) controller.abort();
+        },
+        ownedSignal,
+      );
+      if (!vocabulary.limited && result.code !== 0 && result.code !== 1)
+        throw new Error(result.stderr.trim() || "Ripgrep failed.");
+    } catch (error) {
+      signal.throwIfAborted();
+      if (!vocabulary.limited) throw error;
+    }
+    return vocabulary;
+  }
   signal.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(

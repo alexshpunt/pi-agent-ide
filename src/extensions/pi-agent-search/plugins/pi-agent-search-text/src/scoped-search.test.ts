@@ -49,7 +49,7 @@ test("scoped text search keeps gaps, remote identities and UTF-16 columns separa
       selected,
       process.cwd(),
     ),
-  ).rejects.toThrow("unsupported");
+  ).rejects.toThrow("Boolean scoped search is not available yet.");
 });
 
 test("search handles preserve a remote owner's guard and the original snapshot", async () => {
