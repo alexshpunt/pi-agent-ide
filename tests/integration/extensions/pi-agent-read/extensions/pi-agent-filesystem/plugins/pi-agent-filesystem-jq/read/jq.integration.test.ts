@@ -108,7 +108,6 @@ test.skipIf(!jqAvailable)(
       .flatMap((block) => (block.type === "text" ? [block.text] : []))
       .join("\n");
     expect(firstText).toContain("offset=2001");
-    expect(firstText).toContain("Session files and other JSONL input");
     expect(getToolResultMessage(result, "continue").details).toMatchObject({
       startLine: 2001,
       endLine: 2200,

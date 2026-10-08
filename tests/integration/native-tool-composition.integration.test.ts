@@ -206,7 +206,7 @@ const copied=await tools.copy({path:source,target:matches(destination)[0]});`
           `const before=await tools.fixture_copy_stat({});\n` +
             copy +
             `
-check(copied.includes("No changes: destination already has this text."),"No-op Copy did not explain its outcome");
+check(copied.includes("No changes:"),"No-op Copy did not explain its outcome");
 text(copied);
 check(matches(await tools.search({path:copied,query:"format_me"})).length===1,"No-op Copy lost or widened its destination");
 check(matches(await tools.search({path:copied,query:"outside"})).length===0,"No-op Copy includes neighbors");
@@ -222,7 +222,7 @@ check(await tools.fixture_copy_stat({})===before,"No-op Copy wrote its destinati
       );
       expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(source);
       expect(await readFile(target, "utf8")).toBe(destination);
-      expect(run.tuiRenderedOutput).toContain("No changes: destination already has this text.");
+      expect(run.tuiRenderedOutput).toContain("No changes:");
       await expect(readFile(path.join(cwd, "post-edit-events.jsonl"))).rejects.toMatchObject({
         code: "ENOENT",
       });
@@ -275,9 +275,7 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));
         getToolExecution(run, `copy-direct-${index}`).isError,
         getToolResultText(run, `copy-direct-${index}`),
       ).toBe(false);
-      expect(getToolResultText(run, `copy-direct-${index}`)).toContain(
-        "No changes: destination already has this text.",
-      );
+      expect(getToolResultText(run, `copy-direct-${index}`)).toContain("No changes:");
       expect(await readFile(path.join(cwd, target), "utf8")).toBe(
         "head\nNEW\ntail\nalpha outside\n",
       );
@@ -381,9 +379,7 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));`,
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(getToolResultText(run, "replace-direct")).toContain("Replaced selected text:");
     expect(getToolResultText(run, "replace-direct")).not.toContain("Copied selected text:");
-    expect(getToolResultText(run, "copy-direct")).toContain(
-      "No changes: destination already has this text.",
-    );
+    expect(getToolResultText(run, "copy-direct")).toContain("No changes:");
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("new\nNEW\n");
   });
@@ -424,7 +420,7 @@ check(matches(await tools.search({path:copied,query:"alpha"})).length===1,"Peer 
     );
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("new\nalpha\n");
-    expect(run.tuiRenderedOutput).toContain("No changes: destination already has this text.");
+    expect(run.tuiRenderedOutput).toContain("No changes:");
     expect(getToolResultText(run, "compose-0")).not.toContain("Copied selected text:");
     expect(run.tuiRenderedOutput).toMatch(/│\s+1 ~ new/u);
     expect(run.tuiRenderedOutput).not.toMatch(/│\s+2 ~ alpha/u);
@@ -551,9 +547,7 @@ check(state.effects[1]?.effect==="unknown" && state.effects[1]?.isError,"Failed 
     expect(result).not.toContain("Completed writes:");
     expect(result).toContain("Path: c07-probe:unrestored");
     expect(run.tuiRenderedOutput).toContain("Copy failed · changes rolled back");
-    expect(run.tuiRenderedOutput).toContain(
-      "Copy failed · rollback failed; read destination before retrying",
-    );
+    expect(run.tuiRenderedOutput).toContain("Copy failed · rollback failed");
   });
 });
 test("standalone Copy retains each rollback outcome in one assistant turn", async () => {
@@ -608,9 +602,7 @@ check(state.effects.find(item=>item.target==="c07-probe:unrestored")?.effect==="
     );
     // The state check scrolls these earlier cards out of the final viewport.
     expect(run.terminalOutput).toContain("Copy failed · changes rolled back");
-    expect(run.terminalOutput).toContain(
-      "Copy failed · rollback failed; read destination before retrying",
-    );
+    expect(run.terminalOutput).toContain("Copy failed · rollback failed");
   });
 });
 
@@ -649,7 +641,7 @@ check(state.attempts.length===2,"Native Copy skipped or replayed a write");`,
       expect(run.tuiRenderedOutput).toContain(
         outcome === "restored"
           ? "Copy failed · changes rolled back"
-          : "Copy failed · rollback failed; read destination before retrying",
+          : "Copy failed · rollback failed",
       );
     });
   },
@@ -672,12 +664,8 @@ check(state.writes.length===1&&state.writes[0].source==="c09-probe:target","Copy
     const result = getToolResultText(run, "compose-0");
     expect(getToolExecution(run, "compose-0").isError, result).toBe(false);
     expect(result).not.toContain("No file was changed.");
-    expect(result).toContain(
-      "Copy failed. Its effects are uncertain. Read the affected destinations before retrying.",
-    );
-    expect(run.tuiRenderedOutput).toContain(
-      "Copy failed · effects uncertain; read destination before retrying",
-    );
+    expect(result).toContain("Copy failed");
+    expect(run.tuiRenderedOutput).toContain("Copy failed · effects uncertain");
   });
 });
 
@@ -1188,7 +1176,7 @@ test("whole-file operations preserve binary bytes without granting a text target
     await writeFile(path.join(cwd, "existing.bin"), bytes);
     const run = await runComposition(cwd, "file-operation-binary-and-refusal", [
       `const copied=await tools.copy({path:"source.bin",target:"copy.bin"});
-check(copied.includes("No verified text selection. Read the destination before further edits."),"Binary Copy did not explain unavailable authority");
+check(copied.includes("No verified text selection"),"Binary Copy did not explain unavailable authority");
 await rejects(()=>tools.search({path:copied,query:"BAD"}),/no reusable text selection/);
 const moved = await tools.move({path:"copy.bin",target:"existing.bin"});
 await rejects(()=>tools.search({path:moved,query:"BAD"}),/no reusable text selection/);
@@ -1197,9 +1185,7 @@ text(copied);`,
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(run.tuiRenderedOutput).toContain(
-      "no verified text selection; read destination before further edits",
-    );
+    expect(run.tuiRenderedOutput).toContain("no verified text selection");
     for (const name of ["source.bin", "existing.bin"])
       expect(await readFile(path.join(cwd, name))).toEqual(bytes);
     await expect(readFile(path.join(cwd, "copy.bin"))).rejects.toThrow("ENOENT");

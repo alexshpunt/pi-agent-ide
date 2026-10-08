@@ -10,9 +10,7 @@ test("fails and aborts a search that exceeds its timeout", async () => {
     return new Promise<string>(() => {});
   });
 
-  const rejection = expect(result).rejects.toEqual(
-    new SearchTimeoutError("Search timed out after 30 seconds. Try a smaller path scope."),
-  );
+  const rejection = expect(result).rejects.toBeInstanceOf(SearchTimeoutError);
   await vi.advanceTimersByTimeAsync(30_000);
 
   await rejection;

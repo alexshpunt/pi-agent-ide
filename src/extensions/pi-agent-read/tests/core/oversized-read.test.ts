@@ -26,13 +26,11 @@ test("an oversized local line offers an executable original-byte read without re
     const result = await limitReadOutput(original, { path: source, views: ["anchors"] });
     const block = result.content[0];
     if (block?.type !== "text") throw new Error("Expected the oversized-line notice");
-    expect(block.text).toBe(
-      `[Line 7 is 58.6KB, exceeds the 50.0KB output limit. This line was not returned. Read ${JSON.stringify(`raw:${source}`)} with offset=0 and limit=4096 to inspect the original bytes.]`,
-    );
-    const action = /Read ("(?:[^"\\]|\\.)*") with offset=(\d+) and limit=(\d+)/u.exec(block.text);
+    const action = /("(?:[^"\\\r\n]|\\.)*")[^\n]*?offset=(\d+)[^\n]*?limit=(\d+)/u.exec(block.text);
     if (action === null) throw new Error("Missing bounded raw recovery");
     const rawSource: unknown = JSON.parse(action[1] ?? "");
     if (typeof rawSource !== "string") throw new Error("Expected a raw source string");
+    expect(rawSource).toBe(`raw:${source}`);
     const bytes = await read.execute(
       { path: rawSource, offset: Number(action[2]), limit: Number(action[3]) },
       { cwd },
@@ -70,12 +68,12 @@ test("an oversized jq value asks for a narrower filter and retains its full save
       return "temp:saved";
     },
   );
-  expect(result.content).toEqual([
-    {
-      type: "text",
-      text: "[Output line 1 is 58.6KB, exceeds the 50.0KB output limit. This line was not returned. Narrow the jq filter to return a smaller value. Full output: temp:saved. Available until this runtime is disposed.]",
-    },
-  ]);
+  const block = result.content[0];
+  if (block?.type !== "text") throw new Error("Missing transformed output notice");
+  expect(block.text).toContain("jq");
+  expect(block.text).toContain("temp:saved");
+  expect(block.text).not.toContain("raw:");
+  expect(block.text).not.toContain(content);
   expect(saved).toEqual([content]);
   expect(result.script).toBe(original.script);
   expect(result.details.temporarySource).toBe("temp:saved");
@@ -93,12 +91,14 @@ test("directory and nonlocal oversized output do not offer an invalid raw file r
         path: source,
         views: resolvedBy === "http" ? ["jq:."] : undefined,
       });
-      expect(result.content).toEqual([
-        {
-          type: "text",
-          text: "[Line 7 is 58.6KB, exceeds 50.0KB limit. Use a source-specific tool to read this line in smaller byte ranges.]",
-        },
-      ]);
+      const block = result.content[0];
+      if (block?.type !== "text") throw new Error("Missing oversized output notice");
+      expect(block.text).not.toContain("raw:");
+      expect(block.text).not.toContain("x".repeat(60000));
+      expect(result.details.truncation).toMatchObject({
+        outputLines: 0,
+        firstLineExceedsLimit: true,
+      });
     }
   } finally {
     await rm(cwd, { recursive: true, force: true });

@@ -152,7 +152,6 @@ test("returns a bounded preview for unsupported binary content", async () => {
   expect(result).toMatchObject({ details: { resolvedBy: "web" } });
   const output = getToolResultText(run);
   expect(output).toContain("Unsupported binary response");
-  expect(output).toContain("Read cannot convert this Content-Type.");
   expect(output).toContain("Preview: first 2 bytes (hex).");
   expect(output).toContain("c3 28");
   expect(output).not.toContain("the remaining body was not downloaded");

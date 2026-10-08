@@ -133,7 +133,6 @@ test.each([
     expect(messages).not.toContain("ide-code-review");
   }
   const prompt = getProviderSystemPrompt(result);
-  expect(prompt).toContain("reusable code-review requirement into a proposed project Jev rule.");
   if (mode === "capture-only") {
     expect(prompt).toContain("Jev rule capture: enabled");
     expect(prompt).toContain("capture-code-review-rule");

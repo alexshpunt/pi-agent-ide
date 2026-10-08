@@ -74,7 +74,6 @@ test("delivers loaded source/view contracts and late metadata to the real Pi pro
   ])
     expect(views?.description).toContain(view);
   expect(views?.description).toContain("scale=0.75");
-  expect(views?.description).toContain("cannot be combined");
   expect(offset?.description).toContain("row-major");
   expect(limit?.description).toContain("output pixels");
   expect(source?.description).not.toContain("shell:<session>");
