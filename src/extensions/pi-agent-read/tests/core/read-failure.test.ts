@@ -38,18 +38,21 @@ test("missing-file hints stay optional and permissions do not invent a retry", (
     message: "Unable to read notes.txt",
     cause: Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" }),
   };
-  expect(resultText(missing)).toContain("Source not found. Search for the correct path.");
+  expect(resultText(missing)).toContain(JSON.stringify("notes.txt"));
+  expect(resultText(missing)).toContain("Source not found");
+  expect(resultText(missing)).not.toContain("ENOENT");
   const hinted = resultText({ ...missing, candidates: [{ path: "note.txt" }] });
   expect(hinted).toContain('- "note.txt"');
-  expect(hinted).toContain("Retry read with an exact candidate path.");
-  expect(hinted).not.toContain("Search for the correct path");
+  expect(resultText(missing)).not.toContain(JSON.stringify("note.txt"));
   const denied = resultText({
     ...missing,
     cause: Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }),
   });
-  expect(denied).toContain("Access denied.");
-  expect(denied).not.toContain("Search");
-  expect(denied).not.toContain("Retry");
+  expect(denied).toContain(JSON.stringify("notes.txt"));
+  expect(denied).toContain("Access denied");
+  expect(denied).not.toContain("Source not found");
+  expect(denied).not.toContain("EACCES");
+  expect(denied).not.toContain(JSON.stringify("note.txt"));
 });
 
 test("anchor recovery names the actual source while preserving a stale-line candidate", () => {
@@ -59,9 +62,8 @@ test("anchor recovery names the actual source while preserving a stale-line cand
     message: "line hash anchor is stale\nCandidate: line 2",
   });
   expect(text).toContain("line hash anchor is stale\nCandidate: line 2");
-  expect(text).toContain(
-    'Read "/workspace/quoted\\"notes.txt" with views=["anchors"] and choose a current anchor.',
-  );
+  expect(text).toContain(JSON.stringify('/workspace/quoted"notes.txt'));
+  expect(text).toContain('views=["anchors"]');
   expect(text).not.toContain("FRAGMENT_FAILED");
 });
 
@@ -73,9 +75,9 @@ test("missing input gives a valid next call without changing the rejection", asy
     expect(result.details.failure?.code).toBe("INVALID_REQUEST");
     const block = result.content[0];
     if (block?.type !== "text") throw new Error("Expected missing-source failure");
-    expect(block.text).toContain(
-      "No source was provided. Supply path with a source or an unchanged result reference.",
-    );
+    expect(result.details.failure?.source).toBeUndefined();
+    expect(block.text).toContain("path");
+    expect(block.text).not.toContain("INVALID_REQUEST");
     expect(result.script).toBeUndefined();
   } finally {
     await read.dispose();

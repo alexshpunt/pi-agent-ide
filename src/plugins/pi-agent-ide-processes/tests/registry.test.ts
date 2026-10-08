@@ -132,7 +132,10 @@ describe("Agent IDE process registry", () => {
     active = false;
     providerListener();
     const closedProcess = component?.render(80).join("\n") ?? "";
-    expect(closedProcess).toContain("Process is no longer active.");
+    expect(closedProcess).not.toContain("timer output");
+    component?.handleInput?.("i");
+    component?.handleInput?.("ignored after exit");
+    expect(sendInput).toHaveBeenCalledTimes(1);
     expect(closedProcess).toContain("esc back");
     closeOverlay?.(null);
     await running;

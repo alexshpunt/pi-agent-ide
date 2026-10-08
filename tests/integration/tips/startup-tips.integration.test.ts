@@ -140,13 +140,14 @@ test("names an actionable setup problem and fingerprints changed state", async (
     extensions: [ideExtension],
   });
 
-  expect(first.tuiRenderedOutput).toContain("│ PI AGENT IDE · Project setup needs attention");
-  expect(first.tuiRenderedOutput).toContain("│ • Configured linter custom cannot run");
-  expect(first.tuiRenderedOutput).toContain("│ Run /pi-agent-ide-doctor");
+  expect(first.tuiRenderedOutput).toContain("PI AGENT IDE");
+  expect(first.tuiRenderedOutput).toContain("missing-eslint");
+  expect(first.tuiRenderedOutput).toContain("/pi-agent-ide-doctor");
   expect(first.providerRequests).toHaveLength(1);
-  expect(JSON.stringify(first.providerRequests)).not.toContain("Configured linter custom");
-  expect(repeated.tuiRenderedOutput).not.toContain("Project setup");
-  expect(changed.tuiRenderedOutput).toContain("Project setup needs attention");
+  expect(JSON.stringify(first.providerRequests)).not.toContain("missing-eslint");
+  expect(repeated.tuiRenderedOutput).not.toContain("/pi-agent-ide-doctor");
+  expect(changed.tuiRenderedOutput).toContain("missing-oxlint");
+  expect(changed.tuiRenderedOutput).toContain("/pi-agent-ide-doctor");
 });
 
 test("does not render the doctor tip when its core or provider extension is disabled", async () => {

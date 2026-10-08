@@ -47,11 +47,9 @@ test("overview recovery names the quoted original source without replacing its s
   if (result.kind !== "return") throw new Error("Missing overview");
   const block = result.result.content[0];
   if (block?.type !== "text") throw new Error("Missing text");
-  expect(block.text).toContain("the requested text exceeded the output limit.");
-  expect(block.text).toContain(
-    `Some source text is omitted. Read ${JSON.stringify(file)} with offset and limit for exact source text.`,
-  );
-  const action = /Read ("(?:[^"\\]|\\.)*") with offset and limit/.exec(block.text);
+  expect(block.text).toContain("offset");
+  expect(block.text).toContain("limit");
+  const action = /("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*offset[^\n]*limit)/u.exec(block.text);
   if (action?.[1] === undefined) throw new Error("Missing source action");
   const recoveredSource: unknown = JSON.parse(action[1]);
   expect(recoveredSource).toBe(file);

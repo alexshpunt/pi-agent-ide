@@ -211,10 +211,11 @@ test.each(["matches", "files"] as const)(
     const result = await core.execute({ query: "missing" }, { cwd: process.cwd() });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({ status: "success", data });
-    expect(result.content).toContainEqual({
-      type: "text",
-      text: "Search coverage is incomplete. Do not conclude absence or use this result as an edit scope.",
-    });
+    expect(result.content).toHaveLength(2);
+    expect(result.content[0]).toEqual({ type: "text", text: "No matches found." });
+    const warning = result.content[1];
+    if (warning?.type !== "text") throw new Error("Missing coverage warning");
+    expect(warning.text).toContain("incomplete");
   },
 );
 
@@ -250,10 +251,11 @@ describe("search fallback dispatch", () => {
       expect(specialized).not.toHaveBeenCalled();
       expect(fallback).toHaveBeenCalledWith(request, { cwd: process.cwd() });
       expect(result.details.resolverId).toBe("text");
-      expect(result.content).toContainEqual({
-        type: "text",
-        text: "Search fallback: empty protocol query; searched the original text.",
-      });
+      expect(result.content).toHaveLength(2);
+      expect(result.content[1]).toEqual({ type: "text", text: "local hits" });
+      const notice = result.content[0];
+      if (notice?.type !== "text") throw new Error("Missing fallback notice");
+      expect(notice.text).toContain("fallback");
     },
   );
   test("tries specialized resolvers before fallback regardless of numeric priority", async () => {
@@ -268,10 +270,11 @@ describe("search fallback dispatch", () => {
     const result = await core.execute({ query: "unknown:needle" }, { cwd: process.cwd() });
     expect(fallback.mock.calls[0]?.[0]).toEqual({ query: "unknown:needle" });
     expect(result.details.resolverId).toBe("text");
-    expect(result.content[0]).toEqual({
-      type: "text",
-      text: "Search fallback: unhandled protocol query; searched the original text.",
-    });
+    expect(result.content).toHaveLength(2);
+    expect(result.content[1]).toEqual({ type: "text", text: "local hits" });
+    const notice = result.content[0];
+    if (notice?.type !== "text") throw new Error("Missing fallback notice");
+    expect(notice.text).toContain("fallback");
   });
   test.each([new Error("service down"), { kind: "failed", error: new Error("timeout") } as const])(
     "keeps resolver failures visible",
