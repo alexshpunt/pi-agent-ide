@@ -286,6 +286,12 @@ def perform(request):
             pass
         os.rmdir(directory)
         return None
+    if operation == "temporary-environment":
+        agent = os.environ.get("PI_CODING_AGENT_DIR", "").strip()
+        result = {"home": os.path.expanduser("~"), "temporary": tempfile.gettempdir()}
+        if agent:
+            result["agentDirectory"] = os.path.abspath(agent)
+        return result
     if operation == "realpath":
         return os.path.realpath(path, strict=True)
     if operation == "git-query":

@@ -226,6 +226,11 @@ export async function prepareTrial(
         "Initial fixture",
       ]);
     }
+    if (task.setup === "delete-temporary-no-git") {
+      // The fixture's parent is the disposable source clone. Remove only its Git metadata
+      // so the non-Git cases cannot inherit that worktree or ignore fixture-local settings.
+      await rm(path.join(workspace, ".git"), { recursive: true });
+    }
     if (task.setup === "delete-objects") {
       await mkdir(path.join(cwd, "remove-tree", "nested", "empty"), { recursive: true });
       await writeFile(path.join(cwd, "remove-tree", "nested", "data.bin"), Buffer.from([0, 10]));

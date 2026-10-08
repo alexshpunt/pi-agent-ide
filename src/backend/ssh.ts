@@ -147,6 +147,27 @@ export class SshBackend {
     this.checked(lstatSchema, data, filePath, false);
     return data;
   }
+  /** Read this account's native home, system temp and configured Pi directory.
+   * Controller environment and configuration never become target cleanup permissions.
+   */
+  async temporaryEnvironment(context: BackendOperationContext = {}) {
+    const data = await this.request(
+      { operation: "temporary-environment", path: this.target.workspace },
+      false,
+      context,
+    );
+    this.checked(
+      Type.Object({
+        home: Type.String({ minLength: 1, pattern: "^/" }),
+        temporary: Type.String({ minLength: 1, pattern: "^/" }),
+        agentDirectory: Type.Optional(Type.String({ minLength: 1, pattern: "^/" })),
+      }),
+      data,
+      this.target.workspace,
+      false,
+    );
+    return data;
+  }
   /** Snapshot a tree without following source links or downloading file contents. */
   async objectSnapshot(filePath: string, context: BackendOperationContext = {}) {
     const data = await this.request(

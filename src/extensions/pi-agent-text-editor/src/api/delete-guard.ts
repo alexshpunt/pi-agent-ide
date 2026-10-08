@@ -17,6 +17,15 @@ export interface BeforeDeleteEvent {
 export interface DeleteFileAccess {
   /** Omitted means POSIX target paths; native uses the controller platform's path syntax. */
   readonly pathStyle?: "posix" | "native";
+  /** Native account defaults and config directory for temporary Delete exceptions.
+   * Omitted disables those exceptions; a remote owner must never use controller values.
+   * All returned paths are absolute on this owner. Called again during policy recheck.
+   */
+  readonly temporaryEnvironment?: (signal?: AbortSignal) => Promise<{
+    readonly home: string;
+    readonly temporary: string;
+    readonly agentDirectory?: string;
+  }>;
   readonly realpath: (source: string) => Promise<string>;
   readonly inspect: (source: string) => Promise<{
     readonly kind: "file" | "directory" | "symlink" | "other";

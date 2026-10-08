@@ -1,4 +1,5 @@
 import path from "node:path";
+import { loadTemporaryDirectories } from "./temporary-directories.js";
 import { requiredValue } from "pi-agent-invariant";
 import type { BeforeDeleteEvent, DeleteFileAccess } from "#src/api/delete-guard.js";
 import { localFileTransferAccess as localFiles } from "#src/api/native-files.js";
@@ -28,19 +29,20 @@ export async function prepareDeletion(
   context: DeletePolicyContext,
   signal?: AbortSignal,
 ): Promise<BeforeDeleteEvent & { readonly revision: string }> {
-  const guard = await prepareDeletionGuard(source, cwd, context, signal);
+  const guard = await prepareDeletionGuard(source, cwd, context, signal, true);
   await guard.verify();
   return guard.event;
 }
 
-/** Keep approval checks available when one operation removes more than one object. */
+/** Keep approval checks for multi-object removals; only Delete opts into temporary cleanup. */
 export async function prepareDeletionGuard(
   source: string,
   cwd: string,
   context: DeletePolicyContext,
   signal?: AbortSignal,
+  allowTemporary = false,
 ): Promise<DeletionGuard> {
-  const before = await inspectDeletion(source, cwd, signal, context.files);
+  const before = await inspectDeletion(source, cwd, signal, context.files, allowTemporary);
   const event =
     context.files === undefined
       ? before.event
@@ -68,7 +70,7 @@ export async function prepareDeletionGuard(
       signal?.throwIfAborted();
       let after;
       try {
-        after = await inspectDeletion(source, cwd, signal, context.files);
+        after = await inspectDeletion(source, cwd, signal, context.files, allowTemporary);
       } catch (error) {
         signal?.throwIfAborted();
         fail(
@@ -89,8 +91,9 @@ export async function prepareDeletionGuard(
 async function inspectDeletion(
   source: string,
   cwd: string,
-  signal?: AbortSignal,
-  files?: DeleteFileAccess,
+  signal: AbortSignal | undefined,
+  files: DeleteFileAccess | undefined,
+  allowTemporary: boolean,
 ) {
   const access = files ?? localFiles;
   const paths = files === undefined || files.pathStyle === "native" ? path : path.posix;
@@ -108,13 +111,22 @@ async function inspectDeletion(
   const boundary = project.root ?? (await access.realpath(cwd));
   assertUnprotected(resolvedPath, boundary, project.controls, paths);
 
+  const temporaryRoots =
+    allowTemporary && kind !== "file"
+      ? await loadTemporaryDirectories(boundary, access, signal)
+      : [];
+  const temporary =
+    !temporaryRoots.some((root) => paths.relative(root, resolvedPath) === "") &&
+    temporaryRoots.some((root) => contains(root, resolvedPath, paths));
   let reason: string | undefined;
   let tracked: string[] = [];
   if (kind !== "file") {
     if (!project.gitAvailable || project.root === undefined) {
-      reason = "No Git worktree or reliable Git check is available.";
+      // Broken Git metadata must not bypass the tracking check inside the current project.
+      if (!temporary || (project.root !== undefined && contains(project.root, resolvedPath, paths)))
+        reason = "No Git worktree or reliable Git check is available.";
     } else if (!contains(project.root, resolvedPath, paths)) {
-      reason = "Target is outside the current Git worktree.";
+      if (!temporary) reason = "Target is outside the current Git worktree.";
     } else {
       try {
         const entries = (
@@ -153,6 +165,7 @@ async function inspectDeletion(
       revision: stat.revision,
       boundary,
       controls: project.controls,
+      temporaryRoots,
       reason,
       tracked,
     }),

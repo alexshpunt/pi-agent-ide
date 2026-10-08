@@ -46,7 +46,7 @@ export type {
 export { localFileTransferAccess, snapshotLocalObjects } from "#src/api/native-files.js";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 31;
+export const TEXT_EDITOR_API_VERSION = 32;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 

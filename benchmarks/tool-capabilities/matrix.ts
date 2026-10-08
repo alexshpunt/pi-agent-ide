@@ -49,6 +49,8 @@ const groups: [string[], string[]][] = [
     ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
     ["delete-policy-gates"],
   ],
+  [["edit.delete-temporary-defaults"], ["delete-temporary-defaults"]],
+  [["edit.delete-temporary-config"], ["delete-temporary-config"]],
   [
     ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
     ["selection-copy-move"],

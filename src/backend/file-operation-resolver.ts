@@ -34,6 +34,8 @@ export function createSshFileOperationResolver(
         throw new SshBackendError("UNSUPPORTED_SOURCE", source.location.source, "not-applied");
       const cwd = project?.location.path ?? source.backend.target.workspace;
       const prepared = await deletion.prepare(source.location.path, cwd, {
+        temporaryEnvironment: (signal) =>
+          source.backend.temporaryEnvironment({ ...context, signal }),
         realpath: (file) => source.backend.realpath(file, context),
         inspect: (file) => source.backend.lstat(file, context),
         read: async (file) => (await source.backend.read(file, context)).bytes.toString("utf8"),

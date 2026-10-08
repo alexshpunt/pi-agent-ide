@@ -32,6 +32,8 @@ Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 lo
 Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
 Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases; these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
 
+Temporary Delete cases likewise check the shared defaults and settings contract locally. Target-native account/config resolution is checked by transport tests, not a paid SSH case. Paid SSH temporary-deletion routes remain unverified.
+
 ## Isolation
 
 A run freezes the checkout's current source and dependencies in a disposable clone and records its revision and source digest. Each case gets a fresh clone, fixture directory, private Pi home, and process namespace. Only that case's workspace/state and sandbox temporary directories are writable. Source and system tools are read-only; host checkouts, personal context, extensions, skills, and MCP configuration are not loaded.

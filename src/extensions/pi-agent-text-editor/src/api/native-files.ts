@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { lstat, readdir, readFile, readlink, realpath } from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { promisify } from "node:util";
 import type { Stats } from "node:fs";
 import type { FileObjectEntry, FileObjectSnapshot, FileTransferAccess } from "./file-transfers.js";
@@ -88,6 +89,15 @@ export async function snapshotLocalObjects(
 /** Built-in local owner for shared local/SSH object policy; no controller path fallback for remote owners. */
 export const localFileTransferAccess: FileTransferAccess = {
   owner: "local",
+  async temporaryEnvironment(signal) {
+    signal?.throwIfAborted();
+    const agent = process.env.PI_CODING_AGENT_DIR?.trim();
+    return {
+      home: os.homedir(),
+      temporary: os.tmpdir(),
+      ...(agent ? { agentDirectory: path.resolve(agent) } : {}),
+    };
+  },
   pathStyle: "native",
   realpath,
   async inspect(source) {
