@@ -35,7 +35,14 @@ const groups: [string[], string[]][] = [
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
   [
-    ["git.changes", "git.stage", "git.unstage", "git.undo-change", "discovery.git"],
+    [
+      "git.changes",
+      "git.stage",
+      "git.stage-noop",
+      "git.unstage",
+      "git.undo-change",
+      "discovery.git",
+    ],
     ["git-stage-unstage-undo"],
   ],
   [
