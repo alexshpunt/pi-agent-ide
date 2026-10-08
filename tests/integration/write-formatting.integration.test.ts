@@ -96,7 +96,8 @@ for (const mode of ["standalone", "codemode"] as const) {
         await writeFile(path.join(cwd, source), "before\n");
         const checks = `const result=await tools.write({path:${JSON.stringify(source)},content:"after\\n"});
 ${fixture.notice === undefined ? "" : `if(!result.includes(${JSON.stringify(fixture.notice)})) throw Error("Missing problem notice: "+result);`}
-if(result.includes("Extra check finished") || result.includes("Final text")) throw Error("Write receipt leaked detailed output: "+result);
+const receipt=result.split("\\n\\n---\\n\\n# Guide:")[0]||"";
+if(receipt.includes("Final text") || receipt.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write receipt leaked file text: "+receipt);
 const saved=await tools.read({path:result});
 if(!saved.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write selection lost formatted bytes: "+saved);
 text("Formatting checked.");`;

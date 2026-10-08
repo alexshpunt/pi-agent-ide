@@ -48,6 +48,7 @@ const run = await new PiIntegrationTest({
   testName: `capability-semantic-rename-${mode}`,
   artifactsDir: "/state/results",
   cwd,
+  // Use the checkout's pinned host from the read-only source mount, not a global installation.
   piCommand: "/source/node_modules/.bin/pi",
   transport: "rpc",
   timeoutMs: 90_000,
