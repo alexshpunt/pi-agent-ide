@@ -20,6 +20,9 @@ const groups: [string[], string[]][] = [
   ],
   [["edit.insert-before", "edit.insert-spacing"], ["insert-before"]],
   [["edit.delete-selection", "compose.search-delete"], ["delete-selection"]],
+  [["edit.delete-declaration"], ["delete-symbol"]],
+  [["compose.symbol-read-delete"], ["read-symbol-delete"]],
+  [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
   [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
   [
