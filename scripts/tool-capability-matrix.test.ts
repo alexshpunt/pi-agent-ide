@@ -158,6 +158,34 @@ describe("capability route evidence", () => {
     expect(validateRoute(task, failed, "direct").passed).toBe(false);
   });
 
+  test("distinguishes immediate failures from accepted native text calls", () => {
+    const route = { steps: [{ tool: "move", error: "direct" as const }] };
+    const direct = [
+      { type: "tool_execution_start", toolCallId: "move", toolName: "move", args: {} },
+      { type: "tool_execution_end", toolCallId: "move", toolName: "move", isError: true },
+    ];
+    expect(validateRoute(route, direct, "direct").passed).toBe(true);
+    expect(
+      validateRoute(
+        route,
+        direct.map((event) => ({ ...event, isError: false })),
+        "direct",
+      ).passed,
+    ).toBe(false);
+    const native = [
+      { type: "tool_execution_start", toolCallId: "compose", toolName: "codemode", args: {} },
+      ...direct.map((event) => ({ ...event, parentToolCallId: "compose", isError: false })),
+      { type: "tool_execution_end", toolCallId: "compose", toolName: "codemode", isError: true },
+    ];
+    expect(validateRoute(route, native, "codemode").passed).toBe(true);
+    expect(
+      validateRoute(
+        route,
+        native.map((event) => (event.toolCallId === "move" ? { ...event, isError: true } : event)),
+        "codemode",
+      ).passed,
+    ).toBe(false);
+  });
   test("distinguishes direct calls from real nested Codemode calls", () => {
     expect(validateRoute(task, events, "codemode").passed).toBe(false);
     const nested = events.map((event) => ({ ...event, parentToolCallId: "compose" }));

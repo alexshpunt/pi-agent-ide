@@ -34,6 +34,14 @@ const groups: [string[], string[]][] = [
     ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
     ["selection-copy-move"],
   ],
+  [
+    ["edit.move-rollback"],
+    [
+      "move-rollback-restored",
+      "move-rollback-target-failed",
+      "move-rollback-target-failed-after-restore",
+    ],
+  ],
   [["compose.paired-sources-targets"], ["paired-copy"]],
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],

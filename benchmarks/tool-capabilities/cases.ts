@@ -431,6 +431,39 @@ add(
   },
 );
 
+for (const scenario of ["restored", "target-failed", "target-failed-after-restore"] as const) {
+  const source = `.tmp/move-rollback/${scenario}-source.txt`;
+  const target = `.tmp/move-rollback/${scenario}-target.txt`;
+  const restored = scenario === "restored";
+  add(
+    `move-rollback-${scenario}`,
+    ["edit.move-rollback"],
+    `Move the complete move-me line from ${source} after top in ${target}. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read both files in later calls. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
+    [
+      {
+        tool: "move",
+        error: "direct",
+        args: {
+          path: source,
+          start: /move-me|[A-Z]+#|[0-9]+#/u,
+          target,
+          targetStart: /top|[A-Z]+#|[0-9]+#/u,
+        },
+      },
+      { tool: "read", args: { path: source }, contains: "move-me" },
+      { tool: "read", args: { path: target }, contains: "bottom" },
+    ],
+    {
+      setup: "move-rollback",
+      files: { [source]: "head\nmove-me\nend\n", [target]: "top\nbottom\n" },
+      expected: {
+        [target]: scenario === "target-failed" ? "top\nmove-me\nbottom\n" : "top\nbottom\n",
+      },
+      answer: restored ? "restored" : "unknown",
+    },
+  );
+}
+
 add(
   "paired-copy",
   ["compose.paired-sources-targets"],

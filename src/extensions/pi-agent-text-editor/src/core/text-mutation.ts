@@ -1793,9 +1793,18 @@ function failureToolResult(
     ok: false,
     path: source,
     errors: [{ path: source, code, reason }],
-    ...(fileChangedStatement === undefined ? {} : { fileChangedStatement }),
+    ...(fileChangedStatement === undefined
+      ? {}
+      : {
+          fileChangedStatement:
+            fileChangedStatement +
+            (rollback !== undefined && rollback.restored.length > 0
+              ? `\nRolled back: ${rollback.restored.join(", ")}.`
+              : ""),
+        }),
     ...(rollback !== undefined && {
       rollback: {
+        restoredSources: rollback.restored,
         failedSources: [...new Set([...rollback.failed, ...rollback.originallyMissing])],
       },
     }),

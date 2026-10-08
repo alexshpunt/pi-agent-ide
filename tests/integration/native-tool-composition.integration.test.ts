@@ -697,6 +697,13 @@ check(state.attempts.length===2,"Native Copy skipped or replayed a write");`,
           editorBatchResults: [
             {
               data: {
+                effect: outcome === "restored" ? "not-applied" : "unknown",
+                files: expect.arrayContaining([
+                  {
+                    source: expect.stringContaining(`rollback-${outcome}.txt`) as unknown,
+                    effect: outcome === "restored" ? "not-applied" : "unknown",
+                  },
+                ]) as unknown,
                 operations: [
                   { operation: "copy", effect: outcome === "restored" ? "not-applied" : "unknown" },
                 ],
