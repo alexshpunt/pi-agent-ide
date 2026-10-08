@@ -27,6 +27,8 @@ add(
       "remove-tree": null,
       "remove-tree/data": null,
       "remove-tree/link": null,
+      "remove-tree/nested/data.bin": null,
+      "remove-tree/broken": null,
       link: null,
       "broken-link": null,
     },
@@ -51,6 +53,98 @@ add(
     },
   ],
   { files: deleteFixture, git: true },
+);
+add(
+  "directory-transfers",
+  [
+    "edit.copy-directory",
+    "edit.move-directory",
+    "edit.copy-symlink",
+    "edit.move-symlink",
+    "edit.copy-merge-directory",
+    "edit.move-replace-directory",
+  ],
+  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
+  [
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "merge-target" },
+      contains: "copy: applied",
+    },
+    {
+      tool: "move",
+      args: { path: "merge-target", target: "moved-target" },
+      contains: "move: applied",
+    },
+    { tool: "copy", args: { path: "link", target: "copied-link" }, contains: "copy: applied" },
+    {
+      tool: "move",
+      args: { path: "copied-link", target: "moved-link" },
+      contains: "move: applied",
+    },
+    {
+      tool: "copy",
+      args: { path: "broken-link", target: "copied-broken" },
+      contains: "copy: applied",
+    },
+    {
+      tool: "move",
+      args: { path: "copied-broken", target: "moved-broken" },
+      contains: "move: applied",
+    },
+    { tool: "read", args: { path: "moved-target/nested/empty" } },
+  ],
+  {
+    files: deleteFixture,
+    git: true,
+    setup: "directory-transfers",
+    expected: {
+      "merge-target": null,
+      "copied-link": null,
+      "copied-broken": null,
+      "merge-target/nested/data.bin": null,
+      "merge-target/copy-only": null,
+      "moved-target/move-only": null,
+      "moved-target/nested/data.bin": "\0\n",
+      "moved-target/copy-only": "KEEP\n",
+      "moved-target/link": "symlink:/workspace/fixture/sentinel.txt",
+      "moved-target/broken": "symlink:missing",
+      "moved-link": "symlink:sentinel.txt",
+      "moved-broken": "symlink:missing",
+    },
+  },
+);
+add(
+  "directory-transfer-gates",
+  ["edit.transfer-refusal", "edit.move-policy-refusal"],
+  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require host approval, unavailable in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Report the refusals and leave all fixture bytes unchanged. In Codemode catch each failure so all checks run.",
+  [
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "source-tree/new" },
+      error: true,
+      contains: "OVERLAPPING_PATHS",
+    },
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "link" },
+      error: true,
+      contains: "INVALID_FILE_TYPE",
+    },
+    {
+      tool: "move",
+      args: { path: "tracked", target: "new-target" },
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+    {
+      tool: "move",
+      args: { path: "source-tree", target: ".git" },
+      error: true,
+      contains: "DELETE_PROTECTED_TARGET",
+    },
+  ],
+  { files: deleteFixture, git: true, setup: "directory-transfers" },
 );
 function add(
   id: string,

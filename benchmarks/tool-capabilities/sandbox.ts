@@ -227,9 +227,24 @@ export async function prepareTrial(
       ]);
     }
     if (task.setup === "delete-objects") {
-      await mkdir(path.join(cwd, "remove-tree"));
+      await mkdir(path.join(cwd, "remove-tree", "nested", "empty"), { recursive: true });
+      await writeFile(path.join(cwd, "remove-tree", "nested", "data.bin"), Buffer.from([0, 10]));
+      await symlink("missing", path.join(cwd, "remove-tree", "broken"));
       await writeFile(path.join(cwd, "remove-tree", "data"), "REMOVE\n");
       await symlink("/workspace/fixture/sentinel.txt", path.join(cwd, "remove-tree", "link"));
+      await symlink("sentinel.txt", path.join(cwd, "link"));
+      await symlink("missing", path.join(cwd, "broken-link"));
+    }
+    if (task.setup === "directory-transfers") {
+      await mkdir(path.join(cwd, "source-tree", "nested", "empty"), { recursive: true });
+      await writeFile(path.join(cwd, "source-tree", "nested", "data.bin"), Buffer.from([0, 10]));
+      await symlink("/workspace/fixture/sentinel.txt", path.join(cwd, "source-tree", "link"));
+      await symlink("missing", path.join(cwd, "source-tree", "broken"));
+      await mkdir(path.join(cwd, "merge-target", "nested"), { recursive: true });
+      await writeFile(path.join(cwd, "merge-target", "nested", "data.bin"), "OLD\n");
+      await writeFile(path.join(cwd, "merge-target", "copy-only"), "KEEP\n");
+      await mkdir(path.join(cwd, "moved-target"));
+      await writeFile(path.join(cwd, "moved-target", "move-only"), "REMOVE\n");
       await symlink("sentinel.txt", path.join(cwd, "link"));
       await symlink("missing", path.join(cwd, "broken-link"));
     }

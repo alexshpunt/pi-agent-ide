@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { executeFileOperation } from "#pi-agent-text-editor/core/file-operations.js";
 import { mkdir, mkdtemp, readFile, rm, writeFile, access, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -307,8 +308,15 @@ test("deletion capability fixtures preserve symlink identities and detect leftov
     const trial = await prepareTrial(parent, source, task);
     expect(trial.initial["broken-link"]?.toString()).toBe("symlink:missing");
     expect(trial.initial.link?.toString()).toBe("symlink:sentinel.txt");
-    for (const name of ["remove-tree/data", "remove-tree/link", "link", "broken-link"])
-      await rm(path.join(trial.cwd, name));
+    for (const name of [
+      "remove-tree/data",
+      "remove-tree/link",
+      "remove-tree/nested",
+      "remove-tree/broken",
+      "link",
+      "broken-link",
+    ])
+      await rm(path.join(trial.cwd, name), { recursive: true });
     expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([
       "Expected deleted object still exists: remove-tree",
     ]);
@@ -320,6 +328,42 @@ test("deletion capability fixtures preserve symlink identities and detect leftov
   }
 });
 
+test("directory capability fixtures match actual transfers and refusal effects without inference", async () => {
+  await mkdir(".tmp", { recursive: true });
+  const parent = await mkdtemp(path.resolve(".tmp/capability-transfer-test-"));
+  const source = path.join(parent, "source");
+  await mkdir(source);
+  execFileSync("git", ["init", "-q", source]);
+  execFileSync("git", [
+    "-C",
+    source,
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "--allow-empty",
+    "-qm",
+    "fixture",
+  ]);
+  try {
+    for (const id of ["directory-transfers", "directory-transfer-gates"]) {
+      const task = capabilityCases.find((entry) => entry.id === id);
+      if (task === undefined) throw new Error("Missing transfer capability case");
+      const trial = await prepareTrial(parent, source, task);
+      for (const step of task.steps) {
+        if (step.tool !== "copy" && step.tool !== "move") continue;
+        const result = await executeFileOperation(step.tool, step.args, trial.cwd);
+        expect(result.ok).toBe(!step.error);
+        if (step.error) expect(result.effect).toBe("not-applied");
+      }
+      expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([]);
+      await cleanupTrial(parent, trial.root);
+    }
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+});
 test("a timed-out case cannot touch the checkout and cleanup leaves unrelated files alone", async () => {
   await mkdir(".tmp", { recursive: true });
   const parent = await mkdtemp(path.resolve(".tmp/capability-sandbox-test-"));
