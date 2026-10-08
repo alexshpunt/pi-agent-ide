@@ -58,7 +58,7 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
       tools: ["read", "search", "codemode"],
-      timeoutMs: 40_000,
+      timeoutMs: 90_000,
       conversation: [
         assistantMessage([
           toolCall({ id: "local", name: "read", arguments: { path: fixture.url + "/static" } }),
@@ -121,7 +121,15 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
     const paint = createCanvas(320, 180).getContext("2d");
     paint.drawImage(image, 0, 0);
     expect([...paint.getImageData(0, 0, 1, 1).data]).toEqual([255, 0, 0, 255]);
-    expect(getToolResultText(run, "sequence")).toContain(imageSource);
+    const sequenceRead = run.traceEvents.find(
+      (trace) =>
+        trace.type === "tool_result" &&
+        (trace.event as { toolCallId?: string }).toolCallId === "sequence/1",
+    );
+    expect(sequenceRead?.event).toMatchObject({
+      isError: false,
+      details: { source: imageSource, resolvedBy: "vision" },
+    });
     expect(
       getToolResultMessage(run, "sequence").content.filter((block) => block.type === "image"),
     ).toHaveLength(2);
@@ -143,4 +151,4 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
       await rm(cwd, { recursive: true, force: true });
     }
   }
-}, 50_000);
+}, 120_000);

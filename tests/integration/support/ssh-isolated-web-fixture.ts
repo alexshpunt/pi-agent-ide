@@ -6,9 +6,15 @@ import { startSshWebFixture } from "./ssh-web-fixture.js";
 /** Start HTTP and SSH in a private network namespace, reachable only through the owned Unix socket. */
 export async function startIsolatedSshWebFixture() {
   const controllerNamespace = await readlink("/proc/self/ns/net");
+  // Chrome's crash database and XDG files must stay writable by the synthetic SSH account.
   const fixture = await startSshWebFixture(
     "",
-    { no_proxy: "*" },
+    {
+      no_proxy: "*",
+      XDG_CONFIG_HOME: "{workspace}/.config",
+      XDG_CACHE_HOME: "{workspace}/.cache",
+      XDG_DATA_HOME: "{workspace}/.local/share",
+    },
     {
       server: path.resolve("tests/integration/fixtures/ssh-network-server.py"),
       proxy: path.resolve("tests/integration/fixtures/ssh-network-proxy.py"),
@@ -51,6 +57,15 @@ export async function startIsolatedSshWebFixture() {
         "-e",
         `
         (async () => {
+          const fs = require("node:fs/promises");
+          const path = require("node:path");
+          const {W_OK} = require("node:fs").constants;
+          for (const [key, relative] of [["XDG_CONFIG_HOME",".config"],["XDG_CACHE_HOME",".cache"],["XDG_DATA_HOME",".local/share"]]) {
+            const owned = path.join(process.argv[2],relative);
+            if (process.env[key] !== owned) throw Error("Synthetic browser directory is not target-owned: "+key);
+            await fs.mkdir(owned,{recursive:true});
+            await fs.access(owned,W_OK);
+          }
           const {chromium} = require(process.env.PI_AGENT_IDE_PLAYWRIGHT_PATH);
           let browser;
           try {
@@ -61,6 +76,7 @@ export async function startIsolatedSshWebFixture() {
         })().catch(error => { console.error(String(error)); process.exitCode=1; });
       `,
         proof.url,
+        fixture.workspace,
       ],
       fixture.workspace,
       { signal: AbortSignal.timeout(35_000), timeoutMs: 35_000 },
