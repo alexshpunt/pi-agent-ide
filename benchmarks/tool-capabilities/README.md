@@ -54,6 +54,8 @@ Reports are written after each attempt and preserved on cancellation. Case works
 
 The initial suite verification and retained findings are in [LPT-655 evidence](evidence/LPT-655.md). That report separates historical source digests and leaves incomplete routes unverified.
 
+The focused native Codemode semantic rename fix and its direct/Codemode rerun are in [LPT-660 evidence](evidence/LPT-660.md). These results do not replace the earlier failed attempts.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:

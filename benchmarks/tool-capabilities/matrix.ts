@@ -120,7 +120,15 @@ const groups: [string[], string[]][] = [
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],
   ],
-  [["lsp.rename", "compose.symbol-read-rename"], ["lsp-rename"]],
+  [
+    [
+      "lsp.rename",
+      "lsp.rename-cross-file",
+      "lsp.rename-keeps-unrelated-names",
+      "compose.symbol-read-rename",
+    ],
+    ["lsp-rename"],
+  ],
   [["read.image", "read.pdf"], ["read-media"]],
   [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
   [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],
