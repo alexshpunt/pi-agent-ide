@@ -348,7 +348,9 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
               input.path === undefined
                 ? undefined
                 : (manager.breakpoint(input.path) ??
-                  snapshot.breakpoints.find((candidate) => candidate.source === input.path));
+                  (deletedSnapshot ?? snapshot).breakpoints.find(
+                    (candidate) => candidate.source === input.path,
+                  ));
             const sourceFile =
               input.path === undefined ? undefined : manager.sourceFile(input.path);
             const action =

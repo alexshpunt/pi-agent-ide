@@ -103,6 +103,7 @@ const groups: [string[], string[]][] = [
       "debug.step-out",
       "debug.continue",
       "debug.delete-breakpoint",
+      "compose.debug-breakpoint-delete-read-session",
       "read.breakpoints",
     ],
     ["debug-controls"],
