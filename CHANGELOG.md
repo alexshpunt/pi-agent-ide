@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.7.2 — 2026-10-08
+
+### Bounded output without losing the full result
+
+- Apply a shared 50 KiB / 2,000-line useful-text budget to every IDE tool, including nested Codemode calls, blocked calls and argument-validation errors. Internal references and tool guidance remain separate from this budget.
+- Preserve native text blocks in small Codemode results, so JSON output remains independently readable instead of being merged into the execution summary.
+- Save complete text before budget truncation in private temporary files. Read the omitted tail by line, or use `raw:` byte windows for a single oversized line. Saved output stays available until its owning runtime is disposed.
+- Make Search's `limit` count compact file summaries as well as detailed matches. Large searches no longer return thousands of file summaries despite a small limit; totals and omitted counts remain accurate.
+- Bound image output across the whole result, including images forwarded by Codemode: at most 20 frames, 4 million pixels and 20 MiB of encoded image data. Resize oversized images and report omitted frames.
+- Keep complete source selections and edit effects behind bounded previews. Truncating a display does not shorten a later Read, Select, comparison or mutation input.
+
+### Editing and composition
+
+- Make Write save the file and finish post-edit processing before returning, even inside Codemode. Its result selects the complete saved file for the next tool. Writing identical content leaves the file untouched and does not rerun post-edit handlers.
+- Keep terminal result references usable after sending text or keys. Live terminal actions no longer trigger filesystem-target warnings or appear as saved files with internal command markers in Codemode results.
+- Preserve Copy's destination selections through batched edits and formatting. Report unchanged destinations as no-ops rather than successful writes, and explain when a confirmed follow-up target is unavailable.
+- Distinguish edits that were not applied, writes that remain applied after post-edit failure, successful rollback and failed or uncertain restoration. Keep those outcomes visible in both agent results and nested tool panels instead of implying that an error always means nothing changed.
+- Remove the `flush` tool. Native Codemode completion and dependent source-tool calls commit pending edit batches; no explicit flush call is needed.
+
+### Reading, search and tool guidance
+
+- Explain empty sources, `limit=0` and offsets past the end separately. Read continuation hints identify the source and retain the requested views; raw reads state when their output was limited.
+- Return clearer source errors and cancellation messages. Unsupported views and content explain what to change instead of silently implying a successful conversion. Unsupported web binaries are identified as metadata and byte previews, not document text.
+- Mark incomplete Search coverage explicitly, so an incomplete result cannot be mistaken for proof of absence or used as an edit scope. AST overflow results also explain how to narrow the request.
+- Clarify exact selections, comparison windows, source references, Git change anchors and shell-specific command syntax. Stage failures now explain stale anchors and possible index changes before a retry; Undo declares its required change selector in the tool schema.
+
+### Debugger and model compatibility
+
+- Refresh debugger state when delayed stop or exit events arrive. Track adapter-relocated breakpoints and later binding changes, and refresh displayed local variables after evaluation.
+- Preserve omitted optional IDE tool arguments on Copilot's Responses route instead of letting implicit strictness turn them into required fields. Explicit strictness and other tools remain unchanged.
+
+### Verification and maintenance
+
+- Add real-Pi stress coverage for every callable IDE tool, direct and nested output, provider text and images, limit/view/offset/scope combinations and complete saved-output recovery. Include the reported Search case of 10,114 matches across 1,725 files with `limit=80`.
+- Keep real debugger checks running in separate, non-blocking jobs with their own reports, outside shared CI totals. Pure debugger unit tests and editor checks, including Delete, still block the release.
+- Automatically import newly opened GitHub issues into Linear, with stable issue IDs to avoid duplicate imports.
+
 ## 0.7.1 — 2026-10-05
 
 - Reduced prompt size by keeping internal result structures out of agent-facing tool schemas.
