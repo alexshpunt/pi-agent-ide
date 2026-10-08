@@ -75,8 +75,10 @@ Editing uses direct semantic operations:
 - `replace` changes selected text;
 - `insert` adds text around a selection;
 - `delete` removes selected text or a resource;
-- `copy` and `move` duplicate or relocate text and files;
+- `copy` and `move` duplicate or relocate text, files, directory trees, and symlink objects;
 - `undo` restores the last text edit or a selected Git change.
+
+See [directory and symlink operations](docs/directory-operations.md) for merge/replace behavior, guards, and failure effects.
 
 Independent edits can be submitted together as a tool-call batch. For conditional or dependent work, native Codemode composes the same guarded tools with Read, Search and Select results. Check each operation's status and final effects; a script error does not roll back accepted edits. Diffing and staging are first-class tools too.
 

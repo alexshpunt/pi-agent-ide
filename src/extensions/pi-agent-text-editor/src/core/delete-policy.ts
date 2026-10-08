@@ -19,6 +19,12 @@ interface Project {
   readonly gitAvailable: boolean;
 }
 
+/** A host approval that must be checked again immediately before removal. */
+export interface DeletionGuard {
+  readonly event: BeforeDeleteEvent;
+  readonly verify: () => Promise<void>;
+}
+
 /** Check policy and hooks, obtain any required approval, then verify the same object again. */
 export async function prepareDeletion(
   source: string,
@@ -26,6 +32,18 @@ export async function prepareDeletion(
   context: DeletePolicyContext,
   signal?: AbortSignal,
 ): Promise<BeforeDeleteEvent> {
+  const guard = await prepareDeletionGuard(source, cwd, context, signal);
+  await guard.verify();
+  return guard.event;
+}
+
+/** Keep approval checks available when one operation removes more than one object. */
+export async function prepareDeletionGuard(
+  source: string,
+  cwd: string,
+  context: DeletePolicyContext,
+  signal?: AbortSignal,
+): Promise<DeletionGuard> {
   const before = await inspectDeletion(source, cwd, signal);
   await context.beforeDelete?.(before.event);
   signal?.throwIfAborted();
@@ -39,23 +57,28 @@ export async function prepareDeletion(
       fail("DELETE_NOT_APPROVED", "Deletion was not approved by the user.");
   }
   signal?.throwIfAborted();
-  let after;
-  try {
-    after = await inspectDeletion(source, cwd, signal);
-  } catch (error) {
-    signal?.throwIfAborted();
-    fail(
-      "DELETE_TARGET_CHANGED",
-      `Deletion target cannot be verified again: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  if (before.snapshot !== after.snapshot)
-    fail(
-      "DELETE_TARGET_CHANGED",
-      "Deletion target or its safety classification changed. Nothing was removed; make a new request.",
-    );
-  signal?.throwIfAborted();
-  return after.event;
+  return {
+    event: before.event,
+    verify: async () => {
+      signal?.throwIfAborted();
+      let after;
+      try {
+        after = await inspectDeletion(source, cwd, signal);
+      } catch (error) {
+        signal?.throwIfAborted();
+        fail(
+          "DELETE_TARGET_CHANGED",
+          `Deletion target cannot be verified again: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (before.snapshot !== after.snapshot)
+        fail(
+          "DELETE_TARGET_CHANGED",
+          "Deletion target or its safety classification changed. Nothing was removed; make a new request.",
+        );
+      signal?.throwIfAborted();
+    },
+  };
 }
 
 async function inspectDeletion(source: string, cwd: string, signal?: AbortSignal) {
@@ -73,19 +96,8 @@ async function inspectDeletion(source: string, cwd: string, signal?: AbortSignal
   if (kind === undefined)
     fail("INVALID_FILE_TYPE", "Delete supports regular files, directories, and symlinks.");
   const project = await findProject(cwd, signal);
-  const currentDirectory = await realpath(cwd);
-  const boundary = project.root ?? currentDirectory;
-  if (
-    contains(resolvedPath, boundary) ||
-    resolvedPath === path.parse(resolvedPath).root ||
-    project.controls.some(
-      (control) => contains(control, resolvedPath) || contains(resolvedPath, control),
-    )
-  )
-    fail(
-      "DELETE_PROTECTED_TARGET",
-      `Cannot delete protected project, ancestor, filesystem root, or Git control path: ${source}`,
-    );
+  const boundary = project.root ?? (await realpath(cwd));
+  assertUnprotected(resolvedPath, boundary, project.controls);
 
   let reason: string | undefined;
   let tracked: string[] = [];
@@ -142,6 +154,27 @@ async function inspectDeletion(source: string, cwd: string, signal?: AbortSignal
   };
 }
 
+/** Protect recursive transfer destinations, including paths that do not exist yet. */
+export async function assertUnprotectedTransferPath(
+  resolvedPath: string,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const project = await findProject(cwd, signal);
+  assertUnprotected(resolvedPath, project.root ?? (await realpath(cwd)), project.controls);
+}
+
+function assertUnprotected(resolvedPath: string, boundary: string, controls: readonly string[]) {
+  if (
+    contains(resolvedPath, boundary) ||
+    resolvedPath === path.parse(resolvedPath).root ||
+    controls.some((control) => contains(control, resolvedPath) || contains(resolvedPath, control))
+  )
+    fail(
+      "DELETE_PROTECTED_TARGET",
+      `Cannot remove or overwrite protected project, ancestor, filesystem root, or Git control path: ${resolvedPath}`,
+    );
+}
 async function findProject(cwd: string, signal?: AbortSignal): Promise<Project> {
   try {
     const output = (

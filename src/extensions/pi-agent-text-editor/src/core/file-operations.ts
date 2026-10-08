@@ -1,4 +1,5 @@
-import { lstat, rm, unlink } from "node:fs/promises";
+import { rm, unlink } from "node:fs/promises";
+import { prepareFileTransfer, type TransferKind } from "./file-transfers.js";
 import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.js";
 import path from "node:path";
 import fs from "fs-extra";
@@ -10,7 +11,7 @@ export const fileOperations = ["delete", "move", "copy"] as const;
 export type FileOperation = (typeof fileOperations)[number];
 const filePath = Type.String({
   minLength: 1,
-  description: "Local regular file path, relative to cwd or absolute.",
+  description: "Local file, directory, or symlink path, relative to cwd or absolute.",
 });
 export const deleteFileParameters = Type.Object(
   { path: filePath },
@@ -36,6 +37,7 @@ export interface FileOperationResult {
   readonly effect: "applied" | "not-applied" | "unknown";
   readonly path?: string;
   readonly target?: string;
+  readonly sourceKind?: TransferKind;
   readonly error?: { readonly code: string; readonly message: string };
 }
 
@@ -71,6 +73,7 @@ export async function executeFileOperation(
   let started = false;
   let source: string | undefined;
   let target: string | undefined;
+  let sourceKind: TransferKind | undefined;
   try {
     const schema = operation === "delete" ? deleteFileParameters : transferFileParameters;
     if (!Value.Check(schema, input))
@@ -83,25 +86,11 @@ export async function executeFileOperation(
     signal?.throwIfAborted();
     const deleteEvent =
       operation === "delete" ? await prepareDeletion(source, cwd, deletion, signal) : undefined;
-    const sourceStat = deleteEvent === undefined ? await regularFile(source) : undefined;
-    if (target !== undefined) {
-      const targetStat = await optionalStat(target);
-      if (targetStat !== undefined) {
-        if (!targetStat.isFile() || targetStat.isSymbolicLink())
-          throw Object.assign(new Error("Target must be a regular file"), {
-            code: "INVALID_FILE_TYPE",
-          });
-        if (
-          source === target ||
-          (sourceStat !== undefined &&
-            sourceStat.ino === targetStat.ino &&
-            sourceStat.dev === targetStat.dev)
-        )
-          throw Object.assign(new Error("Source and target are the same file"), {
-            code: "SAME_FILE",
-          });
-      }
-    }
+    const transfer =
+      operation !== "delete" && target !== undefined
+        ? await prepareFileTransfer(operation, source, target, cwd, deletion, signal)
+        : undefined;
+    sourceKind = transfer?.sourceKind;
     signal?.throwIfAborted();
     started = true;
     if (deleteEvent !== undefined) {
@@ -110,9 +99,10 @@ export async function executeFileOperation(
           await deletion.removeDirectory(deleteEvent.resolvedPath);
         else await rm(deleteEvent.resolvedPath, { recursive: true, force: false });
       } else await unlink(deleteEvent.resolvedPath);
-    } else if (target !== undefined) {
-      if (operation === "copy") await fs.copy(source, target, { overwrite: true });
-      else await fs.move(source, target, { overwrite: true });
+    } else if (transfer !== undefined) {
+      if (operation === "copy")
+        await fs.copy(transfer.source, transfer.target, { overwrite: true, dereference: false });
+      else await fs.move(transfer.source, transfer.target, { overwrite: true });
     }
     return {
       kind: "file-operation",
@@ -121,6 +111,7 @@ export async function executeFileOperation(
       effect: "applied",
       path: source,
       ...(target === undefined ? {} : { target }),
+      ...(sourceKind === undefined ? {} : { sourceKind }),
     };
   } catch (error) {
     return {
@@ -138,21 +129,5 @@ export async function executeFileOperation(
         message: error instanceof Error ? error.message : String(error),
       },
     };
-  }
-}
-
-async function regularFile(file: string) {
-  const stat = await lstat(file);
-  if (!stat.isFile() || stat.isSymbolicLink())
-    throw Object.assign(new Error("Source must be a regular file"), { code: "INVALID_FILE_TYPE" });
-  return stat;
-}
-async function optionalStat(file: string) {
-  try {
-    return await lstat(file);
-  } catch (error) {
-    if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT")
-      return undefined;
-    throw error;
   }
 }

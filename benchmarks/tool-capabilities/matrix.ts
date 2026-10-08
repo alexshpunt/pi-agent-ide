@@ -27,6 +27,18 @@ const groups: [string[], string[]][] = [
   [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
   [
+    [
+      "edit.copy-directory",
+      "edit.move-directory",
+      "edit.copy-symlink",
+      "edit.move-symlink",
+      "edit.copy-merge-directory",
+      "edit.move-replace-directory",
+    ],
+    ["directory-transfers"],
+  ],
+  [["edit.transfer-refusal", "edit.move-policy-refusal"], ["directory-transfer-gates"]],
+  [
     ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
     ["delete-objects"],
   ],

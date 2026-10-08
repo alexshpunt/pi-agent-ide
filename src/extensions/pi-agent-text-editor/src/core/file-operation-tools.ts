@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
 import { executeFileOperation } from "#src/core/file-operations.js";
@@ -61,15 +62,17 @@ export async function executeWholeFileTool(
         ...(ui !== undefined && {
           confirm: async (event, reason) =>
             ui.confirm(
-              "Delete permanently?",
+              operation === "move" ? "Move filesystem object?" : "Delete permanently?",
               [
                 event.path,
                 event.resolvedPath === event.path
                   ? undefined
                   : `Resolved path: ${event.resolvedPath}`,
-                event.recursive
-                  ? "Remove directory and all contents recursively."
-                  : "Unlink symlink only; leave its target untouched.",
+                operation === "move" && event.path === path.resolve(context.cwd, String(input.path))
+                  ? `Move source to ${String(input.target)}; preserve link objects without following their targets.`
+                  : event.recursive
+                    ? "Remove directory and all contents recursively."
+                    : "Unlink symlink only; leave its target untouched.",
                 reason,
               ]
                 .filter((line) => line !== undefined)
@@ -90,7 +93,7 @@ export async function executeWholeFileTool(
   if (outcome.ok && operation !== "copy" && outcome.path !== undefined)
     forgetDeferredPostEdit(outcome.path);
   let postProcessingError: string | undefined;
-  if (outcome.ok && outcome.target !== undefined) {
+  if (outcome.ok && outcome.target !== undefined && outcome.sourceKind === "file") {
     try {
       await core.postProcessFile(outcome.target, { cwd: context.cwd, signal });
     } catch (error) {

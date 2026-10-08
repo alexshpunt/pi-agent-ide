@@ -18,10 +18,12 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 export const copySchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Source file path, unchanged source result or its UUID; omit start/end for result inputs. Use one whole-file result when the destination is a file path without text selectors. Source/destination selections pair in declared order, with equal counts and duplicate ranges removed.",
+      "Filesystem source path, unchanged source result or its UUID; omit start/end for result inputs. Use ordinary paths without selectors to copy whole files, directory trees, or symlink objects without following their targets. Use one whole-file result when the destination is a file path without text selectors. Source/destination selections pair in declared order, with equal counts and duplicate ranges removed.",
     ),
     ...sourceRangeProperties(),
-    ...targetProperties(),
+    ...targetProperties(
+      "Directory Copy merges into the exact target path and retains destination-only entries.",
+    ),
   },
   { additionalProperties: false },
 );
@@ -38,9 +40,9 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
   name: "copy",
   wholeFileOperation: "copy",
   description:
-    "Use copy to copy one regular file, or to duplicate selected text within or between files.",
+    "Use copy to copy a file, directory tree, or symlink object, or to duplicate selected text within or between files.",
 
-  promptSnippet: "Copy regular files, or copy selected text within or between files",
+  promptSnippet: "Copy filesystem objects or selected text",
   parameters: copySchema,
   source: { field: "path", inherited: true, targets: [{ field: "target", fallbackTo: "path" }] },
   anchors: [

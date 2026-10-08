@@ -60,17 +60,13 @@ for (const operation of ["copy", "move"] as const) {
   });
 }
 
-test("refuses directories and symbolic links without touching their contents", async () => {
+test("refuses directory destinations for regular-file transfers", async () => {
   const cwd = await fixture();
   await mkdir(path.join(cwd, "dir"));
-  await symlink(path.join(cwd, "source"), path.join(cwd, "link"));
-  for (const name of ["dir", "link"]) {
-    for (const operation of ["copy", "move"] as const) {
-      expect(
-        await executeFileOperation(operation, { path: name, target: "new" }, cwd),
-      ).toMatchObject({ ok: false, effect: "not-applied" });
-    }
-  }
+  for (const operation of ["copy", "move"] as const)
+    expect(
+      await executeFileOperation(operation, { path: "source", target: "dir" }, cwd),
+    ).toMatchObject({ ok: false, effect: "not-applied" });
   expect(await readFile(path.join(cwd, "source"))).toEqual(Buffer.from([0, 255, 10]));
 });
 

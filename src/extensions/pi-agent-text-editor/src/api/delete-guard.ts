@@ -1,4 +1,4 @@
-/** A whole filesystem object about to be removed, never a text selection. */
+/** A whole object removed from this path by Delete or directory/symlink Move, never a text selection. */
 export interface BeforeDeleteEvent {
   /** Absolute path supplied by the caller. */
   readonly path: string;
