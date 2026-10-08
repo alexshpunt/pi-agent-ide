@@ -22,6 +22,9 @@ interface ChildPanel {
   name: string;
   args: unknown;
   renderArgs?: unknown;
+  argumentsTruncated?: boolean;
+  resultOmitted?: boolean;
+  // Older sessions only recorded whether a result display was omitted.
   omitted?: boolean;
   batched?: boolean;
   rollback?: boolean;
@@ -37,7 +40,42 @@ interface PanelGroup {
   parentToolCallId: string;
   cwd: string;
   calls: ChildPanel[];
-  complete: boolean;
+  retention: RetentionReasons;
+}
+
+interface RetentionReasons {
+  argumentsTruncated: boolean;
+  resultsOmitted: boolean;
+  callsOmitted: boolean;
+  resultsUnavailable: boolean;
+}
+
+const retained = (): RetentionReasons => ({
+  argumentsTruncated: false,
+  resultsOmitted: false,
+  callsOmitted: false,
+  resultsUnavailable: false,
+});
+
+interface SavedPanelGroup extends Omit<PanelGroup, "retention"> {
+  retention?: RetentionReasons;
+  // Older history did not record why it was incomplete.
+  complete?: boolean;
+}
+
+function retentionWarning(group: SavedPanelGroup): string | undefined {
+  const reasons = group.retention;
+  const omissions = [
+    reasons?.argumentsTruncated && "arguments shortened",
+    reasons?.resultsOmitted && "result displays omitted",
+    reasons?.callsOmitted && "call panels omitted",
+    reasons?.resultsUnavailable && "results unavailable",
+  ].filter(Boolean);
+  if (omissions.length > 0)
+    return `Nested IDE display: ${omissions.join("; ")}. Tool execution and parent output are unchanged.`;
+  if (!reasons && group.complete === false)
+    return "Nested IDE display is incomplete; omission details are unavailable.";
+  return undefined;
 }
 
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
@@ -54,6 +92,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
   ) => {
     // Bound in-memory display data as each call finishes, not only at persistence.
     call.result = result;
+    call.resultOmitted = false;
     try {
       const serialized = JSON.stringify(group);
       if (Buffer.byteLength(serialized) <= MAX_BYTES) {
@@ -85,8 +124,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
       details: undefined,
       isError: result.isError,
     };
-    call.omitted = true;
-    group.complete = false;
+    call.resultOmitted = true;
   };
   const clear = () => {
     parents.clear();
@@ -113,17 +151,19 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
     if (!definitions.has(event.toolName)) return;
     let group = groups.get(root);
     if (!group) {
-      group = { parentToolCallId: root, cwd: context.cwd, calls: [], complete: true };
+      group = { parentToolCallId: root, cwd: context.cwd, calls: [], retention: retained() };
       groups.set(root, group);
     }
     if (group.calls.length >= MAX_CALLS) {
-      group.complete = false;
+      group.retention.callsOmitted = true;
       return;
     }
     const json = JSON.stringify(event.args);
     const remaining =
       MAX_ARGUMENT_TOTAL_BYTES -
-      group.calls.reduce((bytes, call) => bytes + Buffer.byteLength(JSON.stringify(call.args)), 0);
+      group.calls.reduce((bytes, call) => bytes + Buffer.byteLength(JSON.stringify(call.args)), 0) -
+      // Reserve an empty object for every remaining call, even after argument space runs out.
+      (MAX_CALLS - group.calls.length - 1) * 2;
     const omitted = Buffer.byteLength(json) > Math.min(MAX_ARGUMENT_BYTES, remaining);
     const args = omitted
       ? Object.fromEntries(
@@ -135,9 +175,16 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
           ]),
         )
       : (JSON.parse(json) as unknown);
-    const boundedArgs = Buffer.byteLength(JSON.stringify(args)) <= remaining ? args : {};
-    group.calls.push({ id: event.toolCallId, name: event.toolName, args: boundedArgs });
-    if (omitted) group.complete = false;
+    const boundedArgs =
+      Buffer.byteLength(JSON.stringify(args)) <= Math.min(MAX_ARGUMENT_BYTES, remaining)
+        ? args
+        : {};
+    group.calls.push({
+      id: event.toolCallId,
+      name: event.toolName,
+      args: boundedArgs,
+      argumentsTruncated: omitted,
+    });
   });
   pi.on("tool_execution_end", (event) => {
     const root = parents.get(event.toolCallId);
@@ -164,77 +211,79 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
     groups.delete(event.message.toolCallId);
     for (const [child, root] of parents) if (root === group.parentToolCallId) parents.delete(child);
     // Serializing once strips runtime classes and prevents later hooks from mutating history.
-    const saved: PanelGroup = { ...group, calls: [], complete: group.complete };
-    let bytes = 0;
-    for (const call of group.calls) {
-      if (call.batched) continue;
+    const calls = group.calls.filter((call) => !call.batched);
+    const saved: PanelGroup = {
+      ...group,
+      calls: [],
+      retention: {
+        ...group.retention,
+        argumentsTruncated: calls.some((call) => call.argumentsTruncated === true),
+        resultsOmitted: calls.some((call) => call.resultOmitted === true),
+        resultsUnavailable: calls.some((call) => !call.result),
+      },
+    };
+    // Include group metadata and separators, not just call payloads, in the history budget.
+    let bytes = Buffer.byteLength(JSON.stringify(saved));
+    for (const call of calls) {
       const json = JSON.stringify(call);
-      bytes += Buffer.byteLength(json);
+      bytes += Buffer.byteLength(json) + (saved.calls.length > 0 ? 1 : 0);
       if (bytes > MAX_BYTES) {
-        saved.complete = false;
+        saved.retention.callsOmitted = true;
         break;
       }
       saved.calls.push(JSON.parse(json) as ChildPanel);
-      if (!call.result) saved.complete = false;
     }
     pi.appendEntry(ENTRY_TYPE, saved);
   });
-  pi.registerEntryRenderer<PanelGroup>(ENTRY_TYPE, function renderEntry(entry, options, theme) {
-    if (!Array.isArray(entry.data?.calls)) return undefined;
-    // Pi rebuilds resumed history before session_start binds the public UI.
-    // Keep the entry mounted and resolve its tool components on the next render.
-    if (!tui)
-      return {
-        render: (width: number): string[] =>
-          tui ? (renderEntry(entry, options, theme)?.render(width) ?? []) : [],
-        invalidate: () => {
-          if (entry.data) components.get(entry.data)?.invalidate();
-        },
-      };
-    let panel = components.get(entry.data);
-    if (!panel) {
-      panel = new Container();
-      for (const call of entry.data.calls) {
-        const component = new ToolExecutionComponent(
-          call.name,
-          call.id,
-          call.renderArgs ?? call.args,
-          { showImages: true },
-          call.omitted || !call.result ? undefined : definitions.get(call.name),
-          tui,
-          entry.data.cwd,
-        );
-        if (call.result) component.updateResult(call.result);
-        else
-          component.updateResult({
-            content: [{ type: "text", text: "Result unavailable; history is incomplete." }],
-            isError: true,
-          });
-        panel.addChild(new Spacer(1));
-        panel.addChild(component);
+  pi.registerEntryRenderer<SavedPanelGroup>(
+    ENTRY_TYPE,
+    function renderEntry(entry, options, theme) {
+      if (!Array.isArray(entry.data?.calls)) return undefined;
+      // Pi rebuilds resumed history before session_start binds the public UI.
+      // Keep the entry mounted and resolve its tool components on the next render.
+      if (!tui)
+        return {
+          render: (width: number): string[] =>
+            tui ? (renderEntry(entry, options, theme)?.render(width) ?? []) : [],
+          invalidate: () => {
+            if (entry.data) components.get(entry.data)?.invalidate();
+          },
+        };
+      const warningText = retentionWarning(entry.data);
+      let panel = components.get(entry.data);
+      if (!panel) {
+        panel = new Container();
+        for (const call of entry.data.calls) {
+          const component = new ToolExecutionComponent(
+            call.name,
+            call.id,
+            call.renderArgs ?? call.args,
+            { showImages: true },
+            call.resultOmitted || call.omitted || !call.result
+              ? undefined
+              : definitions.get(call.name),
+            tui,
+            entry.data.cwd,
+          );
+          if (call.result) component.updateResult(call.result);
+          else
+            component.updateResult({
+              content: [{ type: "text", text: "Result unavailable in this saved display." }],
+              isError: true,
+            });
+          panel.addChild(new Spacer(1));
+          panel.addChild(component);
+        }
+        if (warningText) panel.addChild(new Text(theme.fg("warning", warningText), 0, 0));
+        components.set(entry.data, panel);
       }
-      if (!entry.data.complete)
-        panel.addChild(
-          new Text(
-            theme.fg(
-              "warning",
-              "Incomplete nested IDE presentation; some results were not retained.",
-            ),
-            0,
-            0,
-          ),
-        );
-      components.set(entry.data, panel);
-    }
-    const warning = panel.children.at(-1);
-    if (!entry.data.complete && warning instanceof Text)
-      warning.setText(
-        theme.fg("warning", "Incomplete nested IDE presentation; some results were not retained."),
-      );
-    for (const child of panel.children)
-      if (child instanceof ToolExecutionComponent) child.setExpanded(options.expanded);
-    return panel;
-  });
+      const warning = panel.children.at(-1);
+      if (warningText && warning instanceof Text) warning.setText(theme.fg("warning", warningText));
+      for (const child of panel.children)
+        if (child instanceof ToolExecutionComponent) child.setExpanded(options.expanded);
+      return panel;
+    },
+  );
   const finalize = () => {
     pi.events.on(NATIVE_EDIT_BATCH_EVENT, (value) => {
       const batch = value as NativeEditBatchEvent;
