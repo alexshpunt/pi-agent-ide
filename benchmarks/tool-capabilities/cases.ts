@@ -146,6 +146,57 @@ add(
   ],
   { files: deleteFixture, git: true, setup: "directory-transfers" },
 );
+add(
+  "delete-temporary-defaults",
+  ["edit.delete-temporary-defaults"],
+  "Delete tmp/scratch, .tmp/scratch, temp/scratch, and .temp/scratch through ordinary Delete paths. This workspace has no Git; temporary descendants need no approval. Leave sentinel.txt unchanged.",
+  ["tmp", ".tmp", "temp", ".temp"].map((name) => ({
+    tool: "delete",
+    args: { path: `${name}/scratch` },
+    contains: "delete: applied",
+  })),
+  {
+    setup: "delete-temporary-no-git",
+    files: {
+      "sentinel.txt": "KEEP\n",
+      ...Object.fromEntries(
+        ["tmp", ".tmp", "temp", ".temp"].map((name) => [`${name}/scratch/data`, "REMOVE\n"]),
+      ),
+    },
+    expected: Object.fromEntries(
+      ["tmp", ".tmp", "temp", ".temp"].flatMap((name) => [
+        [`${name}/scratch`, null],
+        [`${name}/scratch/data`, null],
+      ]),
+    ),
+  },
+);
+add(
+  "delete-temporary-config",
+  ["edit.delete-temporary-config"],
+  "Delete custom/scratch. The project deletion setting replaces default temporary roots with custom. Request Delete on tmp/scratch too: it must require approval unavailable in this non-interactive runtime. Leave tmp/scratch/data and sentinel.txt unchanged. In Codemode catch the expected refusal.",
+  [
+    { tool: "delete", args: { path: "custom/scratch" }, contains: "delete: applied" },
+    {
+      tool: "delete",
+      args: { path: "tmp/scratch" },
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+  ],
+  {
+    setup: "delete-temporary-no-git",
+    files: {
+      ".pi/pi-agent-ide/deletion.json": JSON.stringify({
+        temporaryDirectories: { mode: "replace", paths: ["custom"] },
+      }),
+      "custom/scratch/data": "REMOVE\n",
+      "tmp/scratch/data": "KEEP\n",
+      "sentinel.txt": "KEEP\n",
+    },
+    expected: { "custom/scratch": null, "custom/scratch/data": null },
+  },
+);
 function add(
   id: string,
   capabilities: string[],

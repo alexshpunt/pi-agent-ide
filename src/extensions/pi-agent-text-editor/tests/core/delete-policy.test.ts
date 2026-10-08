@@ -68,6 +68,12 @@ async function fixture(git = true) {
   const root = await mkdtemp(path.join(os.tmpdir(), "ide-delete-policy-"));
   roots.push(root);
   if (git) await exec("git", ["init", "-q", root]);
+  // These cases exercise the original policy with the temporary exception disabled.
+  await mkdir(path.join(root, ".pi", "pi-agent-ide"), { recursive: true });
+  await writeFile(
+    path.join(root, ".pi", "pi-agent-ide", "deletion.json"),
+    JSON.stringify({ temporaryDirectories: { mode: "replace", paths: [] } }),
+  );
   await mkdir(path.join(root, "folder"));
   await writeFile(path.join(root, "folder", "data"), "keep");
   return root;

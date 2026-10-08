@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import {
   assistantMessage,
@@ -16,6 +17,103 @@ import {
   withTempWorkspace,
 } from "#integration/support/pi-runtime/fixtures.js";
 
+test("cleans external system temp without dialogs while tracked temp still prompts on both routes", async () => {
+  const scratch = await mkdtemp(path.join(os.tmpdir(), "ide-live-temp-delete-"));
+  try {
+    await withTempWorkspace(async (cwd) => {
+      execFileSync("git", ["init", "-q", cwd]);
+      await enableNativeCodemode(cwd);
+      for (const name of ["direct", "script"]) {
+        await mkdir(path.join(scratch, name));
+        await writeFile(path.join(scratch, name, "data"), "scratch");
+        await mkdir(path.join(cwd, "tmp", `${name}-tracked-no`), { recursive: true });
+        await writeFile(path.join(cwd, "tmp", `${name}-tracked-no`, "data"), "tracked");
+      }
+      execFileSync("git", ["-C", cwd, "add", "tmp"]);
+      const run = await new PiIntegrationTest({
+        testName: "delete-temp-both-routes",
+        rawMode: false,
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        extensions: [
+          "builtin:codemode",
+          path.resolve("src/pi-agent-ide.ts"),
+          path.resolve("tests/integration/support/delete-dialog-extension.ts"),
+        ],
+        tools: ["delete", "codemode"],
+        conversation: [
+          assistantMessage(
+            [
+              toolCall({
+                id: "direct-temp",
+                name: "delete",
+                arguments: { path: path.join(scratch, "direct") },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: "script-temp",
+                name: "codemode",
+                arguments: {
+                  code: `text(await tools.delete({path:${JSON.stringify(path.join(scratch, "script"))}}));`,
+                },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: "direct-tracked-temp",
+                name: "delete",
+                arguments: { path: "tmp/direct-tracked-no" },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: "script-tracked-temp",
+                name: "codemode",
+                arguments: {
+                  code: 'let denied=false; try { await tools.delete({path:"tmp/script-tracked-no"}); } catch { denied=true; } if(!denied) throw Error("Tracked temp must prompt"); text("refused");',
+                },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("Done")]),
+        ],
+      }).run("Clean temporary directories and keep tracked directories after refusal");
+      for (const id of ["direct-temp", "script-temp"]) {
+        expect(getToolExecution(run, id).isError).toBe(false);
+        expect(getToolResultText(run, id)).toContain("delete: applied");
+      }
+      expect(getToolExecution(run, "direct-tracked-temp").isError).toBe(true);
+      expect(getToolExecution(run, "script-tracked-temp").isError).toBe(false);
+      for (const name of ["direct", "script"]) {
+        await expect(lstat(path.join(scratch, name))).rejects.toMatchObject({ code: "ENOENT" });
+        expect(await readFile(path.join(cwd, "tmp", `${name}-tracked-no`, "data"), "utf8")).toBe(
+          "tracked",
+        );
+      }
+      const decisions = (await readFile(path.join(cwd, "dialog-decisions.jsonl"), "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as { message: string; approved: boolean });
+      expect(decisions).toHaveLength(2);
+      expect(
+        decisions.every(({ approved, message }) => !approved && message.includes("tracked-no")),
+      ).toBe(true);
+    });
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
 test("requires host user decisions for tracked deletion through direct and native Codemode calls", async () => {
   await withTempWorkspace(async (cwd) => {
     execFileSync("git", ["init", "-q", cwd]);
