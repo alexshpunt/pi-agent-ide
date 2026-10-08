@@ -337,6 +337,43 @@ add(
 );
 
 add(
+  "move-empty",
+  ["edit.move-empty"],
+  "Search task.txt and dest.txt separately for ABSENT to get two empty results. Pass both unchanged results as Move's source and target. It must succeed without changes. Search the unchanged Move result for source; it must find nothing. Do not edit any file.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "ABSENT" } },
+    { tool: "search", args: { path: "dest.txt", query: "ABSENT" } },
+    { tool: "move", reuse: [reuse(0), reuse(1, "target")], contains: "no changes" },
+    { tool: "search", args: { query: "source" }, reuse: reuse(2), contains: "No matches found" },
+  ],
+  {
+    files: { "task.txt": "source\n", "dest.txt": "destination\n" },
+    expected: { "task.txt": "source\n", "dest.txt": "destination\n" },
+  },
+);
+add(
+  "move-zero-width",
+  ["edit.move-zero-width", "compose.move-point-replace"],
+  "Read task.txt and select its point at offset 0 using sliceText from=0,to=0. Read dest.txt and select its point at offset 5 using sliceText from=5,to=5. Move the source point to the destination point using both unchanged Select results as path and target. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.",
+  [
+    { tool: "read", args: { path: "task.txt" } },
+    { tool: "select", args: { operation: { kind: "sliceText", from: 0, to: 0 } }, reuse: reuse(0) },
+    { tool: "read", args: { path: "dest.txt" } },
+    { tool: "select", args: { operation: { kind: "sliceText", from: 5, to: 5 } }, reuse: reuse(2) },
+    {
+      tool: "move",
+      reuse: [reuse(1), reuse(3, "target")],
+      contains: "No changes: zero-width selections.",
+    },
+    { tool: "replace", args: { text: "NEW " }, reuse: reuse(4) },
+  ],
+  {
+    files: { "task.txt": "source\n", "dest.txt": "left right\n" },
+    expected: { "task.txt": "source\n", "dest.txt": "left NEW right\n" },
+  },
+);
+
+add(
   "read-diff",
   ["read.diff", "compose.read-diff"],
   "Read a.txt and b.txt separately. Pass their unchanged results or UUIDs as before and after to diff. Report the added line. Do not edit files.",

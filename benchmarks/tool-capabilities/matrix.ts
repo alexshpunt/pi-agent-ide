@@ -27,6 +27,8 @@ const groups: [string[], string[]][] = [
     ["selection-copy-move"],
   ],
   [["compose.paired-sources-targets"], ["paired-copy"]],
+  [["edit.move-empty"], ["move-empty"]],
+  [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
   [
