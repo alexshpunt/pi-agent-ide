@@ -218,7 +218,7 @@ export async function registerLspWithOwner(
           api
             .tool(operation)
             .describe(
-              "Use symbol:<file>#<selector> as path to select one exact declaration without start/end. Use parent/child for ambiguous names. Copy/move require an explicit target and destination anchor. This text fallback leaves imports and references unchanged; it is not semantic rename." +
+              "Use symbol:<file>#<selector> as path to select one exact declaration without start/end. Use parent/child for ambiguous names. For declaration-text Copy/Move, supply an explicit target and destination anchor. This text fallback leaves imports and references unchanged; it is not semantic rename." +
                 (operation === "replace"
                   ? " Use symbol:<file>#<selector>#name with text containing the new name for native LSP rename across references. Omit start/end. A failed server rename never falls back to identifier text replacement."
                   : ""),

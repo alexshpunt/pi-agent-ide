@@ -146,6 +146,81 @@ def check_copy_destination(destination, source_info, expected):
         raise OperationError("SAME_FILE")
     if expected is None or fingerprint(destination, b"", target_info) != expected:
         raise OperationError("CONFLICT")
+def object_kind(info):
+    return ("symlink" if stat.S_ISLNK(info.st_mode) else
+            "directory" if stat.S_ISDIR(info.st_mode) else
+            "file" if stat.S_ISREG(info.st_mode) else "other")
+
+
+def resolve_object_parent(directory):
+    try:
+        return os.path.realpath(directory, strict=True)
+    except FileNotFoundError:
+        if os.path.lexists(directory):
+            raise
+        return os.path.join(resolve_object_parent(os.path.dirname(directory)), os.path.basename(directory))
+
+
+def object_snapshot(path):
+    resolved = os.path.join(resolve_object_parent(os.path.dirname(path)), os.path.basename(path))
+    entries = []
+    def walk(file, relative):
+        try:
+            info = os.lstat(file)
+        except FileNotFoundError:
+            if relative:
+                raise OperationError("TRANSFER_TARGET_CHANGED")
+            return
+        kind = object_kind(info)
+        entry = {"relativePath": relative, "kind": kind,
+                 "revision": fingerprint(file, b"", info),
+                 "identity": {"device": str(info.st_dev), "inode": str(info.st_ino)},
+                 "mode": stat.S_IMODE(info.st_mode)}
+        if kind == "symlink":
+            entry["link"] = encoded(os.readlink(os.fsencode(file)))
+        entries.append(entry)
+        if kind == "directory":
+            fd = os.open(file, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                if fingerprint(file, b"", os.fstat(fd)) != entry["revision"]:
+                    raise OperationError("TRANSFER_TARGET_CHANGED")
+                for name in sorted(os.listdir(fd)):
+                    walk(os.path.join(file, name), name if not relative else relative + "/" + name)
+                if fingerprint(file, b"", os.lstat(file)) != entry["revision"]:
+                    raise OperationError("TRANSFER_TARGET_CHANGED")
+            finally:
+                os.close(fd)
+    walk(resolved, "")
+    return {"path": resolved, "entries": entries}
+
+
+def check_object_revision(path, expected):
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        if expected is not None:
+            raise OperationError("TRANSFER_TARGET_CHANGED")
+        return None
+    if expected is None or fingerprint(path, b"", info) != expected:
+        raise OperationError("TRANSFER_TARGET_CHANGED")
+    return info
+
+
+def make_object_parents(directory):
+    # Refuse followed directory links, including a parent changed after controller preflight.
+    global effect
+    try:
+        info = os.lstat(directory)
+    except FileNotFoundError:
+        make_object_parents(os.path.dirname(directory))
+        effect = "unknown"
+        os.mkdir(directory)
+        return
+    if not stat.S_ISDIR(info.st_mode):
+        raise OperationError("INVALID_FILE_TYPE")
+    if os.path.dirname(directory) != directory:
+        make_object_parents(os.path.dirname(directory))
+
 def perform(request):
     global effect, active_process
     operation = request["operation"]
@@ -217,6 +292,71 @@ def perform(request):
         environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         environment["GIT_OPTIONAL_LOCKS"] = "0"
         return git_command(path, request["args"], environment).decode("utf8")
+    if operation == "object-snapshot":
+        return object_snapshot(path)
+    if operation in ("mkdir-object", "symlink-object"):
+        info = check_object_revision(path, request["revision"])
+        if operation == "mkdir-object" and info is not None:
+            if not stat.S_ISDIR(info.st_mode):
+                raise OperationError("INVALID_FILE_TYPE")
+            return None
+        if info is not None:
+            raise OperationError("TRANSFER_TARGET_CHANGED")
+        make_object_parents(os.path.dirname(path))
+        with locked_directory(os.path.dirname(path)):
+            check_object_revision(path, None)
+            effect = "unknown"
+            if operation == "mkdir-object":
+                os.mkdir(path, request["mode"] & 0o7777)
+            else:
+                os.symlink(base64.b64decode(request["link"], validate=True), os.fsencode(path))
+            effect = "applied"
+        return None
+    if operation == "chmod-object":
+        make_object_parents(os.path.dirname(path))
+        with locked_directory(os.path.dirname(path)):
+            info = check_object_revision(path, request["revision"])
+            if info is None or not stat.S_ISDIR(info.st_mode):
+                raise OperationError("INVALID_FILE_TYPE")
+            fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                if fingerprint(path, b"", os.fstat(fd)) != request["revision"]:
+                    raise OperationError("TRANSFER_TARGET_CHANGED")
+                effect = "unknown"
+                os.fchmod(fd, request["mode"] & 0o7777)
+                effect = "applied"
+            finally:
+                os.close(fd)
+        return None
+    if operation == "move-object":
+        destination = request["destination"]
+        if object_snapshot(path) != request["sourceSnapshot"] or object_snapshot(destination) != request["targetSnapshot"]:
+            raise OperationError("TRANSFER_TARGET_CHANGED")
+        # A same-device rename preserves the entire object, including its inode and link bytes.
+        ancestor = os.path.dirname(destination)
+        while not os.path.exists(ancestor):
+            ancestor = os.path.dirname(ancestor)
+        if os.lstat(path).st_dev != os.stat(ancestor).st_dev:
+            return False
+        make_object_parents(os.path.dirname(destination))
+        parents = sorted({os.path.dirname(name) for name in (path, destination)})
+        with ExitStack() as locks:
+            for parent in parents:
+                locks.enter_context(locked_directory(parent))
+            if object_snapshot(path) != request["sourceSnapshot"] or object_snapshot(destination) != request["targetSnapshot"]:
+                raise OperationError("TRANSFER_TARGET_CHANGED")
+            if request["targetSnapshot"]["entries"]:
+                effect = "unknown"
+                if stat.S_ISDIR(os.lstat(destination).st_mode):
+                    if not shutil.rmtree.avoids_symlink_attacks:
+                        raise OperationError("DELETE_UNSAFE_PLATFORM")
+                    shutil.rmtree(destination)
+                else:
+                    os.unlink(destination)
+            effect = "unknown"
+            os.rename(path, destination)
+            effect = "applied"
+        return True
     if operation == "delete-object":
         # Policy and dialogs run on the controller; verify the same native object here.
         with locked_directory(os.path.dirname(path)):

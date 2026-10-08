@@ -6,6 +6,7 @@ import { createSshFileOperationResolver } from "#src/backend/file-operation-reso
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { remoteLocation } from "#src/backend/identity.js";
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
+import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.js";
 
 test("streamed transfers preserve external edits and clean unpublished staging files", async () => {
   const fixture = await startSshFixture();
@@ -17,7 +18,9 @@ test("streamed transfers preserve external edits and clean unpublished staging f
       configFile: fixture.config,
     })),
   );
-  const operate = createSshFileOperationResolver(registry);
+  const resolver = createSshFileOperationResolver(registry);
+  const operate: typeof resolver = (operation, input, context) =>
+    resolver(operation, input, context, sshTransferPolicy);
   const sourcePath = path.join(fixture.workspace, "source.bin");
   const targetPath = path.join(fixture.workspace, "target.bin");
   const source = remoteLocation("left", sourcePath).source;
@@ -41,7 +44,10 @@ test("streamed transfers preserve external edits and clean unpublished staging f
       };
       await expect(
         operate("copy", { path: source, target }, { cwd: fixture.workspace }),
-      ).rejects.toMatchObject({ code: "CONFLICT", effect: "not-applied" });
+      ).rejects.toMatchObject({
+        code: changed === "target" ? "TRANSFER_TARGET_CHANGED" : "CONFLICT",
+        effect: "not-applied",
+      });
       expect(await readFile(targetPath, "utf8")).toBe(
         changed === "target" ? "external edit" : "before target",
       );
@@ -56,7 +62,61 @@ test("streamed transfers preserve external edits and clean unpublished staging f
   }
 }, 60000);
 
-test("Copy and Move replace regular destinations across SSH owners without an overwrite flag", async () => {
+test.each(
+  (["copy", "move"] as const).flatMap((operation) =>
+    (["upload", "download", "targets", "same-target"] as const).map((route) => ({
+      operation,
+      route,
+    })),
+  ),
+)(
+  "regular $operation replaces destinations through $route without an overwrite flag",
+  async ({ operation, route }) => {
+    const fixture = await startSshFixture();
+    const registry = new SshBackendRegistry(
+      ["left", "right"].map((id) => ({
+        id,
+        host: "fixture",
+        workspace: fixture.workspace,
+        configFile: fixture.config,
+      })),
+    );
+    const operate = createSshFileOperationResolver(registry);
+    const local = path.join(fixture.root, "local.bin");
+    const remote = path.join(fixture.workspace, "remote.bin");
+    const other = path.join(fixture.workspace, "other.bin");
+    const left = remoteLocation("left", remote).source;
+    const target = remoteLocation(route === "targets" ? "right" : "left", other).source;
+    const [source, destination, actualSource, actualTarget] =
+      route === "upload"
+        ? [local, left, local, remote]
+        : route === "download"
+          ? [left, local, remote, local]
+          : [left, target, remote, other];
+    const bytes = Buffer.from([0, 255, 239, 187, 191, 13, 10]);
+    try {
+      await writeFile(actualSource, bytes);
+      await writeFile(actualTarget, "old destination");
+      expect(
+        await operate(
+          operation,
+          { path: source, target: destination },
+          { cwd: fixture.root },
+          sshTransferPolicy,
+        ),
+      ).toMatchObject({ ok: true, effect: "applied" });
+      expect(await readFile(actualTarget)).toEqual(bytes);
+      if (operation === "move")
+        await expect(readFile(actualSource)).rejects.toMatchObject({ code: "ENOENT" });
+      else expect(await readFile(actualSource)).toEqual(bytes);
+    } finally {
+      await fixture.stop();
+    }
+  },
+  90000,
+);
+
+test("regular SSH transfers reject aliases and destination links before effects", async () => {
   const fixture = await startSshFixture();
   const registry = new SshBackendRegistry(
     ["left", "right"].map((id) => ({
@@ -67,58 +127,25 @@ test("Copy and Move replace regular destinations across SSH owners without an ov
     })),
   );
   const operate = createSshFileOperationResolver(registry);
-  const local = path.join(fixture.root, "local.bin");
   const remote = path.join(fixture.workspace, "remote.bin");
-  const other = path.join(fixture.workspace, "other.bin");
-  const left = remoteLocation("left", remote).source;
-  const right = remoteLocation("right", other).source;
-  const sameTarget = remoteLocation("left", other).source;
-  const bytes = Buffer.from([0, 255, 239, 187, 191, 13, 10]);
+  const source = remoteLocation("left", remote).source;
+  const bytes = Buffer.from([0, 255, 10]);
   try {
-    for (const operation of ["copy", "move"] as const) {
-      for (const [source, target, actualSource, actualTarget] of [
-        [local, left, local, remote],
-        [left, local, remote, local],
-        [left, right, remote, other],
-        [left, sameTarget, remote, other],
-      ] as const) {
-        await writeFile(actualSource, bytes);
-        await writeFile(actualTarget, "old destination");
-        expect(
-          await operate(operation, { path: source, target }, { cwd: fixture.root }),
-        ).toMatchObject({
-          ok: true,
-          effect: "applied",
-        });
-        expect(await readFile(actualTarget)).toEqual(bytes);
-        if (operation === "move") {
-          await expect(readFile(actualSource)).rejects.toMatchObject({ code: "ENOENT" });
-        } else {
-          expect(await readFile(actualSource)).toEqual(bytes);
-        }
-      }
-    }
     await writeFile(remote, bytes);
-    for (const target of [left, remoteLocation("right", remote).source]) {
+    for (const target of [source, remoteLocation("right", remote).source])
       await expect(
-        operate("copy", { path: left, target }, { cwd: fixture.root }),
-      ).rejects.toMatchObject({
-        code: "SAME_FILE",
-        effect: "not-applied",
-      });
-    }
+        operate("copy", { path: source, target }, { cwd: fixture.root }, sshTransferPolicy),
+      ).rejects.toMatchObject({ code: "SAME_FILE", effect: "not-applied" });
     const link = path.join(fixture.workspace, "link.bin");
     await symlink(remote, link);
     await expect(
       operate(
         "copy",
-        { path: left, target: remoteLocation("left", link).source },
+        { path: source, target: remoteLocation("left", link).source },
         { cwd: fixture.root },
+        sshTransferPolicy,
       ),
-    ).rejects.toMatchObject({
-      code: "INVALID_FILE_TYPE",
-      effect: "not-applied",
-    });
+    ).rejects.toMatchObject({ code: "INVALID_FILE_TYPE", effect: "not-applied" });
     expect(await readFile(remote)).toEqual(bytes);
   } finally {
     await fixture.stop();
@@ -138,7 +165,9 @@ test("mixed transfers create missing parents on the destination owner", async ()
       configFile: fixture.config,
     })),
   );
-  const operate = createSshFileOperationResolver(registry);
+  const resolver = createSshFileOperationResolver(registry);
+  const operate: typeof resolver = (operation, input, context) =>
+    resolver(operation, input, context, sshTransferPolicy);
   const local = path.join(fixture.root, "source.bin");
   const uploaded = path.join(fixture.workspace, "upload-new", "nested", "bytes.bin");
   const crossed = path.join(fixture.workspace, "cross-new", "nested", "bytes.bin");
@@ -153,7 +182,12 @@ test("mixed transfers create missing parents on the destination owner", async ()
       [upload, cross, crossed],
       [cross, downloaded, downloaded],
     ] as const) {
-      const result = await operate("copy", { path: source, target }, { cwd: fixture.root });
+      const result = await operate(
+        "copy",
+        { path: source, target },
+        { cwd: fixture.root },
+        sshTransferPolicy,
+      );
       expect(result).toMatchObject({ ok: true, effect: "applied" });
       expect((await readFile(actual)).equals(bytes)).toBe(true);
     }
@@ -173,7 +207,9 @@ test("whole-file owners stream binary files across all backend boundaries", asyn
       configFile: fixture.config,
     })),
   );
-  const operate = createSshFileOperationResolver(registry);
+  const resolver = createSshFileOperationResolver(registry);
+  const operate: typeof resolver = (operation, input, context) =>
+    resolver(operation, input, context, sshTransferPolicy);
   const bytes = Buffer.alloc(33 * 1024 * 1024, 255);
   bytes.set([0, 239, 187, 191, 13, 10]);
   const cases = [

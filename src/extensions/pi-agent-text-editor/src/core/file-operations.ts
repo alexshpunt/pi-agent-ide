@@ -1,4 +1,5 @@
-import { lstat, rm, unlink } from "node:fs/promises";
+import { rm, unlink } from "node:fs/promises";
+import { prepareFileTransfer, prepareObjectTransfer, type TransferKind } from "./file-transfers.js";
 import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.js";
 import path from "node:path";
 import fs from "fs-extra";
@@ -15,7 +16,8 @@ export { fileOperations } from "#src/api/file-operations.js";
 export type { FileOperation, FileOperationResult } from "#src/api/file-operations.js";
 const filePath = Type.String({
   minLength: 1,
-  description: "Regular file path, relative to cwd or absolute, or an owned resource URI.",
+  description:
+    "File, directory, or symlink path, relative to cwd or absolute, or an owned resource URI.",
 });
 export const deleteFileParameters = Type.Object(
   {
@@ -46,12 +48,17 @@ const fileOperationResultSchema = Type.Object({
   ]),
   path: Type.Optional(Type.String({ minLength: 1 })),
   target: Type.Optional(Type.String({ minLength: 1 })),
+  sourceKind: Type.Optional(
+    Type.Union([Type.Literal("file"), Type.Literal("directory"), Type.Literal("symlink")]),
+  ),
   error: Type.Optional(
     Type.Object({ code: Type.String({ minLength: 1 }), message: Type.String() }),
   ),
 });
 /** Host-only deletion policy and optional removal primitive. */
 export interface FileOperationContext extends DeletePolicyContext {
+  /** Capture regular-file hooks before effects; object transfers do not read directories as text. */
+  readonly beforeFileTransfer?: () => Promise<void>;
   readonly removeDirectory?: (source: string) => Promise<void>;
 }
 /** Recognize a host-owned whole-file receipt for shared output rendering. */
@@ -83,6 +90,7 @@ export async function executeFileOperation(
   let started = false;
   let source: string | undefined;
   let target: string | undefined;
+  let sourceKind: TransferKind | undefined;
   try {
     const schema = operation === "delete" ? deleteFileParameters : transferFileParameters;
     if (!Value.Check(schema, input))
@@ -93,35 +101,40 @@ export async function executeFileOperation(
     source = args.path;
     target = args.target;
     signal?.throwIfAborted();
-    if (operation !== "delete") await preflight?.(operation, args);
-    signal?.throwIfAborted();
     for (const resolve of resolvers) {
       started = true;
       const outcome = await resolve(
         operation,
         args,
         { cwd, signal },
-        operation === "delete"
-          ? {
-              async prepare(source, project, files) {
-                try {
-                  const event = await prepareDeletion(
-                    source,
-                    project,
-                    { ...deletion, files },
-                    signal,
-                  );
-                  if (event.kind === "file") await preflight?.(operation, args);
-                  return event;
-                } catch (error) {
-                  // This callback checks policy only; the provider has not received permission to remove.
-                  throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
-                    effect: "not-applied",
-                  });
-                }
-              },
+        {
+          async prepare(source, project, files) {
+            try {
+              const event = await prepareDeletion(source, project, { ...deletion, files }, signal);
+              if (event.kind === "file") await preflight?.(operation, args);
+              return event;
+            } catch (error) {
+              throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+                effect: "not-applied",
+              });
             }
-          : undefined,
+          },
+          async prepareTransfer(action, source, target) {
+            try {
+              const guard = await prepareObjectTransfer(action, source, target, deletion, signal);
+              if (guard.sourceKind === "file") {
+                await deletion.beforeFileTransfer?.();
+                await preflight?.(operation, args);
+              }
+              return guard;
+            } catch (error) {
+              // No permission to change either endpoint has been returned yet.
+              throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+                effect: "not-applied",
+              });
+            }
+          },
+        },
       );
       if (outcome !== undefined) {
         if (
@@ -150,25 +163,15 @@ export async function executeFileOperation(
     signal?.throwIfAborted();
     const deleteEvent =
       operation === "delete" ? await prepareDeletion(source, cwd, deletion, signal) : undefined;
-    const sourceStat = deleteEvent === undefined ? await regularFile(source) : undefined;
     if (deleteEvent?.kind === "file") await preflight?.(operation, args);
-    if (target !== undefined) {
-      const targetStat = await optionalStat(target);
-      if (targetStat !== undefined) {
-        if (!targetStat.isFile() || targetStat.isSymbolicLink())
-          throw Object.assign(new Error("Target must be a regular file"), {
-            code: "INVALID_FILE_TYPE",
-          });
-        if (
-          source === target ||
-          (sourceStat !== undefined &&
-            sourceStat.ino === targetStat.ino &&
-            sourceStat.dev === targetStat.dev)
-        )
-          throw Object.assign(new Error("Source and target are the same file"), {
-            code: "SAME_FILE",
-          });
-      }
+    const transfer =
+      operation !== "delete" && target !== undefined
+        ? await prepareFileTransfer(operation, source, target, cwd, deletion, signal)
+        : undefined;
+    sourceKind = transfer?.sourceKind;
+    if (sourceKind === "file") {
+      await deletion.beforeFileTransfer?.();
+      await preflight?.(operation, args);
     }
     signal?.throwIfAborted();
     started = true;
@@ -178,9 +181,10 @@ export async function executeFileOperation(
           await deletion.removeDirectory(deleteEvent.resolvedPath);
         else await rm(deleteEvent.resolvedPath, { recursive: true, force: false });
       } else await unlink(deleteEvent.resolvedPath);
-    } else if (target !== undefined) {
-      if (operation === "copy") await fs.copy(source, target, { overwrite: true });
-      else await fs.move(source, target, { overwrite: true });
+    } else if (transfer !== undefined) {
+      if (operation === "copy")
+        await fs.copy(transfer.source, transfer.target, { overwrite: true, dereference: false });
+      else await fs.move(transfer.source, transfer.target, { overwrite: true });
     }
     return {
       kind: "file-operation",
@@ -189,6 +193,7 @@ export async function executeFileOperation(
       effect: "applied",
       path: source,
       ...(target === undefined ? {} : { target }),
+      ...(sourceKind === undefined ? {} : { sourceKind }),
     };
   } catch (error) {
     return {
@@ -208,7 +213,6 @@ export async function executeFileOperation(
     };
   }
 }
-
 /** Detect explicit URI sources without mistaking Windows drive paths for schemes. */
 export function isUriSource(value: string): boolean {
   return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value) && !/^[a-z]:[/\\]/iu.test(value);
@@ -222,19 +226,4 @@ function failureEffect(error: unknown, started: boolean): FileOperationResult["e
   )
     return error.effect;
   return started ? "unknown" : "not-applied";
-}
-async function regularFile(file: string) {
-  const stat = await lstat(file);
-  if (!stat.isFile() || stat.isSymbolicLink())
-    throw Object.assign(new Error("Source must be a regular file"), { code: "INVALID_FILE_TYPE" });
-  return stat;
-}
-async function optionalStat(file: string) {
-  try {
-    return await lstat(file);
-  } catch (error) {
-    if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT")
-      return undefined;
-    throw error;
-  }
 }

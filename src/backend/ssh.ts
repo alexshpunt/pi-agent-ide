@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ResourceError } from "pi-agent-resource";
+import type { FileObjectSnapshot } from "pi-agent-text-editor/api/plugin-protocol";
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 
@@ -96,6 +97,19 @@ const lstatSchema = Type.Object({
   }),
   revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
 });
+const objectSnapshotSchema = Type.Object({
+  path: Type.String({ minLength: 1 }),
+  entries: Type.Array(
+    Type.Object({
+      relativePath: Type.String(),
+      kind: lstatSchema.properties.kind,
+      revision: lstatSchema.properties.revision,
+      identity: lstatSchema.properties.identity,
+      mode: Type.Integer({ minimum: 0 }),
+      link: Type.Optional(Type.String()),
+    }),
+  ),
+});
 const replySchema = Type.Union([
   Type.Object({ ok: Type.Literal(true), data: Type.Unknown() }),
   Type.Object({
@@ -133,6 +147,83 @@ export class SshBackend {
     this.checked(lstatSchema, data, filePath, false);
     return data;
   }
+  /** Snapshot a tree without following source links or downloading file contents. */
+  async objectSnapshot(filePath: string, context: BackendOperationContext = {}) {
+    const data = await this.request(
+      { operation: "object-snapshot", path: filePath },
+      false,
+      context,
+    );
+    this.checked(objectSnapshotSchema, data, filePath, false);
+    return data;
+  }
+
+  /** Create a missing directory, or verify an existing native directory, after host transfer policy. */
+  async ensureObjectDirectory(
+    filePath: string,
+    mode: number,
+    revision: string | null,
+    context: BackendOperationContext = {},
+  ): Promise<void> {
+    const data = await this.request(
+      { operation: "mkdir-object", path: filePath, mode, revision },
+      true,
+      context,
+    );
+    this.checked(Type.Null(), data, filePath, true);
+  }
+
+  /** Create a missing link with its original native bytes; never follow or replace a destination link. */
+  async createObjectLink(
+    filePath: string,
+    link: string,
+    context: BackendOperationContext = {},
+  ): Promise<void> {
+    const data = await this.request(
+      { operation: "symlink-object", path: filePath, link, revision: null },
+      true,
+      context,
+    );
+    this.checked(Type.Null(), data, filePath, true);
+  }
+
+  /** Publish a new directory's source mode after children are copied, with a fresh identity check. */
+  async setObjectMode(
+    filePath: string,
+    mode: number,
+    revision: string,
+    context: BackendOperationContext = {},
+  ): Promise<void> {
+    const data = await this.request(
+      { operation: "chmod-object", path: filePath, mode, revision },
+      true,
+      context,
+    );
+    this.checked(Type.Null(), data, filePath, true);
+  }
+  /** Try a same-device object rename after rechecking both approved trees.
+   * False means a cross-device copy is needed; no endpoint object was changed.
+   */
+  async moveObject(
+    source: FileObjectSnapshot,
+    target: FileObjectSnapshot,
+    context: BackendOperationContext = {},
+  ): Promise<boolean> {
+    const data = await this.request(
+      {
+        operation: "move-object",
+        path: source.path,
+        destination: target.path,
+        sourceSnapshot: source,
+        targetSnapshot: target,
+      },
+      true,
+      context,
+    );
+    this.checked(Type.Boolean(), data, source.path, true);
+    return data;
+  }
+
   /** Capture a guarded, disk-backed regular-file journal on this target.
    * Copies and hashes bounded chunks; file bytes never enter the JSON transport.
    * The caller owns the returned directory and must release it after use.

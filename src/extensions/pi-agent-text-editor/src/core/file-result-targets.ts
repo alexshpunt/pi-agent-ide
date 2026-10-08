@@ -16,6 +16,17 @@ export async function attachFileMutationTargets(
   if (action === null || typeof action !== "object") return result;
   const semantic = action as Record<string, unknown>;
   if (semantic.ok !== true || semantic.postProcessingError !== undefined) return result;
+  if (semantic.sourceKind === "directory" || semantic.sourceKind === "symlink")
+    return {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: {
+          ...result.details.metadata,
+          targetUnavailable: "Target is not a regular text file; no text selection is available.",
+        },
+      },
+    };
   const sources =
     semantic.kind === "file-operation" && typeof semantic.target === "string"
       ? [semantic.target]
@@ -48,7 +59,7 @@ export async function attachFileMutationTargets(
       const stat = await lstat(file);
       states.push({ source: file, state: "present" });
       if (!stat.isFile() || stat.isSymbolicLink())
-        throw new Error("Restored target is not a regular text file.");
+        throw new Error("Target is not a regular text file; no text selection is available.");
       const bytes = await readFile(file, { signal });
       const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
       if (content.includes("\0")) throw new Error("Binary file has no supported text target.");

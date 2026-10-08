@@ -9,7 +9,8 @@ export function createDeclarationTargets(managerFor: LspManagerProvider): TextTa
     id: "lsp-declaration-target",
     async tryResolve(value, context) {
       const reference = parseCodeViewReference(value, "symbol");
-      if (reference === undefined) return { kind: "not-handled" };
+      // #name belongs to the rename pre-edit handler, not declaration-text fallback.
+      if (reference === undefined || value.endsWith("#name")) return { kind: "not-handled" };
       if (reference.selector === undefined)
         return {
           kind: "rejected",

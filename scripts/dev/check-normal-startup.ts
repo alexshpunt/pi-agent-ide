@@ -1,5 +1,5 @@
 import path from "node:path";
-import { createAgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, SessionManager, initTheme } from "@earendil-works/pi-coding-agent";
 
 /** Check normal configured loading without sending a prompt or spending provider tokens. */
 const { session, extensionsResult } = await createAgentSession({
@@ -7,6 +7,8 @@ const { session, extensionsResult } = await createAgentSession({
   sessionManager: SessionManager.inMemory(),
 });
 try {
+  // Configured extensions can read the public theme even in a headless SDK session.
+  initTheme(session.settingsManager.getTheme(), false);
   const errors: unknown[] = [...extensionsResult.errors];
   await session.bindExtensions({ mode: "json", onError: (error) => errors.push(error) });
   const ideEntries = extensionsResult.extensions.filter((extension) =>

@@ -34,10 +34,19 @@ export type {
   FileOperationResult,
   FileOperationResolver,
 } from "#src/api/file-operations.js";
-export type { DeleteFileAccess, FileDeletionPolicy } from "#src/api/delete-guard.js";
+export type { DeleteFileAccess } from "#src/api/delete-guard.js";
+export type { FileOperationPolicy } from "#src/api/file-operations.js";
+export type {
+  FileObjectEntry,
+  FileObjectSnapshot,
+  FileTransferAccess,
+  FileTransferEndpoint,
+  FileTransferGuard,
+} from "#src/api/file-transfers.js";
+export { localFileTransferAccess, snapshotLocalObjects } from "#src/api/native-files.js";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 30;
+export const TEXT_EDITOR_API_VERSION = 31;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 

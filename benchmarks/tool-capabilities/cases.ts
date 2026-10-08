@@ -27,6 +27,8 @@ add(
       "remove-tree": null,
       "remove-tree/data": null,
       "remove-tree/link": null,
+      "remove-tree/nested/data.bin": null,
+      "remove-tree/broken": null,
       link: null,
       "broken-link": null,
     },
@@ -53,6 +55,106 @@ add(
     { tool: "delete", args: { path: "/" }, error: true, contains: "DELETE_PROTECTED_TARGET" },
   ],
   { files: deleteFixture, git: true },
+);
+add(
+  "directory-transfers",
+  [
+    "edit.copy-directory",
+    "edit.move-directory",
+    "edit.copy-symlink",
+    "edit.move-symlink",
+    "edit.copy-merge-directory",
+    "edit.move-replace-directory",
+    "compose.object-transfer-refusal",
+  ],
+  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. Search the unchanged first Copy receipt for BAD and observe that it has no reusable text selection; catch that expected error in Codemode. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
+  [
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "merge-target" },
+      contains: "copy: applied",
+    },
+    {
+      tool: "move",
+      args: { path: "merge-target", target: "moved-target" },
+      contains: "move: applied",
+    },
+    { tool: "copy", args: { path: "link", target: "copied-link" }, contains: "copy: applied" },
+    {
+      tool: "move",
+      args: { path: "copied-link", target: "moved-link" },
+      contains: "move: applied",
+    },
+    {
+      tool: "copy",
+      args: { path: "broken-link", target: "copied-broken" },
+      contains: "copy: applied",
+    },
+    {
+      tool: "move",
+      args: { path: "copied-broken", target: "moved-broken" },
+      contains: "move: applied",
+    },
+    { tool: "read", args: { path: "moved-target/nested/empty" } },
+    {
+      tool: "search",
+      args: { query: "BAD" },
+      reuse: reuse(0),
+      error: true,
+      contains: "no reusable text selection",
+    },
+  ],
+  {
+    files: deleteFixture,
+    git: true,
+    setup: "directory-transfers",
+    expected: {
+      "merge-target": null,
+      "copied-link": null,
+      "copied-broken": null,
+      "merge-target/nested/data.bin": null,
+      "merge-target/copy-only": null,
+      "moved-target/move-only": null,
+      "moved-target/nested/data.bin": "\0\n",
+      "moved-target/copy-only": "KEEP\n",
+      "moved-target/link": "symlink:/workspace/fixture/sentinel.txt",
+      "moved-target/broken": "symlink:missing",
+      "moved-link": "symlink:sentinel.txt",
+      "moved-broken": "symlink:missing",
+    },
+  },
+);
+add(
+  "directory-transfer-gates",
+  ["edit.transfer-refusal", "edit.move-policy-refusal"],
+  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require host approval, unavailable in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Report the refusals and leave all fixture bytes unchanged. In Codemode catch each failure so all checks run.",
+  [
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "source-tree/new" },
+      error: true,
+      contains: "OVERLAPPING_PATHS",
+    },
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "link" },
+      error: true,
+      contains: "INVALID_FILE_TYPE",
+    },
+    {
+      tool: "move",
+      args: { path: "tracked", target: "new-target" },
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+    {
+      tool: "move",
+      args: { path: "source-tree", target: ".git" },
+      error: true,
+      contains: "DELETE_PROTECTED_TARGET",
+    },
+  ],
+  { files: deleteFixture, git: true, setup: "directory-transfers" },
 );
 function add(
   id: string,
@@ -267,13 +369,47 @@ add(
 
 add(
   "write-read",
-  ["edit.write", "compose.write-read"],
+  ["edit.write", "edit.write-receipt", "compose.write-read"],
   "Use write to create answer.txt containing exactly ready plus a newline. Pass the returned whole-file result into read, and report the saved value.",
   [
-    { tool: "write", args: { path: "answer.txt", content: "ready\n" } },
+    {
+      tool: "write",
+      args: { path: "answer.txt", content: "ready\n" },
+      contains: "Read the file",
+      excludes: "ready\n",
+    },
     { tool: "read", reuse: reuse(0), contains: "ready" },
   ],
   { expected: { "answer.txt": "ready\n" }, answer: "ready" },
+);
+
+add(
+  "write-silent",
+  ["codemode.silent-write"],
+  "In one Codemode script, await write to create silent.txt containing exactly SILENT_WRITE_BODY plus a newline. Do not print, return, or log the Write result. Finish the script without output, then report completion.",
+  [
+    {
+      tool: "write",
+      args: { path: "silent.txt", content: "SILENT_WRITE_BODY\n" },
+      parentExcludes: "SILENT_WRITE_BODY",
+    },
+  ],
+  { modes: ["codemode"], expected: { "silent.txt": "SILENT_WRITE_BODY\n" } },
+);
+
+add(
+  "write-large-read",
+  ["compose.write-large-read"],
+  "Use one Codemode script to write large.txt with exactly 1024 copies of retained line followed by a newline (use repeat). Pass the returned Write result directly into Read with offset 1024 and limit 1. Print that Read result and report its last-line value. Do not shorten the saved content to match a display preview.",
+  [
+    { tool: "write", args: { path: "large.txt", content: "retained line\n".repeat(1024) } },
+    { tool: "read", args: { offset: 1024, limit: 1 }, reuse: reuse(0), contains: "retained line" },
+  ],
+  {
+    modes: ["codemode"],
+    expected: { "large.txt": "retained line\n".repeat(1024) },
+    answer: "retained line",
+  },
 );
 
 add(
@@ -988,18 +1124,35 @@ add(
 
 add(
   "lsp-rename",
-  ["lsp.rename", "compose.symbol-read-rename"],
-  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. Both the declaration and its usage must change. Do not do an ordinary text replacement.",
+  [
+    "lsp.rename",
+    "lsp.rename-cross-file",
+    "lsp.rename-keeps-unrelated-names",
+    "compose.symbol-read-rename",
+  ],
+  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
   [
     { tool: "read", args: { path: /symbol:task.ts#.*count/ }, contains: "count" },
-    { tool: "replace", args: { path: /symbol:task.ts#.*count#name/, text: "total" } },
+    {
+      tool: "replace",
+      args: { path: /symbol:task.ts#.*count#name/, text: "total" },
+      contains: "Renamed through LSP",
+    },
   ],
   {
     files: {
-      "task.ts": "export const count = 3;\nexport const doubled = count * 2;\n",
-      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["task.ts"]}\n',
+      "task.ts":
+        'export const count = 3;\nexport const doubled = count * 2;\nexport const label = "count";\n',
+      "usage.ts":
+        'import { count } from "./task";\nexport const answer = count;\nexport function unrelated() { const count = 7; return count; }\n',
+      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
     },
-    expected: { "task.ts": "export const total = 3;\nexport const doubled = total * 2;\n" },
+    expected: {
+      "task.ts":
+        'export const total = 3;\nexport const doubled = total * 2;\nexport const label = "count";\n',
+      "usage.ts":
+        'import { total } from "./task";\nexport const answer = total;\nexport function unrelated() { const count = 7; return count; }\n',
+    },
     prerequisite: "command -v typescript-language-server",
   },
 );

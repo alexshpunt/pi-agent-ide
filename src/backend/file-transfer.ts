@@ -133,6 +133,7 @@ export async function validateTransferFile(
 /** Stream original bytes across backend boundaries, checking both endpoints before publication.
  * A cross-backend move deletes its source only after the destination acknowledges its checksum.
  * Publication and source removal are separate effects; failed removal is reported as unknown.
+ * Object callers can recheck their approved leaf metadata before staging and publication.
  */
 export async function transferFile(
   registry: SshBackendRegistry,
@@ -140,9 +141,11 @@ export async function transferFile(
   input: FileOperationInput,
   context: ResourceResolverContext,
   captured?: ReadonlyMap<string, string | null>,
+  verifyApprovedEntries?: () => Promise<void>,
 ): Promise<{ readonly source: string; readonly target: string }> {
   const { source, target, remoteSource, remoteTarget, size, mode, sourceRevision, targetRevision } =
     await prepareTransfer(registry, input, context, captured);
+  await verifyApprovedEntries?.();
   const descriptor = remoteSource
     ? undefined
     : await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -232,6 +235,8 @@ export async function transferFile(
       offset += bytes.length;
     }
     await verifySource();
+    // Keep an object transfer tied to its approved leaf versions, not a newer staged snapshot.
+    await verifyApprovedEntries?.();
     const sha256 = digest.digest("hex");
     context.signal?.throwIfAborted();
     if (channel) {

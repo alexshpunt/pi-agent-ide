@@ -14,7 +14,9 @@ const groups: [string[], string[]][] = [
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
-  [["edit.write", "compose.write-read"], ["write-read"]],
+  [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["codemode.silent-write"], ["write-silent"]],
+  [["compose.write-large-read"], ["write-large-read"]],
   [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
     ["replace-read-search"],
@@ -26,6 +28,19 @@ const groups: [string[], string[]][] = [
   [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
   [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
+  [
+    [
+      "edit.copy-directory",
+      "edit.move-directory",
+      "edit.copy-symlink",
+      "edit.move-symlink",
+      "edit.copy-merge-directory",
+      "edit.move-replace-directory",
+      "compose.object-transfer-refusal",
+    ],
+    ["directory-transfers"],
+  ],
+  [["edit.transfer-refusal", "edit.move-policy-refusal"], ["directory-transfer-gates"]],
   [
     ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
     ["delete-objects"],
@@ -126,7 +141,15 @@ const groups: [string[], string[]][] = [
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],
   ],
-  [["lsp.rename", "compose.symbol-read-rename"], ["lsp-rename"]],
+  [
+    [
+      "lsp.rename",
+      "lsp.rename-cross-file",
+      "lsp.rename-keeps-unrelated-names",
+      "compose.symbol-read-rename",
+    ],
+    ["lsp-rename"],
+  ],
   [["read.image", "read.pdf"], ["read-media"]],
   [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
   [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],

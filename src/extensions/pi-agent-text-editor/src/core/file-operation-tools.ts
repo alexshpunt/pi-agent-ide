@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
 import { forgetDeferredPostEdit } from "./post-edit-scope.js";
@@ -58,22 +59,29 @@ export async function executeWholeFileTool(
           },
         };
       }
-      if (typeof input.target === "string")
-        finalize = await core.prepareFilePostProcessing(input.target, { cwd: context.cwd, signal });
       return core.executeFileOperation(operation, input, context.cwd, signal, {
         beforeDelete: (event) => core.beforeDelete(event),
+        beforeFileTransfer: async () => {
+          if (typeof input.target === "string")
+            finalize = await core.prepareFilePostProcessing(input.target, {
+              cwd: context.cwd,
+              signal,
+            });
+        },
         ...(ui !== undefined && {
           confirm: async (event, reason) =>
             ui.confirm(
-              "Delete permanently?",
+              operation === "move" ? "Move filesystem object?" : "Delete permanently?",
               [
                 event.path,
                 event.resolvedPath === event.path
                   ? undefined
                   : `Resolved path: ${event.resolvedPath}`,
-                event.recursive
-                  ? "Remove directory and all contents recursively."
-                  : "Unlink symlink only; leave its target untouched.",
+                operation === "move" && event.path === path.resolve(context.cwd, String(input.path))
+                  ? `Move source to ${String(input.target)}; preserve link objects without following their targets.`
+                  : event.recursive
+                    ? "Remove directory and all contents recursively."
+                    : "Unlink symlink only; leave its target untouched.",
                 reason,
               ]
                 .filter((line) => line !== undefined)
@@ -95,7 +103,7 @@ export async function executeWholeFileTool(
     forgetDeferredPostEdit(outcome.path);
   let postProcessingError: string | undefined;
   let diffStatuses: MutationDiffStatus[] = [];
-  if (outcome.ok && outcome.target !== undefined) {
+  if (outcome.ok && outcome.target !== undefined && (outcome.sourceKind ?? "file") === "file") {
     try {
       const saved = await finalize?.();
       if (saved?.kind === "completed")

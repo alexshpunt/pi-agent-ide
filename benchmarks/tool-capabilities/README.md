@@ -30,6 +30,7 @@ No inference happens without both `--run` and an explicit model profile. The com
 Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 low was added by explicit task approval. New models belong in `models.json`, not in case definitions. Use the same tasks and validators for each model.
 
 Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
+Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases; these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
 
 ## Isolation
 
@@ -53,6 +54,8 @@ Each invocation creates a new directory under `.tmp/capability-results/`, or a n
 Reports are written after each attempt and preserved on cancellation. Case workspaces and credentials are removed even when a case fails. Review evidence before sharing it: it includes prompts and tool results. Preserve the accepted report and source digest with the task before removing the development worktree. Results from different source digests must not be presented as one run of the same code.
 
 The initial suite verification and retained findings are in [LPT-655 evidence](evidence/LPT-655.md). That report separates historical source digests and leaves incomplete routes unverified.
+
+The focused native Codemode semantic rename fix and its direct/Codemode rerun are in [LPT-660 evidence](evidence/LPT-660.md). These results do not replace the earlier failed attempts.
 
 ## Required maintenance
 

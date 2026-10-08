@@ -180,3 +180,49 @@ test("deletes filesystem objects and fails closed on deletion hooks through both
     expect(await readFile(path.join(cwd, "selected-locked-delete"), "utf8")).toBe("");
   });
 });
+
+test("Delete removes nested binary trees and empty directories without following external links on both routes", async () => {
+  await withTempWorkspace(async (external) => {
+    await writeFile(path.join(external, "sentinel"), "untouched");
+    await withTempWorkspace(async (cwd) => {
+      execFileSync("git", ["init", "-q", cwd]);
+      await enableNativeCodemode(cwd);
+      for (const name of ["direct-tree", "script-tree"]) {
+        await mkdir(path.join(cwd, name, "nested", "empty"), { recursive: true });
+        await writeFile(path.join(cwd, name, "nested", "data.bin"), Buffer.from([0, 255, 10]));
+        await symlink(path.join(external, "sentinel"), path.join(cwd, name, "nested", "external"));
+        await symlink("missing", path.join(cwd, name, "broken"));
+      }
+      const run = await new PiIntegrationTest({
+        testName: "delete-nested-trees-both-routes",
+        transport: "rpc",
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        extensions: ["builtin:codemode", path.resolve("src/pi-agent-ide.ts")],
+        tools: ["delete", "codemode"],
+        conversation: [
+          assistantMessage(
+            [toolCall({ id: "direct-tree", name: "delete", arguments: { path: "direct-tree" } })],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: "script-tree",
+                name: "codemode",
+                arguments: { code: 'text(await tools.delete({path:"script-tree"}));' },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("Done")]),
+        ],
+      }).run("Remove untracked trees without traversing their symlinks");
+      for (const name of ["direct-tree", "script-tree"]) {
+        expect(getToolExecution(run, name).isError).toBe(false);
+        await expect(lstat(path.join(cwd, name))).rejects.toMatchObject({ code: "ENOENT" });
+      }
+      expect(await readFile(path.join(external, "sentinel"), "utf8")).toBe("untouched");
+    });
+  });
+});

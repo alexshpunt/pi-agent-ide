@@ -32,10 +32,10 @@ export function sourceRangeProperties(descriptions: Partial<Record<"start" | "en
 }
 
 /** Build the destination selectors shared by copy and move schemas. */
-export function targetProperties() {
+export function targetProperties(directorySemantics: string) {
   return {
     target: resultSourceProperty(
-      "Destination file path, unchanged source result or its UUID. A result replaces its exact ranges (zero-width ranges insert); omit targetStart/targetEnd. Source and destination selections pair in declared order with equal counts. A file path keeps its existing anchor semantics. Whole-file transfers replace an existing regular destination file.",
+      `Destination path, unchanged source result or its UUID. A result replaces its exact ranges (zero-width ranges insert); omit targetStart/targetEnd. Source and destination selections pair in declared order with equal counts. A path with text selectors keeps its existing anchor semantics. Whole-object transfers create missing parents and replace regular destination files. ${directorySemantics} Reject symlink destinations, type conflicts, and overlapping directory trees.`,
     ),
     targetStart: Type.Optional(
       Type.String({
