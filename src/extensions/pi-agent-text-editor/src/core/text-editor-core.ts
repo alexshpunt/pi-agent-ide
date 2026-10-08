@@ -1922,6 +1922,7 @@ async function finalizeTextResource<Result>(
             diffStatuses: [
               {
                 text: feedback.feedback,
+                origin: "after-edit",
                 tone: feedback.tone === "info" ? "muted" : feedback.tone,
               },
             ],

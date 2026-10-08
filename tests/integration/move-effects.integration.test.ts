@@ -97,7 +97,7 @@ test("whole-file Move preserves unknown effects before and after fixture bytes c
       });
       const output = getToolResultText(run, id);
       expect(output).toContain("move: unknown");
-      expect(output).not.toContain("not-applied");
+      expect(output).not.toContain("move: not-applied");
     }
     expect(getToolResultText(run, "inspect-unknown-destination")).toContain("source bytes");
     expect(getToolExecution(run, "applied").isError).toBe(false);

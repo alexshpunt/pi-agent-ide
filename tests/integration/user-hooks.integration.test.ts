@@ -96,6 +96,18 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
           ],
           { stopReason: "toolUse" },
         ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "write-native-feedback",
+              name: "codemode",
+              arguments: {
+                code: 'await tools.write({path:"native-review.txt",content:"needs review"}); await tools.write({path:"native-after.txt",content:"explode-after"});',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
         assistantMessage([text("Done")]),
       ],
     }).run("Exercise each file hook");
@@ -119,5 +131,14 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
     expect(getToolExecution(run, "write-after-fail").isError).toBe(false);
     expect(await readFile(path.join(cwd, "after.txt"), "utf8")).toBe("explode-after");
     expect(getToolResultText(run, "write-after-fail")).toContain("failed after the edit was saved");
+    expect(getToolExecution(run, "write-native-feedback").isError).toBe(false);
+    const nativeFeedback = getToolResultText(run, "write-native-feedback");
+    expect(nativeFeedback).toContain("Saved edit needs review");
+    expect(nativeFeedback).toContain("failed after the edit was saved");
+    expect(nativeFeedback).not.toContain("interrupted or incomplete");
+    expect(nativeFeedback).not.toContain("explode-after");
+    expect(getToolResultText(run, "write-review")).not.toContain("interrupted or incomplete");
+    expect(await readFile(path.join(cwd, "native-review.txt"), "utf8")).toBe("needs review");
+    expect(await readFile(path.join(cwd, "native-after.txt"), "utf8")).toBe("explode-after");
   });
 });

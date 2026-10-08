@@ -3,7 +3,7 @@ import type { TextEditCompletion } from "#src/api/edit-completion.js";
 import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.js";
 import { mutationOutcome } from "./structured-result.js";
 
-/** Summarize Write problems without quoting diagnostics, diffs, or file text. */
+/** Keep hook feedback and short problem notices without copying diagnostics, diffs, or file text. */
 export function writeProblemNotices(results: readonly FileMutationResult[]): string[] {
   const notices = new Set<string>();
   for (const result of results) {
@@ -17,12 +17,15 @@ export function writeProblemNotices(results: readonly FileMutationResult[]): str
     if (
       result.data.diffStatuses?.some(
         (status) =>
+          status.origin !== "after-edit" &&
           (status.tone === "warning" || status.tone === "error") &&
           (status.formattingStatus === undefined ||
             status.formattingStatus !== result.data.formatting?.status),
       )
     )
       notices.add("Post-edit processing was interrupted or incomplete.");
+    for (const status of result.data.diffStatuses ?? [])
+      if (status.origin === "after-edit") notices.add(status.text);
   }
   return [...notices];
 }

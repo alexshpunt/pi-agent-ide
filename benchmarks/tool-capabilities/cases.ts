@@ -435,6 +435,25 @@ add(
 );
 
 add(
+  "write-hook-read",
+  ["edit.write-hook-feedback", "compose.write-hook-read"],
+  "Write review.txt containing exactly WRITE_HOOK_BODY review plus a newline. Report the saved-check hook's remark from the compact Write receipt, then pass that unchanged result into Read and report the saved value. Do not treat the remark as a failed or interrupted write.",
+  [
+    {
+      tool: "write",
+      args: { path: "review.txt", content: "WRITE_HOOK_BODY review\n" },
+      contains: "Saved edit needs review",
+      excludes: "WRITE_HOOK_BODY",
+    },
+    { tool: "read", reuse: reuse(0), contains: "WRITE_HOOK_BODY review" },
+  ],
+  {
+    setup: "write-hook",
+    expected: { "review.txt": "WRITE_HOOK_BODY review\n" },
+    answer: "Saved edit needs review",
+  },
+);
+add(
   "write-silent",
   ["codemode.silent-write"],
   "In one Codemode script, await write to create silent.txt containing exactly SILENT_WRITE_BODY plus a newline. Do not print, return, or log the Write result. Finish the script without output, then report completion.",

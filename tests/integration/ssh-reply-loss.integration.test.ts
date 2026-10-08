@@ -143,7 +143,7 @@ test("ordinary and structured writes keep a committed SSH write unknown after re
     expect(getToolExecution(run, "reset").isError).toBe(false);
     expect(getToolExecution(run, "structured").isError).toBe(false);
     expect(getToolResultText(run, "structured")).toContain("REMOTE_OPERATION_FAILED");
-    expect(getToolResultText(run, "structured")).toContain("effects are unknown");
+    expect(getToolResultText(run, "structured")).toContain("Write outcome unknown.");
     expect(getToolResultText(run, "structured")).not.toContain("No file was changed.");
     expect(getToolResultText(run, "read-final")).toContain("after");
     expect((await backend.read(file)).bytes.toString("utf8")).toBe("after\n");

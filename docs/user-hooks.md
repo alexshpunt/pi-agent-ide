@@ -91,6 +91,6 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-This hook runs after post-processing and the final reread. Feedback appears in the agent result and beside the diff. Errors are reported as feedback; a successful write is never rolled back.
+This hook runs after post-processing and the final reread. Feedback appears in the agent result and beside the diff, including in compact Write receipts and silent Codemode writes. A remark does not mean processing was interrupted. Errors are reported as feedback; a successful write is never rolled back. Write still leaves file text, diffs, and successful formatting details out of the agent receipt; use Read for the saved content.
 
 Hooks run in registration order. The first denial stops a before hook chain. IDs must be unique within each hook kind. Registrations belong to the Pi session and are removed on shutdown or reload.
