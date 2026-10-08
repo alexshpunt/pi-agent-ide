@@ -45,6 +45,8 @@ export interface RouteStep {
   argsAny?: Record<string, unknown>[];
   args?: Record<string, unknown>;
   contains?: string;
+  /** Reject copied file text in this tool's own agent-facing result. */
+  excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
   parentExcludes?: string;
   image?: boolean;
@@ -209,6 +211,7 @@ export function validateRoute(
       if (step.argsAny && !step.argsAny.some((args) => matches(args, event.args))) continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
+      if (step.excludes && output.includes(step.excludes)) continue;
       if (step.parentExcludes) {
         const parent = ends.get(event.parentToolCallId ?? "");
         if (

@@ -8,11 +8,11 @@ Silent nested Write did duplicate file text into the next provider request. The 
 
 The deterministic fixture writes 400 distinct marked lines (60,400 bytes). Its baseline includes the same content in script arguments but never calls Write.
 
-| Following provider result        | Before the fix                                  | After the fix                                     |
-| -------------------------------- | ----------------------------------------------- | ------------------------------------------------- |
-| Baseline                         | 47 text characters, no file-body markers        | Same                                              |
-| Silent Write                     | 57,776 text characters, 337 file-body markers   | 47 script-output characters, no file-body markers |
-| Explicit output, 1,000-token cap | An extra file fragment appeared outside the cap | Only capped script output carries file text       |
+| Following provider result              | Before the fix                                  | After the fix                                     |
+| -------------------------------------- | ----------------------------------------------- | ------------------------------------------------- |
+| Baseline                               | 47 text characters, no file-body markers        | Same                                              |
+| Silent Write                           | 57,776 text characters, 337 file-body markers   | 47 script-output characters, no file-body markers |
+| Explicit Write output, 1,000-token cap | An extra file fragment appeared outside the cap | Compact receipt only; no file text                |
 
 These are character counts, not billed token measurements. The pre-fix result counts include the attached editing guide. After-fix output-size assertions exclude that separate guide; the saved request keeps it unchanged (6,345 characters in the captured run).
 
@@ -26,13 +26,19 @@ These are character counts, not billed token measurements. The pre-fix result co
 
 The fixtures use the pinned Pi 1.0.0 host. Live worktree verification uses installed Pi 1.1.0. Pi itself is unchanged.
 
-Live verification after reload used silent small and 400-line Writes, explicit output, and Write-result reuse through Read. Silent parent output contained no file text; explicit output appeared once. `inspect_tui` captured the real Herdr pane `w3Q9:p1` at 105×108 cells: the small Write diff and the large diff's final rows/count remained visible. The large panel honestly reported existing argument-retention limits.
+Final live verification after reload covered direct Write, no-op Write, explicit nested output, silent 400-line Write, a directory-target failure, and Write-result reuse through Read. Direct and explicit Write output contained only status, one path, and the Read reminder; the failure added a short reason. Silent output stayed empty. Only the explicit Read exposed file content. `inspect_tui` captured Herdr `w3Q9:p1`, 105×108 cells, revision 344: the direct Write diff and the large nested diff's final rows/+400 count stayed visible. Existing argument-retention limits were labelled honestly.
 
-## Fix
+Nineteen focused integration checks and ten capability-route unit checks passed. Final one-path and notice refinements were rechecked with three direct/error/Read cases and two notice/interruption cases. Typecheck, targeted lint, free capability coverage, and configured startup passed. No broad suites or paid inference ran.
 
-Keep immediate Write results available to the script, nested panels, and session history. Do not append their successful file fragments to the parent Codemode result. Preserve editor-batch metadata, ordinary batch receipts, failed results, syntax notices, formatting failures, and recovery statuses. Notices do not need another copy of the saved file.
+## Compact Write contract
 
-Explicit `text(result)` and `return result` still deliver the Write result once. Codemode still owns output truncation and its full-output recovery file.
+A later direct-call probe also returned a `Final text` file fragment. The user expanded the scope: Write must return only a write status, path, and a reminder to Read the file. Problems get a short reason, not file text or detailed diagnostics. Human-facing diffs stay visible.
+
+Direct Write and explicit `text(result)` / `return result` now share that compact receipt. Small, large, and unchanged files do not produce content previews. Formatter availability, diff counts, source lines, and successful formatting details are not part of the agent receipt.
+
+Keep full mutation data for the renderer and whole-file source targets. Read still consumes the unchanged Write result, including formatted and no-op snapshots. Explicit Read is the positive control for obtaining content; Codemode still owns that output's truncation and recovery file.
+
+Silent native Write still does not append a second receipt or file body to the parent result. It keeps short problem notices when processing failed or was interrupted, native editor-batch metadata, and unrelated pending-edit receipts.
 
 ## Reproduce
 
@@ -45,6 +51,6 @@ pnpm check:capabilities
 
 Each context case saves `following-provider-request.json` beside `run.jsonl` under `.tmp/test-runs/tests/integration/native-codemode-write-context.integration.test.ts/`. The test source regenerates these local captures; they are not committed.
 
-Coverage includes silent and repeated writes, explicit text and return, truncation, error recovery, syntax/formatting notices, native metadata, persisted panels, and the executable silent-Write capability case. Related Write formatting, batch-boundary, and after-save interruption checks protect existing behavior.
+Coverage includes direct small/large/no-op and failed Writes, silent and repeated Writes, explicit compact text/return, Read output truncation, short problem notices, native metadata, persisted panels, and the executable silent-Write capability case. Related Write target, formatting, batch-boundary, and after-save interruption checks protect result reuse and honest recovery.
 
-The paid matrix now declares `codemode.silent-write` and checks completed parent output, not just child tool names. No paid matrix routes were run; real-model execution remains unverified.
+The paid matrix declares `codemode.silent-write` and `edit.write-receipt`. It checks both the completed parent's output and the Write child's own content, not just tool names. No paid matrix routes were run; real-model execution remains unverified.

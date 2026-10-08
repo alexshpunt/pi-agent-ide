@@ -23,6 +23,15 @@ const largeContent = Array.from(
 const writeArgs = JSON.stringify({ path: "large.txt", content: largeContent });
 
 async function runScript(cwd: string, name: string, code: string, extraExtensions: string[] = []) {
+  return runCall(cwd, name, "codemode", { code }, extraExtensions);
+}
+async function runCall(
+  cwd: string,
+  name: string,
+  tool: "write" | "codemode",
+  args: Record<string, unknown>,
+  extraExtensions: string[] = [],
+) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
   await writeFile(
     path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
@@ -35,14 +44,14 @@ async function runScript(cwd: string, name: string, code: string, extraExtension
     rawMode: false,
     isolateUserResources: true,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode", ...extraExtensions],
-    tools: ["codemode", "write"],
+    tools: ["codemode", "write", "read"],
     conversation: [
       assistantMessage(
         [
           toolCall({
             id: "parent",
-            name: "codemode",
-            arguments: { code },
+            name: tool,
+            arguments: args,
             chunks: { kind: "fixed", size: 1_000_000 },
             delayMs: 0,
           }),
@@ -80,7 +89,9 @@ function followingResultText(run: Run, includeGuides = true) {
   return results
     .flatMap((message) => message.content)
     .filter((block) => includeGuides || !block.text?.startsWith("\n\n---\n\n# Guide:"))
-    .map((block) => block.text ?? "")
+    .map((block) =>
+      includeGuides ? (block.text ?? "") : (block.text ?? "").split("\n\n---\n\n# Guide:")[0],
+    )
     .join("\n");
 }
 function assertScriptArguments(run: Run, code: string) {
@@ -105,6 +116,62 @@ async function savedPanels(run: Run) {
   return panel?.data?.calls;
 }
 
+test("direct Write returns a compact receipt independent of file size and keeps its diff", async () => {
+  await withTempWorkspace(async (cwd) => {
+    for (const [name, content] of [
+      ["small", marker + "small\n"],
+      ["large", largeContent],
+      ["noop", largeContent],
+    ] as const) {
+      const run = await runCall(cwd, `write-context-direct-${name}`, "write", {
+        path: "large.txt",
+        content,
+      });
+      expect(getToolExecution(run, "parent").isError).toBe(false);
+      const output = followingResultText(run, false);
+      expect(output).not.toContain(marker);
+      expect(output).not.toContain("Final text");
+      expect(output).toContain("large.txt");
+      expect(output.match(/^Path:/gmu)).toHaveLength(1);
+      expect(output).toMatch(/read.*file/iu);
+      expect(output.length).toBeLessThan(500);
+      expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(content);
+      if (name !== "noop") expect(run.tuiRenderedOutput).toContain(marker);
+    }
+  });
+});
+test("direct failed Write returns a short reason without the proposed file body", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, "directory"));
+    const run = await runCall(cwd, "write-context-direct-error", "write", {
+      path: "directory",
+      content: largeContent,
+    });
+    expect(getToolExecution(run, "parent").isError).toBe(true);
+    const output = followingResultText(run, false);
+    expect(output).toContain("directory");
+    expect(output).toMatch(/failed|unknown/iu);
+    expect(output).toContain("Reason:");
+    expect(output).toMatch(/read.*file/iu);
+    expect(output).not.toContain(marker);
+    expect(output.length).toBeLessThan(700);
+  });
+});
+
+test("explicit Read after compact Write recovers the content and respects Codemode truncation", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const code = `// @options: {"max_output_tokens":1000}\nconst written = await tools.write(${writeArgs}); text(await tools.read({path:written,limit:400}));`;
+    const run = await runScript(cwd, "write-context-read-truncated", code);
+    expect(getToolExecution(run, "parent").isError).toBe(false);
+    assertScriptArguments(run, code);
+    const output = followingResultText(run, false);
+    expect(output).toContain(marker + "0000_");
+    expect(output).not.toContain(marker + "0200_");
+    expect(output).toMatch(/truncated/iu);
+    expect(output.length).toBeLessThan(6000);
+    expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(largeContent);
+  });
+});
 test("the silent Write capability checks real parent output", async () => {
   await withTempWorkspace(async (cwd) => {
     const task = capabilityCases.find((candidate) => candidate.id === "write-silent");
@@ -153,24 +220,24 @@ test("silent Write keeps large file content out of the following provider result
   });
 });
 
-test("explicit Write output reaches the provider once and respects Codemode truncation", async () => {
+test("explicit Write output is a compact receipt even for a large file", async () => {
   await withTempWorkspace(async (cwd) => {
     const code = `// @options: {"max_output_tokens":1000}\ntext(await tools.write(${writeArgs}));`;
-    const run = await runScript(cwd, "write-context-explicit-truncated", code);
+    const run = await runScript(cwd, "write-context-explicit-large", code);
     expect(getToolExecution(run, "parent").isError).toBe(false);
     assertScriptArguments(run, code);
     const output = followingResultText(run, false);
-    expect(output).toContain(marker + "0000_");
-    expect(output).not.toContain(marker + "0200_");
-    expect(output).toMatch(/truncated/iu);
-    expect(output.length).toBeLessThan(6000);
+    expect(output).not.toContain(marker);
+    expect(output).not.toMatch(/truncated/iu);
+    expect(output).toMatch(/read.*file/iu);
+    expect(output.length).toBeLessThan(1000);
     expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(largeContent);
     expect(await savedPanels(run)).toHaveLength(1);
   });
 });
 
 test.each(["text", "return"])(
-  "explicit %s delivers the Write result exactly once",
+  "explicit %s delivers only the compact Write receipt once",
   async (delivery) => {
     await withTempWorkspace(async (cwd) => {
       const content = marker + "positive_control\n";
@@ -178,7 +245,12 @@ test.each(["text", "return"])(
       const code = delivery === "text" ? `text(${call});` : `return ${call};`;
       const run = await runScript(cwd, `write-context-${delivery}`, code);
       expect(getToolExecution(run, "parent").isError).toBe(false);
-      expect(followingResultText(run).split(content)).toHaveLength(2);
+      const output = followingResultText(run, false);
+      expect(output).not.toContain(content);
+      expect(output.split("Saved file.")).toHaveLength(2);
+      expect(output).toContain("small.txt");
+      expect(output).toMatch(/read.*file/iu);
+      expect(output.length).toBeLessThan(1000);
       expect(await readFile(path.join(cwd, "small.txt"), "utf8")).toBe(content);
       expect(await savedPanels(run)).toHaveLength(1);
     });
@@ -191,8 +263,10 @@ test("silent Write keeps syntax and recovery notices without its file body", asy
       path.resolve("tests/integration/fixtures/write-context-notices.ts"),
     ]);
     const output = followingResultText(run);
-    expect(output).toContain("Fixture recovery notice");
-    expect(output).toContain("Fixture syntax problem");
+    expect(output).toContain("interrupted or incomplete");
+    expect(output).toContain("Syntax diagnostics detected");
+    expect(output).not.toContain("Fixture recovery notice");
+    expect(output).not.toContain("Fixture syntax problem");
     expect(output).toContain("Formatting failed");
     expect(output).not.toContain(marker);
     expect(await readFile(path.join(cwd, "notice.note"), "utf8")).toBe(largeContent);

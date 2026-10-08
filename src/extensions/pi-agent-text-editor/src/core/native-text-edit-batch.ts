@@ -24,6 +24,7 @@ import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.
 import { isWholeFileInvocation } from "./file-operation-tools.js";
 import { isResultInput } from "./result-transfer.js";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
+import { writeProblemNotices } from "./write-agent-result.js";
 import {
   ResourceScheduler,
   resourceAccesses,
@@ -77,15 +78,7 @@ interface ScriptBatch {
 }
 
 function completedWriteNotices(result: FileMutationResult): string[] {
-  const notices = [
-    ...(result.data.diffStatuses ?? []).map((status) => status.text),
-    ...result.hints
-      .filter((hint) => hint.source === "compiler" && hint.severity === "error")
-      .map((hint) => `Line ${hint.line}:${hint.column}: ${hint.message}`),
-  ];
-  if (result.data.formatting?.status === "failed")
-    notices.push("Formatting failed. Read the saved file before retrying.");
-  return [...new Set(notices)].map((notice) => `${result.path ?? "Write"}: ${notice}`);
+  return writeProblemNotices([result]).map((notice) => `${result.path ?? "Write"}: ${notice}`);
 }
 function replaceScriptResult(
   script: ScriptBatch,
@@ -466,8 +459,8 @@ class NativeTextEditBatchCoordinator {
         } satisfies NativeEditBatchEvent);
       }
       this.scripts.delete(event.toolCallId);
-      // Write already returned its saved text to the script. Keep it in user panels,
-      // but do not print it again outside Codemode's explicit output and truncation.
+      // Write already returned its compact receipt to the script. Keep full user panels,
+      // but do not append their file text outside explicit script output.
       const parentResults = script.results.filter(
         (result) => !result.ok || !script.completedWrites.has(result),
       );

@@ -241,10 +241,15 @@ add(
 
 add(
   "write-read",
-  ["edit.write", "compose.write-read"],
+  ["edit.write", "edit.write-receipt", "compose.write-read"],
   "Use write to create answer.txt containing exactly ready plus a newline. Pass the returned whole-file result into read, and report the saved value.",
   [
-    { tool: "write", args: { path: "answer.txt", content: "ready\n" } },
+    {
+      tool: "write",
+      args: { path: "answer.txt", content: "ready\n" },
+      contains: "Read the file",
+      excludes: "ready\n",
+    },
     { tool: "read", reuse: reuse(0), contains: "ready" },
   ],
   { expected: { "answer.txt": "ready\n" }, answer: "ready" },

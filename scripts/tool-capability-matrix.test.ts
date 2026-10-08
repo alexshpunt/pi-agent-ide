@@ -292,6 +292,22 @@ describe("capability route evidence", () => {
   });
 });
 
+test("Write receipt capability rejects file text in the tool's own result", () => {
+  const route = { steps: [{ tool: "write", contains: "Read the file", excludes: "FILE_BODY" }] };
+  const start = { type: "tool_execution_start", toolCallId: "w", toolName: "write", args: {} };
+  const end = (text: string) => ({
+    type: "tool_execution_end",
+    toolCallId: "w",
+    isError: false,
+    result: { content: [{ type: "text", text }] },
+  });
+  expect(validateRoute(route, [start, end("Saved file. Read the file")], "direct").passed).toBe(
+    true,
+  );
+  expect(
+    validateRoute(route, [start, end("Saved file. Read the file FILE_BODY")], "direct").passed,
+  ).toBe(false);
+});
 test("schema comparison keeps real property names and behavioral defaults", () => {
   expect(
     schemaShape({
