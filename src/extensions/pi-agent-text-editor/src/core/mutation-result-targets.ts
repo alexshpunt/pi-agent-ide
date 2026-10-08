@@ -142,9 +142,10 @@ export function describeUnavailableCopyTarget(
   };
 }
 
-/** Publish a successful Write's verified final whole-file snapshot, including no-ops. */
+/** Publish filesystem Write snapshots, never grant file authority to live resources. */
 export async function attachWriteTarget(
   result: AgentToolResult<FileMutationBatchResult>,
+  completions: readonly TextEditCompletion[],
   store: ResultTargetStore,
   cwd: string,
   signal?: AbortSignal,
@@ -152,6 +153,7 @@ export async function attachWriteTarget(
   if (result.isError) return result;
   const file = result.details.results?.[0]?.data;
   if (file?.path === undefined || file.afterContent === undefined) return result;
+  if (completions.some((completion) => completion.resolvedBy !== "filesystem")) return result;
   try {
     const content = file.afterContent;
     const lines = content.split(/\r\n|\r|\n/u);
@@ -205,7 +207,12 @@ export async function attachCommittedMutationTarget(
   destinationOnly = false,
   unchangedSnapshots: ReadonlyMap<string, string> = new Map(),
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
-  if (result.isError || typeof result.details.metadata?.resultTarget === "string") return result;
+  if (
+    result.isError ||
+    typeof result.details.metadata?.resultTarget === "string" ||
+    completions.some((completion) => completion.resolvedBy !== "filesystem")
+  )
+    return result;
   result = await attachFileMutationTargets(result, store, cwd, signal);
   if (
     typeof result.details.metadata?.resultTarget === "string" ||

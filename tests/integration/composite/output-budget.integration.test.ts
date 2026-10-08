@@ -208,6 +208,8 @@ test.each([undefined, 0, 1, 1999, 2000, 2001, 1000000])(
             stopReason: "toolUse",
           }),
         ),
+        // Each large Read takes seconds; keep every case while bounding work per RPC session.
+        3,
       );
       for (const [index, entry] of cases.entries()) {
         const result = resultFor(index);

@@ -360,12 +360,20 @@ export function createTextTool<TParameters extends TSchema>(
                 details: { ...captured.value.details, effect: "not-applied" as const },
               }
             : captured.value;
-        recordNativeTextMutation(core, toolCallId, completedValue);
+        // Live-resource actions have their own receipts, not filesystem editor batches.
+        if (captured.completions.every((completion) => completion.resolvedBy === "filesystem"))
+          recordNativeTextMutation(core, toolCallId, completedValue);
         const value =
           resultTargets &&
           ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
             ? definition.name === "write"
-              ? await attachWriteTarget(completedValue, resultTargets, context.cwd, signal)
+              ? await attachWriteTarget(
+                  completedValue,
+                  captured.completions,
+                  resultTargets,
+                  context.cwd,
+                  signal,
+                )
               : await attachCommittedMutationTarget(
                   completedValue,
                   captured.completions,

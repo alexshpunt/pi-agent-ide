@@ -207,7 +207,7 @@ describe("pi-agent-text-editor stale anchor", () => {
 
       expect(getToolExecution(result, callId).isError).toBe(true);
       expect(getToolResultText(result, callId)).toContain(
-        'insert blocked: anchor anchor "1#AAAA" is stale',
+        'insert blocked: anchor "1#AAAA" is stale',
       );
       expect(getToolResultText(result, callId)).toContain("1#BE76");
       expect(getToolCallNames(result).filter((tool) => tool === "insert")).toEqual([
@@ -355,7 +355,7 @@ describe("pi-agent-text-editor stale anchor", () => {
       }).run("Insert after a mid-stream blocked insert");
 
       expect(getToolResultText(result, blockedCallId)).toContain(
-        'insert blocked: anchor anchor "1#AAAA" is stale',
+        'insert blocked: anchor "1#AAAA" is stale',
       );
       expect(getToolExecution(result, nextCallId).isError).toBe(false);
       await expect(readFile(file, "utf8")).resolves.toBe("alpha\npatched\nbeta");
