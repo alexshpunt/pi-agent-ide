@@ -24,6 +24,7 @@ import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.
 import { isWholeFileInvocation } from "./file-operation-tools.js";
 import { isResultInput } from "./result-transfer.js";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
+import { writeProblemNotices } from "./write-agent-result.js";
 import {
   ResourceScheduler,
   resourceAccesses,
@@ -62,6 +63,7 @@ interface ScriptBatch {
   readonly context: ExtensionContext;
   readonly summaries: BatchSummary[];
   readonly results: FileMutationResult[];
+  readonly completedWrites: Set<FileMutationResult>;
   readonly presentations: NativeEditBatchEvent[];
   readonly errors: string[];
   readonly cancellation: AbortController;
@@ -75,6 +77,9 @@ interface ScriptBatch {
   closed: boolean;
 }
 
+function completedWriteNotices(result: FileMutationResult): string[] {
+  return writeProblemNotices([result]).map((notice) => `${result.path ?? "Write"}: ${notice}`);
+}
 function replaceScriptResult(
   script: ScriptBatch,
   previous: FileMutationResult,
@@ -82,6 +87,7 @@ function replaceScriptResult(
 ): void {
   const index = script.results.indexOf(previous);
   if (index >= 0) script.results[index] = updated;
+  if (script.completedWrites.delete(previous)) script.completedWrites.add(updated);
   for (const [slot, presentation] of script.presentations.entries()) {
     const results = presentation.result.details.results;
     if (!results?.includes(previous)) continue;
@@ -198,6 +204,7 @@ class NativeTextEditBatchCoordinator {
           reports: [],
           presentations: [],
           results: [],
+          completedWrites: new Set(),
           errors: [],
           cancellation: new AbortController(),
           targets: new Map(),
@@ -452,6 +459,11 @@ class NativeTextEditBatchCoordinator {
         } satisfies NativeEditBatchEvent);
       }
       this.scripts.delete(event.toolCallId);
+      // Write already returned its compact receipt to the script. Keep full user panels,
+      // but do not append their file text outside explicit script output.
+      const parentResults = script.results.filter(
+        (result) => !result.ok || !script.completedWrites.has(result),
+      );
       if (
         script.results.length === 0 &&
         script.summaries.length === 0 &&
@@ -464,12 +476,17 @@ class NativeTextEditBatchCoordinator {
           ? { ...block, text: block.text.replace(/^Script completed\n/u, "Script failed\n") }
           : block,
       );
-      content.push({
-        type: "text",
-        text: `Editor batches: ${script.summaries.filter((batch) => batch.applied).length} committed.${failed ? "\n" + script.errors.join("\n") : ""}`,
-      });
-      if (script.results.length > 0)
-        content.push(new FileMutationAgentResult(script.results).toTextContent());
+      if (script.summaries.length > 0 || failed)
+        content.push({
+          type: "text",
+          text: `Editor batches: ${script.summaries.filter((batch) => batch.applied).length} committed.${failed ? "\n" + script.errors.join("\n") : ""}`,
+        });
+      const writeNotices = script.results
+        .filter((result) => result.ok && script.completedWrites.has(result))
+        .flatMap(completedWriteNotices);
+      if (writeNotices.length > 0) content.push({ type: "text", text: writeNotices.join("\n") });
+      if (parentResults.length > 0)
+        content.push(new FileMutationAgentResult(parentResults).toTextContent());
       const details =
         typeof event.details === "object" && event.details !== null ? event.details : {};
       return {
@@ -505,7 +522,11 @@ class NativeTextEditBatchCoordinator {
   }
 
   /** Include applied, non-batched mutations in the script's final post-edit presentation. */
-  recordMutation(id: string, result: AgentToolResult<FileMutationBatchResult>): void {
+  recordMutation(
+    id: string,
+    toolName: string,
+    result: AgentToolResult<FileMutationBatchResult>,
+  ): void {
     const script = this.scopedInvocations.get(id);
     if (script && !script.closed) script.unfinishedCalls.delete(id);
     if (
@@ -516,6 +537,8 @@ class NativeTextEditBatchCoordinator {
     )
       return;
     script.results.push(...result.details.results);
+    if (toolName === "write")
+      for (const item of result.details.results) script.completedWrites.add(item);
     script.presentations.push({ parentToolCallId: script.id, calls: [id], result });
   }
   execute(
@@ -901,13 +924,14 @@ export function runNativePostEditScope<T>(
   return coordinator ? coordinator.runPostEdits(id, work, immediate) : work();
 }
 
-/** Retain immediate child results so final formatting is visible on the parent script. */
+/** Retain immediate child results for final user panels and deferred processing failures. */
 export function recordNativeTextMutation(
   core: TextEditorCore,
   id: string,
+  toolName: string,
   result: AgentToolResult<FileMutationBatchResult>,
 ): void {
-  coordinators.get(core)?.recordMutation(id, result);
+  coordinators.get(core)?.recordMutation(id, toolName, result);
 }
 /** Attach accumulating editor batches to native Codemode's public parent/child lifecycle. */
 export function registerNativeTextEditBatching(pi: ExtensionAPI, core: TextEditorCore): void {

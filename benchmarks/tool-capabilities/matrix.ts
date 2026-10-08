@@ -13,7 +13,8 @@ const groups: [string[], string[]][] = [
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
-  [["edit.write", "compose.write-read"], ["write-read"]],
+  [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["codemode.silent-write"], ["write-silent"]],
   [["compose.write-large-read"], ["write-large-read"]],
   [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
