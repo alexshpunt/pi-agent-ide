@@ -261,6 +261,11 @@ async function attempt(
       "--pi-agent-ide-no-post-processing",
       "true",
     ];
+    if (task.setup === "move-effects")
+      piArgs.push(
+        "-e",
+        "/source/src/extensions/pi-agent-text-editor/test/fixtures/move-effects-probe.ts",
+      );
     if (task.setup === "display")
       piArgs.push(
         "--pi-agent-ide-vision-displays",

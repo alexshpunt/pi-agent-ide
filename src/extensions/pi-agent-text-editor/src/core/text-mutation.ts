@@ -1767,7 +1767,9 @@ function failureToolResult(
         ? "The edit was saved, but a post-write step failed. Run Read/Search before editing this resource again."
         : effect === "unknown"
           ? "The operation failed, and its effects are unknown. Read the affected resources before retrying."
-          : undefined
+          : code === "MUTATION_REJECTED"
+            ? undefined
+            : "No file was changed."
       : rollback.originallyMissing.length > 0
         ? "The file may now exist. Read the path before retrying."
         : uncertain

@@ -21,6 +21,7 @@ const groups: [string[], string[]][] = [
   [["edit.insert-before", "edit.insert-spacing"], ["insert-before"]],
   [["edit.delete-selection", "compose.search-delete"], ["delete-selection"]],
   [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
+  [["edit.move-effects"], ["move-unknown-effects"]],
   [
     ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
     ["selection-copy-move"],
