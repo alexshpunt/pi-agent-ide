@@ -124,8 +124,8 @@ export function createTextTool<TParameters extends TSchema>(
       description: definition.description,
       parameters: definition.parameters,
       outputSchema: mutationResultSchema(definition.name),
+      // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
       prepareArguments: (arguments_) =>
-        // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
         prepareGuardedArguments(
           definition.parameters,
           arguments_,
