@@ -973,18 +973,35 @@ add(
 
 add(
   "lsp-rename",
-  ["lsp.rename", "compose.symbol-read-rename"],
-  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. Both the declaration and its usage must change. Do not do an ordinary text replacement.",
+  [
+    "lsp.rename",
+    "lsp.rename-cross-file",
+    "lsp.rename-keeps-unrelated-names",
+    "compose.symbol-read-rename",
+  ],
+  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
   [
     { tool: "read", args: { path: /symbol:task.ts#.*count/ }, contains: "count" },
-    { tool: "replace", args: { path: /symbol:task.ts#.*count#name/, text: "total" } },
+    {
+      tool: "replace",
+      args: { path: /symbol:task.ts#.*count#name/, text: "total" },
+      contains: "Renamed through LSP",
+    },
   ],
   {
     files: {
-      "task.ts": "export const count = 3;\nexport const doubled = count * 2;\n",
-      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["task.ts"]}\n',
+      "task.ts":
+        'export const count = 3;\nexport const doubled = count * 2;\nexport const label = "count";\n',
+      "usage.ts":
+        'import { count } from "./task";\nexport const answer = count;\nexport function unrelated() { const count = 7; return count; }\n',
+      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
     },
-    expected: { "task.ts": "export const total = 3;\nexport const doubled = total * 2;\n" },
+    expected: {
+      "task.ts":
+        'export const total = 3;\nexport const doubled = total * 2;\nexport const label = "count";\n',
+      "usage.ts":
+        'import { total } from "./task";\nexport const answer = total;\nexport function unrelated() { const count = 7; return count; }\n',
+    },
     prerequisite: "command -v typescript-language-server",
   },
 );
