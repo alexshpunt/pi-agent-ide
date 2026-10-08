@@ -184,6 +184,7 @@ test("ordinary parent failure keeps one final diff per file and every native cal
     expect(panels).not.toContain("Nested IDE results");
     expect(panels.match(/\+0 ~3 -0/g)).toHaveLength(1);
     expect(panels).toContain("replace 2 files");
+    expect(panels).not.toContain("Nested IDE display:");
     for (const file of ["note.txt", "other.txt"])
       expect(
         panels.split("\n").filter((line) => line.includes("╭─") && line.includes(file)),
@@ -200,6 +201,93 @@ test("ordinary parent failure keeps one final diff per file and every native cal
   });
 });
 
+test("large nested write arguments keep results and honest warnings through restore and export", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const content = "large write line\n".repeat(800);
+    const run = await new PiIntegrationTest({
+      testName: "nested-large-write-arguments",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      isolateUserResources: true,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["codemode", "write"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "parent",
+              name: "codemode",
+              arguments: {
+                code: 'const result = await tools.write({path:"large.txt",content:"large write line\\n".repeat(800)}); text(result);',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Write a large file through Codemode");
+    expect(getToolExecution(run, "parent").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(content);
+    const parent = getToolResultMessage(run, "parent");
+    expect(JSON.stringify(parent.content)).toContain("Saved file");
+    const saved = await PiRun.open(run.artifacts.run);
+    const line = saved.session
+      ?.split("\n")
+      .find((value) => value.includes('"customType":"ide-nested-results"'));
+    const entry = JSON.parse(line ?? "{}") as {
+      data: { retention: unknown; calls: { result?: unknown }[] };
+    };
+    expect(entry.data.retention).toEqual({
+      argumentsTruncated: true,
+      resultsOmitted: false,
+      callsOmitted: false,
+      resultsUnavailable: false,
+    });
+    expect(entry.data.calls[0]?.result).toBeDefined();
+    expect(Buffer.byteLength(line ?? "")).toBeLessThan(513 * 1024);
+    expect(run.tuiRenderedOutput).toContain("arguments shortened");
+    expect(run.tuiRenderedOutput).not.toContain("results were not retained");
+    expect(run.tuiRenderedOutput).not.toContain("result displays omitted");
+    const session = path.join(cwd, "saved.jsonl");
+    await writeFile(session, saved.session ?? "");
+    const restored = await new PiIntegrationTest({
+      testName: "nested-large-write-restored",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      tuiSize: { cols: 60, rows: 40 },
+      cwd,
+      isolateUserResources: true,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        path.resolve("tests/integration/fixtures/restore-tool-history.ts"),
+      ],
+      tools: ["read"],
+      environment: {
+        IDE_RESTORE_SESSION: session,
+        IDE_HISTORY_THEME: "light",
+        IDE_HISTORY_EXPANDED: "0",
+      },
+      conversation: [assistantMessage([text("Restored")])],
+    }).run("/restore-tool-history");
+    expect(restored.tuiRenderedOutput).toContain("arguments shortened");
+    expect(restored.tuiRenderedOutput).not.toContain("results were not retained");
+    expect(restored.tuiRenderedOutput).toContain("large.txt");
+    await promisify(execFile)(process.env.PI_COMMAND ?? "pi", [
+      "--export",
+      session,
+      path.join(cwd, "history.html"),
+    ]);
+    const html = await readFile(path.join(cwd, "history.html"), "utf8");
+    const encoded = html.match(
+      /<script id="session-data" type="application\/json">([^<]+)<\/script>/,
+    )?.[1];
+    expect(encoded).toBeDefined();
+    const exported = Buffer.from(encoded ?? "", "base64").toString("utf8");
+    expect(exported).toContain('"argumentsTruncated":true');
+    expect(exported).toContain('"resultsOmitted":false');
+    expect(exported).toContain("large.txt");
+  });
+});
 test("nested display retention is bounded and labels omitted results honestly", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(
@@ -236,8 +324,10 @@ test("nested display retention is bounded and labels omitted results honestly", 
       .find((line) => line.includes('"customType":"ide-nested-results"'));
     expect(panelLine).toBeDefined();
     expect(Buffer.byteLength(panelLine ?? "")).toBeLessThan(513 * 1024);
-    expect(panelLine).toContain('"complete":false');
-    expect(run.tuiRenderedOutput).toContain("Incomplete nested IDE presentation");
+    expect(panelLine).toContain('"resultsOmitted":true');
+    expect(panelLine).toContain('"argumentsTruncated":false');
+    expect(run.tuiRenderedOutput).toContain("result displays omitted");
+    expect(run.tuiRenderedOutput).not.toContain("arguments shortened");
   });
 });
 

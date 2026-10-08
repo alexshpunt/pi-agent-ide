@@ -265,6 +265,21 @@ add(
 );
 
 add(
+  "write-large-read",
+  ["compose.write-large-read"],
+  "Use one Codemode script to write large.txt with exactly 1024 copies of retained line followed by a newline (use repeat). Pass the returned Write result directly into Read with offset 1024 and limit 1. Print that Read result and report its last-line value. Do not shorten the saved content to match a display preview.",
+  [
+    { tool: "write", args: { path: "large.txt", content: "retained line\n".repeat(1024) } },
+    { tool: "read", args: { offset: 1024, limit: 1 }, reuse: reuse(0), contains: "retained line" },
+  ],
+  {
+    modes: ["codemode"],
+    expected: { "large.txt": "retained line\n".repeat(1024) },
+    answer: "retained line",
+  },
+);
+
+add(
   "replace-read-search",
   ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
   "Follow replace → read → search in that order. Use replace with the exact OLD fragment in task.txt to change it to NEW. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",
@@ -972,18 +987,35 @@ add(
 
 add(
   "lsp-rename",
-  ["lsp.rename", "compose.symbol-read-rename"],
-  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. Both the declaration and its usage must change. Do not do an ordinary text replacement.",
+  [
+    "lsp.rename",
+    "lsp.rename-cross-file",
+    "lsp.rename-keeps-unrelated-names",
+    "compose.symbol-read-rename",
+  ],
+  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
   [
     { tool: "read", args: { path: /symbol:task.ts#.*count/ }, contains: "count" },
-    { tool: "replace", args: { path: /symbol:task.ts#.*count#name/, text: "total" } },
+    {
+      tool: "replace",
+      args: { path: /symbol:task.ts#.*count#name/, text: "total" },
+      contains: "Renamed through LSP",
+    },
   ],
   {
     files: {
-      "task.ts": "export const count = 3;\nexport const doubled = count * 2;\n",
-      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["task.ts"]}\n',
+      "task.ts":
+        'export const count = 3;\nexport const doubled = count * 2;\nexport const label = "count";\n',
+      "usage.ts":
+        'import { count } from "./task";\nexport const answer = count;\nexport function unrelated() { const count = 7; return count; }\n',
+      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
     },
-    expected: { "task.ts": "export const total = 3;\nexport const doubled = total * 2;\n" },
+    expected: {
+      "task.ts":
+        'export const total = 3;\nexport const doubled = total * 2;\nexport const label = "count";\n',
+      "usage.ts":
+        'import { total } from "./task";\nexport const answer = total;\nexport function unrelated() { const count = 7; return count; }\n',
+    },
     prerequisite: "command -v typescript-language-server",
   },
 );

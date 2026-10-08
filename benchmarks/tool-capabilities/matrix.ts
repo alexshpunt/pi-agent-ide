@@ -15,6 +15,7 @@ const groups: [string[], string[]][] = [
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.write", "compose.write-read"], ["write-read"]],
   [["codemode.silent-write"], ["write-silent"]],
+  [["compose.write-large-read"], ["write-large-read"]],
   [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
     ["replace-read-search"],
@@ -121,7 +122,15 @@ const groups: [string[], string[]][] = [
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],
   ],
-  [["lsp.rename", "compose.symbol-read-rename"], ["lsp-rename"]],
+  [
+    [
+      "lsp.rename",
+      "lsp.rename-cross-file",
+      "lsp.rename-keeps-unrelated-names",
+      "compose.symbol-read-rename",
+    ],
+    ["lsp-rename"],
+  ],
   [["read.image", "read.pdf"], ["read-media"]],
   [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
   [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],
