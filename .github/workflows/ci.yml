@@ -247,6 +247,24 @@ jobs:
           test -n "$tarball"
           pnpm security:scan -- artifact "$tarball"
 
+      - name: Allow Bubblewrap user namespaces
+        if: needs.plan.outputs.full == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          restriction=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [[ -f "$restriction" && "$(cat "$restriction")" == 1 ]]; then
+            # Allow only the sandbox binary; keep the runner-wide restriction enabled.
+            printf '%s\n' \
+              'abi <abi/4.0>,' \
+              'include <tunables/global>' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' \
+              '  userns,' \
+              '}' | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser --replace /etc/apparmor.d/bwrap
+          fi
+          bwrap --die-with-parent --unshare-user --unshare-pid \
+            --ro-bind / / --proc /proc --dev /dev /bin/true
       - name: Run unit tests
         if: needs.plan.outputs.full == 'true'
         id: unit-tests
