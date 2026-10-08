@@ -238,16 +238,27 @@ add(
 
 add(
   "git-stage-unstage-undo",
-  ["git.changes", "git.stage", "git.unstage", "git.undo-change", "discovery.git"],
-  "Replace OLD with NEW in task.txt. Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Read changes again and unstage its current CHANGE anchor. Read changes once more and undo that current change. Leave source and index at the original clean state.",
+  ["git.changes", "git.stage", "git.stage-noop", "git.unstage", "git.undo-change", "discovery.git"],
+  "Replace OLD with NEW in task.txt. Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Repeat stage with that anchor and confirm it succeeds as already staged. Read changes again and unstage its current CHANGE anchor. Read changes once more and undo that current change. Leave source and index at the original clean state.",
   [
     { tool: "replace", args: { text: "NEW" } },
     { tool: "read", args: { path: "task.txt", views: ["changes"] } },
-    { tool: "stage", args: { file: "task.txt" }, reuse: reuse(1, "change", "change") },
+    {
+      tool: "stage",
+      args: { file: "task.txt" },
+      reuse: reuse(1, "change", "change"),
+      contains: "<system-result",
+    },
+    {
+      tool: "stage",
+      args: { file: "task.txt" },
+      reuse: reuse(1, "change", "change"),
+      contains: "already staged",
+    },
     { tool: "read", args: { path: "task.txt", views: ["changes"] } },
-    { tool: "unstage", args: { file: "task.txt" }, reuse: reuse(3, "change", "change") },
+    { tool: "unstage", args: { file: "task.txt" }, reuse: reuse(4, "change", "change") },
     { tool: "read", args: { path: "task.txt", views: ["changes"] } },
-    { tool: "undo", args: { file: "task.txt" }, reuse: reuse(5, "change", "change") },
+    { tool: "undo", args: { file: "task.txt" }, reuse: reuse(6, "change", "change") },
   ],
   { git: true },
 );
