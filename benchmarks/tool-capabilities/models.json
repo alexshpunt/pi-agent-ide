@@ -1,0 +1,20 @@
+{
+  "registrySource": "Explicit Edit Benchmark benchmark-models-v1; explicit Luna 6 addition for LPT-655",
+  "models": [
+    {
+      "id": "luna-6-low",
+      "model": "openai-codex/gpt-6-luna",
+      "thinking": "low"
+    },
+    {
+      "id": "luna-5.6-low",
+      "model": "openai-codex/gpt-5.6-luna",
+      "thinking": "low"
+    },
+    {
+      "id": "deepseek-flash",
+      "model": "deepseek/deepseek-flash",
+      "thinking": "low"
+    }
+  ]
+}

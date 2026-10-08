@@ -18,7 +18,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install --yes build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc openssh-server iproute2
+        sudo apt-get install --yes bubblewrap build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc openssh-server iproute2
         sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
         curl --fail --location --silent --show-error \
           https://storage.googleapis.com/dart-archive/channels/stable/release/3.13.3/sdk/dartsdk-linux-x64-release.zip \

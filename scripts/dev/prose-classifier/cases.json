@@ -1,0 +1,462 @@
+[
+  {
+    "id": "real-tests/integration/web-search.integration.test.ts:80",
+    "file": "tests/integration/web-search.integration.test.ts",
+    "line": 80,
+    "split": "development",
+    "expected": "prose",
+    "rationale": "Checks the wording of a system-prompt instruction, not web-search execution.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/code-review/review.integration.test.ts:136",
+    "file": "tests/integration/code-review/review.integration.test.ts",
+    "line": 136,
+    "split": "development",
+    "expected": "prose",
+    "rationale": "Pins an instruction sentence despite separate execution checks.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/code-review/review.integration.test.ts:138",
+    "file": "tests/integration/code-review/review.integration.test.ts",
+    "line": 138,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Checks the capture-enabled metadata marker, not a prose sentence.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/code-review/review.integration.test.ts:139",
+    "file": "tests/integration/code-review/review.integration.test.ts",
+    "line": 139,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Checks the skill identifier, not its wording.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/code-review/review.integration.test.ts:140",
+    "file": "tests/integration/code-review/review.integration.test.ts",
+    "line": 140,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Checks absence of the capture-enabled metadata marker.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/ide-exposure.integration.test.ts:167",
+    "file": "tests/integration/ide-exposure.integration.test.ts",
+    "line": 167,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Pins tool-discovery instruction wording despite checking actual tool exposure.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/ide-exposure.integration.test.ts:228",
+    "file": "tests/integration/ide-exposure.integration.test.ts",
+    "line": 228,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Pins absence of the debug discovery instruction sentence.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/ide-exposure.integration.test.ts:229",
+    "file": "tests/integration/ide-exposure.integration.test.ts",
+    "line": 229,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Pins absence of the Git discovery instruction sentence.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/ide-exposure.integration.test.ts:257",
+    "file": "tests/integration/ide-exposure.integration.test.ts",
+    "line": 257,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks absence of a technical prompt section tag.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/composite/presets.integration.test.ts:57",
+    "file": "tests/integration/composite/presets.integration.test.ts",
+    "line": 57,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks a technical tool label/markup.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/composite/presets.integration.test.ts:58",
+    "file": "tests/integration/composite/presets.integration.test.ts",
+    "line": 58,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks a technical tool label/markup.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/composite/presets.integration.test.ts:59",
+    "file": "tests/integration/composite/presets.integration.test.ts",
+    "line": 59,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks a technical tool label/markup.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/composite/presets.integration.test.ts:60",
+    "file": "tests/integration/composite/presets.integration.test.ts",
+    "line": 60,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks a technical tool label/markup.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/composite/presets.integration.test.ts:61",
+    "file": "tests/integration/composite/presets.integration.test.ts",
+    "line": 61,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks a technical tool label/markup.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/composite/presets.integration.test.ts:62",
+    "file": "tests/integration/composite/presets.integration.test.ts",
+    "line": 62,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks a technical tool label/markup.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/extensions/pi-agent-filesystem/tests/integration/filesystem.integration.test.ts:85",
+    "file": "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/tests/integration/filesystem.integration.test.ts",
+    "line": 85,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "The short error fragment identifies the invalid content-block category.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/code-review/reviewer.test.ts:71",
+    "file": "src/code-review/reviewer.test.ts",
+    "line": 71,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Checks forwarding of a fixture rule description rather than production instruction wording.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/tests/core/view-warnings.test.ts:78",
+    "file": "src/extensions/pi-agent-read/tests/core/view-warnings.test.ts",
+    "line": 78,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Short warning category and the rejected view value are the checked signal.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/tests/core/view-warnings.test.ts:104",
+    "file": "src/extensions/pi-agent-read/tests/core/view-warnings.test.ts",
+    "line": 104,
+    "split": "development",
+    "expected": "prose",
+    "rationale": "Pins a full warning with an editable guidance sentence.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/tests/core/view-warnings.test.ts:152",
+    "file": "src/extensions/pi-agent-read/tests/core/view-warnings.test.ts",
+    "line": 152,
+    "split": "development",
+    "expected": "prose",
+    "rationale": "Pins the same editable guidance sentence for another content path.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/tests/core/view-warnings.test.ts:170",
+    "file": "src/extensions/pi-agent-read/tests/core/view-warnings.test.ts",
+    "line": 170,
+    "split": "development",
+    "expected": "prose",
+    "rationale": "Pins a full warning and a guidance sentence despite the content-kind behavior being separable.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/tests/core/raw-read.test.ts:84",
+    "file": "src/extensions/pi-agent-read/tests/core/raw-read.test.ts",
+    "line": 84,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Continuation syntax and its numeric byte offset form a technical recovery action.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-text-editor/test/mutation-tool.test.ts:55",
+    "file": "src/extensions/pi-agent-text-editor/test/mutation-tool.test.ts",
+    "line": 55,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Short diagnostic fragment identifies invalid anchor metadata.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/code-review/config.test.ts:5",
+    "file": "src/code-review/config.test.ts",
+    "line": 5,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "The prose is authored fixture data whose YAML folding must preserve its contents.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts:104",
+    "file": "src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts",
+    "line": 104,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Short diagnostic fragment identifies an unsupported binary response.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts:105",
+    "file": "src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts",
+    "line": 105,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Pins explanatory output wording rather than only the binary-response behavior.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts:108",
+    "file": "src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts",
+    "line": 108,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "Absence of a false download claim is meaningful, but it is unclear whether this particular phrase is the required contract.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts:164",
+    "file": "src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts",
+    "line": 164,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "The regex checks both failure paths and a technical environment-variable name.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts:174",
+    "file": "src/extensions/pi-agent-read/extensions/pi-agent-web/test/browser-resolver.test.ts",
+    "line": 174,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "The short error identifies the empty-browser-output category.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/tests/core/temp-resource-store.test.ts:26",
+    "file": "src/extensions/pi-agent-read/tests/core/temp-resource-store.test.ts",
+    "line": 26,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Checks exact preservation of saved fixture bytes after idle time.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-read/tests/core/temp-resource-store.test.ts:28",
+    "file": "src/extensions/pi-agent-read/tests/core/temp-resource-store.test.ts",
+    "line": 28,
+    "split": "development",
+    "expected": "contract",
+    "rationale": "Checks preservation again after a second idle period.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-text-editor/test/core/tool-call-interceptor/partial-tool-recovery.test.ts:49",
+    "file": "src/extensions/pi-agent-text-editor/test/core/tool-call-interceptor/partial-tool-recovery.test.ts",
+    "line": 49,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "Structured skip reason is meaningful; supplied evidence does not establish whether exact reason wording is required.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-text-editor/test/core/tool-call-interceptor/partial-tool-recovery.test.ts:104",
+    "file": "src/extensions/pi-agent-text-editor/test/core/tool-call-interceptor/partial-tool-recovery.test.ts",
+    "line": 104,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "Structured completion reason is meaningful; exact text contract is not established.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/ripgrep-capability.test.ts:91",
+    "file": "src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/ripgrep-capability.test.ts",
+    "line": 91,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Short error fragment identifies the missing PCRE2 dependency.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-packages/pi-agent-image/test/image-converter.test.ts:64",
+    "file": "packages/pi-agent-image/test/image-converter.test.ts",
+    "line": 64,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "Conversion metadata matters, but exact English wrapper/markup may or may not be a format contract.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/doctor/discovery.test.ts:68",
+    "file": "src/doctor/discovery.test.ts",
+    "line": 68,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Checks discovery evidence labels and executable identity.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/ast-overflow.integration.test.ts:130",
+    "file": "tests/integration/ast-overflow.integration.test.ts",
+    "line": 130,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "Information-loss reporting matters, but exact sentence contract is not established.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-tests/integration/ast-overflow.integration.test.ts:137",
+    "file": "tests/integration/ast-overflow.integration.test.ts",
+    "line": 137,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "The same reporting issue appears on another execution path.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-search/src/core/search-core.test.ts:214",
+    "file": "src/extensions/pi-agent-search/src/core/search-core.test.ts",
+    "line": 214,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Pins full guidance wording despite a separate structured incomplete-coverage check.",
+    "origin": "repository"
+  },
+  {
+    "id": "real-src/extensions/pi-agent-search/src/core/search-core.test.ts:240",
+    "file": "src/extensions/pi-agent-search/src/core/search-core.test.ts",
+    "line": 240,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Short result category for a complete zero-match outcome.",
+    "origin": "repository"
+  },
+  {
+    "id": "synthetic-prompt",
+    "file": "synthetic/prompt.test.ts",
+    "line": 3,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Production prompt wording is not the agent's observed behavior.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\nfunction getSystemPrompt() { return \"Inspect the input before making edits.\"; }\ntest(\"prompt\", () => { expect(getSystemPrompt()).toContain(\"Inspect the input before making edits.\"); });\n"
+  },
+  {
+    "id": "synthetic-guide",
+    "file": "synthetic/guide.test.ts",
+    "line": 2,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Pins a prose sentence in a guide file.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\ntest(\"guide\", async () => { const guide = await readFile(\"guides/editing.md\", \"utf8\"); expect(guide).toContain(\"Always inspect the current document before editing.\"); });\n"
+  },
+  {
+    "id": "synthetic-role",
+    "file": "synthetic/role.test.ts",
+    "line": 2,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "Checks role wording rather than a real role launch.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\ntest(\"role\", async () => { const role = await readFile(\"agents/reviewer.md\", \"utf8\"); expect(role).toMatch(/Review every change carefully before returning your result\\./); });\n"
+  },
+  {
+    "id": "synthetic-warning",
+    "file": "synthetic/warning.test.ts",
+    "line": 5,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "The error code covers the behavior; the extra sentence pins presentation wording.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\ntest(\"invalid\", () => {\n  const result = validateInput(null);\n  expect(result.code).toBe(\"INVALID_INPUT\");\n  expect(result.message).toBe(\"Please provide a valid input before continuing.\");\n});\nfunction validateInput(input: unknown) { return { code: \"INVALID_INPUT\", message: \"Please provide a valid input before continuing.\" }; }\n"
+  },
+  {
+    "id": "synthetic-alias",
+    "file": "synthetic/alias.test.ts",
+    "line": 3,
+    "split": "holdout",
+    "expected": "prose",
+    "rationale": "A constant expected sentence still pins production prompt wording.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\nfunction buildPrompt() { return \"Ask the user before deleting any files.\"; }\ntest(\"prompt\", () => { const expected = \"Ask the user before deleting any files.\"; expect(buildPrompt()).toBe(expected); });\n"
+  },
+  {
+    "id": "synthetic-copy",
+    "file": "synthetic/copy.test.ts",
+    "line": 3,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "Literal prose is fixture input that must survive copying unchanged.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\nfunction copy(input: string) { return input; }\ntest(\"copy preserves bytes\", () => { const input = \"Ask the user before deleting any files.\"; expect(copy(input)).toBe(\"Ask the user before deleting any files.\"); });\n"
+  },
+  {
+    "id": "synthetic-frame",
+    "file": "synthetic/frame.test.ts",
+    "line": 4,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "A protocol frame is a technical byte contract.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\n// Wire format requires the exact HELLO token and one newline.\nfunction encodeHandshake() { return \"HELLO\\n\"; }\ntest(\"wire frame\", () => { expect(encodeHandshake()).toBe(\"HELLO\\n\"); });\n"
+  },
+  {
+    "id": "synthetic-yaml",
+    "file": "synthetic/yaml.test.ts",
+    "line": 2,
+    "split": "holdout",
+    "expected": "contract",
+    "rationale": "The prose is caller-provided YAML data being decoded.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\ntest(\"folded fixture data\", () => { const input = \"description: >\\n  Inspect the input\\n  before making edits.\\n\"; expect(parseYaml(input).description).toBe(\"Inspect the input before making edits.\\n\"); });\n"
+  },
+  {
+    "id": "synthetic-opaque",
+    "file": "synthetic/opaque.test.ts",
+    "line": 3,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "No supplied code explains whether the text is copied or generated.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\ndeclare function processText(): string;\ntest(\"opaque\", () => { expect(processText()).toBe(\"Inspect the input before making edits.\"); });\n"
+  },
+  {
+    "id": "synthetic-ui",
+    "file": "synthetic/ui.test.ts",
+    "line": 3,
+    "split": "holdout",
+    "expected": "unknown",
+    "rationale": "No product requirement establishes whether this particular UI label is fixed.",
+    "origin": "synthetic",
+    "source": "import { expect, test } from \"vitest\";\ndeclare function renderSubmitButton(): string;\ntest(\"submit label\", () => { expect(renderSubmitButton()).toBe(\"Send your request\"); });\n"
+  }
+]

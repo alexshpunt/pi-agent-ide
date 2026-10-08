@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { createTextDocument } from "pi-agent-text";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
 import {
@@ -8,11 +8,38 @@ import {
 import { ResultTargetStore } from "pi-agent-resource";
 import {
   attachCommittedMutationTarget,
+  attachWriteTarget,
   setMutationSnapshotReader,
 } from "#src/core/mutation-result-targets.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 import { FileMutationResult } from "#src/api/mutation-result.js";
 import { wholeFileResultSource } from "#src/core/result-input.js";
+
+test.each([
+  ["shell:owned", "terminal-input"],
+  ["debug:owned", "debugger-input"],
+])("writing %s never tries to publish a file snapshot", async (source, resolvedBy) => {
+  const store = new ResultTargetStore();
+  const core = createTextEditorCore();
+  const reader = vi.fn(async () => {
+    throw Error("This action is not a file read");
+  });
+  setMutationSnapshotReader(core, reader);
+  const receipt = {
+    content: [{ type: "text" as const, text: "Input sent." }],
+    details: {
+      effect: "applied" as const,
+      results: [new FileMutationResult({ ok: true, path: source, afterContent: "input" })],
+    },
+  };
+  const result = await attachWriteTarget(receipt, core, store, "/workspace", undefined, [
+    { ...completion("", "input", resolvedBy), source, resourceSource: source },
+  ]);
+  expect(result).toBe(receipt);
+  expect(reader).not.toHaveBeenCalled();
+  expect(result.details.metadata?.resultTarget).toBeUndefined();
+  expect(result.details.metadata?.targetUnavailable).toBeUndefined();
+});
 
 test("a whole-file result includes the saved final line separator", async () => {
   const store = new ResultTargetStore();

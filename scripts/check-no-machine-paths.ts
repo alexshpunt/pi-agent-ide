@@ -43,6 +43,8 @@ const projectSkillPrefixes = [
   ".pi/skills/design-read-views/",
   ".pi/skills/design-terminal-ui/",
   ".pi/skills/export-agent-interface/",
+  ".pi/skills/find-prose-test-candidates/",
+  ".pi/skills/run-tool-capability-matrix/",
   ".pi/skills/publish-pi-agent-ide/",
   ".pi/skills/testing-pi-agent-ide/",
   ".pi/skills/take-task/",

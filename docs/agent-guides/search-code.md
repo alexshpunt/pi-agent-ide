@@ -26,7 +26,7 @@ If Search is interrupted or cancelled, do not treat it as zero matches or comple
 
 If a result has no local edit references, use its locations to inspect the source, not as an edit scope. For changed local files, repeat Search or Read to obtain a current selection before editing.
 
-Use verified Read/Search/Select results, their `data`, returned items, or `RESULT#` targets as Search scopes. These inputs keep exact source ranges and sparse gaps. Reconstructed coordinates do not grant access. Refresh stale snapshots before searching again.
+Use unchanged Read/Search/Select result text, its UUID, returned items, or `RESULT#` targets as Search scopes. These inputs keep exact source ranges and sparse gaps. Reconstructed coordinates do not grant access. Refresh stale snapshots before searching again.
 
 Use `navigation: "references"` only for symbol searches that must follow declarations outside the input scope. Without navigation, symbol results stay inside the supplied ranges. Reference results retain the originating declaration identity; equal names do not establish that identity.
 Local text results expose `SEARCH#HASH:N:line` for its containing line and `SEARCH#HASH:N:match` for the exact match. Complete selections use `:all:line` or `:all:match`. Pass these references directly to read or editing tools; omit the file path when an all-selection spans files.

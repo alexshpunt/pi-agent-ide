@@ -194,17 +194,27 @@ export function describeUnavailableCopyTarget(
   };
 }
 
-/** Publish a successful Write's verified final whole-file snapshot, including no-ops. */
+/** Publish a successful file Write's verified whole-file snapshot, never an input action. */
 export async function attachWriteTarget(
   result: AgentToolResult<FileMutationBatchResult>,
   core: TextEditorCore,
   store: ResultTargetStore,
   cwd: string,
   signal?: AbortSignal,
+  completions: readonly Pick<TextEditCompletion, "source" | "resourceSource" | "resolvedBy">[] = [],
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (result.isError) return result;
   const file = result.details.results?.[0]?.data;
   if (file?.path === undefined || file.afterContent === undefined) return result;
+  const completion = completions.findLast(
+    (item) => item.source === file.path || item.resourceSource === file.path,
+  );
+  if (
+    completion !== undefined &&
+    completion.resolvedBy !== "filesystem" &&
+    !completion.resourceSource.startsWith("ssh://")
+  )
+    return result;
   try {
     const content = file.afterContent;
     const lines = content.split(/\r\n|\r|\n/u);

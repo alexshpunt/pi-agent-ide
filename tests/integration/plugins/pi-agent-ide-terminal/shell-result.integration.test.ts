@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assistantMessage,
@@ -104,6 +104,55 @@ test.runIf(process.platform !== "win32")(
       expect(result.tuiRenderedOutput).toContain("line-2099");
       await rm(details.fullOutputPath, { force: true });
       await rm(logPath, { force: true });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
+
+test.runIf(process.platform !== "win32")(
+  "terminal input receipts stay live resources and cannot authorize file edits",
+  async () => {
+    const root = path.resolve(".tmp/shell-result");
+    await mkdir(root, { recursive: true });
+    const cwd = await mkdtemp(path.join(root, "input-"));
+    try {
+      await writeFile(path.join(cwd, "task.txt"), "unchanged\n");
+      const code = `
+        const opened = await tools.bash({command: "IFS= read -r answer; printf 'resource:%s' \\"$answer\\"", background: true});
+        const source = /^session: (shell:[^\\s]+)/m.exec(opened)?.[1];
+        if (!source) throw Error("Missing live session");
+        try {
+          const sent = await tools.write({path: source, content: "hello"});
+          await tools.insert({path: source, text: "Enter"});
+          const observed = await tools.read({path: sent});
+          if (!observed.includes("resource:hello")) throw Error("Input receipt lost its live owner");
+          let refused = false;
+          try { await tools.replace({path: sent, text: "not a file"}); }
+          catch { refused = true; }
+          if (!refused) throw Error("Terminal input granted file edit authority");
+          text(observed);
+        } finally {
+          await tools.delete({path: source});
+        }
+      `;
+      const run = await new PiIntegrationTest({
+        testName: "native-shell-input-owner",
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        isolateUserResources: true,
+        rawMode: false,
+        extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+        tools: ["bash", "write", "insert", "read", "replace", "delete", "codemode"],
+        environment: { SHELL: "/bin/bash", PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE: "1" },
+        conversation: [
+          assistantMessage([toolCall({ id: "input", name: "codemode", arguments: { code } })]),
+          assistantMessage([text("The terminal kept its own resource identity.")]),
+        ],
+      }).run("Send input and read its live receipt without touching files.");
+      expect(getToolExecution(run, "input").isError, getToolResultText(run, "input")).toBe(false);
+      expect(getToolResultText(run, "input")).toContain("resource:hello");
+      expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe("unchanged\n");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
