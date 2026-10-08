@@ -18,6 +18,14 @@ See [Develop nightly](nightly.md). Nightlies test a pinned `develop` commit and 
 
 Real debugger integration tests and adapter/platform jobs still run, but their results are non-blocking and kept outside the shared CI test totals and badges. They have separate jobs and reports marked flaky. A failed debugger job does not reject a release candidate. Pure debugger unit tests, other source/runtime checks, and editor tests remain blocking. In particular, Delete is not part of this exception.
 
+## Reuse full CI evidence
+
+A release has two full test gates: the pinned promotion PR and the versioned candidate PR. Every other PR and every nightly also runs fully. A later push to `main` or `develop` can reuse a successful full CI run only when its exact Git tree, CI workflow, Node/npm/pnpm pins, and Linux/Windows runner image identities match.
+
+CI checks the source run and attempt through GitHub, including the actual tested commit and both successful core jobs. Their results must be no older than 24 hours. Missing, failed, expired or incompatible evidence means a full run. A reused run never creates new evidence or extends its lifetime. New develop combinations and changed verification conditions therefore still get fresh tests.
+
+The required `Validate` check and commit-range security scan still run on reused pushes. The CI summary links to the full source run rather than reporting new test counts. Reused pushes do not update test badges. Candidate packaging, installed-runtime tests, branch protection and exact-archive publication checks stay unchanged.
+
 ## Start a release
 
 Choose a release cut by its full commit SHA. If that commit is not yet on main, promote it through a separate pinned branch such as `chore/promote-X.Y.Z`, not a PR whose head is the moving `develop` branch. Keep that promotion head unchanged while CI runs. New develop merges do not join the release unless its scope is explicitly changed. After promotion and main-to-develop synchronization succeed, start the versioned release below. See `.pi/skills/publish-pi-agent-ide/SKILL.md` for the agent runbook.
