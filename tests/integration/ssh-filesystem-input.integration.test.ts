@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { chmod, mkdir } from "node:fs/promises";
 import { expect, test } from "vitest";
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
 import { SshBackend } from "#src/backend/ssh.js";
@@ -89,7 +90,10 @@ test("owned read errors retain the selected source and never imply a user-file w
       effect: "not-applied",
       source: remoteLocation("fixture", `${file}.missing`).source,
     });
-    const refused = `${fixture.root}/unwritable-owned-file.txt`;
+    const denied = `${fixture.root}/denied`;
+    await mkdir(denied);
+    await chmod(denied, 0o555);
+    const refused = `${denied}/unwritable-owned-file.txt`;
     await expect(
       backend.write(refused, Buffer.from("Do not bypass native permissions"), null),
     ).rejects.toMatchObject({

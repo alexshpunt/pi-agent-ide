@@ -1,3 +1,4 @@
+import { createServer, type Socket } from "node:net";
 import { DoctorCore } from "#src/doctor/core.js";
 import { runDoctor } from "#src/doctor/run.js";
 import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.js";
@@ -11,9 +12,15 @@ export async function probeOwnedDoctorCapture(
   mode: "ready" | "missing-identity" | "headless" | "unreachable",
 ) {
   const graphics = mode === "ready" || mode === "missing-identity";
-  const fixture = graphics
-    ? await startSshVisionFixture({ xResource: mode === "ready" })
-    : await startSshFixture({}, { DISPLAY: mode === "headless" ? "" : ":99999" });
+  const display = mode === "unreachable" ? await startSilentDisplay() : undefined;
+  const fixture = await (
+    graphics
+      ? startSshVisionFixture({ xResource: mode === "ready" })
+      : startSshFixture({}, { DISPLAY: display?.source ?? "" })
+  ).catch(async (error: unknown) => {
+    await display?.stop();
+    throw error;
+  });
   try {
     const target =
       "target" in fixture
@@ -48,6 +55,39 @@ export async function probeOwnedDoctorCapture(
     }
     return { root: fixture.root, project, mode, findings };
   } finally {
-    await fixture.stop();
+    try {
+      await fixture.stop();
+    } finally {
+      await display?.stop();
+    }
   }
+}
+
+/** Accept the native X handshake but never reply, so the probe must use its deadline. */
+async function startSilentDisplay() {
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("data", () => {});
+    socket.on("error", () => {});
+    socket.on("close", () => sockets.delete(socket));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string" || address.port < 6000) {
+    server.close();
+    throw new Error("No private X TCP endpoint");
+  }
+  return {
+    source: `127.0.0.1:${address.port - 6000}`,
+    async stop() {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    },
+  };
 }

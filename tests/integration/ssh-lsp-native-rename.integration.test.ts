@@ -36,7 +36,7 @@ test.each(["cold graph", "rename"] as const)(
       'import { greet } from "./note";\r\nexport function caller(): string { return greet("owned"); }\r\n';
     try {
       const version = await backend.execute(
-        "/usr/bin/typescript-language-server",
+        "typescript-language-server",
         ["--version"],
         fixture.workspace,
       );
@@ -50,7 +50,7 @@ test.each(["cold graph", "rename"] as const)(
           include: ["*.ts"],
         }),
         "start-server.sh":
-          'printf "%s\\n" "$$" > "$1/server.pid"\nexec /usr/bin/typescript-language-server --stdio\n',
+          'printf "%s\\n" "$$" > "$1/server.pid"\nexec typescript-language-server --stdio\n',
         ".pi/pi-agent-ide/lsp-servers.json": JSON.stringify({
           version: 1,
           servers: {

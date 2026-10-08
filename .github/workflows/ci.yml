@@ -142,6 +142,10 @@ jobs:
           sudo install /tmp/pi-debug-tools/dlv /usr/local/bin/dlv
           npm install --global @ast-grep/cli@0.45.1 eslint_d@15.0.2 typescript-language-server@5.3.0 typescript@6.0.3
           typescript-language-server --version
+          # The loopback SSH account uses /usr/local/bin, not setup-node's controller PATH.
+          for executable in node typescript-language-server tsc ast-grep eslint_d; do
+            sudo ln --symbolic --force "$(command -v "$executable")" "/usr/local/bin/$executable"
+          done
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
