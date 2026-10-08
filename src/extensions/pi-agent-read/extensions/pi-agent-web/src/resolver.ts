@@ -17,6 +17,8 @@ export interface WebResolverOptions {
   readonly fetch?: typeof globalThis.fetch;
   readonly browser?: BrowserHtmlLoader;
   readonly autoBrowserFallback?: boolean;
+  /** Explicit non-local web resources. Unclaimed target sources fail without local fallback. */
+  readonly owner?: ResourceResolver;
 }
 
 /** Creates an HTTP(S) resolver that retries failed reads and empty HTML in a local browser. */
@@ -28,8 +30,16 @@ export function createWebResolver(
 
   return {
     id: "web",
-    tryResolve(source) {
-      return Promise.resolve(resolveHttpSource(source, contentHost, settings));
+    async tryResolve(source, context) {
+      if (/^web:/iu.test(source)) {
+        const owned = await options.owner?.tryResolve(source, context);
+        if (owned !== undefined && owned.kind !== "not-handled") return owned;
+        return {
+          kind: "failed",
+          error: new Error(`Target web execution is unavailable: ${source}`),
+        };
+      }
+      return resolveHttpSource(source, contentHost, settings);
     },
   };
 }

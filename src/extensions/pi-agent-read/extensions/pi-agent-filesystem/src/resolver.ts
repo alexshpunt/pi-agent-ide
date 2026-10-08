@@ -66,21 +66,35 @@ function resolveFilesystemSource(
       return false;
     }
   })();
-  const read = async ({ signal }: { readonly signal?: AbortSignal }) =>
-    isDirectory
+  let sourceBytes: Uint8Array | undefined;
+  const read = async ({ signal }: { readonly signal?: AbortSignal }) => {
+    sourceBytes = undefined;
+    return isDirectory
       ? readDirectoryContent(filePath, signal)
-      : readFilesystemContent(filePath, contentHost, signal);
+      : readFilesystemContent(filePath, contentHost, signal, (bytes) => {
+          sourceBytes = bytes;
+        });
+  };
+  const resource = {
+    source: filePath,
+    link,
+    read,
+    get sourceBytes() {
+      return sourceBytes;
+    },
+  };
 
   if (capability === "read" || isDirectory) {
-    return { kind: "resolved", resource: { source: filePath, link, read } };
+    return { kind: "resolved", resource };
   }
 
   return {
     kind: "resolved",
     resource: {
-      source: filePath,
-      link,
-      read,
+      ...resource,
+      get sourceBytes() {
+        return sourceBytes;
+      },
       async write(content, operationContext) {
         throwIfAborted(operationContext.signal);
         const text = textFromAgentContent(content);
@@ -117,6 +131,7 @@ async function readFilesystemContent(
   filePath: string,
   contentHost: FilesystemContentHost,
   signal: AbortSignal | undefined,
+  capture: (bytes: Uint8Array) => void,
 ) {
   throwIfAborted(signal);
   const bytes = await readFile(filePath, {
@@ -124,6 +139,7 @@ async function readFilesystemContent(
     ...(signal !== undefined && { signal }),
   });
   throwIfAborted(signal);
+  capture(bytes);
   return contentHost.convert({ source: filePath, bytes }, signal === undefined ? {} : { signal });
 }
 

@@ -36,7 +36,7 @@ import type { SearchToolDetails } from "#src/api/search.js";
 
 import { searchSchema } from "#src/api/search-parameters.js";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.js";
-import { resultError, withStructuredResult } from "pi-agent-resource";
+import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
 
 /** Arguments accepted by the search tool. */
 export type SearchParameters = Static<typeof searchSchema>;
@@ -51,7 +51,7 @@ export function searchCallModel(
       ? []
       : [
           {
-            text: `in ${arguments_.path}`,
+            text: typeof arguments_.path === "string" ? `in ${arguments_.path}` : "in result scope",
             color: "accent" as const,
             underline: true,
             truncate: "start" as const,
@@ -94,7 +94,7 @@ export default async function registerSearchCore(
       ],
     }),
   ]);
-  const core = createSearchCore();
+  const core = createSearchCore(connectResultTargets(pi));
   const interceptionRendering = new ToolCallInterceptionRenderStore();
   const unsubscribe = pi.events.on(SEARCH_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isSearchPluginRegistrationRequest(request)) {
@@ -205,7 +205,14 @@ export default async function registerSearchCore(
 function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[] {
   return [
     { label: "query", value: JSON.stringify(arguments_.query) },
-    ...optionalDetail("path", arguments_.path),
+    ...optionalDetail(
+      "path",
+      arguments_.path === undefined
+        ? undefined
+        : typeof arguments_.path === "string"
+          ? arguments_.path
+          : "result scope",
+    ),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),
     ...optionalDetail(

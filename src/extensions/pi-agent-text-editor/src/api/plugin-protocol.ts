@@ -27,6 +27,15 @@ import type {
   TextMutationToolRegistration,
 } from "#src/api/mutation-tool.js";
 import type { TextEditorToolRendererRegistration } from "#src/api/tool-renderer.js";
+import type { FileOperationResolver } from "#src/api/file-operations.js";
+import type { ApplyFileAccessProvider } from "#src/api/apply-files.js";
+export type {
+  ApplyFileAccess,
+  ApplyFileAccessProvider,
+  ApplyFileBackup,
+  ApplyFileOperation,
+  ApplyFileState,
+} from "#src/api/apply-files.js";
 
 /** Shared index operations; Apply uses the same implementation and guards as standalone tools. */
 export interface ScriptIndexOperation {
@@ -38,9 +47,15 @@ export interface ScriptIndexOperation {
     context: ExtensionContext,
   ): Promise<AgentToolResult<unknown>>;
 }
+export type {
+  FileOperation,
+  FileOperationInput,
+  FileOperationResult,
+  FileOperationResolver,
+} from "#src/api/file-operations.js";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 22;
+export const TEXT_EDITOR_API_VERSION = 28;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 
@@ -92,12 +107,24 @@ export interface TextEditorRecoveryConfigSection {
   readonly settings: unknown;
 }
 export interface TextEditorPluginApi {
-  /** Restore a session-scoped Apply transaction receipt atomically. */
+  /** Restore a session-scoped Apply receipt after stale checks, with compensation on failure. */
   restoreApplyUndo(
     transaction: string,
     signal?: AbortSignal,
-  ): Promise<{ readonly transaction: string; readonly restored: readonly string[] }>;
+  ): Promise<{
+    readonly transaction: string;
+    readonly restored: readonly string[];
+    /** States published by the owning checkpoint; absent paths grant no text target. */
+    readonly restoredStates: readonly {
+      readonly source: string;
+      readonly state: "present" | "absent";
+    }[];
+  }>;
   addResolver(registration: ResourceResolverRegistration): void;
+  /** Register an ordered whole-file owner; URI failures never fall back to local files. */
+  addFileOperationResolver(resolver: FileOperationResolver): void;
+  /** Register owner-aware Apply capture, preflight, file effects and compensation. */
+  addApplyFileAccessProvider(provider: ApplyFileAccessProvider): void;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
   /** Reads this plugin's project recovery subsection. */

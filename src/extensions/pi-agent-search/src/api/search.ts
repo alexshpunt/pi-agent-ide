@@ -1,7 +1,10 @@
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ResolvedResultTargets } from "pi-agent-resource";
 
 export interface SearchRequest {
   readonly query: string;
+  /** Only symbols: queries may explicitly follow scoped symbols to workspace references. */
+  readonly navigation?: "references";
   readonly path?: string;
   readonly include?: string;
   readonly exclude?: string;
@@ -10,7 +13,47 @@ export interface SearchRequest {
   readonly limit?: number;
 }
 
+/** Public calls accept registered result objects; resolvers receive normalized string paths. */
+export interface SearchInput extends Omit<SearchRequest, "path"> {
+  readonly path?: string | object | readonly unknown[];
+}
+
+/** Backend-owned filesystem identity and a bounded, cancellable ripgrep line stream.
+ * Paths stay canonical; implementations must not fall back to a local executor.
+ */
+export interface SearchEnvironment {
+  resolve(cwd: string, source: string): string;
+  dirname(source: string): string;
+  basename(source: string): string;
+  isDirectory(source: string, signal?: AbortSignal): Promise<boolean>;
+  readText(source: string, signal?: AbortSignal): Promise<string>;
+  /** Run exact argv on this owner, with bounded output and cancellation.
+   * Missing execution support must reject structural queries, never run locally.
+   */
+  execute?(
+    command: string,
+    arguments_: readonly string[],
+    cwd: string,
+    signal?: AbortSignal,
+  ): Promise<{ code: number; stdout: string; stderr: string }>;
+  runLines(
+    arguments_: readonly string[],
+    cwd: string,
+    onLine: (line: string) => void,
+    signal?: AbortSignal,
+  ): Promise<{ code: number | null; stderr: string }>;
+}
+/** Return undefined only for unowned scopes; reject invalid owned scopes. */
+export type SearchEnvironmentProvider = (
+  request: SearchRequest,
+  context: SearchContext,
+) => SearchEnvironment | undefined;
 export interface SearchContext {
+  /** Select an existing lazy owner for one canonical source in a mixed result scope. */
+  readonly environmentForSource?: (source: string) => SearchEnvironment | undefined;
+  /** Trusted snapshot scopes resolved by the owning tool; never accepted as raw JSON coordinates. */
+  readonly scope?: ResolvedResultTargets;
+  readonly environment?: SearchEnvironment;
   readonly cwd: string;
   readonly signal?: AbortSignal;
   readonly onUpdate?: (result: AgentToolResult<unknown>) => void;
@@ -22,6 +65,8 @@ export type SearchResolutionAttempt =
   | { readonly kind: "failed"; readonly error: unknown };
 
 export interface SearchResolver {
+  /** Explicit opt-in to exact registered source scopes; unsupported providers must not widen them. */
+  readonly supportsResultScope?: boolean;
   /** Required for native data calls; project only documented JSON domain fields. */
   readonly toScriptData?: (payload: unknown, formattedDetails: unknown) => unknown;
   readonly id: string;
@@ -96,6 +141,9 @@ export interface SearchSelectionRegistration extends SearchSelectionSnapshot {
   readonly refresh: (signal?: AbortSignal) => Promise<SearchSelectionSnapshot>;
 }
 export interface RegisteredSearchSelection {
+  /** Immutable source handles independent of legacy refreshing SEARCH references. */
+  readonly target?: string;
+  readonly matchTargets?: readonly string[];
   readonly id: string;
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
@@ -105,6 +153,8 @@ export type SearchSelectionProvider = (
   context: SearchContext,
 ) => Promise<RegisteredSearchSelection>;
 export interface SearchPluginApi {
+  /** Add a lazy scope owner. Failed plugin setup must not retain its provider. */
+  addEnvironmentProvider(provider: SearchEnvironmentProvider): void;
   addResolver(registration: SearchResolverRegistration): void;
   /** Register the one shared SEARCH reference store. */
   addSelectionProvider(provider: SearchSelectionProvider): void;
@@ -119,7 +169,7 @@ export interface SearchPluginApi {
   addPromptGuideline(guideline: SearchDescriptionSource): void;
   /** Execute configured resolvers and register references before returning script data. */
   search(
-    request: SearchRequest,
+    request: SearchInput,
     context: SearchContext,
     audience?: "agent" | "script",
   ): Promise<SearchToolResult>;
@@ -143,4 +193,5 @@ export interface SearchToolDetails {
 }
 
 export { searchSchema } from "#src/api/search-parameters.js";
+export { containsSearchMatch } from "./search-scope.js";
 export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";

@@ -97,7 +97,12 @@ function createExtensionEnvironment(): { createExtension(): TestExtension } {
         pi,
         async shutdown(): Promise<void> {
           for (const handler of shutdownHandlers) {
-            await handler({ reason: "reload" }, {});
+            await handler(
+              { reason: "reload" },
+              {
+                sessionManager: { getSessionId: () => "owned-lifecycle-session" },
+              },
+            );
           }
         },
       };

@@ -2,7 +2,12 @@ import { registerTools } from "#src/toolchain/registry.js";
 
 import { DiagnosticStore } from "#src/core/diagnostic-store.js";
 
-import type { IdeDiagnosticSource, IdePlugin, IdePluginApi } from "#src/api/plugin-protocol.js";
+import type {
+  IdeDiagnosticSource,
+  IdeDiagnosticFileReader,
+  IdePlugin,
+  IdePluginApi,
+} from "#src/api/plugin-protocol.js";
 import type { IdeTool } from "#src/toolchain/types.js";
 
 export interface IdeCore {
@@ -15,7 +20,8 @@ export function createIdeCore(): IdeCore {
   const plugins = new Map<string, Promise<void>>();
   const diagnosticSources: IdeDiagnosticSource[] = [];
 
-  const diagnostics = new DiagnosticStore(diagnosticSources);
+  const diagnosticReaders: IdeDiagnosticFileReader[] = [];
+  const diagnostics = new DiagnosticStore(diagnosticSources, { readers: diagnosticReaders });
   let queue = Promise.resolve();
 
   return {
@@ -34,6 +40,7 @@ export function createIdeCore(): IdeCore {
       const ready = queue.then(async () => {
         const tools: IdeTool[] = [];
         const incomingDiagnosticSources: IdeDiagnosticSource[] = [];
+        const incomingReaders: IdeDiagnosticFileReader[] = [];
         let isOpen = true;
         const api: IdePluginApi = {
           addTool(tool): void {
@@ -52,6 +59,12 @@ export function createIdeCore(): IdeCore {
             assertDiagnosticSource(source);
             incomingDiagnosticSources.push(source);
           },
+          addDiagnosticFileReader(reader): void {
+            if (!isOpen) throw new Error(`Plugin ${plugin.id} setup is already complete`);
+            if (!reader.id.trim() || typeof reader.readText !== "function")
+              throw new TypeError("Invalid diagnostic file reader");
+            incomingReaders.push(reader);
+          },
           readDiagnostics(filePath, context) {
             return diagnostics.read(filePath, context);
           },
@@ -66,8 +79,15 @@ export function createIdeCore(): IdeCore {
 
         isOpen = false;
         assertUniqueDiagnosticSources(diagnosticSources, incomingDiagnosticSources);
+        const readerIds = new Set(diagnosticReaders.map((reader) => reader.id));
+        for (const reader of incomingReaders) {
+          if (readerIds.has(reader.id))
+            throw new Error(`Diagnostic file reader ${reader.id} is already registered`);
+          readerIds.add(reader.id);
+        }
         registerTools(tools);
         diagnosticSources.push(...incomingDiagnosticSources);
+        diagnosticReaders.push(...incomingReaders);
       });
       plugins.set(plugin.id, ready);
       queue = ready.catch(() => {});

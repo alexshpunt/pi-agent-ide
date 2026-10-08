@@ -120,6 +120,16 @@ describe("terminal renderer", () => {
     expect(lines.join("\n")).toContain("[truncated]");
   });
 
+  test("a completed terminal keeps its historical wait reason without suggesting more input", () => {
+    const running = snapshot({ waitReason: "timeout" });
+    expect(formatAgentTerminalSnapshot(running)).toContain(
+      "then use write or insert to send input",
+    );
+    const completed = formatAgentTerminalSnapshot({ ...running, status: "completed", exitCode: 0 });
+    expect(completed).toContain("reason: timeout");
+    expect(completed).toContain("exitCode: 0");
+    expect(completed).not.toContain("next:");
+  });
   test("formats large agent output as a recoverable tail", () => {
     const text = formatAgentTerminalSnapshot(
       snapshot({

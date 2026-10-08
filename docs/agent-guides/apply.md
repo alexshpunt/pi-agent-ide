@@ -6,7 +6,7 @@ Read this guide before writing an Apply script. Use Apply only for computed or c
 
 When each change is already known and independent, use standalone text tools instead. Submit those tools together in one assistant response; they share the original file snapshots and work for several edits in one file or across files. Do not write a JavaScript Apply program merely to group straightforward replacements, insertions, removals, copies, or moves. Read `docs:editing` for that workflow.
 
-Open every source first, select from immutable snapshots, stage operations, and let normal completion commit once. A thrown script commits no pending operations. Check every operation outcome: independent valid edits may succeed when another edit is rejected. Keep each returned `APPLY#` receipt for atomic undo of that checkpoint.
+Open every source first, select from immutable snapshots, stage operations, and let normal completion commit once. A thrown script commits no pending operations. Check every operation outcome: independent valid edits may succeed when another edit is rejected. Keep each returned `APPLY#` receipt to undo that checkpoint after stale-content checks.
 
 ## Choosing a selection
 
@@ -308,12 +308,13 @@ Effect: commits every pending operation, refreshes affected open handles, and ca
 
 Operations are evaluated against their captured snapshots, not against text shifted by earlier staged edits. This makes several non-overlapping edits safe without compensating line numbers. Overlapping or stale selections are rejected rather than guessed.
 
-A successful checkpoint may return an `APPLY#` receipt. Restore every path touched by that checkpoint atomically with:
+A successful checkpoint may return an `APPLY#` receipt. Use it to restore the paths touched by that checkpoint after checking for stale contents:
 
 ```js
 undo({ transaction: "APPLY#..." });
 ```
 
+Restoration is not atomic across files or targets. A failed restore attempts compensation; check the reported effects and any compensation failures before retrying.
 Separate explicit checkpoints can produce separate receipts. Do not assume one receipt covers changes committed by an earlier flush.
 
 ## Standalone anchors and specialized resources

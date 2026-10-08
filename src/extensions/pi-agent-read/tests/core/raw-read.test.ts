@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
+import type { ResourceResolutionAttempt } from "pi-agent-resource";
 import { createReadTool } from "#src/core/tools/tool-read.js";
 
 test("raw reads retain exact bytes and byte windows without invoking text handlers", async () => {
@@ -29,6 +30,12 @@ test("raw reads retain exact bytes and byte windows without invoking text handle
       totalBytes: 8,
     });
     expect(full.details.lines).toBeUndefined();
+    if (process.platform !== "win32") {
+      await writeFile(path.join(cwd, "name:bytes.bin"), Buffer.from(bytes));
+      expect(
+        (await read.execute({ path: "raw:name:bytes.bin" }, { cwd }, "script")).script,
+      ).toMatchObject({ bytes });
+    }
     const tail = await read.execute(
       { path: "raw:data.bin", offset: -3, limit: 2 },
       { cwd },
@@ -77,5 +84,88 @@ test("raw agent output stays bounded and can continue while script data stays co
   } finally {
     await read.dispose();
     await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("raw resources use the owning byte reader and run guards before fetching bytes", async () => {
+  const read = createReadTool();
+  const source = "memory://target/data.bin";
+  const bytes = Uint8Array.from([0, 255, 13, 10, 65]);
+  let calls = 0;
+  let denied = false;
+  read.registerContributions("byte-provider", {
+    resolvers: [
+      {
+        resolver: {
+          id: "memory-bytes",
+          async tryResolve(input): Promise<ResourceResolutionAttempt> {
+            if (input !== source) return { kind: "not-handled" };
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  throw new Error("Text conversion must not run");
+                },
+                async readBytes(offset: number, limit: number | undefined) {
+                  calls++;
+                  const start = Math.min(
+                    bytes.length,
+                    Math.max(0, offset < 0 ? bytes.length + offset : offset),
+                  );
+                  return {
+                    bytes: bytes.slice(start, start + (limit ?? bytes.length)),
+                    byteOffset: start,
+                    totalBytes: bytes.length,
+                  };
+                },
+              },
+            };
+          },
+        },
+      },
+    ],
+    resourceGuards: [
+      {
+        id: "deny-bytes",
+        guard(event) {
+          expect(event.requestedSource).toBe(`raw:${source}`);
+          expect(event.resourceSource).toBe(`raw:${source}`);
+          return denied ? { kind: "rejected", reason: "private bytes" } : { kind: "accepted" };
+        },
+      },
+    ],
+  });
+  try {
+    expect(
+      (await read.execute({ path: `raw:${source}` }, { cwd: "/local" }, "script")).script,
+    ).toMatchObject({
+      kind: "bytes",
+      source: `raw:${source}`,
+      bytes: Array.from(bytes),
+      totalBytes: 5,
+    });
+    expect(
+      (
+        await read.execute(
+          { path: `raw:${source}`, offset: -2, limit: 1 },
+          { cwd: "/local" },
+          "script",
+        )
+      ).script,
+    ).toMatchObject({ bytes: [10], byteOffset: 3, byteLength: 1 });
+    expect(
+      (await read.execute({ path: `raw:${source}`, limit: 0 }, { cwd: "/local" }, "script")).script,
+    ).toMatchObject({ bytes: [], byteLength: 0 });
+    const prior = calls;
+    denied = true;
+    expect((await read.execute({ path: `raw:${source}` }, { cwd: "/local" })).isError).toBe(true);
+    expect(calls).toBe(prior);
+    expect(
+      (await read.execute({ path: `raw:${source}`, views: ["ast"] }, { cwd: "/local" })).isError,
+    ).toBe(true);
+    expect(calls).toBe(prior);
+  } finally {
+    await read.dispose();
   }
 });

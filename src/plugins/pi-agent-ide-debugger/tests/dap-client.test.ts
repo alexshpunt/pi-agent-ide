@@ -4,6 +4,55 @@ import { afterEach, expect, test } from "vitest";
 
 import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
 
+import { PassThrough, Writable } from "node:stream";
+
+test("an owned DAP stream reports transport loss and stops its owner exactly once", async () => {
+  const readable = new PassThrough();
+  const writable = new PassThrough();
+  let fail: (error: Error) => void = () => {};
+  const completion = new Promise<void>((_resolve, reject) => {
+    fail = reject;
+  });
+  let stops = 0;
+  const client = DapClient.fromTransport({
+    readable,
+    writable,
+    completion,
+    stop: () => {
+      stops += 1;
+      return Promise.resolve();
+    },
+  });
+  const request = client.request("stackTrace", { threadId: 1 });
+  fail(new Error("TRANSPORT_FAILED"));
+  await expect(request).rejects.toThrow("TRANSPORT_FAILED");
+  await expect(client.waitForEvent("terminated", 10)).rejects.toThrow("TRANSPORT_FAILED");
+  await client.dispose();
+  await client.dispose();
+  expect(stops).toBe(1);
+});
+test("a failed owned stream write rejects the DAP request instead of waiting for a reply", async () => {
+  const readable = new PassThrough();
+  const writable = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback(new Error("INPUT_CLOSED"));
+    },
+  });
+  writable.on("error", () => {});
+  const client = DapClient.fromTransport({
+    readable,
+    writable,
+    completion: new Promise<void>(() => {}),
+    stop: () => Promise.resolve(),
+  });
+  try {
+    await expect(client.request("continue", { threadId: 1 }, { timeoutMs: 30 })).rejects.toThrow(
+      "INPUT_CLOSED",
+    );
+  } finally {
+    await client.dispose();
+  }
+});
 const servers: net.Server[] = [];
 const clients: DapClient[] = [];
 

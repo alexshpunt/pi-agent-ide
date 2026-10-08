@@ -1,12 +1,34 @@
-import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/edit-pipeline";
 import type { LspManagerProvider } from "./code-view-resolvers.js";
 import { resolveLspRenameTarget } from "./lsp/code-views.js";
-import { requestRename } from "./lsp/rename.js";
+import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.js";
+import type { LspClient } from "./lsp/client.js";
 import type { LspPosition } from "./lsp/types.js";
+import { documentUri } from "./lsp/document-uri.js";
+import { loadQueryProject } from "./lsp/navigation.js";
 
+function renameEntries(edit: LspWorkspaceEdit | null, client: LspClient) {
+  if (edit === null)
+    throw new Error(
+      "The language server did not provide rename edits. No text fallback was applied.",
+    );
+  const entries = new Map(Object.entries(edit.changes ?? {}));
+  for (const change of edit.documentChanges ?? []) {
+    if (!("textDocument" in change) || !("edits" in change))
+      throw new Error("Rename returned an unsupported file operation. No edits applied.");
+    if (
+      change.textDocument.version != null &&
+      change.textDocument.version !== client.documentVersion(change.textDocument.uri)
+    )
+      throw new Error("Rename refers to an unavailable document revision. No edits applied.");
+    if (entries.has(change.textDocument.uri))
+      throw new Error("Rename returned duplicate document edits.");
+    entries.set(change.textDocument.uri, change.edits);
+  }
+  return entries;
+}
 function offset(content: string, position: LspPosition): number {
   const lines = content.split("\n");
   const line = lines[position.line];
@@ -50,78 +72,62 @@ export async function prepareSymbolRename(
   if (reference?.selector === undefined)
     throw new Error("Rename needs an exact symbol selector before #name.");
   const source = resolveCodeViewPath(reference.path, state.cwd);
+  const manager = await managerFor(state.cwd, source, state.signal);
   const target = await resolveLspRenameTarget(
-    await managerFor(state.cwd),
+    manager,
     source,
     reference.selector,
     state.cwd,
     state.signal,
   );
-  // TypeScript can answer rename before loading unopened project files.
-  // Its advertised project query loads them before requesting workspace edits.
-  if (target.client.supportsCommand("typescript.tsserverRequest")) {
-    const project = await target.client.sendRequest<{ success?: boolean } | null>(
-      "workspace/executeCommand",
-      {
-        command: "typescript.tsserverRequest",
-        arguments: [
-          "projectInfo",
-          { file: source, needFileNameList: true },
-          { isAsync: false, expectsResult: true },
-        ],
-      },
-    );
-    if (project?.success !== true)
-      throw new Error("TypeScript could not load the project for rename. No edits applied.");
-  }
-  const requestedAt = Date.now();
-  const edit = await requestRename(target.client, target.uri, target.position, input.text);
-  state.signal?.throwIfAborted();
-  if (edit === null)
-    throw new Error(
-      "The language server did not provide rename edits. No text fallback was applied.",
-    );
-  const entries = new Map(Object.entries(edit.changes ?? {}));
-  for (const change of edit.documentChanges ?? []) {
-    if (!("textDocument" in change) || !("edits" in change))
-      throw new Error("Rename returned a file operation that is not supported; no edits applied.");
-    if (
-      change.textDocument.version != null &&
-      change.textDocument.version !== target.client.documentVersion(change.textDocument.uri)
-    )
+  await loadQueryProject(target.client, target.uri, state.signal);
+  // The first request discovers participants; only the second request can supply applied edits.
+  // Capture and synchronize every participant first, so unopened files have a guarded revision.
+  const preview = renameEntries(
+    await requestRename(target.client, target.uri, target.position, input.text),
+    target.client,
+  );
+  const snapshots = new Map<string, { file: string; content: string; version: string }>();
+  for (const uri of new Set([target.uri, ...preview.keys()])) {
+    state.signal?.throwIfAborted();
+    const canonical = documentUri(uri, target.client.rootUri);
+    if (canonical !== uri)
+      throw new Error("Rename returned a non-canonical participant. No edits applied.");
+    const file = canonical.startsWith("ssh://") ? canonical : fileURLToPath(canonical);
+    const snapshot = await manager.readSourceSnapshot(file, state.signal);
+    if (file === source && snapshot.content !== target.content)
+      throw new Error("The rename source changed. Read the symbol again before retrying.");
+    const opened = await manager.openFile(file, state.cwd, "symbols", state.signal);
+    if (opened?.client !== target.client || opened.uri !== uri)
       throw new Error(
-        "Rename refers to an unavailable document revision. Refresh the source before retrying.",
+        "A rename participant has a different language server owner. No edits applied.",
       );
-    if (entries.has(change.textDocument.uri))
-      throw new Error("Rename returned duplicate document edits.");
-    entries.set(change.textDocument.uri, change.edits);
+    if (target.client.documentContent(uri) !== snapshot.content)
+      throw new Error("A rename participant changed during synchronization. No edits applied.");
+    snapshots.set(uri, { file, ...snapshot });
+  }
+  const entries = renameEntries(
+    await requestRename(target.client, target.uri, target.position, input.text),
+    target.client,
+  );
+  state.signal?.throwIfAborted();
+  for (const [uri, before] of snapshots) {
+    state.signal?.throwIfAborted();
+    const after = await manager.readSourceSnapshot(before.file, state.signal);
+    if (before.version !== after.version || target.client.documentContent(uri) !== before.content)
+      throw new Error("A rename participant changed during the server request. No edits applied.");
   }
   const files: TextEditPlan["files"][number][] = [];
   for (const [uri, edits] of entries) {
-    const file = fileURLToPath(uri);
-    const before = await stat(file);
-    const content = await readFile(file, "utf8");
-    const after = await stat(file);
-    const synchronized = target.client.documentContent(uri);
-    if (synchronized !== undefined && synchronized !== content)
-      throw new Error(
-        "The language server has stale text for a rename target. Read that symbol again before retrying.",
-      );
-    if (
-      before.mtimeMs > requestedAt ||
-      before.mtimeMs !== after.mtimeMs ||
-      before.size !== after.size ||
-      (file === source && content !== target.content)
-    )
-      throw new Error(
-        "A rename source changed during the language-server request. Retry from a fresh symbol read.",
-      );
+    const before = snapshots.get(uri);
+    if (!before)
+      throw new Error("Rename discovered a new participant after preflight. No edits applied.");
     files.push({
-      source: file,
-      expectedContent: content,
+      source: before.file,
+      expectedContent: before.content,
       changes: edits.map((change) => ({
-        from: offset(content, change.range.start),
-        to: offset(content, change.range.end),
+        from: offset(before.content, change.range.start),
+        to: offset(before.content, change.range.end),
         insert: change.newText,
       })),
     });

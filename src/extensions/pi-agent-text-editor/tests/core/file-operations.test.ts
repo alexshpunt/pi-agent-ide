@@ -26,6 +26,92 @@ test("whole-file mode requires paths and no text selectors", () => {
   expect(isWholeFileInvocation("delete", {})).toBe(false);
 });
 
+test("whole-file owners receive original SSH identities before local path resolution", async () => {
+  const calls: unknown[] = [];
+  const resolver = async (operation: string, input: unknown, context: unknown) => {
+    calls.push({ operation, input, context });
+    return {
+      kind: "file-operation" as const,
+      operation: "copy" as const,
+      ok: true,
+      effect: "applied" as const,
+      path: "ssh://sandbox/tmp/source.bin",
+      target: "ssh://sandbox/tmp/destination.bin",
+    };
+  };
+  const input = { path: "source.bin", target: "destination.bin" };
+  const result = await executeFileOperation("copy", input, "ssh://sandbox/tmp", undefined, [
+    resolver,
+  ]);
+  expect(result).toMatchObject({ ok: true, path: "ssh://sandbox/tmp/source.bin" });
+  expect(calls).toEqual([
+    { operation: "copy", input, context: { cwd: "ssh://sandbox/tmp", signal: undefined } },
+  ]);
+});
+
+test("whole-file owner failures retain unknown effects instead of claiming no mutation", async () => {
+  const result = await executeFileOperation(
+    "copy",
+    { path: "ssh://sandbox/source", target: "local" },
+    "/local",
+    undefined,
+    [
+      async () => {
+        throw Object.assign(new Error("Transport lost after publication started"), {
+          code: "CONNECTION_LOST",
+          effect: "unknown",
+        });
+      },
+    ],
+  );
+  expect(result).toMatchObject({
+    ok: false,
+    effect: "unknown",
+    path: "ssh://sandbox/source",
+    error: { code: "CONNECTION_LOST" },
+  });
+});
+
+test("an owner throwing after a mutation cannot be reported as not applied", async () => {
+  const cwd = await fixture();
+  const result = await executeFileOperation("delete", { path: "source" }, cwd, undefined, [
+    async () => {
+      await writeFile(path.join(cwd, "partial"), "owner changed this");
+      throw new Error("Reply failed");
+    },
+  ]);
+  expect(result).toMatchObject({ ok: false, effect: "unknown" });
+  expect(await readFile(path.join(cwd, "partial"), "utf8")).toBe("owner changed this");
+  expect(await readFile(path.join(cwd, "source"))).toEqual(Buffer.from([0, 255, 10]));
+});
+
+test("malformed whole-file owner results are unknown and never fall back locally", async () => {
+  const cwd = await fixture();
+  const result = await executeFileOperation("delete", { path: "source" }, cwd, undefined, [
+    async () => ({ kind: "file-operation", operation: "copy", ok: true, effect: "applied" }),
+  ]);
+  expect(result).toMatchObject({
+    ok: false,
+    effect: "unknown",
+    error: { code: "INVALID_PROVIDER_RESULT" },
+  });
+  expect(await readFile(path.join(cwd, "source"))).toEqual(Buffer.from([0, 255, 10]));
+});
+
+test("unclaimed URI operations fail without touching a similarly named local path", async () => {
+  const cwd = await fixture();
+  const misleading = path.join(cwd, "ssh:", "sandbox", "source");
+  await mkdir(path.dirname(misleading), { recursive: true });
+  await writeFile(misleading, "keep local");
+  const result = await executeFileOperation("delete", { path: "ssh://sandbox/source" }, cwd);
+  expect(result).toMatchObject({
+    ok: false,
+    effect: "not-applied",
+    error: { code: "UNSUPPORTED_SOURCE" },
+  });
+  expect(await readFile(misleading, "utf8")).toBe("keep local");
+});
+
 test("copies bytes, moves the copy, and removes only the moved file", async () => {
   const cwd = await fixture();
   expect((await executeFileOperation("copy", { path: "source", target: "copy" }, cwd)).ok).toBe(

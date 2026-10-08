@@ -1,8 +1,7 @@
-import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
 import { LINTER_RECIPES } from "./catalog.js";
 
 import {
-  hasConfiguredExecutable,
+  toolRuntimeEvidence,
   loadLayeredToolConfig,
   selectConfiguredEntry,
   parseLintersConfig,
@@ -12,7 +11,7 @@ import type {
   EffectiveToolConfigEntry,
   LinterCommandConfig,
   LintersConfig,
-  LayeredToolConfigOptions,
+  ToolRuntimeConfigOptions,
 } from "pi-agent-ide/api/tool-config";
 
 /**
@@ -31,7 +30,7 @@ export class LintCommandRegistry {
   */
   public static async fromDirectory(
     directory: string,
-    options: LayeredToolConfigOptions = {},
+    options: ToolRuntimeConfigOptions = {},
   ): Promise<LintCommandRegistry> {
     const effective = await loadLayeredToolConfig(
       directory,
@@ -39,35 +38,20 @@ export class LintCommandRegistry {
       (value) => parseLintersConfig(value).linters,
       options,
     );
-    const environment = options.environment ?? process.env;
-    const available = await Promise.all(
+    const { available, evidence } = await toolRuntimeEvidence(
+      directory,
       effective.entries
         .filter((entry) => entry.layer === "built-in")
-        .map(async (entry) => ({
-          id: entry.id,
-          available: await hasConfiguredExecutable(entry.config.check, directory, environment),
-        })),
+        .map((entry) => ({ id: entry.id, config: entry.config.check })),
+      LINTER_RECIPES,
+      options,
     );
-    const evidence = await inspectRecipeEvidence(directory, LINTER_RECIPES);
     const entries = [...effective.entries].sort((left, right) =>
       left.layer === "built-in" && right.layer === "built-in"
         ? (evidence.get(right.id)?.score ?? 0) - (evidence.get(left.id)?.score ?? 0)
         : 0,
     );
-    return new LintCommandRegistry(
-      entries,
-      new Set(
-        available
-          .filter(
-            (entry) =>
-              entry.available &&
-              (!options.requireBuiltInEvidence || (evidence.get(entry.id)?.score ?? 0) > 0),
-          )
-          .map((entry) => entry.id),
-      ),
-
-      evidence,
-    );
+    return new LintCommandRegistry(entries, available, evidence);
   }
 
   /**

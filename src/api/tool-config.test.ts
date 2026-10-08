@@ -51,8 +51,8 @@ describe("versioned tool config", () => {
       },
       { projectRoot: directory, filePath: file },
     );
-    expect(result).toEqual({ ok: false, changed: false });
-    expect(await readFile(file, "utf8")).toBe("invalid but saved edit\n");
+    expect(result).toEqual({ ok: false, changed: true });
+    expect(await readFile(file, "utf8")).toBe("partial");
   });
 
   it("cancels a running configured process", async () => {

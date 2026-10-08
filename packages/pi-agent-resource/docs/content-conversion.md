@@ -27,9 +27,9 @@ This module does not:
 
 ## Runtime model
 
-Each provider creates a host for an exact `{ provider, capability }` target. The host stores converters locally. Adapter and host extensions use Pi events only to establish registration; conversion calls run directly against the host.
+Providers request a host for an exact `{ provider, capability }` target. Requests on the same Pi event bus share that target's host and installed converters, including providers loaded after converter registration. Different targets and event buses stay separate. Host lookup uses the event bus, not the identity of an extension's event wrapper. Conversion calls run directly against the host.
 
-Every handshake subscription belongs to the Pi extension instance that created it. It is removed on `session_shutdown`, including an adapter that is still waiting for its target host. Reload and session replacement therefore build a fresh graph on the shared event bus.
+Each provider retains ownership until its `session_shutdown`. The host removes its lookup and registration subscriptions when its last owner shuts down. Adapter subscriptions also end on shutdown, including adapters still waiting for a target. Reload and session replacement therefore build a fresh graph.
 
 Lower priority runs first. Equal priorities keep registration order. One conversion snapshots the current list and invokes converters one at a time. `converted` and `failed` are terminal, invalid outcomes are terminal, cancellation is terminal, and exhausting the list throws an unsupported-content error.
 

@@ -1,4 +1,7 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectResultTargets } from "pi-agent-resource";
+import { createResultTargetAnchors } from "./result-target-anchors.js";
+import { setMutationSnapshotReader } from "./mutation-result-targets.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -25,6 +28,11 @@ import {
 import { setTextAnchorRecoveryReader } from "#src/core/text-anchor-recovery.js";
 import { setTextEditBatchRenderArgumentSink } from "#src/core/text-edit-batch-registrar.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import {
+  adoptSessionApplyUndo,
+  disposeSessionApplyUndo,
+  retainSessionApplyUndo,
+} from "#src/core/apply/reload-journals.js";
 import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js";
 import { createTextTool } from "#src/core/text-mutation.js";
 import { registerApply } from "#src/core/apply/tool.js";
@@ -47,6 +55,7 @@ export default async function registerTextEditorCore(
     registerToolCallAnnotationSink(pi);
     interceptionRendering.clear();
   });
+  const resultTargets = connectResultTargets(pi);
   const mutationTools = new Set<string>();
   const core = createTextEditorCore((registration, editor) => {
     mutationTools.add(registration.name);
@@ -56,10 +65,28 @@ export default async function registerTextEditorCore(
         registration,
         interceptionRendering,
         () => getLastResolvedResource(pi)?.source,
+        resultTargets,
       ),
     );
   });
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "result-targets",
+    setup(api) {
+      api.addAnchorResolver(createResultTargetAnchors(resultTargets));
+    },
+  });
+  const journalScope = new URL(import.meta.url).pathname;
+  pi.on("session_start", (_event, context) =>
+    adoptSessionApplyUndo(core, journalScope, context.sessionManager.getSessionId()),
+  );
+  pi.on("session_shutdown", (event, context) =>
+    event.reason === "reload"
+      ? retainSessionApplyUndo(core, journalScope, context.sessionManager.getSessionId())
+      : disposeSessionApplyUndo(core, journalScope),
+  );
   pi.on("tool_result", (event) => {
     rememberLastResolvedResource(pi, event.details);
 
@@ -83,6 +110,17 @@ export default async function registerTextEditorCore(
         "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# references go directly in path, without a file prefix. offset/limit select context relative to each location; output keeps original line numbers.",
       );
     },
+  });
+  setMutationSnapshotReader(core, async (source, cwd, signal) => {
+    if (readApi === undefined) throw Error("Mutation targets require pi-agent-read.");
+    const result = await readApi.read({ path: source }, { cwd, signal }, "script");
+    if (result.isError || result.script?.kind !== "text" || result.script.target === undefined)
+      throw Error("Saved resource did not provide guarded text authority.");
+    const selected = resultTargets.resolve(result.script.target, cwd);
+    const target = selected.targets[0];
+    if (!selected.complete || selected.targets.length !== 1 || target === undefined)
+      throw Error("Saved resource did not provide one complete source snapshot.");
+    return target;
   });
   setTextAnchorRecoveryReader(core, (request, context) => {
     if (readApi === undefined) {

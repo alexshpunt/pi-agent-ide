@@ -18,7 +18,8 @@ export function createWebSearchResolver(web: ResourceResolver): SearchResolver {
     id: "web",
     async tryResolve(request, context) {
       const source = request.path;
-      if (source === undefined || !/^https?:/iu.test(source)) return { kind: "not-handled" };
+      if (source === undefined || !/^(?:https?:|web:)/iu.test(source))
+        return { kind: "not-handled" };
       if (request.include !== undefined || request.exclude !== undefined) {
         return {
           kind: "failed",

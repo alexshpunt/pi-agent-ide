@@ -134,13 +134,18 @@ export async function parseDocument(
     return undefined;
   }
 
-  const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+  const absolutePath =
+    filePath.includes("://") || path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
   const extension = path.extname(absolutePath).toLowerCase();
   const source = lines.join("\n");
   const parser = await ensureParser(extension);
 
   if (parser) {
-    return parser.parse(source) ?? undefined;
+    try {
+      return parser.parse(source) ?? undefined;
+    } finally {
+      parser.delete();
+    }
   }
 
   return parseNativeDocument(extension, source);

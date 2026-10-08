@@ -3,6 +3,13 @@ import path from "node:path";
 
 import type { ShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
+/** Linux SSH sessions use Bash, independently of the local platform shell. */
+export const remoteBashProfile: ShellProfile = {
+  executable: "/bin/bash",
+  displayName: "Bash over SSH",
+  family: "posix",
+  commandArgs: (command) => ["-lc", command],
+};
 /** Resolve the shell configured for the current user and describe its command syntax. */
 export function resolveShellProfile(
   platform: NodeJS.Platform = process.platform,

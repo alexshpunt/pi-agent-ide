@@ -6,6 +6,8 @@ import type { Static, TSchema } from "typebox";
 export interface TextMutationEdit {
   readonly changes: readonly TextChange[];
   readonly action: "edited" | "overwritten";
+  /** Indices that produce destination text; source removals never grant transfer output authority. */
+  readonly resultChanges?: readonly number[];
 }
 
 export interface TextMutation {

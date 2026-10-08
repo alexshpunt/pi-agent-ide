@@ -1,5 +1,6 @@
 import type { IPty } from "node-pty";
 import type { Terminal } from "@xterm/headless";
+import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
 
 export type TerminalWaitReason = "timeout" | "interactive";
 export type TerminalWaitOutcomeReason = TerminalWaitReason | "aborted";
@@ -33,6 +34,8 @@ export interface TerminalSession {
   readonly rows: number;
   readonly fullOutputPath: string;
   readonly process?: IPty;
+  /** Remote channels never populate the native local process field. */
+  readonly remote?: { readonly target: string; readonly process: SshProcessChannel };
   readonly screen: Terminal;
   status: TerminalSessionStatus;
   endedAt?: number;
@@ -58,6 +61,8 @@ export interface TerminalSessionSnapshot {
   readonly shell: string;
   readonly shellFamily: ShellProfile["family"];
   readonly pid?: number;
+  /** Remote identity is scoped to a target and must not grant local process/vision ownership. */
+  readonly remote?: { readonly target: string; readonly pid: number; readonly identity?: string };
   readonly background: boolean;
   readonly status: TerminalSessionStatus;
   readonly waitReason?: TerminalWaitReason;

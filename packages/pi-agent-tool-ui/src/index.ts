@@ -1,4 +1,11 @@
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+export {
+  ResultPanel,
+  sourceRows,
+  type ResultPanelModel,
+  type ResultPanelRow,
+  type SourcePreview,
+} from "./result-panel.js";
 import {
   type Component,
   sliceByColumn,

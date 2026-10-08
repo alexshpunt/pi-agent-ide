@@ -3,6 +3,37 @@ import { expect, test } from "vitest";
 import { ApplyResults } from "#src/core/apply/results.js";
 import { renderApplyOutput } from "#src/core/apply/output.js";
 
+test("successful Apply keeps whole-file outcomes and their owner paths", async () => {
+  const results = new ApplyResults();
+  results.record("commit", "mutation", {
+    operation: "apply",
+    ok: true,
+    effect: "applied",
+    errors: [],
+    files: [],
+    operations: [
+      {
+        index: 0,
+        kind: "copy",
+        status: "applied",
+        effect: "applied",
+        resources: ["/tmp/source.bin", "ssh://sandbox/tmp/destination.bin"],
+      },
+    ],
+  });
+  const output = await renderApplyOutput(results, {
+    async saveTemporary() {
+      throw new Error("Unexpected overflow");
+    },
+  });
+  const shown = output.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
+    .join("\n");
+  expect(shown).toContain("copy: applied");
+  expect(shown).toContain("/tmp/source.bin");
+  expect(shown).toContain("ssh://sandbox/tmp/destination.bin");
+});
 test("small native results stay inline without creating a temporary resource", async () => {
   const results = new ApplyResults();
   const image = { type: "image" as const, mimeType: "image/png", data: "aGVsbG8=" };

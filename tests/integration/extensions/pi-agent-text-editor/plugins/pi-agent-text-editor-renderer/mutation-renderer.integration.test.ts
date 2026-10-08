@@ -508,6 +508,8 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "inherited-path.ts", source);
       const result = await new PiIntegrationTest({
         testName: "text-editor-renderer-inherited-path-streaming",
+        // Both completed panels and postflight output must fit in the final viewport.
+        tuiSize: { cols: 160, rows: 100 },
         cwd: directory,
         extensions: extensions.paths.map((extension) =>
           extension === defaultTextEditorExtension ? rendererTestStand : extension,
@@ -563,6 +565,7 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "post-edit-viewport.ts", source);
       const result = await new PiIntegrationTest({
         testName: "text-editor-renderer-batched-viewports",
+        tuiSize: { cols: 160, rows: 100 },
         cwd: directory,
         extensions: extensions.paths.map((extension) =>
           extension === defaultTextEditorExtension ? rendererTestStand : extension,
@@ -1232,13 +1235,19 @@ function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: stri
   const settledAfterSuccessor = input.frames
     .slice(successorFrameIndex)
     .find(({ text: frameText }) => {
-      const mutationPanel = largeWriteMutationPanel(frameText);
-      return !mutationPanel.includes("▌") && mutationPanel.includes(finalRow);
+      // An expanded panel's header can be above the live viewport. Its visible tail
+      // still proves catch-up; the full final capture checks all rows separately.
+      const start = Math.max(0, frameText.indexOf("write large-write.txt"));
+      const end = frameText.indexOf("╯", start);
+      if (end < 0) return false;
+      const mutationPanel = frameText.slice(start, end + 1);
+      return mutationPanel.indexOf("▌") < 0 && mutationPanel.indexOf(finalRow) >= 0;
     });
   if (settledAfterSuccessor === undefined) {
     throw new Error("The mutation animation did not settle after the later tool call appeared");
   }
   const successorFrame = input.frames[successorFrameIndex];
+  if (successorFrame === undefined) throw new Error("The successor frame is missing");
   const visualCatchUpMs = input.frameDelaysMs
     .slice(successorFrame.frame, settledAfterSuccessor.frame)
     .reduce((sum, delay) => sum + delay, 0);

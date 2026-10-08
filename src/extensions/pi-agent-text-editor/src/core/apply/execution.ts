@@ -5,7 +5,7 @@ import { executeDiff, diffReadResult } from "#src/core/diff-tool.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
 import { readParameters, type ReadToolResult } from "pi-agent-read/api/tools/read";
-import { searchSchema, type SearchPluginApi, type SearchRequest } from "pi-agent-search/api/search";
+import { searchSchema, type SearchPluginApi } from "pi-agent-search/api/search";
 import { Value } from "typebox/value";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import { ApplyResults } from "#src/core/apply/results.js";
@@ -253,13 +253,16 @@ export function createApplyExecution(
             "script",
           );
           const value = outcome.script;
-          if (
-            outcome.isError ||
-            outcome.details.resolvedBy !== "filesystem" ||
-            value?.kind !== "text" ||
-            typeof value.content !== "string"
-          )
-            throw failure("NOT_EDITABLE_TEXT", "open() requires one local text file");
+          if (outcome.isError || value?.kind !== "text" || typeof value.content !== "string")
+            throw failure("NOT_EDITABLE_TEXT", "open() requires one editable text resource");
+          if (outcome.details.resolvedBy !== "filesystem") {
+            const preview = await services.editor.previewTexts(
+              [{ source: outcome.details.source ?? value.source, read: false }],
+              { cwd: context.cwd, signal },
+              () => ({ changes: new Map(), result: undefined }),
+            );
+            if (preview.kind === "failed") throw failure("NOT_EDITABLE_TEXT", preview.reason);
+          }
           const snapshot = {
             id,
             source: outcome.details.source ?? value.source,
@@ -277,10 +280,9 @@ export function createApplyExecution(
           results.record(id, "read", value, diffReadResult(value));
           return value;
         }
-        const schema = tool === "read" ? readParameters : searchSchema;
-        if (!Value.Check(schema, arguments_))
-          throw failure("INVALID_ARGUMENTS", `Invalid arguments for ${tool}`);
         if (tool === "read") {
+          if (!Value.Check(readParameters, arguments_))
+            throw failure("INVALID_ARGUMENTS", "Invalid arguments for read");
           const outcome = await services.read.read(
             arguments_,
             { cwd: context.cwd, signal },
@@ -306,8 +308,10 @@ export function createApplyExecution(
           services.rememberRead?.(outcome);
           return value;
         }
+        if (!Value.Check(searchSchema, arguments_))
+          throw failure("INVALID_ARGUMENTS", "Invalid arguments for search");
         const outcome = await services.search.search(
-          arguments_ as SearchRequest,
+          arguments_,
           {
             cwd: context.cwd,
             signal,

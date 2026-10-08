@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 
-const MAX_SOURCE_BYTES = 256 * 1024;
+/** The same byte budget for local and owner-provided explicit outline snapshots. */
+export const MAX_SOURCE_BYTES = 256 * 1024;
 
 export interface TextFileSnapshot {
   readonly lines: string[];
@@ -8,6 +9,8 @@ export interface TextFileSnapshot {
 }
 
 export async function readTextFile(filePath: string): Promise<TextFileSnapshot> {
+  if (filePath.includes("://"))
+    throw new Error("URI outlines require an owned text snapshot, not a local file read.");
   const buffer = await readFile(filePath);
 
   if (buffer.byteLength > MAX_SOURCE_BYTES) {

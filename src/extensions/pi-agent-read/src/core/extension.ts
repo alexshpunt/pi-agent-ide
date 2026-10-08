@@ -1,4 +1,6 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectResultTargets } from "pi-agent-resource";
+import { createReadResultTargetHandler } from "./tools/read/result-target.js";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   ToolCallInterceptionRenderStore,
@@ -35,6 +37,12 @@ export default async function registerReadCore(
     }),
   ]);
   const core = createReadCore(parsePresentation(context?.preferences["ui.read"]));
+  const targets = connectResultTargets(pi);
+  core.read.registerContributions("result-targets", {
+    handlers: [
+      { stage: "post-read", handler: createReadResultTargetHandler(targets, core.read.execute) },
+    ],
+  });
 
   const unsubscribeRegistration = pi.events.on(READ_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isReadPluginRegistrationRequest(request)) {

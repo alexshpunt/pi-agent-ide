@@ -1,5 +1,6 @@
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { SshBackendRegistry } from "#src/backend/registry.js";
 
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -16,7 +17,10 @@ import {
 } from "#src/plugins/pi-agent-ide-terminal/src/shell-result.js";
 import { renderRunCall, renderRunResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 
-import { shellSyntaxGuidance } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
+import {
+  shellSyntaxGuidance,
+  remoteBashProfile,
+} from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
 import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
 import type { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
 import type {
@@ -28,7 +32,8 @@ const runParameters = Type.Object(
   {
     command: Type.String({
       minLength: 1,
-      description: "Command written in the syntax of the configured system shell",
+      description:
+        "Use the configured local shell syntax, or Bash syntax when cwd selects an SSH target.",
     }),
     background: Type.Optional(
       Type.Boolean({
@@ -45,7 +50,8 @@ const runParameters = Type.Object(
     ),
     cwd: Type.Optional(
       Type.String({
-        description: "Working directory. Relative paths resolve from the current workspace.",
+        description:
+          "Working directory. Relative local paths resolve from the current workspace. Use ssh://target/path to run Bash in a configured Linux SSH target; its account environment is used instead of the local environment.",
       }),
     ),
     cols: Type.Optional(
@@ -65,6 +71,7 @@ export function registerTerminalTools(
   profile: ShellProfile,
   ui: Pick<TerminalUi, "bind" | "notifyWaitTransition">,
   presentation: "full" | "compact" | "disabled" = "compact",
+  targets: SshBackendRegistry = new SshBackendRegistry([]),
 ): void {
   const toolName = process.platform === "win32" ? "powershell" : "bash";
   pi.registerTool(
@@ -91,15 +98,24 @@ export function registerTerminalTools(
       outputSchema: shellOutputSchema,
       async execute(_toolCallId, input, signal, onUpdate, context) {
         ui.bind(context);
-        const cwd = input.cwd === undefined ? context.cwd : path.resolve(context.cwd, input.cwd);
-        const session = manager.start({
+        const remote = targets.resolve(input.cwd ?? context.cwd, context.cwd);
+        const options = {
           command: input.command,
           background: input.background ?? false,
-          cwd,
-          shell: profile,
           ...(input.cols === undefined ? {} : { cols: input.cols }),
           ...(input.rows === undefined ? {} : { rows: input.rows }),
-        });
+        };
+        const session = remote
+          ? await manager.startRemote({
+              ...options,
+              remote,
+              ...(signal === undefined ? {} : { signal }),
+            })
+          : manager.start({
+              ...options,
+              cwd: input.cwd === undefined ? context.cwd : path.resolve(context.cwd, input.cwd),
+              shell: profile,
+            });
         if (input.background === true && session.status !== "failed") {
           await captureInitialBackgroundPreview(manager, session, onUpdate);
           if (session.status !== "running") session.completionDelivered = true;
@@ -117,9 +133,20 @@ export function registerTerminalTools(
         const mode = context.expanded ? "full" : presentation;
         if (mode === "disabled") return new Text(theme.fg("toolTitle", toolName), 0, 0);
         const command = typeof args.command === "string" ? args.command : "";
+        const remote = typeof args.cwd === "string" && args.cwd.startsWith("ssh:");
         const cwd =
-          typeof args.cwd === "string" ? path.resolve(process.cwd(), args.cwd) : process.cwd();
-        return renderRunCall(command, args.background === true, cwd, profile, theme);
+          typeof args.cwd === "string"
+            ? remote
+              ? args.cwd
+              : path.resolve(process.cwd(), args.cwd)
+            : process.cwd();
+        return renderRunCall(
+          command,
+          args.background === true,
+          cwd,
+          remote ? remoteBashProfile : profile,
+          theme,
+        );
       },
       renderResult(result, options, theme) {
         return renderRunResult(

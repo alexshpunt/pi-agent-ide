@@ -32,49 +32,108 @@ import {
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+/** Backend-neutral language server transport for root registration bridges. */
+import type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.js";
+import { SharedStartup, waitWithSignal } from "./src/lsp/abort.js";
+export type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.js";
+export type {
+  LspFileWatcherSubscriptions,
+  WatchPattern,
+  WatchedFileChange,
+} from "./src/lsp/file-watchers.js";
+export type { LspOwnerTransport, LspOwnedProcess } from "./src/lsp/owner-transport.js";
+export { LspServerRegistry } from "./src/lsp/registry.js";
+export { LSP_RECIPES } from "./src/catalog.js";
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "LSP" });
 
+/** Resource-owner hooks for root registration without backend imports in the LSP package. */
+export interface LspRegistrationOwner {
+  loadRegistry(cwd: string, external: boolean, signal?: AbortSignal): Promise<LspServerRegistry>;
+  workspace(cwd: string): LspWorkspaceOwner | undefined;
+  resolveProject(
+    filePath: string,
+    cwd: string,
+    signal?: AbortSignal,
+  ): Promise<{ cwd: string; external: boolean } | undefined>;
+}
+
 export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
-  const managers = new Map<string, Promise<LspManager>>();
+  await registerLspWithOwner(pi);
+}
+
+/** Register ordinary LSP tools, optionally using explicit workspace-owner hooks. */
+export async function registerLspWithOwner(
+  pi: ExtensionAPI,
+  owner?: LspRegistrationOwner,
+): Promise<void> {
+  const managers = new Map<string, SharedStartup<LspManager>>();
   let disposed = false;
-  const managerFor = (cwd: string, external = false): Promise<LspManager> => {
-    if (disposed) return Promise.reject(new Error("LSP session has ended"));
+  const managerFor = async (
+    cwd: string,
+    external = false,
+    signal?: AbortSignal,
+  ): Promise<LspManager> => {
+    signal?.throwIfAborted();
+    if (disposed) throw new Error("LSP session has ended");
     const key = JSON.stringify([cwd, external]);
     let ready = managers.get(key);
-    if (!ready) {
-      ready = loadRegistry(cwd, external).then((registry) => {
-        if (disposed) throw new Error("LSP session has ended");
-        return LspManager.init(registry);
-      });
-      managers.set(key, ready);
+    if (ready?.controller.signal.aborted) {
+      await waitWithSignal(
+        ready.promise.catch(() => undefined),
+        signal,
+      );
+      if (managers.get(key) === ready) managers.delete(key);
+      return managerFor(cwd, external, signal);
     }
-    return ready;
+    if (!ready) {
+      ready = new SharedStartup(async (startupSignal) => {
+        const registry = owner
+          ? await owner.loadRegistry(cwd, external, startupSignal)
+          : await loadRegistry(cwd, external, startupSignal);
+        startupSignal.throwIfAborted();
+        if (disposed) throw new Error("LSP session has ended");
+        return LspManager.init(registry, owner?.workspace(cwd));
+      });
+      const pending = ready;
+      managers.set(key, pending);
+      void pending.promise.catch(() => {
+        if (managers.get(key) === pending) managers.delete(key);
+      });
+    }
+    return ready.wait(signal);
   };
-  const resolveLspProject = async (filePath: string, cwd: string) => {
+  const resolveLspProject = async (filePath: string, cwd: string, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    if (owner) return owner.resolveProject(filePath, cwd, signal);
     const projectRoot = await resolveExternalToolProjectRoot(
       cwd,
       filePath,
       "lsp-servers",
       LSP_RECIPES,
+      signal,
     );
+    signal?.throwIfAborted();
     return projectRoot === undefined
       ? undefined
       : { cwd: projectRoot, external: projectRoot !== path.resolve(cwd) };
   };
 
+  const managerForFile = async (
+    cwd: string,
+    filePath?: string,
+    signal?: AbortSignal,
+  ): Promise<LspManager> => {
+    signal?.throwIfAborted();
+    if (!filePath) return managerFor(cwd, false, signal);
+    const project = await resolveLspProject(filePath, cwd, signal);
+    signal?.throwIfAborted();
+    if (!project) throw new Error("No language server project for this source");
+    return managerFor(project.cwd, project.external, signal);
+  };
   const compiler = {
-    kind: "compiler",
+    ...createLspCompiler(managerForFile),
     name: "pi-agent-ide-lsp",
     priority: 200,
-    extensions: ["*"],
-    detect: async (context) => {
-      await managerFor(context.cwd);
-      return true;
-    },
-    async compile(input, context) {
-      const manager = await managerFor(context.cwd);
-      return createLspCompiler(manager).compile(input, context);
-    },
   } satisfies IdeTool;
   const idePlugin = {
     protocol: IDE_PROTOCOL,
@@ -89,7 +148,10 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
   pi.on("session_shutdown", async () => {
     disposed = true;
     await Promise.allSettled(
-      [...managers.values()].map(async (ready) => (await ready).shutdownAll()),
+      [...managers.values()].map(async (ready) => {
+        if (!ready.settled) ready.controller.abort(new Error("LSP session has ended"));
+        await (await ready.promise).shutdownAll();
+      }),
     );
     managers.clear();
   });
@@ -100,11 +162,11 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
     id: "lsp",
     setup(api) {
       api.addResolver({
-        resolver: createLspSymbolResolver(managerFor),
+        resolver: createLspSymbolResolver(managerForFile),
         renderResult: renderReadResult,
       });
       api.addResolver({
-        resolver: createLspGraphResolver(managerFor),
+        resolver: createLspGraphResolver(managerForFile),
         renderResult: renderReadResult,
       });
       api.addHandler({
@@ -125,6 +187,19 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
       apiVersion: TEXT_EDITOR_API_VERSION,
       id: "lsp-declarations",
       setup(api) {
+        api.onDidEdit(async (completion) => {
+          await Promise.all(
+            [...managers.values()]
+              .filter((ready) => ready.settled)
+              .map((ready) =>
+                ready.promise.then(
+                  (manager) =>
+                    manager.syncEditedSource(completion.source, completion.after.content),
+                  () => undefined,
+                ),
+              ),
+          );
+        });
         api.addAnchorResolver({
           kind: TEXT_SEARCH_ANCHOR_KIND,
           type: "auxiliary",
@@ -136,7 +211,7 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
             renderCompact: (value) => value,
             tryResolve: () => Promise.resolve({ kind: "not-handled" }),
           },
-          resources: createDeclarationTargets(managerFor),
+          resources: createDeclarationTargets(managerForFile),
           describeInPrompt: false,
         });
         for (const operation of ["copy", "move", "delete", "replace"]) {
@@ -152,7 +227,7 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
             stage: "text-pre-edit",
             async handler(state) {
               if (operation === "replace") {
-                const renamed = await prepareSymbolRename(state, managerFor);
+                const renamed = await prepareSymbolRename(state, managerForFile);
                 if (renamed !== undefined) return renamed;
               }
               const input = state.input as Record<string, unknown>;
@@ -218,18 +293,25 @@ export default async function registerLsp(pi: ExtensionAPI): Promise<void> {
       apiVersion: SEARCH_API_VERSION,
       id: "symbols",
       setup(api): void {
-        api.addResolver({ resolver: createLspSearchResolver(managerFor) });
+        api.addResolver({
+          resolver: createLspSearchResolver(managerForFile, api.registerSelection),
+        });
         api.describe(
-          "Use `symbols:<query>` to locate named workspace declarations and references through configured language servers when the file is unknown.",
+          "Use `symbols:<query>` to locate declarations and references through configured language servers. Result scopes stay inside their exact ranges unless navigation: references explicitly follows represented symbols to workspace references; matching names alone do not establish identity.",
         );
       },
     }),
   ]);
 }
 
-async function loadRegistry(cwd: string, external: boolean): Promise<LspServerRegistry> {
+async function loadRegistry(
+  cwd: string,
+  external: boolean,
+  signal?: AbortSignal,
+): Promise<LspServerRegistry> {
   const configDirectory = external ? cwd : (process.env.PI_AGENT_IDE_CONFIG_DIR ?? cwd);
   return LspServerRegistry.fromPackageDir(configDirectory, {
+    signal,
     includeGlobal: !external,
     requireBuiltInEvidence: external,
     recipes: LSP_RECIPES,

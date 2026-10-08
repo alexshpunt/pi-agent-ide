@@ -39,6 +39,8 @@ export interface BeforeEditEvent {
     readonly before: TextDocument;
     readonly after: TextDocument;
     readonly changes: readonly AppliedTextChange[];
+    /** Exact binary bytes for whole-file operations; before/after text is empty in this case. */
+    readonly binary?: { readonly before: Uint8Array; readonly after: Uint8Array };
   }[];
   readonly signal?: AbortSignal;
 }
@@ -118,6 +120,7 @@ export function connectBeforeEditHook(
               before: resource.before,
               after: resource.after,
               changes: resource.changes,
+              ...(resource.binary === undefined ? {} : { binary: resource.binary }),
             })),
             ...(context.signal !== undefined && { signal: context.signal }),
           });

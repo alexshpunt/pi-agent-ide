@@ -71,10 +71,12 @@ export function symbolKindName(kind: number): string {
 export async function requestDocumentSymbols(
   client: LspClient,
   uri: string,
+  signal?: AbortSignal,
 ): Promise<LspDocumentSymbol[]> {
   const result = await client.sendRequest<LspDocumentSymbol[] | null>(
     "textDocument/documentSymbol",
     { textDocument: { uri } },
+    signal,
   );
   return result ?? [];
 }
@@ -96,10 +98,15 @@ export async function requestWorkspaceSymbols(
   client: LspClient,
   query: string,
   limit = 100,
+  signal?: AbortSignal,
 ): Promise<LspWorkspaceSymbol[]> {
-  const result = await client.sendRequest<LspWorkspaceSymbol[] | null>("workspace/symbol", {
-    query,
-  });
+  const result = await client.sendRequest<LspWorkspaceSymbol[] | null>(
+    "workspace/symbol",
+    {
+      query,
+    },
+    signal,
+  );
   return (result ?? []).slice(0, limit);
 }
 
@@ -114,15 +121,11 @@ export async function findWorkspaceSymbol(
   const clients = await manager.prepareWorkspaceSymbols(cwd);
 
   for (const client of clients) {
-    try {
-      const symbols = await requestWorkspaceSymbols(client, query, 100);
-      const symbol = symbols.find((item) => item.name === query) ?? symbols[0];
+    const symbols = await requestWorkspaceSymbols(client, query, 100);
+    const symbol = symbols.find((item) => item.name === query) ?? symbols[0];
 
-      if (symbol) {
-        return { client, symbol };
-      }
-    } catch {
-      // Try the next configured language server.
+    if (symbol) {
+      return { client, symbol };
     }
   }
 

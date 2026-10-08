@@ -4,12 +4,17 @@ import fs from "fs-extra";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-/** Whole-file operations, distinct from text-selection copy/move/remove. */
-export const fileOperations = ["delete", "move", "copy"] as const;
-export type FileOperation = (typeof fileOperations)[number];
+import type {
+  FileOperation,
+  FileOperationInput,
+  FileOperationResult,
+  FileOperationResolver,
+} from "#src/api/file-operations.js";
+export { fileOperations } from "#src/api/file-operations.js";
+export type { FileOperation, FileOperationResult } from "#src/api/file-operations.js";
 const filePath = Type.String({
   minLength: 1,
-  description: "Local regular file path, relative to cwd or absolute.",
+  description: "Regular file path, relative to cwd or absolute, or an owned resource URI.",
 });
 export const deleteFileParameters = Type.Object(
   { path: filePath },
@@ -28,25 +33,24 @@ export const transferFileParameters = Type.Object(
   { additionalProperties: false },
 );
 
-/** Plain receipt; unknown means the filesystem call failed after execution began. */
-export interface FileOperationResult {
-  readonly kind: "file-operation";
-  readonly operation: FileOperation;
-  readonly ok: boolean;
-  readonly effect: "applied" | "not-applied" | "unknown";
-  readonly path?: string;
-  readonly target?: string;
-  readonly error?: { readonly code: string; readonly message: string };
-}
-
+const fileOperationResultSchema = Type.Object({
+  kind: Type.Literal("file-operation"),
+  operation: Type.Union([Type.Literal("copy"), Type.Literal("move"), Type.Literal("delete")]),
+  ok: Type.Boolean(),
+  effect: Type.Union([
+    Type.Literal("applied"),
+    Type.Literal("not-applied"),
+    Type.Literal("unknown"),
+  ]),
+  path: Type.Optional(Type.String({ minLength: 1 })),
+  target: Type.Optional(Type.String({ minLength: 1 })),
+  error: Type.Optional(
+    Type.Object({ code: Type.String({ minLength: 1 }), message: Type.String() }),
+  ),
+});
 /** Recognize a host-owned whole-file receipt for shared output rendering. */
 export function isFileOperationResult(value: unknown): value is FileOperationResult {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "kind" in value &&
-    value.kind === "file-operation"
-  );
+  return Value.Check(fileOperationResultSchema, value);
 }
 
 /** Compact operation summary shared by standalone and Apply output. */
@@ -66,6 +70,8 @@ export async function executeFileOperation(
   input: unknown,
   cwd: string,
   signal?: AbortSignal,
+  resolvers: readonly FileOperationResolver[] = [],
+  preflight?: (operation: FileOperation, input: FileOperationInput) => Promise<void>,
 ): Promise<FileOperationResult> {
   let started = false;
   let source: string | undefined;
@@ -76,10 +82,39 @@ export async function executeFileOperation(
       throw Object.assign(new Error("Invalid file operation arguments"), {
         code: "INVALID_ARGUMENTS",
       });
-    const args = input as { path: string; target?: string; overwrite?: boolean };
+    const args = input as FileOperationInput;
+    source = args.path;
+    target = args.target;
+    signal?.throwIfAborted();
+    await preflight?.(operation, args);
+    signal?.throwIfAborted();
+    for (const resolve of resolvers) {
+      started = true;
+      const outcome = await resolve(operation, args, { cwd, signal });
+      if (outcome !== undefined) {
+        if (
+          !isFileOperationResult(outcome) ||
+          outcome.operation !== operation ||
+          (outcome.ok &&
+            (outcome.effect !== "applied" ||
+              outcome.path === undefined ||
+              (operation !== "delete" && outcome.target === undefined)))
+        )
+          throw Object.assign(new Error("Invalid whole-file provider result"), {
+            code: "INVALID_PROVIDER_RESULT",
+            effect: "unknown",
+          });
+        return outcome;
+      }
+      started = false;
+      signal?.throwIfAborted();
+    }
+    if ([cwd, args.path, args.target].some((value) => value !== undefined && isUriSource(value)))
+      throw Object.assign(new Error("No whole-file provider owns this resource"), {
+        code: "UNSUPPORTED_SOURCE",
+      });
     source = path.resolve(cwd, args.path);
     target = args.target === undefined ? undefined : path.resolve(cwd, args.target);
-    signal?.throwIfAborted();
     const sourceStat = await regularFile(source);
     if (target !== undefined) {
       const targetStat = await optionalStat(target);
@@ -122,7 +157,7 @@ export async function executeFileOperation(
       kind: "file-operation",
       operation,
       ok: false,
-      effect: started ? "unknown" : "not-applied",
+      effect: failureEffect(error, started),
       ...(source === undefined ? {} : { path: source }),
       ...(target === undefined ? {} : { target }),
       error: {
@@ -136,6 +171,20 @@ export async function executeFileOperation(
   }
 }
 
+/** Detect explicit URI sources without mistaking Windows drive paths for schemes. */
+export function isUriSource(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value) && !/^[a-z]:[/\\]/iu.test(value);
+}
+function failureEffect(error: unknown, started: boolean): FileOperationResult["effect"] {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    (error.effect === "applied" || error.effect === "not-applied" || error.effect === "unknown")
+  )
+    return error.effect;
+  return started ? "unknown" : "not-applied";
+}
 async function regularFile(file: string) {
   const stat = await lstat(file);
   if (!stat.isFile() || stat.isSymbolicLink())

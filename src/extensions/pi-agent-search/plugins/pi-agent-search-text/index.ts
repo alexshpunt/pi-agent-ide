@@ -1,4 +1,11 @@
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
+import { connectResultTargets } from "pi-agent-resource";
+import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
+import {
+  READ_API_VERSION,
+  READ_PROTOCOL,
+  type ReadPluginApi,
+} from "pi-agent-read/api/plugin-protocol";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
@@ -18,7 +25,20 @@ import { isSearchToolDetails } from "#src/search-result.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default async function registerTextSearch(pi: ExtensionAPI): Promise<void> {
-  const sessions = new SearchSessionStore();
+  let read: ReadPluginApi | undefined;
+  const sessions = new SearchSessionStore(
+    undefined,
+    connectResultTargets(pi),
+    async (source, cwd, signal) => {
+      if (read === undefined) throw new Error("The source snapshot reader is unavailable.");
+      const result = await read.read({ path: source }, { cwd, signal }, "script");
+      if (result.isError || result.script?.kind !== "text" || result.script.source !== source)
+        throw new Error(
+          result.details.failure?.message ?? "The source cannot provide an exact text snapshot.",
+        );
+      return result.script.content;
+    },
+  );
 
   pi.on("tool_result", async (event, ctx) => {
     if (
@@ -84,6 +104,14 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
     };
   });
   await Promise.all([
+    connectReadPlugin(pi, {
+      protocol: READ_PROTOCOL,
+      apiVersion: READ_API_VERSION,
+      id: "search-snapshots",
+      setup(api): void {
+        read = api;
+      },
+    }),
     connectDoctorPlugin(pi, textSearchDoctorPlugin),
     connectSearchPlugin(pi, {
       protocol: SEARCH_PROTOCOL,
@@ -99,6 +127,7 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
             context.signal,
             { ...selection.request, regex: false },
             selection.refresh,
+            context.environment,
           ),
         );
         api.addResolver({ resolver: createRegexResolver(sessions), priority: -10 });

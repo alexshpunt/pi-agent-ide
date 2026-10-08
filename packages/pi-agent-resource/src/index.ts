@@ -8,6 +8,16 @@ export {
   type ResultError,
   type StructuredResult,
 } from "./tool-result.js";
+export { ResourceError } from "./resource-error.js";
+export {
+  connectResultTargets,
+  ResultTargetStore,
+  resultInputSchema,
+  verifyResultTargets,
+  type ResultRange,
+  type ResultSourceTarget,
+  type ResolvedResultTargets,
+} from "./result-targets.js";
 export type {
   AgentContent,
   AgentContentBlock,
@@ -65,6 +75,8 @@ export type {
   ReadWriteResource,
   Resource,
   ResourceBase,
+  ResourceByteRead,
+  ResourceByteRange,
   ResourceOperationContext,
   ResourceRead,
   ResourceWrite,

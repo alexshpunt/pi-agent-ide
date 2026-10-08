@@ -1,15 +1,17 @@
 import { withBlockedToolResult } from "pi-agent-tool-call-interception";
-import { withStructuredResult } from "pi-agent-resource";
+import { withStructuredResult, type ResultTargetStore } from "pi-agent-resource";
 import { searchDataSchema } from "#src/api/structured-result.js";
 
 import type { SearchPlugin } from "#src/api/plugin-protocol.js";
 import type {
   SearchActionRegistration,
+  SearchEnvironmentProvider,
   SearchSelectionProvider,
   SearchContext,
   SearchDescriptionSource,
   SearchPluginApi,
   SearchRequest,
+  SearchInput,
   SearchResolutionAttempt,
   SearchResolverRegistration,
   SearchToolDetails,
@@ -27,7 +29,7 @@ export interface SearchCore {
   registerPlugin(plugin: SearchPlugin): Promise<void>;
   waitForPendingPlugins(): Promise<void>;
   execute(
-    request: SearchRequest,
+    request: SearchInput,
     context: SearchContext,
     audience?: "agent" | "script",
   ): Promise<SearchToolResult>;
@@ -44,8 +46,9 @@ export interface SearchCore {
   renderer(resolverId: string): SearchResolverRegistration["resolver"]["renderResult"];
 }
 
-export function createSearchCore(): SearchCore {
+export function createSearchCore(targets?: ResultTargetStore): SearchCore {
   const resolvers: RegisteredResolver[] = [];
+  const environments: SearchEnvironmentProvider[] = [];
   let selectionProvider: SearchSelectionProvider | undefined;
   const actions = new Map<string, SearchActionRegistration>();
   const promptGuidelines = new Map<string, SearchDescriptionSource[]>();
@@ -67,11 +70,15 @@ export function createSearchCore(): SearchCore {
 
       const ready = queue.then(async () => {
         const draftResolvers: SearchResolverRegistration[] = [];
+        const draftEnvironments: SearchEnvironmentProvider[] = [];
         const draftActions: SearchActionRegistration[] = [];
         let draftSelectionProvider: SearchSelectionProvider | undefined;
         let draftDescription: SearchDescriptionSource | undefined;
         const draftPromptGuidelines: SearchDescriptionSource[] = [];
         const api: SearchPluginApi = {
+          addEnvironmentProvider(provider) {
+            draftEnvironments.push(provider);
+          },
           addSelectionProvider(provider) {
             if (draftSelectionProvider !== undefined || selectionProvider !== undefined)
               throw new Error("Search selection provider is already registered");
@@ -143,6 +150,7 @@ export function createSearchCore(): SearchCore {
           resolvers.push({ pluginId: plugin.id, registration, order: resolvers.length });
         }
         if (draftSelectionProvider !== undefined) selectionProvider = draftSelectionProvider;
+        environments.push(...draftEnvironments);
 
         for (const action of draftActions) {
           actions.set(actionKey(action.resolverId, action.capability), action);
@@ -165,11 +173,60 @@ export function createSearchCore(): SearchCore {
     async waitForPendingPlugins(): Promise<void> {
       await Promise.all(plugins.values());
     },
-    async execute(request, context, audience = "agent"): Promise<SearchToolResult> {
+    async execute(input, context, audience = "agent"): Promise<SearchToolResult> {
+      let request: SearchRequest = {
+        ...input,
+        path: typeof input.path === "string" ? input.path : undefined,
+      };
       if (request.query.trim().length === 0) {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
 
+      if (input.navigation !== undefined && !input.query.startsWith("symbols:"))
+        return failure(
+          "INVALID_REQUEST",
+          "Reference navigation is supported only for symbols: queries.",
+        );
+      try {
+        const scoped =
+          input.path !== undefined &&
+          (typeof input.path !== "string" || input.path.startsWith("RESULT#"));
+        if (scoped) {
+          if (targets === undefined) throw new Error("Result scopes are unavailable.");
+          if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
+          const scope = targets.resolve(input.path, context.cwd);
+          await targets.verify(scope, context.signal);
+          context = { ...context, scope };
+          request = { ...request, path: undefined };
+        }
+        if (context.scope !== undefined) {
+          const ownerContext = context;
+          context = {
+            ...context,
+            environmentForSource: (source) => {
+              for (const provider of environments) {
+                const owner = provider({ ...request, path: source }, ownerContext);
+                if (owner !== undefined) return owner;
+              }
+              return undefined;
+            },
+          };
+        }
+        for (const provider of context.scope === undefined ? environments : []) {
+          const environment = provider(request, context);
+          if (environment !== undefined) {
+            context = { ...context, environment };
+            break;
+          }
+        }
+      } catch (error) {
+        return failure(
+          "RESOLVE_FAILED",
+          messageFor(error, "Search scope is unavailable"),
+          undefined,
+          error,
+        );
+      }
       const snapshot = [...resolvers].sort(
         (left, right) =>
           Number(left.registration.fallback === true) -
@@ -183,6 +240,8 @@ export function createSearchCore(): SearchCore {
       for (const entry of snapshot) {
         if (emptyProtocol && !entry.registration.fallback) continue;
         const resolver = entry.registration.resolver;
+        if (context.scope !== undefined && resolver.supportsResultScope !== true) continue;
+        if (context.scope !== undefined && entry.registration.fallback && protocolLike) continue;
         let attempt: unknown;
 
         try {

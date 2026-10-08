@@ -32,6 +32,15 @@ export const shellOutputSchema = Type.Object({
     ),
   ),
   background: Type.Boolean(),
+  cwd: Type.String({
+    description: "Actual working directory; SSH sessions retain their canonical ssh:// target URI.",
+  }),
+  remote: Type.Optional(
+    Type.Object(
+      { target: Type.String(), pid: Type.Integer({ minimum: 1 }) },
+      { description: "Remote process identity, never a local native PID." },
+    ),
+  ),
   wait_reason: Type.Optional(Type.Union([Type.Literal("timeout"), Type.Literal("interactive")])),
   completion_reason: Type.Optional(Type.Literal("timeout")),
   signal: Type.Optional(Type.Number()),
@@ -85,6 +94,8 @@ export async function structuredShellResult(snapshot: TerminalSessionSnapshot) {
       source: snapshot.source,
       status: snapshot.status,
       background: snapshot.background,
+      cwd: snapshot.cwd,
+      ...(snapshot.remote === undefined ? {} : { remote: snapshot.remote }),
       ...(snapshot.waitReason === undefined ? {} : { wait_reason: snapshot.waitReason }),
       ...(snapshot.completionReason === undefined
         ? {}

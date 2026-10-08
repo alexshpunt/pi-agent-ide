@@ -121,7 +121,8 @@ export function isResource(value: unknown): value is Resource {
     const resource = value as Record<PropertyKey, unknown>;
     const isReadIsValid = !("read" in resource) || typeof resource.read === "function";
     const isWriteIsValid = !("write" in resource) || typeof resource.write === "function";
-    return isReadIsValid && isWriteIsValid;
+    const isByteReadValid = !("readBytes" in resource) || typeof resource.readBytes === "function";
+    return isReadIsValid && isWriteIsValid && isByteReadValid;
   });
 }
 

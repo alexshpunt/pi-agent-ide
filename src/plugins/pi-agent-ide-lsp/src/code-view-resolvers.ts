@@ -20,7 +20,11 @@ import type {
   ResourceResolverContext,
 } from "pi-agent-resource";
 
-export type LspManagerProvider = (cwd: string) => Promise<LspManager>;
+export type LspManagerProvider = (
+  cwd: string,
+  filePath?: string,
+  signal?: AbortSignal,
+) => Promise<LspManager>;
 
 export function createLspSymbolResolver(getManager: LspManagerProvider): ResourceResolver {
   return createCodeViewResolver("symbol", "lsp-symbol", getManager, async (request) => {
@@ -107,7 +111,7 @@ function resolveCodeViewSource(
     resource: {
       source: canonicalSource,
       async read(operationContext) {
-        const manager = await getManager(context.cwd);
+        const manager = await getManager(context.cwd, filePath, operationContext.signal);
         const content = await read({
           manager,
           filePath,

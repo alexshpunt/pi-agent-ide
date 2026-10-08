@@ -1,4 +1,7 @@
-import { isExecutableAvailable, probeExecutable } from "pi-agent-doctor/api/executable";
+import {
+  projectExecutableAvailable,
+  probeProjectExecutable,
+} from "pi-agent-doctor/api/project-probes";
 
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
@@ -15,8 +18,10 @@ export const textSearchDoctorPlugin: DoctorPlugin = {
     api.addSetupCheck({
       id: "ripgrep",
       async inspect(context) {
-        const executable = resolveRipgrepExecutable(context.env.PI_CODING_AGENT_DIR);
-        const available = await isExecutableAvailable(executable, context.cwd, context.env);
+        const executable = context.workspace
+          ? "rg"
+          : resolveRipgrepExecutable(context.env.PI_CODING_AGENT_DIR);
+        const available = await projectExecutableAvailable(context, executable);
         return available
           ? {}
           : {
@@ -35,8 +40,8 @@ export const textSearchDoctorPlugin: DoctorPlugin = {
       title: "Local search",
       async run(context) {
         const agentDirectory = context.env.PI_CODING_AGENT_DIR;
-        const executable = resolveRipgrepExecutable(agentDirectory);
-        const result = await probeExecutable(executable, ["--version"], context.cwd, context.env);
+        const executable = context.workspace ? "rg" : resolveRipgrepExecutable(agentDirectory);
+        const result = await probeProjectExecutable(context, executable, ["--version"]);
         return [
           result.ok
             ? { status: "pass", message: "ripgrep is available", detail: result.detail }

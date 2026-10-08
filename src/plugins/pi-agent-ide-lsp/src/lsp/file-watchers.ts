@@ -3,7 +3,8 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { URI } from "vscode-uri";
 
-interface WatchPattern {
+/** One language-server glob and its requested create/change/delete event mask. */
+export interface WatchPattern {
   globPattern: string | { baseUri: string | { uri: string }; pattern: string };
   kind?: number;
 }
@@ -14,6 +15,12 @@ export interface WatchedFileChange {
   type: 1 | 2 | 3;
 }
 
+/** Subscriptions supplied by the filesystem owner; release may involve a remote process. */
+export interface LspFileWatcherSubscriptions {
+  register(id: string, patterns: readonly WatchPattern[]): Promise<void>;
+  unregister(id: string): void | Promise<void>;
+  dispose(): void | Promise<void>;
+}
 /** Own the filesystem subscriptions requested by one language server. */
 export class LspFileWatchers {
   private readonly registrations = new Map<string, FSWatcher[]>();

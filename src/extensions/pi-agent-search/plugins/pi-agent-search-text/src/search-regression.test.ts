@@ -16,6 +16,16 @@ async function fixture(content: string) {
   await writeFile(path.join(cwd, "input.txt"), content);
   return cwd;
 }
+test("searches a literal dash filename rather than stdin", async () => {
+  const cwd = await fixture("ordinary\n");
+  const source = path.join(cwd, "-");
+  await writeFile(source, "dash-marker\n");
+  const result = await runSearchRecipe(
+    createSearchRecipe({ query: "dash-marker", path: source }),
+    cwd,
+  );
+  expect(result.matches).toMatchObject([{ source, matchedText: "dash-marker" }]);
+});
 test("keeps a directory-relative exclusion when the search path is absolute", async () => {
   const cwd = await fixture("alpha\n");
   await mkdir(path.join(cwd, "sessions"));

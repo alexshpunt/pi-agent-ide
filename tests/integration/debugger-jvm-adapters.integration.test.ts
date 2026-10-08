@@ -86,7 +86,7 @@ test.runIf(selected === "java")(
           ?.findings.filter(({ status }) => status !== "pass"),
       ).toEqual([]);
     } finally {
-      manager.dispose();
+      await manager.dispose();
       await rm(cwd, { recursive: true, force: true });
     }
   },

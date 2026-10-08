@@ -31,6 +31,7 @@ export function executeJq(
 ): Promise<string> {
   if (options.signal?.aborted === true)
     return Promise.reject(new Error("jq execution was cancelled"));
+  if (hasModuleOperation(filter)) return Promise.reject(new Error("jq module loading is disabled"));
   return new Promise((resolve, reject) => {
     const child = spawn(options.command ?? "jq", ["-L", JQ_MODULE_DIRECTORY, "--", filter], {
       cwd: options.cwd,
@@ -97,6 +98,72 @@ export function executeJq(
   });
 }
 
+/** Find module syntax outside strings/comments, including expressions inside string interpolation. */
+function hasModuleOperation(filter: string): boolean {
+  const contexts: ("string" | number)[] = [0];
+  let index = 0;
+  let previous = "";
+  while (index < filter.length) {
+    const character = filter[index];
+    const context = contexts.at(-1);
+    if (context === "string") {
+      if (character === "\\") {
+        if (filter[index + 1] === "(") {
+          contexts.push(0);
+          previous = "";
+        }
+        index += 2;
+      } else {
+        if (character === '"') {
+          contexts.pop();
+          previous = '"';
+        }
+        index += 1;
+      }
+      continue;
+    }
+    if (character === "#") {
+      const newline = filter.indexOf("\n", index);
+      index = newline < 0 ? filter.length : newline + 1;
+      continue;
+    }
+    if (character === '"') contexts.push("string");
+    else if (character === "(") contexts[contexts.length - 1] = (context ?? 0) + 1;
+    else if (character === ")") {
+      if (contexts.length > 1 && context === 0) contexts.pop();
+      else contexts[contexts.length - 1] = Math.max(0, (context ?? 0) - 1);
+    } else if (/[A-Za-z_]/u.test(character ?? "")) {
+      const start = index;
+      while (/[A-Za-z0-9_]/u.test(filter[index] ?? "")) index += 1;
+      const token = filter.slice(start, index);
+      const next = nextCode(filter, index);
+      const fieldOrVariable = previous === "." || previous === "$";
+      const objectKey = next.startsWith(":") && !next.startsWith("::");
+      if (
+        !fieldOrVariable &&
+        !objectKey &&
+        (token === "include" || token === "import" || token === "modulemeta")
+      )
+        return true;
+      previous = token;
+      continue;
+    }
+    if (character !== undefined && !/\s/u.test(character)) previous = character;
+    index += 1;
+  }
+  return false;
+}
+function nextCode(filter: string, start: number): string {
+  let index = start;
+  while (index < filter.length) {
+    if (/\s/u.test(filter[index] ?? "")) index += 1;
+    else if (filter[index] === "#") {
+      const newline = filter.indexOf("\n", index);
+      index = newline < 0 ? filter.length : newline + 1;
+    } else break;
+  }
+  return filter.slice(index, index + 2);
+}
 function safeEnvironment(cwd: string): NodeJS.ProcessEnv {
   const source = projectProcessEnvironment(cwd, process.env);
   const environment: NodeJS.ProcessEnv = {};

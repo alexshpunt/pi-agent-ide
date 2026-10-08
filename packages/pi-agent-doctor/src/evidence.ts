@@ -10,21 +10,42 @@ export interface RecipeEvidence {
   readonly dependency?: string;
 }
 
+/** Project-bound evidence IO. Relative filenames and markers must stay with this owner. */
+export interface RecipeEvidenceAccess {
+  readonly readText: (file: string, signal?: AbortSignal) => Promise<string | undefined>;
+  readonly hasMarker: (marker: string, signal?: AbortSignal) => Promise<boolean>;
+}
 /** Reads native config and declared dependencies without executing project code. */
 export async function inspectRecipeEvidence(
   cwd: string,
   recipes: readonly ToolRecipe[],
+  owner?: RecipeEvidenceAccess,
+  signal?: AbortSignal,
 ): Promise<ReadonlyMap<string, RecipeEvidence>> {
+  signal?.throwIfAborted();
+  if (cwd.includes("://") && !owner)
+    throw Object.assign(new Error("Project evidence requires its resource owner"), {
+      code: "UNSUPPORTED_SOURCE",
+    });
   const cache = new Map<string, Promise<string | undefined>>();
   const content = (file: string): Promise<string | undefined> => {
     let pending = cache.get(file);
     if (pending === undefined) {
-      pending = readFile(path.join(cwd, file), "utf8").catch(() => undefined);
+      pending = owner
+        ? owner.readText(file, signal)
+        : readFile(path.join(cwd, file), { encoding: "utf8", signal });
+      pending = pending.catch((error: unknown) => {
+        signal?.throwIfAborted();
+        if (owner) throw error;
+        return undefined;
+      });
       cache.set(file, pending);
     }
     return pending;
   };
-  const manifest = parseJson(await content("package.json"));
+  const rawManifest = await content("package.json");
+  signal?.throwIfAborted();
+  const manifest = parseJson(rawManifest);
   const dependencies = new Set<string>();
   for (const key of [
     "dependencies",
@@ -41,14 +62,24 @@ export async function inspectRecipeEvidence(
     recipes.map(async (recipe) => {
       let config: string | undefined;
       for (const file of recipe.configFiles ?? []) {
-        if (await hasProjectMarker(cwd, file)) {
+        signal?.throwIfAborted();
+        const found = await (
+          owner ? owner.hasMarker(file, signal) : hasProjectMarker(cwd, file, signal)
+        ).catch((error: unknown) => {
+          signal?.throwIfAborted();
+          throw error;
+        });
+        signal?.throwIfAborted();
+        if (found) {
           config = file;
           break;
         }
       }
       if (config === undefined) {
         for (const [file, sections] of Object.entries(recipe.configSections ?? {})) {
+          signal?.throwIfAborted();
           const raw = await content(file);
+          signal?.throwIfAborted();
           if (raw === undefined) continue;
           const json = file.endsWith(".json") ? parseJson(raw) : undefined;
           if (
@@ -77,23 +108,37 @@ export async function inspectRecipeEvidence(
       ] as const;
     }),
   );
+  signal?.throwIfAborted();
   return new Map(entries);
 }
 
 /** Matches a root-relative native filename or glob, including named project files. */
-export async function hasProjectMarker(cwd: string, marker: string): Promise<boolean> {
+export async function hasProjectMarker(
+  cwd: string,
+  marker: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  signal?.throwIfAborted();
+  if (cwd.includes("://"))
+    throw Object.assign(new Error("Project marker requires its resource owner"), {
+      code: "UNSUPPORTED_SOURCE",
+    });
   if (!marker.includes("*")) {
     try {
       await access(path.join(cwd, marker));
+      signal?.throwIfAborted();
       return true;
     } catch {
+      signal?.throwIfAborted();
       return false;
     }
   }
   try {
     const names = await readdir(cwd);
+    signal?.throwIfAborted();
     return names.some((name) => path.matchesGlob(name, marker));
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 }

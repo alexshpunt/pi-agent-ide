@@ -66,6 +66,15 @@ export function resolveCodeViewPath(filePath: string, cwd: string): string {
     return fileURLToPath(new URL(filePath));
   }
 
+  if (filePath.startsWith("ssh://")) return filePath;
+  if (filePath.includes("://")) throw new TypeError("Unsupported code-view resource owner.");
+  if (cwd.startsWith("ssh://")) {
+    const base = new URL(cwd);
+    const remotePath = path.posix.resolve(decodeURIComponent(base.pathname), filePath);
+    base.pathname = remotePath.split("/").map(encodeURIComponent).join("/");
+    return base.href;
+  }
+  if (cwd.includes("://")) throw new TypeError("Unsupported code-view resource owner.");
   return path.isAbsolute(filePath) ? path.normalize(filePath) : path.resolve(cwd, filePath);
 }
 

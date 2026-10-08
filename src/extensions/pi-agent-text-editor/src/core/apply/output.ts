@@ -44,6 +44,7 @@ export async function renderApplyOutput(
     if (
       operation.kind === "read" ||
       hasOperationWarnings(operation.value) ||
+      hasWholeFileOperations(operation.value) ||
       isFailure(operation.value) ||
       (operation.value !== null &&
         typeof operation.value === "object" &&
@@ -142,6 +143,21 @@ function expandReadSection(section: {
   return resources?.length
     ? resources.flatMap((read) => expandReadSection({ content: read.content, read }))
     : [section];
+}
+function hasWholeFileOperations(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "operations" in value &&
+    Array.isArray(value.operations) &&
+    value.operations.some(
+      (operation: unknown) =>
+        operation !== null &&
+        typeof operation === "object" &&
+        "kind" in operation &&
+        ["copy", "move", "delete"].includes(String(operation.kind)),
+    )
+  );
 }
 function hasOperationWarnings(value: unknown): boolean {
   return (
@@ -264,7 +280,9 @@ function formatOperationOutcome(value: unknown): string {
       : "error" in value
         ? ` — ${formatReceiptError(value.error)}`
         : "";
-  return `${index}. ${kind}: ${status}${detail}`;
+  const resources =
+    "resources" in value && Array.isArray(value.resources) ? value.resources.join(" → ") : "";
+  return `${index}. ${kind}: ${status}${detail}${resources ? `\n${resources}` : ""}`;
 }
 
 function formatReceiptError(value: unknown): string {

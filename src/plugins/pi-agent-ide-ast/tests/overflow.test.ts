@@ -12,7 +12,7 @@ function context(content = source, file = "sample.ts", displayed = content): Rea
     resolverContext: { cwd: process.cwd() },
     state: {
       source: file,
-      resolvedBy: "filesystem",
+      resolvedBy: file.startsWith("ssh://") ? "ssh" : "filesystem",
       preserveTruncatedOutput: true,
       textMode: "normal",
       contentKind: "text",
@@ -27,18 +27,21 @@ test("script data is never replaced with an overflow outline", async () => {
   const input: ReadPipelineContext = { ...context(), audience: "script" };
   expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
 });
-test("overflow returns the whole compact tree from the read snapshot", async () => {
-  const result = await createAstOverflowHandler()(context());
-  expect(result.kind).toBe("return");
-  if (result.kind !== "return") throw new Error("Missing overview");
-  expect(result.result.details.resolvedBy).toBe("ast-overflow");
-  const block = result.result.content[0];
-  if (block?.type !== "text") throw new Error("Missing text");
-  expect(truncateHead(block.text).truncated).toBe(false);
-  expect(block.text).toContain('1 | test("checkout", () => {');
-  expect(block.text).toContain("2102 | });");
-  expect(block.text).not.toContain("check(value)");
-});
+test.each(["sample.ts", "ssh://fixture/work/sample.ts"])(
+  "overflow returns the compact tree from the %s snapshot",
+  async (file) => {
+    const result = await createAstOverflowHandler()(context(source, file));
+    expect(result.kind).toBe("return");
+    if (result.kind !== "return") throw new Error("Missing overview");
+    expect(result.result.details.resolvedBy).toBe("ast-overflow");
+    const block = result.result.content[0];
+    if (block?.type !== "text") throw new Error("Missing text");
+    expect(truncateHead(block.text).truncated).toBe(false);
+    expect(block.text).toContain('1 | test("checkout", () => {');
+    expect(block.text).toContain("2102 | });");
+    expect(block.text).not.toContain("check(value)");
+  },
+);
 
 test("Unicode before a collapsed body keeps source coordinates", async () => {
   const input = context(source.replace("checkout", "付款 🛒"));

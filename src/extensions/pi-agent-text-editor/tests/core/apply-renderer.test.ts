@@ -120,6 +120,41 @@ test("Apply shows changed files when a large mutation panel has no compact rows"
   expect(rows.join("\n")).not.toContain("No output");
 });
 
+test("mixed Apply shows successful whole-file outcomes beside text changes", () => {
+  const results = new ApplyResults();
+  results.updateFile("note.txt", "before", "after");
+  results.record("commit", "mutation", {
+    operation: "apply",
+    ok: true,
+    effect: "applied",
+    errors: [],
+    files: [],
+    operations: [
+      { index: 0, kind: "replace", status: "applied", effect: "applied", resources: ["note.txt"] },
+      {
+        index: 1,
+        kind: "copy",
+        status: "applied",
+        effect: "applied",
+        resources: ["/tmp/source.bin", "ssh://sandbox/tmp/destination.bin"],
+      },
+    ],
+  });
+  const display = createApplyDisplay(results, { content: [], level: "full" });
+  const context = { state: {}, isError: false } as Parameters<typeof renderApplyResult>[3];
+  const rows = renderApplyResult(
+    { content: [], details: { display } },
+    { expanded: false, isPartial: false },
+    theme,
+    context,
+  ).render(100);
+  const visible = rows.join("\n");
+  expect(visible).toContain("copy");
+  expect(visible).toContain("applied");
+  expect(visible).toContain("/tmp/source.bin");
+  expect(visible).toContain("ssh://sandbox/tmp/destination.bin");
+  expect(display.blocks.some(({ text }) => text.includes("(replace)"))).toBe(false);
+});
 test("Apply keeps transaction receipts agent-only", () => {
   const results = new ApplyResults();
   results.addValue({ verified: true, transaction: "APPLY#123456789ABC" });

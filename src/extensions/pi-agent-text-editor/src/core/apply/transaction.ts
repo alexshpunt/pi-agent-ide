@@ -1,10 +1,13 @@
-import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import fs from "fs-extra";
 import { requiredValue } from "pi-agent-invariant";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { applyTextChanges, type TextChange } from "#src/core/text-change-engine.js";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
+import { isUriSource } from "#src/core/file-operations.js";
+import type { ApplyFileAccess } from "#src/api/apply-files.js";
+import { createLocalFileJournal } from "#src/core/apply/local-journal.js";
 
 import { forgetDeferredPostEdit } from "#src/core/post-edit-scope.js";
 import type {
@@ -62,11 +65,7 @@ export interface EditorTransactionRequest {
   readonly operations: readonly Operation[];
 }
 /** Captured path state used to restore one failed operation. */
-export interface SavedPath {
-  readonly path: string;
-  readonly existed: boolean;
-  readonly bytes?: Uint8Array;
-}
+export type SavedPath = Awaited<ReturnType<ApplyFileAccess["capture"]>>;
 export interface ApplyOperationOutcome {
   readonly index: number;
   readonly kind: Operation["kind"];
@@ -84,10 +83,14 @@ export interface ApplyOperationOutcome {
 export type TransactionEditor = Pick<
   TextEditorCore,
   "editTexts" | "postProcessFile" | "recordApplyUndo"
->;
+> &
+  Partial<Pick<TextEditorCore, "getApplyFileAccess" | "prepareFilePostProcessing">>;
 
+export type TransactionFileAccess = ApplyFileAccess;
 /** Optional transaction execution dependencies for deterministic failure handling. */
 export interface TransactionExecutionOptions {
+  /** File owner access. Without it, URI operations fail closed. */
+  readonly access?: TransactionFileAccess;
   /** Restore one captured path after an operation fails. */
   readonly restorePath?: (state: SavedPath) => Promise<void>;
 }
@@ -108,14 +111,49 @@ export async function executeEditorTransaction(
   const accepted = new Map<string, TextChange[]>();
   const unknown = new Set<string>();
   const journal = new Map<string, SavedPath>();
+  const discarded: SavedPath[] = [];
   const files: ScriptMutationFile[] = [];
   const operations: ApplyOperationOutcome[] = [];
   const cwd = context.cwd;
+  const access =
+    options.access ?? editor.getApplyFileAccess?.({ ...context, signal }) ?? localFileAccess;
+  const executionOptions = { ...options, access };
   const batchedReplacements = new Set<number>();
 
   for (const [index, operation] of request.operations.entries()) {
-    const resources = operationResources(operation, snapshots, cwd);
+    const resources = operationResources(operation, snapshots, cwd, access.resolve);
     if (batchedReplacements.has(index)) continue;
+    if (
+      access === localFileAccess &&
+      operation.kind !== "warning" &&
+      (isUriSource(cwd) || resources.some(isUriSource))
+    ) {
+      operations.push(
+        failed(
+          index,
+          operation,
+          resources,
+          Object.assign(new Error("Apply resource journaling is not available for this source"), {
+            code: "UNSUPPORTED_SOURCE",
+          }),
+        ),
+      );
+      continue;
+    }
+    if (resources.some((resource) => unknown.has(resource))) {
+      operations.push({
+        index,
+        kind: operation.kind,
+        status: "blocked",
+        effect: "unknown",
+        resources,
+        error: {
+          code: "DEPENDENCY_UNKNOWN",
+          message: "A prior operation left a required resource in an unknown state.",
+        },
+      });
+      continue;
+    }
     if (operation.kind === "replace") {
       const replacements: Array<{ index: number; operation: TextOperation }> = [];
       for (
@@ -140,12 +178,18 @@ export async function executeEditorTransaction(
           editor,
           cwd,
           signal,
-          options,
+          executionOptions,
+          discarded,
         );
-        for (const state of outcome.saved)
+        for (const state of outcome.saved) {
           if (!journal.has(state.path)) journal.set(state.path, state);
+          else discarded.push(state);
+        }
         files.push(...outcome.files);
         operations.push(...outcome.operations);
+        for (const result of outcome.operations)
+          if (result.effect === "unknown")
+            for (const resource of result.resources) unknown.add(resource);
         continue;
       }
     }
@@ -157,20 +201,6 @@ export async function executeEditorTransaction(
         effect: "not-applied",
         resources,
         warning: warningDetails(operation),
-      });
-      continue;
-    }
-    if (resources.some((resource) => unknown.has(resource))) {
-      operations.push({
-        index,
-        kind: operation.kind,
-        status: "blocked",
-        effect: "unknown",
-        resources,
-        error: {
-          code: "DEPENDENCY_UNKNOWN",
-          message: "A prior operation left a required resource in an unknown state.",
-        },
       });
       continue;
     }
@@ -192,10 +222,21 @@ export async function executeEditorTransaction(
 
     let saved: readonly SavedPath[] = [];
     try {
-      await validateOperation(operation, snapshots, accepted, cwd);
-      saved = await Promise.all(resources.map(savePath));
-      const produced = await executeOperation(operation, snapshots, accepted, editor, cwd, signal);
-      for (const state of saved) if (!journal.has(state.path)) journal.set(state.path, state);
+      await validateOperation(operation, snapshots, accepted, cwd, access);
+      saved = await capturePaths(resources, access, signal);
+      const produced = await executeOperation(
+        operation,
+        snapshots,
+        accepted,
+        editor,
+        cwd,
+        signal,
+        access,
+      );
+      for (const state of saved) {
+        if (!journal.has(state.path)) journal.set(state.path, state);
+        else discarded.push(state);
+      }
       files.push(...produced);
       operations.push({
         index,
@@ -205,7 +246,9 @@ export async function executeEditorTransaction(
         resources,
       });
     } catch (error) {
-      const rollbackErrors = await rollback(saved, options.restorePath);
+      const rollbackErrors = rejectedBeforeEffects(error)
+        ? []
+        : await rollback(saved, options.restorePath ?? access.restore);
       if (rollbackErrors.length > 0) {
         for (const resource of resources) unknown.add(resource);
         operations.push({
@@ -216,15 +259,24 @@ export async function executeEditorTransaction(
           resources,
           error: codedError(error, rollbackErrors),
         });
-      } else operations.push(failed(index, operation, resources, error));
+      } else {
+        discarded.push(...saved);
+        operations.push(failed(index, operation, resources, error));
+      }
     }
   }
 
+  const cleanupErrors = await releaseBackups(discarded);
   const successful = operations.some(({ effect }) => effect === "applied");
-  const transaction = successful ? await editor.recordApplyUndo([...journal.values()]) : undefined;
+  const transaction = successful
+    ? await editor.recordApplyUndo([...journal.values()], access)
+    : undefined;
   return {
     operation: "apply",
-    ok: operations.length > 0 && operations.every(({ status }) => status === "applied"),
+    ok:
+      cleanupErrors.length === 0 &&
+      operations.length > 0 &&
+      operations.every(({ status }) => status === "applied"),
     effect: unknown.size > 0 ? "unknown" : successful ? "applied" : "not-applied",
     ...(transaction === undefined ? {} : { transaction }),
     files,
@@ -235,15 +287,54 @@ export async function executeEditorTransaction(
           .flatMap(({ resources }) => resources),
       ),
     ],
-    errors: operations.flatMap((item) =>
-      item.status === "warning" || item.error === undefined
-        ? []
-        : [{ source: item.resources.join(", "), ...item.error }],
-    ),
+    errors: [
+      ...cleanupErrors,
+      ...operations.flatMap((item) =>
+        item.status === "warning" || item.error === undefined
+          ? []
+          : [{ source: item.resources.join(", "), ...item.error }],
+      ),
+    ],
     operations,
   };
 }
 
+async function releaseBackups(states: readonly SavedPath[]) {
+  const results = await Promise.allSettled(states.map((state) => state.backup?.release()));
+  return results.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [
+          {
+            source: requiredValue(states[index]).path,
+            code: "JOURNAL_CLEANUP_FAILED",
+            message:
+              result.reason instanceof Error ? result.reason.message : "Journal cleanup failed.",
+          },
+        ]
+      : [],
+  );
+}
+
+async function capturePaths(
+  sources: readonly string[],
+  access: TransactionFileAccess,
+  signal?: AbortSignal,
+): Promise<readonly SavedPath[]> {
+  const saved: SavedPath[] = [];
+  try {
+    for (const source of sources) {
+      signal?.throwIfAborted();
+      saved.push(await access.capture(source, signal));
+    }
+    return saved;
+  } catch (error) {
+    const cleanupErrors = await releaseBackups(saved);
+    throw Object.assign(error instanceof Error ? error : new Error("Snapshot capture failed."), {
+      effect: "not-applied",
+      cleanupErrors,
+    });
+  }
+}
 async function executeReplacementBatch(
   replacements: readonly { readonly index: number; readonly operation: TextOperation }[],
   snapshots: ReadonlyMap<string, EditorSnapshot>,
@@ -252,14 +343,16 @@ async function executeReplacementBatch(
   cwd: string,
   signal: AbortSignal,
   options: TransactionExecutionOptions,
+  discarded: SavedPath[],
 ): Promise<{
   readonly saved: readonly SavedPath[];
   readonly files: readonly ScriptMutationFile[];
   readonly operations: readonly ApplyOperationOutcome[];
 }> {
   const first = requiredValue(replacements[0]);
+  const access = options.access ?? localFileAccess;
   const snapshot = snapshots.get(first.operation.selection.document);
-  const resources = operationResources(first.operation, snapshots, cwd);
+  const resources = operationResources(first.operation, snapshots, cwd, access.resolve);
   if (snapshot === undefined)
     return {
       saved: [],
@@ -304,7 +397,7 @@ async function executeReplacementBatch(
   const before = applyTextChanges(snapshot.content, prior).content;
   let current: string;
   try {
-    current = await readFile(snapshot.source, "utf8");
+    current = await access.readText(snapshot.source);
     if (current !== before) throw stale(snapshot.source);
   } catch (error) {
     for (const { index, operation } of replacements)
@@ -317,10 +410,11 @@ async function executeReplacementBatch(
     };
   }
 
-  const saved = [await savePath(snapshot.source)];
+  let saved: readonly SavedPath[] = [];
   const combined = [...prior, ...additions];
   const applied = applyTextChanges(snapshot.content, combined);
   try {
+    saved = await capturePaths([snapshot.source], access, signal);
     await editOne(editor, snapshot.source, before, applied.content, cwd, signal, false);
     accepted.set(snapshot.source, combined);
     for (const { index, operation } of replacements)
@@ -355,7 +449,9 @@ async function executeReplacementBatch(
       operations: replacements.map(({ index }) => requiredValue(operationResults.get(index))),
     };
   } catch (error) {
-    const rollbackErrors = await rollback(saved, options.restorePath);
+    const rollbackErrors = rejectedBeforeEffects(error)
+      ? []
+      : await rollback(saved, options.restorePath ?? access.restore);
     for (const { index, operation } of replacements)
       if (!operationResults.has(index))
         operationResults.set(
@@ -371,6 +467,7 @@ async function executeReplacementBatch(
                 error: codedError(error, rollbackErrors),
               },
         );
+    if (rollbackErrors.length === 0) discarded.push(...saved);
     return {
       saved: rollbackErrors.length === 0 ? [] : saved,
       files: [],
@@ -384,6 +481,7 @@ async function validateOperation(
   snapshots: ReadonlyMap<string, EditorSnapshot>,
   accepted: ReadonlyMap<string, readonly TextChange[]>,
   cwd: string,
+  access: TransactionFileAccess,
 ): Promise<void> {
   if (operation.kind === "warning") return;
   if (operation.kind === "text-copy" || operation.kind === "text-move") {
@@ -417,7 +515,7 @@ async function validateOperation(
       ).content;
       let current;
       try {
-        current = await readFile(snapshot.source, "utf8");
+        current = await access.readText(snapshot.source);
       } catch {
         throw stale(snapshot.source);
       }
@@ -434,32 +532,15 @@ async function validateOperation(
     ).content;
     let current: string;
     try {
-      current = await readFile(snapshot.source, "utf8");
+      current = await access.readText(snapshot.source);
     } catch {
       throw stale(snapshot.source);
     }
     if (current !== expected) throw stale(snapshot.source);
     return;
   }
-  const source = path.resolve(cwd, operation.path);
-  const sourceStat = await optionalStat(source);
-  if (operation.kind === "create") {
-    if (sourceStat !== undefined) throw invalid(`Create target exists: ${operation.path}`);
-    return;
-  }
-  if (sourceStat === undefined) throw invalid(`Source does not exist: ${operation.path}`);
-  if (!sourceStat.isFile() || sourceStat.isSymbolicLink())
-    throw invalid(`${source} is not a regular file`);
-  if (operation.kind === "delete") return;
-  const target = path.resolve(cwd, operation.target ?? "");
-  if (source === target) throw invalid("Source and target are the same file");
-  const targetStat = await optionalStat(target);
-  if (targetStat !== undefined && (!targetStat.isFile() || targetStat.isSymbolicLink()))
-    throw invalid(`${target} is not a regular file`);
-  if (targetStat !== undefined && operation.overwrite !== true)
-    throw invalid(`Target exists: ${operation.target}`);
+  await access.validateFile(operation, cwd);
 }
-
 async function executeOperation(
   operation: Operation,
   snapshots: ReadonlyMap<string, EditorSnapshot>,
@@ -467,6 +548,7 @@ async function executeOperation(
   editor: TransactionEditor,
   cwd: string,
   signal: AbortSignal,
+  access: TransactionFileAccess,
 ): Promise<ScriptMutationFile[]> {
   if (operation.kind === "warning") return [];
   if (operation.kind === "text-copy" || operation.kind === "text-move")
@@ -507,7 +589,7 @@ async function executeOperation(
     ];
   }
   if (operation.kind === "create") {
-    const source = path.resolve(cwd, operation.path);
+    const source = access.resolve(cwd, operation.path);
     await editOne(editor, source, "", operation.content, cwd, signal, true);
     return [
       {
@@ -520,14 +602,21 @@ async function executeOperation(
       },
     ];
   }
-  await performFileOperation(operation, cwd);
+  const finalize =
+    operation.target !== undefined
+      ? await editor.prepareFilePostProcessing?.(access.resolve(cwd, operation.target), {
+          cwd,
+          signal,
+        })
+      : undefined;
+  await access.performFile(operation, cwd);
   if (operation.kind === "delete" || operation.kind === "move") {
-    forgetDeferredPostEdit(path.resolve(cwd, operation.path));
+    forgetDeferredPostEdit(access.resolve(cwd, operation.path));
   }
   if (operation.target !== undefined) {
-    const target = path.resolve(cwd, operation.target);
-    if ((await optionalStat(target)) !== undefined)
-      await editor.postProcessFile(target, { cwd, signal });
+    const target = access.resolve(cwd, operation.target);
+    if (finalize !== undefined) await finalize();
+    else await editor.postProcessFile(target, { cwd, signal });
   }
   return [];
 }
@@ -681,32 +770,34 @@ function validateSelection(
 function overlaps(change: TextChange, selection: Selection): boolean {
   return selection.from < change.to && change.from < selection.to;
 }
+function transactionSource(cwd: string, source: string): string {
+  return isUriSource(source) || isUriSource(cwd) ? source : path.resolve(cwd, source);
+}
 function operationResources(
   operation: Operation,
   snapshots: ReadonlyMap<string, EditorSnapshot>,
   cwd: string,
+  resolve: (cwd: string, source: string) => string,
 ): string[] {
   if (operation.kind === "text-copy" || operation.kind === "text-move")
     return [
       ...new Set(
         [...operation.sources, ...operation.destinations].flatMap((selection) => {
           const snapshot = snapshots.get(selection.document);
-          return snapshot === undefined ? [] : [path.resolve(cwd, snapshot.source)];
+          return snapshot === undefined ? [] : [resolve(cwd, snapshot.source)];
         }),
       ),
     ];
-  if (operation.kind === "warning") {
-    const snapshot = snapshots.get(operation.document);
-    return snapshot === undefined ? [] : [path.resolve(cwd, snapshot.source)];
-  }
-  if (operation.kind === "replace") {
-    const snapshot = snapshots.get(operation.selection.document);
-    return snapshot === undefined ? [] : [path.resolve(cwd, snapshot.source)];
+  if (operation.kind === "warning" || operation.kind === "replace") {
+    const snapshot = snapshots.get(
+      operation.kind === "warning" ? operation.document : operation.selection.document,
+    );
+    return snapshot === undefined ? [] : [resolve(cwd, snapshot.source)];
   }
   return [
-    path.resolve(cwd, operation.path),
+    resolve(cwd, operation.path),
     ...("target" in operation && operation.target !== undefined
-      ? [path.resolve(cwd, operation.target)]
+      ? [resolve(cwd, operation.target)]
       : []),
   ];
 }
@@ -748,6 +839,14 @@ function failed(
     resources,
     error: codedError(error),
   };
+}
+function rejectedBeforeEffects(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    error.effect === "not-applied"
+  );
 }
 function codedError(
   error: unknown,
@@ -859,10 +958,75 @@ function integer(value: unknown, label: string): number {
   if (!Number.isInteger(value)) throw invalid(`${label} must be an integer`);
   return value as number;
 }
-async function performFileOperation(operation: FileOperation, cwd: string): Promise<void> {
+
+function assertLocal(...sources: readonly string[]): void {
+  if (sources.some(isUriSource))
+    throw Object.assign(new Error("No Apply file owner for this resource"), {
+      code: "UNSUPPORTED_SOURCE",
+      effect: "not-applied",
+    });
+}
+
+/** Create session-owned local access; URI sources never reach local fs. */
+export function createLocalFileAccess(): TransactionFileAccess {
+  const journal = createLocalFileJournal();
+  return {
+    resolve: transactionSource,
+    ownerKey(source) {
+      assertLocal(source);
+      return "local-filesystem";
+    },
+    capture: journal.capture,
+    readText: (source) => {
+      assertLocal(source);
+      return readFile(source, "utf8");
+    },
+    restore: journal.restore,
+    validateFile: validateLocalFile,
+    performFile: (operation, cwd) => performFileOperation(operation, cwd, journal.observe),
+  };
+}
+
+/** Standalone transaction access; editor sessions create their own owner. */
+export const localFileAccess = createLocalFileAccess();
+
+async function validateLocalFile(
+  operation: CreateOperation | FileOperation,
+  cwd: string,
+): Promise<void> {
+  assertLocal(
+    cwd,
+    operation.path,
+    ...("target" in operation && operation.target !== undefined ? [operation.target] : []),
+  );
+  const source = path.resolve(cwd, operation.path);
+  const sourceStat = await optionalStat(source);
+  if (operation.kind === "create") {
+    if (sourceStat !== undefined) throw invalid(`Create target exists: ${operation.path}`);
+    return;
+  }
+  if (sourceStat === undefined) throw invalid(`Source does not exist: ${operation.path}`);
+  if (!sourceStat.isFile() || sourceStat.isSymbolicLink())
+    throw invalid(`${source} is not a regular file`);
+  if (operation.kind === "delete") return;
+  const target = path.resolve(cwd, operation.target ?? "");
+  if (source === target) throw invalid("Source and target are the same file");
+  const targetStat = await optionalStat(target);
+  if (targetStat !== undefined && (!targetStat.isFile() || targetStat.isSymbolicLink()))
+    throw invalid(`${target} is not a regular file`);
+  if (targetStat !== undefined && operation.overwrite !== true)
+    throw invalid(`Target exists: ${operation.target}`);
+}
+async function performFileOperation(
+  operation: FileOperation,
+  cwd: string,
+  observe: (source: string) => Promise<void>,
+): Promise<void> {
+  assertLocal(cwd, operation.path, ...(operation.target === undefined ? [] : [operation.target]));
   const source = path.resolve(cwd, operation.path);
   if (operation.kind === "delete") {
     await rm(source);
+    await observe(source);
     return;
   }
   const target = path.resolve(cwd, operation.target ?? "");
@@ -870,18 +1034,12 @@ async function performFileOperation(operation: FileOperation, cwd: string): Prom
   if (operation.kind === "copy")
     await fs.copy(source, target, { overwrite: operation.overwrite === true, errorOnExist: true });
   else await fs.move(source, target, { overwrite: operation.overwrite === true });
-}
-async function savePath(file: string): Promise<SavedPath> {
-  try {
-    return { path: file, existed: true, bytes: await readFile(file) };
-  } catch (error) {
-    if (isCode(error, "ENOENT")) return { path: file, existed: false };
-    throw error;
-  }
+  await observe(source);
+  await observe(target);
 }
 async function rollback(
   saved: readonly SavedPath[],
-  restorePath: (state: SavedPath) => Promise<void> = restoreSavedPath,
+  restorePath: (state: SavedPath) => Promise<void>,
 ): Promise<readonly string[]> {
   const errors: string[] = [];
   for (const item of [...saved].reverse())
@@ -892,12 +1050,6 @@ async function rollback(
       errors.push(`${item.path}: ${error instanceof Error ? error.message : String(error)}`);
     }
   return errors;
-}
-async function restoreSavedPath(item: SavedPath): Promise<void> {
-  if (item.existed) {
-    await mkdir(path.dirname(item.path), { recursive: true });
-    await writeFile(item.path, item.bytes ?? new Uint8Array());
-  } else await rm(item.path, { force: true });
 }
 async function optionalStat(file: string) {
   try {

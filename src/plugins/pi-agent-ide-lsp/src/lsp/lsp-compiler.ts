@@ -2,18 +2,20 @@ import { requestDiagnostics } from "./diagnostics.js";
 
 import type { LspClient } from "./client.js";
 import type { LspManager } from "./manager.js";
-import type { Compiler, CompileResult, Diagnostic, ToolContext } from "pi-agent-ide/api/toolchain";
+import type { Compiler, Diagnostic, ToolContext } from "pi-agent-ide/api/toolchain";
 
 /**
- * Universal LSP-based Compiler for Gate.
- *
- * Priority 50 — lower than language-specific fast-path tools (tsc at 100),
- * higher than skip (0). Handles any language with a configured LSP server
- * that provides diagnostics capability.
- *
- * LSP errors include type errors and never act as a syntax-only formatting gate.
+ * Compile with the language server selected for the actual source owner.
+ * Missing diagnostics support is a refusal, not a clean result.
+ * LSP type errors never act as a syntax-only formatting gate.
  */
-export function createLspCompiler(manager: LspManager): Compiler {
+export function createLspCompiler(
+  managerForFile: (
+    cwd: string,
+    filePath: string,
+    signal?: AbortSignal,
+  ) => Promise<Pick<LspManager, "openFile">>,
+): Compiler {
   let _client: LspClient | null = null;
 
   return {
@@ -23,10 +25,13 @@ export function createLspCompiler(manager: LspManager): Compiler {
     extensions: ["*"],
     detect: () => Promise.resolve(true),
     async compile({ filePath }, context) {
+      context.signal?.throwIfAborted();
+      const manager = await managerForFile(context.cwd, filePath, context.signal);
+      context.signal?.throwIfAborted();
       const result = await openAndDiagnose(filePath, context, manager);
 
       if (!result) {
-        return skipOk();
+        throw new Error("No diagnostic language server for this source");
       }
 
       const { client, diagnostics, syntaxErrors, otherDiagnostics } = result;
@@ -55,23 +60,25 @@ export function createLspCompiler(manager: LspManager): Compiler {
 async function openAndDiagnose(
   filePath: string,
   context: ToolContext,
-  manager: LspManager,
+  manager: Pick<LspManager, "openFile">,
 ): Promise<{
   client: LspClient;
   diagnostics: Diagnostic[];
   syntaxErrors: Diagnostic[];
   otherDiagnostics: Diagnostic[];
 } | null> {
-  const opened = await manager.openFile(filePath, context.cwd);
+  const opened = await manager.openFile(filePath, context.cwd, "diagnostics", context.signal);
+  context.signal?.throwIfAborted();
 
   if (!opened) {
     return null;
   }
 
-  const diag = await requestDiagnostics(opened.client, opened.uri, opened.languageId);
+  const diag = await requestDiagnostics(opened.client, opened.uri, opened.languageId, {
+    signal: context.signal,
+  });
+  context.signal?.throwIfAborted();
+  if (!diag.complete)
+    throw new Error("Language server diagnostics are a snapshot, not a completed report");
   return { client: opened.client, ...diag };
-}
-
-function skipOk(): CompileResult {
-  return { ok: true, diagnostics: [], syntaxErrors: [], otherDiagnostics: [] };
 }

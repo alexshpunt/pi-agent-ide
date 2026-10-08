@@ -51,7 +51,7 @@ function filesystemEditor(): TransactionEditor & Pick<TextEditorCore, "restoreAp
       }
     },
     async postProcessFile() {},
-    recordApplyUndo: (before) => undo.record(before),
+    recordApplyUndo: (before, access) => undo.record(before, access),
     restoreApplyUndo: (transaction) => undo.restore(transaction),
   };
 }
@@ -77,6 +77,144 @@ function replace(document: string, from: number, to: number, text: string, inser
   return { kind: "replace", selection: { document, from, to, text }, text: insert };
 }
 
+test("Apply releases redundant and refused operation backups", async () => {
+  const source = "ssh://sandbox/tmp/source.bin";
+  const target = "ssh://sandbox/tmp/copy.bin";
+  let released = 0;
+  const access = {
+    resolve: (_cwd: string, file: string) => file,
+    async capture(file: string) {
+      return {
+        path: file,
+        existed: true,
+        backup: {
+          sha256: "a".repeat(64),
+          async release() {
+            released += 1;
+          },
+        },
+      };
+    },
+    async readText() {
+      return "";
+    },
+    async restore() {},
+    async validateFile() {},
+    async performFile(operation: { kind: string }) {
+      if (operation.kind === "move")
+        throw Object.assign(new Error("Publication refused"), { effect: "not-applied" });
+    },
+  };
+  const editor = {
+    ...filesystemEditor(),
+    async recordApplyUndo() {
+      return "APPLY#000000000001";
+    },
+  };
+  const outcome = await executeEditorTransaction(
+    editor,
+    {
+      snapshots: [],
+      operations: [
+        { kind: "copy", path: source, target },
+        { kind: "delete", path: source },
+        { kind: "move", path: source, target },
+      ],
+    },
+    new AbortController().signal,
+    { cwd: "/tmp" },
+    { access },
+  );
+  expect(outcome.operations?.map(({ effect }) => effect)).toEqual([
+    "applied",
+    "applied",
+    "not-applied",
+  ]);
+  // The receipt owns the first two backups; a repeated participant and a refused operation own none.
+  expect(released).toBe(3);
+});
+test("an unowned URI cannot delete a local file through Apply", async () => {
+  const { cwd, run } = await fixture({ "keep.txt": "keep", "fresh.txt": "fresh" });
+  // Deliberate traversal reproduces URI normalization deleting a local file.
+  // oxlint-disable-next-line repo/no-parent-paths
+  const source = "ssh://unknown/../../keep.txt";
+  const outcome = await run(
+    [snapshot(cwd, "fresh", "fresh.txt", "fresh")],
+    [{ kind: "delete", path: source }, replace("fresh", 0, 5, "fresh", "FRESH")],
+  );
+  expect(outcome.operations?.[0]).toMatchObject({
+    effect: "not-applied",
+    resources: [source],
+    error: { code: "UNSUPPORTED_SOURCE" },
+  });
+  expect(await readFile(path.join(cwd, "keep.txt"), "utf8")).toBe("keep");
+  expect(await readFile(path.join(cwd, "fresh.txt"), "utf8")).toBe("FRESH");
+});
+
+test("URI replacements use owner snapshots for commit and undo", async () => {
+  const source = "ssh://sandbox/tmp/note.txt";
+  const contents = new Map([[source, "one two"]]);
+  const capture = async (file: string) => {
+    const content = contents.get(file);
+    return {
+      path: file,
+      existed: content !== undefined,
+      ...(content !== undefined && { bytes: Buffer.from(content) }),
+    };
+  };
+  const restore = async (state: { path: string; existed: boolean; bytes?: Uint8Array }) => {
+    if (state.existed) contents.set(state.path, Buffer.from(state.bytes ?? []).toString());
+    else contents.delete(state.path);
+  };
+  const undo = new ApplyUndoStore(restore, capture);
+  const editor: TransactionEditor = {
+    async editTexts(_sources, _context, plan) {
+      const planned = await plan(new Map(contents), async () => {
+        throw new Error("no anchors");
+      });
+      for (const [file, changes] of planned.changes)
+        contents.set(file, applyTextChanges(contents.get(file) ?? "", changes).content);
+      return { kind: "completed", resources: [], result: planned.result };
+    },
+    async postProcessFile() {},
+    recordApplyUndo: (before) => undo.record(before),
+  };
+  const outcome = await executeEditorTransaction(
+    editor,
+    {
+      snapshots: [{ id: "note", source, content: "one two" }],
+      operations: [replace("note", 0, 3, "one", "ONE"), replace("note", 4, 7, "two", "TWO")],
+    },
+    new AbortController().signal,
+    { cwd: "/unused" },
+    {
+      access: {
+        resolve: (_cwd, file) => file,
+        capture,
+        restore,
+        readText: async (file) => {
+          const content = contents.get(file);
+          if (content === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return content;
+        },
+        async validateFile() {
+          throw new Error("not used");
+        },
+        async performFile() {
+          throw new Error("not used");
+        },
+      },
+    },
+  );
+  expect(outcome.effect).toBe("applied");
+  expect(outcome.operations?.map((operation) => operation.resources)).toEqual([[source], [source]]);
+  expect(contents.get(source)).toBe("ONE TWO");
+  expect(outcome.transaction).toBeDefined();
+  if (outcome.transaction === undefined) throw new Error("Missing undo receipt");
+  await undo.restore(outcome.transaction);
+  expect(contents.get(source)).toBe("one two");
+});
+
 test("an invalid selection fails only its operation", async () => {
   const { cwd, run } = await fixture({ "a.txt": "abc", "b.txt": "xyz" });
   const outcome = await run(
@@ -85,6 +223,81 @@ test("an invalid selection fails only its operation", async () => {
   );
   expect(outcome.operations?.map(({ status }) => status)).toEqual(["failed", "applied"]);
   expect(await readFile(path.join(cwd, "b.txt"), "utf8")).toBe("Xyz");
+});
+
+test("unknown replacement batches block later dependent file operations", async () => {
+  const { cwd, core } = await fixture({ "note.txt": "one two" });
+  const source = path.join(cwd, "note.txt");
+  const editor: TransactionEditor = {
+    ...core,
+    async editTexts(sources, context, plan) {
+      await core.editTexts(sources, context, plan);
+      throw Object.assign(new Error("lost acknowledgement"), { effect: "unknown" });
+    },
+  };
+  const outcome = await executeEditorTransaction(
+    editor,
+    {
+      snapshots: [snapshot(cwd, "note", "note.txt", "one two")],
+      operations: [
+        replace("note", 0, 3, "one", "ONE"),
+        replace("note", 4, 7, "two", "TWO"),
+        { kind: "copy", path: source, target: "must-not-exist.txt" },
+      ],
+    },
+    new AbortController().signal,
+    { cwd },
+    {
+      restorePath: async () => {
+        throw new Error("transport unavailable");
+      },
+    },
+  );
+  expect(outcome.effect).toBe("unknown");
+  expect(outcome.operations?.map(({ status }) => status)).toEqual([
+    "unknown",
+    "unknown",
+    "blocked",
+  ]);
+  await expect(readFile(path.join(cwd, "must-not-exist.txt"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
+test("a rejected guarded write does not roll back an external edit", async () => {
+  const { cwd, core } = await fixture({ "note.txt": "before" });
+  const source = path.join(cwd, "note.txt");
+  const editor: TransactionEditor = {
+    ...core,
+    async editTexts() {
+      await writeFile(source, "external");
+      const cause = Object.assign(new Error("observed external change"), {
+        code: "STALE_SNAPSHOT",
+        effect: "not-applied",
+      });
+      return {
+        kind: "failed",
+        completed: [],
+        failure: {
+          code: "WRITE_FAILED",
+          source,
+          message: cause.message,
+          cause,
+        },
+      };
+    },
+  };
+  const outcome = await executeEditorTransaction(
+    editor,
+    {
+      snapshots: [snapshot(cwd, "note", "note.txt", "before")],
+      operations: [replace("note", 0, 6, "before", "after")],
+    },
+    new AbortController().signal,
+    { cwd },
+  );
+  expect(outcome.effect).toBe("not-applied");
+  expect(await readFile(source, "utf8")).toBe("external");
 });
 
 test("a stale snapshot fails only edits that use it", async () => {

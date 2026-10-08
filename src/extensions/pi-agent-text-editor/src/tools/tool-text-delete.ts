@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 
 import {
-  sourcePathProperty,
+  resultSourceProperty,
   sourceRangeProperties,
 } from "#src/tools/text-tool-schema-properties.js";
 
@@ -17,15 +17,15 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 
 export const deleteSchema = Type.Object(
   {
-    path: sourcePathProperty(
-      "Source resource reference or file path. A returned SEARCH# reference can select deletion ranges.",
+    path: resultSourceProperty(
+      "File path or structured source selection. A structured input deletes only its exact text ranges and keeps the file; omit start/end.",
     ),
     ...sourceRangeProperties(),
   },
   { additionalProperties: false },
 );
 interface DeleteParameters {
-  readonly path?: string;
+  readonly path?: unknown;
   readonly start?: string;
   readonly end?: string;
 }
@@ -34,7 +34,7 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
   name: "delete",
   wholeFileOperation: "delete",
   description:
-    "Use delete to permanently delete one regular file when path is supplied without text selectors, or to remove selected text. Whole-file deletion rejects directories and symlinks.",
+    "Use delete to permanently delete one regular file when an ordinary string path is supplied without text selectors, or to remove selected text. Structured path removes only its text ranges and keeps the file, even for a whole-file selection. Whole-file deletion rejects directories and symlinks.",
 
   promptSnippet: "Delete regular files, or delete selected text using exact matches or anchors",
   parameters: deleteSchema,

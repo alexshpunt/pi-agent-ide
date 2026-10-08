@@ -33,6 +33,7 @@ import {
   buildSuccessfulTextMutationResult,
   mutationSources,
   preflightMutationAnchors,
+  postWriteFailureEffect,
 } from "#src/core/text-mutation.js";
 import { registerBlockedToolCallSink } from "#src/core/tool-call-interceptor/coordinator.js";
 
@@ -73,7 +74,7 @@ export interface PlannedTextBatch {
     readonly callId: string;
     readonly source: string;
     readonly error: unknown;
-    readonly effect: "applied" | "not-applied";
+    readonly effect: "applied" | "not-applied" | "unknown";
   }[];
 }
 
@@ -378,7 +379,7 @@ export async function executeRegisteredTextBatch(
         callId: entry.callId,
         source: entry.mutation.edits.keys().next().value ?? "",
         error,
-        effect: "applied",
+        effect: postWriteFailureEffect(error),
       });
     }
   }
@@ -504,7 +505,7 @@ export async function executeRegisteredTextBatch(
     const failedResult = await buildFailedTextMutationResult(
       core,
       {
-        code: failure.effect === "applied" ? "POST_WRITE_FAILED" : "INVALID_REQUEST",
+        code: failure.effect === "not-applied" ? "INVALID_REQUEST" : "POST_WRITE_FAILED",
         source: failure.source,
         message: errorMessage(failure.error),
         cause: failure.error,

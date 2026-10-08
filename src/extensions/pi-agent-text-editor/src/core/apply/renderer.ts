@@ -119,7 +119,18 @@ export function createApplyDisplay(
               "status" in operation &&
               operation.status === "applied",
           ).length;
-          if (completed === value.operations.length) return [];
+          const wholeFiles = value.operations
+            .filter(
+              (operation: unknown) =>
+                operation !== null &&
+                typeof operation === "object" &&
+                "kind" in operation &&
+                ["copy", "move", "delete"].includes(String(operation.kind)) &&
+                "status" in operation &&
+                operation.status === "applied",
+            )
+            .map((operation: unknown) => ({ text: formatDisplayOutcome(operation) }));
+          if (completed === value.operations.length) return wholeFiles;
           const outcomes = value.operations
             .filter(
               (operation: unknown) =>
@@ -133,6 +144,7 @@ export function createApplyDisplay(
             {
               text: `Apply partially applied: ${completed} of ${value.operations.length} operations completed.`,
             },
+            ...wholeFiles,
             ...outcomes,
           ];
         }
@@ -371,7 +383,9 @@ function formatDisplayOutcome(value: unknown): string {
     "error" in value && value.error !== null && typeof value.error === "object"
       ? `: ${"code" in value.error ? String(value.error.code) : "ERROR"}: ${"message" in value.error ? String(value.error.message) : "Operation failed"}`
       : "";
-  return `Operation ${index} (${kind}): ${status}${error}`;
+  const resources =
+    "resources" in value && Array.isArray(value.resources) ? value.resources.join(" → ") : "";
+  return `Operation ${index} (${kind}): ${status}${error}${resources ? `\n${resources}` : ""}`;
 }
 
 function redactApplyReceipts(text: string): string {

@@ -25,6 +25,7 @@ import { createAstOverflowHandler, reduceAstReadOutput } from "./overflow-handle
 import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.js";
 import { createAstScopeAnchorResolver } from "./scope-resolver.js";
 import { createAstSearchResolver } from "./search-resolver.js";
+import { registerSelect } from "./tool-select.js";
 
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "AST" });
 
@@ -36,8 +37,25 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
     protocol: READ_PROTOCOL,
     apiVersion: READ_API_VERSION,
     id: "ast",
-    setup(api) {
-      api.addResolver({ resolver: createAstOutlineResolver(), renderResult: renderReadResult });
+    async setup(api) {
+      await registerSelect(pi, api);
+      api.addResolver({
+        resolver: createAstOutlineResolver(undefined, async (source, context) => {
+          const result = await api.read({ path: source }, context, "script");
+          if (result.isError === true)
+            throw new Error(
+              result.details.failure?.message ??
+                "Could not acquire an owned text snapshot for the AST outline.",
+            );
+          if (result.script?.kind !== "text")
+            throw new Error("AST outlines require an owned text snapshot.");
+          return {
+            source: result.script.source,
+            lines: result.script.lines.map((line) => line.content),
+          };
+        }),
+        renderResult: renderReadResult,
+      });
       api.addHandler({
         stage: "read",
         when: { resolvedBy: "ast", contentKind: "text" },

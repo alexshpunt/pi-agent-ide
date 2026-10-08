@@ -150,7 +150,7 @@ for (const item of cases.filter(({ language }) => language === selected)) {
           ?.findings.filter(({ status }) => status !== "pass"),
       ).toEqual([]);
     } finally {
-      manager.dispose();
+      await manager.dispose();
       await rm(cwd, { recursive: true, force: true });
     }
   }, 60_000);

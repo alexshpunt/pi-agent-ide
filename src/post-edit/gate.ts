@@ -11,7 +11,10 @@ import type {
 export async function runIdePostEditGate(
   transaction: TextPostEditTransaction,
 ): Promise<{ formatting: MutationFormatting } & Partial<TextPostEditStatusContribution>> {
-  if (!path.isAbsolute(transaction.resourceSource))
+  if (
+    !path.isAbsolute(transaction.resourceSource) &&
+    !transaction.resourceSource.startsWith("ssh://")
+  )
     return { formatting: { status: "unavailable" } };
   let formatterName: string | undefined;
   try {

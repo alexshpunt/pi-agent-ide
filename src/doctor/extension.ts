@@ -7,6 +7,8 @@ import {
 } from "#src/api/doctor.js";
 
 import { writeSuggestedConfigs } from "./config-writer.js";
+import { parseDoctorArguments } from "./arguments.js";
+import type { DoctorWorkspace } from "#src/api/doctor.js";
 import { DoctorCore } from "./core.js";
 import {
   buildDoctorAgentPrompt,
@@ -23,12 +25,20 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 Registers the modular doctor core and `/pi-agent-ide-doctor`.
 */
 export default async function registerDoctor(pi: ExtensionAPI): Promise<void> {
+  await registerDoctorWithOwner(pi);
+}
+
+/** Resolve explicit project owners for the existing Doctor command; local startup stays local. */
+export async function registerDoctorWithOwner(
+  pi: ExtensionAPI,
+  resolveWorkspace?: (source: string) => Promise<DoctorWorkspace | undefined>,
+): Promise<void> {
   const core = new DoctorCore();
   registerDoctorTipProvider(pi, async (context) => {
     await core.waitForPlugins();
     return inspectDoctorSetup(core.snapshot(), context.cwd, process.env, context.signal);
   });
-  let delegatedProject: string | undefined;
+  let delegatedProject: { cwd: string; workspace?: DoctorWorkspace } | undefined;
   const unsubscribe = pi.events.on(DOCTOR_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isDoctorPluginRegistrationRequest(request)) {
       throw new Error("Invalid doctor plugin registration request");
@@ -39,13 +49,14 @@ export default async function registerDoctor(pi: ExtensionAPI): Promise<void> {
   pi.on("session_shutdown", unsubscribe);
 
   pi.registerCommand("pi-agent-ide-doctor", {
-    description: "Check and configure Pi Agent IDE for this project",
+    description: "Check and configure this project or an explicit ssh://target/path",
     handler: async (arguments_, context) => {
+      const { cwd, flags } = parseDoctorArguments(arguments_, context.cwd);
+      const workspace = await resolveWorkspace?.(cwd);
       await core.waitForPlugins();
-      let result = await runDoctor(core.snapshot(), context.cwd);
+      let result = await runDoctor(core.snapshot(), cwd, process.env, undefined, workspace);
       sendReport(pi, formatDoctorReport(result));
 
-      const flags = new Set(arguments_.trim().split(/\s+/u).filter(Boolean));
       const shouldApply =
         result.suggestions.length > 0 &&
         !flags.has("--no-apply") &&
@@ -57,13 +68,13 @@ export default async function registerDoctor(pi: ExtensionAPI): Promise<void> {
             ))));
 
       if (shouldApply) {
-        const files = await writeSuggestedConfigs(context.cwd, result.suggestions);
+        const files = await writeSuggestedConfigs(cwd, result.suggestions, workspace);
         const updateMessage =
           files.length === 0
             ? "Pi Agent IDE configs are already up to date"
             : `Updated ${files.length} Pi Agent IDE config ${files.length === 1 ? "file" : "files"}`;
         context.ui.notify(updateMessage, "info");
-        result = await runDoctor(core.snapshot(), context.cwd);
+        result = await runDoctor(core.snapshot(), cwd, process.env, undefined, workspace);
         sendReport(pi, formatDoctorReport(result));
       }
 
@@ -80,21 +91,27 @@ export default async function registerDoctor(pi: ExtensionAPI): Promise<void> {
           )));
 
       if (shouldDelegate) {
-        delegatedProject = context.cwd;
+        delegatedProject = { cwd, workspace };
         pi.sendUserMessage(buildDoctorAgentPrompt(result));
       }
     },
   });
 
   pi.on("agent_end", async (_event, context) => {
-    const cwd = delegatedProject;
+    const selected = delegatedProject;
 
-    if (cwd === undefined) {
+    if (selected === undefined) {
       return;
     }
 
     delegatedProject = undefined;
-    const result = await runDoctor(core.snapshot(), cwd, process.env);
+    const result = await runDoctor(
+      core.snapshot(),
+      selected.cwd,
+      process.env,
+      undefined,
+      selected.workspace,
+    );
     sendReport(pi, `Doctor recheck after agent setup\n\n${formatDoctorReport(result)}`);
 
     if (doctorNeedsWork(result)) {

@@ -11,6 +11,7 @@ import {
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
+import { isDiffStatusContribution } from "#src/api/post-edit.js";
 
 const effect = Type.Union([
   Type.Literal("pending"),
@@ -19,7 +20,14 @@ const effect = Type.Union([
   Type.Literal("unknown"),
 ]);
 const file = Type.Object(
-  { source: Type.String(), effect, action: Type.Optional(Type.String()) },
+  {
+    source: Type.String(),
+    effect,
+    action: Type.Optional(Type.String()),
+    state: Type.Optional(
+      Type.Union([Type.Literal("present"), Type.Literal("absent"), Type.Literal("unknown")]),
+    ),
+  },
   { additionalProperties: false },
 );
 const operation = Type.Object(
@@ -38,6 +46,8 @@ const operation = Type.Object(
     ),
     sources: Type.Optional(Type.Array(Type.String())),
     warnings: Type.Optional(Type.Array(resultErrorSchema)),
+    target: Type.Optional(Type.String()),
+    targetUnavailable: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );
@@ -47,6 +57,8 @@ export const mutationDataSchema = Type.Object(
     effect,
     operationId: Type.Optional(Type.String()),
     files: Type.Array(file),
+    target: Type.Optional(Type.String()),
+    targetUnavailable: Type.Optional(Type.String()),
     operations: Type.Optional(Type.Array(operation)),
     parentToolCallId: Type.Optional(Type.String()),
     transaction: Type.Optional(Type.String()),
@@ -137,6 +149,9 @@ export function mutationOutcome(
       data: {
         operation,
         effect: "pending",
+        ...(typeof details.metadata?.resultTarget === "string"
+          ? { target: details.metadata.resultTarget }
+          : {}),
         files:
           typeof detailRecord.source === "string"
             ? [{ source: detailRecord.source, effect: "pending" }]
@@ -188,7 +203,9 @@ export function mutationOutcome(
       : undefined;
   if (semantic) {
     const semanticEffect =
-      semantic.effect === "not-applied" || semantic.effect === "unknown"
+      semantic.effect === "applied" ||
+      semantic.effect === "not-applied" ||
+      semantic.effect === "unknown"
         ? semantic.effect
         : semantic.ok === false
           ? "unknown"
@@ -205,28 +222,56 @@ export function mutationOutcome(
     if (Array.isArray(semantic.restored))
       for (const source of semantic.restored)
         if (typeof source === "string") files.push({ source, effect: semanticEffect });
+    if (Array.isArray(semantic.restoredStates))
+      for (const restored of semantic.restoredStates)
+        if (
+          record(restored) &&
+          typeof restored.source === "string" &&
+          (restored.state === "present" || restored.state === "absent")
+        ) {
+          const file = files.find((item) => item.source === restored.source);
+          if (file !== undefined) file.state = restored.state;
+        }
     if (typeof semantic.target === "string")
       files.push({ source: semantic.target, effect: semanticEffect });
-    if (record(semantic.error))
-      errors.push(
-        resultError(
-          semantic.error.message,
-          typeof semantic.error.code === "string" ? semantic.error.code : "MUTATION_FAILED",
-          source,
-        ),
+    if (record(semantic.error)) {
+      const error = resultError(
+        semantic.error.message ?? "Resource operation failed",
+        typeof semantic.error.code === "string" ? semantic.error.code : "MUTATION_FAILED",
+        source,
       );
+      if (
+        !errors.some(
+          (existing) =>
+            existing.code === error.code &&
+            existing.message === error.message &&
+            existing.source === error.source,
+        )
+      )
+        errors.push(error);
+    }
     if (typeof semantic.postProcessingError === "string")
       errors.push(resultError(semantic.postProcessingError, "POST_EDIT_FAILED", source));
     if (semantic.ok === false && errors.length === 0)
       errors.push(resultError("Resource operation failed", "MUTATION_FAILED", source));
   }
-  const unique = [...new Map(files.map((file) => [file.source, file])).values()];
+  const participants = Array.isArray(semantic?.restored)
+    ? files.filter((file) => file.source !== semantic.source)
+    : files;
+  const unique = [...new Map(participants.map((file) => [file.source, file])).values()];
   const known = unique.some((file) => file.effect === "applied");
   if (result.isError && errors.length === 0)
     errors.push({ code: "MUTATION_FAILED", message: "Mutation failed" });
-  if ((results?.length ?? 0) === 0 && !semantic && observed.size === 0 && errors.length === 0)
+  if (
+    (results?.length ?? 0) === 0 &&
+    !semantic &&
+    observed.size === 0 &&
+    errors.length === 0 &&
+    details.metadata?.emptyTargets !== true
+  )
     errors.push({ code: "UNKNOWN_RESULT", message: "Mutation effects were not reported" });
   const effect =
+    details.effect === "unknown" ||
     unique.some((file) => file.effect === "unknown") ||
     errors.some((error) => error.code === "UNKNOWN_RESULT")
       ? "unknown"
@@ -269,6 +314,17 @@ export function mutationOutcome(
             : {}),
         }
       : undefined;
+  const feedback = isDiffStatusContribution(semantic)
+    ? semantic.diffStatuses.map((status) => ({
+        code: "POST_EDIT_FEEDBACK",
+        message: status.text,
+        ...(typeof semantic.target === "string"
+          ? { source: semantic.target }
+          : typeof semantic.source === "string"
+            ? { source: semantic.source }
+            : {}),
+      }))
+    : [];
   const checkedAction =
     action && Value.Check(mutationDataSchema.properties.action, action) ? action : undefined;
   if (action && !checkedAction)
@@ -284,6 +340,27 @@ export function mutationOutcome(
       operation,
       effect,
       files: unique,
+      ...(typeof details.metadata?.resultTarget === "string"
+        ? { target: details.metadata.resultTarget }
+        : {}),
+      ...(typeof details.metadata?.targetUnavailable === "string"
+        ? { targetUnavailable: details.metadata.targetUnavailable }
+        : {}),
+      ...(feedback.length === 0
+        ? {}
+        : {
+            operations: [
+              {
+                id: operation,
+                operation,
+                effect,
+                status: errors.length === 0 ? ("warning" as const) : ("error" as const),
+                sources: unique.map((file) => file.source),
+                errors,
+                warnings: feedback,
+              },
+            ],
+          }),
       ...(details.anchorRecoveries === undefined
         ? {}
         : {
@@ -309,6 +386,10 @@ export function structuredMutation(
   operationId?: string,
 ) {
   const outcome = mutationOutcome(result, operation, completions);
-  if (outcome.data && operationId !== undefined) outcome.data.operationId = operationId;
+  if (outcome.data && operationId !== undefined) {
+    outcome.data.operationId = operationId;
+    const single = outcome.data.operations?.length === 1 ? outcome.data.operations[0] : undefined;
+    if (single !== undefined) single.id = operationId;
+  }
   return withStructuredResult(result, mutationDataSchema, outcome);
 }

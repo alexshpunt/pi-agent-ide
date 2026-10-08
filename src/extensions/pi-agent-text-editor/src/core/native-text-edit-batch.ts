@@ -22,7 +22,14 @@ import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.
 import { isWholeFileInvocation } from "./file-operation-tools.js";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
 import { Type } from "typebox";
-import { resultError, withStructuredResult, type StructuredResult } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  resultError,
+  withStructuredResult,
+  type StructuredResult,
+} from "pi-agent-resource";
+import { committedMutationTargets, verifyMutationTargets } from "./mutation-result-targets.js";
+import { isResultInput } from "./result-transfer.js";
 import { captureScriptMutation } from "./text-mutation.js";
 import {
   NATIVE_EDIT_BATCH_EVENT,
@@ -40,6 +47,7 @@ interface PendingBatch {
   readonly snapshots: Map<string, string>;
   readonly existence: Map<string, boolean>;
   readonly requests: Map<string, TextResourceEditRequest>;
+  readonly resultTargets: Map<string, string>;
   plan: PlannedTextBatch;
 }
 
@@ -110,6 +118,7 @@ function pendingBatch(): PendingBatch {
     snapshots: new Map(),
     existence: new Map(),
     requests: new Map(),
+    resultTargets: new Map(),
     plan: { changes: new Map(), mutations: [], failures: [] },
   };
 }
@@ -148,11 +157,13 @@ function isBatchable(
 class NativeTextEditBatchCoordinator {
   private readonly scripts = new Map<string, ScriptBatch>();
   private readonly invocations = new Map<string, ScriptBatch>();
+  private readonly resultTargets;
 
   constructor(
     private readonly core: TextEditorCore,
     private readonly pi: ExtensionAPI,
   ) {
+    this.resultTargets = connectResultTargets(pi);
     pi.registerTool({
       name: "flush",
       exposure: "codemode",
@@ -240,6 +251,28 @@ class NativeTextEditBatchCoordinator {
         .find((tool) => tool.name === event.toolName);
       const input: Record<string, unknown> = event.input;
       let ownsSource = false;
+      const selectorFields =
+        registration === undefined
+          ? []
+          : [
+              registration.source.field,
+              ...(registration.source.targets ?? []).map((target) => target.field),
+              ...(registration.anchors ?? []).map((anchor) => anchor.field),
+            ];
+      // A dependent result must commit its producer before any owner tries to resolve it.
+      if (selectorFields.some((field) => isResultInput(input[field]))) {
+        const work = script.tail.then(() => this.commit(script));
+        script.tail = work.then(
+          () => undefined,
+          () => undefined,
+        );
+        if (!(await work))
+          return {
+            block: true,
+            reason: "Editor batch failed before this result input; inspect its effects.",
+          };
+        return;
+      }
       if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
         const resolverContext = {
           cwd: context.cwd,
@@ -323,6 +356,8 @@ class NativeTextEditBatchCoordinator {
               })),
             },
           });
+          for (const reference of script.pending.resultTargets.values())
+            this.resultTargets.reject(reference, error.message);
           script.errors.push(error.message);
           script.pending = pendingBatch();
         }
@@ -360,6 +395,8 @@ class NativeTextEditBatchCoordinator {
       for (const script of this.scripts.values()) {
         script.closed = true;
         script.cancellation.abort();
+        for (const reference of script.pending.resultTargets.values())
+          this.resultTargets.reject(reference, "Editor session closed before writing.");
       }
       this.scripts.clear();
       this.invocations.clear();
@@ -473,8 +510,12 @@ class NativeTextEditBatchCoordinator {
       ...planning.plan,
       mutations: [...batch.plan.mutations, ...planning.plan.mutations],
     };
+    const reference =
+      registration.name === "delete" ? undefined : this.resultTargets.reserve(context.cwd);
+    if (reference !== undefined) batch.resultTargets.set(id, reference);
     const details = {
       results: [],
+      ...(reference === undefined ? {} : { metadata: { resultTarget: reference } }),
       source: entry.path,
       resolvedBy: preview.resources.find((resource) => resource.path === entry.path)?.resolvedBy,
       nativeEditBatch: { parentToolCallId: script.id, state: "accepted" },
@@ -501,6 +542,7 @@ class NativeTextEditBatchCoordinator {
         ? script.cancellation.signal
         : AbortSignal.any([script.context.signal, script.cancellation.signal]);
     let observedSources: string[] = [];
+    const confirmed = new Set<string>();
     const record = (outcome: StructuredResult<MutationData>): boolean => {
       const calls = journal.snapshot();
       const operations = calls.map((call) => ({
@@ -513,6 +555,7 @@ class NativeTextEditBatchCoordinator {
               ? ("unknown" as const)
               : ("not-applied" as const),
         errors: call.failure === undefined ? [] : [resultError(call.failure.error)],
+        ...(confirmed.has(call.callId) ? { target: batch.resultTargets.get(call.callId) } : {}),
       }));
       const files = mergedFiles([
         ...operations.flatMap((operation) => {
@@ -535,6 +578,12 @@ class NativeTextEditBatchCoordinator {
         ).values(),
       ];
       const completed = calls.every((call) => call.state === "completed");
+      for (const [id, reference] of batch.resultTargets)
+        if (!confirmed.has(id))
+          this.resultTargets.reject(
+            reference,
+            "Editor operation has no confirmed text target; inspect the final effects.",
+          );
       if (!completed && errors.length === 0)
         errors.push(resultError("Editor batch did not complete", "BATCH_FAILED"));
       script.reports.push({
@@ -582,6 +631,44 @@ class NativeTextEditBatchCoordinator {
       observedSources = captured.completions.map((completion) => completion.resourceSource);
       if (captured.kind === "failed") throw captured.error;
       script.results.push(...(captured.value.details.results ?? []));
+      if (journal.snapshot().every((call) => call.state === "completed")) {
+        try {
+          const mutations = batch.plan.mutations.map(({ callId, mutation }) => ({
+            callId,
+            edits:
+              mutation.operation === "delete"
+                ? new Map(
+                    [...mutation.edits].map(([source, edit]) => [
+                      source,
+                      { ...edit, resultChanges: [] },
+                    ]),
+                  )
+                : mutation.edits,
+          }));
+          const mapped = committedMutationTargets(mutations, captured.completions);
+          for (const [id, reference] of batch.resultTargets) {
+            const targets = mapped.get(id);
+            if (targets === undefined) continue;
+            const verified = await verifyMutationTargets(
+              this.core,
+              targets,
+              this.resultTargets,
+              script.context.cwd,
+              signal,
+            );
+            this.resultTargets.confirm(reference, verified, script.context.cwd);
+            confirmed.add(id);
+          }
+        } catch (error) {
+          signal.throwIfAborted();
+          for (const [id, reference] of batch.resultTargets)
+            if (!confirmed.has(id))
+              this.resultTargets.reject(
+                reference,
+                error instanceof Error ? error.message : String(error),
+              );
+        }
+      }
       this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, {
         parentToolCallId: script.id,
         calls: batch.entries.map((entry) => entry.callId),

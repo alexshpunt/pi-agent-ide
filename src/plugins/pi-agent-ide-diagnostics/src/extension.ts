@@ -207,7 +207,10 @@ function createDiagnosticPresenter(
   return {
     id: "diagnostics",
     async present(document, context) {
-      if (context.purpose !== "read" || !path.isAbsolute(document.source)) {
+      if (
+        context.purpose !== "read" ||
+        (!path.isAbsolute(document.source) && !document.source.startsWith("ssh://"))
+      ) {
         return document;
       }
 

@@ -359,7 +359,15 @@ async function executeRead(
   audience: "agent" | "script" = "agent",
 ): Promise<ReadToolResult> {
   if (request.path?.startsWith("raw:"))
-    return readRaw(request, resolverContext, audience, resourceGuards);
+    return readRaw(
+      request,
+      resolverContext,
+      audience,
+      resourceGuards,
+      [...resolvers]
+        .sort((left, right) => left.priority - right.priority || left.order - right.order)
+        .map(({ resolver }) => resolver),
+    );
   resolverContext = { ...resolverContext, audience };
   const limitOutput: typeof limitReadOutput =
     audience === "script" ? async (result) => result : limitReadOutput;
@@ -602,6 +610,7 @@ async function resolveTextTargets(
       for (const range of ranges) {
         const rangeLimit = Math.max(1, range.end.lineNumber - range.start.lineNumber);
         let rangePipeline: ReadPipelineContext = {
+          ...(request.path?.startsWith("RESULT#") === true ? { sourceTarget: request.path } : {}),
           request: {
             ...request,
             path: target.source,
@@ -945,10 +954,19 @@ async function resolveSource(
       };
     }
 
+    let sourceText: string | undefined;
+    if (resource.sourceBytes !== undefined) {
+      try {
+        sourceText = new TextDecoder("utf8", { fatal: true }).decode(resource.sourceBytes);
+      } catch {
+        /* Non-text source bytes never grant text-edit authority. */
+      }
+    }
     return {
       kind: "continue",
       context: {
         ...initialContext,
+        ...(sourceText === undefined ? {} : { sourceText }),
         state: createReadState(content, resource.source, resolver.id, {
           preserveTruncatedOutput: registeredResolver.preserveTruncatedOutput,
           textMode: resolver.id === "temp" ? "final" : "normal",
@@ -1047,6 +1065,7 @@ async function runTextPresenters(
   const document = state.text;
   const presentationContext: TextPresentationContext = {
     purpose: "read",
+    ...(context.sourceText === undefined ? {} : { sourceText: context.sourceText }),
     audience: context.resolverContext.audience,
     requestedViews: context.request.views,
     source: state.source,

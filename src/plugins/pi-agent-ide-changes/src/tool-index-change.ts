@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 
 import {
   defineTool,
@@ -28,6 +27,7 @@ const indexDataSchema = Type.Object(
 export const indexOutputSchema = structuredResultSchema(indexDataSchema);
 
 import { ChangeService } from "#src/changes/change-service.js";
+import { gitSourceDirectory, resolveGitSource } from "#src/changes/git-paths.js";
 
 import type { ChangeIndexAction } from "#src/changes/change-types.js";
 import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
@@ -117,7 +117,7 @@ export function createIndexChangeTool(
               action,
               change: parameters.change,
               file: resolveFile(parameters.file, context.cwd),
-              effect: "unknown",
+              effect: publicationEffect(error),
             },
             errors: [failure],
           },
@@ -144,8 +144,14 @@ export function createIndexChangeExecutor(
 
     return withFileMutationQueue(file, () =>
       queue.run(async () => {
-        const worktreeText = await readFile(file, "utf8");
-        const creation = await ChangeService.create(executor, context.cwd, signal);
+        const worktreeText = executor.readText
+          ? await executor.readText(file, signal)
+          : await readFile(file, "utf8");
+        const creation = await ChangeService.create(
+          executor,
+          gitSourceDirectory(file, context.cwd),
+          signal,
+        );
 
         if (creation.status !== "ready") {
           throw new Error(creation.message);
@@ -163,7 +169,8 @@ export function createIndexChangeExecutor(
         );
 
         if (result.status === "unavailable") {
-          throw new Error(result.message);
+          if ("failure" in result && result.failure !== undefined) throw result.failure;
+          throw Object.assign(new Error(result.message), { effect: "not-applied" });
         }
 
         if (result.status === "not-applicable") {
@@ -191,5 +198,16 @@ export function createIndexChangeExecutor(
 }
 function resolveFile(file: string, cwd: string): string {
   const normalized = file.startsWith("@") ? file.slice(1) : file;
-  return path.resolve(cwd, normalized);
+  return resolveGitSource(normalized, cwd);
+}
+
+function publicationEffect(error: unknown): "applied" | "not-applied" | "unknown" {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    (error.effect === "applied" || error.effect === "not-applied")
+  )
+    return error.effect;
+  return "unknown";
 }

@@ -1,30 +1,73 @@
 import path from "node:path";
-
+import { requiredValue } from "pi-agent-invariant";
 import { URI } from "vscode-uri";
+import { documentUri } from "./document-uri.js";
+import { createTextDocument } from "pi-agent-text";
+import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import { containsSearchMatch, type SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import { LspManager } from "./manager.js";
-import { requestReferences } from "./navigation.js";
-import { type LspWorkspaceSymbol, requestWorkspaceSymbols } from "./symbols.js";
+import { requestReferences, type LspLocation } from "./navigation.js";
+import {
+  requestWorkspaceSymbols,
+  requestDocumentSymbols,
+  type LspDocumentSymbol,
+} from "./symbols.js";
+import type { LspRange } from "./types.js";
 
-/** Restrict symbol definitions and references before applying the result limit. */
+/** Strict discovery scope, or an explicit seed scope for reference navigation. */
 export interface SymbolSearchScope {
   readonly path?: string;
   readonly include?: string;
   readonly exclude?: string;
+  readonly resultScope?: ResolvedResultTargets;
+  readonly navigation?: "references";
+}
+
+/** Provider identity is the declaration's source/range, not its display name. */
+export interface SearchSymbol {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly source: string;
+  readonly range: {
+    readonly startLine: number;
+    readonly startColumn: number;
+    readonly endLine: number;
+    readonly endColumn: number;
+  };
+}
+
+/** Exact source match with the declaration that produced this reference. */
+export interface SymbolHit extends SearchSelectionMatch {
+  readonly role: "definition" | "reference";
+  readonly symbol: SearchSymbol;
 }
 
 function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boolean {
-  const relative = path.relative(path.resolve(cwd, scope.path ?? "."), file);
-  // oxlint-disable-next-line repo/no-parent-paths -- reject results outside the requested scope.
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+  const remote = cwd.startsWith("ssh://");
+  const filesystem = remote ? path.posix : path;
+  const native = (source: string) =>
+    remote ? decodeURIComponent(new URL(documentUri(source, cwd)).pathname) : source;
+  const base = remote ? native(scope.path ?? cwd) : path.resolve(cwd, scope.path ?? ".");
+  const relative = filesystem.relative(base, native(file));
+  if (
+    // oxlint-disable-next-line repo/no-parent-paths -- containment check only.
+    relative === ".." ||
+    relative.startsWith(`..${filesystem.sep}`) ||
+    filesystem.isAbsolute(relative)
+  )
     return false;
-  const candidate = path.relative(cwd, file).split(path.sep).join("/");
+  const candidate = filesystem.relative(native(cwd), native(file)).split(filesystem.sep).join("/");
   const matches = (patterns: string) =>
     patterns.split(",").some((value) => {
       const glob = value.trim();
       return (
         glob.length > 0 &&
-        path.matchesGlob(glob.includes("/") ? candidate : path.basename(file), glob)
+        filesystem.matchesGlob(
+          glob.includes("/") ? candidate : filesystem.basename(native(file)),
+          glob,
+        )
       );
     });
   return (
@@ -32,45 +75,38 @@ function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boole
     (scope.exclude === undefined || !matches(scope.exclude))
   );
 }
-export interface SymbolHit {
-  filePath: string;
-  lineNumber: number;
-  column: number;
-  kind: string;
-  name: string;
+function sourceOf(uri: string, cwd: string): string {
+  const canonical = documentUri(uri, cwd);
+  if (canonical.startsWith("ssh://")) return canonical;
+  const parsed = URI.parse(canonical);
+  if (parsed.scheme !== "file") throw new Error("Unsupported LSP source location.");
+  return path.resolve(parsed.fsPath);
 }
 
-function uriToFilePath(uri: string): string {
-  try {
-    return URI.parse(uri).fsPath;
-  } catch {
-    return uri.startsWith("file://") ? decodeURIComponent(uri.slice(7)) : uri;
-  }
+function sameRange(left: LspRange, right: LspRange): boolean {
+  return (
+    left.start.line === right.start.line &&
+    left.start.character === right.start.character &&
+    left.end.line === right.end.line &&
+    left.end.character === right.end.character
+  );
 }
-
-function toHit(
-  cwd: string,
-  symbol: LspWorkspaceSymbol,
-  uri: string,
-  line: number,
-  character: number,
-): SymbolHit {
-  const filePath = uriToFilePath(uri);
-  const relativePath = path.relative(cwd, filePath);
-
-  return {
-    // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
-    filePath: relativePath.startsWith("..") ? filePath : relativePath,
-    lineNumber: line + 1,
-    column: character + 1,
-    kind: String(symbol.kind),
-    name: symbol.name,
-  };
+function declarationNames(
+  symbols: readonly LspDocumentSymbol[],
+  name: string,
+  range: LspRange,
+): LspRange[] {
+  return symbols.flatMap((symbol) => [
+    ...(symbol.name === name &&
+    symbol.range !== undefined &&
+    sameRange(symbol.range, range) &&
+    symbol.selectionRange !== undefined
+      ? [symbol.selectionRange]
+      : []),
+    ...declarationNames(symbol.children ?? [], name, range),
+  ]);
 }
-
-/**
-Search workspace symbols and their references through native LSP servers.
-*/
+/** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
 export async function searchSymbols(
   query: string,
   cwd: string,
@@ -78,90 +114,177 @@ export async function searchSymbols(
   signal?: AbortSignal,
   scope: SymbolSearchScope = {},
   manager = LspManager.getInstance(),
-): Promise<SymbolHit[]> {
-  if (signal?.aborted) {
-    throw new Error("Operation aborted");
+): Promise<{ readonly hits: SymbolHit[]; readonly complete: boolean }> {
+  signal?.throwIfAborted();
+  const resultScope = scope.resultScope;
+  if (resultScope !== undefined) {
+    await verifyResultTargets(resultScope, signal);
+    if (resultScope.targets.length === 0) return { hits: [], complete: resultScope.complete };
   }
-
-  const clients = await manager.prepareWorkspaceSymbols(cwd, scope.path ?? cwd);
-  const definitions: LspWorkspaceSymbol[] = [];
-
-  for (const client of clients) {
-    if (signal?.aborted) {
-      throw new Error("Operation aborted");
-    }
-
-    try {
-      definitions.push(...(await requestWorkspaceSymbols(client, query, Number.MAX_SAFE_INTEGER)));
-    } catch {
-      // A server without workspace/symbol support cannot contribute results.
-    }
-  }
-
-  const seen = new Set<string>();
-  const hits: SymbolHit[] = [];
-
-  for (const symbol of definitions) {
-    if (signal?.aborted) {
-      throw new Error("Operation aborted");
-    }
-
-    if (hits.length >= limit) {
-      break;
-    }
-
-    const definition = symbol.location;
-    const definitionHit = toHit(
-      cwd,
-      symbol,
-      definition.uri,
-      definition.range.start.line,
-      definition.range.start.character,
+  const roots = resultScope?.targets.map((target) => target.source) ?? [scope.path ?? cwd];
+  const clients = new Set(
+    (
+      await Promise.all(
+        roots.map((root) =>
+          manager.prepareWorkspaceSymbols(
+            cwd,
+            root,
+            (source) => withinScope(source, cwd, scope),
+            signal,
+          ),
+        ),
+      )
+    ).flat(),
+  );
+  if (clients.size === 0)
+    throw new Error(
+      "LSP symbol search is unavailable: no provider supports workspace/symbol in this scope.",
     );
-    const definitionKey = `${definitionHit.filePath}:${definitionHit.lineNumber}:${definitionHit.column}`;
-
-    if (withinScope(uriToFilePath(definition.uri), cwd, scope) && !seen.has(definitionKey)) {
-      seen.add(definitionKey);
-      hits.push(definitionHit);
+  const contents = new Map<
+    string,
+    { document: ReturnType<typeof createTextDocument>; version: string }
+  >();
+  const toMatch = async (location: LspLocation): Promise<SearchSelectionMatch> => {
+    signal?.throwIfAborted();
+    const source = sourceOf(location.uri, cwd);
+    let snapshot = contents.get(source);
+    if (snapshot === undefined) {
+      const { content, version } = await manager.readSourceSnapshot(source, signal);
+      snapshot = { document: createTextDocument(source, content), version };
+      contents.set(source, snapshot);
     }
-
-    if (hits.length >= limit) {
-      break;
+    const { document } = snapshot;
+    const { start, end } = location.range;
+    const positions = [start, end];
+    for (const position of positions) {
+      const line = document.lines[position.line];
+      if (
+        !Number.isInteger(position.line) ||
+        !Number.isInteger(position.character) ||
+        line === undefined ||
+        position.character < 0 ||
+        position.character > line.content.length
+      )
+        throw new Error("LSP range does not match its source snapshot.");
     }
-
-    const sourcePath = uriToFilePath(definition.uri);
-    const opened = await manager.openFile(sourcePath, cwd, "symbols").catch(() => null);
-
-    if (!opened) {
-      continue;
-    }
-
-    const references = await requestReferences(
-      opened.client,
-      opened.uri,
-      definition.range.start,
-    ).catch(() => []);
-
-    for (const reference of references) {
-      const hit = toHit(
-        cwd,
-        symbol,
-        reference.uri,
-        reference.range.start.line,
-        reference.range.start.character,
+    const first = requiredValue(document.lines[start.line]);
+    const offset = (line: number) =>
+      document.lines
+        .slice(0, line)
+        .reduce((total, row) => total + row.content.length + row.lineEnding.length, 0);
+    const from = offset(start.line) + start.character;
+    const to = offset(end.line) + end.character;
+    if (to < from) throw new Error("LSP returned a reversed source range.");
+    return {
+      source,
+      lineNumber: start.line + 1,
+      endLineNumber: end.line + 1,
+      startColumn: start.character,
+      endColumn: end.character,
+      matchedText: document.content.slice(from, to),
+      lineText: first.content,
+    };
+  };
+  const included = (hit: SearchSelectionMatch) =>
+    withinScope(hit.source, cwd, scope) &&
+    (resultScope === undefined || containsSearchMatch(resultScope, hit));
+  const hits: SymbolHit[] = [];
+  const seen = new Set<string>();
+  for (const client of clients) {
+    signal?.throwIfAborted();
+    const definitions = await requestWorkspaceSymbols(
+      client,
+      query,
+      Number.MAX_SAFE_INTEGER,
+      signal,
+    );
+    for (const definition of definitions) {
+      signal?.throwIfAborted();
+      if (!withinScope(sourceOf(definition.location.uri, cwd), cwd, {})) continue;
+      const workspaceMatch = await toMatch(definition.location);
+      const opened = await manager.openFile(workspaceMatch.source, cwd, "symbols", signal);
+      if (opened === null)
+        throw new Error("LSP references are unavailable for a discovered declaration.");
+      let location = definition.location;
+      if (workspaceMatch.matchedText !== definition.name) {
+        const symbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
+        const names = declarationNames(symbols, definition.name, definition.location.range);
+        if (names.length !== 1)
+          throw new Error(
+            "LSP declaration has no unique provider selectionRange; cannot search its references.",
+          );
+        location = { uri: opened.uri, range: requiredValue(names[0]) };
+      }
+      const declared = await toMatch(location);
+      const symbol: SearchSymbol = {
+        id: JSON.stringify([client.serverId, declared.source, definition.location.range]),
+        name: definition.name,
+        kind: String(definition.kind),
+        source: declared.source,
+        range: {
+          startLine: declared.lineNumber,
+          startColumn: declared.startColumn,
+          endLine: declared.endLineNumber ?? declared.lineNumber,
+          endColumn: declared.endColumn,
+        },
+      };
+      const references = await requestReferences(
+        opened.client,
+        opened.uri,
+        location.range.start,
+        signal,
       );
-      const key = `${hit.filePath}:${hit.lineNumber}:${hit.column}`;
-
-      if (withinScope(uriToFilePath(reference.uri), cwd, scope) && !seen.has(key)) {
+      signal?.throwIfAborted();
+      const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
+      for (const location of references) {
+        if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
+        const reference = await toMatch(location);
+        if (
+          reference.source === declared.source &&
+          reference.lineNumber === declared.lineNumber &&
+          reference.startColumn === declared.startColumn &&
+          reference.endLineNumber === declared.endLineNumber &&
+          reference.endColumn === declared.endColumn
+        )
+          continue;
+        candidates.push({ ...reference, role: "reference", symbol });
+      }
+      if (scope.navigation === "references" && !candidates.some(included)) continue;
+      for (const hit of candidates) {
+        if (scope.navigation !== "references" && !included(hit)) continue;
+        // Navigation can leave the seed region, never the workspace source-access boundary.
+        if (scope.navigation === "references" && !withinScope(hit.source, cwd, {})) continue;
+        const key = JSON.stringify([
+          symbol.id,
+          hit.source,
+          hit.lineNumber,
+          hit.startColumn,
+          hit.endLineNumber,
+          hit.endColumn,
+        ]);
+        if (seen.has(key)) continue;
         seen.add(key);
         hits.push(hit);
       }
-
-      if (hits.length >= limit) {
-        break;
-      }
     }
   }
-
-  return hits;
+  signal?.throwIfAborted();
+  for (const [source, snapshot] of contents) {
+    const current = await manager.readSourceSnapshot(source, signal);
+    if (current.version !== snapshot.version || current.content !== snapshot.document.content)
+      throw new Error("LSP source changed during search.");
+  }
+  if (resultScope !== undefined) await verifyResultTargets(resultScope, signal);
+  hits.sort(
+    (left, right) =>
+      left.source.localeCompare(right.source) ||
+      left.lineNumber - right.lineNumber ||
+      left.startColumn - right.startColumn ||
+      left.endColumn - right.endColumn ||
+      left.symbol.id.localeCompare(right.symbol.id),
+  );
+  return {
+    hits: hits.slice(0, limit),
+    complete: (resultScope?.complete ?? true) && hits.length <= limit,
+  };
 }

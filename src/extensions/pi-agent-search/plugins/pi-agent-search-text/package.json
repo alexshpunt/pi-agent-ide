@@ -29,6 +29,8 @@
     "@earendil-works/pi-tui": "1.0.0",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-invariant": "workspace:^",
+    "pi-agent-read": "workspace:^",
+    "pi-agent-resource": "workspace:^",
     "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^"

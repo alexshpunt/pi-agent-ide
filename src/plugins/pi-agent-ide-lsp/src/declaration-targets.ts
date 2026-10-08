@@ -20,7 +20,11 @@ export function createDeclarationTargets(managerFor: LspManagerProvider): TextTa
         };
       try {
         const declaration = await resolveLspDeclaration(
-          await managerFor(context.cwd),
+          await managerFor(
+            context.cwd,
+            resolveCodeViewPath(reference.path, context.cwd),
+            context.signal,
+          ),
           resolveCodeViewPath(reference.path, context.cwd),
           reference.selector,
           context.cwd,

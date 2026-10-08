@@ -2,13 +2,17 @@ import spawn from "cross-spawn";
 
 import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { rmSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { resolvePythonDebuggerCommand } from "./adapter-executables.js";
+import type {
+  DebugWorkspaceOwner,
+  DebugWorkspaceOwnerResolver,
+  OwnedDebugAdapter,
+} from "./workspace-owner.js";
 import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import {
   DapClient,
@@ -95,6 +99,8 @@ export interface DebugSession {
   readonly source: string;
   readonly options: DebugSessionOptions;
   readonly breakpoints: Map<string, DebugBreakpoint>;
+  readonly ownerKey?: string;
+  remote?: { readonly target: string; readonly pid: number; readonly identity?: string };
   status: DebugSessionStatus;
   client?: DapClient;
   controlClient?: DapClient;
@@ -111,6 +117,7 @@ export interface DebugSession {
 }
 
 export interface DebugSessionSnapshot {
+  readonly remote?: { readonly target: string; readonly pid: number; readonly identity?: string };
   readonly id: string;
   readonly source: string;
   readonly options: DebugSessionOptions;
@@ -150,16 +157,45 @@ interface SetBreakpointsBody {
 export class DebugSessionManager {
   readonly #sessions = new Map<string, DebugSession>();
   readonly #changeListeners = new Set<DebugSessionChangeListener>();
+  #ownerResolver: DebugWorkspaceOwnerResolver | undefined;
+
+  /** Resolve only explicit workspace owners; omitted means controller-local sessions only. */
+  constructor(ownerResolver?: DebugWorkspaceOwnerResolver) {
+    this.#ownerResolver = ownerResolver;
+  }
+
+  /** Rebind configuration after reload without silently rebinding existing sessions. */
+  setOwnerResolver(ownerResolver?: DebugWorkspaceOwnerResolver): void {
+    this.#ownerResolver = ownerResolver;
+  }
+
+  #owner(session: DebugSession): DebugWorkspaceOwner | undefined {
+    const owner = this.#ownerResolver?.(session.options.cwd);
+    if (owner?.key !== session.ownerKey) throw new Error("Debugger resource owner changed");
+    return owner;
+  }
 
   /** Create a configured session without launching the debuggee. */
   create(
     options: Omit<DebugSessionOptions, "sourceFile"> & { readonly sourceFile?: string },
   ): DebugSession {
+    const owner = this.#ownerResolver?.(options.cwd);
+    if (
+      !owner &&
+      [options.cwd, options.program, options.sourceFile].some((source) => source?.includes("://"))
+    ) {
+      throw new Error("No debugger workspace owner");
+    }
+    if (owner) {
+      for (const source of [options.cwd, options.program, options.sourceFile ?? options.program])
+        owner.serverPath(source);
+    }
     const id = randomBytes(6).toString("hex");
     const session: DebugSession = {
       id,
       source: `debug:${id}`,
       options: { ...options, sourceFile: options.sourceFile ?? options.program },
+      ...(owner === undefined ? {} : { ownerKey: owner.key }),
       breakpoints: new Map(),
       status: "configured",
       stopGeneration: 0,
@@ -187,6 +223,7 @@ export class DebugSessionManager {
       source: session.source,
       options: session.options,
       status: session.status,
+      ...(session.remote === undefined ? {} : { remote: session.remote }),
       breakpoints: [...session.breakpoints.values()].map((breakpoint) => ({ ...breakpoint })),
       ...(session.stop === undefined ? {} : { stop: session.stop }),
     };
@@ -220,10 +257,13 @@ export class DebugSessionManager {
   }
 
   /** Read fresh source text so normal anchors detect edits before breakpoint creation. */
-  readSource(source: string): Promise<string> {
+  async readSource(source: string): Promise<string> {
+    const session = this.get(source);
     const file = this.sourceFile(source);
-    if (file === undefined) return Promise.reject(new Error(`Unknown debug source ${source}`));
-    return readFile(file, "utf8");
+    if (session === undefined || file === undefined)
+      throw new Error(`Unknown debug source ${source}`);
+    const owner = this.#owner(session);
+    return owner === undefined ? readFile(file, "utf8") : owner.readText(file);
   }
 
   /** Store one breakpoint selected against a fresh source snapshot. */
@@ -236,6 +276,7 @@ export class DebugSessionManager {
     const file = this.sourceFile(source);
     if (session === undefined || file === undefined)
       throw new Error(`Unknown debug source ${source}`);
+    this.#owner(session);
     if (session.status === "terminated")
       throw new Error("Cannot add a breakpoint to a terminated session");
     const id = randomBytes(5).toString("hex");
@@ -272,24 +313,19 @@ export class DebugSessionManager {
     retriesLeft: number,
   ): Promise<DebugSession> {
     if (session.status !== "configured") throw new Error(`Session is already ${session.status}`);
-    if (session.options.adapter === "powershell") {
+    signal?.throwIfAborted();
+    const owner = this.#owner(session);
+    if (owner === undefined && session.options.adapter === "powershell") {
       session.adapterTemporaryDirectory = await mkdtemp(
         path.join(tmpdir(), "pi-powershell-debug-"),
       );
     }
-    const recipe = await adapterRecipe(session.options, session.adapterTemporaryDirectory);
-    const client =
-      session.options.adapter === "node"
-        ? await this.#startNodeAdapter(session)
-        : session.options.adapter === "delve"
-          ? await this.#startDelveAdapter(session)
-          : session.options.adapter === "ruby"
-            ? await this.#startRubyAdapter(session)
-            : session.options.adapter === "julia"
-              ? await this.#startJuliaAdapter(session)
-              : session.options.adapter === "r"
-                ? await this.#startRAdapter(session)
-                : DapClient.start(recipe.command, recipe.args, session.options.cwd);
+    const recipe =
+      owner === undefined
+        ? await this.#prepareLocal(session)
+        : await owner.prepare(session.options, signal);
+    if (recipe.remote) session.remote = recipe.remote;
+    const client = recipe.client;
     session.client = client;
     session.controlClient = client;
     session.clients = [client];
@@ -301,12 +337,17 @@ export class DebugSessionManager {
     session.status = "running";
     this.#notify(session);
     try {
-      if (session.options.adapter !== "r") {
+      if (owner !== undefined && session.options.adapter === "node") {
+        if (!recipe.connectChild) throw new Error("Owned Node adapter has no child connection");
+        client.onReverseRequest(this.#handleNodeReverseRequest(session, recipe.connectChild));
+      }
+      if (owner !== undefined || session.options.adapter !== "r") {
         await initializeClient(client, recipe.adapterID, signal);
       }
       const initialized = client.waitForAnyEvent(["initialized"], 30_000, signal);
       const launch = client.request(recipe.request, recipe.launch, { signal });
-      await initialized;
+      // A refusal may arrive before initialized; observe both without waiting for launch success.
+      await Promise.race([initialized, launch.then(() => initialized)]);
       await this.#configureBreakpoints(session, client, signal);
       const configurationDone = client.request("configurationDone", undefined, { signal });
       if (session.options.adapter === "java" || session.options.adapter === "kotlin") {
@@ -327,7 +368,9 @@ export class DebugSessionManager {
       ) {
         // These adapters can start the debuggee before source breakpoints bind under load.
         // Relaunching creates a fresh suspended VM and gives breakpoint binding another chance.
-        for (const activeClient of session.clients ?? [client]) activeClient.close();
+        await Promise.all(
+          (session.clients ?? [client]).map((activeClient) => activeClient.dispose()),
+        );
         session.adapterProcess?.kill();
         await removeAdapterTemporaryDirectory(session);
         session.client = undefined;
@@ -341,7 +384,9 @@ export class DebugSessionManager {
       }
       return session;
     } catch (error) {
-      for (const activeClient of session.clients ?? [client]) activeClient.close();
+      await Promise.all(
+        (session.clients ?? [client]).map((activeClient) => activeClient.dispose()),
+      );
       session.adapterProcess?.kill();
       await removeAdapterTemporaryDirectory(session);
       session.client = undefined;
@@ -362,6 +407,7 @@ export class DebugSessionManager {
     command: "continue" | "next" | "stepIn" | "stepOut",
     signal?: AbortSignal,
   ): Promise<DebugSession> {
+    this.#owner(session);
     if (session.status !== "stopped" || session.stop === undefined) {
       throw new Error(`Cannot ${command} while session is ${session.status}`);
     }
@@ -381,6 +427,7 @@ export class DebugSessionManager {
     expression: string,
     signal?: AbortSignal,
   ): Promise<DebugEvaluation> {
+    this.#owner(session);
     if (session.status !== "stopped" || session.stop?.frame === undefined) {
       throw new Error(`Cannot evaluate while session is ${session.status}`);
     }
@@ -388,7 +435,11 @@ export class DebugSessionManager {
     if (trimmed.length === 0) throw new Error("Debug evaluation requires an expression");
     const response = await requiredClient(session).request<EvaluateBody>(
       "evaluate",
-      { expression: trimmed, frameId: session.stop.frame.id, context: "repl" },
+      {
+        expression: trimmed,
+        frameId: session.stop.frame.id,
+        context: session.options.adapter === "powershell" ? "watch" : "repl",
+      },
       { signal },
     );
     if (typeof response.result !== "string") {
@@ -419,10 +470,10 @@ export class DebugSessionManager {
     }
     if (source !== session.source) throw new Error(`Cannot delete debug resource ${source}`);
     if (session.client !== undefined) {
-      void (session.controlClient ?? session.client)
+      await (session.controlClient ?? session.client)
         .request("disconnect", { terminateDebuggee: true }, { signal, timeoutMs: 500 })
         .catch(() => {});
-      for (const client of session.clients ?? [session.client]) client.close();
+      await Promise.all((session.clients ?? [session.client]).map((client) => client.dispose()));
     }
     await terminateOwnedAdapterProcess(session.adapterProcess);
     await removeAdapterTemporaryDirectory(session);
@@ -431,21 +482,27 @@ export class DebugSessionManager {
     this.#sessions.delete(session.id);
   }
 
-  /** Stop all owned adapter processes during Pi shutdown. */
-  dispose(): void {
-    for (const session of this.#sessions.values()) {
-      for (const client of session.clients ??
-        (session.client === undefined ? [] : [session.client])) {
-        client.close();
-      }
-      void terminateOwnedAdapterProcess(session.adapterProcess);
-      if (session.adapterTemporaryDirectory !== undefined) {
-        rmSync(session.adapterTemporaryDirectory, { recursive: true, force: true });
-      }
-    }
-    this.#sessions.clear();
+  /** Wait for every owned adapter to stop during Pi shutdown. */
+  async dispose(): Promise<void> {
+    await Promise.all(this.list().map((session) => this.delete(session.source)));
   }
 
+  async #prepareLocal(session: DebugSession): Promise<OwnedDebugAdapter> {
+    const recipe = await adapterRecipe(session.options, session.adapterTemporaryDirectory);
+    const client =
+      session.options.adapter === "node"
+        ? await this.#startNodeAdapter(session)
+        : session.options.adapter === "delve"
+          ? await this.#startDelveAdapter(session)
+          : session.options.adapter === "ruby"
+            ? await this.#startRubyAdapter(session)
+            : session.options.adapter === "julia"
+              ? await this.#startJuliaAdapter(session)
+              : session.options.adapter === "r"
+                ? await this.#startRAdapter(session)
+                : DapClient.start(recipe.command, recipe.args, session.options.cwd);
+    return { ...recipe, client };
+  }
   async #startRubyAdapter(session: DebugSession): Promise<DapClient> {
     const port = await availablePort();
     const command = process.env.PI_RUBY_DEBUG_PATH ?? "rdbg";
@@ -647,13 +704,13 @@ export class DebugSessionManager {
     });
     await waitForJsDebugReady(session.adapterProcess);
     const client = await connectWithRetry(port);
-    client.onReverseRequest(this.#handleNodeReverseRequest(session, port));
+    client.onReverseRequest(this.#handleNodeReverseRequest(session, () => DapClient.connect(port)));
     return client;
   }
 
   #handleNodeReverseRequest(
     session: DebugSession,
-    port: number,
+    connectChild: () => Promise<DapClient>,
   ): (request: DapReverseRequest) => Promise<unknown> {
     return async (request) => {
       if (request.command !== "startDebugging") {
@@ -661,9 +718,10 @@ export class DebugSessionManager {
       }
       const arguments_ = asRecord(request.arguments);
       const configuration = asRecord(arguments_.configuration);
-      const child = await DapClient.connect(port);
+      const owner = this.#owner(session);
+      const child = await connectChild();
       session.clients?.push(child);
-      child.onReverseRequest(this.#handleNodeReverseRequest(session, port));
+      child.onReverseRequest(this.#handleNodeReverseRequest(session, connectChild));
       await initializeClient(child, "pwa-node");
       const initialized = child.waitForEvent("initialized");
       const launch = child.request(
@@ -672,10 +730,16 @@ export class DebugSessionManager {
           ...configuration,
           sourceMaps: true,
           pauseForSourceMap: true,
-          outFiles: [path.join(path.dirname(session.options.program), "**", "*.js")],
+          outFiles: [
+            path.join(
+              path.dirname(owner?.serverPath(session.options.program) ?? session.options.program),
+              "**",
+              "*.js",
+            ),
+          ],
         },
       );
-      await initialized;
+      await Promise.race([initialized, launch.then(() => initialized)]);
       session.client = child;
       await this.#configureBreakpoints(session, child);
       await child.request("configurationDone");
@@ -706,7 +770,7 @@ export class DebugSessionManager {
     const response = await client.request<SetBreakpointsBody>(
       "setBreakpoints",
       {
-        source: { path: file, name: path.basename(file) },
+        source: { path: this.#owner(session)?.serverPath(file) ?? file, name: path.basename(file) },
         breakpoints: breakpoints.map(({ line }) => ({ line })),
         sourceModified: false,
       },
@@ -730,7 +794,21 @@ export class DebugSessionManager {
     }
     if (event.event === "loadedSource") {
       const source = asRecord(body.source);
-      const loadedPath = typeof source.path === "string" ? path.resolve(source.path) : undefined;
+      const owner = this.#owner(session);
+      // js-debug also reports named sources such as repl, not remote filesystem paths.
+      if (
+        owner !== undefined &&
+        session.options.adapter === "node" &&
+        typeof source.path === "string" &&
+        !path.posix.isAbsolute(source.path)
+      ) {
+        await this.#waitForStop(session, signal);
+        return;
+      }
+      const loadedPath =
+        typeof source.path === "string"
+          ? (owner?.resourcePath(source.path) ?? path.resolve(source.path))
+          : undefined;
       const breakpointFile =
         loadedPath === undefined
           ? undefined
@@ -756,7 +834,10 @@ export class DebugSessionManager {
           typeof changed.line === "number" &&
           changed.line === breakpoint.line &&
           typeof changedSource.path === "string" &&
-          sameFilePath(changedSource.path, breakpoint.file)
+          sameFilePath(
+            this.#owner(session)?.resourcePath(changedSource.path) ?? changedSource.path,
+            breakpoint.file,
+          )
         ) {
           breakpoint.verified = true;
         }
@@ -817,6 +898,7 @@ export class DebugSessionManager {
     }
     if (
       session.options.adapter === "shell" &&
+      session.stopGeneration === 1 &&
       session.stop?.frame !== undefined &&
       ![...session.breakpoints.values()].some(
         (breakpoint) =>
@@ -841,8 +923,17 @@ export class DebugSessionManager {
     const fallbackThread = (await client.request<ThreadsBody>("threads")).threads?.[0]?.id;
     const threadId = typeof body.threadId === "number" ? body.threadId : fallbackThread;
     if (threadId === undefined) throw new Error("Debugger stopped without a thread");
-    const frame = (await requestStackTrace(client, threadId, session.options.adapter === "dart"))
-      .stackFrames?.[0];
+    const owner = this.#owner(session);
+    const nativeFrame = (
+      await requestStackTrace(client, threadId, session.options.adapter === "dart")
+    ).stackFrames?.[0];
+    const frame =
+      nativeFrame?.source?.path === undefined || owner === undefined
+        ? nativeFrame
+        : {
+            ...nativeFrame,
+            source: { ...nativeFrame.source, path: owner.resourcePath(nativeFrame.source.path) },
+          };
     if (frame?.source?.path !== undefined) {
       for (const breakpoint of session.breakpoints.values()) {
         if (sameFilePath(breakpoint.file, frame.source.path) && breakpoint.line === frame.line) {
@@ -878,7 +969,8 @@ export class DebugSessionManager {
       threadId,
       ...(frame === undefined ? {} : { frame }),
       variables,
-      sourceLines: frame === undefined ? [] : await sourceWindow(frame),
+      sourceLines:
+        frame === undefined ? [] : await sourceWindow(frame, owner?.readText.bind(owner)),
     };
     session.status = "stopped";
     if (notify) this.#notify(session);
@@ -890,11 +982,16 @@ export class DebugSessionManager {
   }
 }
 
-async function sourceWindow(frame: DebugFrame): Promise<readonly DebugSourceLine[]> {
+async function sourceWindow(
+  frame: DebugFrame,
+  readText?: (source: string) => Promise<string>,
+): Promise<readonly DebugSourceLine[]> {
   const file = frame.source?.path;
   if (file === undefined) return [];
   try {
-    const lines = (await readFile(file, "utf8")).split(/\r?\n/u);
+    const lines = (await (readText === undefined ? readFile(file, "utf8") : readText(file))).split(
+      /\r?\n/u,
+    );
     const start = Math.max(1, frame.line - 2);
     const end = Math.min(lines.length, frame.line + 2);
     return lines.slice(start - 1, end).map((content, index) => ({
@@ -902,7 +999,8 @@ async function sourceWindow(frame: DebugFrame): Promise<readonly DebugSourceLine
       content,
       current: start + index === frame.line,
     }));
-  } catch {
+  } catch (error) {
+    if (readText !== undefined) throw error;
     return [];
   }
 }

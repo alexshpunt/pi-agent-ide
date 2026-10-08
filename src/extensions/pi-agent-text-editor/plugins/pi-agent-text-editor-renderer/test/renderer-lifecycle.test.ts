@@ -380,6 +380,118 @@ describe("mutation renderer lifecycle", () => {
     expect(finalPanel).not.toContain("⠋");
   });
 
+  test.each([
+    {
+      effect: "not-applied",
+      code: "UNSUPPORTED_SOURCE",
+      expected: "✗ Not applied · no file provider for this resource",
+    },
+    { effect: "unknown", code: "CONNECTION_LOST", expected: "? Outcome unknown · connection lost" },
+    { effect: "applied", code: "CONNECTION_LOST", expected: "✓ Applied · connection lost" },
+    {
+      kind: "text-mutation",
+      effect: "unknown",
+      code: "POST_WRITE_FAILED",
+      expected: "? Outcome unknown · edit failed",
+    },
+    {
+      kind: "text-mutation",
+      effect: "applied",
+      code: "POST_WRITE_FAILED",
+      expected: "✓ Applied · edit failed",
+    },
+    {
+      kind: "direct-mutation",
+      effect: "applied",
+      code: "APPLY_UNDO_CLEANUP_FAILED",
+      expected: "✓ Applied · journal cleanup failed",
+    },
+    {
+      kind: "direct-mutation",
+      effect: "not-applied",
+      code: "APPLY_UNDO_OWNER_CHANGED",
+      expected: "✗ Not applied · resource owner changed",
+    },
+  ])(
+    "file and direct failures show $effect and a safe cause",
+    ({ kind, effect, code, expected }) => {
+      let renderer: TextEditorToolRendererRegistration | undefined;
+      const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+        onMutationTool(listener: (registration: unknown) => void): void {
+          listener({
+            name: kind === "direct-mutation" ? "undo" : "delete",
+            source: { field: "path" },
+          });
+        },
+        addToolRenderer(value: TextEditorToolRendererRegistration): void {
+          renderer = value;
+        },
+      });
+      registerMutationRenderers(api);
+      if (renderer?.renderResult === undefined) throw new Error("Missing delete renderer");
+      const args = {
+        path: "ssh://sandbox/file",
+        ...(kind === "direct-mutation" ? { transaction: "APPLY#000000000000" } : {}),
+      };
+      const component = renderer.renderResult(
+        {
+          content: [{ type: "text", text: "private transport diagnostic and stack trace" }],
+          details:
+            kind === "text-mutation"
+              ? {
+                  effect: effect === "unknown" ? "unknown" : "applied",
+                  results: [
+                    new FileMutationResult({
+                      ok: false,
+                      path: args.path,
+                      errors: [
+                        {
+                          path: args.path,
+                          code,
+                          reason: "private transport diagnostic and stack trace",
+                        },
+                      ],
+                    }),
+                  ],
+                }
+              : {
+                  results: [],
+                  metadata: {
+                    semanticAction: {
+                      kind: kind ?? "file-operation",
+                      operation: "delete",
+                      ok: false,
+                      effect,
+                      path: args.path,
+                      error: { code, message: "private transport diagnostic and stack trace" },
+                    },
+                  },
+                },
+        },
+        { expanded: false, isPartial: false },
+        theme,
+        {
+          args,
+          toolCallId: "whole-file-failure",
+          invalidate: vi.fn(),
+          lastComponent: undefined,
+          state: {},
+          cwd: process.cwd(),
+          executionStarted: true,
+          argsComplete: true,
+          isPartial: false,
+          expanded: false,
+          showImages: true,
+          isError: true,
+        },
+      );
+      const output = component.render(100).join("\n");
+      expect(output).toContain(expected);
+      expect(output).not.toContain("private transport diagnostic");
+      expect(output).not.toContain("stack trace");
+    },
+  );
+
   test("labels resolved diff resources only when the tool call has no source path", () => {
     let renderer: TextEditorToolRendererRegistration | undefined;
     const api = Object.assign(Object.create(null) as TextEditorPluginApi, {

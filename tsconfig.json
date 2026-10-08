@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "allowImportingTsExtensions": true,
+    "allowJs": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "paths": {
@@ -12,6 +13,13 @@
     "strict": true,
     "target": "ES2023"
   },
-  "include": ["dev/**/*.ts", "packages/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "dev/**/*.ts",
+    "packages/**/*.ts",
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "src/backend/web-browser-worker.mjs",
+    "tests/**/*.ts"
+  ],
   "exclude": [".worktrees/**", "**/dist/**", "**/node_modules/**"]
 }

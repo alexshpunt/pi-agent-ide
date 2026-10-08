@@ -425,11 +425,14 @@ function createInputResolver(manager: TerminalSessionManager): ResourceResolver 
             const writeIndex = text.indexOf(WRITE_PREFIX);
             const keysIndex = text.indexOf(KEYS_PREFIX);
             if (writeIndex >= 0) {
-              manager.write(session.source, text.slice(writeIndex + WRITE_PREFIX.length));
+              await manager.write(session.source, text.slice(writeIndex + WRITE_PREFIX.length));
               return;
             }
             if (keysIndex >= 0) {
-              manager.sendKeys(session.source, text.slice(keysIndex + KEYS_PREFIX.length).trim());
+              await manager.sendKeys(
+                session.source,
+                text.slice(keysIndex + KEYS_PREFIX.length).trim(),
+              );
               return;
             }
             throw new Error(`Unsupported text operation for ${session.source}`);

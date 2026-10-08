@@ -10,7 +10,10 @@ export interface TextEditCompletion {
   readonly resolvedBy: string;
   readonly cwd: string;
   readonly existed: boolean;
+  /** Text before the publication; final formatting does not replace this snapshot. */
   readonly before: TextDocument;
+  /** Saved text immediately before final formatting, used to reconcile deferred undo receipts. */
+  readonly beforePostProcessing?: TextDocument;
   readonly after: TextDocument;
   readonly intent: TextEditIntent;
 }

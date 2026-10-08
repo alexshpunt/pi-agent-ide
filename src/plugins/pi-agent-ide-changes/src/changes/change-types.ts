@@ -52,6 +52,8 @@ export type ChangeInspection =
       readonly status: "unavailable";
       readonly reason: ChangeUnavailableReason;
       readonly message: string;
+      /** Original publication failure, including its acknowledged effect. */
+      readonly failure?: Error;
     };
 
 export interface ChangeInspectionInput {
@@ -64,6 +66,7 @@ export interface ChangeInspectionInput {
 export type ChangeIndexAction = "stage" | "unstage";
 
 export interface GitIndexUpdate {
+  readonly expectedWorktreeText?: string;
   readonly head: string;
   readonly repositoryPath: string;
   readonly headStart: number;
