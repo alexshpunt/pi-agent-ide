@@ -23,7 +23,7 @@ export interface SearchPresentation {
   readonly files: readonly SearchPresentationFile[];
 }
 
-/** Selects bounded search details while preserving complete low-volume files. */
+/** Shares one item budget between complete small files, compact summaries and groups. */
 export function planSearchPresentation(
   matches: readonly TextSearchMatch[],
   detailBudget: number,
@@ -36,45 +36,55 @@ export function planSearchPresentation(
   }
 
   const compacted = new Set<string>();
-  let detailedCount = matches.length;
+  let itemCount = matches.length;
   const noisiestFirst = [...bySource].sort(
     ([leftSource, left], [rightSource, right]) =>
       right.length - left.length || leftSource.localeCompare(rightSource),
   );
   for (const [source, sourceMatches] of noisiestFirst) {
-    if (detailedCount <= detailBudget) break;
+    if (itemCount <= detailBudget) break;
     compacted.add(source);
-    detailedCount -= sourceMatches.length;
+    itemCount -= sourceMatches.length - 1;
   }
 
-  const files = [...bySource]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([source, sourceMatches]): SearchPresentationFile => {
-      if (!compacted.has(source)) {
-        return { kind: "detailed", source, matches: sourceMatches };
-      }
-
-      const counts = new Map<string, number>();
-      for (const match of sourceMatches) {
-        counts.set(match.lineText, (counts.get(match.lineText) ?? 0) + 1);
-      }
-      return {
-        kind: "compacted",
-        source,
-        matchCount: sourceMatches.length,
-        uniqueLineCount: counts.size,
-        groups:
-          bySource.size === 1
-            ? [...counts]
-                .sort(
-                  ([leftText, leftCount], [rightText, rightCount]) =>
-                    rightCount - leftCount || leftText.localeCompare(rightText),
-                )
-                .slice(0, detailBudget)
-                .map(([text, matchCount]) => ({ text, matchCount }))
-            : [],
-      };
+  const files: SearchPresentationFile[] = [];
+  let remaining = detailBudget;
+  // Keep complete small files before spending the remaining budget on noisy summaries.
+  const ordered = [...bySource].sort(
+    ([left], [right]) =>
+      Number(compacted.has(left)) - Number(compacted.has(right)) || left.localeCompare(right),
+  );
+  for (const [source, sourceMatches] of ordered) {
+    if (!compacted.has(source)) {
+      if (sourceMatches.length > remaining) continue;
+      files.push({ kind: "detailed", source, matches: sourceMatches });
+      remaining -= sourceMatches.length;
+      continue;
+    }
+    if (remaining < 1) continue;
+    remaining--;
+    const counts = new Map<string, number>();
+    for (const match of sourceMatches)
+      counts.set(match.lineText, (counts.get(match.lineText) ?? 0) + 1);
+    const groups =
+      bySource.size === 1
+        ? [...counts]
+            .sort(
+              ([leftText, leftCount], [rightText, rightCount]) =>
+                rightCount - leftCount || leftText.localeCompare(rightText),
+            )
+            .slice(0, remaining)
+            .map(([text, matchCount]) => ({ text, matchCount }))
+        : [];
+    remaining -= groups.length;
+    files.push({
+      kind: "compacted",
+      source,
+      matchCount: sourceMatches.length,
+      uniqueLineCount: counts.size,
+      groups,
     });
-
+  }
+  files.sort((left, right) => left.source.localeCompare(right.source));
   return { files };
 }

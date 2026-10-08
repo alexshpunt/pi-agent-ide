@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { AgentContent, ResourceResolutionAttempt, ResourceResolver } from "pi-agent-resource";
+import type { AgentContent } from "./content.js";
+import type { ResourceResolutionAttempt, ResourceResolver } from "./resolver.js";
 
 export interface TempResourceStoreOptions {
   /** Parent folder for this store's private temporary directory. */
@@ -28,12 +29,21 @@ export class TempResourceStore {
   }
 
   /** Saves text and returns a reference owned by this store. Rejects after disposal starts. */
-  async save(text: string): Promise<string> {
+  save(text: string): Promise<string> {
+    return this.#startSave(text, false);
+  }
+
+  /** Saves complete text to a private file readable through filesystem and raw byte reads. */
+  saveFile(text: string): Promise<string> {
+    return this.#startSave(text, true);
+  }
+
+  async #startSave(text: string, asFile: boolean): Promise<string> {
     if (this.#disposal !== undefined) {
       throw new Error("Temporary resource store is closed");
     }
 
-    const saving = this.#save(text);
+    const saving = this.#save(text, asFile);
     this.#pendingSaves.add(saving);
     try {
       return await saving;
@@ -48,14 +58,14 @@ export class TempResourceStore {
     return this.#disposal;
   }
 
-  async #save(text: string): Promise<string> {
+  async #save(text: string, asFile: boolean): Promise<string> {
     const directory = await this.#getDirectory();
     const id = randomUUID();
     const source = `temp:${id}`;
     const filePath = path.join(directory, `${id}.txt`);
-    await writeFile(filePath, text, { encoding: "utf8", flag: "wx" });
-    this.#entries.set(source, filePath);
-    return source;
+    await writeFile(filePath, text, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    if (!asFile) this.#entries.set(source, filePath);
+    return asFile ? filePath : source;
   }
 
   async #dispose(): Promise<void> {

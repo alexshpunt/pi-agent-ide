@@ -53,6 +53,7 @@ export async function limitReadOutput(
       content: [{ ...block, text: appendNotice(truncation.content, notice) }],
       details: {
         ...truncatedDetails(result.details, truncation),
+        outputNotice: (truncation.content.length ? "\n\n" : "") + notice,
         ...(temporarySource !== undefined && { temporarySource }),
       },
     };
@@ -77,6 +78,7 @@ export function explainReadWindow(
   return {
     ...result,
     content: [{ ...block, text: appendNotice(block.text, notice) }],
+    details: { ...result.details, outputNotice: (block.text.length ? "\n\n" : "") + notice },
   };
 }
 
@@ -96,7 +98,8 @@ function emptyTextNotice(
   return undefined;
 }
 function appendTemporarySource(notice: string, source: string): string {
-  return `${notice.slice(0, -1)} Full output: ${source}. Available until this runtime is disposed.]`;
+  const reference = source.startsWith("temp:") ? source : JSON.stringify(source);
+  return `${notice.slice(0, -1)} Full output: ${reference}. Available until this runtime is disposed.]`;
 }
 
 async function oversizedFirstLineNotice(

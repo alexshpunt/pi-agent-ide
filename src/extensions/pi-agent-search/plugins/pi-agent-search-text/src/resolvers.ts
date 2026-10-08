@@ -340,6 +340,16 @@ function formatSearchSession(
     }
   }
 
+  const omittedFiles = fileCount - presentation.files.length;
+  if (omittedFiles > 0) {
+    const shownMatches = presentation.files.reduce(
+      (total, file) => total + (file.kind === "detailed" ? file.matches.length : file.matchCount),
+      0,
+    );
+    lines.push(
+      `\n… ${omittedFiles} more files (${count - shownMatches} matches) not displayed. Narrow path, include, or query to see them.`,
+    );
+  }
   return lines.join("\n");
 }
 

@@ -186,6 +186,8 @@ export interface ReadResultDetails extends UnsupportedContentDetails {
   readonly totalLines?: number;
   readonly truncation?: TruncationResult;
   readonly temporarySource?: string;
+  /** Exact appended notice, outside the useful-output budget. */
+  readonly outputNotice?: string;
   readonly lines?: readonly ReadTextLine[];
   /** Requested view names that no registration backed; they were ignored. */
   readonly ignoredViews?: readonly string[];
@@ -322,6 +324,8 @@ export interface ReadToolPluginApi {
   ): Promise<ReadToolResult | undefined>;
   /** Stores complete output for follow-up read access until this runtime is disposed. */
   saveTemporary(text: string): Promise<string>;
+  /** Sets the saver used before the shared text budget truncates a Read result. */
+  setOutputSaver(saver: (text: string) => Promise<string>): void;
   /** Executes the shared pipeline; script results are not clipped to the agent output budget. */
   read(
     request: ReadRequest,
