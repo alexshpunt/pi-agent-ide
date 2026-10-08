@@ -300,7 +300,7 @@ function formatSearchSession(
   const heading = anchorsRegistered
     ? session.complete
       ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${summary}`
-      : `${summary} (limit reached; no all anchors were registered)`
+      : `${summary} (incomplete results; no all anchors were registered)`
     : `${summary} (files changed during search; results shown without anchors)`;
   const lines = anchorsRegistered ? [SEARCH_ANCHOR_LEGEND, heading] : [heading];
   const indices = new Map(session.matches.map((match, index) => [match, index + 1]));
@@ -340,6 +340,16 @@ function formatSearchSession(
     }
   }
 
+  const omittedFiles = fileCount - presentation.files.length;
+  if (omittedFiles > 0) {
+    const shownMatches = presentation.files.reduce(
+      (total, file) => total + (file.kind === "detailed" ? file.matches.length : file.matchCount),
+      0,
+    );
+    lines.push(
+      `\n… ${omittedFiles} more files (${count - shownMatches} matches) not displayed. Narrow path, include, or query to see them.`,
+    );
+  }
   return lines.join("\n");
 }
 

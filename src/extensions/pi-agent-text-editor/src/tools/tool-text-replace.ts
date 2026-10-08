@@ -23,7 +23,7 @@ export const replaceSchema = Type.Object(
     ...sourceRangeProperties(),
     text: Type.String({
       description:
-        "Replacement text. Empty text removes the selection; a whole-line selection removes its lines without inserting a blank line. Adjacent unselected lines are kept.",
+        "Replacement text for each selected range. Empty text removes the selection; a whole-line selection removes its lines without inserting a blank line. Adjacent unselected lines are kept.",
     }),
   },
   { additionalProperties: false },
@@ -37,8 +37,7 @@ interface ReplaceParameters {
 
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
   name: "replace",
-  description:
-    "Use replace to change an existing text fragment, an inclusive line range, or every selected search match.",
+  description: "Use replace to replace a text fragment or each selected range.",
 
   promptSnippet: "Make precise file edits by replacing text using exact matches or anchors",
   parameters: replaceSchema,

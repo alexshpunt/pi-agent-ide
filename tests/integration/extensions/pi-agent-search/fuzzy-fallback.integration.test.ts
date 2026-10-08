@@ -152,7 +152,6 @@ const individual=/SEARCH#[A-F\d]+:\d+:match/.exec(first)?.[0];
 if(!individual) throw Error("Candidate individual reference missing");
 text(results[0]); text(results[1]);
 await tools.write({path:"link_hints.js",content:"hintStrings();\nHintStrings();\nmyhintStrings();\ngenerateHintStrings();\n"});
-await tools.flush({});
 const after = await tools.read({path:reference});
 if (!after.includes("hintStrings();") || after.includes("HintStrings();") || after.includes("generateHintStrings();")) throw Error("Read reranked fuzzy or changed exact semantics: "+after);
 let stale=false; try { await tools.read({path:individual}); } catch { stale=true; }
@@ -164,7 +163,7 @@ text("Exact candidate Read and refresh passed");
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd: fixture.cwd,
     extensions: [ide, "builtin:codemode"],
-    tools: ["search", "read", "write", "flush", "codemode"],
+    tools: ["search", "read", "write", "codemode"],
     rawMode: true,
     timeoutMs: 120_000,
     conversation: [call("script", "codemode", { code }), assistantMessage([text("Done")])],

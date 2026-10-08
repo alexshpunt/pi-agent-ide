@@ -254,18 +254,27 @@ export function createSearchCore(): SearchCore {
                 const missingAdapter = data === undefined;
                 return withStructuredResult(
                   {
-                    content:
-                      entry.registration.fallback && protocolLike
+                    content: [
+                      ...(entry.registration.fallback && protocolLike
                         ? [
                             {
-                              type: "text",
+                              type: "text" as const,
                               text: emptyProtocol
                                 ? "Search fallback: empty protocol query; searched the original text."
                                 : "Search fallback: unhandled protocol query; searched the original text.",
                             },
                             ...formatted.content,
                           ]
-                        : formatted.content,
+                        : formatted.content),
+                      ...(isRecord(data) && data.complete === false
+                        ? [
+                            {
+                              type: "text" as const,
+                              text: "Search coverage is incomplete. Do not conclude absence or use this result as an edit scope.",
+                            },
+                          ]
+                        : []),
+                    ],
                     details: { resolverId: resolver.id, payload: formatted.details },
                     ...(audience === "script" && {
                       script: {

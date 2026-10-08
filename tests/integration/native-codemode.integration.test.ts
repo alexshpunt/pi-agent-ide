@@ -91,6 +91,87 @@ function batchDetails(run: Awaited<ReturnType<typeof runScripts>>, id = "script-
 }
 
 test.each(["on", "only"] as const)(
+  "Write saves and formats files before returning in Codemode %s",
+  async (mode) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "existing.note"), "old\n");
+      const run = await runScripts(
+        cwd,
+        `native-codemode-immediate-write-${mode}`,
+        [
+          'text(await tools.write({path:"new.note",content:"created\\n"}));\n' +
+            'text(await tools.write({path:"existing.note",content:"replaced\\n"}));\n' +
+            'throw new Error("after completed writes");',
+        ],
+        mode,
+        [path.resolve("tests/integration/support/final-post-edit-extension.ts")],
+      );
+      expect(getToolExecution(run, "script-0").isError).toBe(true);
+      expect(getToolResultText(run, "script-0")).toContain("after completed writes");
+      const recorded = await events(cwd);
+      expect(
+        recorded
+          .filter((event) => event.type === "result" && event.name === "write")
+          .map((event) => event.content),
+      ).toEqual(["CREATED\n", "REPLACED\n"]);
+      expect(await readFile(path.join(cwd, "new.note"), "utf8")).toBe("CREATED\n");
+      expect(await readFile(path.join(cwd, "existing.note"), "utf8")).toBe("REPLACED\n");
+      expect(batchDetails(run).editorBatches).toHaveLength(0);
+      expect(
+        (await readFile(path.join(cwd, "format-events.jsonl"), "utf8")).trim().split("\n"),
+      ).toHaveLength(2);
+    });
+  },
+);
+
+test("Write finishes pending edits and gives later edits its saved snapshot", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.note"), "alpha\nbeta\n");
+    const run = await runScripts(
+      cwd,
+      "native-codemode-immediate-write-boundary",
+      [
+        'text(await tools.replace({path:"note.note",start:"alpha",text:"first"}));\n' +
+          'text(await tools.write({path:"note.note",content:"replacement\\n"}));\n' +
+          'text(await tools.replace({path:"note.note",start:"REPLACEMENT",text:"changed"}));',
+      ],
+      "on",
+      [path.resolve("tests/integration/support/final-post-edit-extension.ts")],
+    );
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    const recorded = await events(cwd);
+    expect(
+      recorded.find((event) => event.type === "result" && event.name === "write")?.content,
+    ).toBe("REPLACEMENT\n");
+    expect(recorded.filter((event) => event.type === "call").map((event) => event.content)).toEqual(
+      ["alpha\nbeta\n", "first\nbeta\n", "REPLACEMENT\n"],
+    );
+    expect(await readFile(path.join(cwd, "note.note"), "utf8")).toBe("CHANGED\n");
+    expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([1, 1]);
+    const formats = (await readFile(path.join(cwd, "format-events.jsonl"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { content: string });
+    expect(formats.map((event) => event.content)).toEqual(["replacement\n", "changed\n"]);
+  });
+});
+
+test("a completed Write survives a later script deadline", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runScripts(cwd, "native-codemode-immediate-write-deadline", [
+      '// @options: {"timeout_ms":2000}\ntext(await tools.write({path:"saved.txt",content:"saved\\n"})); while (true) {}',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(
+      (await events(cwd)).find((event) => event.type === "result" && event.name === "write")
+        ?.content,
+    ).toBe("saved\n");
+    expect(await readFile(path.join(cwd, "saved.txt"), "utf8")).toBe("saved\n");
+  });
+});
+test.each(["on", "only"] as const)(
   "native Codemode %s preserves original snapshots for sequential edits",
   async (mode) => {
     await withTempWorkspace(async (cwd) => {
@@ -108,7 +189,6 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
       );
       const shown = getToolResultText(run, "script-0");
       expect(getToolExecution(run, "script-0").isError, shown).toBe(false);
-      expect(shown).toContain("not yet applied");
       expect(shown).toContain("Editor batches: 1 committed");
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
         "added\nalpha\nBETA\nomega\n",
@@ -147,6 +227,24 @@ text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma
   },
 );
 
+test("editor batches commit automatically without a checkpoint tool", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-automatic-commits", [
+      `if (ALL_TOOLS.some(tool => tool.name === "flush")) throw Error("Unexpected editor checkpoint tool");
+await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
+const shown = await tools.read({path:"note.txt"});
+if (!shown.includes("ALPHA")) throw Error("Read did not see the committed edit");
+const changed = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+await tools.replace({path:changed,text:"FINAL"+String.fromCharCode(10)});
+text(await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"}));`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nFINAL\nGAMMA\nomega\n");
+  });
+});
 test("read and search finish a batch before dependent work starts", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
@@ -242,29 +340,35 @@ test("a rejected combined write fails the parent and blocks the next read", asyn
   });
 });
 
-test.each(["content", "existence"] as const)(
-  "commit rejects an external %s change without replay",
-  async (kind) => {
-    await withTempWorkspace(async (cwd) => {
-      await writeFile(path.join(cwd, "note.txt"), initial);
-      const code =
-        kind === "content"
-          ? 'text(await tools.replace({path:"note.txt",start:"alpha",text:"RACE"}));'
-          : 'text(await tools.write({path:"created.txt",content:"planned"}));';
-      const run = await runScripts(cwd, `native-codemode-external-${kind}`, [code]);
-      expect(getToolExecution(run, "script-0").isError).toBe(true);
-      expect(getToolResultText(run, "script-0")).toContain(
-        kind === "content"
-          ? "changed before the edit batch"
-          : "created or removed before the edit batch",
-      );
-      expect(
-        await readFile(path.join(cwd, kind === "content" ? "note.txt" : "created.txt"), "utf8"),
-      ).toBe(kind === "content" ? "external\n" : "");
-      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
-    });
-  },
-);
+test("commit rejects an external content change without replay", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-external-content", [
+      'text(await tools.replace({path:"note.txt",start:"alpha",text:"RACE"}));',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(getToolResultText(run, "script-0")).toContain("changed before the edit batch");
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("external\n");
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
+  });
+});
+
+test("completed Write is not replayed after another writer changes the file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runScripts(cwd, "native-codemode-write-external-change", [
+      'text(await tools.write({path:"created.txt",content:"planned"}));',
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    const recorded = await events(cwd);
+    expect(
+      recorded.find((event) => event.type === "result" && event.name === "write")?.content,
+    ).toBe("planned");
+    expect(await readFile(path.join(cwd, "created.txt"), "utf8")).toBe("");
+    expect(recorded.filter((event) => event.type === "edit")).toHaveLength(1);
+  });
+});
 
 test("a script deadline discards pending edits and the next script gets a fresh batch", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -274,7 +378,9 @@ test("a script deadline discards pending edits and the next script gets a fresh 
       'text(await tools.replace({path:"note.txt",start:"alpha",text:"CLEAN"}));',
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toContain("no pending edits were written");
+    const interruption = getToolExecutionDetails(getToolExecution(run, "script-0"));
+    expect(interruption).toHaveProperty("editorBatchResults.0.data.effect", "not-applied");
+    expect(interruption).toHaveProperty("editorBatchResults.0.errors.0.code", "CANCELLED");
     expect(getToolExecution(run, "script-1").isError, getToolResultText(run, "script-1")).toBe(
       false,
     );
@@ -285,7 +391,50 @@ test("a script deadline discards pending edits and the next script gets a fresh 
   });
 });
 
-test("all six text operations share one multi-file snapshot batch", async () => {
+test("a deadline with clipped output still discards pending Insert edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-clipped-deadline", [
+      '// @options: {"timeout_ms":2000,"max_output_tokens":10000}\nawait tools.insert({path:"note.txt",anchor:"alpha",text:"UNEXPECTED"}); text("x".repeat(100000)); while (true) {}',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(initial);
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
+  });
+});
+test("an ordinary error after deadline-like script output keeps accepted edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-deadline-like-output", [
+      'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"}); text("Script error:\\nScript timed out: script output only"); throw new Error("ordinary failure");',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      "alpha\nKEPT\nbeta\ngamma\nomega\n",
+    );
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+  });
+});
+test.each([false, true])(
+  "an ordinary exception containing a timeout marker keeps edits with clipped output=%s",
+  async (clipped) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const run = await runScripts(cwd, `native-codemode-marker-in-error-${clipped}`, [
+        (clipped ? '// @options: {"max_output_tokens":1000}\n' : "") +
+          'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"});' +
+          (clipped ? 'text("x".repeat(100000));' : "") +
+          'throw new Error("Script error:\\nScript timed out: copied failure");',
+      ]);
+      expect(getToolExecution(run, "script-0").isError).toBe(true);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "alpha\nKEPT\nbeta\ngamma\nomega\n",
+      );
+      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+    });
+  },
+);
+test("five text operations share a multi-file snapshot batch before immediate Write", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     await writeFile(path.join(cwd, "target.txt"), "head\nmid\ntail\n");
@@ -301,14 +450,14 @@ test("all six text operations share one multi-file snapshot batch", async () => 
       false,
     );
     expect(batchDetails(run).editorBatches).toHaveLength(1);
-    expect(batchDetails(run).editorBatches[0]?.calls).toHaveLength(6);
+    expect(batchDetails(run).editorBatches[0]?.calls).toHaveLength(5);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("added\nalpha\nBETA\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
       "head\nalpha\nmid\ntail\nomega\n",
     );
     expect(await readFile(path.join(cwd, "new.txt"), "utf8")).toBe("created\n");
     const recorded = await events(cwd);
-    expect(recorded.filter((event) => event.type === "guard")).toHaveLength(1);
+    expect(recorded.filter((event) => event.type === "guard")).toHaveLength(2);
     expect(recorded.filter((event) => event.type === "edit")).toHaveLength(3);
   });
 });
@@ -364,6 +513,42 @@ test("a deadline cancels a boundary commit waiting on a slow guard", async () =>
   });
 });
 
+test.each([
+  { name: "pending-deadline", committed: false, deadline: true, remains: false },
+  { name: "committed-deadline", committed: true, deadline: true, remains: true },
+  { name: "ordinary-error", committed: false, deadline: false, remains: true },
+])("Copy preserves the interruption boundary: $name", async (scenario) => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "alpha\n");
+    await writeFile(path.join(cwd, "target.txt"), "head\ntail\n");
+    const run = await runScripts(cwd, `copy-interruption-${scenario.name}`, [
+      `${scenario.deadline ? '// @options: {"timeout_ms":2000}\n' : ""}
+text(await tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}));
+${scenario.committed ? 'await tools.read({path:"target.txt"});' : ""}
+${scenario.deadline ? "while(true) {}" : 'throw Error("ordinary Copy script error");'}`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+      scenario.remains ? "head\nalpha\ntail\n" : "head\ntail\n",
+    );
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(
+      scenario.remains ? 1 : 0,
+    );
+    expect(getToolExecutionDetails(getToolExecution(run, "script-0"))).toHaveProperty(
+      "editorBatchResults.0.data.effect",
+      scenario.remains ? "applied" : "not-applied",
+    );
+    if (!scenario.remains)
+      expect(getToolExecutionDetails(getToolExecution(run, "script-0"))).toHaveProperty(
+        "editorBatchResults.0.errors.0.code",
+        "CANCELLED",
+      );
+    expect(getToolResultText(run, "script-0")).toContain(
+      scenario.remains ? "Editor batches: 1 committed" : "No file was changed.",
+    );
+  });
+});
 test("agent abort discards accepted but unwritten edits", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
@@ -378,7 +563,9 @@ test("agent abort discards accepted but unwritten edits", async () => {
       false,
     );
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toContain("no pending edits were written");
+    const interruption = getToolExecutionDetails(getToolExecution(run, "script-0"));
+    expect(interruption).toHaveProperty("editorBatchResults.0.data.effect", "not-applied");
+    expect(interruption).toHaveProperty("editorBatchResults.0.errors.0.code", "CANCELLED");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(initial);
     expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
   });

@@ -51,6 +51,9 @@ export interface SearchToolDetails {
   readonly matchCount: number;
   readonly fileCount: number;
   readonly complete: boolean;
+  /** Files and matches retained internally but not shown within the item budget. */
+  readonly omittedFileCount?: number;
+  readonly omittedMatchCount?: number;
   readonly files: readonly SearchResultFile[];
   readonly fuzzy?: FuzzyResultData;
   readonly fuzzyPresentation?: FuzzySearchPresentation;
@@ -71,6 +74,7 @@ export function createSearchToolDetails(
   detailBudget = 50,
 ): SearchToolDetails {
   const presentation = planSearchPresentation(matches, detailBudget);
+  const fileCount = new Set(matches.map((match) => match.source)).size;
   const files = presentation.files.map((file): SearchResultFile =>
     file.kind === "detailed"
       ? createSearchResultFile(file.source, file.matches, cwd)
@@ -88,7 +92,14 @@ export function createSearchToolDetails(
     ...(sessionId !== undefined && { sessionId }),
     query,
     matchCount: matches.length,
-    fileCount: files.length,
+    fileCount,
+    ...(presentation.files.length < fileCount
+      ? {
+          omittedFileCount: fileCount - files.length,
+          omittedMatchCount:
+            matches.length - files.reduce((count, file) => count + file.matchCount, 0),
+        }
+      : {}),
     complete,
     files,
   };
@@ -159,6 +170,8 @@ export function isSearchToolDetails(value: unknown): value is SearchToolDetails 
     typeof value.query !== "string" ||
     !isCount(value.matchCount) ||
     !isCount(value.fileCount) ||
+    (value.omittedFileCount !== undefined && !isCount(value.omittedFileCount)) ||
+    (value.omittedMatchCount !== undefined && !isCount(value.omittedMatchCount)) ||
     typeof value.complete !== "boolean" ||
     (value.sessionId !== undefined && typeof value.sessionId !== "string") ||
     (value.fuzzy !== undefined && !isFuzzyResultData(value.fuzzy)) ||
@@ -171,8 +184,9 @@ export function isSearchToolDetails(value: unknown): value is SearchToolDetails 
 
   const files = value.files as readonly SearchResultFile[];
   return (
-    value.fileCount === files.length &&
-    value.matchCount === files.reduce((count, file) => count + file.matchCount, 0)
+    value.fileCount === files.length + (value.omittedFileCount ?? 0) &&
+    value.matchCount ===
+      files.reduce((count, file) => count + file.matchCount, 0) + (value.omittedMatchCount ?? 0)
   );
 }
 

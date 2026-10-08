@@ -32,9 +32,9 @@ export function formatAgentTerminalSnapshot(snapshot: TerminalSessionSnapshot): 
     snapshot.completionReason === undefined
       ? undefined
       : `completionReason: ${snapshot.completionReason}`,
-    snapshot.waitReason === undefined || snapshot.status !== "running"
-      ? undefined
-      : `next: Read ${snapshot.source} to inspect it, then use write or insert to send input.`,
+    snapshot.status === "running" && snapshot.background
+      ? `next: Continue independent work or finish your turn; completion or a one-time idle inspection notice will wake the agent. Read ${snapshot.source} to inspect output; use write or insert when input is needed.`
+      : undefined,
     `outputRange: ${snapshot.outputStart}-${snapshot.outputEnd}`,
     snapshot.truncated ? "retainedOutput: earlier data omitted from memory" : undefined,
     truncation.truncated ? `fullOutput: ${snapshot.fullOutputPath}` : undefined,

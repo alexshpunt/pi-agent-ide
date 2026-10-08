@@ -11,6 +11,7 @@ import { createFeatureFlags } from "#src/composite/feature-flags.js";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
+import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
@@ -25,6 +26,16 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   const nestedRendering = createNestedIdeRendering(pi);
   const textResults = createIdeTextResults(nestedRendering.api);
   const availability = createIdeToolAvailability(textResults.api);
+  pi.on("before_provider_request", (event, context) => {
+    if (context.model?.api !== "openai-responses") return;
+    const names = new Set(
+      pi
+        .getAllTools()
+        .filter((tool) => tool.namespace?.name.startsWith("ide_"))
+        .map((tool) => tool.name),
+    );
+    return preserveResponsesToolOmission(event.payload, names);
+  });
   pi.on("session_start", (event, context) => {
     const restored =
       event.reason === "reload"

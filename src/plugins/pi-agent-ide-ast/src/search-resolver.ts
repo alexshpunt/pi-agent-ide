@@ -233,9 +233,6 @@ export function createAstSearchResolver(
 
       if (result.complete)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact AST matches.`);
-      if (!result.complete) {
-        lines.push("Result limit reached.");
-      }
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],

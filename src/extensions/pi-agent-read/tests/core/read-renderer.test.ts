@@ -17,6 +17,65 @@ const plainTheme = {
 
 initTheme("dark", false);
 
+test.each([
+  {
+    source: "/workspace/notes.txt",
+    status: "lint: unavailable (No linter configured for this file).",
+  },
+  {
+    source: "/workspace/notes.md",
+    status: "marksman: snapshot (Latest push snapshot; completion is unknown).",
+  },
+])(
+  "keeps diagnostic readiness visible above $source without changing source rows",
+  ({ source, status }) => {
+    const warning = "Unknown view ignored: ghost.";
+    for (const mapped of [true, false]) {
+      const result: AgentToolResult<ReadResultDetails> = {
+        content: [{ type: "text", text: `${warning}\n${status}\nalpha\nbeta` }],
+        details: {
+          source,
+          startLine: 1,
+          endLine: 2,
+          totalLines: 2,
+          ...(mapped
+            ? {
+                lines: [
+                  { lineNumber: 1, content: "alpha", lineEnding: "\n" },
+                  { lineNumber: 2, content: "beta", lineEnding: "" },
+                ],
+              }
+            : {}),
+          viewWarnings: [warning],
+          diagnosticStatus: status,
+        },
+      };
+      for (const expanded of [false, true]) {
+        const rendered = createReadResultRenderer({ kind: "source" })(
+          result,
+          { expanded, isPartial: false },
+          plainTheme,
+          { isError: false, lastComponent: undefined } as never,
+        )
+          .render(52)
+          .join("\n");
+        const plain = rendered.replaceAll("│", " ").replace(/\s+/gu, " ");
+        expect(plain).toContain(status);
+        expect(plain.split(status)).toHaveLength(2);
+        expect(plain.split(warning)).toHaveLength(2);
+        expect(rendered).toContain("alpha");
+        expect(rendered).toContain("beta");
+        expect(rendered.indexOf(status.split(":")[0] ?? status)).toBeLessThan(
+          rendered.indexOf("alpha"),
+        );
+        expect(result.details.lines?.map((line) => line.content)).toEqual(
+          mapped ? ["alpha", "beta"] : undefined,
+        );
+      }
+    }
+  },
+);
+
 test("renders projected view content and expands the complete saved result", () => {
   const lines: ReadTextLine[] = Array.from({ length: 15 }, (_, index) => ({
     lineNumber: index + 1,

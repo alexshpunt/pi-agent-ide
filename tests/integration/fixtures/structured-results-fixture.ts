@@ -1,3 +1,4 @@
+import { appendFile } from "node:fs/promises";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -54,7 +55,10 @@ export default async function structuredResultsFixture(pi: ExtensionAPI): Promis
               action: "edited",
               changes: [{ from: 0, to: context.sourceDocument.length, insert: parameters.text }],
             }]]),
-            afterWrite() { if (parameters.fail) throw new Error("Fixture failed after writing"); },
+            async afterWrite() {
+              await appendFile(context.sourceFor("path") + ".writes", "write\n", "utf8");
+              if (parameters.fail) throw new Error("Fixture failed after writing");
+            },
           };
         },
       });

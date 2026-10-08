@@ -107,7 +107,17 @@ test.each([
           call("full", "read", { path: "large.ts" }),
           call("bounded", "read", { path: "large.ts", offset: 2, limit: 3 }),
           call("script", "codemode", {
-            code: 'const result = await tools.read({ path: "large.ts" }); if(typeof result !== "string") throw Error("Expected readable overview"); text(result);',
+            code: String.raw`
+const result = await tools.read({ path: "large.ts" });
+if (typeof result !== "string") throw Error("Expected readable overview");
+const action = /Read ("(?:[^"\\]|\\.)*") with offset and limit for exact source text\./.exec(result);
+if (!action) throw Error("Missing original-source recovery action");
+const recovered = await tools.read({ path: JSON.parse(action[1]), offset: 2, limit: 3 });
+if (!recovered.includes(${JSON.stringify(source.split("\n").slice(1, 4).join("\n"))}))
+  throw Error("Recovery did not return the exact source window");
+text(result);
+text(recovered);
+`,
           }),
           assistantMessage([text("Done")]),
         ],
@@ -117,14 +127,14 @@ test.each([
       expect(getToolExecutionDetails(getToolExecution(run, "full"))).toMatchObject({
         resolvedBy: "ast-overflow",
       });
-      expect(getToolResultText(run, "full")).toContain("omitted bodies are not exact source text");
+      expect(getToolResultText(run, "full")).toContain("Some source text is omitted.");
       expect(getToolExecutionResult(run, "full")).not.toHaveProperty("structuredContent");
       const bounded = getToolResultText(run, "bounded");
       expect(bounded).toContain(source.split("\n").slice(1, 4).join("\n"));
       expect(getToolExecutionResult(run, "bounded")).not.toHaveProperty("structuredContent");
       expect(getToolExecution(run, "script").isError).toBe(false);
       const scriptText = getToolResultText(run, "script");
-      expect(scriptText).toContain("omitted bodies are not exact source text");
+      expect(scriptText).toContain("Some source text is omitted.");
       expect(scriptText).toContain("function checkout");
       expect(scriptText).not.toContain('"kind":"text"');
     } finally {

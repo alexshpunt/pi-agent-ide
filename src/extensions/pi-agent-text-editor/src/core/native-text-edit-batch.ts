@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
@@ -21,19 +22,18 @@ import {
 } from "./text-edit-batch-registrar.js";
 import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.js";
 import { isWholeFileInvocation } from "./file-operation-tools.js";
+import { isResultInput } from "./result-transfer.js";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
-import { Type } from "typebox";
 import {
   ResourceScheduler,
   resourceAccesses,
   connectResultTargets,
   resultError,
-  withStructuredResult,
   type ResultTargetStore,
   type StructuredResult,
 } from "pi-agent-resource";
 import { createPostEditScope } from "./post-edit-scope.js";
-import { committedMutationTargets } from "./mutation-result-targets.js";
+import { committedMutationTargets, unchangedCopySources } from "./mutation-result-targets.js";
 import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.js";
 import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.js";
 import { captureScriptMutation } from "./text-mutation.js";
@@ -41,13 +41,7 @@ import {
   NATIVE_EDIT_BATCH_EVENT,
   type NativeEditBatchEvent,
 } from "#src/api/native-edit-batch-event.js";
-import {
-  flushDataSchema,
-  flushOutputSchema,
-  mutationOutcome,
-  type MutationData,
-  type FlushData,
-} from "./structured-result.js";
+import { mutationOutcome, type MutationData, type BatchMutationData } from "./structured-result.js";
 
 interface PendingBatch {
   readonly entries: TextBatchEntry[];
@@ -63,8 +57,7 @@ interface BatchSummary {
 }
 
 interface ScriptBatch {
-  readonly reports: StructuredResult<FlushData>[];
-  reportCursor: number;
+  readonly reports: StructuredResult<BatchMutationData>[];
   readonly id: string;
   readonly context: ExtensionContext;
   readonly summaries: BatchSummary[];
@@ -77,10 +70,33 @@ interface ScriptBatch {
   tail: Promise<void>;
   readonly scheduler: ResourceScheduler;
   readonly callOrder: Map<string, number>;
+  readonly unfinishedCalls: Map<string, string>;
   pending: PendingBatch;
   closed: boolean;
 }
 
+function replaceScriptResult(
+  script: ScriptBatch,
+  previous: FileMutationResult,
+  updated: FileMutationResult,
+): void {
+  const index = script.results.indexOf(previous);
+  if (index >= 0) script.results[index] = updated;
+  for (const [slot, presentation] of script.presentations.entries()) {
+    const results = presentation.result.details.results;
+    if (!results?.includes(previous)) continue;
+    script.presentations[slot] = {
+      ...presentation,
+      result: {
+        ...presentation.result,
+        details: {
+          ...presentation.result.details,
+          results: results.map((result) => (result === previous ? updated : result)),
+        },
+      },
+    };
+  }
+}
 function mergedFiles(files: MutationData["files"]): MutationData["files"] {
   const merged = new Map<string, MutationData["files"][number]>();
   for (const file of files) {
@@ -104,7 +120,7 @@ function receiptEffect(files: MutationData["files"]): MutationData["effect"] {
       : "not-applied";
 }
 
-function receiptStatus(errors: readonly unknown[], operations: FlushData["operations"]) {
+function receiptStatus(errors: readonly unknown[], operations: BatchMutationData["operations"]) {
   return errors.length === 0
     ? ("success" as const)
     : operations.some(
@@ -136,6 +152,7 @@ function isBatchable(
   input: Readonly<Record<string, unknown>>,
 ): boolean {
   if (
+    registration.name === "write" ||
     registration.direct?.matches(input) ||
     registration.intent === "restore" ||
     isWholeFileInvocation(registration.wholeFileOperation, input) ||
@@ -172,73 +189,6 @@ class NativeTextEditBatchCoordinator {
     private readonly pi: ExtensionAPI,
   ) {
     this.resultTargets = connectResultTargets(pi);
-    pi.registerTool({
-      name: "flush",
-      exposure: "codemode",
-      namespace: {
-        name: "ide_edit",
-        description: "Edit files and live IDE resources with guarded operations.",
-      },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true,
-        idempotentHint: false,
-        openWorldHint: false,
-      },
-      label: "Flush",
-      description:
-        "Use flush to commit pending native Codemode text edits and return their observed effects. Await tools.flush({}) before depending on a completed write. A failed flush retains applied effects and does not replay edits. Call it only inside native Codemode.",
-      promptSnippet: "Commit pending native editor changes and inspect their effects",
-      parameters: Type.Object({}, { additionalProperties: false }),
-      outputSchema: flushOutputSchema,
-      execute: async (id) => {
-        const script = this.invocations.get(id);
-        if (!script) throw new Error("Flush requires an active native Codemode script");
-        const work = script.scheduler.run(undefined, async () => {
-          await this.commit(script);
-          const reports = script.reports.slice(script.reportCursor);
-          script.reportCursor = script.reports.length;
-          const files = mergedFiles(reports.flatMap((report) => report.data?.files ?? []));
-          const errors = reports.flatMap((report) => report.errors);
-          const operations = reports.flatMap((report) => report.data?.operations ?? []);
-          const effect = receiptEffect(files);
-          return withStructuredResult(
-            {
-              content: [
-                {
-                  type: "text",
-                  text: [
-                    errors.length === 0
-                      ? `Flushed ${operations.length} editor operations; ${effect}.`
-                      : `Editor flush failed; ${effect}.`,
-                    ...files.map(
-                      (file) =>
-                        `${file.source}: ${file.effect}${file.state ? ` (${file.state})` : ""}`,
-                    ),
-                    ...operations.map(
-                      (operation) =>
-                        `${operation.operation}: ${operation.effect}${operation.errors.length ? ` — ${operation.errors.map((error) => error.message).join("; ")}` : ""}`,
-                    ),
-                  ].join("\n"),
-                },
-              ],
-              details: { results: [] },
-            },
-            flushDataSchema,
-            {
-              status: receiptStatus(errors, operations),
-              data: { operation: "flush", effect, files, operations },
-              errors,
-            },
-          );
-        });
-        script.tail = work.then(
-          () => undefined,
-          () => undefined,
-        );
-        return work;
-      },
-    });
     pi.on("tool_call", async (event, context) => {
       if (event.toolName === "codemode" && event.parentToolCallId === undefined) {
         this.scripts.set(event.toolCallId, {
@@ -246,7 +196,6 @@ class NativeTextEditBatchCoordinator {
           context,
           summaries: [],
           reports: [],
-          reportCursor: 0,
           presentations: [],
           results: [],
           errors: [],
@@ -256,6 +205,7 @@ class NativeTextEditBatchCoordinator {
           tail: Promise.resolve(),
           scheduler: new ResourceScheduler(),
           callOrder: new Map(),
+          unfinishedCalls: new Map(),
           pending: pendingBatch(),
           closed: false,
         });
@@ -264,15 +214,18 @@ class NativeTextEditBatchCoordinator {
       const script =
         event.parentToolCallId === undefined ? undefined : this.scripts.get(event.parentToolCallId);
       if (!script) return;
-      if (event.toolName === "flush") {
-        this.invocations.set(event.toolCallId, script);
-        return;
-      }
       const registration = this.core
         .getMutationTools()
         .find((tool) => tool.name === event.toolName);
-      if (registration) this.scopedInvocations.set(event.toolCallId, script);
       const input: Record<string, unknown> = event.input;
+      if (registration) {
+        this.scopedInvocations.set(event.toolCallId, script);
+        const source = input[registration.source.field];
+        script.unfinishedCalls.set(
+          event.toolCallId,
+          typeof source === "string" && !isResultInput(source) ? source : "",
+        );
+      }
       let ownsSource = false;
       if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
         const resolverContext = {
@@ -283,7 +236,9 @@ class NativeTextEditBatchCoordinator {
           const value = input[descriptor.field];
           if (typeof value === "string" && value.length > 0) {
             if (
-              ["replace", "write", "copy", "move", "delete", "undo"].includes(registration.name) &&
+              ["replace", "write", "copy", "move", "delete", "undo", "insert"].includes(
+                registration.name,
+              ) &&
               value.startsWith("RESULT#")
             ) {
               // The executor validates result handles and returns a structured rejection.
@@ -326,25 +281,51 @@ class NativeTextEditBatchCoordinator {
       return;
     });
     pi.on("tool_result", async (event) => {
+      this.scopedInvocations.get(event.toolCallId)?.unfinishedCalls.delete(event.toolCallId);
       this.invocations.delete(event.toolCallId);
       this.scopedInvocations.delete(event.toolCallId);
       const script = this.scripts.get(event.toolCallId);
       if (!script) return;
       script.closed = true;
+      const texts = event.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text);
+      let executionError = texts.findLast((text) => text.startsWith("Script error:\n")) ?? "";
+      const executionDetails = event.details;
+      if (
+        event.isError &&
+        executionDetails !== null &&
+        typeof executionDetails === "object" &&
+        "fullOutputPath" in executionDetails &&
+        typeof executionDetails.fullOutputPath === "string"
+      ) {
+        try {
+          const output = await readFile(executionDetails.fullOutputPath, "utf8");
+          // A timeout has one engine error line followed by the call summary, not a JavaScript stack.
+          const matches = [
+            ...output.matchAll(
+              /(?:^|\n)(Script error:\nScript (?:aborted|timed out):[^\n]*\n\n(?:Tool calls made before the failure[^\n]*|No tool calls were made\.))/gu,
+            ),
+          ];
+          const match = matches.at(-1);
+          executionError =
+            match !== undefined &&
+            !output.slice(match.index + match[0].length).includes("Script error:\n")
+              ? (match[1] ?? "")
+              : "";
+        } catch {
+          // Use the returned output when its complete artifact is unavailable.
+        }
+      }
       const interrupted =
         script.context.signal?.aborted ||
-        (event.isError &&
-          event.content.some(
-            (block) =>
-              block.type === "text" &&
-              /^Script error:\nScript (?:aborted|timed out):/u.test(block.text),
-          ));
+        (event.isError && /^Script error:\nScript (?:aborted|timed out):/u.test(executionError));
       if (interrupted) script.cancellation.abort();
       await script.tail;
       if (interrupted) {
         if (script.pending.entries.length > 0) {
           const error = resultError(
-            "Pending editor batch cancelled; no pending edits were written.",
+            "The operation was interrupted before writing. No file was changed.",
             "CANCELLED",
           );
           const operations = script.pending.entries.map((entry) => ({
@@ -357,7 +338,7 @@ class NativeTextEditBatchCoordinator {
             status: "error",
             errors: [error],
             data: {
-              operation: "flush",
+              operation: "batch",
               effect: "not-applied",
               operations,
               files: [...script.pending.snapshots.keys()].map((source) => ({
@@ -374,46 +355,85 @@ class NativeTextEditBatchCoordinator {
           script.pending = pendingBatch();
         }
       } else await this.commit(script);
+      if (interrupted) {
+        for (const [id, source] of script.unfinishedCalls) {
+          if (
+            script.presentations.some((presentation) => presentation.calls.includes(id)) ||
+            script.reports.some((report) =>
+              report.data?.operations.some((operation) => operation.id === id),
+            )
+          )
+            continue;
+          // Cancellation is not a result. Do not guess whether a resolver already wrote.
+          const message =
+            "The operation was interrupted. Its file effects are unknown.\nRead the affected files before retrying.";
+          const presentation = new MutationPresentation({
+            ok: false,
+            path: source,
+            fileChangedStatement: message,
+            errors: [{ path: source, code: "CANCELLED" }],
+          });
+          const result: AgentToolResult<FileMutationBatchResult> = {
+            content: [new FileMutationAgentResult(presentation).toTextContent()],
+            details: { results: [presentation], effect: "unknown" },
+            isError: true,
+          };
+          script.results.push(presentation);
+          script.presentations.push({ parentToolCallId: script.id, calls: [id], result });
+        }
+      }
       try {
         await this.core.enqueueFileOperation(
           () =>
-            script.postEdits.finish((outcome) => {
-              const index = script.results.findLastIndex(
-                (item) => item.data.path === outcome.after.source,
-              );
-              if (index < 0) return;
-              const previous = requiredValue(script.results[index]).data;
-              const updated = new MutationPresentation({
-                ...previous,
-                afterContent: outcome.after.content,
-                afterDocument: outcome.after,
-                formatting: outcome.postEditContributions
-                  .map((item) => item.data)
-                  .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
-                diffStatuses: outcome.postEditContributions
-                  .map((item) => item.data)
-                  .filter(isDiffStatusContribution)
-                  .flatMap((item) => item.diffStatuses),
-              });
-              const previousResult = requiredValue(script.results[index]);
-              script.results[index] = updated;
-              for (const [slot, presentation] of script.presentations.entries()) {
-                const results = presentation.result.details.results;
-                if (!results?.includes(previousResult)) continue;
-                script.presentations[slot] = {
-                  ...presentation,
-                  result: {
-                    ...presentation.result,
-                    details: {
-                      ...presentation.result.details,
-                      results: results.map((result) =>
-                        result === previousResult ? updated : result,
-                      ),
-                    },
-                  },
-                };
-              }
-            }),
+            script.postEdits.finish(
+              (outcome) => {
+                const index = script.results.findLastIndex(
+                  (item) => item.data.path === outcome.after.source,
+                );
+                if (index < 0) return;
+                const previous = requiredValue(script.results[index]).data;
+                const updated = new MutationPresentation({
+                  ...previous,
+                  afterContent: outcome.after.content,
+                  afterDocument: outcome.after,
+                  formatting: outcome.postEditContributions
+                    .map((item) => item.data)
+                    .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
+                  diffStatuses: outcome.postEditContributions
+                    .map((item) => item.data)
+                    .filter(isDiffStatusContribution)
+                    .flatMap((item) => item.diffStatuses),
+                });
+                replaceScriptResult(script, requiredValue(script.results[index]), updated);
+              },
+              (source, error) => {
+                const reason = error instanceof Error ? error.message : String(error);
+                const failure = { code: "POST_EDIT_FAILED", message: reason, source };
+                for (const previous of script.results.filter(
+                  (result) => result.data.path === source,
+                )) {
+                  replaceScriptResult(
+                    script,
+                    previous,
+                    new MutationPresentation({
+                      ok: false,
+                      path: source,
+                      errors: [{ path: source, code: failure.code, reason }],
+                      fileChangedStatement:
+                        "The edit was saved, but final processing failed. Final text is not confirmed. Run Read/Search before editing this resource again.",
+                    }),
+                  );
+                }
+                for (const [index, report] of script.reports.entries()) {
+                  if (!report.data?.files.some((file) => file.source === source)) continue;
+                  script.reports[index] = {
+                    ...report,
+                    status: report.status === "success" ? "partial" : report.status,
+                    errors: [...report.errors, failure],
+                  };
+                }
+              },
+            ),
           undefined,
           { cwd: script.context.cwd, sources: script.postEdits.sources() },
         );
@@ -478,16 +498,23 @@ class NativeTextEditBatchCoordinator {
     pi.on("session_shutdown", clear);
   }
 
-  /** Keep every mutation in the script's shared post-edit scope, including non-batched calls. */
-  runPostEdits<T>(id: string, work: () => T): T {
+  /** Share post-edit state while allowing Write to finish its own processing immediately. */
+  runPostEdits<T>(id: string, work: () => T, immediate: boolean): T {
     const script = this.scopedInvocations.get(id);
-    return script ? script.postEdits.run(work) : work();
+    return script ? script.postEdits.run(work, immediate) : work();
   }
 
-  /** Include non-batched mutations in the script's final post-edit presentation. */
+  /** Include applied, non-batched mutations in the script's final post-edit presentation. */
   recordMutation(id: string, result: AgentToolResult<FileMutationBatchResult>): void {
     const script = this.scopedInvocations.get(id);
-    if (!script || !result.details.results?.some((item) => item.data.ok === true)) return;
+    if (script && !script.closed) script.unfinishedCalls.delete(id);
+    if (
+      !script ||
+      script.closed ||
+      result.details.effect === "not-applied" ||
+      !result.details.results?.some((item) => item.data.ok === true)
+    )
+      return;
     script.results.push(...result.details.results);
     script.presentations.push({ parentToolCallId: script.id, calls: [id], result });
   }
@@ -615,6 +642,13 @@ class NativeTextEditBatchCoordinator {
       ? this.resultTargets.reserve(context.cwd)
       : undefined;
     if (target) script.targets.set(id, target);
+    const unchangedCopy =
+      registration.name === "copy" &&
+      planning.plan.mutations.every(
+        ({ mutation }) =>
+          mutation.edits.size > 0 &&
+          unchangedCopySources(mutation, batch.snapshots).size === mutation.edits.size,
+      );
     const details = {
       results: [],
       source: entry.path,
@@ -626,7 +660,12 @@ class NativeTextEditBatchCoordinator {
       content: [
         {
           type: "text",
-          text: `Accepted ${registration.name} for ${entry.path}; not yet applied. The editor batch commits before another tool or when this script ends.`,
+          text:
+            registration.name === "copy"
+              ? unchangedCopy
+                ? "No changes: destination already has this text."
+                : `Copy destination: ${typeof normalized.target === "string" ? normalized.target : entry.path}`
+              : `Accepted ${registration.name} for ${entry.path}. Check the final Codemode result for applied changes.`,
         },
       ],
       details,
@@ -645,6 +684,7 @@ class NativeTextEditBatchCoordinator {
       mapped = committedMutationTargets(
         batch.plan.mutations.map(({ callId, mutation }) => ({ callId, edits: mutation.edits })),
         completions,
+        batch.snapshots,
       );
     } catch (error) {
       for (const entry of batch.entries) {
@@ -688,6 +728,17 @@ class NativeTextEditBatchCoordinator {
       script.context.signal === undefined
         ? script.cancellation.signal
         : AbortSignal.any([script.context.signal, script.cancellation.signal]);
+    const unchangedCopies = new Map(
+      batch.plan.mutations
+        .filter(({ mutation }) => mutation.operation === "copy")
+        .map(({ callId, mutation }) => {
+          const sources = unchangedCopySources(mutation, batch.snapshots);
+          return [
+            callId,
+            { sources, all: sources.size > 0 && sources.size === mutation.edits.size },
+          ] as const;
+        }),
+    );
     let observedSources: string[] = [];
     const record = (outcome: StructuredResult<MutationData>): boolean => {
       const calls = journal.snapshot();
@@ -695,11 +746,13 @@ class NativeTextEditBatchCoordinator {
         id: call.callId,
         operation: requiredValue(batch.entries.find((entry) => entry.callId === call.callId)).op,
         effect:
-          call.state === "completed" || call.state === "failed-applied"
-            ? ("applied" as const)
-            : call.state === "failed-unknown" || call.state === "running"
-              ? ("unknown" as const)
-              : ("not-applied" as const),
+          call.state === "completed" && unchangedCopies.get(call.callId)?.all
+            ? ("not-applied" as const)
+            : call.state === "completed" || call.state === "failed-applied"
+              ? ("applied" as const)
+              : call.state === "failed-unknown" || call.state === "running"
+                ? ("unknown" as const)
+                : ("not-applied" as const),
         errors: call.failure === undefined ? [] : [resultError(call.failure.error)],
       }));
       const files = mergedFiles([
@@ -712,7 +765,10 @@ class NativeTextEditBatchCoordinator {
           return [...mutationSources(registration, entry).values()].map((source) => ({
             source,
             effect:
-              mutation?.edits.has(source) === false ? ("not-applied" as const) : operation.effect,
+              mutation?.edits.has(source) === false ||
+              unchangedCopies.get(operation.id)?.sources.has(source) === true
+                ? ("not-applied" as const)
+                : operation.effect,
           }));
         }),
         ...observedSources.map((source) => ({ source, effect: "applied" as const })),
@@ -734,7 +790,7 @@ class NativeTextEditBatchCoordinator {
         errors,
         data: {
           ...outcome.data,
-          operation: "flush",
+          operation: "batch",
           effect: receiptEffect(files),
           files,
           operations,
@@ -775,16 +831,36 @@ class NativeTextEditBatchCoordinator {
       );
       observedSources = captured.completions.map((completion) => completion.resourceSource);
       if (captured.kind === "failed") throw captured.error;
-      script.results.push(...(captured.value.details.results ?? []));
+      const value =
+        captured.completions.length === 0 &&
+        journal
+          .snapshot()
+          .every((call) => call.state === "completed" && unchangedCopies.get(call.callId)?.all)
+          ? {
+              ...captured.value,
+              content: [
+                { type: "text" as const, text: "No changes: destination already has this text." },
+              ],
+              details: { ...captured.value.details, effect: "not-applied" as const },
+            }
+          : captured.value;
+      script.results.push(...(value.details.results ?? []));
       await this.settleTargets(script, batch, journal, captured.completions, signal);
       const presentation = {
         parentToolCallId: script.id,
         calls: batch.entries.map((entry) => entry.callId),
-        result: captured.value,
+        unchangedCopyCalls: journal
+          .snapshot()
+          .filter((call) => call.state === "completed" && unchangedCopies.get(call.callId)?.all)
+          .map((call) => call.callId),
+        ...(value.details.copyResults === undefined
+          ? {}
+          : { copyResults: value.details.copyResults }),
+        result: value,
       } satisfies NativeEditBatchEvent;
       script.presentations.push(presentation);
       this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, presentation);
-      return record(mutationOutcome(captured.value, "flush", captured.completions));
+      return record(mutationOutcome(value, "batch", captured.completions));
     } catch (error) {
       journal.markRunningUnknown(error);
       await this.settleTargets(script, batch, journal, [], signal);
@@ -795,10 +871,15 @@ class NativeTextEditBatchCoordinator {
 
 const coordinators = new WeakMap<TextEditorCore, NativeTextEditBatchCoordinator>();
 
-/** Run immediate mutation paths under the same deferred post-edit boundary as native batches. */
-export function runNativePostEditScope<T>(core: TextEditorCore, id: string, work: () => T): T {
+/** Share deferred post-edit state, or finish this operation's processing before return. */
+export function runNativePostEditScope<T>(
+  core: TextEditorCore,
+  id: string,
+  work: () => T,
+  immediate = false,
+): T {
   const coordinator = coordinators.get(core);
-  return coordinator ? coordinator.runPostEdits(id, work) : work();
+  return coordinator ? coordinator.runPostEdits(id, work, immediate) : work();
 }
 
 /** Retain immediate child results so final formatting is visible on the parent script. */

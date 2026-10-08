@@ -1,7 +1,6 @@
 import { Type, type Static } from "typebox";
 import {
   resultError,
-  resultErrorSchema,
   structuredResultSchema,
   withStructuredResult,
   type StructuredResult,
@@ -36,7 +35,7 @@ export function mutationDataSchema(operation: string) {
       operation: Type.Literal(operation),
       ...receipt,
       operationId: Type.Optional(Type.String()),
-      ...(operation === "delete" || operation === "flush"
+      ...(operation === "delete"
         ? {}
         : {
             target: Type.Optional(Type.String()),
@@ -50,17 +49,18 @@ export function mutationDataSchema(operation: string) {
 export function mutationResultSchema(operation: string) {
   return structuredResultSchema(mutationDataSchema(operation));
 }
-const batchOperation = Type.Object(
-  { id: Type.String(), operation: Type.String(), effect, errors: Type.Array(resultErrorSchema) },
-  { additionalProperties: false },
-);
-/** Flush owns the batch journal; individual file tools do not carry it. */
-export const flushDataSchema = Type.Object(
-  { operation: Type.Literal("flush"), ...receipt, operations: Type.Array(batchOperation) },
-  { additionalProperties: false },
-);
-export const flushOutputSchema = structuredResultSchema(flushDataSchema);
-export type FlushData = Static<typeof flushDataSchema>;
+/** Observed file and operation effects retained on the parent native script. */
+export interface BatchMutationData {
+  operation: "batch";
+  effect: MutationData["effect"];
+  files: MutationData["files"];
+  operations: {
+    id: string;
+    operation: string;
+    effect: MutationData["effect"];
+    errors: ResultError[];
+  }[];
+}
 /** Small internal receipt used to collect observed file effects. */
 export interface MutationData {
   operation: string;
@@ -206,6 +206,7 @@ export function mutationOutcome(
   )
     errors.push({ code: "UNKNOWN_RESULT", message: "Mutation effects were not reported" });
   const effect =
+    details.effect === "unknown" ||
     unique.some((file) => file.effect === "unknown") ||
     errors.some((error) => error.code === "UNKNOWN_RESULT")
       ? "unknown"

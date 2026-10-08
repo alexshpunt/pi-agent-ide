@@ -41,6 +41,37 @@ test("stores the same diff model without whole-file snapshots or size-dependent 
   expect(serialized.length).toBe(JSON.stringify(compactMutationDetails(result(100))).length);
 });
 
+test("already-formatted status survives compact session details", () => {
+  initTheme("dark", false);
+  const rich = {
+    results: [
+      new FileMutationResult({
+        ...result(100).results[0]?.data,
+        formatting: { status: "unchanged", formatter: "fixture" },
+        diffStatuses: [{ text: "Already formatted", tone: "success", formatter: "fixture" }],
+      }),
+    ],
+  };
+  const restored = JSON.parse(JSON.stringify(compactMutationDetails(rich))) as ReturnType<
+    typeof compactMutationDetails
+  >;
+  const theme = Object.assign(Object.create(null) as Theme, {
+    fg: (_color: ThemeColor, text: string) => text,
+    bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
+    getFgAnsi: () => "",
+    getBgAnsi: () => "",
+    getColorMode: () => "truecolor" as const,
+  });
+  const before = new MutationPanel(theme);
+  const after = new MutationPanel(theme);
+  before.setResultResources(resolveMutationResultResources(rich, undefined));
+  after.setResultResources(resolveMutationResultResources(restored, undefined));
+  for (const width of [160, 40, 80]) {
+    expect(after.render(width)).toEqual(before.render(width));
+    expect(after.render(width).join("\n")).toContain("Already formatted (fixture)");
+  }
+});
 test("keeps restored panels identical through width and expansion changes", () => {
   initTheme("dark", false);
   const theme = Object.assign(Object.create(null) as Theme, {

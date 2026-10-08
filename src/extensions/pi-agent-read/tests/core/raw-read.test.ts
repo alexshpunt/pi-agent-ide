@@ -63,11 +63,25 @@ test("raw agent output stays bounded and can continue while script data stays co
     expect(first.details.byteLength).toBeGreaterThan(0);
     expect(first.details.byteLength).toBeLessThan(60000);
     expect(Buffer.byteLength(JSON.stringify(first.content))).toBeLessThan(51200);
+    const firstBlock = first.content[0];
+    const firstText = firstBlock?.type === "text" ? firstBlock.text : "";
+    const action =
+      /\[Output limited\. Read ("(?:[^"\\]|\\.)*") with offset=(\d+) to continue\.\]$/u.exec(
+        firstText,
+      );
+    if (action === null) throw new Error("Missing executable raw limit explanation");
+    const source: unknown = JSON.parse(action[1] ?? "");
+    if (typeof source !== "string") throw new Error("Raw continuation source is not a string");
+    expect(source).toBe(first.details.source);
+    expect(Number(action[2])).toBe(first.details.byteLength);
     const next = await read.execute(
-      { path: "raw:large.bin", offset: first.details.byteLength, limit: 16 },
+      { path: source, offset: Number(action[2]), limit: 16 },
       { cwd },
-      "script",
     );
+    const nextBlock = next.content[0];
+    const nextText = nextBlock?.type === "text" ? nextBlock.text : "";
+    expect(nextText).not.toContain("Output limited");
+    expect(nextText).toContain(`Use offset=${Number(action[2]) + 16} to continue in bytes.`);
     expect(next.script).toMatchObject({
       byteOffset: first.details.byteLength,
       bytes: Array(16).fill(255),

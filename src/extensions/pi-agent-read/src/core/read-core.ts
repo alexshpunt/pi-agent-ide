@@ -201,6 +201,10 @@ function createPluginContributionController(
       assertAvailable();
       return read.saveTemporary(text);
     },
+    setOutputSaver(saver) {
+      assertAvailable();
+      read.setOutputSaver(saver);
+    },
     read(request, context, audience) {
       assertAvailable();
       return read.execute(request, context, audience);
@@ -368,7 +372,7 @@ function renderParameterDescriptions(
   return Object.fromEntries(
     Object.entries(entries).map(([parameter, descriptions]) => [
       parameter,
-      [...new Set(descriptions)].join("\n"),
+      [...new Set(descriptions.flatMap((description) => description.split("\n")))].join("\n"),
     ]),
   );
 }

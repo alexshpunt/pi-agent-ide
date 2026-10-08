@@ -6,7 +6,15 @@ The project is experimental. The behavior below describes the current implementa
 
 ## Readable results and composition
 
-IDE tools return readable text in direct calls and Codemode. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and `tools.flush({})`.
+IDE tools return readable text in direct calls and Codemode. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and automatic commit boundaries.
+
+## Shared output limits
+
+Every IDE tool, including nested calls and the combined Codemode result, shares a useful-text limit of 50 KiB or 2,000 lines. Images share a limit of 20 frames, 4,000,000 pixels and 20 MiB of image bytes per result. Notices, guides and composition references are added afterward and are not part of these budgets.
+
+When the shared text limit truncates a result, the complete useful text is saved to a private temporary file. The result names that file. Use Read with `offset` and `limit` to continue, or `raw:` byte windows for a line that is too large. The file is removed when its owning runtime is disposed. Media is resized or omitted, not archived.
+
+An explicit request limit still selects what the tool produces; the saved file does not undo that filter. Truncation does not shorten private source selections or change file-edit effects. Terminal results also link to their complete session log.
 
 ## Resource references
 
@@ -38,7 +46,7 @@ A source field such as `path` or mutation `target` is therefore a resource field
 - AST-aware code views;
 - LSP diagnostics, symbols, references, and call graphs.
 
-A read result may include anchors, diagnostics, Git changes, or structural markers. Large text results are bounded, and supported resolvers can retain the complete output in a temporary resource.
+A read result may include anchors, diagnostics, Git changes, or structural markers. Large text results are bounded. The shared limiter retains complete truncated text in a temporary file.
 
 Read sources are not assumed to be writable. The read and text-editor cores keep separate resolver registries so a derived view cannot be edited by accident.
 

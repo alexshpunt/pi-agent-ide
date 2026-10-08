@@ -185,6 +185,61 @@ test("rejects reference navigation for non-LSP queries before dispatch", async (
   expect(fallback).not.toHaveBeenCalled();
   expect(specialized).not.toHaveBeenCalled();
 });
+test.each(["matches", "files"] as const)(
+  "warns about incomplete %s coverage without turning it into an error",
+  async (kind) => {
+    const core = createSearchCore();
+    const data =
+      kind === "matches"
+        ? { kind, matches: [], complete: false }
+        : { kind, files: [], complete: false };
+    await core.registerPlugin({
+      protocol: SEARCH_PROTOCOL,
+      apiVersion: SEARCH_API_VERSION,
+      id: "incomplete",
+      setup(api) {
+        api.addResolver({
+          resolver: {
+            id: "incomplete",
+            tryResolve: () => ({ kind: "resolved", payload: data }),
+            format: () => ({ content: [{ type: "text", text: "No matches found." }], details: {} }),
+            toScriptData: () => data,
+          },
+        });
+      },
+    });
+    const result = await core.execute({ query: "missing" }, { cwd: process.cwd() });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ status: "success", data });
+    expect(result.content).toContainEqual({
+      type: "text",
+      text: "Search coverage is incomplete. Do not conclude absence or use this result as an edit scope.",
+    });
+  },
+);
+
+test("keeps complete zero-match results free of incomplete warnings", async () => {
+  const core = createSearchCore();
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "complete-zero",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "complete-zero",
+          tryResolve: () => ({ kind: "resolved", payload: undefined }),
+          format: () => ({ content: [{ type: "text", text: "No matches found." }], details: {} }),
+          toScriptData: () => ({ kind: "matches", matches: [], complete: true }),
+        },
+      });
+    },
+  });
+  const result = await core.execute({ query: "missing" }, { cwd: process.cwd() });
+  expect(result.structuredContent).toMatchObject({ status: "success", data: { complete: true } });
+  expect(result.content).toEqual([{ type: "text", text: "No matches found." }]);
+});
+
 describe("search fallback dispatch", () => {
   test.each(["symbols:", "ast:", "regex:", "files:", "custom:   "])(
     "routes empty %s straight to local text",

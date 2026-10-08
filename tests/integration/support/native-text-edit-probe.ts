@@ -1,4 +1,4 @@
-import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { appendFile, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
@@ -13,7 +13,7 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
   const record = (cwd: string, event: unknown) =>
     appendFile(path.join(cwd, "batch-events.jsonl"), JSON.stringify(event) + "\n");
   pi.on("tool_call", async (event, context) => {
-    if (!event.parentToolCallId) return;
+    if (!event.parentToolCallId && event.toolName !== "write") return;
     const input: Record<string, unknown> = event.input;
     const source =
       typeof input.path === "string" ? path.resolve(context.cwd, input.path) : undefined;
@@ -24,6 +24,13 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
       parent: event.parentToolCallId,
       name: event.toolName,
       content,
+      ...(event.toolName === "write" && source
+        ? {
+            mtimeMs: await stat(source)
+              .then((file) => file.mtimeMs)
+              .catch(() => null),
+          }
+        : {}),
     });
     if (input.text === "BLOCKED") return { block: true, reason: "fixture blocked this edit" };
     return;
@@ -32,16 +39,27 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
     // Keep the real workspace alive long enough to catch effects after the parent finishes.
     if (slowParents.delete(event.toolCallId))
       await new Promise((resolve) => setTimeout(resolve, 3500));
-    if (!event.parentToolCallId) return;
+    if (!event.parentToolCallId && event.toolName !== "write") return;
     await record(context.cwd, {
       type: "result",
       id: event.toolCallId,
       parent: event.parentToolCallId,
       name: event.toolName,
       isError: event.isError,
+      ...(event.toolName === "write" && typeof event.input.path === "string"
+        ? {
+            content: await readFile(path.resolve(context.cwd, event.input.path), "utf8").catch(
+              () => null,
+            ),
+            mtimeMs: await stat(path.resolve(context.cwd, event.input.path))
+              .then((file) => file.mtimeMs)
+              .catch(() => null),
+          }
+        : {}),
     });
     if (event.input.text === "ABORT_PENDING" && !event.isError) context.abort();
-    if (event.input.text === "SLOW_BOUNDARY") slowParents.add(event.parentToolCallId);
+    if (event.input.text === "SLOW_BOUNDARY" && event.parentToolCallId)
+      slowParents.add(event.parentToolCallId);
     // A different writer changes the real file after acceptance but before commit.
     if (event.input.text === "RACE" && typeof event.input.path === "string")
       await writeFile(path.resolve(context.cwd, event.input.path), "external\n");
@@ -77,7 +95,13 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
       });
       api.onDidEdit(async (completion) => {
         await record(completion.cwd, {
-          type: completion.postProcessing === "final" ? "post-edit" : "edit",
+          // An interrupted final notification can describe already-saved bytes without a new edit.
+          type:
+            completion.postProcessing === "final" ||
+            (completion.postProcessing === "interrupted" &&
+              completion.before.content === completion.after.content)
+              ? "post-edit"
+              : "edit",
           path: completion.resourceSource,
           before: completion.before.content,
           after: completion.after.content,

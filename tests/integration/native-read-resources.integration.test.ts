@@ -98,7 +98,7 @@ test.each([false, true])(
         output
           .split(/\n[ \t]*\n/u)
           // Recovery hints can mention a native resource without being its read header.
-          .filter((block) => !block.includes("Possible matches:"))
+          .filter((block) => /^\s*(?:read(?:\s|$)|\[skill\]\s)/u.test(block))
           .map((block) =>
             block
               .split("\n")
@@ -111,7 +111,7 @@ test.each([false, true])(
             ),
           );
       expect(headers(baseline.tuiRenderedOutput)).toHaveLength(3);
-      expect(headers(run.tuiRenderedOutput)).toHaveLength(3);
+      expect(headers(run.tuiRenderedOutput), run.tuiRenderedOutput).toHaveLength(3);
       expect(headers(run.tuiRenderedOutput).slice(0, 2)).toEqual(
         headers(baseline.tuiRenderedOutput).slice(0, 2),
       );

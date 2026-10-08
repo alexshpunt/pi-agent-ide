@@ -1,5 +1,6 @@
 import { execFile, spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -24,7 +25,12 @@ import {
 const execute = promisify(execFile);
 const selectedAdapter = process.env.PI_DEBUGGER_CORE_ADAPTER;
 const excludedAdapter = process.env.PI_DEBUGGER_CORE_EXCLUDE_ADAPTER;
-const matrixProvisioned = spawnSync("kotlinc", ["-version"], { stdio: "ignore" }).status === 0;
+const matrixProvisioned =
+  selectedAdapter === "node"
+    ? existsSync(
+        process.env.PI_JS_DEBUG_PATH ?? "/opt/pi-debug-adapters/js-debug/src/dapDebugServer.js",
+      )
+    : spawnSync("kotlinc", ["-version"], { stdio: "ignore" }).status === 0;
 let workspace = "";
 
 interface AdapterCase {
@@ -188,9 +194,11 @@ for (const item of cases) {
         args: [],
         ...(item.mainClass === undefined ? {} : { mainClass: item.mainClass }),
       });
+      let stage = "breakpoint";
       try {
         const source = manager.sourceResource(session);
         const breakpoint = await manager.addBreakpoint(source, item.line);
+        stage = "start";
         await manager.start(session);
         expect(session.status).toBe("stopped");
         expect(breakpoint.verified, JSON.stringify(session.stop)).toBe(true);
@@ -209,8 +217,14 @@ for (const item of cases) {
           ),
           JSON.stringify(session.stop),
         ).toBe(true);
+        stage = "continue";
         await manager.command(session, "continue");
         expect(session.status, JSON.stringify(session.stop)).toBe("terminated");
+      } catch (error) {
+        throw new Error(
+          `${item.name} failed during ${stage}: ${JSON.stringify(manager.snapshot(session))}`,
+          { cause: error },
+        );
       } finally {
         await manager.delete(session.source);
         await manager.dispose();
@@ -285,6 +299,28 @@ async function prepareFixtures(
     "function total() {\n  const items = [12, 30];\n  const subtotal = items[0] + items[1];\n  const result = subtotal + 1;\n  return result;\n}\nconsole.log(total());\n";
   const typescript =
     "function total(): number {\n  const items: number[] = [12, 30];\n  const subtotal: number = items[0]! + items[1]!;\n  const result: number = subtotal + 1;\n  return result;\n}\nconsole.log(total());\n";
+  if (selected === "node") {
+    await Promise.all([
+      writeFile(path.join(cwd, "main.js"), javascript),
+      writeFile(path.join(cwd, "main.ts"), typescript),
+      writeFile(path.join(cwd, "src/main.ts"), typescript),
+    ]);
+    await execute(
+      "tsc",
+      [
+        "src/main.ts",
+        "--target",
+        "ES2022",
+        "--module",
+        "ESNext",
+        "--sourceMap",
+        "--outDir",
+        "dist",
+      ],
+      { cwd },
+    );
+    return;
+  }
   const dart =
     "void main() {\n  final items = [12, 30];\n  final subtotal = items[0] + items[1];\n  final result = subtotal + 1;\n  print(result);\n}\n";
   const kotlin =

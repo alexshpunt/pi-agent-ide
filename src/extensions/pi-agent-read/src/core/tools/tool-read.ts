@@ -43,18 +43,15 @@ import {
   type ResourceResolverRegistration,
   type TextTargetResolverRegistration,
 } from "#src/api/tools/read.js";
-import {
-  limitReadOutput,
-  READ_OUTPUT_MAX_BYTES,
-  READ_OUTPUT_MAX_LINES,
-} from "#src/core/tools/read/output-truncation.js";
+import { explainReadWindow, limitReadOutput } from "#src/core/tools/read/output-truncation.js";
 import { createReadResultRenderer, renderReadCall } from "#src/core/tools/read/read-renderer.js";
 import {
   createReadState,
   failureResult,
   projectReadState,
+  withReadCancellation,
 } from "#src/core/tools/read/read-result.js";
-import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
+import { TempResourceStore } from "pi-agent-resource";
 
 import {
   type readParameters,
@@ -116,6 +113,8 @@ export interface ReadToolContributions {
 export interface ReadTool {
   /** Shares the read runtime's temporary resource store with composed operations. */
   saveTemporary(text: string): Promise<string>;
+  /** Sets the saver used before agent-facing text is truncated. */
+  setOutputSaver(saver: (text: string) => Promise<string>): void;
   readonly tool: ToolDefinition<typeof readParameters, ReadResultDetails>;
   execute(
     request: ReadPipelineContext["request"],
@@ -133,6 +132,7 @@ export function createReadTool(
   parameterDescriptions?: () => ReadParameterText,
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
+  let outputSaver: ((text: string) => Promise<string>) | undefined;
   const resolvers: RegisteredResolver[] = [
     {
       resolver: temporaryResources.resolver,
@@ -154,6 +154,9 @@ export function createReadTool(
 
   return {
     saveTemporary: (text) => temporaryResources.save(text),
+    setOutputSaver(saver) {
+      outputSaver = saver;
+    },
     tool: {
       name: toolId,
       exposure: "direct",
@@ -168,9 +171,7 @@ export function createReadTool(
       label: toolId,
 
       promptSnippet: "Read supported sources as text or bytes, with optional views",
-      get description(): string {
-        return `Use read to inspect supported resources. path selects the source; offset and limit select a bounded window; views request source-specific presentations. Text output is limited to ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB; follow a returned continuation offset or temp: reference when present.`;
-      },
+      description: "Use read to inspect files and other supported resources.",
       get promptGuidelines(): string[] {
         return [
           "Use read to inspect supported sources and search to locate workspace content.",
@@ -226,8 +227,10 @@ export function createReadTool(
             fragments,
             targetResolvers,
             resourceGuards,
+            "agent",
+            outputSaver,
           );
-          return structuredRead(result);
+          return structuredRead(withReadCancellation(result, parameters.path, signal));
         } catch (error) {
           if (signal?.aborted) throw error;
           return structuredRead(
@@ -240,8 +243,8 @@ export function createReadTool(
         }
       },
     },
-    execute(request, context, audience = "agent"): Promise<ReadToolResult> {
-      return executeRead(
+    async execute(request, context, audience = "agent"): Promise<ReadToolResult> {
+      const result = await executeRead(
         request,
         context,
         resolvers,
@@ -252,7 +255,9 @@ export function createReadTool(
         targetResolvers,
         resourceGuards,
         audience,
+        outputSaver,
       );
+      return withReadCancellation(result, request.path, context.signal);
     },
     registerContributions(pluginId, contributions): void {
       const incomingResourceGuards = [...(contributions.resourceGuards ?? [])];
@@ -370,12 +375,16 @@ async function executeRead(
   }[],
   resourceGuards: readonly RegisteredResourceGuard[],
   audience: "agent" | "script" = "agent",
+  outputSaver?: (text: string) => Promise<string>,
 ): Promise<ReadToolResult> {
   if (request.path?.startsWith("raw:"))
     return readRaw(request, resolverContext, audience, resourceGuards);
   resolverContext = { ...resolverContext, audience };
   const limitOutput: typeof limitReadOutput =
-    audience === "script" ? async (result) => result : limitReadOutput;
+    audience === "script"
+      ? async (result) => result
+      : (result, request, fallback, options) =>
+          limitReadOutput(result, request, outputSaver ?? fallback, options);
   const resolverSnapshot = [...resolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
@@ -397,7 +406,18 @@ async function executeRead(
   ];
   const requestedViews = new Set(rawRequestedViews.map(viewName));
   const knownViews = new Set([...viewSnapshot.map(({ registration }) => registration.view)]);
-  const ignoredViews = rawRequestedViews.filter((view) => !knownViews.has(viewName(view)));
+  const explicitViews = [...new Set(request.views ?? [])];
+  const nativeViews = new Set(
+    viewSnapshot
+      .filter(({ registration }) => registration.contentKind === "any")
+      .map(({ registration }) => registration.view),
+  );
+  const viewWarnings: ReadViewWarnings = {
+    ignored: explicitViews.filter((view) => !knownViews.has(viewName(view))),
+    textOnly: explicitViews.filter(
+      (view) => knownViews.has(viewName(view)) && !nativeViews.has(viewName(view)),
+    ),
+  };
   if (request.path !== undefined && targetSnapshot.length > 0) {
     const targeted = await resolveTextTargets(
       request,
@@ -407,9 +427,10 @@ async function executeRead(
       handlerSnapshot,
       viewSnapshot,
       requestedViews,
-      ignoredViews,
+      viewWarnings,
       audience,
       resourceGuards,
+      outputSaver,
     );
     if (targeted !== undefined) return targeted;
   }
@@ -419,7 +440,7 @@ async function executeRead(
     const preRead = await runPreReadHandlers(pipeline, handlerSnapshot);
 
     if (preRead.kind === "return") {
-      return withIgnoredViews(await limitOutput(preRead.result, pipeline.request), ignoredViews);
+      return withViewWarnings(await limitOutput(preRead.result, pipeline.request), viewWarnings);
     }
 
     pipeline = preRead.context;
@@ -489,23 +510,23 @@ async function executeRead(
   }
 
   if (pipeline.state?.textMode === "final") {
-    return withIgnoredViews(
+    return withViewWarnings(
       await limitOutput(
         projectReadState(pipeline.state, pipeline.request, { originLine: origin, audience }),
         pipeline.request,
         undefined,
         { originLine: origin },
       ),
-      ignoredViews,
+      viewWarnings,
     );
   }
 
   const processed = await runReadHandlers(pipeline, handlerSnapshot);
 
   if (processed.kind === "return") {
-    return withIgnoredViews(
+    return withViewWarnings(
       await limitOutput(processed.result, pipeline.request, undefined, { originLine: origin }),
-      ignoredViews,
+      viewWarnings,
     );
   }
 
@@ -523,9 +544,9 @@ async function executeRead(
     pipeline.request.limit === undefined && pipeline.state?.preserveTruncatedOutput === true
       ? (text: string): Promise<string> => temporaryResources.save(text)
       : undefined;
-  return withIgnoredViews(
+  return withViewWarnings(
     await limitOutput(result, pipeline.request, saveFullOutput, { originLine: origin }),
-    ignoredViews,
+    viewWarnings,
   );
 }
 
@@ -559,12 +580,16 @@ async function resolveTextTargets(
   handlers: readonly RegisteredHandler[],
   views: readonly RegisteredView[],
   requestedViews: ReadonlySet<string>,
-  ignoredViews: readonly string[],
+  viewWarnings: ReadViewWarnings,
   audience: "agent" | "script",
   resourceGuards: readonly RegisteredResourceGuard[],
+  outputSaver?: (text: string) => Promise<string>,
 ): Promise<ReadToolResult | undefined> {
   const limitOutput: typeof limitReadOutput =
-    audience === "script" ? async (result) => result : limitReadOutput;
+    audience === "script"
+      ? async (result) => result
+      : (result, request, fallback, options) =>
+          limitReadOutput(result, request, outputSaver ?? fallback, options);
   for (const { resolver } of targetResolvers) {
     let rawAttempt: unknown;
     try {
@@ -634,7 +659,7 @@ async function resolveTextTargets(
           const preRead = await runPreReadHandlers(rangePipeline, handlers);
           if (preRead.kind === "return") {
             if (preRead.result.isError === true)
-              return withIgnoredViews(preRead.result, ignoredViews);
+              return withViewWarnings(preRead.result, viewWarnings);
             return preRead.result;
           }
           rangePipeline = preRead.context;
@@ -646,12 +671,12 @@ async function resolveTextTargets(
           request.path ?? target.source,
         );
         if (resolved.kind === "return") {
-          return withIgnoredViews(resolved.result, ignoredViews);
+          return withViewWarnings(resolved.result, viewWarnings);
         }
         const processed = await runReadHandlers(resolved.context, handlers);
         if (processed.kind === "return") {
           if (processed.result.isError === true)
-            return withIgnoredViews(processed.result, ignoredViews);
+            return withViewWarnings(processed.result, viewWarnings);
           return processed.result;
         }
         const presented = await runTextPresenters(processed.context, views, requestedViews);
@@ -660,18 +685,26 @@ async function resolveTextTargets(
           originLine: range.start.lineNumber,
         });
         const postRead = await runPostReadHandlers({ ...presented, result: projected }, handlers);
-        if (projected.isError === true) return withIgnoredViews(projected, ignoredViews);
+        if (projected.isError === true) return withViewWarnings(projected, viewWarnings);
         const result =
           postRead.kind === "return" ? postRead.result : requiredValue(postRead.context.result);
-        if (result.isError === true) return withIgnoredViews(result, ignoredViews);
-        return result;
+        if (result.isError === true) return withViewWarnings(result, viewWarnings);
+        return audience === "script"
+          ? result
+          : explainReadWindow(
+              result,
+              { ...presented.request, limit: request.limit },
+              {
+                originLine: range.start.lineNumber,
+              },
+            );
       });
     });
     const completed = await Promise.allSettled(pending);
     for (const outcome of completed) {
       if (outcome.status === "rejected") throw outcome.reason;
       const result = outcome.value;
-      if (result.isError === true) return withIgnoredViews(result, ignoredViews);
+      if (result.isError === true) return withViewWarnings(result, viewWarnings);
       for (const block of result.content) {
         if (block.type === "text") chunks.push(block.text);
       }
@@ -693,9 +726,9 @@ async function resolveTextTargets(
           ? { source: request.path, resources }
           : (firstDetails ?? { source: request.path }),
     } satisfies ReadToolResult;
-    return withIgnoredViews(
+    return withViewWarnings(
       await limitOutput(aggregate, { path: request.path, views: request.views }),
-      ignoredViews,
+      viewWarnings,
     );
   }
   return undefined;
@@ -733,7 +766,7 @@ async function resolveAnchoredOrigin(
       code: "UNSUPPORTED_RANGE",
       source: state.source,
       resolverId: state.resolvedBy,
-      message: "Anchored reads require textual content",
+      message: "Anchored reads require textual content. Read this source without an anchor.",
     });
   }
 
@@ -1110,21 +1143,43 @@ function viewName(view: string): string {
   return separator < 0 ? view : view.slice(0, separator);
 }
 
-/** Prepends a note listing unknown view names so the agent can correct the request. */
-function withIgnoredViews(result: ReadToolResult, ignoredViews: readonly string[]): ReadToolResult {
-  if (ignoredViews.length === 0) {
-    return result;
+interface ReadViewWarnings {
+  readonly ignored: readonly string[];
+  readonly textOnly: readonly string[];
+}
+
+/** Reports unused views without changing source data or discarding native content. */
+function withViewWarnings(result: ReadToolResult, requested: ReadViewWarnings): ReadToolResult {
+  const messages: string[] = [];
+  if (requested.ignored.length > 0) {
+    messages.push(
+      requested.ignored.length === 1
+        ? `Unknown view ignored: ${requested.ignored[0]}. Remove it or choose a supported view from the views parameter.`
+        : `Unknown views ignored: ${requested.ignored.join(", ")}. Remove these entries or choose supported views from the views parameter.`,
+    );
   }
-
-  const note = `note: ignored unknown views: ${ignoredViews.join(", ")}`;
-  const block = result.content[0];
+  if (result.isError !== true && result.content.some((block) => block.type !== "text")) {
+    for (const view of requested.textOnly) {
+      messages.push(
+        `View not applied: ${view} requires text. Read a text source to use ${viewName(view)}.`,
+      );
+    }
+  }
+  if (messages.length === 0 || result.details.viewWarnings !== undefined) return result;
+  const note = messages.join("\n");
+  const first = result.content[0];
   const content =
-    block?.type === "text" ? [{ ...block, text: `${note}\n${block.text}` }] : [...result.content];
-
+    result.content.length === 1 && first?.type === "text"
+      ? [{ ...first, text: `${note}\n${first.text}` }]
+      : [{ type: "text" as const, text: note }, ...result.content];
   return {
     ...result,
     content,
-    details: { ...result.details, ignoredViews },
+    details: {
+      ...result.details,
+      ...(requested.ignored.length === 0 ? {} : { ignoredViews: requested.ignored }),
+      viewWarnings: messages,
+    },
   };
 }
 

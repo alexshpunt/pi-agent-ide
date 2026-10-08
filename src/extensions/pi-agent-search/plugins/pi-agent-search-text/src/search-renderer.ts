@@ -146,6 +146,12 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
     }
   }
 
+  if ((details.omittedFileCount ?? 0) > 0)
+    rows.push({
+      kind: "summary",
+      text: `… ${details.omittedFileCount} more files (${details.omittedMatchCount} matches) · narrow path, include, or query`,
+    });
+
   if (details.fuzzy !== undefined || expanded || rows.length <= COMPACT_SEARCH_ROWS) {
     return rows;
   }
