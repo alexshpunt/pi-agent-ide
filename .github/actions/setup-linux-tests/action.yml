@@ -105,10 +105,12 @@ runs:
     - name: Verify Bubblewrap sandbox
       shell: bash
       run: |
-        if ! bwrap --unshare-user --ro-bind / / /bin/true; then
+        if ! bwrap --die-with-parent --unshare-user --unshare-pid \
+          --ro-bind / / --proc /proc --dev /dev /bin/true; then
           sudo install --mode=0644 scripts/ci/bwrap.apparmor /etc/apparmor.d/pi-agent-ide-bwrap
           sudo apparmor_parser --replace /etc/apparmor.d/pi-agent-ide-bwrap
-          bwrap --unshare-user --ro-bind / / /bin/true
+          bwrap --die-with-parent --unshare-user --unshare-pid \
+            --ro-bind / / --proc /proc --dev /dev /bin/true
         fi
 
     - name: Install dependencies
