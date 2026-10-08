@@ -44,6 +44,8 @@ async function runComposition(
       "copy-identical-structured",
       "copy-identical-legacy",
       "copy-empty-result-presentation",
+      "move-zero-width-no-op",
+      "move-empty-no-op",
       "copy-no-op-after-peer-edit",
       "copy-rollback-reporting",
       "copy-rollback-standalone",
@@ -460,6 +462,71 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));`,
     expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("NEW\n");
   });
 });
+test.each([false, true])(
+  "zero-width Move keeps destination points without writes (same file: %s)",
+  async (sameFile) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "left right\r\n");
+      await writeFile(path.join(cwd, "destination.txt"), "left right\r\n");
+      const destination = sameFile ? "source.txt" : "destination.txt";
+      const run = await runComposition(
+        cwd,
+        "move-zero-width-no-op",
+        [
+          `const source=await tools.select({path:await tools.read({path:"source.txt"}),operation:{kind:"sliceText",from:0,to:0}});
+const destination=await tools.select({path:await tools.read({path:${JSON.stringify(destination)}}),operation:{kind:"sliceText",from:5,to:5}});
+const paths=["source.txt","destination.txt"];
+const before=await tools.fixture_move_stat({paths});
+const moved=await tools.move({path:source,target:destination});
+text(moved);
+const observed=JSON.parse(await tools.fixture_move_result({}));
+check(!observed.isError && observed.details.effect==="not-applied","Move did not report no-write success");
+check(before===await tools.fixture_move_stat({paths}),"Move wrote a fixture");
+const point=items(await tools.select({path:moved,operation:{kind:"trim",side:"both"}}));
+check(point.length===1 && point[0].startColumn===5 && point[0].endColumn===5 && point[0].source.endsWith(${JSON.stringify(destination)}),"Move lost destination-only point authority");
+await rejects(()=>tools.move({path:source,target:source}),/overlap or touch/);
+check(before===await tools.fixture_move_stat({paths}),"Rejected Move wrote a fixture");
+text(await tools.replace({path:moved,text:"NEW "}));`,
+        ],
+        [path.resolve("tests/integration/support/move-no-op-probe.ts")],
+      );
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      expect(run.tuiRenderedOutput).toContain("No changes: zero-width selections.");
+      expect(await readFile(path.join(cwd, destination), "utf8")).toBe("left NEW right\r\n");
+      expect(
+        await readFile(path.join(cwd, sameFile ? "destination.txt" : "source.txt"), "utf8"),
+      ).toBe("left right\r\n");
+    });
+  },
+);
+
+test("empty Move succeeds without writes or selection authority", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "source.txt"), "source\n");
+    const run = await runComposition(
+      cwd,
+      "move-empty-no-op",
+      [
+        `const paths=["source.txt"];
+const before=await tools.fixture_move_stat({paths});
+const moved=await tools.move({path:[],target:[]});
+text(moved);
+const observed=JSON.parse(await tools.fixture_move_result({}));
+check(!observed.isError && observed.details.effect==="not-applied","Empty Move did not report no-write success");
+check(before===await tools.fixture_move_stat({paths}),"Empty Move wrote a fixture");
+check(matches(await tools.search({path:moved,query:"source"})).length===0,"Empty Move gained authority");`,
+      ],
+      [path.resolve("tests/integration/support/move-no-op-probe.ts")],
+    );
+    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+      false,
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("source\n");
+  });
+});
+
 test("unchanged Copy points remain reusable insertion positions", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "source.txt"), "source\n");

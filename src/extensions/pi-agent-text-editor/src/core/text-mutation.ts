@@ -220,6 +220,20 @@ export function createTextTool<TParameters extends TSchema>(
                     );
                     input = asMutationParameters<TParameters>(prepared.input);
                     verifyFileSource = prepared.verifyFileSource;
+                    if (prepared.noOpTarget !== undefined)
+                      return {
+                        content: [
+                          {
+                            type: "text",
+                            text: "No changes: zero-width selections. The result selects the unchanged destination points.",
+                          },
+                        ],
+                        details: {
+                          results: [],
+                          effect: "not-applied",
+                          metadata: { resultTarget: prepared.noOpTarget },
+                        },
+                      };
                     if (prepared.empty)
                       return {
                         content: [
@@ -412,7 +426,7 @@ export function createTextTool<TParameters extends TSchema>(
             write:
               "For file writes, this result selects the whole file, not only its changed span.",
             copy: "This result selects only the copied destination text; a whole-file copy selects the whole destination. Copy edits only the destination.",
-            move: "Use the Move result to work with the inserted destination text, including any added line separators. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
+            move: "Use the Move result to work with the inserted destination text, including any added line separators. Valid empty arrays and paired zero-width selections succeed without writes; paired points select only the unchanged destination points. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
             delete: "Delete returns no reusable text selection.",
             undo: "The result selects the whole restored text file, not only the reversed span.",
           } as Record<string, string>
