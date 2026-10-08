@@ -64,6 +64,8 @@ export interface CapabilityCase {
   prerequisite?: string;
   setup?: string;
   git?: boolean;
+  /** Require a full virtual-guide read before first tool use, with no unrelated Read detours. */
+  guideFirstUse?: { path: string; tool: string };
 }
 
 /** A durable capability and its executable checks. */
@@ -161,7 +163,7 @@ function reuses(value: unknown, output: string, kind = "result"): boolean {
 
 /** Require successful real executions in order, including result provenance and nesting. */
 export function validateRoute(
-  task: Pick<CapabilityCase, "steps">,
+  task: Pick<CapabilityCase, "steps" | "guideFirstUse">,
   events: RunEvent[],
   mode: string,
 ): { passed: boolean; reasons: string[] } {
@@ -181,6 +183,38 @@ export function validateRoute(
       .filter(({ event }) => event.toolName === "codemode")
       .map(({ event }) => event.toolCallId),
   );
+  if (task.guideFirstUse) {
+    const guide = task.guideFirstUse;
+    const firstUse = starts.find(({ event }) => event.toolName === guide.tool);
+    const retrieved = starts.some(({ event, index }) => {
+      const end = ends.get(event.toolCallId ?? "");
+      return (
+        event.toolName === "read" &&
+        event.args?.path === guide.path &&
+        event.args.offset === undefined &&
+        event.args.limit === undefined &&
+        end !== undefined &&
+        end.index > index &&
+        end.event.isError === false &&
+        firstUse !== undefined &&
+        end.index < firstUse.index &&
+        (mode === "codemode"
+          ? codemodeParents.has(event.parentToolCallId)
+          : !event.parentToolCallId)
+      );
+    });
+    if (!retrieved)
+      reasons.push(`Full ${guide.path} retrieval before first ${guide.tool} use was not observed`);
+    const detours = starts.filter(
+      ({ event }) =>
+        event.toolName === "read" &&
+        typeof event.args?.path === "string" &&
+        !event.args.path.startsWith("docs:") &&
+        !event.args.path.startsWith("shell:"),
+    );
+    for (const { event } of detours)
+      reasons.push(`Unnecessary filesystem or other resource Read: ${String(event.args?.path)}`);
+  }
   let furthest = 0;
   function walk(
     stepIndex: number,

@@ -11,6 +11,18 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "terminal-guide-first-use",
+  ["docs.terminal-first-use"],
+  "Run a short foreground shell command that prints TERMINAL-GUIDE-MARKER, then report the marker and the exit status. Do not create or edit files.",
+  [{ tool: "bash", contains: "TERMINAL-GUIDE-MARKER" }],
+  {
+    files: {},
+    answer: "TERMINAL-GUIDE-MARKER",
+    guideFirstUse: { path: "docs:terminal", tool: "bash" },
+    prerequisite: `node -e 'require("/source/node_modules/node-pty").spawn("/bin/sh",["-c","exit 0"],{cwd:"/workspace/fixture",env:process.env}).onExit(({exitCode})=>process.exit(exitCode));'`,
+  },
+);
+add(
   "delete-objects",
   ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
   "Delete remove-tree recursively, then unlink link and broken-link using ordinary paths without text selectors. Leave sentinel.txt and tracked/data untouched.",

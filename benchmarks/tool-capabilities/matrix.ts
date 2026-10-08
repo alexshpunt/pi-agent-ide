@@ -2,6 +2,7 @@ import type { Capability } from "./validation.ts";
 
 // This declared inventory is reviewed separately from executable cases.
 const groups: [string[], string[]][] = [
+  [["docs.terminal-first-use"], ["terminal-guide-first-use"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],

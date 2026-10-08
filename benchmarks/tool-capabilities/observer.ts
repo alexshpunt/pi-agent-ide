@@ -12,6 +12,8 @@ export default function observeCapabilities(pi: ExtensionAPI): void {
           thinking: pi.getThinkingLevel(),
           tools: pi.getAllTools().map((tool) => ({
             name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
             exposure: tool.exposure,
             namespace: tool.namespace?.name,
           })),

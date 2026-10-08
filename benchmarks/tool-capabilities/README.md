@@ -31,6 +31,15 @@ Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 lo
 
 Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
 
+## Guide first-use probe
+
+`terminal-guide-first-use` asks for a short shell marker, without naming documentation or a guide path. Only the shell operation is listed in its required route. The model must choose the guide from the current system prompt and tool exposure.
+
+Its validator requires a completed, unpaged `docs:terminal` read before the first Bash call. It allows `shell:` status reads and rejects other non-`docs:` Reads because the marker needs no file inspection. A later successful guide read does not hide an earlier detour or unguided shell call. Direct and native-Codemode routes are checked separately.
+
+This is a small reproduction probe, not proof that every task or model will choose the right guide. Retain all attempts and distinguish path choice, guide retrieval, route compliance, and infrastructure failures.
+The retained [LPT-667 investigation](evidence/LPT-667.md) records path choices separately from strict native-route compliance.
+
 ## Isolation
 
 A run freezes the checkout's current source and dependencies in a disposable clone and records its revision and source digest. Each case gets a fresh clone, fixture directory, private Pi home, and process namespace. Only that case's workspace/state and sandbox temporary directories are writable. Source and system tools are read-only; host checkouts, personal context, extensions, skills, and MCP configuration are not loaded.
@@ -46,7 +55,7 @@ Each invocation creates a new directory under `.tmp/capability-results/`, or a n
 - `matrix.md`: capability × model/route evidence with links to every attempt.
 - `manifest.json`: live inventory, selected profiles/cases, base revision, source digest, timeout.
 - `attempts.json`: all attempts, including failures.
-- Per attempt: prompt, JSONL events, stderr, actual model/thinking and system prompt, initial/final fixture bytes (`files.json`, Base64), result, and tool errors when execution reached validation.
+- Per attempt: prompt, JSONL events, stderr, actual model/thinking and system prompt, registered tool descriptions and schemas, initial/final fixture bytes (`files.json`, Base64), result, and tool errors when execution reached validation. Registered definitions are not the prepared declarations in the first model request; use the interface exporter when those are needed.
 
 `pass` means the required route and outcome were observed. `route_failed`, `outcome_failed`, `model_error`, `infra_error`, `timed_out`, `cancelled`, and `unavailable` remain distinct. Not run is not a pass. A later success does not erase earlier failures. An observed pass proves executability once, not consistency across runs.
 
