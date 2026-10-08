@@ -166,12 +166,53 @@ add(
 add(
   "file-copy-move-delete",
   ["edit.copy-file", "edit.move-file", "edit.delete-file"],
-  "Use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, not result selections. The original must stay unchanged.",
+  "First use move with task.txt as both path and target; it must report not-applied. Then use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, not result selections. The original must stay unchanged.",
   [
+    {
+      tool: "move",
+      args: { path: "task.txt", target: "task.txt" },
+      error: true,
+      contains: "move: not-applied",
+    },
     { tool: "copy", args: { path: "task.txt", target: "copied.txt" } },
-    { tool: "move", args: { path: "copied.txt", target: "moved.txt" } },
+    { tool: "move", args: { path: "copied.txt", target: "moved.txt" }, contains: "move: applied" },
     { tool: "delete", args: { path: "moved.txt" } },
   ],
+);
+
+add(
+  "move-unknown-effects",
+  ["edit.move-effects"],
+  "Use whole-file move on .tmp/move-effects/unknown-after.txt to .tmp/move-effects/unknown-after-target.txt. This isolated fixture deliberately fails after execution starts. Preserve the unknown effect: do not call it not-applied and do not retry. Read the destination by its ordinary path to inspect the bytes and report that the Move effect is unknown. In Codemode, catch the failed call so the inspection still runs.",
+  [
+    {
+      tool: "move",
+      args: {
+        path: ".tmp/move-effects/unknown-after.txt",
+        target: ".tmp/move-effects/unknown-after-target.txt",
+      },
+      error: true,
+      contains: "move: unknown",
+    },
+    {
+      tool: "read",
+      args: { path: ".tmp/move-effects/unknown-after-target.txt" },
+      contains: "MOVED-BYTES",
+    },
+  ],
+  {
+    setup: "move-effects",
+    files: {
+      ".tmp/move-effects/owned.txt": "LPT-642 disposable fixtures\n",
+      ".tmp/move-effects/unknown-after.txt": "MOVED-BYTES\n",
+      ".tmp/move-effects/unknown-after-target.txt": "old target\n",
+    },
+    expected: {
+      ".tmp/move-effects/unknown-after.txt": null,
+      ".tmp/move-effects/unknown-after-target.txt": "MOVED-BYTES\n",
+    },
+    answer: "unknown",
+  },
 );
 
 add(
