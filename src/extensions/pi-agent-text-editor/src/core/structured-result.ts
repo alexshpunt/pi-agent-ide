@@ -110,6 +110,8 @@ export function mutationOutcome(
       ...new Set([
         ...(data.files ?? []).map((file) => file.path),
         ...(data.path ? [data.path] : []),
+        ...(data.rollback?.failedSources ?? []),
+        ...(data.rollback?.restoredSources ?? []),
       ]),
     ];
     for (const source of sources)
@@ -120,7 +122,11 @@ export function mutationOutcome(
           observed.has(source) ||
           (data.ok === true && data.files?.some((file) => file.path === source))
             ? "applied"
-            : (details.effect ?? "unknown"),
+            : data.rollback?.failedSources.includes(source)
+              ? "unknown"
+              : data.rollback?.restoredSources.includes(source)
+                ? "not-applied"
+                : (details.effect ?? "unknown"),
       });
     for (const error of data.errors ?? [])
       errors.push({

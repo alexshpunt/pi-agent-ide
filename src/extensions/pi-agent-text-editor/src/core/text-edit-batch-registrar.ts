@@ -411,6 +411,9 @@ export async function executeRegisteredTextBatch(
               source: destination ?? outcome.failure.source,
               ...(outcome.failure.rollback !== undefined && {
                 rollback: {
+                  restored: outcome.failure.rollback.restored.filter((source) =>
+                    mutation.edits.has(source),
+                  ),
                   failed: outcome.failure.rollback.failed.filter((source) =>
                     mutation.edits.has(source),
                   ),

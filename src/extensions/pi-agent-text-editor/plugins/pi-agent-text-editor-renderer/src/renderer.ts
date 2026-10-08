@@ -908,12 +908,17 @@ function userFacingFailure(
   agentOutput: string,
   details: FileMutationBatchResult | undefined,
 ): string {
-  const rollback = details?.results?.find((result) => result.data.rollback !== undefined)?.data
-    .rollback;
-  if (rollback !== undefined) {
-    return rollback.failedSources.length === 0
-      ? "Rolled back · write failed"
-      : "State unknown · rollback failed";
+  const rollbacks =
+    details?.results?.flatMap((result) => (result.data.rollback ? [result.data.rollback] : [])) ??
+    [];
+  if (rollbacks.length > 0) {
+    const failed = [...new Set(rollbacks.flatMap((rollback) => rollback.failedSources))];
+    const restored = [...new Set(rollbacks.flatMap((rollback) => rollback.restoredSources))];
+    return [
+      failed.length === 0 ? "Rolled back · write failed" : "State unknown · rollback failed",
+      ...(failed.length > 0 ? [`Unknown: ${failed.join(", ")}`] : []),
+      ...(restored.length > 0 ? [`Rolled back: ${restored.join(", ")}`] : []),
+    ].join("\n");
   }
   if (details?.effect === "unknown") return "Effects unknown · edit failed";
   if (details?.effect === "applied") return "Saved · post-write step failed";

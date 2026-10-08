@@ -740,7 +740,21 @@ class NativeTextEditBatchCoordinator {
         }),
     );
     let observedSources: string[] = [];
-    const record = (outcome: StructuredResult<MutationData>): boolean => {
+    const record = (
+      outcome: StructuredResult<MutationData>,
+      results: readonly FileMutationResult[] = [],
+    ): boolean => {
+      // Only explicit rollback evidence overrides the journal's call-wide effect.
+      const reportedFiles = new Map<string, MutationData["files"][number]>(
+        results.flatMap(({ data }) => [
+          ...(data.rollback?.restoredSources ?? []).map(
+            (source) => [source, { source, effect: "not-applied" as const }] as const,
+          ),
+          ...(data.rollback?.failedSources ?? []).map(
+            (source) => [source, { source, effect: "unknown" as const }] as const,
+          ),
+        ]),
+      );
       const calls = journal.snapshot();
       const operations = calls.map((call) => ({
         id: call.callId,
@@ -773,7 +787,9 @@ class NativeTextEditBatchCoordinator {
         }),
         ...observedSources.map((source) => ({ source, effect: "applied" as const })),
       ]).map((file) =>
-        observedSources.includes(file.source) ? { ...file, effect: "applied" as const } : file,
+        observedSources.includes(file.source)
+          ? { ...file, effect: "applied" as const }
+          : (reportedFiles.get(file.source) ?? file),
       );
       const errors = [
         ...new Map(
@@ -860,7 +876,10 @@ class NativeTextEditBatchCoordinator {
       } satisfies NativeEditBatchEvent;
       script.presentations.push(presentation);
       this.pi.events.emit(NATIVE_EDIT_BATCH_EVENT, presentation);
-      return record(mutationOutcome(value, "batch", captured.completions));
+      return record(
+        mutationOutcome(value, "batch", captured.completions),
+        value.details.results ?? [],
+      );
     } catch (error) {
       journal.markRunningUnknown(error);
       await this.settleTargets(script, batch, journal, [], signal);

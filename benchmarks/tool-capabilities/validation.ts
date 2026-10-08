@@ -46,7 +46,8 @@ export interface RouteStep {
   args?: Record<string, unknown>;
   contains?: string;
   image?: boolean;
-  error?: boolean;
+  /** Native text calls can be accepted before their parent reports a write failure. */
+  error?: boolean | "direct";
   reuse?: ResultReuse | ResultReuse[];
 }
 
@@ -197,7 +198,7 @@ export function validateRoute(
         event.toolName !== step.tool ||
         !end ||
         end.index <= start.index ||
-        end.event.isError !== Boolean(step.error)
+        end.event.isError !== (step.error === "direct" ? mode === "direct" : Boolean(step.error))
       )
         continue;
       if (mode === "codemode" && !codemodeParents.has(event.parentToolCallId)) continue;

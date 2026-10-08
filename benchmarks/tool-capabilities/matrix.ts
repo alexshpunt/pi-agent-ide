@@ -20,6 +20,14 @@ const groups: [string[], string[]][] = [
     ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
     ["selection-copy-move"],
   ],
+  [
+    ["edit.move-rollback"],
+    [
+      "move-rollback-restored",
+      "move-rollback-target-failed",
+      "move-rollback-target-failed-after-restore",
+    ],
+  ],
   [["compose.paired-sources-targets"], ["paired-copy"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],

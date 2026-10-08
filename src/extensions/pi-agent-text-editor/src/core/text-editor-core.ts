@@ -264,6 +264,8 @@ export interface TextResourceEditFailure {
   readonly rollback?: {
     readonly failed: readonly string[];
     readonly originallyMissing: readonly string[];
+    /** Existing resources whose restoration write succeeded. */
+    readonly restored: readonly string[];
   };
 }
 
@@ -1337,7 +1339,13 @@ async function editTextResources<Result>(
         resolverId: item.resolverId,
         message: `Unable to write ${source}: ${cause instanceof Error ? cause.message : String(cause)}`,
         cause,
-        rollback: { failed: rollbackFailures, originallyMissing },
+        rollback: {
+          failed: rollbackFailures,
+          originallyMissing,
+          restored: written.filter(
+            (source) => !rollbackFailures.includes(source) && !originallyMissing.includes(source),
+          ),
+        },
       },
       completed: [],
     };
