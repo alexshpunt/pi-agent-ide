@@ -111,6 +111,13 @@ test("keeps unit failure evidence before success-only integration", () => {
   expect(logs.step.if).toBe("always()");
   expect(logs.step.with?.["include-hidden-files"]).toBe(true);
   expect(logs.step.with?.path).toBe(".tmp/integration-shards.*/*.log");
+  const compositionTraces = find("Retain failed composition Pi traces");
+  expect(compositionTraces.index).toBeGreaterThan(integration.index);
+  expect(compositionTraces.step.if).toBe("failure()");
+  expect(compositionTraces.step.with?.["include-hidden-files"]).toBe(true);
+  expect(compositionTraces.step.with?.path).toBe(
+    ".tmp/test-runs/tests/integration/native-tool-composition.integration.test.ts/",
+  );
   const candidate = find("Build and install reproducible release candidate");
   expect(candidate.index).toBeGreaterThan(integration.index);
   expect(candidate.step.if).toMatch(/^success\(\)/u);

@@ -292,6 +292,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Retain failed composition Pi traces
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: failed-composition-pi-traces
+          path: .tmp/test-runs/tests/integration/native-tool-composition.integration.test.ts/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

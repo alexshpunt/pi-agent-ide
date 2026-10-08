@@ -81,6 +81,9 @@ async function runComposition(
               id: `compose-${index}`,
               name: "codemode",
               arguments: { code: withTextResultChecks(code) },
+              // These scenarios test composition, not character-by-character delivery.
+              chunks: { kind: "fixed", size: 4096 },
+              delayMs: 0,
             }),
           ],
           { stopReason: "toolUse" },
