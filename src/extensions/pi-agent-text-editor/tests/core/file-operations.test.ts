@@ -59,13 +59,9 @@ test("refuses directories and symbolic links without touching their contents", a
   await mkdir(path.join(cwd, "dir"));
   await symlink(path.join(cwd, "source"), path.join(cwd, "link"));
   for (const name of ["dir", "link"]) {
-    for (const operation of ["copy", "move", "delete"] as const) {
+    for (const operation of ["copy", "move"] as const) {
       expect(
-        await executeFileOperation(
-          operation,
-          { path: name, ...(operation === "delete" ? {} : { target: "new" }) },
-          cwd,
-        ),
+        await executeFileOperation(operation, { path: name, target: "new" }, cwd),
       ).toMatchObject({ ok: false, effect: "not-applied" });
     }
   }

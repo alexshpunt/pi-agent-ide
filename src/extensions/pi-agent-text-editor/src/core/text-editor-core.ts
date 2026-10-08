@@ -97,6 +97,7 @@ import type {
   TextMutationPreviewRequest,
 } from "#src/api/mutation-preview.js";
 
+import type { BeforeDeleteEvent, DeleteGuardRegistration } from "#src/api/delete-guard.js";
 type PluginStatus = "active" | "pending";
 
 interface PluginLifecycle {
@@ -215,6 +216,7 @@ interface PluginContributionDraft {
   readonly mutationToolListeners?: TextMutationToolListener[];
   readonly editCompletionListeners?: TextEditCompletionListener[];
   readonly mutationGuards?: TextMutationGuardRegistration[];
+  readonly deleteGuards?: DeleteGuardRegistration[];
   readonly toolRenderers?: TextEditorToolRendererRegistration[];
 }
 
@@ -334,6 +336,8 @@ export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
 export interface TextEditorCore {
+  /** Run whole-object deletion policies in registration order; denial and errors block removal. */
+  beforeDelete(event: BeforeDeleteEvent): Promise<void>;
   /** Finalize a surviving local text file after a whole-file operation; binary files are untouched. */
   postProcessFile(source: string, context: ResourceResolverContext): Promise<void>;
   /** Reserve complete file sets. Only an explicit transaction owner may enqueue covered nested edits. */
@@ -426,6 +430,7 @@ export function createTextEditorCore(
   const mutationListeners = new Set<TextMutationToolListener>();
   const editCompletionListeners = new Set<TextEditCompletionListener>();
   const mutationGuards: TextMutationGuardRegistration[] = [];
+  const deleteGuards: DeleteGuardRegistration[] = [];
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
   let registrationQueue = Promise.resolve();
   const scheduler = resourceScheduler;
@@ -499,6 +504,7 @@ export function createTextEditorCore(
     handlers.push(...draft.handlers);
     semanticHandlers.push(...(draft.semanticHandlers ?? []));
     mutationGuards.push(...(draft.mutationGuards ?? []));
+    deleteGuards.push(...(draft.deleteGuards ?? []));
     promptContributions.push(...draft.promptContributions);
     writablePromptContributions.push(...draft.writablePromptContributions);
 
@@ -533,6 +539,22 @@ export function createTextEditorCore(
   };
 
   const core: TextEditorCore = {
+    async beforeDelete(event) {
+      for (const registration of [...deleteGuards]) {
+        event.signal?.throwIfAborted();
+        try {
+          const decision = await registration.guard(event);
+          if (decision.decision !== "allow") throw new Error(decision.reason);
+        } catch (error) {
+          throw Object.assign(
+            new Error(
+              `Delete blocked by hook ${registration.id}: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+            { code: "DELETE_HOOK_REJECTED" },
+          );
+        }
+      }
+    },
     async postProcessFile(source, context) {
       await enqueueMutation(
         async () => {
@@ -1995,6 +2017,7 @@ function createPluginContributionController(
     mutationToolListeners: [],
     editCompletionListeners: [],
     mutationGuards: [],
+    deleteGuards: [],
     toolRenderers: [],
   };
   let state: "active" | "closed" | "setup" = "setup";
@@ -2116,6 +2139,25 @@ function createPluginContributionController(
         writablePromptContributions: [],
         tools: [],
         toolRenderers: [registration],
+      });
+    },
+    addDeleteGuard(registration): void {
+      assertAvailable();
+      if (registration.id.trim().length === 0 || typeof registration.guard !== "function") {
+        throw new TypeError(`Plugin ${pluginId} provided an invalid delete guard`);
+      }
+      if (state === "setup") {
+        requiredValue(setupDraft.deleteGuards).push(registration);
+        return;
+      }
+      registerContributions({
+        resolvers: [],
+        anchorResolvers: [],
+        handlers: [],
+        promptContributions: [],
+        writablePromptContributions: [],
+        tools: [],
+        deleteGuards: [registration],
       });
     },
     addMutationGuard(registration): void {

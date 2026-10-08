@@ -45,6 +45,32 @@ export default function (pi: ExtensionAPI) {
 
 The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools, including calls through native Codemode. A denial or thrown error leaves every Resource unchanged.
 
+## Protect whole objects from deletion
+
+```ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectBeforeDeleteHook } from "pi-agent-ide/api/hooks";
+
+export default function (pi: ExtensionAPI) {
+  connectBeforeDeleteHook(pi, {
+    id: "protect-data",
+    run(event) {
+      return event.resolvedPath.endsWith("/data")
+        ? { decision: "deny", reason: "Keep the data directory" }
+        : { decision: "allow" };
+    },
+  });
+}
+```
+
+This hook covers whole-object Delete calls for regular files, directories, and symlinks, including native Codemode. It does not cover selected-text removal, terminal/debugger actions, Copy, or Move. The event provides `path` (absolute requested path), `resolvedPath` (parent symlinks resolved, final symlink left alone), `cwd`, `kind`, `recursive`, and an optional abort `signal`. It runs once before removal and any user dialog. A denial or thrown error blocks removal; allowing does not override another hook or built-in protection.
+
+Delete removes directories recursively and unlinks symlinks, including broken ones, without traversing their targets. The built-in policy uses the Git worktree containing Pi's cwd. Tracked or newly staged targets require a user dialog, as do external directories and symlinks, missing Git worktrees, and failed Git checks. Untracked directories and symlinks inside that worktree need no dialog. Ordinary files keep their existing policy.
+
+The dialog names the exact target, reason, and operation. Refusal, dismissal, cancellation, or an unavailable dialog prevents removal. Project roots, their ancestors, filesystem roots, and current Git control paths are always blocked, even when a hook allows. Git control protection also covers regular-file `.git` markers. Without Git, cwd and its ancestors are protected.
+
+Delete checks the target identity and policy again after hooks and confirmation. Changed targets need a new request; there is no agent approval flag. These checks are not an atomic lock against other processes changing the filesystem. Recursive deletion has no rollback: a filesystem error after removal begins reports `unknown` effects, because some entries may already be gone.
+
 ## Check saved edits
 
 ```ts

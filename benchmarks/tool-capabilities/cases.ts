@@ -1,5 +1,6 @@
 import type { CapabilityCase, RouteStep } from "./validation.ts";
 
+// Directory/symlink approval is a host UI policy, not an agent calling requirement.
 const both = ["direct", "codemode"];
 const reuse = (from: number, field: string | string[] = "path", kind = "result") => ({
   from,
@@ -7,7 +8,50 @@ const reuse = (from: number, field: string | string[] = "path", kind = "result")
   kind,
 });
 const textFile = { "task.txt": "keep\nOLD\nlast\n" };
+const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
+add(
+  "delete-objects",
+  ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
+  "Delete remove-tree recursively, then unlink link and broken-link using ordinary paths without text selectors. Leave sentinel.txt and tracked/data untouched.",
+  [
+    { tool: "delete", args: { path: "remove-tree" }, contains: "delete: applied" },
+    { tool: "delete", args: { path: "link" }, contains: "delete: applied" },
+    { tool: "delete", args: { path: "broken-link" }, contains: "delete: applied" },
+  ],
+  {
+    files: deleteFixture,
+    git: true,
+    setup: "delete-objects",
+    expected: {
+      "remove-tree": null,
+      "remove-tree/data": null,
+      "remove-tree/link": null,
+      link: null,
+      "broken-link": null,
+    },
+  },
+);
+add(
+  "delete-policy-gates",
+  ["edit.delete-policy-refusal", "edit.delete-protected-path"],
+  "Request whole-object deletion of tracked and .git/config through Delete. Both should be blocked in this non-interactive runtime. Keep all fixture bytes unchanged and report the two refusal reasons.",
+  [
+    {
+      tool: "delete",
+      args: { path: "tracked" },
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+    {
+      tool: "delete",
+      args: { path: ".git/config" },
+      error: true,
+      contains: "DELETE_PROTECTED_TARGET",
+    },
+  ],
+  { files: deleteFixture, git: true },
+);
 function add(
   id: string,
   capabilities: string[],
