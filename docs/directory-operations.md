@@ -36,10 +36,10 @@ There is no recursive undo or atomic rollback. After an unknown result, inspect 
 
 ## Executable checks
 
-- [Transfer unit tests](../src/extensions/pi-agent-text-editor/tests/core/directory-transfers.test.ts): binary bytes, empty directories, link text, merge/replace behavior, aliases, nested destinations, conflicts, hooks/approvals, changed objects, cancellation, real Linux cross-device moves, and controlled partial failures.
-- [Delete policy unit tests](../src/extensions/pi-agent-text-editor/tests/core/delete-policy.test.ts): deletion guards and uncertain recursive effects.
-- [Real-Pi transfer cases](../tests/integration/directory-transfers.integration.test.ts): direct and native Codemode transfers, preserved source/sentinel bytes, host approval, and refusal paths.
-- [Real-Pi Delete cases](../tests/integration/delete-objects.integration.test.ts): both call routes and fail-closed host guards.
-- [Paid capability matrix](../benchmarks/tool-capabilities/README.md): executable `directory-transfers` and `directory-transfer-gates` cases have direct and Codemode routes. They are not model-verified until explicitly run with paid permission. Free coverage checks do not prove model execution.
+- [Transfer unit tests](https://github.com/alexshpunt/pi-agent-ide/blob/develop/src/extensions/pi-agent-text-editor/tests/core/directory-transfers.test.ts): binary bytes, empty directories, link text, merge/replace behavior, aliases, nested destinations, conflicts, hooks/approvals, changed objects, cancellation, real Linux cross-device moves, and controlled partial failures.
+- [Delete policy unit tests](https://github.com/alexshpunt/pi-agent-ide/blob/develop/src/extensions/pi-agent-text-editor/tests/core/delete-policy.test.ts): deletion guards and uncertain recursive effects.
+- [Real-Pi transfer cases](https://github.com/alexshpunt/pi-agent-ide/blob/develop/tests/integration/directory-transfers.integration.test.ts): direct and native Codemode transfers, preserved source/sentinel bytes, host approval, and refusal paths.
+- [Real-Pi Delete cases](https://github.com/alexshpunt/pi-agent-ide/blob/develop/tests/integration/delete-objects.integration.test.ts): both call routes and fail-closed host guards.
+- [Paid capability matrix](https://github.com/alexshpunt/pi-agent-ide/blob/develop/benchmarks/tool-capabilities/README.md): executable `directory-transfers` and `directory-transfer-gates` cases have direct and Codemode routes. They are not model-verified until explicitly run with paid permission. Free coverage checks do not prove model execution.
 
 These contracts are checked on Linux/WSL. The cross-device test uses `/dev/shm` and runs only on Linux. Other operating systems are not verified by that test.
