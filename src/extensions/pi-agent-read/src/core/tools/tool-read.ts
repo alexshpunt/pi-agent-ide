@@ -408,10 +408,7 @@ async function executeRead(
   const targetSnapshot = [...targetResolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
-  const rawRequestedViews = [
-    ...(request.views ?? []),
-    ...(audience === "script" ? viewSnapshot.map(({ registration }) => registration.view) : []),
-  ];
+  const rawRequestedViews = request.views ?? [];
   const requestedViews = new Set(rawRequestedViews.map(viewName));
   const knownViews = new Set([...viewSnapshot.map(({ registration }) => registration.view)]);
   const explicitViews = [...new Set(request.views ?? [])];

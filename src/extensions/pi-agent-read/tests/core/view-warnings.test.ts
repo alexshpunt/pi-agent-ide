@@ -54,6 +54,43 @@ function reader(content: AgentContent) {
   return read;
 }
 
+test.each(["agent", "script"] as const)(
+  "views run only when requested by the %s reader",
+  async (audience) => {
+    const read = reader([{ type: "text", text: "alpha" }]);
+    let checks = 0;
+    read.registerContributions("diagnostics-fixture", {
+      views: [
+        {
+          view: "diagnostics",
+          presenter: {
+            id: "diagnostics-fixture",
+            present(document) {
+              checks++;
+              return document;
+            },
+          },
+        },
+      ],
+    });
+    try {
+      const plain = await read.execute({ path: "memory:notes" }, { cwd: process.cwd() }, audience);
+      expect(plain.content).toEqual([{ type: "text", text: "alpha" }]);
+      expect(checks).toBe(0);
+      await read.execute(
+        { path: "memory:notes", views: ["diagnostics"] },
+        { cwd: process.cwd() },
+        audience,
+      );
+      expect(checks).toBe(1);
+      await read.execute({ path: "memory:notes", views: [] }, { cwd: process.cwd() }, audience);
+      expect(checks).toBe(1);
+    } finally {
+      await read.dispose();
+    }
+  },
+);
+
 test("unknown views explain recovery without entering source lines or hiding valid views", async () => {
   const read = reader([{ type: "text", text: "alpha\nbeta" }]);
   try {

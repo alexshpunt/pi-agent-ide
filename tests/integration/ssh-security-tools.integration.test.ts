@@ -77,7 +77,7 @@ test("ordinary and native tools keep private SSH diagnostics out of agent and TU
             id: "native",
             name: "codemode",
             arguments: {
-              code: `text(await tools.read({path:${JSON.stringify(source)}}));text(await tools.write({path:${JSON.stringify(source)},content:"Must not change\\n"}));`,
+              code: `for (const operation of [() => tools.read({path:${JSON.stringify(source)}}), () => tools.write({path:${JSON.stringify(source)},content:"Must not change\\n"})]) { let failure; try { await operation(); } catch(error) { failure=String(error); } if(!failure?.includes("TRANSPORT_FAILED") || failure.includes("Outcome unknown")) throw Error("Unexpected SSH receipt: " + failure); text({refusal:failure}); }`,
             },
           }),
         ]),
@@ -103,18 +103,13 @@ test("ordinary and native tools keep private SSH diagnostics out of agent and TU
     expect(getToolExecution(run, "ordinary-write").isError).toBe(true);
     expect(getToolResultText(run, "ordinary-write")).toContain("TRANSPORT_FAILED");
     expect(getToolResultText(run, "ordinary-write")).not.toContain("Outcome unknown");
-    expect(getToolExecution(run, "native").isError).toBe(false);
+    expect(getToolExecution(run, "native").isError, getToolResultText(run, "native")).toBe(false);
     const results = getToolResultText(run, "native")
       .split("\n")
-      .filter((line) => line.startsWith('{"status":'))
-      .map((line): unknown => JSON.parse(line));
+      .filter((line) => line.startsWith('{"refusal":'))
+      .map((line) => JSON.parse(line) as { refusal: string });
     expect(results).toHaveLength(2);
-    expect(results[0]).toMatchObject({ status: "error", errors: [{ code: "TRANSPORT_FAILED" }] });
-    expect(results[1]).toMatchObject({
-      status: "error",
-      data: { effect: "not-applied" },
-      errors: [{ code: "TRANSPORT_FAILED" }],
-    });
+    for (const result of results) expect(result.refusal).toContain("TRANSPORT_FAILED");
     expect(getToolExecution(run, "unknown").isError).toBe(true);
     expect(getToolResultText(run, "unknown")).toContain("UNKNOWN_TARGET");
     expect(getToolExecution(run, "application").isError).toBe(false);

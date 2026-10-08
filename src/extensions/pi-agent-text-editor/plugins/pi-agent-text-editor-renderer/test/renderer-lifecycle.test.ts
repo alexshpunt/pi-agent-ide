@@ -39,6 +39,58 @@ afterEach(() => {
 });
 
 describe("mutation renderer lifecycle", () => {
+  test("whole-file Copy shows final saved feedback without a text diff", () => {
+    let renderer: TextEditorToolRendererRegistration | undefined;
+    const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+      onMutationTool(listener: (registration: unknown) => void) {
+        listener({ name: "copy", source: { field: "path" } });
+      },
+      addToolRenderer(value: TextEditorToolRendererRegistration) {
+        renderer = value;
+      },
+    });
+    registerMutationRenderers(api);
+    if (renderer?.renderResult === undefined) throw new Error("Missing Copy renderer");
+    const args = { path: "source.txt", target: "ssh://fixture/saved.txt" };
+    const component = renderer.renderResult(
+      {
+        content: [{ type: "text", text: "Saved." }],
+        details: {
+          results: [],
+          metadata: {
+            semanticAction: {
+              kind: "file-operation",
+              operation: "copy",
+              ok: true,
+              effect: "applied",
+              path: args.path,
+              target: args.target,
+              diffStatuses: [{ text: "Review sees the final saved content.", tone: "warning" }],
+            },
+          },
+        },
+      },
+      { expanded: false, isPartial: false },
+      theme,
+      {
+        args,
+        toolCallId: "whole-file-feedback",
+        invalidate: vi.fn(),
+        lastComponent: undefined,
+        state: {},
+        cwd: process.cwd(),
+        executionStarted: true,
+        argsComplete: true,
+        isPartial: false,
+        expanded: false,
+        showImages: true,
+        isError: false,
+      },
+    );
+    const output = component.render(100).join("\n");
+    expect(output).toContain("✓ Applied");
+    expect(output).toContain("Review sees the final saved content.");
+  });
   test("disabled animations skip preview work and timers but show the final diff", () => {
     const interval = vi.spyOn(globalThis, "setInterval");
     const previewMutation = vi.fn();

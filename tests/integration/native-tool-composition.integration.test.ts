@@ -1440,7 +1440,7 @@ text(await tools.search({path:"format.txt",query:"FORMATTED"}));`,
       .map((line) => JSON.parse(line) as { content: string });
     expect(events).toHaveLength(1);
     expect(events[0]?.content).toBe("head\nformat_me\ntail\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Fixture formatting finished");
+    expect(getToolResultText(run, "compose-0")).toContain("Formatted (fixture).");
     expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");
   });
 });

@@ -4,7 +4,6 @@ import {
   assistantMessage,
   getToolExecution,
   getToolExecutionDetails,
-  getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -31,7 +30,13 @@ test.runIf(process.platform !== "win32")(
       const waiting = await tools.bash({command: "read -r line", timeoutSeconds: 0.1});
       for (const result of [empty, failed, waiting, large]) if (typeof result !== "string") throw Error("Expected readable shell text");
       const observed = await tools.read({path:waiting});
-      text({empty, failed, waiting, observed, large});
+      if (!large.includes("Earlier output omitted") || !large.includes("TAIL") || large.includes("�"))
+        throw Error("Invalid bounded shell preview");
+      const largeBytes = encodeURIComponent(large).replace(/%[A-F\\d]{2}|./gu, "x").length;
+      if (largeBytes >= 50 * 1024) throw Error("Shell preview exceeds its byte budget");
+      const logPath = /^fullOutput: (.+)$/mu.exec(large)?.[1];
+      if (!logPath) throw Error("Missing readable full-log path");
+      text("SHELL_RESULTS=" + JSON.stringify({empty, failed, waiting, observed, largeBytes, logPath}));
     `;
       const result = await new PiIntegrationTest({
         testName: "native-shell-result",
@@ -62,15 +67,19 @@ test.runIf(process.platform !== "win32")(
           assistantMessage([text("Done")]),
         ],
       }).run("Filter shell output inside a native script and show a bounded direct preview.");
-      expect(getToolExecution(result, "script").isError).toBe(false);
-      const script = getToolExecutionResult(result, "script") as {
-        content: { type: string; text?: string }[];
-      };
-      const output = script.content.find(
-        (part) => part.type === "text" && part.text?.startsWith("{"),
+      expect(getToolExecution(result, "script").isError, getToolResultText(result, "script")).toBe(
+        false,
       );
-      if (output?.text === undefined) throw new Error("Missing shell script JSON output");
-      const data = JSON.parse(output.text) as Record<string, string>;
+      const payload = /^SHELL_RESULTS=(.+)$/mu.exec(getToolResultText(result, "script"))?.[1];
+      if (payload === undefined) throw new Error("Missing shell script JSON output");
+      const data = JSON.parse(payload) as {
+        empty: string;
+        failed: string;
+        waiting: string;
+        observed: string;
+        largeBytes: number;
+        logPath: string;
+      };
       expect(data.empty).toContain("status: completed");
       expect(data.empty).toContain("exitCode: 0");
       expect(data.empty).toContain("output: (empty)");
@@ -81,12 +90,8 @@ test.runIf(process.platform !== "win32")(
       expect(data.waiting).toContain("reason: timeout");
       expect(data.waiting).not.toContain("exitCode:");
       expect(data.observed).toContain("status: running");
-      expect(data.large).toContain("Earlier output omitted");
-      expect(data.large).toContain("TAIL");
-      expect(data.large).not.toContain("�");
-      expect(Buffer.byteLength(data.large ?? "")).toBeLessThan(50 * 1024);
-      const logPath = /^fullOutput: (.+)$/mu.exec(data.large ?? "")?.[1];
-      if (!logPath) throw new Error("Missing readable full-log path");
+      expect(data.largeBytes).toBeLessThan(50 * 1024);
+      const logPath = data.logPath;
       expect(await readFile(logPath, "utf8")).toBe("HEAD" + "я".repeat(700000) + "TAIL");
       const preview = getToolResultText(result, "preview");
       expect(preview).toContain("Earlier output omitted");

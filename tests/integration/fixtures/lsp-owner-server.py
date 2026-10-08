@@ -45,7 +45,7 @@ while True:
         state["exitOnSymbolQuery"] = params.get("initializationOptions", {}).get("ownerExitOnSymbolQuery")
         state["watchRegistered"] = False
         state["watchChanges"] = []
-        result = {"capabilities": {"textDocumentSync": 1, "renameProvider": True}}
+        result = {"capabilities": {"textDocumentSync": 1, "renameProvider": True, "workspaceSymbolProvider": True, "documentSymbolProvider": True, "referencesProvider": True}}
     elif method == "initialized" and state.get("watchRequested"):
         send({"jsonrpc": "2.0", "id": 777, "method": "client/registerCapability", "params": {"registrations": [{"id": "owned-watch", "method": "workspace/didChangeWatchedFiles", "registerOptions": {"watchers": [{"globPattern": {"baseUri": state["receivedRoot"], "pattern": "**/*.ts"}, "kind": 7}]}}]}})
     elif method is None and message.get("id") == 777:
@@ -73,7 +73,7 @@ while True:
             continue
         result = [{"name": "label", "kind": 14, "location": {"uri": state["receivedRoot"] + "/note.ts", "range": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}}] if params["query"] == "label" else []
     elif method == "textDocument/references":
-        result = [{"uri": state["receivedRoot"] + "/" + name, "range": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}} for name in ("note.ts", "reference.ts")]
+        result = [{"uri": state["receivedRoot"] + "/" + name, "range": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}} for name in ("note.ts", "reference.ts") if os.path.isfile(unquote(urlparse(state["receivedRoot"] + "/" + name).path))]
     elif method == "textDocument/prepareCallHierarchy":
         result = [{"name": "label", "kind": 14, "uri": params["textDocument"]["uri"], "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 21}}, "selectionRange": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}]
     elif method in ("callHierarchy/incomingCalls", "callHierarchy/outgoingCalls"):

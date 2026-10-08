@@ -140,7 +140,7 @@ const name = await tools.select({path:capture,operation:{kind:"sliceText",from:0
 if (!name.includes("greet")) throw Error(name);
 const absentCall = await tools.search({path:line,query:"ast:greet($$$ARGS)"});
 if (!absentCall.includes("No AST matches found")) throw Error("AST scope widened: " + absentCall);
-text({ast,name});
+text({ast,name,absentCallChecked:true});
 text(await tools.replace({path:extent,text:""}));
 await expectFailure(() => tools.select({path:read,operation:{kind:"position",edge:"after"}}), "stale");
 
@@ -164,7 +164,7 @@ await expectFailure(() => tools.select({path:read,operation:{kind:"position",edg
     expect(result).toContain("greet");
     expect(result).toContain("hello");
     expect(result).toContain("capture NAME:");
-    expect(result).toContain("No AST matches found");
+    expect(result).toContain('"absentCallChecked":true');
     expect(result).toContain("stale");
     expect((await backend.read(`${fixture.workspace}/note.ts`)).bytes.toString("utf8")).toBe(
       source.replace('"hello", ', ""),

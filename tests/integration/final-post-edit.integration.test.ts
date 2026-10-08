@@ -18,7 +18,7 @@ import {
 } from "#integration/support/pi-runtime/fixtures.js";
 
 test.each([false, true])(
-  "Native Codemode processes final files once, even after a later failure=%s",
+  "Native Codemode finishes Write immediately and batches later edits, even after a failure=%s",
   async (fail) => {
     await withTempWorkspace(async (cwd) => {
       await enableNativeCodemode(cwd);
@@ -50,8 +50,8 @@ const check = result => { if(typeof result!=="string") throw Error("Expected rea
 check(await tools.write({path:"a.note",content:"first"}));
 check(await tools.write({path:"b.note",content:"second"}));
 const seen=check(await tools.read({path:"a.note"}));
-if(!seen.endsWith("first")) throw Error("formatted too early");
-check(await tools.replace({path:"a.note",start:"first",text:"final"}));
+if(!seen.endsWith("FIRST")) throw Error("Write was not formatted before returning");
+check(await tools.replace({path:"a.note",start:"FIRST",text:"final"}));
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,
                 },
@@ -88,11 +88,12 @@ ${fail ? 'throw new Error("planned failure");' : ""}
       // Independent files may finish in either order; each final content must appear once.
       expect((await events("format-events.jsonl")).map((event) => event.content).sort()).toEqual([
         "final",
+        "first",
         "second",
       ]);
       expect(
         (await events("diagnostic-events.jsonl")).map((event) => event.content).sort(),
-      ).toEqual(["FINAL", "SECOND"]);
+      ).toEqual(["FINAL", "FIRST", "SECOND"]);
     });
   },
 );

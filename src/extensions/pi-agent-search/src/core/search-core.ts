@@ -259,7 +259,15 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
             if (sources === undefined) return [{ resource: "*", mode: "read" as const }];
             return (
               await Promise.all(
-                sources.map((source) => resourceAccesses(source, context.cwd, "read")),
+                sources.map(async (source) => {
+                  const accesses = await resourceAccesses(source, context.cwd, "read");
+                  if (
+                    context.environment !== undefined &&
+                    (await context.environment.isDirectory(source, context.signal))
+                  )
+                    return accesses.map((access) => ({ ...access, recursive: true }));
+                  return accesses;
+                }),
               )
             ).flat();
           });

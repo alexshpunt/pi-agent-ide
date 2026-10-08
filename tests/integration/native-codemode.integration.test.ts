@@ -536,7 +536,7 @@ ${scenario.deadline ? "while(true) {}" : 'throw Error("ordinary Copy script erro
       scenario.remains ? 1 : 0,
     );
     expect(getToolResultText(run, "script-0")).toContain(
-      scenario.remains ? "Editor batches: 1 committed" : "no pending edits were written",
+      scenario.remains ? "Editor batches: 1 committed" : "No file was changed.",
     );
   });
 });

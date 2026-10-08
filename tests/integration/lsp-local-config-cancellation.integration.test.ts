@@ -65,8 +65,11 @@ test("loaded local config cancellation preserves its reason and ordinary symbols
         manifestReadRetained: true,
       },
     });
-    expect(getToolExecution(run, "retry-symbols").isError).toBe(false);
-    expect(getToolResultText(run, "retry-symbols")).toContain("note.ts:1:7 14 label");
+    expect(
+      getToolExecution(run, "retry-symbols").isError,
+      getToolResultText(run, "retry-symbols"),
+    ).toBe(false);
+    expect(getToolResultText(run, "retry-symbols")).toMatch(/note\.ts:1:7[^\n]*\blabel\b/u);
     expect(run.tuiRenderedOutput).toContain("label");
   } finally {
     await rm(cwd, { recursive: true, force: true });

@@ -142,6 +142,7 @@ test("trusted hooks guard remote read paths and mixed moves, then see final nati
       expect(getToolResultText(run, id)).toContain("Owned remote content is blocked");
       expect(getToolResultText(run, id)).not.toContain("PRIVATE_OWNED_READ_CONTENT");
     }
+    expect(getToolExecution(run, "script").isError).toBe(true);
     expect(getToolResultText(run, "script")).toContain("Owned remote content is blocked");
     expect(getToolResultText(run, "script")).not.toContain("PRIVATE_OWNED_READ_CONTENT");
     expect(getToolExecution(run, "throw").isError).toBe(true);
@@ -193,14 +194,15 @@ test("trusted hooks guard remote read paths and mixed moves, then see final nati
     expect(plan).toContain(JSON.stringify(local));
     expect(plan).toContain(JSON.stringify("local café source\n"));
     expect(plan).toContain(JSON.stringify("remote café destination\n"));
+    // Native tool calls use the same guarded Read entry as ordinary calls.
     expect(
-      events.some(
+      events.filter(
         (line) =>
           line.includes('"kind":"beforeRead"') &&
           line.includes(JSON.stringify(secret)) &&
-          line.includes('"audience":"script"'),
-      ),
-    ).toBe(true);
+          line.includes('"audience":"agent"'),
+      ).length,
+    ).toBeGreaterThanOrEqual(3);
     expect(
       events.some(
         (line) =>

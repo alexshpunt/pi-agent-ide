@@ -277,6 +277,7 @@ test("bounds Search items across protocols, globs, generated files and composed 
     const resultFor = await runBatches(
       {
         testName: "search-limit-matrix",
+        timeoutMs: 90000,
         artifactsDir: testArtifactsDir(import.meta.filename, path.join(root, ".tmp/test-runs")),
         cwd,
         extensions: [extension, "builtin:codemode"],

@@ -74,6 +74,9 @@ test("retains failures while every integration shard runs on its own runner", ()
   const aggregate = job("integration-report");
   expect(aggregate.needs).toEqual(["integration", "integration-namespaces"]);
   expect(aggregate.if).toBe("always()");
+  expect(find("integration-report", "Checkout").index).toBeLessThan(
+    find("integration-report", "Download integration reports").index,
+  );
   const integrationReport = find("integration-report", "Report integration tests");
   expect(integrationReport.step.with?.path).toBe(".agents/tmp/test-results/integration-*.xml");
   expect(integrationReport.step.if).toBe(

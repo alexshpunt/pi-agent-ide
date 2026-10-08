@@ -67,6 +67,20 @@ async function fixture() {
   return { cwd, manager, sendRequest, resultScope };
 }
 
+test("an explicitly excluded file is an empty scope, not an unavailable provider", async () => {
+  const { cwd, manager } = await fixture();
+  const result = await searchSymbols(
+    "same",
+    cwd,
+    20,
+    undefined,
+    { path: "a.ts", exclude: "a.ts" },
+    manager,
+  );
+  expect(result).toEqual({ hits: [], complete: true });
+  expect(manager.prepareWorkspaceSymbols).not.toHaveBeenCalled();
+});
+
 test("keeps strict exact ranges while explicit navigation retains the originating symbol", async () => {
   const { cwd, manager, resultScope } = await fixture();
   const strict = await searchSymbols("same", cwd, 100, undefined, { resultScope }, manager);

@@ -129,7 +129,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
       ],
     }).run("Use ordinary structural search and replace on the SSH scope.");
     for (const id of ["search", "replace-search", "read", "structured", "scopes", "outline"])
-      expect(getToolExecution(run, id).isError).toBe(false);
+      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(getToolResultText(run, "search")).toContain(note);
     expect(getToolExecution(run, "unknown-outline").isError).toBe(true);
     expect(getToolResultText(run, "unknown-outline")).toContain("UNKNOWN_TARGET");

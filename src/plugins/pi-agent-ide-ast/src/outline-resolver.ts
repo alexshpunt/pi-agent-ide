@@ -63,7 +63,9 @@ function resolveAstOutlineSource(
   return {
     kind: "resolved",
     resource: {
-      source: canonicalSource,
+      // Reserve the physical owner; the AST presentation remains read-only.
+      source: filePath,
+      link: canonicalSource,
       async read({ signal }) {
         signal?.throwIfAborted();
         const astOutline = await (astOutlineModule ??= import("./ast/outline.js"));

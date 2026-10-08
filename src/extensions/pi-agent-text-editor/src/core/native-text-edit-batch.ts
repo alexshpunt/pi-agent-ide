@@ -43,6 +43,21 @@ import {
 } from "#src/api/native-edit-batch-event.js";
 import { mutationOutcome, type MutationData, type BatchMutationData } from "./structured-result.js";
 
+/** A confirmed whole-file write can finish formatting after its child tool has returned. */
+function appliedFileAction(
+  result: AgentToolResult<FileMutationBatchResult>,
+): Record<string, unknown> | undefined {
+  const action = result.details.metadata?.semanticAction;
+  if (
+    action === null ||
+    typeof action !== "object" ||
+    !("effect" in action) ||
+    action.effect !== "applied"
+  )
+    return undefined;
+  return action;
+}
+
 interface PendingBatch {
   readonly entries: TextBatchEntry[];
   readonly snapshots: Map<string, string>;
@@ -295,7 +310,12 @@ class NativeTextEditBatchCoordinator {
       const texts = event.content
         .filter((block) => block.type === "text")
         .map((block) => block.text);
-      let executionError = texts.findLast((text) => text.startsWith("Script error:\n")) ?? "";
+      let executionError =
+        texts
+          .join("\n")
+          .match(
+            /(?:^|\n)(Script error:\nScript (?:aborted|timed out):[^\n]*\n\n(?:Tool calls made before the failure[^\n]*|No tool calls were made\.))(?![\s\S]*\nScript error:\n)/u,
+          )?.[1] ?? "";
       const executionDetails = event.details;
       if (
         event.isError &&
@@ -395,7 +415,46 @@ class NativeTextEditBatchCoordinator {
                 const index = script.results.findLastIndex(
                   (item) => item.data.path === outcome.after.source,
                 );
-                if (index < 0) return;
+                if (index < 0) {
+                  const statuses = outcome.postEditContributions
+                    .map((item) => item.data)
+                    .filter(isDiffStatusContribution)
+                    .flatMap((item) => item.diffStatuses);
+                  let recorded = false;
+                  for (const [slot, presentation] of script.presentations.entries()) {
+                    const action = appliedFileAction(presentation.result);
+                    if (action?.target !== outcome.after.source) continue;
+                    recorded = true;
+                    script.presentations[slot] = {
+                      ...presentation,
+                      result: {
+                        ...presentation.result,
+                        details: {
+                          ...presentation.result.details,
+                          metadata: {
+                            ...presentation.result.details.metadata,
+                            semanticAction: { ...action, diffStatuses: statuses },
+                          },
+                        },
+                      },
+                    };
+                  }
+                  if (recorded && statuses.length > 0)
+                    script.results.push(
+                      new MutationPresentation({
+                        ok: true,
+                        path: outcome.after.source,
+                        files: [{ path: outcome.after.source, action: "edited" }],
+                        diffStatuses: statuses,
+                        formatting: outcome.postEditContributions
+                          .map((item) => item.data)
+                          .findLast(isFormattingContribution)?.formatting ?? {
+                          status: "not-reported",
+                        },
+                      }),
+                    );
+                  return;
+                }
                 const previous = requiredValue(script.results[index]).data;
                 const updated = new MutationPresentation({
                   ...previous,
@@ -517,10 +576,11 @@ class NativeTextEditBatchCoordinator {
       !script ||
       script.closed ||
       result.details.effect === "not-applied" ||
-      !result.details.results?.some((item) => item.data.ok === true)
+      (!result.details.results?.some((item) => item.data.ok === true) &&
+        appliedFileAction(result) === undefined)
     )
       return;
-    script.results.push(...result.details.results);
+    script.results.push(...(result.details.results ?? []));
     script.presentations.push({ parentToolCallId: script.id, calls: [id], result });
   }
   execute(

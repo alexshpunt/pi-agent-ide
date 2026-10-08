@@ -151,7 +151,7 @@ test("ordinary search retains SSH identities, recipes, selections and file scope
       "structured",
       "dash-file",
     ])
-      expect(getToolExecution(run, id).isError).toBe(false);
+      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(getToolExecution(run, "unknown").isError).toBe(true);
     expect(getToolResultText(run, "unknown")).toContain("UNKNOWN_TARGET");
     expect(getToolResultText(run, "search")).toContain(note);

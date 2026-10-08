@@ -10,6 +10,7 @@ const namespaceFiles = [
   "tests/integration/ssh-process-namespaces.integration.test.ts",
   "tests/integration/ssh-process-namespaces-tools.integration.test.ts",
   "tests/integration/ssh-file-identities.integration.test.ts",
+  "tests/integration/ssh-web-network.integration.test.ts",
   "tests/integration/ssh-web-network-tools.integration.test.ts",
 ];
 
@@ -24,13 +25,13 @@ test.each([
   const cwd = await mkdtemp(path.join(parent, "workspace-"));
   try {
     await mkdir(path.join(cwd, "scripts"));
-    await mkdir(path.join(cwd, "bin"));
+    await mkdir(path.join(cwd, "node_modules/vitest"), { recursive: true });
     await copyFile(
       path.join(root, "scripts/test-integration-ci.sh"),
       path.join(cwd, "scripts/run.sh"),
     );
     await writeFile(
-      path.join(cwd, "bin/pnpm"),
+      path.join(cwd, "node_modules/vitest/vitest.mjs"),
       `#!${process.execPath}\nconsole.log(JSON.stringify({arguments:process.argv.slice(2),runner:process.env.PI_INTEGRATION_TEST_RUNNER ?? null})); process.exit(${fixture.exit});\n`,
       { mode: 0o755 },
     );
@@ -40,7 +41,6 @@ test.each([
         cwd,
         env: {
           ...process.env,
-          PATH: `${path.join(cwd, "bin")}:${process.env.PATH ?? ""}`,
           PI_INTEGRATION_TEST_RUNNER: "shared",
         },
       });

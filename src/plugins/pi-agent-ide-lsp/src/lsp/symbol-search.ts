@@ -121,6 +121,17 @@ export async function searchSymbols(
     await verifyResultTargets(resultScope, signal);
     if (resultScope.targets.length === 0) return { hits: [], complete: resultScope.complete };
   }
+  if (
+    resultScope === undefined &&
+    scope.path !== undefined &&
+    !withinScope(
+      cwd.startsWith("ssh://") ? documentUri(scope.path, cwd) : path.resolve(cwd, scope.path),
+      cwd,
+      scope,
+    ) &&
+    (await manager.isSourceFile(scope.path, cwd, signal))
+  )
+    return { hits: [], complete: true };
   const roots = resultScope?.targets.map((target) => target.source) ?? [scope.path ?? cwd];
   const clients = new Set(
     (

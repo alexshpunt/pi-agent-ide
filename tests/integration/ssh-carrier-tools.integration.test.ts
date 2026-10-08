@@ -116,7 +116,7 @@ test("ordinary Pi reports a genuinely lost SSH terminal without inventing exit z
             id: "start-owned",
             name: "codemode",
             arguments: {
-              code: `const child=await tools.bash({command:${JSON.stringify(command)},cwd:${JSON.stringify(scope)},background:true}); if(!child.remote) throw new Error("Missing native owner"); store("carrierChild",child); text(child); text(await tools.write({path:${JSON.stringify(cutGate)},content:"cut only my fixture connection\\n"}));`,
+              code: `const child=await tools.bash({command:${JSON.stringify(command)},cwd:${JSON.stringify(scope)},background:true}); if(!child.includes("shell: Bash over SSH") || !child.includes(${JSON.stringify(scope)})) throw new Error("Missing native owner"); store("carrierChild",child); text(child); text(await tools.write({path:${JSON.stringify(cutGate)},content:"cut only my fixture connection\\n"}));`,
             },
           }),
         ]),
@@ -125,7 +125,7 @@ test("ordinary Pi reports a genuinely lost SSH terminal without inventing exit z
             id: "observe-loss",
             name: "codemode",
             arguments: {
-              code: `const child=load("carrierChild"); const checked=await tools.bash({command:${JSON.stringify(`python3 -c ${quote(wait)} ${quote(cutDone)}`)},cwd:${JSON.stringify(cwd)}}); try { text(checked); text(await tools.read({path:child.source})); } finally { text(await tools.delete({path:checked.source})); text(await tools.delete({path:child.source})); }`,
+              code: `const child=load("carrierChild"); const checked=await tools.bash({command:${JSON.stringify(`python3 -c ${quote(wait)} ${quote(cutDone)}`)},cwd:${JSON.stringify(cwd)}}); const session = value => /^session: (shell:[^\\s]+)/m.exec(value)?.[1] ?? (()=>{throw Error(value)})(); try { text(checked); text(await tools.read({path:child})); } finally { text(await tools.delete({path:session(checked)})); text(await tools.delete({path:session(child)})); }`,
             },
           }),
         ]),

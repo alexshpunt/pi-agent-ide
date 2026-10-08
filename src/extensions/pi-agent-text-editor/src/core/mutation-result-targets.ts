@@ -43,8 +43,13 @@ export async function verifyMutationTargets(
       verified.push(target);
       continue;
     }
-    const fresh = await reader(target.source, cwd, signal);
-    if (fresh.source !== target.source || fresh.expectedContent !== target.expectedContent)
+    const source = target.source.includes("://")
+      ? target.source
+      : cwd.startsWith("ssh://")
+        ? new URL(target.source, cwd.endsWith("/") ? cwd : cwd + "/").href
+        : path.resolve(cwd, target.source);
+    const fresh = await reader(source, cwd, signal);
+    if (fresh.source !== source || fresh.expectedContent !== target.expectedContent)
       throw Error("Mutation target changed before publication; repeat Read/Search.");
     verified.push({ ...fresh, ranges: target.ranges });
   }

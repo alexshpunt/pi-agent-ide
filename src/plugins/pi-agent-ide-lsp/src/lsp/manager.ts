@@ -234,6 +234,18 @@ export class LspManager {
     return startingClient;
   }
 
+  /** Inspect source kind through its workspace owner without reading content or starting a server. */
+  async isSourceFile(source: string, cwd: string, signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted();
+    if (cwd.startsWith("ssh://")) {
+      if (this._owner === undefined) throw new Error("No language server workspace owner");
+      return this._owner.isFile(documentUri(source, cwd), signal);
+    }
+    const file = await stat(path.resolve(cwd, source));
+    signal?.throwIfAborted();
+    return file.isFile();
+  }
+
   /** Start symbol servers only for language families with files in this workspace. */
   async getWorkspaceClients(
     cwd: string,

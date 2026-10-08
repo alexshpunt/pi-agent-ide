@@ -210,7 +210,19 @@ export function createIndexChangeExecutor(
         );
 
         if (result.status === "unavailable") {
-          if ("failure" in result && result.failure !== undefined) throw result.failure;
+          if ("failure" in result && result.failure !== undefined) {
+            if (action === "stage" && result.reason === "index-write-failed") {
+              const failure = resultError(result.failure, "INDEX_CHANGE_FAILED", parameters.file);
+              throw Object.assign(
+                new Error(
+                  `${failure.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
+                  { cause: result.failure },
+                ),
+                { effect: publicationEffect(result.failure) },
+              );
+            }
+            throw result.failure;
+          }
           if (action === "stage" && result.reason === "stale-selector") {
             throw Object.assign(
               new Error(

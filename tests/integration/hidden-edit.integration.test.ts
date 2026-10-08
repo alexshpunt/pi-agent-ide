@@ -4,7 +4,6 @@ import {
   assistantMessage,
   getProviderSystemPrompt,
   getToolExecution,
-  getToolExecutionResult,
   getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
@@ -63,7 +62,7 @@ test.each(["direct", "native"] as const)(
             ? [
                 call("discover", "tool_search", { query: "edit", limit: 20 }),
                 call("script", "codemode", {
-                  code: 'let description; try { description = await describeTool("edit"); } catch {} text({editType: "edit" in tools ? "available" : "undefined", matches: await searchTools("edit", {limit: 20}), description});',
+                  code: 'let description; try { description = await describeTool("edit"); } catch {} text("EDIT_AVAILABILITY=" + JSON.stringify({editType: "edit" in tools ? "available" : "undefined", matches: await searchTools("edit", {limit: 20}), description}));',
                 }),
               ]
             : []),
@@ -104,14 +103,9 @@ test.each(["direct", "native"] as const)(
         };
         expect(discovery.loaded).not.toContain("edit");
         expect(getToolExecution(result, "script").isError).toBe(false);
-        const execution = getToolExecutionResult(result, "script") as {
-          content: { type: string; text?: string }[];
-        };
-        const output = execution.content.find(
-          (part) => part.type === "text" && part.text?.startsWith("{"),
-        );
-        if (output?.text === undefined) throw new Error("Missing script JSON output");
-        const script = JSON.parse(output.text) as {
+        const payload = /^EDIT_AVAILABILITY=(.+)$/mu.exec(getToolResultText(result, "script"))?.[1];
+        if (payload === undefined) throw new Error("Missing script JSON output");
+        const script = JSON.parse(payload) as {
           editType: string;
           matches: { name: string }[];
           description?: unknown;

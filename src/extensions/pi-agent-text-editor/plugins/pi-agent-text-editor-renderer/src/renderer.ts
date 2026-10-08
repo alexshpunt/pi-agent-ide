@@ -300,7 +300,14 @@ function createRenderer(
           typeof result.details.metadata?.targetUnavailable === "string"
             ? " · no verified text selection; read destination before further edits"
             : "";
-        return new Text(theme.fg(summary.color, summary.text + unavailable), 0, 0);
+        return new Text(
+          [
+            theme.fg(summary.color, summary.text + unavailable),
+            ...summary.diffStatuses.map((status) => theme.fg(status.tone ?? "muted", status.text)),
+          ].join("\n"),
+          0,
+          0,
+        );
       }
 
       const output = result.content

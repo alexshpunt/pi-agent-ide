@@ -9,6 +9,7 @@ namespace_files=(
   tests/integration/ssh-process-namespaces.integration.test.ts
   tests/integration/ssh-process-namespaces-tools.integration.test.ts
   tests/integration/ssh-file-identities.integration.test.ts
+  tests/integration/ssh-web-network.integration.test.ts
   tests/integration/ssh-web-network-tools.integration.test.ts
 )
 arguments=()
@@ -24,7 +25,7 @@ else
   exit 2
 fi
 mkdir -p .tmp/integration-ci .agents/tmp/test-results
-env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs \
+env -u PI_INTEGRATION_TEST_RUNNER node node_modules/vitest/vitest.mjs run --config vitest.integration.config.mjs \
   "${arguments[@]}" --reporter=default --reporter=junit \
   "--outputFile.junit=.agents/tmp/test-results/integration-$report.xml" \
   2>&1 | tee ".tmp/integration-ci/$report.log"
