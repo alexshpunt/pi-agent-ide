@@ -15,6 +15,7 @@ import type {
 } from "#src/api/anchor-inspection.js";
 import type { TextEditCompletionListener } from "#src/api/edit-completion.js";
 import type { TextEditorToolPluginApi } from "#src/api/edit-pipeline.js";
+import type { DeleteGuardRegistration } from "#src/api/delete-guard.js";
 import type { TextMutationGuardRegistration } from "#src/api/mutation-guard.js";
 import type {
   TextMutationPreviewOutcome,
@@ -28,7 +29,7 @@ import type { TextEditorToolRendererRegistration } from "#src/api/tool-renderer.
 
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 23;
+export const TEXT_EDITOR_API_VERSION = 24;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 
@@ -88,6 +89,8 @@ export interface TextEditorPluginApi {
   addTextPresenter(registration: TextPresenterRegistration): void;
   addMutationTool(registration: TextMutationToolRegistration): void;
   addMutationGuard(registration: TextMutationGuardRegistration): void;
+  /** Add a fail-closed policy for whole-object filesystem deletion, not text removal. */
+  addDeleteGuard(registration: DeleteGuardRegistration): void;
   addToolRenderer(registration: TextEditorToolRendererRegistration): void;
   onMutationTool(listener: TextMutationToolListener): () => void;
   onDidEdit(listener: TextEditCompletionListener): () => void;

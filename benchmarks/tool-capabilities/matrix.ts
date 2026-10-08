@@ -26,6 +26,11 @@ const groups: [string[], string[]][] = [
   [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
   [
+    ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
+    ["delete-objects"],
+  ],
+  [["edit.delete-policy-refusal", "edit.delete-protected-path"], ["delete-policy-gates"]],
+  [
     ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
     ["selection-copy-move"],
   ],
