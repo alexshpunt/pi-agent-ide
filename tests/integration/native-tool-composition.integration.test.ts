@@ -81,6 +81,9 @@ async function runComposition(
               id: `compose-${index}`,
               name: "codemode",
               arguments: { code: withTextResultChecks(code) },
+              // These scenarios test composition, not character-by-character delivery.
+              chunks: { kind: "fixed", size: 4096 },
+              delayMs: 0,
             }),
           ],
           { stopReason: "toolUse" },
@@ -1440,7 +1443,7 @@ text(await tools.search({path:"format.txt",query:"FORMATTED"}));`,
       .map((line) => JSON.parse(line) as { content: string });
     expect(events).toHaveLength(1);
     expect(events[0]?.content).toBe("head\nformat_me\ntail\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Fixture formatting finished");
+    expect(getToolResultText(run, "compose-0")).toContain("Formatted (fixture).");
     expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");
   });
 });

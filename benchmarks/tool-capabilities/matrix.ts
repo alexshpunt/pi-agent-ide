@@ -52,6 +52,8 @@ const groups: [string[], string[]][] = [
       "shell.search",
       "shell.input",
       "shell.keys",
+      "compose.shell-reference-after-input",
+      "shell.file-authority-refusal",
       "shell.delete",
       "process.discovery",
       "process.read",

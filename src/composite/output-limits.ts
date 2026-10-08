@@ -103,6 +103,7 @@ export async function limitIdeOutput(
     );
   return {
     text: truncated.firstLineExceedsLimit ? bytePrefix(text) : truncated.content,
+    textTruncated: truncated.truncated,
     images,
     notices,
     metadataSuffix,

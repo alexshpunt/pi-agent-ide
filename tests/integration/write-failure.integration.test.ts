@@ -73,9 +73,9 @@ for (const mode of ["standalone", "codemode"] as const) {
       if (fixture.effect === "unknown") {
         expect(getToolResultText(run, "failed")).not.toContain("No file was changed.");
         expect(getToolResultText(run, "failed")).not.toContain("Completed writes:");
-        expect(run.tuiRenderedOutput).toContain("Effects unknown · edit failed");
+        expect(run.tuiRenderedOutput).toContain("State unknown · rollback failed");
       } else {
-        expect(run.tuiRenderedOutput).toContain("Rolled back · edit failed");
+        expect(run.tuiRenderedOutput).toContain("Rolled back · write failed");
       }
       const attempts = (await readFile(path.join(cwd, ".tmp/write-failure/events.jsonl"), "utf8"))
         .trim()
@@ -129,6 +129,6 @@ test("the shared Replace path does not claim a failed rollback was unapplied", a
       effect: "unknown",
     });
     expect(getToolResultText(run, "failed")).not.toContain("No file was changed.");
-    expect(run.tuiRenderedOutput).toContain("Effects unknown · edit failed");
+    expect(run.tuiRenderedOutput).toContain("State unknown · rollback failed");
   });
 });

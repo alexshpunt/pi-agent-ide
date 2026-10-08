@@ -123,17 +123,20 @@ const nextLine = await tools.read({path:"long.txt",offset:2});
 if(!nextLine.endsWith("last\n")) throw new Error(nextLine);
 const transformed = await tools.read({path:"values.txt",views:["jq:.payload"]});
 if(!transformed.includes("Output line 1") || !transformed.includes("Narrow the jq filter to return a smaller value.") || transformed.includes("raw:")) throw new Error(transformed);
-const saved = /Full output: (temp:[^. ]+)/u.exec(transformed);
-if(saved === null) throw new Error("Full jq output reference lost");
-store("oversizedJqOutput",saved[1]);
+const saved = /Full output: ("(?:[^"\\]|\\.)*")/u.exec(transformed);
+if(saved === null) throw new Error("Full jq output file lost: " + transformed);
+store("oversizedJqOutput",JSON.parse(saved[1]));
 store("oversizedJqSource","values.txt");
 const smaller = await tools.read({path:"values.txt",views:["jq:.payload[0:64]"]});
 if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
 text(capped); text(transformed); text(smaller);
 `,
       String.raw`
-const saved = await tools.read({path:load("oversizedJqOutput")});
-if(!saved.includes("58.6KB") || !saved.includes("source-specific tool")) throw new Error("Full saved output was not retained: " + saved);
+const file = load("oversizedJqOutput");
+const saved = await tools.read({path:file});
+if(!saved.includes("58.6KB") || !saved.includes("raw:" + file)) throw new Error("Full saved output was not retained: " + saved);
+const tail = await tools.read({path:"raw:" + file,offset:-16,limit:16});
+if(!tail.includes("60003 bytes total") || !tail.includes("79 79 79 79") || !tail.includes("22 0a")) throw new Error("Saved jq tail was lost: " + tail);
 const smaller = await tools.read({path:load("oversizedJqSource"),views:["jq:.payload[0:64]"]});
 if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
 text(smaller);
@@ -536,8 +539,10 @@ test.runIf(process.platform !== "win32")(
 const started=await tools.bash({command:"IFS= read -r answer; printf 'resource:%s' \"$answer\"",background:true});
 const uuid=/<uuid>([^<]+)<\/uuid>/.exec(started)?.[1];
 if(!uuid) throw Error("Missing shell result ID");
-await tools.write({path:uuid,content:"hello"});
-await tools.insert({path:started,text:"Enter"});
+const written=await tools.write({path:uuid,content:"hello"});
+if(!written.includes('Sent text "hello"') || written.includes("no verified text selection") || written.includes("ENOENT")) throw Error("Terminal Write was treated as a file: "+written);
+const entered=await tools.insert({path:started,text:"Enter"});
+if(!entered.includes("Sent keys Enter") || entered.includes("no verified text selection")) throw Error("Terminal Insert was treated as a file: "+entered);
 const shown=await tools.read({path:started});
 if(!shown.includes("resource:hello")) throw Error("Shell output lost: "+shown);
 let rejected=false; try { await tools.replace({path:shown,start:"hello",text:"BAD"}); } catch { rejected=true; }
@@ -549,6 +554,9 @@ text(await tools.delete({path:shown}));
         false,
       );
       expect(getToolResultText(run, "script-0")).toContain("Deleted terminal session");
+      expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-write");
+      expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-keys");
+      expect(getToolResultText(run, "script-0")).not.toContain("Saved file.");
     });
   },
 );

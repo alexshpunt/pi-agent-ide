@@ -535,8 +535,17 @@ ${scenario.deadline ? "while(true) {}" : 'throw Error("ordinary Copy script erro
     expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(
       scenario.remains ? 1 : 0,
     );
+    expect(getToolExecutionDetails(getToolExecution(run, "script-0"))).toHaveProperty(
+      "editorBatchResults.0.data.effect",
+      scenario.remains ? "applied" : "not-applied",
+    );
+    if (!scenario.remains)
+      expect(getToolExecutionDetails(getToolExecution(run, "script-0"))).toHaveProperty(
+        "editorBatchResults.0.errors.0.code",
+        "CANCELLED",
+      );
     expect(getToolResultText(run, "script-0")).toContain(
-      scenario.remains ? "Editor batches: 1 committed" : "no pending edits were written",
+      scenario.remains ? "Editor batches: 1 committed" : "No file was changed.",
     );
   });
 });
