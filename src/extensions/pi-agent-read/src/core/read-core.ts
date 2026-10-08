@@ -12,6 +12,7 @@ import {
   isTextTargetResolverRegistration,
   type FragmentResolverRegistration,
   type PromptDescriptionSource,
+  type ReadParameterDescriptions,
   type ReadHandlerRegistration,
   type ReadOutputReducer,
   type ReadResourceGuardRegistration,
@@ -20,6 +21,7 @@ import {
   type TextTargetResolverRegistration,
 } from "#src/api/tools/read.js";
 import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
+import { readParameters, type ReadParameterText } from "#src/api/read-parameters.js";
 
 type PluginStatus = "active" | "pending";
 
@@ -30,7 +32,7 @@ interface PluginLifecycle {
 interface RegisteredPlugin {
   readonly lifecycle: PluginLifecycle;
   readonly plugin: ReadPlugin;
-  readonly promptContributions: PromptDescriptionSource[];
+  readonly parameterDescriptions: ReadParameterDescriptions[];
 
   readonly promptGuidelines: PromptDescriptionSource[];
   readonly ready: Promise<void>;
@@ -46,7 +48,6 @@ export interface ReadCore {
   readonly read: ReadTool;
   registerPlugin(plugin: ReadPlugin): Promise<void>;
   waitForPendingPlugins(): Promise<void>;
-  renderPluginPromptGuideline(): string | undefined;
 }
 
 export function createReadCore(
@@ -55,7 +56,11 @@ export function createReadCore(
   const outputReducers: ReadOutputReducer[] = [];
   const pendingPlugins = new Set<Promise<void>>();
   const plugins = new Map<string, RegisteredPlugin>();
-  const read = createReadTool(() => renderPromptGuidelines(plugins), presentation);
+  const read = createReadTool(
+    () => renderPromptGuidelines(plugins),
+    presentation,
+    () => renderParameterDescriptions(plugins),
+  );
   let registrationQueue = Promise.resolve();
 
   return {
@@ -78,14 +83,14 @@ export function createReadCore(
       }
 
       const lifecycle: PluginLifecycle = { status: "pending" };
-      const promptContributions: PromptDescriptionSource[] = [];
+      const parameterDescriptions: ReadParameterDescriptions[] = [];
 
       const promptGuidelines: PromptDescriptionSource[] = [];
       const contributions = createPluginContributionController(
         plugin.id,
         read,
         promptGuidelines,
-        promptContributions,
+        parameterDescriptions,
         outputReducers,
       );
       const ready = registrationQueue.then(async () => {
@@ -103,7 +108,7 @@ export function createReadCore(
         lifecycle,
         plugin,
         promptGuidelines,
-        promptContributions,
+        parameterDescriptions,
         ready,
       };
 
@@ -128,7 +133,6 @@ export function createReadCore(
 
       return ready;
     },
-    renderPluginPromptGuideline: () => renderPluginPromptGuideline(plugins),
     async waitForPendingPlugins(): Promise<void> {
       await Promise.all(pendingPlugins);
     },
@@ -159,11 +163,11 @@ function createPluginContributionController(
   pluginId: string,
   read: ReadTool,
   promptGuidelines: PromptDescriptionSource[],
-  promptContributions: PromptDescriptionSource[],
+  parameterDescriptions: ReadParameterDescriptions[],
   outputReducers: ReadOutputReducer[],
 ): PluginContributionController {
   const setupOutputReducers: ReadOutputReducer[] = [];
-  const setupPromptContributions: PromptDescriptionSource[] = [];
+  const setupParameterDescriptions: ReadParameterDescriptions[] = [];
 
   const setupPromptGuidelines: PromptDescriptionSource[] = [];
   const setupResourceGuards: ReadResourceGuardRegistration[] = [];
@@ -196,6 +200,10 @@ function createPluginContributionController(
     saveTemporary(text) {
       assertAvailable();
       return read.saveTemporary(text);
+    },
+    setOutputSaver(saver) {
+      assertAvailable();
+      read.setOutputSaver(saver);
     },
     read(request, context, audience) {
       assertAvailable();
@@ -273,18 +281,18 @@ function createPluginContributionController(
     describe(description): void {
       assertAvailable();
 
-      if (setupPromptContributions.length > 0 || promptContributions.length > 0) {
+      if (setupParameterDescriptions.length > 0 || parameterDescriptions.length > 0) {
         throw new Error(`Plugin ${pluginId} provides more than one description`);
       }
 
-      const normalized = normalizeDescriptionSource(description);
+      const normalized = normalizeParameterDescriptions(description);
 
       if (state === "setup") {
-        setupPromptContributions.push(normalized);
+        setupParameterDescriptions.push(normalized);
         return;
       }
 
-      promptContributions.push(normalized);
+      parameterDescriptions.push(normalized);
     },
 
     addPromptGuideline(guideline): void {
@@ -318,7 +326,7 @@ function createPluginContributionController(
         views: setupViews,
         fragments: setupFragmentResolvers,
       });
-      promptContributions.push(...setupPromptContributions);
+      parameterDescriptions.push(...setupParameterDescriptions);
       outputReducers.push(...setupOutputReducers);
 
       promptGuidelines.push(...setupPromptGuidelines);
@@ -346,32 +354,43 @@ function renderPromptGuidelines(plugins: ReadonlyMap<string, RegisteredPlugin>):
   return guidelines;
 }
 
-function renderPluginPromptGuideline(
+function renderParameterDescriptions(
   plugins: ReadonlyMap<string, RegisteredPlugin>,
-): string | undefined {
-  const entries: string[] = [];
-
-  for (const registeredPlugin of plugins.values()) {
-    if (registeredPlugin.lifecycle.status !== "active") {
-      continue;
-    }
-
-    const source = registeredPlugin.promptContributions[0];
-
-    if (source === undefined) {
-      continue;
-    }
-
-    const description = renderDescriptionSource(source);
-
-    if (description !== undefined) {
-      entries.push(description);
+): ReadParameterText {
+  const entries: Partial<Record<keyof ReadParameterDescriptions, string[]>> = {};
+  for (const plugin of plugins.values()) {
+    if (plugin.lifecycle.status !== "active") continue;
+    for (const descriptions of plugin.parameterDescriptions) {
+      for (const parameter of Object.keys(descriptions) as (keyof ReadParameterDescriptions)[]) {
+        const source = descriptions[parameter];
+        if (source === undefined) continue;
+        const description = renderDescriptionSource(source);
+        if (description !== undefined) (entries[parameter] ??= []).push(description);
+      }
     }
   }
+  return Object.fromEntries(
+    Object.entries(entries).map(([parameter, descriptions]) => [
+      parameter,
+      [...new Set(descriptions.flatMap((description) => description.split("\n")))].join("\n"),
+    ]),
+  );
+}
 
-  return entries.length === 0
-    ? undefined
-    : [...new Set(entries.flatMap((entry) => entry.split("\n")))].join("\n");
+function normalizeParameterDescriptions(value: unknown): ReadParameterDescriptions {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("Read plugin parameter descriptions must be an object");
+  }
+  const entries = Object.entries(value);
+  if (entries.length === 0) throw new Error("Read plugin parameter descriptions are empty");
+  const normalized: Partial<Record<keyof ReadParameterDescriptions, PromptDescriptionSource>> = {};
+  for (const [parameter, source] of entries) {
+    if (!Object.hasOwn(readParameters.properties, parameter)) {
+      throw new Error(`Read plugin description names an unknown parameter: ${parameter}`);
+    }
+    normalized[parameter as keyof ReadParameterDescriptions] = normalizeDescriptionSource(source);
+  }
+  return normalized;
 }
 
 function normalizeDescriptionSource(value: unknown): PromptDescriptionSource {

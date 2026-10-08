@@ -50,13 +50,24 @@ export async function runIdePostEditGate(
           }
         : {
             diffStatuses: [
-              { text: `Formatting failed (${formatterName})`, tone: "error" as const },
+              {
+                text: `Formatting failed (${formatterName})`,
+                formatter: formatterName,
+                tone: "error" as const,
+              },
             ],
           }),
     };
   } catch {
     return {
-      diffStatuses: [{ text: "Formatting failed", tone: "error" as const }],
+      diffStatuses: [
+        {
+          text: "Formatting failed",
+          tone: "error" as const,
+          formattingStatus: "failed",
+          ...(formatterName === undefined ? {} : { formatter: formatterName }),
+        },
+      ],
       formatting: {
         status: "failed",
         ...(formatterName === undefined ? {} : { formatter: formatterName }),

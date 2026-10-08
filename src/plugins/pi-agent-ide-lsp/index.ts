@@ -174,9 +174,9 @@ export async function registerLspWithOwner(
         when: { resolvedBy: "any", contentKind: "text" },
         handler: createSourceMappedTextReadHandler(),
       });
-      api.describe(
-        "symbol:<file>#<selector> — declaration source, e.g. symbol:src/catalog.ts#Catalog/find. graph:<file> — top-level declarations, references and calls; members include selectors. graph:<file>#<selector> — references and incoming/outgoing calls for that declaration or member.",
-      );
+      api.describe({
+        path: "symbol:<file>#<selector> — declaration source, e.g. symbol:src/catalog.ts#Catalog/find. graph:<file> — top-level declarations, references and calls; members include selectors. graph:<file>#<selector> — references and incoming/outgoing calls for that declaration or member.",
+      });
     },
   } satisfies ReadPlugin;
 
@@ -297,7 +297,7 @@ export async function registerLspWithOwner(
           resolver: createLspSearchResolver(managerForFile, api.registerSelection),
         });
         api.describe(
-          "Use `symbols:<query>` to locate declarations and references through configured language servers. Result scopes stay inside their exact ranges unless navigation: references explicitly follows represented symbols to workspace references; matching names alone do not establish identity.",
+          'Use `symbols:<query>` to locate named workspace declarations and references through configured language servers when the file is unknown. Results contain exact source targets, roles, and originating symbols. Default search stays within path. Use navigation: "references" explicitly to follow symbols represented inside path to references outside it, within the workspace.',
         );
       },
     }),

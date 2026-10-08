@@ -20,7 +20,7 @@ import type { TextChange } from "#src/core/text-change-engine.js";
 export const moveSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Source file path or structured source selection; omit start/end for structured inputs. Use one whole-file result when target is a string without text selectors. Structured source/destination selections pair in declared order with equal counts and duplicate ranges removed. Destinations must not overlap or touch source ranges.",
+      "Source file path, unchanged source result or its UUID; omit start/end for result inputs. Use one whole-file result when the destination is a file path without text selectors. Source/destination selections pair in declared order, with equal counts and duplicate ranges removed. Destinations must not overlap or touch source ranges.",
     ),
     ...sourceRangeProperties(),
     ...targetProperties(),
@@ -110,7 +110,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
     return {
       edits: new Map([
         [sourceSpan.source, { changes: [deletion], action: "edited", resultChanges: [] }],
-        [target, { changes: [targetChange], action: "edited", resultChanges: [0] }],
+        [target, { changes: [targetChange], action: "edited" }],
       ]),
     };
   },

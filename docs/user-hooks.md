@@ -43,7 +43,7 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools and Apply. A denial or thrown error leaves every Resource unchanged.
+The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools, including calls through native Codemode. A denial or thrown error leaves every Resource unchanged.
 
 Whole-file move plans include both the source removal and the destination replacement. Copy plans include the modified destination. For non-UTF-8 files, `resource.binary.before` and `resource.binary.after` contain exact bytes; the text documents are empty instead of showing a lossy conversion. The guard runs before publication or source removal, and changed participants are rejected before effects.
 

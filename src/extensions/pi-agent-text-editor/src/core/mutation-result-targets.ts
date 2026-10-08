@@ -1,91 +1,17 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ResultRange, ResultSourceTarget } from "pi-agent-resource";
 import type { ResultTargetStore } from "pi-agent-resource";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
 import { createTextDocument } from "pi-agent-text";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import type { TextMutationEdit } from "#src/api/mutation-tool.js";
+import type { TextMutation, TextMutationEdit } from "#src/api/mutation-tool.js";
 import { applyTextChanges } from "./text-change-engine.js";
+import { attachFileMutationTargets } from "./file-result-targets.js";
+
 import type { TextEditorCore } from "./text-editor-core.js";
 
-/** A call's changes retain ownership even when several calls commit together. */
-export interface OwnedMutationChanges {
-  readonly callId: string;
-  readonly edits: ReadonlyMap<string, TextMutationEdit>;
-}
-
-/** Map each call to its actual inserted text, including shifts from all batch peers. */
-export function committedMutationTargets(
-  mutations: readonly OwnedMutationChanges[],
-  completions: readonly TextEditCompletion[],
-): ReadonlyMap<string, readonly ResultSourceTarget[]> {
-  const targets = new Map<string, ResultSourceTarget[]>();
-  const sources = new Set(mutations.flatMap((mutation) => [...mutation.edits.keys()]));
-  for (const source of sources) {
-    const completion = completions.findLast(
-      (item) => item.source === source || item.resourceSource === source,
-    );
-    if (
-      !completion ||
-      (completion.resolvedBy !== "filesystem" && !completion.resourceSource.startsWith("ssh://"))
-    )
-      continue;
-    const changes = mutations
-      .flatMap((mutation) =>
-        (mutation.edits.get(source)?.changes ?? []).map((change, index) => ({
-          ...change,
-          callId: mutation.callId,
-          producesTarget: mutation.edits.get(source)?.resultChanges?.includes(index) ?? true,
-        })),
-      )
-      .sort((left, right) => left.from - right.from);
-    const before = completion.before.content;
-    const after = completion.after.content;
-    if (applyTextChanges(before, changes, !completion.existed).content !== after)
-      throw new Error("Mutation targets cannot be mapped to the actual written snapshot.");
-    const starts = [0];
-    for (const line of createTextDocument(completion.resourceSource, after).lines)
-      if (line.lineEnding.length > 0)
-        starts.push((starts.at(-1) ?? 0) + line.content.length + line.lineEnding.length);
-    const position = (offset: number): ResultRange["start"] => {
-      let first = 0;
-      let last = starts.length - 1;
-      while (first < last) {
-        const middle = Math.ceil((first + last) / 2);
-        if ((starts[middle] ?? after.length) <= offset) first = middle;
-        else last = middle - 1;
-      }
-      return { lineNumber: first + 1, column: offset - (starts[first] ?? 0) };
-    };
-    let shift = 0;
-    const ranges = new Map<string, ResultRange[]>();
-    for (const change of changes) {
-      const start = change.from + shift;
-      if (change.producesTarget) {
-        const own = ranges.get(change.callId) ?? [];
-        own.push({ start: position(start), end: position(start + change.insert.length) });
-        ranges.set(change.callId, own);
-      }
-      shift += change.insert.length - (change.to - change.from);
-    }
-    for (const mutation of mutations) {
-      if (mutation.edits.get(source)?.action === "overwritten")
-        ranges.set(mutation.callId, [{ start: position(0), end: position(after.length) }]);
-    }
-    for (const [callId, selected] of ranges) {
-      const own = targets.get(callId) ?? [];
-      own.push({
-        source: completion.resourceSource,
-        expectedContent: after,
-        ranges: selected,
-      });
-      targets.set(callId, own);
-    }
-  }
-  return targets;
-}
-
-/** Trusted Read pipeline callback, including full owning-source guards and snapshots. */
 export type MutationSnapshotReader = (
   source: string,
   cwd: string,
@@ -126,152 +52,174 @@ export async function verifyMutationTargets(
   return verified;
 }
 
-/** Publish only a successful call's actual written text; refusals and Delete never grant authority. */
-export async function attachCommittedMutationTarget(
+/** A call's changes retain ownership even when several calls commit together. */
+export interface OwnedMutationChanges {
+  readonly callId: string;
+  readonly edits: ReadonlyMap<string, TextMutationEdit>;
+}
+
+/** Find Copy destinations with identical text and no secondary resource action. */
+export function unchangedCopySources(
+  mutation: TextMutation,
+  snapshots: ReadonlyMap<string, string>,
+): ReadonlySet<string> {
+  if (mutation.afterWrite !== undefined || mutation.semanticAction !== undefined) return new Set();
+  return new Set(
+    [...mutation.edits]
+      .filter(([source, edit]) => {
+        const before = snapshots.get(source);
+        return (
+          before !== undefined &&
+          edit.changes.length > 0 &&
+          edit.changes.every(
+            (change) =>
+              change.allowUnchanged && before.slice(change.from, change.to) === change.insert,
+          )
+        );
+      })
+      .map(([source]) => source),
+  );
+}
+/** Map final resource snapshots and unchanged Copy ranges; verify before publishing. */
+export function committedMutationTargets(
+  mutations: readonly OwnedMutationChanges[],
+  completions: readonly Pick<
+    TextEditCompletion,
+    "source" | "resourceSource" | "resolvedBy" | "before" | "after" | "existed"
+  >[],
+  unchangedSnapshots: ReadonlyMap<string, string> = new Map(),
+): ReadonlyMap<string, readonly ResultSourceTarget[]> {
+  const targets = new Map<string, ResultSourceTarget[]>();
+  const sources = new Set(mutations.flatMap((mutation) => [...mutation.edits.keys()]));
+  for (const source of sources) {
+    const completion = completions.findLast(
+      (item) => item.source === source || item.resourceSource === source,
+    );
+    if (
+      completion &&
+      completion.resolvedBy !== "filesystem" &&
+      !completion.resourceSource.startsWith("ssh://")
+    )
+      continue;
+    const changes = mutations
+      .flatMap((mutation) =>
+        (mutation.edits.get(source)?.changes ?? []).map((change, index) => ({
+          ...change,
+          callId: mutation.callId,
+          producesTarget: mutation.edits.get(source)?.resultChanges?.includes(index) ?? true,
+        })),
+      )
+      .sort((left, right) => left.from - right.from);
+    const before = completion?.before.content ?? unchangedSnapshots.get(source);
+    if (before === undefined) continue;
+    if (
+      !completion &&
+      changes.some(
+        (change) =>
+          !change.allowUnchanged || before.slice(change.from, change.to) !== change.insert,
+      )
+    )
+      continue;
+    const after = completion?.after.content ?? before;
+    const resourceSource = completion?.resourceSource ?? source;
+    if (applyTextChanges(before, changes, completion?.existed === false).content !== after)
+      throw new Error("Mutation targets cannot be mapped to the actual written snapshot.");
+    const starts = [0];
+    for (const line of createTextDocument(resourceSource, after).lines)
+      if (line.lineEnding.length > 0)
+        starts.push((starts.at(-1) ?? 0) + line.content.length + line.lineEnding.length);
+    const position = (offset: number): ResultRange["start"] => {
+      let first = 0;
+      let last = starts.length - 1;
+      while (first < last) {
+        const middle = Math.ceil((first + last) / 2);
+        if ((starts[middle] ?? after.length) <= offset) first = middle;
+        else last = middle - 1;
+      }
+      return { lineNumber: first + 1, column: offset - (starts[first] ?? 0) };
+    };
+    let shift = 0;
+    const ranges = new Map<string, ResultRange[]>();
+    for (const change of changes) {
+      const start = change.from + shift;
+      if (change.producesTarget) {
+        const own = ranges.get(change.callId) ?? [];
+        own.push({ start: position(start), end: position(start + change.insert.length) });
+        ranges.set(change.callId, own);
+      }
+      shift += change.insert.length - (change.to - change.from);
+    }
+    for (const mutation of mutations) {
+      if (mutation.edits.get(source)?.action === "overwritten")
+        ranges.set(mutation.callId, [{ start: position(0), end: position(after.length) }]);
+    }
+    for (const [callId, selected] of ranges) {
+      const own = targets.get(callId) ?? [];
+      own.push({
+        source: resourceSource,
+        expectedContent: after,
+        ranges: selected,
+      });
+      targets.set(callId, own);
+    }
+  }
+  return targets;
+}
+
+/** Explain missing Copy authority without changing its write outcome. */
+export function describeUnavailableCopyTarget(
   result: AgentToolResult<FileMutationBatchResult>,
-  completions: readonly TextEditCompletion[],
+): AgentToolResult<FileMutationBatchResult> {
+  const notice = "No verified text selection. Read the destination before further edits.";
+  if (
+    result.isError ||
+    typeof result.details.metadata?.targetUnavailable !== "string" ||
+    result.content.some((block) => block.type === "text" && block.text === notice)
+  )
+    return result;
+  return {
+    ...result,
+    content: [
+      ...result.content,
+      {
+        type: "text",
+        text: notice,
+      },
+    ],
+  };
+}
+
+/** Publish a successful Write's verified final whole-file snapshot, including no-ops. */
+export async function attachWriteTarget(
+  result: AgentToolResult<FileMutationBatchResult>,
   core: TextEditorCore,
   store: ResultTargetStore,
-  callId: string,
   cwd: string,
-  operation: string,
-  plannedEdits?: ReadonlyMap<string, TextMutationEdit>,
   signal?: AbortSignal,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
-  if (
-    operation === "delete" ||
-    result.isError ||
-    result.details.metadata?.resultTarget !== undefined
-  )
-    return result;
-  if (
-    result.details.results?.some((item) => !item.data.ok) ||
-    result.details.effect === "not-applied"
-  )
-    return result;
+  if (result.isError) return result;
+  const file = result.details.results?.[0]?.data;
+  if (file?.path === undefined || file.afterContent === undefined) return result;
   try {
-    let targets: readonly ResultSourceTarget[];
-    const semantic: unknown = result.details.metadata?.semanticAction;
-    if (
-      operation === "undo" &&
-      semantic !== null &&
-      typeof semantic === "object" &&
-      "kind" in semantic &&
-      semantic.kind === "apply-undo"
-    ) {
-      if (
-        !("ok" in semantic) ||
-        semantic.ok !== true ||
-        !("restoredStates" in semantic) ||
-        !Array.isArray(semantic.restoredStates)
-      )
-        throw Error("Restore did not report confirmed source states.");
-      const reader = readers.get(core);
-      if (reader === undefined)
-        throw Error("Restored targets require their guarded Read provider.");
-      targets = [];
-      const states: readonly unknown[] = semantic.restoredStates;
-      for (const state of states) {
-        if (
-          state === null ||
-          typeof state !== "object" ||
-          !("source" in state) ||
-          typeof state.source !== "string" ||
-          !("state" in state)
-        )
-          throw Error("Restore returned an invalid source state.");
-        if (state.state === "absent") continue;
-        if (state.state !== "present") throw Error("Restore source state is unknown.");
-        const fresh = await reader(state.source, cwd, signal);
-        const lines = fresh.expectedContent.split(/\r\n|\r|\n/u);
-        targets = [
-          ...targets,
+    const content = file.afterContent;
+    const lines = content.split(/\r\n|\r|\n/u);
+    const targets: ResultSourceTarget[] = [
+      {
+        source: file.path.startsWith("ssh://")
+          ? file.path
+          : path.resolve(
+              cwd,
+              file.path.startsWith("file://") ? fileURLToPath(file.path) : file.path,
+            ),
+        expectedContent: content,
+        ranges: [
           {
-            ...fresh,
-            ranges: [
-              {
-                start: { lineNumber: 1, column: 0 },
-                end: { lineNumber: lines.length, column: lines.at(-1)?.length ?? 0 },
-              },
-            ],
+            start: { lineNumber: 1, column: 0 },
+            end: { lineNumber: lines.length, column: lines.at(-1)?.length ?? 0 },
           },
-        ];
-      }
-    } else if (
-      semantic !== null &&
-      typeof semantic === "object" &&
-      "kind" in semantic &&
-      semantic.kind === "file-operation"
-    ) {
-      if (
-        !("ok" in semantic) ||
-        semantic.ok !== true ||
-        !("target" in semantic) ||
-        typeof semantic.target !== "string"
-      )
-        return result;
-      if ("postProcessingError" in semantic)
-        throw Error("Post-processing did not complete; inspect the saved file.");
-      const reader = readers.get(core);
-      if (reader === undefined)
-        throw Error("Whole-file target requires its guarded Read provider.");
-      const fresh = await reader(semantic.target, cwd, signal);
-      const lines = fresh.expectedContent.split(/\r\n|\r|\n/u);
-      const last = lines.at(-1);
-      targets = [
-        {
-          ...fresh,
-          ranges: [
-            {
-              start: { lineNumber: 1, column: 0 },
-              end: { lineNumber: lines.length, column: last?.length ?? 0 },
-            },
-          ],
-        },
-      ];
-    } else {
-      const edits = new Map<string, TextMutationEdit>();
-      for (const item of result.details.results ?? []) {
-        if (!item.data.path || !item.data.rawChanges) continue;
-        const planned = plannedEdits?.get(item.data.path);
-        if ((operation === "copy" || operation === "move") && planned === undefined)
-          throw Error("Transfer handler did not report destination change ownership.");
-        edits.set(
-          item.data.path,
-          planned ?? {
-            action: "edited",
-            changes: item.data.rawChanges.map((change) => ({
-              from: change.fromA,
-              to: change.toA,
-              insert: change.insertedText,
-            })),
-          },
-        );
-      }
-      if (operation === "write" || operation === "undo") {
-        targets = [...new Map(completions.map((item) => [item.resourceSource, item])).values()]
-          .filter((item) => edits.has(item.source) || edits.has(item.resourceSource))
-          .map((item) => {
-            const lines = item.after.content.split(/\r\n|\r|\n/u);
-            return {
-              source: item.resourceSource,
-              expectedContent: item.after.content,
-              ranges: [
-                {
-                  start: { lineNumber: 1, column: 0 },
-                  end: { lineNumber: lines.length, column: lines.at(-1)?.length ?? 0 },
-                },
-              ],
-            };
-          });
-      } else {
-        targets = committedMutationTargets([{ callId, edits }], completions).get(callId) ?? [];
-      }
-      if (edits.size > 0 && targets.length === 0)
-        throw Error("This operation did not produce confirmed text targets.");
-      if (edits.size === 0 && result.details.metadata?.emptyTargets !== true) return result;
-    }
-    if (targets.length === 0) return result;
+        ],
+      },
+    ];
     const verified = await verifyMutationTargets(core, targets, store, cwd, signal);
     return {
       ...result,
@@ -281,7 +229,96 @@ export async function attachCommittedMutationTarget(
       },
     };
   } catch (error) {
-    // Output verification cannot erase an already observed publication or imply a rollback.
+    signal?.throwIfAborted();
+    return {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: {
+          ...result.details.metadata,
+          targetUnavailable: error instanceof Error ? error.message : String(error),
+        },
+      },
+    };
+  }
+}
+/** Publish immediate results only when their committed range mapping is verified. */
+export async function attachCommittedMutationTarget(
+  result: AgentToolResult<FileMutationBatchResult>,
+  completions: readonly TextEditCompletion[],
+  core: TextEditorCore,
+  store: ResultTargetStore,
+  callId: string,
+  cwd: string,
+  signal?: AbortSignal,
+  wholeFile = false,
+  plannedEdits?: ReadonlyMap<string, TextMutationEdit>,
+  destinationOnly = false,
+  unchangedSnapshots: ReadonlyMap<string, string> = new Map(),
+): Promise<AgentToolResult<FileMutationBatchResult>> {
+  if (result.isError || typeof result.details.metadata?.resultTarget === "string") return result;
+  result = await attachFileMutationTargets(result, store, cwd, signal, readers.get(core));
+  if (
+    typeof result.details.metadata?.resultTarget === "string" ||
+    result.details.metadata?.targetUnavailable !== undefined
+  )
+    return result;
+  if (
+    destinationOnly &&
+    result.details.results?.some((item) => !plannedEdits?.has(item.data.path ?? ""))
+  )
+    return {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: {
+          ...result.details.metadata,
+          targetUnavailable: "Transfer handler did not report destination change ownership.",
+        },
+      },
+    };
+  const edits = new Map<string, TextMutationEdit>();
+  for (const item of result.details.results ?? []) {
+    if (!item.data.ok || !item.data.path || !item.data.rawChanges) return result;
+    const planned = plannedEdits?.get(item.data.path);
+    edits.set(
+      item.data.path,
+      planned !== undefined
+        ? {
+            ...planned,
+            ...(wholeFile ? { action: "overwritten" as const } : {}),
+          }
+        : {
+            action: wholeFile ? "overwritten" : "edited",
+            changes: item.data.rawChanges.map((change) => ({
+              from: change.fromA,
+              to: change.toA,
+              insert: change.insertedText,
+            })),
+          },
+    );
+  }
+  for (const [source, edit] of plannedEdits ?? [])
+    if (!edits.has(source) && unchangedSnapshots.has(source)) edits.set(source, edit);
+  if (edits.size === 0 && result.details.metadata?.emptyTargets !== true) return result;
+  try {
+    const mapped = committedMutationTargets([{ callId, edits }], completions, unchangedSnapshots);
+    const targets = mapped.get(callId) ?? [];
+    const outputCount = [...edits.values()].filter(
+      (edit) => edit.resultChanges?.length !== 0,
+    ).length;
+    if (outputCount > 0 && targets.length !== outputCount)
+      throw new Error("This operation did not produce confirmed filesystem targets.");
+    const verified = await verifyMutationTargets(core, targets, store, cwd, signal);
+    return {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: { ...result.details.metadata, resultTarget: store.register(verified, cwd) },
+      },
+    };
+  } catch (error) {
+    signal?.throwIfAborted();
     return {
       ...result,
       details: {

@@ -68,7 +68,7 @@ for (const operation of ["write", "delete"] as const) {
           );
           return tool.execute(
             id,
-            { path: { target }, content: whole ? "saved café\n" : "must not widen" },
+            { path: target, content: whole ? "saved café\n" : "must not widen" },
             undefined,
             undefined,
             context,
@@ -81,7 +81,7 @@ for (const operation of ["write", "delete"] as const) {
           () => undefined,
           store,
         );
-        return tool.execute(id, { path: { target } }, undefined, undefined, context);
+        return tool.execute(id, { path: target }, undefined, undefined, context);
       };
       const reference = (whole: boolean) =>
         store.register(
@@ -97,11 +97,11 @@ for (const operation of ["write", "delete"] as const) {
           cwd,
         );
       const partial = {
-        path: { target: reference(false) },
+        path: reference(false),
         ...(operation === "write" ? { content: "must not widen" } : {}),
       };
       expect(Value.Check(definition.parameters, partial)).toBe(true);
-      const partialResult = await execute("partial", partial.path.target, false);
+      const partialResult = await execute("partial", partial.path, false);
       if (operation === "write") {
         expect(partialResult.details.effect).toBe("not-applied");
         expect(await readFile(file, "utf8")).toBe(content);
@@ -111,11 +111,11 @@ for (const operation of ["write", "delete"] as const) {
         await writeFile(file, content);
       }
       const whole = {
-        path: { target: reference(true) },
+        path: reference(true),
         ...(operation === "write" ? { content: "saved café\n" } : {}),
       };
       expect(Value.Check(definition.parameters, whole)).toBe(true);
-      const wholeResult = await execute("whole", whole.path.target, true);
+      const wholeResult = await execute("whole", whole.path, true);
       expect(wholeResult.details.effect).not.toBe("not-applied");
       expect(await readFile(file, "utf8")).toBe(operation === "write" ? "saved café\n" : "");
     } finally {

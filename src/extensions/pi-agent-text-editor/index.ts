@@ -10,11 +10,6 @@ import { registerTextEditorTools } from "./src/tools/extension.js";
 export default async function registerTextEditor(pi: ExtensionAPI): Promise<void> {
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
-      id: "apply",
-      description: "Guarded Apply scripting, selections, transactions, and file operations",
-      triggers: [{ tool: "apply" }],
-    }),
-    await loadPackagedAgentGuide({
       id: "editing",
       description: "Precise standalone text and file edits",
       triggers: ["write", "replace", "insert", "delete", "copy", "move", "diff"].map((tool) => ({

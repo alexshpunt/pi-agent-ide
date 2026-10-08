@@ -1,6 +1,5 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectResultTargets } from "pi-agent-resource";
-import { createResultTargetAnchors } from "./result-target-anchors.js";
 import { setMutationSnapshotReader } from "./mutation-result-targets.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
@@ -28,14 +27,9 @@ import {
 import { setTextAnchorRecoveryReader } from "#src/core/text-anchor-recovery.js";
 import { setTextEditBatchRenderArgumentSink } from "#src/core/text-edit-batch-registrar.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import {
-  adoptSessionApplyUndo,
-  disposeSessionApplyUndo,
-  retainSessionApplyUndo,
-} from "#src/core/apply/reload-journals.js";
+import { createResultTargetAnchors } from "#src/core/result-target-anchors.js";
 import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js";
 import { createTextTool } from "#src/core/text-mutation.js";
-import { registerApply } from "#src/core/apply/tool.js";
 import { registerDiff } from "#src/core/diff-tool.js";
 import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
@@ -70,6 +64,9 @@ export default async function registerTextEditorCore(
     );
   });
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
+  core.onDidEdit((completion) => {
+    resultTargets.refresh(completion.resourceSource, completion.cwd);
+  });
   await core.registerPlugin({
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
@@ -78,15 +75,6 @@ export default async function registerTextEditorCore(
       api.addAnchorResolver(createResultTargetAnchors(resultTargets));
     },
   });
-  const journalScope = new URL(import.meta.url).pathname;
-  pi.on("session_start", (_event, context) =>
-    adoptSessionApplyUndo(core, journalScope, context.sessionManager.getSessionId()),
-  );
-  pi.on("session_shutdown", (event, context) =>
-    event.reason === "reload"
-      ? retainSessionApplyUndo(core, journalScope, context.sessionManager.getSessionId())
-      : disposeSessionApplyUndo(core, journalScope),
-  );
   pi.on("tool_result", (event) => {
     rememberLastResolvedResource(pi, event.details);
 
@@ -106,9 +94,13 @@ export default async function registerTextEditorCore(
       api.addTargetResolver({ resolver: core.textTargetResolver() });
       api.addFragmentResolver(createReadFragmentResolver(core));
 
-      api.describe(
-        "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# references go directly in path, without a file prefix. offset/limit select context relative to each location; output keeps original line numbers.",
-      );
+      api.describe({
+        path: "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# and RESULT# references go directly in path, without a file prefix. Returned Read/Search/Select/mutation targets select their verified source ranges.",
+        offset:
+          "For path#anchor, SEARCH# or RESULT# selections, count from each containing line: omitted, 0 or 1 starts there; 2 starts one line later; -1 starts one line earlier. Output keeps original line numbers.",
+        limit:
+          "For source selections, limit caps each selected context window separately. Without limit, each selection supplies its natural line count, with at least one line.",
+      });
     },
   });
   setMutationSnapshotReader(core, async (source, cwd, signal) => {
@@ -153,7 +145,6 @@ export default async function registerTextEditorCore(
   });
 
   await core.waitForPendingPlugins();
-  if (pi.getFlag("pi-agent-ide-no-apply") !== true) await registerApply(pi, core);
   registerDiff(pi, core, () => readApi);
   return core;
 }

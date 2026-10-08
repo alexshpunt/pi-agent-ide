@@ -52,7 +52,8 @@ test("a whole-file result includes the saved final line separator", async () => 
     store,
     "write",
     "/workspace",
-    "write",
+    undefined,
+    true,
   );
   const target = result.details.metadata?.resultTarget;
   expect(typeof target).toBe("string");
@@ -95,61 +96,11 @@ test("a refused output reread never hides a saved edit or grants source authorit
     store,
     "replace",
     "/workspace",
-    "replace",
   );
   expect(result.details.effect).toBe("applied");
   expect(result.details.metadata?.resultTarget).toBeUndefined();
   expect(result.details.metadata?.targetUnavailable).toContain("blocked");
 });
-test("direct undo grants whole restored text but never a target for restored absence", async () => {
-  const store = new ResultTargetStore();
-  const core = createTextEditorCore();
-  const present = "ssh://fixture/work/restored.txt";
-  const absent = "ssh://fixture/work/created.txt";
-  const content = "prior café\r\n";
-  const reads: string[] = [];
-  setMutationSnapshotReader(core, async (source) => {
-    reads.push(source);
-    if (source !== present) throw Error("Absent files must not be read as text");
-    return {
-      source,
-      expectedContent: content,
-      readCurrent: async () => content,
-      ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 2, column: 0 } }],
-    };
-  });
-  const result = await attachCommittedMutationTarget(
-    {
-      content: [],
-      details: {
-        results: [],
-        metadata: {
-          semanticAction: {
-            kind: "apply-undo",
-            ok: true,
-            restored: [present, absent],
-            restoredStates: [
-              { source: present, state: "present" },
-              { source: absent, state: "absent" },
-            ],
-          },
-        },
-      },
-    },
-    [],
-    core,
-    store,
-    "restore",
-    "/workspace",
-    "undo",
-  );
-  const target = result.details.metadata?.resultTarget;
-  expect(typeof target).toBe("string");
-  if (typeof target !== "string") throw Error("No restored text target");
-  expect(wholeFileResultSource(store.resolve(target, "/workspace"))).toBe(present);
-  expect(reads).toEqual([present, present]);
-});
-
 function completion(before: string, after: string, resolvedBy = "filesystem"): TextEditCompletion {
   return {
     source: "/workspace/note.txt",
@@ -197,7 +148,6 @@ test("retains separate ownership for insertions at the same position", () => {
     { start: { lineNumber: 1, column: 1 }, end: { lineNumber: 1, column: 2 } },
   ]);
 });
-
 test.each([
   { before: "old", after: "", from: 0, to: 3, insert: "", lineNumber: 1, column: 0 },
   { before: "x\r\nold", after: "x\r\n", from: 3, to: 6, insert: "", lineNumber: 2, column: 0 },

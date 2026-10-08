@@ -104,6 +104,7 @@ function createExtensionEnvironment(): { createExtension(): TestExtension } {
           return false;
         },
         registerEntryRenderer(): void {},
+        registerMessageRenderer(): void {},
       };
 
       return {

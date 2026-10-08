@@ -147,7 +147,6 @@ test.each(["full", "compact", "disabled"] as const)(
             "ui.read": mode,
             "ui.search": mode,
             "ui.diffs": mode,
-            "ui.applyPreview": mode,
           },
         }),
       );

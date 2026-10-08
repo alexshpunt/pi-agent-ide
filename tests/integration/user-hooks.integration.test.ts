@@ -10,10 +10,14 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import {
+  enableNativeCodemode,
+  withTempWorkspace,
+} from "#integration/support/pi-runtime/fixtures.js";
 
 test("file hooks block resolved access and report saved-edit feedback", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await writeFile(path.join(cwd, "secret.txt"), "do not expose");
     await writeFile(path.join(cwd, "locked.txt"), "unchanged");
     await writeFile(path.join(cwd, "throw.txt"), "hidden");
@@ -24,10 +28,11 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [
+        "builtin:codemode",
         path.resolve("src/pi-agent-ide.ts"),
         path.resolve("tests/integration/support/user-hooks-extension.ts"),
       ],
-      tools: ["read", "apply", "write"],
+      tools: ["read", "codemode", "write", "replace"],
       conversation: [
         assistantMessage(
           [toolCall({ id: "read-secret", name: "read", arguments: { path: "secret.txt" } })],
@@ -47,8 +52,10 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
           [
             toolCall({
               id: "read-script-secret",
-              name: "apply",
-              arguments: { source: 'read({ path: "secret.txt" });' },
+              name: "codemode",
+              arguments: {
+                code: 'let blocked=""; try { await tools.read({path:"secret.txt"}); } catch(error) { blocked=String(error); } if(!blocked.includes("fixture secret")) throw Error("Blocked read must reject"); text(blocked);',
+              },
             }),
           ],
           { stopReason: "toolUse" },
@@ -61,10 +68,9 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
           [
             toolCall({
               id: "edit-locked",
-              name: "apply",
+              name: "codemode",
               arguments: {
-                source:
-                  'const file = open("locked.txt"); file.replace(file.find("unchanged"), "changed"); flush();',
+                code: 'text(await tools.replace({path:"locked.txt",start:"unchanged",text:"changed"}));',
               },
             }),
           ],
@@ -98,10 +104,11 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
     expect(getToolResultText(run, "read-secret")).toContain("fixture secret");
     expect(getToolExecution(run, "read-raw-secret").isError).toBe(true);
     expect(getToolResultText(run, "read-raw-secret")).toContain("fixture secret");
-    expect(getToolExecution(run, "read-script-secret").isError).toBe(true);
+    expect(getToolExecution(run, "read-script-secret").isError).toBe(false);
     expect(getToolResultText(run, "read-script-secret")).toContain("fixture secret");
     expect(getToolExecution(run, "read-throw").isError).toBe(true);
     expect(getToolResultText(run, "read-throw")).toContain("read hook exploded");
+    // A caught Read rejection can continue; a blocked batch commit fails the parent script.
     expect(getToolExecution(run, "edit-locked").isError).toBe(true);
     expect(getToolResultText(run, "edit-locked")).toContain("fixture lock");
     expect(await readFile(path.join(cwd, "locked.txt"), "utf8")).toBe("unchanged");

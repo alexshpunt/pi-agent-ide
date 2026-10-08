@@ -24,6 +24,9 @@ export default function registerExternalSearchPlugin(pi: ExtensionAPI): void | P
               ? { kind: "resolved", payload: "External plugin connected." }
               : { kind: "not-handled" };
           },
+          toScriptData(payload) {
+            return { kind: "custom", resolverId: "external-integration-test", value: payload };
+          },
           format(payload) {
             return { content: [{ type: "text", text: String(payload) }], details: {} };
           },

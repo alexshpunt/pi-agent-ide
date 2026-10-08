@@ -12,7 +12,7 @@ Use `read` with `views: ["changes"]` on a tracked SSH file to get `CHANGE#` anch
 
 Use whole-file `copy`, `move` and `delete` with SSH paths. Copies and moves also support local/SSH and target/target transfers, streaming original bytes without text conversion. Use regular files; symbolic links are rejected. Use `overwrite: true` to replace an existing regular target. Missing destination parents are created after endpoint checks. Undo restores file entries, not newly created parent directories. Same-target, same-filesystem moves keep the inode. Other moves publish the destination before removing the source and can have a partial effect on interruption.
 
-Use Apply with writable SSH text resources and mixed local/SSH files. SSH byte journals stay on the owning target and copy files in bounded chunks, including files larger than 32 MiB. Text snapshots still have the separate 32 MiB limit. Check each operation's effect and use a returned `APPLY#` receipt with `undo`. An unavailable or stale receipt must not overwrite newer content. Cross-backend commits and compensation are not distributed atomic operations.
+Use the standalone editing tools with writable SSH text resources and mixed local/SSH files. Use Codemode to compose those tools; Apply and Flush are not available. Check each operation's reported effect. Use `undo` with `last` for a saved text-editor transaction or a `CHANGE#` anchor for a Git change. Cross-backend writes and compensation are not distributed atomic operations.
 
 Use `bash` with an SSH `cwd` to run Bash in the remote account's environment. Use the returned `shell:` resource for input, output and cleanup. Read `docs:terminal` before interacting with a session. Remote process IDs belong to the named target, not the local machine.
 

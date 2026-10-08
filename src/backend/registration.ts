@@ -21,7 +21,6 @@ import {
 } from "pi-agent-text-editor/api/plugin-protocol";
 
 import { createSshFileOperationResolver } from "./file-operation-resolver.js";
-import { createSshApplyFileAccessProvider } from "./apply-file-access.js";
 import { remoteLocation } from "./identity.js";
 import { SshBackendRegistry } from "./registry.js";
 import { createSshResourceResolver } from "./resource-resolver.js";
@@ -55,7 +54,6 @@ export async function registerSshResources(
     },
   ]);
   const registry = new SshBackendRegistry(targets);
-  const applyFiles = createSshApplyFileAccessProvider(registry);
   // Reuse installed byte converters; readable images/PDFs never become writable text.
   const readHost = createContentHost(pi, { provider: "filesystem", capability: "read" });
   const writeHost = createContentHost(pi, { provider: "filesystem", capability: "write" });
@@ -78,7 +76,6 @@ export async function registerSshResources(
     id: "ssh",
     setup(api) {
       api.addFileOperationResolver(createSshFileOperationResolver(registry));
-      api.addApplyFileAccessProvider(applyFiles);
       api.addResolver({
         resolver: createSshResourceResolver(registry, writeHost, "write"),
         priority: -50,

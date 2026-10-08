@@ -3,14 +3,14 @@ import type { ResolvedResultTargets } from "pi-agent-resource";
 
 export interface SearchRequest {
   readonly query: string;
-  /** Only symbols: queries may explicitly follow scoped symbols to workspace references. */
-  readonly navigation?: "references";
   readonly path?: string;
   readonly include?: string;
   readonly exclude?: string;
   readonly caseSensitive?: boolean;
   readonly wholeWord?: boolean;
   readonly limit?: number;
+  /** Explicitly follow scoped LSP symbols to references outside the input scope. */
+  readonly navigation?: "references";
 }
 
 /** Public calls accept registered result objects; resolvers receive normalized string paths. */
@@ -65,8 +65,16 @@ export type SearchResolutionAttempt =
   | { readonly kind: "failed"; readonly error: unknown };
 
 export interface SearchResolver {
-  /** Explicit opt-in to exact registered source scopes; unsupported providers must not widen them. */
+  /** Handle exact source ranges instead of widening a structured input to a path. */
   readonly supportsResultScope?: boolean;
+  /** Complete read scope for resolving and formatting. Empty means no resource reads;
+   * undefined means unknown scope, compatible with reads but conflicting with every write.
+   * Declaring a scope must not read resource contents.
+   */
+  readonly readResources?: (
+    request: SearchRequest,
+    context: SearchContext,
+  ) => readonly string[] | undefined | Promise<readonly string[] | undefined>;
   /** Required for native data calls; project only documented JSON domain fields. */
   readonly toScriptData?: (payload: unknown, formattedDetails: unknown) => unknown;
   readonly id: string;
@@ -141,10 +149,10 @@ export interface SearchSelectionRegistration extends SearchSelectionSnapshot {
   readonly refresh: (signal?: AbortSignal) => Promise<SearchSelectionSnapshot>;
 }
 export interface RegisteredSearchSelection {
-  /** Immutable source handles independent of legacy refreshing SEARCH references. */
+  readonly id: string;
+  /** Shared immutable source targets, independent of legacy SEARCH refresh handles. */
   readonly target?: string;
   readonly matchTargets?: readonly string[];
-  readonly id: string;
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
 }
@@ -193,5 +201,22 @@ export interface SearchToolDetails {
 }
 
 export { searchSchema } from "#src/api/search-parameters.js";
+export { renderSearchMatches } from "./presentation.js";
 export { containsSearchMatch } from "./search-scope.js";
+export {
+  fuzzyLimits,
+  isFuzzyResultData,
+  FuzzyVocabulary,
+  isFuzzyQuery,
+  rankFuzzyIdentifiers,
+  fuzzyCandidateData,
+  formatFuzzyCandidate,
+} from "#src/api/fuzzy.js";
+export type {
+  FuzzyIdentifier,
+  FuzzyResultData,
+  FuzzyCandidate,
+  FuzzyResult,
+  FuzzyCandidateData,
+} from "#src/api/fuzzy.js";
 export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";

@@ -38,7 +38,7 @@ export async function runScopedSearch(
         const result = await searchTextContent(
           { ...recipe, query, condition },
           document.content.slice(from, to),
-          cwd,
+          cwd.includes("://") ? process.cwd() : cwd,
           signal,
         );
         for (const match of result.matches) {
@@ -84,7 +84,7 @@ export async function runScopedSearch(
       notices.push(
         fallback.mode === "regex"
           ? "Search fallback: no literal matches; tried unquoted terms as regex."
-          : "Search fallback: no matches in earlier modes; tried separate words.",
+          : "Search fallback: no matches in earlier modes; tried separate words. Use these matches as location hints; refine the query before editing.",
       );
     } catch (error) {
       if (

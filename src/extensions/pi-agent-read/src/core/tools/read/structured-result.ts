@@ -53,7 +53,7 @@ const bytes = Type.Object(
 const block = Type.Union([
   Type.Object({ type: Type.Literal("text"), text: Type.String() }, { additionalProperties: false }),
   Type.Object(
-    { type: Type.Literal("image"), data: Type.String(), mimeType: Type.String() },
+    { type: Type.Literal("image"), mimeType: Type.String() },
     { additionalProperties: false },
   ),
 ]);
@@ -62,6 +62,14 @@ const native = Type.Object(
   { additionalProperties: false },
 );
 export const readDataSchema = Type.Union([
+  Type.Object(
+    {
+      kind: Type.Literal("recovery"),
+      source: Type.String(),
+      candidates: Type.Array(Type.Object({ path: Type.String() }, { additionalProperties: false })),
+    },
+    { additionalProperties: false },
+  ),
   text,
   bytes,
   native,
@@ -119,6 +127,7 @@ function publicData(value: ReadScriptData): unknown {
         : {}),
     };
   }
+  // Image bytes belong to native content, not the composable result record.
   if (value.kind === "native")
     return {
       kind: value.kind,
@@ -126,8 +135,7 @@ function publicData(value: ReadScriptData): unknown {
       truncated: false,
       blocks: value.blocks.map((block) => {
         if (block.type === "text") return { type: block.type, text: block.text };
-        if (block.type === "image")
-          return { type: block.type, data: block.data, mimeType: block.mimeType };
+        if (block.type === "image") return { type: block.type, mimeType: block.mimeType };
         throw new TypeError("Custom content requires a structured adapter");
       }),
     };
@@ -155,6 +163,7 @@ function publicData(value: ReadScriptData): unknown {
     endLine: lines.at(-1)?.lineNumber ?? 0,
     totalLines: value.totalLines,
     truncated,
+    ...(value.target === undefined ? {} : { target: value.target }),
     ...(value.references === undefined ? {} : { references: value.references }),
     ...(truncated || endLine < value.totalLines
       ? { continuation: { path: value.source, offset: endLine + 1 } }
@@ -169,6 +178,11 @@ export function structuredRead(result: ReadToolResult): ReadToolResult {
   if (result.isError || failure !== undefined)
     return withStructuredResult(result, readDataSchema, {
       status: "error",
+      ...(failure?.candidates?.length && failure.source !== undefined
+        ? {
+            data: { kind: "recovery", source: failure.source, candidates: failure.candidates },
+          }
+        : {}),
       errors: [
         {
           code: safe?.code ?? failure?.code ?? "READ_FAILED",

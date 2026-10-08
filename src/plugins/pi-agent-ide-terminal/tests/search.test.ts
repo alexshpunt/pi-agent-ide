@@ -1,10 +1,9 @@
 import { expect, test } from "vitest";
-import { Text, visibleWidth } from "@earendil-works/pi-tui";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { renderSearchMatches } from "pi-agent-search/api/search";
 
-import {
-  findTerminalMatches,
-  TerminalSearchPanel,
-} from "#src/plugins/pi-agent-ide-terminal/src/search.js";
+import { findTerminalMatches } from "#src/plugins/pi-agent-ide-terminal/src/search.js";
 import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
 const snapshot = {
@@ -29,35 +28,28 @@ const snapshot = {
   rows: 24,
 } satisfies TerminalSessionSnapshot;
 
-test("bounds wrapped terminal search rows only in compact presentation", () => {
-  const content = new Text(`search\n${"long output ".repeat(100)}`, 0, 0);
-  const theme = { fg: (_color: string, text: string) => text };
-
-  const compact = new TerminalSearchPanel(content, false, theme).render(40);
-  const expanded = new TerminalSearchPanel(content, true, theme).render(40);
-
-  expect(compact).toHaveLength(12);
-  expect(compact.at(-1)).toContain("visual rows omitted");
-  expect(expanded.length).toBeGreaterThan(compact.length);
+const theme = Object.assign(Object.create(null) as Theme, {
+  fg: (_color: string, text: string) => text,
+  bg: (_color: string, text: string) => text,
+  bold: (text: string) => text,
+  underline: (text: string) => text,
 });
-
-test("keeps terminal search rows within the available width after resizing", () => {
-  const output = Array.from(
-    { length: 6 },
-    (_, index) =>
-      `${126 + index}: Official run: https://github.com/alexshpunt/explicit-edit-benchmark-run/actions/runs/36568016139 界`,
-  ).join("\n");
-  const theme = { fg: (_color: string, text: string) => `\u001b[36m${text}\u001b[39m` };
-
+test("frames retained terminal matches and keeps compact rows bounded after resizing", () => {
+  const matches = findTerminalMatches(
+    { ...snapshot, output: ("needle https://example.com/界 ".repeat(30) + "\n").repeat(6) },
+    { query: "needle" },
+  );
   for (const expanded of [false, true]) {
-    const panel = new TerminalSearchPanel(new Text(`search\n${output}`, 0, 0), expanded, theme);
+    const panel = renderSearchMatches(matches, false, theme, expanded);
     for (const width of [80, 39, 40, 41, 80, 40]) {
       const rows = panel.render(width);
-      expect(rows.length).toBeGreaterThan(0);
-      if (!expanded && width === 40) expect(rows.join("\n")).toContain("omitted");
-      for (const row of rows) {
-        expect(visibleWidth(row), `width ${width}: ${row}`).toBeLessThanOrEqual(width);
+      expect(rows[0]).toContain("╭");
+      expect(rows.join("\n")).toContain("SH");
+      if (!expanded) {
+        expect(rows.length).toBeLessThanOrEqual(14);
+        expect(rows.join("\n")).toContain("output truncated");
       }
+      expect(rows.every((row) => visibleWidth(row) <= width)).toBe(true);
     }
   }
 });

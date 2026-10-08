@@ -7,17 +7,17 @@ export const searchSchema = Type.Object(
     query: Type.String({
       minLength: 1,
       description:
-        "Text to find, a Boolean expression, or a prefixed query described below, such as files:*.ts. Quote text to keep it literal, or use regex:<pattern> for regular-expression matching.",
+        "Text to find or a Boolean expression. Quote text to keep it literal. Use regex:<pattern> for regular expressions, files:<pattern> for file paths, ast:<pattern> for syntax patterns, symbols:<query> for language symbols, or process:<query> for running processes.",
     }),
     path: Type.Optional({
       ...resultInputSchema,
       description:
-        "File, directory, ssh://target/path, HTTP(S) URL, web:ssh://target/https://… or a source-aware result, RESULT# reference or returned target array. Result scopes search only their exact ranges. Use literal or regex: queries for web pages.",
+        "File, directory, URL, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Results select only their registered ranges unless symbols: navigation follows external references.",
     }),
     navigation: Type.Optional(
       Type.Literal("references", {
         description:
-          "Only for symbols: queries. Explicitly follow symbols represented inside path to references outside that scope. Without navigation, returned ranges stay inside path.",
+          "Only for symbols: queries. Explicitly follow symbols represented inside path to their references outside that scope. Without navigation, all returned ranges stay inside path.",
       }),
     ),
     include: Type.Optional(
@@ -32,7 +32,7 @@ export const searchSchema = Type.Object(
       Type.Integer({
         minimum: 1,
         maximum: 1000,
-        description: "Maximum detailed results returned to the agent (default 50)",
+        description: "Maximum displayed items, including compact file summaries (default 50).",
       }),
     ),
   },

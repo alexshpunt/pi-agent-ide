@@ -5,12 +5,11 @@ import {
   type SearchPlugin,
 } from "pi-agent-search/api/plugin-protocol";
 import type { SearchRequest, SearchSelectionMatch } from "pi-agent-search/api/search";
-import { selectionData } from "pi-agent-search/api/search";
+import { selectionData, renderSearchMatches } from "pi-agent-search/api/search";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 
-import { renderTerminalAction } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
 import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
@@ -41,6 +40,8 @@ export async function registerTerminalSearch(
 
 function terminalSearchResolver(manager: TerminalSessionManager) {
   return {
+    readResources: (request: SearchRequest) =>
+      request.path?.startsWith("shell:") ? [request.path] : [],
     id: "terminal",
     toScriptData(payload: unknown) {
       const result = parsePayload(payload);
@@ -89,48 +90,23 @@ function terminalSearchResolver(manager: TerminalSessionManager) {
     renderResult(
       result: { details: unknown },
       options: { readonly expanded?: boolean },
-      theme: Parameters<typeof renderTerminalAction>[4],
+      theme: Theme,
     ) {
       const details = result.details;
       const payload = isRecord(details) ? parsePayload(details.payload) : parsePayload(undefined);
-      const content = renderTerminalAction(
-        payload.snapshot,
-        "search",
-        JSON.stringify(payload.query),
-        payload.matches.slice(-6).map((match) => `${match.lineNumber}: ${match.lineText}`),
+      return renderSearchMatches(
+        payload.matches,
+        false,
         theme,
+        options.expanded === true,
+        undefined,
+        [`Retained terminal output · ${payload.snapshot.status} · read-only`],
       );
-      return new TerminalSearchPanel(content, options.expanded === true, theme);
     },
   };
 }
 
-const COMPACT_TERMINAL_SEARCH_ROWS = 12;
-
-/** Keep terminal search readable without changing the complete agent-facing result. */
-export class TerminalSearchPanel implements Component {
-  public constructor(
-    private readonly content: Component,
-    private readonly expanded: boolean,
-    private readonly theme: Parameters<typeof renderTerminalAction>[4],
-  ) {}
-
-  public render(width: number): string[] {
-    const rows = this.content.render(width);
-    if (this.expanded || rows.length <= COMPACT_TERMINAL_SEARCH_ROWS) return rows;
-    const shown = COMPACT_TERMINAL_SEARCH_ROWS - 1;
-    const omitted = String(rows.length - shown);
-    const fullHint = `… ${omitted} visual rows omitted · ctrl+o to expand`;
-    const hint =
-      visibleWidth(fullHint) <= width ? fullHint : `… ${omitted} visual rows omitted · ctrl+o`;
-    return [...rows.slice(0, shown), this.theme.fg("muted", truncateToWidth(hint, width))];
-  }
-
-  public invalidate(): void {
-    this.content.invalidate();
-  }
-}
-
+/** Find literal matches in retained output without claiming a complete source scope. */
 export function findTerminalMatches(
   snapshot: TerminalSessionSnapshot,
   request: SearchRequest,

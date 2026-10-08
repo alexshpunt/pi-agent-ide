@@ -41,7 +41,9 @@ export const shellOutputSchema = Type.Object({
       { description: "Remote process identity, never a local native PID." },
     ),
   ),
-  wait_reason: Type.Optional(Type.Union([Type.Literal("timeout"), Type.Literal("interactive")])),
+  wait_reason: Type.Optional(
+    Type.Union([Type.Literal("timeout"), Type.Literal("interactive"), Type.Literal("steering")]),
+  ),
   completion_reason: Type.Optional(Type.Literal("timeout")),
   signal: Type.Optional(Type.Number()),
   error: Type.Optional(Type.String()),

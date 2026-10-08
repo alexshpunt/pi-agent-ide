@@ -136,7 +136,8 @@ const debugParameters = Type.Object(
     }),
     source: Type.Optional(
       Type.String({
-        description: "Source file used for anchored breakpoints. Defaults to program.",
+        description:
+          "Source file used for anchored breakpoints. Defaults to program. Relative paths resolve from cwd.",
       }),
     ),
     args: Type.Optional(
@@ -241,9 +242,11 @@ export async function registerDebuggerWithOwner(
         },
       });
       api.addView({ view: "breakpoints", presenter: breakpointPresenter });
-      api.describe(
-        'views: ["breakpoints"] — current debugger breakpoints beside source lines. Normal files include every current session; debug sources are session-scoped. debug:<session> — debugger state.',
-      );
+      api.describe({
+        path: "debug:<session> — debugger state.",
+        views:
+          "breakpoints — current debugger breakpoints beside source lines. Normal files include every current session; debug sources are session-scoped.",
+      });
     },
   } satisfies ReadPlugin;
   const editorPlugin = {
@@ -252,6 +255,11 @@ export async function registerDebuggerWithOwner(
     id: "debugger",
     setup(api) {
       api.addResolver({ resolver: editorResolver });
+      api
+        .tool("insert")
+        .describe(
+          'For debug:<session>, omit anchor and put start, continue, step over, step into, step out, or evaluate <expression> in text. Evaluate requires a stopped frame. For debug:<session>/source, use a fresh Read/Search line anchor and text "breakpoint"; the result reports pending or verified readiness. These actions do not edit source text.',
+        );
       api.tool("insert").addSemanticHandler({
         matches: (input) => matchesDebugInsert(input, manager),
         execute: async (context, input) => {
@@ -273,7 +281,7 @@ export async function registerDebuggerWithOwner(
             );
             return {
               source: breakpoint.source,
-              summary: `Breakpoint ${breakpoint.source} created at ${path.relative(session.options.cwd, breakpoint.file)}:${breakpoint.line}.`,
+              summary: `Breakpoint ${breakpoint.source} registered at ${path.relative(session.options.cwd, breakpoint.file)}:${breakpoint.line} (${breakpoint.verified ? "verified" : "pending"}).`,
               data: {
                 kind: "debug-breakpoint",
                 session: session.source,
@@ -407,7 +415,7 @@ export async function registerDebuggerWithOwner(
         openWorldHint: false,
       },
       label: "Debug session",
-      promptSnippet: "Create DAP debugger sessions with anchored breakpoints",
+      promptSnippet: "Configure a local debugger session",
       description:
         "Use debug to create a configured debugger session on a local or supported SSH workspace. This does not launch the program yet. The returned debug: resource survives extension reloads.",
       parameters: debugParameters,
@@ -445,7 +453,7 @@ export async function registerDebuggerWithOwner(
               content: [
                 {
                   type: "text",
-                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${details.sourceResource} with views ["anchors"], then insert a breakpoint at an anchor.`,
+                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${session.source} to inspect the configured session. To set a breakpoint, read ${details.sourceResource} with views ["anchors"], then insert "breakpoint" at an anchor.`,
                 },
               ],
               details,
@@ -519,6 +527,7 @@ function createDebugResourceResolver(manager: DebugSessionManager, id: string): 
         resource: {
           source,
           async read() {
+            await manager.refresh(session);
             const sourceFile = manager.sourceFile(source);
             if (sourceFile !== undefined) {
               return [debugSourceContent(sourceFile, await manager.readSource(source))];
@@ -646,7 +655,7 @@ function renderBreakpointList(session: DebugSession): string {
   return [...session.breakpoints.values()]
     .map(
       (breakpoint) =>
-        `${breakpoint.verified ? "●" : "○"} ${breakpoint.file}:${breakpoint.line} · ${breakpoint.source}`,
+        `${breakpoint.verified ? "●" : "○"} ${breakpoint.file}:${breakpoint.line} · ${breakpoint.source} (${breakpoint.verified ? "verified" : "pending"})`,
     )
     .join("\n");
 }

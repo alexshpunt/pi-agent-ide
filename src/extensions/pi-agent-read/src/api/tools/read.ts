@@ -51,12 +51,19 @@ export interface ReadFailure {
   readonly stage?: ReadPipelineStage;
   readonly message: string;
   readonly cause?: unknown;
+  /** Ranked exact paths offered as hints, never read automatically. */
+  readonly candidates?: readonly { readonly path: string }[];
 }
 
 export type ReadResultRenderer = NonNullable<ToolDefinition["renderResult"]>;
 export type ReadCallRenderer = NonNullable<ToolDefinition["renderCall"]>;
 
 export interface ResourceResolverRegistration {
+  /** Offers recovery hints after this resolver fails to resolve or read a source. */
+  readonly recoverFailure?: (
+    failure: ReadFailure,
+    context: ResourceResolverContext,
+  ) => Promise<ReadFailure["candidates"]>;
   readonly resolver: ResourceResolver;
   /** Selects a resolver-specific call header before resource resolution. */
   readonly matchesCall?: (source: string) => boolean;
@@ -100,6 +107,8 @@ export interface FragmentResolverRegistration {
  */
 export interface ReadViewRegistration {
   readonly view: string;
+  /** Text views require source lines; native handlers may register views for any content. */
+  readonly contentKind?: "text" | "any";
   /** Requested views whose complete presentation this view already provides. */
   readonly includes?: readonly string[];
   readonly presenter: TextLinePresenter;
@@ -159,6 +168,8 @@ export interface UnsupportedContentDetails {
 }
 
 export interface ReadResultDetails extends UnsupportedContentDetails {
+  /** Diagnostic readiness shown separately from canonical source lines. */
+  readonly diagnosticStatus?: string;
   /** Explicit diagnostic checks; completed empty reports need no content panel. */
   readonly diagnosticCheck?: {
     readonly complete: boolean;
@@ -177,9 +188,13 @@ export interface ReadResultDetails extends UnsupportedContentDetails {
   readonly totalLines?: number;
   readonly truncation?: TruncationResult;
   readonly temporarySource?: string;
+  /** Exact appended notice, outside the useful-output budget. */
+  readonly outputNotice?: string;
   readonly lines?: readonly ReadTextLine[];
   /** Requested view names that no registration backed; they were ignored. */
   readonly ignoredViews?: readonly string[];
+  /** Situational presentation messages, kept outside source lines and script data. */
+  readonly viewWarnings?: readonly string[];
   readonly failure?: ReadFailure;
 }
 
@@ -196,7 +211,7 @@ export type ReadScriptData =
     }
   | {
       readonly kind: "text";
-      /** Strict source snapshot handle; derived presentations do not gain edit authority. */
+      /** Strict source-window handle, independent of preview truncation. */
       readonly target?: string;
       readonly source: string;
       readonly content: string;
@@ -264,6 +279,11 @@ export type ReadHandlerRegistration =
 
 export type PromptDescriptionSource = string | (() => string | undefined);
 
+/** Source and view syntax attached to the matching Read parameter. Callbacks are evaluated for each schema snapshot; undefined omits that contribution. */
+export type ReadParameterDescriptions = {
+  readonly [Parameter in keyof ReadRequest]?: PromptDescriptionSource;
+};
+
 /** Remaining text budget for a format-aware view of already-read data. */
 export interface ReadOutputBudget {
   readonly maxBytes: number;
@@ -306,6 +326,8 @@ export interface ReadToolPluginApi {
   ): Promise<ReadToolResult | undefined>;
   /** Stores complete output for follow-up read access until this runtime is disposed. */
   saveTemporary(text: string): Promise<string>;
+  /** Sets the saver used before the shared text budget truncates a Read result. */
+  setOutputSaver(saver: (text: string) => Promise<string>): void;
   /** Executes the shared pipeline; script results are not clipped to the agent output budget. */
   read(
     request: ReadRequest,
@@ -320,7 +342,8 @@ export interface ReadToolPluginApi {
   /** Registers a named view whose presenter runs when a request lists the view. */
   addView(registration: ReadViewRegistration): void;
   addFragmentResolver(registration: FragmentResolverRegistration): void;
-  describe(description: PromptDescriptionSource): void;
+  /** Adds one parameter-description map per plugin. This documents capabilities without changing validation or registering them. */
+  describe(descriptions: ReadParameterDescriptions): void;
 
   /** Adds an operational rule to the read tool's system-prompt guidelines. */
   addPromptGuideline(guideline: PromptDescriptionSource): void;
@@ -346,6 +369,7 @@ const fragmentResolverRegistrationSchema = Type.Object({
 });
 const viewRegistrationSchema = Type.Object({
   view: Type.String({ pattern: "\\S" }),
+  contentKind: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("any")])),
   includes: Type.Optional(Type.Array(Type.String({ pattern: "\\S" }))),
   presenter: Type.Object({ id: Type.String(), present: functionSchema }),
   priority: Type.Optional(Type.Number()),

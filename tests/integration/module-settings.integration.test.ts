@@ -9,12 +9,16 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import {
+  enableNativeCodemode,
+  withTempWorkspace,
+} from "#integration/support/pi-runtime/fixtures.js";
 
 test.each([true, false])(
-  "obsolete disabled IDs do not prevent Apply startup; LSP disabled=%s",
+  "obsolete disabled IDs do not prevent native startup; LSP disabled=%s",
   async (disabled) => {
     await withTempWorkspace(async (cwd) => {
+      await enableNativeCodemode(cwd);
       await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
       await writeFile(
         path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
@@ -26,21 +30,21 @@ test.each([true, false])(
         testName: `module-lsp-${disabled ? "off" : "on"}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
-        extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: ["apply"],
+        extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+        tools: ["codemode", "read", "write"],
         timeoutMs: 120_000,
         conversation: [
           assistantMessage(
             [
               toolCall({
                 id: "probe",
-                name: "apply",
+                name: "codemode",
                 arguments: {
-                  source: `
-const file = read({path: "source.ts"});
-if (!file.content.includes("Example")) throw new Error("Ordinary read unavailable");
+                  code: `
+const file = await tools.read({path: "source.ts"});
+if(typeof file!=="string"||!file.includes("Example")) throw Error(file);
 let available = false;
-try { const symbol = read({path: "symbol:source.ts#Example"}); available = symbol.content.includes("Example"); } catch {}
+try { const symbol=await tools.read({path:"symbol:source.ts#Example"}); available=typeof symbol==="string" && symbol.includes("Example"); } catch {}
 if (available !== ${!disabled}) throw new Error("Wrong LSP module state");
 `,
                 },
@@ -64,6 +68,7 @@ test.each([
   { disabled: false, mode: "flag" },
 ])("formatter respects $mode selection: disabled=$disabled", async ({ disabled, mode }) => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     const config = path.join(cwd, ".pi/pi-agent-ide");
     await mkdir(config, { recursive: true });
     await writeFile(
@@ -96,17 +101,17 @@ test.each([
       testName: `${mode}-format-${disabled ? "off" : "on"}`,
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["codemode", "read", "write"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "format",
-              name: "apply",
+              name: "codemode",
               arguments: {
-                source: 'createFile("note.fixture", "value=2\\n"); flush();',
+                code: 'const written=await tools.write({path:"note.fixture",content:"value=2\\n"}); if(typeof written!=="string") throw Error("Expected readable write result"); text(written);',
               },
             }),
           ],
@@ -123,13 +128,8 @@ test.each([
   });
 });
 
-test.each([true, false])("Apply can be disabled independently: %s", async (disabled) => {
+test("normal registration has native tools but no Apply tool", async () => {
   await withTempWorkspace(async (cwd) => {
-    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
-    await writeFile(
-      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
-      JSON.stringify({ flags: { "pi-agent-ide-no-apply": disabled } }),
-    );
     const probe = path.join(cwd, "probe.ts");
     await writeFile(
       probe,
@@ -137,14 +137,14 @@ test.each([true, false])("Apply can be disabled independently: %s", async (disab
 import path from "node:path";
 export default function(pi) { pi.on("session_start", async (_event, context) => {
   const names = pi.getAllTools().map(tool => tool.name);
-  if (names.includes("apply") !== ${!disabled}) throw new Error("Wrong Apply registration");
+  if(names.includes("apply")) throw Error("Removed Apply tool is registered");
   for (const name of ["read", "search", "replace", "copy", "move", "delete", "diff"]) if (!names.includes(name)) throw new Error("Missing standalone tool: " + name);
   for (const name of ["copy_file", "move_file", "delete_file"]) if (names.includes(name)) throw new Error("Obsolete standalone tool: " + name);
   await writeFile(path.join(context.cwd, "verified.txt"), "verified");
 }); }`,
     );
     const run = await new PiIntegrationTest({
-      testName: `apply-setting-${disabled}`,
+      testName: "native-registration-without-apply",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), probe],

@@ -64,7 +64,7 @@ jobs:
       - name: Setup runtime tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc
+          sudo apt-get install --yes build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc openssh-server
           sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
           curl --fail --location --silent --show-error \
             https://storage.googleapis.com/dart-archive/channels/stable/release/3.13.3/sdk/dartsdk-linux-x64-release.zip \
@@ -174,12 +174,70 @@ jobs:
         id: unit-tests
         run: pnpm test:unit:report
 
+      - name: Upload unit test report
+        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: unit-test-results
+          path: .agents/tmp/test-results/unit.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report unit tests
+        id: unit-report
+        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        with:
+          name: Unit tests
+          path: .agents/tmp/test-results/unit.xml
+          reporter: java-junit
+          fail-on-error: false
+
       - name: Run integration tests
         id: integration-tests
-        if: always()
+        if: success()
         env:
           PI_DEBUGGER_CORE_EXCLUDE_ADAPTER: kotlin
-        run: pnpm test:integration:report
+          SHARDS: "4"
+          REPORT_DIR: .agents/tmp/test-results
+        run: pnpm test:integration:shards
+
+      - name: Verify normal configured startup
+        if: success()
+        run: |
+          pnpm exec pi install --approve --local "$GITHUB_WORKSPACE"
+          pnpm exec oxnode scripts/dev/check-normal-startup.ts src/pi-agent-ide.ts
+
+      - name: Capture agent interface
+        if: success()
+        run: >-
+          pnpm dev:export-agent-interface --
+          --transport rpc
+          --tools read,search,select,diff,write,replace,insert,delete,copy,move,undo,bash,codemode,tool_search
+
+      - name: Retain agent interface
+        if: always() && hashFiles('.tmp/prompt-snapshots/*.md') != ''
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: agent-interface
+          path: .tmp/prompt-snapshots/*.md
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retain editor TUI traces
+        if: always() && steps.integration-tests.outcome == 'success'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: editor-tui-traces
+          path: |
+            .tmp/test-runs/tests/integration/native-codemode.integration.test.ts/**/run.jsonl
+            .tmp/test-runs/tests/integration/native-codemode.integration.test.ts/**/tui-rendered.log
+            .tmp/test-runs/tests/integration/native-nested-rendering.integration.test.ts/**/run.jsonl
+            .tmp/test-runs/tests/integration/native-nested-rendering.integration.test.ts/**/tui-rendered.log
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Smoke test nightly package
         if: success() && inputs.nightly
@@ -214,6 +272,16 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+      - name: Upload integration shard logs
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: integration-shard-logs
+          path: .tmp/integration-shards.*/*.log
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -223,23 +291,13 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Report unit tests
-        id: unit-report
-        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
-        with:
-          name: Unit tests
-          path: .agents/tmp/test-results/unit.xml
-          reporter: java-junit
-          fail-on-error: false
-
       - name: Report integration tests
         id: integration-report
-        if: always() && hashFiles('.agents/tmp/test-results/integration.xml') != ''
+        if: always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != ''
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Integration tests
-          path: .agents/tmp/test-results/integration.xml
+          path: .agents/tmp/test-results/integration-*.xml
           reporter: java-junit
           fail-on-error: false
 
@@ -297,7 +355,7 @@ jobs:
 
       - name: Verify Windows Pi 0.99.1 source and native tools
         shell: bash
-        run: pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
+        run: env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts tests/integration/lazy-builtins.integration.test.ts
 
       - name: Verify Windows installed package and host boundaries
         shell: bash
@@ -307,7 +365,18 @@ jobs:
           archive="$(find .agents/tmp/public-package -maxdepth 1 -type f -name 'pi-agent-ide-*.tgz' -print -quit)"
           test -n "$archive"
           node --experimental-strip-types --input-type=module -e 'import { installTestPackage, verifyInstalledPackage } from "./scripts/release-candidate.ts"; installTestPackage(".tmp/windows-install", process.argv[1]); verifyInstalledPackage(".tmp/windows-install");' "$archive"
-          PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" pnpm exec pi-test run -- vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
+          PI_AGENT_IDE_TEST_INSTALLATION="$(pwd)/.tmp/windows-install" env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/native-host.integration.test.ts
+
+      - name: Retain Windows host traces
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: windows-host-traces
+          path: |
+            .tmp/test-runs/tests/integration/native-host.integration.test.ts/
+            .tmp/test-runs/tests/integration/lazy-builtins.integration.test.ts/
+          include-hidden-files: true
+          if-no-files-found: ignore
 
       - name: Setup Windows native tools
         if: ${{ hashFiles('validation/language-toolchains/build-windows-checks.mjs') != '' }}
@@ -415,6 +484,83 @@ jobs:
           pnpm exec node .agents/tmp/windows-checks/windows-ast-check.mjs
           node .agents/tmp/windows-checks/windows-debugger-check.mjs
 
+  java-debugger-lifecycle:
+    name: Java debugger (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Setup pinned JDK
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: temurin
+          java-version: "21.0.8+9.0.LTS"
+
+      - name: Setup npm and pnpm
+        run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup SSH fixture tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes openssh-server
+      - name: Provision pinned Java debugger
+        run: node scripts/provision-java-debugger.ts ".tmp/java dependencies"
+
+      - name: Verify Java source lifecycle and public Pi calls
+        run: >-
+          pnpm exec vitest run --config vitest.integration.config.mjs
+          tests/integration/debugger-jvm-adapters.integration.test.ts
+          tests/integration/debugger-java-native.integration.test.ts
+          tests/integration/debugger-java-public.integration.test.ts
+
+      - name: Verify SSH Java lifecycle
+        if: runner.os == 'Linux'
+        run: pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/ssh-java-debugger.integration.test.ts
+      - name: Verify installed Java debugger through public Pi calls
+        # Windows public-Pi startup is quarantined; native Java lifecycle still runs above.
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          pnpm check:package
+          archive="$(find .agents/tmp/public-package -maxdepth 1 -name 'pi-agent-ide-*.tgz' -print -quit)"
+          test -n "$archive"
+          node --input-type=module -e 'import { installTestPackage } from "./scripts/release-candidate.ts"; installTestPackage(".tmp/java candidate", process.argv[1]);' "$archive"
+          node scripts/build-java-checks.ts ".tmp/java candidate"
+          installation="$(node -p 'require("node:path").resolve(".tmp/java candidate")' | tr -d '\r')"
+          PI_AGENT_IDE_TEST_INSTALLATION="$installation" pnpm exec vitest run --config vitest.integration.config.mjs tests/integration/debugger-java-public.integration.test.ts
+
+      - name: Retain candidate Pi traces
+        if: always() && runner.os != 'Windows'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: java-debugger-${{ matrix.os }}
+          path: |
+            .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/run.jsonl
+            .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/tui-rendered.log
+            .tmp/test-runs/tests/integration/debugger-java-public.integration.test.ts/**/error.log
+          include-hidden-files: true
+          if-no-files-found: error
+
   debugger-matrix:
     name: Debugger (${{ matrix.language }})
     runs-on: ubuntu-latest
@@ -422,7 +568,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [swift, zig, julia, java, kotlin, elixir, r]
+        language: [swift, zig, julia, kotlin, elixir, r]
 
     steps:
       - name: Checkout
@@ -505,7 +651,7 @@ jobs:
             echo "PI_ZIG_PATH=/opt/zig/zig" >> "$GITHUB_ENV"
             echo "PI_LLDB_DAP_PATH=$(command -v lldb-dap-18)" \
               >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.language }}" == "java" || "${{ matrix.language }}" == "kotlin" ]]; then
+          elif [[ "${{ matrix.language }}" == "kotlin" ]]; then
             sudo apt-get install --yes unzip
             jdk_url="https://github.com/adoptium/temurin21-binaries/releases/download"
             jdk_url+="/jdk-21.0.8%2B9"

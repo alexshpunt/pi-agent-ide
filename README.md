@@ -63,6 +63,10 @@ Views change how the same resource is presented. The agent can request source st
 
 </div>
 
+### Review edits against your own rules
+
+Optional [Jev code review](docs/code-review.md) checks small saved diffs against natural-language YAML rules you supply. It delivers background hints without replacing normal diagnostics. A separately enabled skill helps turn your review feedback into proposed rules, saved only after confirmation. Both features are off by default.
+
 ### Express edits as intentions
 
 Editing uses direct semantic operations:
@@ -72,9 +76,9 @@ Editing uses direct semantic operations:
 - `insert` adds text around a selection;
 - `delete` removes selected text or a resource;
 - `copy` and `move` duplicate or relocate text and files;
-- `undo` restores an edit or a complete transaction.
+- `undo` restores the last text edit or a selected Git change.
 
-Independent edits can be submitted together as a tool-call batch. Conditional and multi-file work uses Apply, a code mode that exposes the same guarded operations through transactional JavaScript. Diffing and staging are first-class tools too.
+Independent edits can be submitted together as a tool-call batch. For conditional or dependent work, native Codemode composes the same guarded tools with Read, Search and Select results. Check each operation's status and final effects; a script error does not roll back accepted edits. Diffing and staging are first-class tools too.
 
 <div align="center">
 

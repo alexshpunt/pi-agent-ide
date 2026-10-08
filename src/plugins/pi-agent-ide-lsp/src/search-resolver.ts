@@ -5,9 +5,11 @@ import {
   type SearchResolver,
 } from "pi-agent-search/api/search";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.js";
+import path from "node:path";
+import { renderSearchMatches } from "pi-agent-search/api/search";
 import type { LspManager } from "./lsp/manager.js";
 
-/** Register exact native symbol ranges; only explicit navigation may leave a seed scope. */
+/** Expose strict LSP discovery and explicit reference navigation as shared source targets. */
 export function createLspSearchResolver(
   managerFor: (cwd: string, source?: string, signal?: AbortSignal) => Promise<LspManager>,
   registerSelection: SearchPluginApi["registerSelection"],
@@ -15,6 +17,8 @@ export function createLspSearchResolver(
   return {
     id: "symbols",
     supportsResultScope: true,
+    // Workspace symbol backends may read beyond the requested path.
+    readResources: (request) => (request.query.startsWith("symbols:") ? undefined : []),
     toScriptData(payload) {
       return (payload as { readonly data: unknown }).data;
     },
@@ -78,6 +82,7 @@ export function createLspSearchResolver(
         kind: "resolved",
         payload: {
           query,
+          sessionId: session.id,
           hits: found.hits,
           complete: found.complete,
           navigation: request.navigation,
@@ -92,9 +97,29 @@ export function createLspSearchResolver(
         },
       };
     },
-    format(payload) {
+    renderResult(result, options, theme) {
+      const data = result.details as {
+        hits: readonly SymbolHit[];
+        complete: boolean;
+        navigation?: "references";
+        cwd: string;
+      };
+      return renderSearchMatches(
+        data.hits,
+        data.complete,
+        theme,
+        options.expanded,
+        data.cwd,
+        data.navigation === "references"
+          ? ["LSP reference navigation · may leave input scope"]
+          : [],
+        data.hits.map((hit) => `${hit.role} ${hit.symbol.name}`),
+      );
+    },
+    format(payload, context) {
       const result = payload as {
         readonly query: string;
+        readonly sessionId: string;
         readonly hits: readonly SymbolHit[];
         readonly complete: boolean;
         readonly navigation?: "references";
@@ -110,11 +135,15 @@ export function createLspSearchResolver(
               .slice(0, 100)
               .map(
                 (hit, index) =>
-                  `${String(index + 1)}. ${hit.source}:${String(hit.lineNumber)}:${String(hit.startColumn + 1)} ${hit.role} ${hit.symbol.name}`,
+                  `SEARCH#${result.sessionId}:${index + 1}:match ${hit.source.startsWith("ssh://") ? hit.source : path.relative(context.cwd, hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · declared at ${hit.symbol.source.startsWith("ssh://") ? hit.symbol.source : path.relative(context.cwd, hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`,
               );
-      if (!result.complete) lines.push("Incomplete results; not a complete edit scope.");
+      if (result.complete && result.hits.length)
+        lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
-      return { content: [{ type: "text", text: [heading, ...lines].join("\n") }], details: result };
+      return {
+        content: [{ type: "text", text: [heading, ...lines].join("\n") }],
+        details: { ...result, cwd: context.cwd },
+      };
     },
   };
 }

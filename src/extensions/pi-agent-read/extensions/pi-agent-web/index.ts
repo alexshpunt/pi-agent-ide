@@ -52,14 +52,15 @@ export async function registerWebWithOwner(
         renderResult: renderWebResult,
         preserveTruncatedOutput: true,
       });
-      api.describe(() =>
-        renderContentDescription(
-          owner
-            ? "HTTP(S) URLs use local HTTP/browser execution; web:ssh://target/https://… explicitly uses the configured target. Web content is read-only. Target browser fallback requires target-installed Node, playwright-core and Chrome/Chromium. Browser reads enable page JavaScript and disable the Chromium sandbox, using a fresh temporary profile."
-            : "HTTP(S) URL — remote content.",
-          readHost.listDescriptions(),
-        ),
-      );
+      api.describe({
+        path: () =>
+          renderContentDescription(
+            owner
+              ? "HTTP(S) URLs use local HTTP/browser execution; web:ssh://target/https://… explicitly uses the configured target. Web content is read-only. Target browser fallback requires target-installed Node, playwright-core and Chrome/Chromium. Browser reads enable page JavaScript and disable the Chromium sandbox, using a fresh temporary profile."
+              : "HTTP(S) URL — remote content.",
+            readHost.listDescriptions(),
+          ),
+      });
     },
   } satisfies ReadPlugin;
 
@@ -70,6 +71,9 @@ export async function registerWebWithOwner(
     setup(api) {
       // Claim URL scopes before local query resolvers such as regex.
       api.addResolver({ resolver: createWebSearchResolver(webResolver), priority: -100 });
+      api.describe(
+        "HTTP(S) Search reuses converted page text for zero-result identifier spelling suggestions. Candidate groups carry the URL and line ranges, never editable SEARCH references.",
+      );
       api.addPromptGuideline(
         owner
           ? "Use search with an HTTP(S) path for local web execution or web:ssh://target/https://… for explicit target execution; no prior read is required."

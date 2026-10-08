@@ -128,7 +128,13 @@ function renderRow(
   let content = resource.highlightedRows.get(row) ?? row.text.replaceAll("\t", " ".repeat(4));
 
   if (row.kind === "modified") {
-    content = highlightRanges(content, row.text, row.addedRanges ?? [], palette.modified);
+    content = highlightRanges(
+      content,
+      row.text,
+      row.addedRanges ?? [],
+      palette.modified,
+      row.deletedOffsets ?? [],
+    );
   }
 
   const cursor = resource.cursor;
@@ -166,8 +172,12 @@ function highlightRanges(
   source: string,
   ranges: readonly DiffTextRange[],
   tone: DiffThemeTone,
+  deletedOffsets: readonly number[],
 ): string {
-  const expandedRanges = ranges.map(({ from, to }) => ({
+  const expandedRanges = mergeRanges([
+    ...ranges,
+    ...deletionWordRanges(source, deletedOffsets),
+  ]).map(({ from, to }) => ({
     from: expandedOffset(source, from),
     to: expandedOffset(source, to),
   }));
@@ -214,6 +224,30 @@ function highlightRanges(
   }
 
   return rendered;
+}
+
+function deletionWordRanges(source: string, offsets: readonly number[]): readonly DiffTextRange[] {
+  const words = [...source.matchAll(/[\p{L}\p{M}\p{N}_$]+/gu)].map((match) => ({
+    from: match.index,
+    to: match.index + match[0].length,
+  }));
+  return offsets.flatMap((offset) => {
+    const word = words.find(({ to }) => to > offset) ?? words.at(-1);
+    return word === undefined ? [] : [word];
+  });
+}
+
+function mergeRanges(ranges: readonly DiffTextRange[]): readonly DiffTextRange[] {
+  const merged: DiffTextRange[] = [];
+  for (const range of [...ranges].sort((left, right) => left.from - right.from)) {
+    const previous = merged.at(-1);
+    if (previous !== undefined && range.from <= previous.to) {
+      merged[merged.length - 1] = { from: previous.from, to: Math.max(previous.to, range.to) };
+    } else {
+      merged.push(range);
+    }
+  }
+  return merged;
 }
 
 function ansiSequenceAt(text: string, index: number): string | undefined {

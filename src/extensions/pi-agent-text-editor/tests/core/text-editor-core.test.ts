@@ -9,137 +9,6 @@ import {
 } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 
-test("a reloaded core restores retained receipts through their original journal owners", async () => {
-  const first = createTextEditorCore();
-  const source = "ssh://sandbox/tmp/reload.txt";
-  let bytes = Buffer.from("before");
-  let released = 0;
-  const provider = Object.assign(
-    (previous: ReturnType<typeof first.getApplyFileAccess>) => ({
-      ...previous,
-      ownerKey: () => "sandbox:host",
-      capture: async () => ({ path: source, existed: true, bytes }),
-      restore: async (state: { bytes?: Uint8Array }) => {
-        bytes = Buffer.from(state.bytes ?? []);
-      },
-    }),
-    {
-      async dispose() {
-        released += 1;
-      },
-    },
-  );
-  await first.registerPlugin({
-    protocol: TEXT_EDITOR_PROTOCOL,
-    apiVersion: TEXT_EDITOR_API_VERSION,
-    id: "retained-owner",
-    setup(api) {
-      api.addApplyFileAccessProvider(provider);
-    },
-  });
-  const access = first.getApplyFileAccess({ cwd: "/tmp" });
-  const before = await access.capture(source);
-  bytes = Buffer.from("after");
-  const receipt = await first.recordApplyUndo([before], access);
-  const retained = await first.detachApplyUndo();
-  expect(released).toBe(0);
-  const next = createTextEditorCore();
-  await next.registerPlugin({
-    protocol: TEXT_EDITOR_PROTOCOL,
-    apiVersion: TEXT_EDITOR_API_VERSION,
-    id: "current-owner",
-    setup(api) {
-      api.addApplyFileAccessProvider((previous) => ({
-        ...previous,
-        ownerKey: () => "sandbox:host",
-      }));
-    },
-  });
-  await next.adoptApplyUndo(retained);
-  await expect(next.adoptApplyUndo(retained)).rejects.toThrow(
-    "Apply core already owns session journals.",
-  );
-  expect(next.hasApplyUndo(receipt)).toBe(true);
-  await next.restoreApplyUndo(receipt);
-  expect(bytes.toString()).toBe("before");
-  await first.disposeApplyUndo();
-  expect(released).toBe(0);
-  await next.disposeApplyUndo();
-  expect(released).toBe(1);
-});
-test("Apply owners release journals only after queued mutations finish", async () => {
-  const core = createTextEditorCore();
-  const events: string[] = [];
-  let finish: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    finish = resolve;
-  });
-  const provider = Object.assign((access: ReturnType<typeof core.getApplyFileAccess>) => access, {
-    async dispose() {
-      events.push("owner disposed");
-    },
-  });
-  await core.registerPlugin({
-    protocol: TEXT_EDITOR_PROTOCOL,
-    apiVersion: TEXT_EDITOR_API_VERSION,
-    id: "journal-lifetime",
-    setup(api) {
-      api.addApplyFileAccessProvider(provider);
-    },
-  });
-  const operation = core.enqueueFileOperation(async () => {
-    events.push("mutation started");
-    await gate;
-    events.push("mutation finished");
-  });
-  const shutdown = core.disposeApplyUndo();
-  await Promise.resolve();
-  expect(events).not.toContain("owner disposed");
-  finish?.();
-  await operation;
-  await shutdown;
-  expect(events).toEqual(["mutation started", "mutation finished", "owner disposed"]);
-});
-test("Apply owner registration is lazy and failed setup contributes nothing", async () => {
-  const core = createTextEditorCore();
-  let failedCalls = 0;
-  await expect(
-    core.registerPlugin({
-      protocol: TEXT_EDITOR_PROTOCOL,
-      apiVersion: TEXT_EDITOR_API_VERSION,
-      id: "failed-apply-owner",
-      setup(api) {
-        api.addApplyFileAccessProvider((access) => {
-          failedCalls += 1;
-          return access;
-        });
-        throw new Error("Setup failed");
-      },
-    }),
-  ).rejects.toThrow("Setup failed");
-  let calls = 0;
-  await core.registerPlugin({
-    protocol: TEXT_EDITOR_PROTOCOL,
-    apiVersion: TEXT_EDITOR_API_VERSION,
-    id: "apply-owner",
-    setup(api) {
-      api.addApplyFileAccessProvider((access, context) => {
-        calls += 1;
-        expect(context.cwd).toBe("ssh://sandbox/tmp");
-        return { ...access, capture: async (source) => ({ path: source, existed: false }) };
-      });
-    },
-  });
-  expect(calls).toBe(0);
-  const access = core.getApplyFileAccess({ cwd: "ssh://sandbox/tmp" });
-  expect(await access.capture("ssh://sandbox/tmp/owned")).toEqual({
-    path: "ssh://sandbox/tmp/owned",
-    existed: false,
-  });
-  expect(calls).toBe(1);
-  expect(failedCalls).toBe(0);
-});
-
 test("registered whole-file owners receive SSH inputs through core dispatch", async () => {
   const core = createTextEditorCore();
   const calls: unknown[] = [];
@@ -387,6 +256,66 @@ test("returns plugin and stage context when an edit handler fails", async () => 
   });
 });
 
+test("a multi-resource transaction writes disjoint resources concurrently", async () => {
+  const core = createTextEditorCore();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let timedOut = false;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const entered: string[] = [];
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "parallel-writes",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "memory-writes",
+          async tryResolve(source) {
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  return [{ type: "text", text: "old" }];
+                },
+                async write() {
+                  entered.push(source);
+                  if (source === "memory:first") await gate;
+                  else release();
+                },
+              },
+            };
+          },
+        },
+      });
+    },
+  });
+  try {
+    watchdog = setTimeout(() => {
+      timedOut = true;
+      release();
+    }, 1000);
+    const result = await core.editTexts(
+      ["memory:first", "memory:second"].map((source) => ({ source, read: true })),
+      { cwd: "/workspace" },
+      (texts) => ({
+        changes: new Map(
+          [...texts.keys()].map((source) => [source, [{ from: 0, to: 3, insert: "new" }]]),
+        ),
+        result: undefined,
+      }),
+    );
+    expect(timedOut).toBe(false);
+    expect(result.kind).toBe("completed");
+    expect(entered).toEqual(["memory:first", "memory:second"]);
+  } finally {
+    clearTimeout(watchdog);
+    release();
+  }
+});
 test("rolls back earlier resources when a later write fails", async () => {
   const core = createTextEditorCore();
   const values = new Map([
@@ -453,7 +382,11 @@ test("rolls back earlier resources when a later write fails", async () => {
     }),
   );
 
-  expect(outcome).toMatchObject({ kind: "failed", completed: ["second.txt"] });
+  expect(outcome).toMatchObject({
+    kind: "failed",
+    failure: { rollback: { failed: ["second.txt"], originallyMissing: [] } },
+    completed: [],
+  });
   expect(values.get("first.txt")).toBe("first before");
   expect(values.get("second.txt")).toBe("second before changed");
   expect(writes.get("first.txt")).toEqual(["first before changed", "first before"]);
@@ -521,6 +454,52 @@ test("does not compensate a resource whose write was explicitly not applied", as
   expect(values.get("conflict.txt")).toBe("external");
 });
 
+test("preserves every confirmed write when later presentation fails", async () => {
+  const core = createTextEditorCore();
+  const firstWrites: AgentContent[] = [];
+  const secondWrites: AgentContent[] = [];
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "failed-presentation",
+    setup(api) {
+      api.addResolver({ resolver: textResolver("first", "first.txt", "first", firstWrites) });
+      api.addResolver({ resolver: textResolver("second", "second.txt", "second", secondWrites) });
+      api.addTextPresenter({
+        presenter: {
+          id: "failed-diff",
+          present(document, context) {
+            if (context.purpose === "edit-diff") throw new Error("fixture presentation failed");
+            return document;
+          },
+        },
+      });
+    },
+  });
+  const outcome = await core.editTexts(
+    [
+      { source: "first.txt", read: true },
+      { source: "second.txt", read: true },
+    ],
+    { cwd: "/workspace" },
+    async (texts) => ({
+      changes: new Map(
+        [...texts].map(([source, content]) => [
+          source,
+          [{ from: 0, to: content.length, insert: `${content} changed` }],
+        ]),
+      ),
+      result: undefined,
+    }),
+  );
+  expect(outcome).toMatchObject({
+    kind: "failed",
+    failure: { code: "POST_WRITE_FAILED", source: "first.txt" },
+    completed: ["first.txt", "second.txt"],
+  });
+  expect(firstWrites).toEqual([[{ type: "text", text: "first changed" }]]);
+  expect(secondWrites).toEqual([[{ type: "text", text: "second changed" }]]);
+});
 test("reads and writes through the same resource", async () => {
   const core = createTextEditorCore();
   const writes: AgentContent[] = [];
@@ -932,6 +911,178 @@ function textResolver(
   };
 }
 
+test("an edit on another resource completes while the first edit is waiting", async () => {
+  const core = createTextEditorCore();
+  await core.registerPlugin({
+    id: "independent-sources",
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    setup(api) {
+      api.addResolver({ resolver: textResolver("first", "first.txt", "") });
+      api.addResolver({ resolver: textResolver("second", "second.txt", "") });
+    },
+  });
+  let signalEntered!: () => void;
+  let releaseFirst!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    signalEntered = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const first = core.editText("first.txt", { cwd: "/workspace" }, async (text) => {
+    signalEntered();
+    await release;
+    return { text: `${text}A`, result: null };
+  });
+  await entered;
+  const second = core.editText("second.txt", { cwd: "/workspace" }, (text) => ({
+    text: `${text}B`,
+    result: null,
+  }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const outcome = await Promise.race([
+      second,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Unrelated edit waited for the first resource")),
+          500,
+        );
+      }),
+    ]);
+    expect(outcome).toMatchObject({ kind: "completed", after: { content: "B" } });
+  } finally {
+    clearTimeout(timer);
+    releaseFirst();
+    await Promise.allSettled([first, second]);
+  }
+});
+test("a multi-resource edit reads independent resources together", async () => {
+  const core = createTextEditorCore();
+  let releaseFirst!: () => void;
+  const release = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  let secondRead = false;
+  await core.registerPlugin({
+    id: "parallel-reads",
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "memory",
+          async tryResolve(source) {
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  if (source === "first.txt") await release;
+                  else {
+                    secondRead = true;
+                    releaseFirst();
+                  }
+                  return [{ type: "text", text: source }];
+                },
+                async write() {},
+              },
+            };
+          },
+        },
+      });
+    },
+  });
+  const operation = core.editTexts(
+    [
+      { source: "first.txt", read: true },
+      { source: "second.txt", read: true },
+    ],
+    { cwd: "/workspace" },
+    (texts) => ({ changes: new Map(), result: texts.size }),
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const outcome = await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Resource reads were serialized")), 500);
+      }),
+    ]);
+    expect(secondRead).toBe(true);
+    expect(outcome).toMatchObject({ kind: "completed", result: 2 });
+  } finally {
+    clearTimeout(timer);
+    releaseFirst();
+    await operation;
+  }
+});
+test("different source names owned by the same resource do not lose updates", async () => {
+  const core = createTextEditorCore();
+  const owner = textResolver("owner", "shared.txt", "");
+  await core.registerPlugin({
+    id: "aliased-source",
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "aliases",
+          tryResolve(source, context) {
+            return owner.tryResolve(source === "alias.txt" ? "shared.txt" : source, context);
+          },
+        },
+      });
+    },
+  });
+  const first = core.editText("shared.txt", { cwd: "/workspace" }, async (text) => {
+    await Promise.resolve();
+    return { text: `${text}A`, result: null };
+  });
+  const second = core.editText("alias.txt", { cwd: "/workspace" }, (text) => ({
+    text: `${text}B`,
+    result: null,
+  }));
+  const outcomes = await Promise.all([first, second]);
+  expect(outcomes[1]).toMatchObject({ kind: "completed", after: { content: "AB" } });
+});
+test("one transaction cannot write the same owned resource through two aliases", async () => {
+  const core = createTextEditorCore();
+  const writes: AgentContent[] = [];
+  const owner = textResolver("owner", "shared.txt", "initial", writes);
+  await core.registerPlugin({
+    id: "transaction-aliases",
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "aliases",
+          tryResolve(source, context) {
+            return owner.tryResolve(source === "alias.txt" ? "shared.txt" : source, context);
+          },
+        },
+      });
+    },
+  });
+  const outcome = await core.editTexts(
+    [
+      { source: "shared.txt", read: true },
+      { source: "alias.txt", read: true },
+    ],
+    { cwd: "/workspace" },
+    () => ({
+      changes: new Map([
+        ["shared.txt", [{ from: 0, to: 1, insert: "A" }]],
+        ["alias.txt", [{ from: 1, to: 2, insert: "B" }]],
+      ]),
+      result: null,
+    }),
+  );
+  expect(outcome).toMatchObject({ kind: "failed", failure: { code: "MUTATION_REJECTED" } });
+  expect(writes).toHaveLength(0);
+});
 test("single and multi-resource edits share the whole read-modify-write queue", async () => {
   const core = createTextEditorCore();
   await core.registerPlugin({

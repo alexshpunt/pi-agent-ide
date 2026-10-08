@@ -133,7 +133,7 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
       resourceLoader: loader,
       settingsManager,
       sessionManager: manager,
-      tools: ["edit", "apply", "edit_availability_probe"],
+      tools: ["edit", "read", "edit_availability_probe"],
     }));
     for (const phase of ["loaded", "reloaded", "resumed"] as const) {
       if (phase === "reloaded") await session.reload();
@@ -151,11 +151,11 @@ test("reload and persisted resume cannot restore the legacy edit declaration", a
           resourceLoader: loader,
           settingsManager,
           sessionManager: SessionManager.open(captured),
-          tools: ["edit", "apply", "edit_availability_probe"],
+          tools: ["edit", "read", "edit_availability_probe"],
         }));
       }
       await session.bindExtensions({});
-      session.setActiveToolsByName(["edit", "apply", "edit_availability_probe"]);
+      session.setActiveToolsByName(["edit", "read", "edit_availability_probe"]);
       expect(session.getActiveToolNames()).not.toContain("edit");
       expect(session.getCallableToolNames()).not.toContain("edit");
       expect(session.getAllTools().find((tool) => tool.name === "edit")?.exposure).toBe("hidden");

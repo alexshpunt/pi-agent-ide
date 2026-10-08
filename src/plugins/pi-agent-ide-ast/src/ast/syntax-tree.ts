@@ -22,6 +22,6 @@ export interface SyntaxNode {
 /** Parser-neutral syntax tree used by AST read views. */
 export interface SyntaxTree {
   readonly rootNode: SyntaxNode;
-  /** Release provider-owned tree memory after use. */
+  /** Release provider-owned tree memory when the consumer has finished. */
   delete?(): void;
 }

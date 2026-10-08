@@ -78,9 +78,10 @@ const readPlugin = {
         };
       },
     });
-    api.describe(
-      'JSON files accept views such as ["jq:.scripts | keys"] to query them with the installed jq executable.',
-    );
+    api.describe({
+      views:
+        'jq:<filter> — query local JSON text with the installed jq executable, e.g. ["jq:.scripts | keys"]. Exactly one non-empty jq filter is required; it cannot be combined with other views. offset/limit apply to the transformed output, not original source lines.',
+    });
   },
 } satisfies ReadPlugin;
 

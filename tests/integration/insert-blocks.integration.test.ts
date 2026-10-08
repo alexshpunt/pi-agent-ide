@@ -21,22 +21,18 @@ for (const [name, original, payload, mode, expected] of [
   ["CRLF block", "A\r\nB\r\n", "X", "blank-line", "A\r\n\r\nX\r\n\r\nB\r\n"],
   ["existing CRLF separator", "A\r\n\r\nB\r\n", "X", "blank-line", "A\r\n\r\nX\r\n\r\nB\r\n"],
 ] as const) {
-  test(`real Pi insert and linewise Apply agree: ${name}`, async () => {
+  test(`real Pi insert preserves line separation: ${name}`, async () => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "standalone.txt"), original);
-      await writeFile(path.join(cwd, "apply.txt"), original);
       const run = await new PiIntegrationTest({
         testName: `insert-block-${name.replaceAll(" ", "-")}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         extensions: [extension],
-        tools: ["read", "insert", "apply"],
+        tools: ["read", "insert"],
         conversation: [
           assistantMessage(
-            [
-              toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } }),
-              toolCall({ id: "apply-guide", name: "read", arguments: { path: "docs:apply" } }),
-            ],
+            [toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } })],
             { stopReason: "toolUse" },
           ),
           assistantMessage(
@@ -54,25 +50,11 @@ for (const [name, original, payload, mode, expected] of [
             ],
             { stopReason: "toolUse" },
           ),
-          assistantMessage(
-            [
-              toolCall({
-                id: "apply",
-                name: "apply",
-                arguments: {
-                  source: `const file = open("apply.txt"); file.insertAfter(file.line(1), ${JSON.stringify(payload)}, { separation: ${JSON.stringify(mode)} });`,
-                },
-              }),
-            ],
-            { stopReason: "toolUse" },
-          ),
           assistantMessage([text("Done")]),
         ],
-      }).run("Insert the supplied text into both files.");
+      }).run("Insert the supplied text into the file.");
       expect(getToolExecution(run, "insert").isError, getToolResultText(run, "insert")).toBe(false);
-      expect(getToolExecution(run, "apply").isError).toBe(false);
       expect(await readFile(path.join(cwd, "standalone.txt"), "utf8")).toBe(expected);
-      expect(await readFile(path.join(cwd, "apply.txt"), "utf8")).toBe(expected);
     });
   }, 120_000);
 }
@@ -80,19 +62,15 @@ for (const [name, original, payload, mode, expected] of [
 test("real Pi rejects empty insert without changing EOF bytes", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "standalone.txt"), "anchor");
-    await writeFile(path.join(cwd, "apply.txt"), "anchor");
     const run = await new PiIntegrationTest({
       testName: "insert-empty-payload",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [extension],
-      tools: ["read", "insert", "apply"],
+      tools: ["read", "insert"],
       conversation: [
         assistantMessage(
-          [
-            toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } }),
-            toolCall({ id: "apply-guide", name: "read", arguments: { path: "docs:apply" } }),
-          ],
+          [toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
@@ -105,24 +83,10 @@ test("real Pi rejects empty insert without changing EOF bytes", async () => {
           ],
           { stopReason: "toolUse" },
         ),
-        assistantMessage(
-          [
-            toolCall({
-              id: "apply",
-              name: "apply",
-              arguments: {
-                source: 'const file = open("apply.txt"); file.insertAfter(file.line(1), "");',
-              },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Try an empty insertion in both files.");
+    }).run("Try an empty insertion in the file.");
     expect(getToolExecution(run, "insert").isError).toBe(true);
-    expect(getToolExecution(run, "apply").isError).toBe(true);
     expect(await readFile(path.join(cwd, "standalone.txt"), "utf8")).toBe("anchor");
-    expect(await readFile(path.join(cwd, "apply.txt"), "utf8")).toBe("anchor");
   });
 }, 120_000);

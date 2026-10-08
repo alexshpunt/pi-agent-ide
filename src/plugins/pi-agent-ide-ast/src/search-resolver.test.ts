@@ -25,6 +25,7 @@ test("AST matches and captures stay inside one exact scope with their source aut
       context.signal,
       selection.request,
       selection.refresh,
+      undefined,
       context.environment,
     ),
   );

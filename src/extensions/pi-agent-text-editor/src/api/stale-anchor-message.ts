@@ -14,7 +14,7 @@ export function formatStaleAnchorMessage(
 ): string {
   const context = details.context === undefined ? "" : `\n\n${details.context}`;
   return (
-    `[SYSTEM] ${details.toolName} blocked: ${details.field} anchor "${details.anchor}" is stale. ` +
+    `[SYSTEM] ${details.toolName} blocked: ${details.field === "anchor" ? "anchor" : `${details.field} anchor`} "${details.anchor}" is stale. ` +
     `If the required line is represented by one of the context lines below, use that anchor. Otherwise, reread only the relevant section of "${details.path}" and regenerate the anchor. (${reason})${context}`
   );
 }

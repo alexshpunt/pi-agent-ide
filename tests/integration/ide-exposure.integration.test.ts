@@ -116,9 +116,9 @@ test.each(["on", "only"])(
       [
         call("snapshot", "ide_exposure_probe", {
           target: "apply",
-          args: { source: 'read({path: "example.txt"});' },
+          args: { source: "removed" },
         }),
-        call("apply", "apply", { source: 'read({path: "example.txt"});' }),
+        call("apply", "apply", { source: "removed" }),
         call("script", "codemode", {
           code: 'text(await tools.read({path: "example.txt"})); text(await searchTools("stage", {namespace: "ide_git"})); text(await describeNamespace("ide_edit"));',
         }),
@@ -145,7 +145,6 @@ test.each(["on", "only"])(
       ["read", "direct", "ide_read"],
       ["diff", "direct", "ide_read"],
       ["search", "direct", "ide_search"],
-      ["apply", "model-only", "ide_edit"],
       ["write", "direct", "ide_edit"],
       ["bash", "direct", "ide_terminal"],
       ["stage", "deferred", "ide_git"],
@@ -157,7 +156,8 @@ test.each(["on", "only"])(
         namespace: { name: namespace },
       });
     expect(state.tools.find((tool) => tool.name === "read")?.annotations?.readOnlyHint).toBe(false);
-    expect(declarations(result).map((tool) => tool.name)).toContain("apply");
+    expect(declarations(result).map((tool) => tool.name)).not.toContain("apply");
+    expect(state.tools.map((tool) => tool.name)).not.toContain("apply");
     expect(declarations(result).map((tool) => tool.name)).not.toContain("debug");
     expect(
       declarations(result)
@@ -167,8 +167,8 @@ test.each(["on", "only"])(
     expect(getProviderSystemPrompt(result)).toContain(
       "Use tool_search to find stage and unstage in ide_git",
     );
-    expect(getToolExecution(result, "apply").isError).toBe(false);
-    expect(getToolResultText(result, "apply")).toContain("native-exposure-marker");
+    expect(getToolExecution(result, "apply").isError).toBe(true);
+    expect(getToolResultText(result, "apply")).toContain("Tool apply not found");
     expect(getToolResultText(result, "script")).toContain("native-exposure-marker");
     expect(getToolResultText(result, "script")).not.toContain("third-party-stage-marker");
     expect(getToolResultText(result, "discover")).toContain("debug");
@@ -183,7 +183,7 @@ test("deferred Git tools execute through native Codemode after namespace discove
     [
       call("discover", "tool_search", { query: "ide_git stage unstage", limit: 2 }),
       call("git", "codemode", {
-        code: 'const first = await tools.read({path: "example.txt", views: ["changes"]}); const change = first.data.references[0].value; text(await tools.stage({file: "example.txt", change})); const staged = await tools.read({path: "example.txt", views: ["changes"]}); const next = staged.data.references[0].value; text(await tools.unstage({file: "example.txt", change: next}));',
+        code: 'const first = await tools.read({path: "example.txt", views: ["changes"]}); const change = first.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.stage({file: "example.txt", change})); const staged = await tools.read({path: "example.txt", views: ["changes"]}); const next = staged.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.unstage({file: "example.txt", change: next}));',
       }),
     ],
     { defaultTools: ["+codemode"] },
@@ -193,8 +193,8 @@ test("deferred Git tools execute through native Codemode after namespace discove
   );
   expect(getToolResultText(result, "discover")).not.toContain("stage_note");
   expect(getToolExecution(result, "git").isError).toBe(false);
-  expect(getToolResultText(result, "git")).toContain('"state":"staged"');
-  expect(getToolResultText(result, "git")).toContain('"state":"unstaged"');
+  expect(getToolResultText(result, "git")).toContain("Staged");
+  expect(getToolResultText(result, "git")).toContain("Unstaged");
 });
 
 test.each(["settings", "modules"])(

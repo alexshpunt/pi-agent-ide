@@ -8,6 +8,7 @@ import { LspClient } from "./client.js";
 import { SharedStartup, waitWithSignal } from "./abort.js";
 import { documentUri } from "./document-uri.js";
 import type { LspWorkspaceOwner } from "./workspace-owner.js";
+import { prepareProjectQuery } from "./project.js";
 
 import { resolveInitializationOptions } from "./initialization-options.js";
 import { toDiagnostic } from "./diagnostics.js";
@@ -326,8 +327,11 @@ export class LspManager {
         const opened = await this.openFile(filePath, cwd, capability, signal);
 
         if (opened) {
-          clients.add(opened.client);
           remainingExtensions.delete(extension);
+          if (opened.client.hasWorkspaceSymbolCapability) {
+            await prepareProjectQuery(opened.client, filePath);
+            clients.add(opened.client);
+          }
         }
       }
     };
@@ -336,7 +340,9 @@ export class LspManager {
     if ((await stat(selected)).isFile()) {
       if (!acceptsFile(selected)) return [];
       const opened = await this.openFile(selected, cwd, capability, signal);
-      return opened === null ? [] : [opened.client];
+      if (opened === null || !opened.client.hasWorkspaceSymbolCapability) return [];
+      await prepareProjectQuery(opened.client, selected);
+      return [opened.client];
     }
     await visit(selected);
     signal?.throwIfAborted();

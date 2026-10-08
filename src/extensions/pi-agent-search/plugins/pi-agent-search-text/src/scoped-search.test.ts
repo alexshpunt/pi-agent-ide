@@ -63,7 +63,7 @@ test("search handles preserve a remote owner's guard and the original snapshot",
   });
   const result = await runScopedSearch({ query: "hello" }, scope(), process.cwd());
   const session = await sessions.register("hello", result.matches, result.complete, process.cwd());
-  const resolved = targets.resolve(sessions.resultTargets(session.id), process.cwd());
+  const resolved = targets.resolve(session.target, process.cwd());
   expect(resolved.complete).toBe(false);
   expect(resolved.targets[0]?.ranges).toEqual([
     { start: { lineNumber: 1, column: 7 }, end: { lineNumber: 1, column: 12 } },

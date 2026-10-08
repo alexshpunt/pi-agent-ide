@@ -137,6 +137,11 @@ export class LspClient {
     return Array.isArray(provider?.commands) && provider.commands.includes(command);
   }
 
+  /** Whether initialization advertised support for workspace/symbol requests. */
+  get hasWorkspaceSymbolCapability(): boolean {
+    const provider = this._serverCapabilities?.workspaceSymbolProvider;
+    return provider === true || (typeof provider === "object" && provider !== null);
+  }
   get hasFoldingRangeCapability(): boolean {
     const provider = this._serverCapabilities?.foldingRangeProvider;
     return provider === true || (typeof provider === "object" && provider !== null);

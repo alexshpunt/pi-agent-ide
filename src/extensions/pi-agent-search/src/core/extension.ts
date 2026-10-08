@@ -1,13 +1,13 @@
 import {
   type AgentToolResult,
   type ExtensionAPI,
-  keyText,
   type Theme,
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
+  ResultPanel,
   toolCallHeader,
   type ToolCallHeaderDetail,
   type ToolCallHeaderModel,
@@ -57,6 +57,9 @@ export function searchCallModel(
             truncate: "start" as const,
           },
         ]),
+    ...(arguments_.navigation === undefined
+      ? []
+      : [{ text: "reference navigation", color: "warning" as const }]),
     ...(arguments_.include === undefined ? [] : [{ text: `include ${arguments_.include}` }]),
     ...(arguments_.exclude === undefined ? [] : [{ text: `exclude ${arguments_.exclude}` }]),
     ...(arguments_.caseSensitive === true ? [{ text: "case sensitive" }] : []),
@@ -94,7 +97,8 @@ export default async function registerSearchCore(
       ],
     }),
   ]);
-  const core = createSearchCore(connectResultTargets(pi));
+  const targets = connectResultTargets(pi);
+  const core = createSearchCore(targets);
   const interceptionRendering = new ToolCallInterceptionRenderStore();
   const unsubscribe = pi.events.on(SEARCH_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isSearchPluginRegistrationRequest(request)) {
@@ -120,7 +124,8 @@ export default async function registerSearchCore(
           openWorldHint: false,
         },
         label: "search",
-        description: "Use search to locate workspace text, file paths, and code structures.",
+        description:
+          "Use search to find text, file paths, syntax patterns, language symbols, web-page text, and running processes.",
         promptSnippet:
           "Search files and text with literals or regular expressions, plus syntax trees and language symbols",
         get promptGuidelines(): string[] {
@@ -149,8 +154,13 @@ export default async function registerSearchCore(
           const renderer =
             details?.resolverId === undefined ? undefined : core.renderer(details.resolverId);
 
-          if (renderer !== undefined) {
-            const inner = { ...result, details: details?.payload };
+          if (
+            renderer !== undefined &&
+            details?.payload !== undefined &&
+            !context.isError &&
+            !options.isPartial
+          ) {
+            const inner = { ...result, details: details.payload };
             return renderer(inner, options, theme, context);
           }
 
@@ -169,11 +179,28 @@ export default async function registerSearchCore(
             );
             return await runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
               await core.waitForPendingPlugins();
-              return core.execute(parameters, {
-                cwd: context.cwd,
-                ...(operationSignal !== undefined && { signal: operationSignal }),
-                ...(onUpdate !== undefined && { onUpdate }),
-              });
+              const scoped =
+                parameters.path !== undefined &&
+                (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
+              const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
+              if (scope !== undefined) {
+                await targets.verify(scope, operationSignal);
+                if (/^(?:files|symbol|graph|process):/u.test(parameters.query))
+                  throw new Error("This query provider does not support result scopes yet.");
+              }
+              return core.execute(
+                {
+                  ...parameters,
+                  path:
+                    typeof parameters.path === "string" && !scoped ? parameters.path : undefined,
+                },
+                {
+                  cwd: context.cwd,
+                  ...(scope === undefined ? {} : { scope }),
+                  ...(operationSignal !== undefined && { signal: operationSignal }),
+                  ...(onUpdate !== undefined && { onUpdate }),
+                },
+              );
             });
           } catch (error) {
             if (signal?.aborted) throw error;
@@ -213,6 +240,7 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
           ? arguments_.path
           : "result scope",
     ),
+    ...optionalDetail("navigation", arguments_.navigation),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),
     ...optionalDetail(
@@ -242,10 +270,15 @@ function fallbackResult(
   const text = result.content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("\n");
-  const preview = options.expanded ? text : text.split("\n").slice(0, 8).join("\n");
-  const hint =
-    !options.expanded && text.split("\n").length > 8
-      ? `\n${theme.fg("dim", `${keyText("app.tools.expand")} to expand`)}`
-      : "";
-  return new Text(`${theme.fg("muted", preview)}${hint}`, 0, 0);
+  return new ResultPanel(
+    {
+      summary:
+        result.details && typeof result.details === "object" && "failure" in result.details
+          ? "Search failed"
+          : "Search results",
+      rows: text.split("\n").map((line) => ({ kind: "note", text: line })),
+    },
+    theme,
+    options.expanded,
+  );
 }

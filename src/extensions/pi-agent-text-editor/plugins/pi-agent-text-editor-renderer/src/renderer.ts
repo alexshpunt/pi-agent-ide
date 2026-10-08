@@ -197,7 +197,6 @@ function createRenderer(
             generated,
             cwd: context.cwd,
           } satisfies PreviewRequest;
-
           if (!advancePreviewTarget(state, request, now)) {
             queuePreview(state, request, api, tool);
           }
@@ -253,7 +252,17 @@ function createRenderer(
           options.expanded,
           theme,
         );
-        return new Text("", 0, 0);
+        return new Text(
+          registration.name === "copy" &&
+            typeof result.details.metadata?.targetUnavailable === "string"
+            ? theme.fg(
+                "muted",
+                "No verified text selection. Read the destination before further edits.",
+              )
+            : "",
+          0,
+          0,
+        );
       }
 
       clearTypingRuntime(state);
@@ -273,46 +282,25 @@ function createRenderer(
       );
       state.panel?.setPreviewResources([]);
 
-      const wholeFile = wholeFileOperationSummary(result.details);
-      if (wholeFile !== undefined) {
-        return new Text(
-          [
-            theme.fg(wholeFile.color, wholeFile.text),
-            ...wholeFile.diffStatuses.map((status) =>
-              theme.fg(status.tone ?? "muted", status.text),
-            ),
-          ].join("\n"),
-          0,
-          0,
-        );
-      }
-
-      if (context.isError && typeof result.details === "object" && "effect" in result.details) {
-        const effect = result.details.effect;
-        if (effect === "unknown" || effect === "applied") {
-          return new Text(
-            theme.fg(
-              "warning",
-              effect === "unknown" ? "? Outcome unknown · edit failed" : "✓ Applied · edit failed",
-            ),
-            0,
-            0,
-          );
-        }
-      }
-      if (registration.name === "undo" && typeof state.input?.transaction === "string") {
-        const restored = restoredApplyPathCount(result.details);
-        const succeeded = restored !== undefined && !context.isError;
+      if (!context.isError && result.details.metadata?.emptyTargets === true) {
         return new Text(
           theme.fg(
-            succeeded ? "success" : "error",
-            succeeded
-              ? `✓ Undo applied · ${String(restored)} ${restored === 1 ? "file" : "files"}`
-              : "✗ Undo not applied",
+            "muted",
+            registration.name === "copy"
+              ? "No changes: empty selection."
+              : "No changes · empty target set",
           ),
           0,
           0,
         );
+      }
+      const summary = wholeFileOperationSummary(result.details);
+      if (summary !== undefined) {
+        const unavailable =
+          typeof result.details.metadata?.targetUnavailable === "string"
+            ? " · no verified text selection; read destination before further edits"
+            : "";
+        return new Text(theme.fg(summary.color, summary.text + unavailable), 0, 0);
       }
 
       const output = result.content
@@ -321,7 +309,19 @@ function createRenderer(
         )
         .map((item) => item.text)
         .join("\n");
-      const displayedOutput = context.isError ? userFacingFailure(output) : output;
+      const rollback =
+        registration.name === "copy" ? result.details.metadata?.copyRollback : undefined;
+      const uncertainExecution =
+        registration.name === "copy" && result.details.metadata?.copyExecution === "uncertain";
+      const displayedOutput = context.isError
+        ? uncertainExecution
+          ? "Copy failed · effects uncertain; read destination before retrying"
+          : rollback === "restored"
+            ? "Copy failed · changes rolled back"
+            : rollback === "failed"
+              ? "Copy failed · rollback failed; read destination before retrying"
+              : userFacingFailure(output, result.details)
+        : output;
       return new Text(
         displayedOutput.length === 0
           ? ""
@@ -738,7 +738,14 @@ function mutationCallDetails(
 
   const generated = generatedField(tool);
   return Object.entries(input).map(([label, value]) => {
-    const encoded = typeof value === "string" ? value : JSON.stringify(value);
+    const encoded =
+      ["path", "file", "target"].includes(label) && value !== null && typeof value === "object"
+        ? Array.isArray(value)
+          ? `${value.length} returned targets`
+          : "result scope"
+        : typeof value === "string"
+          ? value
+          : JSON.stringify(value);
     const exact = typeof encoded === "string" ? encoded : String(value);
     return {
       label,
@@ -750,14 +757,13 @@ function mutationCallDetails(
   });
 }
 
-/** Render a written call header without preparing previews or reading files. */
-export function renderWrittenMutationHeader(
-  registration: AnyTextMutationToolRegistration,
-  input: Readonly<Record<string, unknown>>,
-  theme: Theme,
-): string {
-  return renderHeader(registration, input, undefined, theme, undefined, false);
+function sourceLabel(value: unknown): string | undefined {
+  if (typeof value === "string" && value.startsWith("RESULT#")) return "result scope";
+  return (
+    stringValue(value) ?? (value !== null && typeof value === "object" ? "result scope" : undefined)
+  );
 }
+
 function renderHeader(
   registration: AnyTextMutationToolRegistration,
   input: Readonly<Record<string, unknown>>,
@@ -767,9 +773,7 @@ function renderHeader(
   expanded: boolean,
 ): string {
   const source = registration.source;
-  if (registration.name === "undo" && typeof input.transaction === "string")
-    return `${theme.fg("toolTitle", theme.bold("undo"))} ${theme.fg("muted", "· Apply transaction")}`;
-  const path = stringValue(input[source.field]);
+  const path = sourceLabel(input[source.field]);
   const previewResources = preview?.kind === "completed" ? preview.resources : [];
   const displayedPath =
     path ??
@@ -783,10 +787,10 @@ function renderHeader(
       ? requiredValue(previewResources[0]).link
       : resourceLink(preview, path);
   const targets = (source.targets ?? [])
-    .map(({ field }) => ({ field, path: stringValue(input[field]) }))
+    .map(({ field }) => ({ field, path: sourceLabel(input[field]) }))
     .filter(
       (target): target is { readonly field: string; readonly path: string } =>
-        target.path !== undefined && target.path !== path,
+        target.path !== undefined && (target.path === "result scope" || target.path !== path),
     );
   let header = `${theme.fg("toolTitle", theme.bold(registration.name))} ${renderPath(
     displayedPath,
@@ -881,29 +885,11 @@ function semanticRange(start: string, end: string): string {
     : `${start}–${end}`;
 }
 
-function restoredApplyPathCount(details: unknown): number | undefined {
-  if (details === null || typeof details !== "object" || !("metadata" in details)) return undefined;
-  const metadata = details.metadata;
-  if (metadata === null || typeof metadata !== "object" || !("semanticAction" in metadata))
-    return undefined;
-  const action = metadata.semanticAction;
-  if (
-    action === null ||
-    typeof action !== "object" ||
-    !("kind" in action) ||
-    action.kind !== "apply-undo" ||
-    !("restored" in action) ||
-    !Array.isArray(action.restored)
-  )
-    return undefined;
-  return action.restored.length;
-}
-
 function wholeFileOperationSummary(details: unknown):
   | {
-      readonly text: string;
-      readonly color: "success" | "warning" | "error";
-      readonly diffStatuses: readonly MutationDiffStatus[];
+      text: string;
+      diffStatuses: readonly MutationDiffStatus[];
+      color: "error" | "warning" | "success";
     }
   | undefined {
   if (details === null || typeof details !== "object" || !("metadata" in details)) return undefined;
@@ -1006,7 +992,20 @@ function wholeFileFailureCause(code: string): string {
   }
 }
 
-function userFacingFailure(agentOutput: string): string {
+function userFacingFailure(
+  agentOutput: string,
+  details: FileMutationBatchResult | undefined,
+): string {
+  const rollback = details?.results?.find((result) => result.data.rollback !== undefined)?.data
+    .rollback;
+  if (rollback !== undefined) {
+    return rollback.failedSources.length === 0
+      ? "Rolled back · write failed"
+      : "State unknown · rollback failed";
+  }
+  if (details?.effect === "unknown") return "Effects unknown · edit failed";
+  if (details?.effect === "applied") return "Saved · post-write step failed";
+  if (details?.metadata?.rollback === "restored") return "Rolled back · edit failed";
   if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }

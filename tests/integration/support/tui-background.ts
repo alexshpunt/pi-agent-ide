@@ -30,7 +30,7 @@ export function expectToolRowsPreserveBackground(
   const backgrounds: string[] = [];
   let checkedResets = 0;
 
-  for (const row of terminalOutput.split("\u001B[2K")) {
+  for (const row of terminalOutput.split(/\u001B\[2K|\r?\n/u)) {
     if (!row.includes(marker)) {
       continue;
     }

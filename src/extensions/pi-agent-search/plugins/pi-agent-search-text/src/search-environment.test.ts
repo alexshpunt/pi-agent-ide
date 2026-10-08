@@ -55,6 +55,7 @@ test("text search uses the owner executor and canonical Unicode ranges", async (
     { query: "needle", path: "memory://owner/work" },
     "/local",
     undefined,
+    undefined,
     environment,
   );
   expect(calls).toHaveLength(1);

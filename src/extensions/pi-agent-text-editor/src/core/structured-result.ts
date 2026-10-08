@@ -1,8 +1,6 @@
 import { Type, type Static } from "typebox";
-import { Value } from "typebox/value";
 import {
   resultError,
-  resultErrorSchema,
   structuredResultSchema,
   withStructuredResult,
   type StructuredResult,
@@ -11,7 +9,6 @@ import {
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import { isDiffStatusContribution } from "#src/api/post-edit.js";
 
 const effect = Type.Union([
   Type.Literal("pending"),
@@ -23,111 +20,56 @@ const file = Type.Object(
   {
     source: Type.String(),
     effect,
-    action: Type.Optional(Type.String()),
     state: Type.Optional(
       Type.Union([Type.Literal("present"), Type.Literal("absent"), Type.Literal("unknown")]),
     ),
   },
   { additionalProperties: false },
 );
-const operation = Type.Object(
-  {
-    id: Type.String(),
-    operation: Type.String(),
-    effect,
-    errors: Type.Array(resultErrorSchema),
-    status: Type.Optional(
-      Type.Union([
-        Type.Literal("success"),
-        Type.Literal("error"),
-        Type.Literal("warning"),
-        Type.Literal("unknown"),
-      ]),
-    ),
-    sources: Type.Optional(Type.Array(Type.String())),
-    warnings: Type.Optional(Type.Array(resultErrorSchema)),
-    target: Type.Optional(Type.String()),
-    targetUnavailable: Type.Optional(Type.String()),
-  },
-  { additionalProperties: false },
-);
-export const mutationDataSchema = Type.Object(
-  {
-    operation: Type.String(),
-    effect,
-    operationId: Type.Optional(Type.String()),
-    files: Type.Array(file),
-    target: Type.Optional(Type.String()),
-    targetUnavailable: Type.Optional(Type.String()),
-    operations: Type.Optional(Type.Array(operation)),
-    parentToolCallId: Type.Optional(Type.String()),
-    transaction: Type.Optional(Type.String()),
-    transactions: Type.Optional(Type.Array(Type.String())),
-    recovery: Type.Optional(
-      Type.Array(
-        Type.Object({
-          source: Type.String(),
-          field: Type.String(),
-          anchor: Type.String(),
-          total: Type.Integer(),
-          candidates: Type.Array(
-            Type.Object({
-              rank: Type.Integer(),
-              range: Type.Object({
-                start: Type.Object({ lineNumber: Type.Integer(), column: Type.Integer() }),
-                end: Type.Object({ lineNumber: Type.Integer(), column: Type.Integer() }),
-              }),
-            }),
-          ),
-        }),
-      ),
-    ),
-    action: Type.Optional(
-      Type.Object(
-        {
-          source: Type.String(),
-          kind: Type.Optional(Type.String()),
-          status: Type.Optional(Type.String()),
-          command: Type.Optional(Type.String()),
-          deleted: Type.Optional(Type.Boolean()),
-          session: Type.Optional(Type.String()),
-          file: Type.Optional(Type.String()),
-          line: Type.Optional(Type.Integer()),
-          verified: Type.Optional(Type.Boolean()),
-          evaluation: Type.Optional(
-            Type.Object(
-              {
-                expression: Type.String(),
-                result: Type.String(),
-                type: Type.Optional(Type.String()),
-                variablesReference: Type.Integer(),
-              },
-              { additionalProperties: false },
-            ),
-          ),
-          breakpoints: Type.Optional(
-            Type.Array(
-              Type.Object(
-                {
-                  source: Type.String(),
-                  file: Type.String(),
-                  line: Type.Integer(),
-                  verified: Type.Boolean(),
-                },
-                { additionalProperties: false },
-              ),
-            ),
-          ),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-  },
-  { additionalProperties: false },
-);
-export const mutationOutputSchema = structuredResultSchema(mutationDataSchema);
-/** Public receipt fields are defined by the native output schema. */
-export type MutationData = Static<typeof mutationDataSchema>;
+const receipt = { effect, files: Type.Array(file) };
+
+/** Validate one file tool's result. Recovery, rendering and resource actions stay in details. */
+export function mutationDataSchema(operation: string) {
+  return Type.Object(
+    {
+      operation: Type.Literal(operation),
+      ...receipt,
+      operationId: Type.Optional(Type.String()),
+      ...(operation === "delete"
+        ? {}
+        : {
+            target: Type.Optional(Type.String()),
+            targetUnavailable: Type.Optional(Type.String()),
+          }),
+    },
+    { additionalProperties: false },
+  );
+}
+/** Internal validation schema for a single tool, not an agent-facing return declaration. */
+export function mutationResultSchema(operation: string) {
+  return structuredResultSchema(mutationDataSchema(operation));
+}
+/** Observed file and operation effects retained on the parent native script. */
+export interface BatchMutationData {
+  operation: "batch";
+  effect: MutationData["effect"];
+  files: MutationData["files"];
+  operations: {
+    id: string;
+    operation: string;
+    effect: MutationData["effect"];
+    errors: ResultError[];
+  }[];
+}
+/** Small internal receipt used to collect observed file effects. */
+export interface MutationData {
+  operation: string;
+  effect: Static<typeof effect>;
+  files: Static<typeof file>[];
+  operationId?: string;
+  target?: string;
+  targetUnavailable?: string;
+}
 type MutationFile = MutationData["files"][number];
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -149,16 +91,13 @@ export function mutationOutcome(
       data: {
         operation,
         effect: "pending",
-        ...(typeof details.metadata?.resultTarget === "string"
+        ...(operation !== "delete" && typeof details.metadata?.resultTarget === "string"
           ? { target: details.metadata.resultTarget }
           : {}),
         files:
           typeof detailRecord.source === "string"
             ? [{ source: detailRecord.source, effect: "pending" }]
             : [],
-        ...(typeof native.parentToolCallId === "string"
-          ? { parentToolCallId: native.parentToolCallId }
-          : {}),
       },
     };
   const observed = new Set(completions.map((completion) => completion.resourceSource));
@@ -176,6 +115,7 @@ export function mutationOutcome(
     for (const source of sources)
       files.push({
         source,
+        ...(observed.has(source) ? { state: "present" as const } : {}),
         effect:
           observed.has(source) ||
           (data.ok === true && data.files?.some((file) => file.path === source))
@@ -196,69 +136,64 @@ export function mutationOutcome(
       });
   }
   for (const source of observed)
-    if (!files.some((file) => file.source === source)) files.push({ source, effect: "applied" });
+    if (!files.some((file) => file.source === source))
+      files.push({ source, effect: "applied", state: "present" });
   const semantic =
     record(details.metadata) && record(details.metadata.semanticAction)
       ? details.metadata.semanticAction
       : undefined;
   if (semantic) {
     const semanticEffect =
-      semantic.effect === "applied" ||
-      semantic.effect === "not-applied" ||
-      semantic.effect === "unknown"
+      semantic.effect === "not-applied" || semantic.effect === "unknown"
         ? semantic.effect
         : semantic.ok === false
           ? "unknown"
           : "applied";
     const source = typeof semantic.source === "string" ? semantic.source : undefined;
-    if (source && !Array.isArray(semantic.restored))
+    if (source)
       files.push({
         source,
+        ...(semantic.kind === "file-operation" && semantic.ok === true
+          ? {
+              state:
+                operation === "delete" || operation === "move"
+                  ? ("absent" as const)
+                  : ("present" as const),
+            }
+          : {}),
         effect:
           operation === "copy" && typeof semantic.target === "string" && semantic.target !== source
             ? "not-applied"
             : semanticEffect,
       });
-    if (Array.isArray(semantic.restored))
-      for (const source of semantic.restored)
-        if (typeof source === "string") files.push({ source, effect: semanticEffect });
-    if (Array.isArray(semantic.restoredStates))
-      for (const restored of semantic.restoredStates)
-        if (
-          record(restored) &&
-          typeof restored.source === "string" &&
-          (restored.state === "present" || restored.state === "absent")
-        ) {
-          const file = files.find((item) => item.source === restored.source);
-          if (file !== undefined) file.state = restored.state;
-        }
     if (typeof semantic.target === "string")
-      files.push({ source: semantic.target, effect: semanticEffect });
-    if (record(semantic.error)) {
-      const error = resultError(
-        semantic.error.message ?? "Resource operation failed",
-        typeof semantic.error.code === "string" ? semantic.error.code : "MUTATION_FAILED",
-        source,
+      files.push({
+        source: semantic.target,
+        effect: semanticEffect,
+        ...(semantic.kind === "file-operation" && semantic.ok === true
+          ? { state: "present" as const }
+          : {}),
+      });
+    if (record(semantic.error))
+      errors.push(
+        resultError(
+          semantic.error.message,
+          typeof semantic.error.code === "string" ? semantic.error.code : "MUTATION_FAILED",
+          source,
+        ),
       );
-      if (
-        !errors.some(
-          (existing) =>
-            existing.code === error.code &&
-            existing.message === error.message &&
-            existing.source === error.source,
-        )
-      )
-        errors.push(error);
-    }
     if (typeof semantic.postProcessingError === "string")
       errors.push(resultError(semantic.postProcessingError, "POST_EDIT_FAILED", source));
     if (semantic.ok === false && errors.length === 0)
       errors.push(resultError("Resource operation failed", "MUTATION_FAILED", source));
   }
-  const participants = Array.isArray(semantic?.restored)
-    ? files.filter((file) => file.source !== semantic.source)
-    : files;
-  const unique = [...new Map(participants.map((file) => [file.source, file])).values()];
+  const unique = [...new Map(files.map((file) => [file.source, file])).values()];
+  if (Array.isArray(details.metadata?.resultFileStates))
+    for (const state of details.metadata.resultFileStates) {
+      if (!record(state)) continue;
+      const file = unique.find((file) => file.source === state.source);
+      if (file && (state.state === "present" || state.state === "absent")) file.state = state.state;
+    }
   const known = unique.some((file) => file.effect === "applied");
   if (result.isError && errors.length === 0)
     errors.push({ code: "MUTATION_FAILED", message: "Mutation failed" });
@@ -267,7 +202,7 @@ export function mutationOutcome(
     !semantic &&
     observed.size === 0 &&
     errors.length === 0 &&
-    details.metadata?.emptyTargets !== true
+    details.effect !== "not-applied"
   )
     errors.push({ code: "UNKNOWN_RESULT", message: "Mutation effects were not reported" });
   const effect =
@@ -278,57 +213,6 @@ export function mutationOutcome(
       : known
         ? "applied"
         : "not-applied";
-  const action =
-    semantic && typeof semantic.source === "string"
-      ? {
-          source: semantic.source,
-          ...(typeof semantic.kind === "string" ? { kind: semantic.kind } : {}),
-          ...(typeof semantic.status === "string" ? { status: semantic.status } : {}),
-          ...(typeof semantic.command === "string" ? { command: semantic.command } : {}),
-          ...(typeof semantic.deleted === "boolean" ? { deleted: semantic.deleted } : {}),
-          ...(typeof semantic.session === "string" ? { session: semantic.session } : {}),
-          ...(typeof semantic.file === "string" ? { file: semantic.file } : {}),
-          ...(typeof semantic.line === "number" ? { line: semantic.line } : {}),
-          ...(typeof semantic.verified === "boolean" ? { verified: semantic.verified } : {}),
-          ...(record(semantic.evaluation)
-            ? {
-                evaluation: {
-                  expression: semantic.evaluation.expression,
-                  result: semantic.evaluation.result,
-                  variablesReference: semantic.evaluation.variablesReference,
-                  ...(typeof semantic.evaluation.type === "string"
-                    ? { type: semantic.evaluation.type }
-                    : {}),
-                },
-              }
-            : {}),
-          ...(Array.isArray(semantic.breakpoints)
-            ? {
-                breakpoints: semantic.breakpoints.filter(record).map((breakpoint) => ({
-                  source: breakpoint.source,
-                  file: breakpoint.file,
-                  line: breakpoint.line,
-                  verified: breakpoint.verified,
-                })),
-              }
-            : {}),
-        }
-      : undefined;
-  const feedback = isDiffStatusContribution(semantic)
-    ? semantic.diffStatuses.map((status) => ({
-        code: "POST_EDIT_FEEDBACK",
-        message: status.text,
-        ...(typeof semantic.target === "string"
-          ? { source: semantic.target }
-          : typeof semantic.source === "string"
-            ? { source: semantic.source }
-            : {}),
-      }))
-    : [];
-  const checkedAction =
-    action && Value.Check(mutationDataSchema.properties.action, action) ? action : undefined;
-  if (action && !checkedAction)
-    errors.push(resultError("Action adapter returned invalid fields", "INVALID_STRUCTURED_RESULT"));
   return {
     status:
       errors.length === 0
@@ -340,40 +224,12 @@ export function mutationOutcome(
       operation,
       effect,
       files: unique,
-      ...(typeof details.metadata?.resultTarget === "string"
+      ...(operation !== "delete" && typeof details.metadata?.resultTarget === "string"
         ? { target: details.metadata.resultTarget }
         : {}),
-      ...(typeof details.metadata?.targetUnavailable === "string"
+      ...(operation !== "delete" && typeof details.metadata?.targetUnavailable === "string"
         ? { targetUnavailable: details.metadata.targetUnavailable }
         : {}),
-      ...(feedback.length === 0
-        ? {}
-        : {
-            operations: [
-              {
-                id: operation,
-                operation,
-                effect,
-                status: errors.length === 0 ? ("warning" as const) : ("error" as const),
-                sources: unique.map((file) => file.source),
-                errors,
-                warnings: feedback,
-              },
-            ],
-          }),
-      ...(details.anchorRecoveries === undefined
-        ? {}
-        : {
-            recovery: details.anchorRecoveries.map((item) => ({
-              source: item.path,
-              field: item.field,
-              anchor: item.anchor,
-              total: item.total,
-              candidates: [...item.candidates],
-            })),
-          }),
-      ...(typeof semantic?.transaction === "string" ? { transaction: semantic.transaction } : {}),
-      ...(checkedAction ? { action: checkedAction } : {}),
     },
     errors,
   };
@@ -386,10 +242,6 @@ export function structuredMutation(
   operationId?: string,
 ) {
   const outcome = mutationOutcome(result, operation, completions);
-  if (outcome.data && operationId !== undefined) {
-    outcome.data.operationId = operationId;
-    const single = outcome.data.operations?.length === 1 ? outcome.data.operations[0] : undefined;
-    if (single !== undefined) single.id = operationId;
-  }
-  return withStructuredResult(result, mutationDataSchema, outcome);
+  if (outcome.data && operationId !== undefined) outcome.data.operationId = operationId;
+  return withStructuredResult(result, mutationDataSchema(operation), outcome);
 }

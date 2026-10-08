@@ -63,7 +63,8 @@ export function projectReadState(
         code: "UNSUPPORTED_RANGE",
         source: state.source,
         resolverId: state.resolvedBy,
-        message: "Line ranges require textual content",
+        message:
+          "Line ranges require textual content. Omit offset and limit to read this content without a line range.",
       });
     }
 
@@ -140,6 +141,60 @@ function renderFinalTextLines(
     .join("");
 }
 
+function readFailureMessage(failure: ReadFailure): string {
+  let cause = failure.cause;
+  let error: Error | undefined;
+  const visited = new Set<Error>();
+  while (cause instanceof Error && !visited.has(cause)) {
+    visited.add(cause);
+    error = cause;
+    cause = cause.cause;
+  }
+  const code = error !== undefined && "code" in error ? error.code : undefined;
+  let reason = error?.message || failure.message;
+  if (code === "ENOENT")
+    reason = failure.candidates?.length
+      ? "Source not found."
+      : "Source not found. Search for the correct path.";
+  else if (code === "EACCES" || code === "EPERM") reason = "Access denied.";
+  else if (failure.code === "INVALID_RESOLVER_RESULT")
+    reason = "The source provider returned an invalid result.";
+  else if (failure.code === "INVALID_RESOURCE_CONTENT")
+    reason = "The source provider returned invalid content.";
+  else if (failure.code === "UNSUPPORTED_CAPABILITY")
+    reason = "This source does not support reading.";
+  else if (failure.code === "NO_RESOLVER")
+    reason = "This source is not supported. Choose a supported source from the path parameter.";
+  else if (failure.code === "NO_FRAGMENT_RESOLVER")
+    reason = "This anchor is not supported. Read the source without the anchor.";
+  if (failure.code === "INVALID_REQUEST")
+    reason += ". Supply path with a source or an unchanged result reference.";
+  else if (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined)
+    reason += `\nRead ${JSON.stringify(failure.source)} with views=["anchors"] and choose a current anchor.`;
+  const source = failure.source === undefined ? "" : ` for ${JSON.stringify(failure.source)}`;
+  return `Read failed${source}: ${reason}`;
+}
+
+/** Describe a caller-cancelled failed Read without changing its private record or exceptions. */
+export function withReadCancellation(
+  result: ReadToolResult,
+  requestedSource: string | undefined,
+  signal: AbortSignal | undefined,
+): ReadToolResult {
+  if (!signal?.aborted || !result.isError) return result;
+  const source = result.details.source ?? result.details.failure?.source ?? requestedSource;
+  return {
+    ...result,
+    content: [
+      {
+        type: "text",
+        text: `Read cancelled${source === undefined ? "" : ` for ${JSON.stringify(source)}`}. No completed result was returned.`,
+      },
+    ],
+  };
+}
+
+/** Show an actionable failure while retaining the original record for private adapters. */
 export function failureResult(failure: ReadFailure): ReadToolResult {
   const safe = failure.cause instanceof ResourceError ? failure.cause : undefined;
   if (safe !== undefined) {
@@ -154,10 +209,18 @@ export function failureResult(failure: ReadFailure): ReadToolResult {
     content: [
       {
         type: "text",
-        text:
-          safe === undefined
-            ? `${failure.code}: ${failure.message}`
-            : `${safe.code}: ${failure.source ?? safe.source}`,
+        text: [
+          readFailureMessage(failure),
+          ...(failure.candidates?.length
+            ? [
+                "",
+                "Possible matches:",
+                ...failure.candidates.map((candidate) => `- ${JSON.stringify(candidate.path)}`),
+                "",
+                "Retry read with an exact candidate path.",
+              ]
+            : []),
+        ].join("\n"),
       },
     ],
     details: { failure },

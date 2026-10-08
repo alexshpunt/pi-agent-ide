@@ -148,7 +148,7 @@ test("keeps missing sources, explicit paths, invalid anchors, and batch inherita
     }).run("Check source guards and same-block source inheritance.");
     expect(getToolResultText(result, "no-history")).toContain("path is required");
     expect(getToolResultText(result, "empty-source")).toContain("path is required");
-    expect(getToolResultText(result, "invalid-anchor")).toContain("EDIT_FAILED");
+    expect(getToolResultText(result, "invalid-anchor")).toContain("start anchor");
     expect(await readFile(notes, "utf8")).toBe("HEADER\nBODY\nTAIL\n");
     expect(await readFile(other, "utf8")).toBe("EXPLICIT\nBATCH\nINHERITED\n");
   } finally {

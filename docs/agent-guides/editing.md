@@ -1,66 +1,65 @@
 # Precise text editing
 
-Use standalone `replace`, `insert`, `delete`, `copy`, and `move` whenever each intended change is known in advance and does not depend on another change. Submit several independent edits together as separate tool calls in one assistant response, whether they affect one file or several files.
+Use standalone `replace`, `insert`, `delete`, `copy`, and `move` when each change is known in advance and does not depend on another change. Submit independent calls together in one response. Use native Codemode for computed or dependent composition; it does not add grouped rollback.
 
-Use `apply` only when the work requires computation, conditions, selection composition, checkpoints, or one coherent cross-file transaction. Do not replace a straightforward standalone batch with a JavaScript Apply program. Read `docs:apply` before writing an Apply script.
+Use `write` only to create a file or deliberately replace all its contents. Use `diff` for read-only comparison.
 
-Use `write` only to create a file or deliberately replace its complete contents. Use `diff` for read-only comparison.
-
-## Selecting text
+## Select the intended text
 
 Use a returned anchor when it identifies the intended text. Otherwise use the smallest unique exact string.
 
-Supported selectors include:
+- `LINE#HASH` selects a current source line from the `anchors` view.
+- `scope-begin-HASH` and `scope-end-HASH` mark syntax boundaries from the `ast` view.
+- `SEARCH#...:line` selects a complete containing line; `SEARCH#...:match` selects the exact match.
+- `begin` and `end` select the first and last existing lines.
+- A unique exact string selects that fragment.
 
-- `LINE#HASH` — one current source line returned by the `anchors` view.
-- `scope-begin-HASH` and `scope-end-HASH` — syntax-scope boundaries returned by the `ast` view.
-- `SEARCH#...:line` — the complete containing line of a search result.
-- `SEARCH#...:match` — only the exact search match.
-- `begin` and `end` — the first and last existing source lines.
-- A unique exact string — that text fragment itself.
+With `end`, the operation covers complete lines from the first line containing `start` through the last line containing `end`, inclusive. Without `end`, an exact string selects just that fragment.
 
-With an `end` selector, the operation covers complete lines from the first line containing `start` through the last line containing `end`, inclusive. Without `end`, an exact string targets only that fragment, while a line or structured anchor targets its selected line or range.
+After an exact-text selector fails, exact-text edits are blocked for that file. Find the intended location among the returned current anchors, or use Read/Search for another section. Edit with its anchor. After that edit succeeds, exact text is available again. Do not retry a guessed string.
 
-Selections are revision-sensitive. Re-read after a mutation before reusing a single-file line, scope, or search anchor. Complete `SEARCH#...:all` selections can refresh their original query.
+Re-read after a mutation before reusing line, scope, or individual Search anchors. Complete `SEARCH#...:all` selections retain their existing query-refresh behavior.
 
-## Returned source results
+## Compose results
 
-Use a confirmed `data.target` or the producing result for a dependent edit. Keep selected ranges exact; do not rebuild authority from displayed coordinates. Use one whole-file result for whole-file write/undo. For copy/move, keep ordered source and destination selections paired; do not broadcast one selection across several destinations.
+Results are readable text with a leading system-result envelope. The envelope is an internal reference, not file content. Do not edit it or write it into a file. Pass the unchanged result to another source parameter; outside Codemode you can also pass its UUID. Store/load keeps the same string in the current session. No internal fields need to be inspected.
 
-Check the producing edit's effect before using its target. Pending native edits reserve a target but do not confirm saved text. Flush the producer before dependent work. Failed or cancelled edits grant no editable result. Restored absence has no text target; inspect `files[].state` instead.
+Read results select their requested source windows. Search results select exact matches. Select derives new boundaries. A displayed item reference selects that item; the whole result retains all selections, including those omitted from its preview.
 
-## Choosing line separation
+- `replace.path` replaces selected ranges. `delete.path` removes selected text but keeps the file, even for a whole-file selection.
+- `write.path` and `undo.file` require one whole-file selection. Partial and multi-file scopes are rejected, not widened.
+- `copy.path` / `move.path` select source ranges; `target` selects destination ranges. A zero-width destination inserts. Arrays pair in declared order, with equal counts and duplicates removed. Unequal counts and overlapping moves are rejected.
+- Ordinary destination file paths without text selectors require one whole-file source and keep byte-preserving file transfer behavior.
+- `insert` uses line-based insertion before or after its selected containing lines.
 
-Use `separation: "blank-line"` for a separate paragraph or section; use the default line mode for adjacent code lines, list items, or a continuation of the current block. For example, inserting `X` after `A` in `A\nB` with blank-line separation produces `A\n\nX\n\nB`. In Apply, pass `{ separation: "blank-line" }` as the third argument to a linewise `insertAfter` or `insertBefore`.
+Replace/insert results select their resulting text, including supplied line separators. Empty replacement selects the resulting position, not removed text. Copy/move results select only destination text. Whole-file transfers and write select the whole destination; undo selects restored files. Delete and binary operations provide no reusable text selection. If a result cannot supply a verified selection, inspect the file instead.
 
-## Standalone mutation behavior
+Results are strict snapshots. Changed files permanently retire their old IDs, even if the old bytes are restored later. Session changes and reloads also retire IDs. Empty selections are valid no-ops; incomplete or expired selections cannot authorize edits. Diff text and invented coordinates do not grant source authority.
 
-Batch independent mutations as separate tool calls in one assistant response. Every call in that batch is evaluated against the original file contents. Combine overlapping changes into one mutation. A rejected call does not cancel successful independent calls; retry only what was not applied.
+## Line separation
 
-When a text tool allows an omitted path, it can inherit the source identified by its anchor, the last read, or the preceding edit in the same batch. Supply the path when that inheritance would be ambiguous.
+Use `separation: "blank-line"` for a separate paragraph or section; use default line mode for adjacent code, list items, or a continuation. Inserting `X` after `A` in `A\nB` with blank-line separation produces `A\n\nX\n\nB`.
 
-Use `delete` with a path and no text selector to delete one complete file. Use a selector to remove text. Use `copy` or `move` with no text selectors for whole-file operations; add source and destination selectors for text transfers.
+## Writes and failures
 
-## Native Codemode
+When Write changes or creates a file, it saves the file and finishes post-edit processing before returning, including in Codemode. If an existing file already matches the supplied content, Write returns its whole-file selection without writing or running post-edit handlers. Earlier pending edits commit before Write. Other eligible text edits keep their pending-batch behavior.
 
-Check each IDE result's `status` before using its data. Structured domain errors resolve to `status: "error"` or `"partial"`; argument validation, blocking, and cancellation can still reject. Check `data.effect` and per-source effects before retrying.
+Independent calls share the original snapshots. Combine overlapping edits into one mutation. A rejected call does not cancel successful peers; retry only unapplied changes.
 
-Await `tools.flush({})` when later script work needs a committed receipt. Inspect its `data.operations` for final effects keyed by accepted child call ID. A failed flush does not replay edits. An empty flush succeeds with no operations.
+An omitted path can inherit the file identified by an anchor, the last read, or the preceding edit in the batch. Supply the path when that would be ambiguous.
 
-Submit independent local text-edit calls on disjoint resource sets concurrently inside one script. Await calls on overlapping resource sets in order. Keep their selectors tied to the original file snapshots and combine overlapping edits before submitting them. Check the parent Codemode result for committed effects; a child acceptance is not proof that a file was written.
+An ordinary `delete.path` without selectors deletes a complete regular file. A result input removes only selected text. Ordinary copy/move paths without selectors transfer whole files and replace an existing regular destination file.
 
-Read or search again before dependent edits that need fresh content or anchors. Another tool, a whole-file operation, or a resource-owned selector ends the pending batch before running. Do not reuse old line anchors across that boundary.
+Inside Codemode, await independent edits on disjoint resources concurrently and overlapping resources in order. Pass a pending edit result directly to another source tool for dependent work; that boundary commits the batch before consuming the result.
 
-Inspect final results after an ordinary script error and retry only unapplied edits. Abort or deadline discards pending writes, not batches that already committed.
+Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the parent result for actual committed effects: an acceptance is not proof of writing, and an error is not proof of rollback. Read the affected files when the result cannot confirm their final state.
+
+After an interruption, read the affected files before retrying. Retry only unapplied edits.
 
 ## Specialized resources
 
-Some resources attach non-text actions to the same tools:
+- `shell:<session>`: write sends exact input, insert sends keys, delete terminates the session.
+- `debug:<session>`: insert controls the debugger; delete removes a breakpoint or terminates it.
+- `symbol:<file>#<selector>#name`: replace performs a native language-server rename when available.
 
-- `shell:<session>` — `write` sends exact input, `insert` sends named keys, and `delete` terminates the session.
-- `debug:<session>` — `insert` controls the debugger and `delete` removes a breakpoint or terminates the session.
-- `symbol:<file>#<selector>#name` — `replace` performs a native language-server rename when available.
-
-Read `docs:terminal`, `docs:debugger`, or `docs:search-code` before using those specialized resources.
-
-Never guess after a stale snapshot, empty selection, ambiguous target, or unknown rollback effect.
+Read `docs:terminal`, `docs:debugger`, or `docs:search-code` before using these resources. Never guess after a stale snapshot, ambiguous target, incomplete selection, or unknown rollback effect.

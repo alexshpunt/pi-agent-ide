@@ -25,9 +25,10 @@ export default async function registerLineHashTextAnchor(pi: ExtensionAPI): Prom
     id: "text-anchor-line-hash",
     setup(api) {
       api.addView({ view: "anchors", presenter });
-      api.describe(
-        'views: ["anchors"] — LINE#HASH references for editing individual source lines.',
-      );
+      api.describe({
+        views:
+          "anchors — annotate text with returned line references in the form LINE#HASH, e.g. 12#A4F0 (line number 12 and its content hash). These references select source lines in edits or path#anchor reads; display annotations are not file content.",
+      });
     },
   } satisfies ReadPlugin;
   const editorPlugin = {

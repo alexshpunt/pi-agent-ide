@@ -232,7 +232,6 @@ for (const effect of ["not-applied", "applied", "unknown"] as const) {
       );
       expect(output).not.toContain("No file was changed.");
     } finally {
-      await core.disposeApplyUndo();
       await rm(cwd, { recursive: true, force: true });
     }
   });

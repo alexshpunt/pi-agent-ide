@@ -72,7 +72,7 @@ test("nested IDE results keep their custom panels below Codemode without script 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'await tools.read({path:"note.txt"}); await tools.search({path:"note.txt",query:"beta"}); await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); await tools.flush({});',
+                code: 'await tools.read({path:"note.txt"}); await tools.search({path:"note.txt",query:"beta"}); await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"});',
               },
             }),
           ],
@@ -88,9 +88,8 @@ test("nested IDE results keep their custom panels below Codemode without script 
     expect(panels).toContain("BETA");
     expect(panels.match(/\+0 ~2 -0/g)).toHaveLength(1);
     expect(panels).not.toContain("Applied in the same editor batch");
-    expect(getToolResultMessage(run, "parent").nestedCalls?.calls).toHaveLength(5);
-    expect(getToolResultMessage(run, "parent").nestedCalls?.calls.at(-1)?.name).toBe("flush");
-    expect(panels).not.toMatch(/^\s*flush\s*$/m);
+    expect(getToolResultMessage(run, "parent").nestedCalls?.calls).toHaveLength(4);
+    expect(getToolResultMessage(run, "parent").nestedCalls?.calls.at(-1)?.name).toBe("replace");
     expect(panels).not.toContain("not yet applied");
     const saved = await PiRun.open(run.artifacts.run);
     expect(saved.session).toContain("ide-nested-results");
@@ -100,7 +99,6 @@ test("nested IDE results keep their custom panels below Codemode without script 
       .find((line) => line.includes('"customType":"ide-nested-results"'));
     expect(panelEntry).not.toContain('"beforeContentMap"');
     expect(panelEntry).not.toContain('"afterDocument"');
-    expect(panelEntry).not.toContain('"name":"flush"');
     expect(saved.session).not.toContain('"editorBatchRender"');
     expect(await readFile(path.join(cwd, "first-request-persisted.txt"), "utf8")).toBe(
       "user persisted before assistant\n",
@@ -133,9 +131,7 @@ test("nested IDE results keep their custom panels below Codemode without script 
     expect(restoredPanels.match(/\+0 ~2 -0/g)).toHaveLength(1);
     expect(restoredPanels).not.toContain("Nested IDE results");
     expect(restoredPanels).not.toContain("Applied in the same editor batch");
-    expect(restoredPanels).not.toMatch(/^\s*flush\s*$/m);
     expect(restoredPanels).toContain("BETA");
-    expect(restoredPanels).not.toContain("not yet applied");
     await promisify(execFile)(process.env.PI_COMMAND ?? "pi", [
       "--export",
       session,
@@ -201,7 +197,6 @@ test("ordinary parent failure keeps one final diff per file and every native cal
         .find((line) => line.includes('"customType":"ide-nested-results"')) ?? "{}",
     ) as { data: { calls: unknown[] } };
     expect(entry.data.calls).toHaveLength(1);
-    expect(panels).not.toContain("not yet applied");
   });
 });
 
@@ -264,7 +259,7 @@ test("nested terminal and debugger calls retain their custom panels and a child 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'const background = await tools.bash({command:"sleep 0.2; printf nested-background",background:true}); await tools.bash({command:"sleep 0.3; printf nested-terminal"}); await tools.read({path:background.source}); await tools.debug({adapter:"debugpy",program:"example.py"}); await tools.read({path:"missing.txt"});',
+                code: 'const background = await tools.bash({command:"sleep 0.2; printf nested-background",background:true}); await tools.bash({command:"sleep 0.3; printf nested-terminal"}); await tools.read({path:background}); await tools.debug({adapter:"debugpy",program:"example.py"}); try { await tools.read({path:"missing.txt"}); throw Error("Missing Read succeeded"); } catch (error) { if (!String(error).includes("Source not found.") || !String(error).includes("missing.txt")) throw error; }',
               },
             }),
           ],
@@ -320,7 +315,6 @@ test("a deadline renders accepted edits as not applied rather than successful", 
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\n");
     const panels = run.tuiRenderedOutput;
     expect(panels).toContain("Not changed");
-    expect(panels).not.toContain("not yet applied");
     expect(panels).not.toContain("+0 ~1 -0");
   });
 });

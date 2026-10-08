@@ -52,7 +52,7 @@ export async function runSearchRecipe(
   TextSearchBackendResult & { readonly query: string; readonly notices: readonly string[] }
 > {
   let query = recipe.query;
-  let result = await searchText(recipe, cwd, signal, environment);
+  let result = await searchText(recipe, cwd, signal, undefined, environment);
   const notices: string[] = [];
   for (const fallback of recipe.fallbacks ?? []) {
     if (result.matches.length > 0 || !result.complete) break;
@@ -62,6 +62,7 @@ export async function runSearchRecipe(
         { ...recipe, query: fallback.query, regex: true, condition: fallback.condition },
         cwd,
         signal,
+        undefined,
         environment,
       );
       result = next;
@@ -69,7 +70,7 @@ export async function runSearchRecipe(
       notices.push(
         fallback.mode === "regex"
           ? "Search fallback: no literal matches; tried unquoted terms as regex."
-          : "Search fallback: no matches in earlier modes; tried separate words.",
+          : "Search fallback: no matches in earlier modes; tried separate words. Use these matches as location hints; refine the query before editing.",
       );
     } catch (error) {
       if (fallback.mode !== "regex" || !isRegexSyntaxError(error) || signal?.aborted) throw error;

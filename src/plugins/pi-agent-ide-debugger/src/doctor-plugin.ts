@@ -14,6 +14,7 @@ import {
 } from "pi-agent-doctor/api/plugin-protocol";
 
 import { resolvePythonDebuggerCommand } from "./adapter-executables.js";
+import { JavaDebugRuntime, javaDebuggerFiles, javaExecutable } from "./java-runtime.js";
 import {
   DEBUGGER_LANGUAGE_MATRIX,
   DEBUGGER_RECIPES,
@@ -80,7 +81,11 @@ export async function inspectDebuggerSetup(
     }
     const python = recipe.id === "debugpy" ? await pythonCommand(context, platform) : undefined;
     const missingRuntime = await firstMissingExecutable(
-      python === undefined ? debuggerRecipe.runtimeExecutables : [python.command],
+      recipe.id === "java-debug"
+        ? [javaExecutable(context.env)]
+        : python === undefined
+          ? debuggerRecipe.runtimeExecutables
+          : [python.command],
       context,
     );
     if (missingRuntime !== undefined) {
@@ -124,7 +129,18 @@ async function checkDebuggerAdapters(context: DoctorContext): Promise<readonly D
   }
   return Promise.all(
     recipes.map(async (recipe): Promise<DoctorFinding> => {
-      const result = await probeAdapter(recipe.id, context);
+      let result = await probeAdapter(recipe.id, context);
+      if (recipe.id === "java-debug" && result.ok && context.workspace === undefined) {
+        const runtime = new JavaDebugRuntime();
+        try {
+          await runtime.connect(context.cwd, AbortSignal.timeout(20_000), context.env);
+          result = { ok: true, detail: `${result.detail}\nJava DAP bridge ready` };
+        } catch (error) {
+          result = { ok: false, detail: error instanceof Error ? error.message : String(error) };
+        } finally {
+          await runtime.close();
+        }
+      }
       return {
         status: result.ok ? "pass" : "fail",
         message: `${recipe.name}: ${result.ok ? "available" : "unavailable"}`,
@@ -134,6 +150,27 @@ async function checkDebuggerAdapters(context: DoctorContext): Promise<readonly D
   );
 }
 
+async function probeJavaFiles(
+  context: DoctorContext,
+  platform: NodeJS.Platform,
+): Promise<{ ok: boolean; detail: string }> {
+  if (context.workspace !== undefined) {
+    return probeProjectExecutable(context, "python3", [
+      "-c",
+      "import glob,os,sys; home,plugin=sys.argv[1:]; launchers=glob.glob(os.path.join(home,'plugins','org.eclipse.equinox.launcher_*.jar')); ok=len(launchers)==1 and os.path.isfile(plugin) and os.path.isdir(os.path.join(home,'config_linux')); print('Java debugger files ready' if ok else 'Missing JDT LS or java-debug plugin'); sys.exit(0 if ok else 1)",
+      context.env.PI_JDTLS_HOME ?? "/opt/pi-debug-adapters/jdtls",
+      context.env.PI_JAVA_DEBUG_PLUGIN_PATH ??
+        "/opt/pi-debug-adapters/java-debug/com.microsoft.java.debug.plugin-0.53.2.jar",
+    ]);
+  }
+  try {
+    await javaDebuggerFiles(context.env, platform);
+    return { ok: true, detail: "Java debugger files ready" };
+  } catch (error) {
+    context.signal?.throwIfAborted();
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
 async function firstMissingExecutable(
   executables: readonly string[],
   context: DoctorContext,
@@ -174,6 +211,17 @@ async function adapterInstalled(
     );
   }
   if (id === "delve") return projectExecutableAvailable(context, env.PI_DELVE_PATH ?? "dlv");
+  if (id === "java-debug") {
+    try {
+      if (context.workspace !== undefined) {
+        return (await probeJavaFiles(context, platform)).ok;
+      }
+      await javaDebuggerFiles(env, platform);
+      return true;
+    } catch {
+      return false;
+    }
+  }
   if (id === "kotlin-debug-adapter")
     return projectExecutableAvailable(
       context,
@@ -187,6 +235,24 @@ async function adapterInstalled(
   }
   if (id === "dart-debug-adapter")
     return projectExecutableAvailable(context, env.PI_DART_PATH ?? "dart");
+  if (id === "netcoredbg")
+    return projectExecutableAvailable(context, env.PI_NETCOREDBG_PATH ?? "netcoredbg");
+  if (id === "rdbg") return projectExecutableAvailable(context, env.PI_RUBY_DEBUG_PATH ?? "rdbg");
+  const adapterFiles: Record<string, string> = {
+    "vscode-php-debug":
+      env.PI_PHP_DEBUG_PATH ?? "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js",
+    "local-lua-debugger":
+      env.PI_LUA_DEBUG_PATH ??
+      "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js",
+    "vscode-bash-debug":
+      env.PI_BASH_DEBUG_PATH ?? "/opt/pi-debug-adapters/bash-debug/extension/out/bashDebug.js",
+    "powershell-editor-services-debug": `${env.PI_POWERSHELL_EDITOR_SERVICES_PATH ?? "/opt/pi-debug-adapters/powershell-editor-services"}/PowerShellEditorServices/Start-EditorServices.ps1`,
+  };
+  const adapterFile = adapterFiles[id];
+  if (adapterFile !== undefined) {
+    return adapterFileExists(context, adapterFile);
+  }
+  if (id !== "debugpy") return false;
   const python = await pythonCommand(context, platform);
   const probe = await probeProjectExecutable(context, python.command, [
     ...python.args,
@@ -242,6 +308,19 @@ async function probeAdapter(
       "-e",
       "using DebugAdapter",
     ]);
+  }
+  if (id === "java-debug") {
+    const files = await probeJavaFiles(context, platform);
+    if (!files.ok) return files;
+    const runtime = await probeProjectExecutable(context, javaExecutable(env), ["-version"]);
+    if (!runtime.ok) return runtime;
+    const major = /version "(\d+)/u.exec(runtime.detail)?.[1];
+    return Number(major) >= 21
+      ? runtime
+      : {
+          ok: false,
+          detail: "Java debugger requires JDK 21 or newer. Set PI_JAVA_PATH or JAVA_HOME.",
+        };
   }
   if (id === "kotlin-debug-adapter") {
     const adapter = await probeProjectExecutable(
@@ -314,6 +393,9 @@ async function probeAdapter(
     return runtime.ok
       ? probeAdapterFile(`${bundle}/PowerShellEditorServices/Start-EditorServices.ps1`, context)
       : runtime;
+  }
+  if (id !== "vscode-js-debug") {
+    return { ok: false as const, detail: `Unknown debugger adapter: ${id}` };
   }
   const server = env.PI_JS_DEBUG_PATH ?? DEFAULT_JS_DEBUG_PATH;
   if (!(await adapterFileExists(context, server)))

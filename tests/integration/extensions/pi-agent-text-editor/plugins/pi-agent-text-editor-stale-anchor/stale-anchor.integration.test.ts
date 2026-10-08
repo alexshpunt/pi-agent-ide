@@ -287,14 +287,14 @@ describe("pi-agent-text-editor stale anchor", () => {
         .split("\n")
         .filter(Boolean);
       expect(reboundCalls).toHaveLength(1);
-      expect(firstBlockedResult).toContain('insert blocked: anchor anchor "1#AAAA" is stale');
+      expect(getToolExecution(result, firstCallId).isError).toBe(true);
       expect(firstBlockedResult).toContain("1#BE76");
       expect(firstBlockedResult).not.toContain("Validation failed");
       expect(firstBlockedResult).not.toContain("Received arguments");
       expect(getToolExecution(result, readCallId).isError).toBe(false);
       expect(result.providerRequests.length).toBeGreaterThanOrEqual(5);
       expect(getToolExecution(result, recoveryCallId).isError).toBe(false);
-      expect(largeBlockedResult).toContain('insert blocked: anchor anchor "1#AAAA" is stale');
+      expect(getToolExecution(result, largeCallId).isError).toBe(true);
       expect(largeBlockedResult).toContain("1#BE76");
       expect(largeBlockedResult).not.toContain("Validation failed");
       expect(largeBlockedResult).not.toContain("Received arguments");

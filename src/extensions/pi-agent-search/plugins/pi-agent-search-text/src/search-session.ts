@@ -1,8 +1,8 @@
 import { requiredValue } from "pi-agent-invariant";
-import type { ResultTargetStore, ResultSourceTarget } from "pi-agent-resource";
+import type { ResultTargetStore } from "pi-agent-resource";
 import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
 
@@ -49,6 +49,7 @@ interface StoredSearchSession extends TextSearchSession, SearchSnapshot {
   readonly environment?: SearchEnvironment;
   readonly refresh?: SearchSelectionRegistration["refresh"];
   readonly recipe: SearchRecipe;
+  readonly snapshotByteBudget?: number;
   readonly cwd: string;
   readonly refreshedComplete?: SearchSnapshot;
 }
@@ -160,7 +161,7 @@ export class SearchSessionStore {
 
   public constructor(
     private readonly createIdentity: typeof createSearchSessionIdentity = createSearchSessionIdentity,
-    private readonly targets?: ResultTargetStore,
+    private readonly resultTargets?: ResultTargetStore,
     private readonly readSource?: (
       source: string,
       cwd: string,
@@ -168,17 +169,7 @@ export class SearchSessionStore {
     ) => Promise<string>,
   ) {}
 
-  /** Published handles are immutable even when a legacy all-reference later refreshes. */
-  public resultTargets(id: string | undefined): Pick<TextSearchSession, "target" | "matchTargets"> {
-    const session = id === undefined ? undefined : this.#sessions.get(id);
-    return session === undefined
-      ? {}
-      : {
-          ...(session.target === undefined ? {} : { target: session.target }),
-          ...(session.matchTargets === undefined ? {} : { matchTargets: session.matchTargets }),
-        };
-  }
-
+  /** Capture current files; an optional byte budget also bounds reads if a file grows during capture. */
   public async register(
     query: string,
     sourceMatches: readonly TextSearchMatch[],
@@ -190,6 +181,7 @@ export class SearchSessionStore {
       regex: true,
     },
     refresh?: SearchSelectionRegistration["refresh"],
+    snapshotByteBudget?: number,
     environment?: SearchEnvironment,
   ): Promise<TextSearchSession> {
     const matches = sourceMatches
@@ -198,26 +190,13 @@ export class SearchSessionStore {
     const readSource = this.readSource;
     const read: SnapshotReader | undefined =
       readSource === undefined ? undefined : (source, abort) => readSource(source, cwd, abort);
-    const contentBySource = await snapshotContents(matches, signal, environment, read);
-    const selected: ResultSourceTarget[] = matches.map((match) => ({
-      source: match.source,
-      expectedContent: requiredValue(contentBySource.get(match.source)),
-      ranges: [
-        selectionRange(
-          createTextDocument(match.source, requiredValue(contentBySource.get(match.source))),
-          match,
-          "match",
-        ),
-      ],
-      readCurrent: (abort) => readOwnedText(match.source, abort, environment, read),
-    }));
-    const target = this.targets?.register(selected, cwd, complete);
-    const matchTargets =
-      this.targets === undefined
-        ? undefined
-        : selected
-            .slice(0, 100)
-            .map((selection) => requiredValue(this.targets).register([selection], cwd, complete));
+    const contentBySource = await snapshotContents(
+      matches,
+      signal,
+      snapshotByteBudget,
+      environment,
+      read,
+    );
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
     const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
@@ -228,8 +207,15 @@ export class SearchSessionStore {
       complete,
       contentBySource,
       read,
-      ...(target === undefined ? {} : { target }),
-      ...(matchTargets === undefined ? {} : { matchTargets }),
+      ...registerResultReferences(
+        this.resultTargets,
+        matches,
+        contentBySource,
+        cwd,
+        complete,
+        (source, abort) => readOwnedText(source, abort, environment, read),
+      ),
+      ...(snapshotByteBudget === undefined ? {} : { snapshotByteBudget }),
       recipe,
       environment,
       ...(refresh !== undefined && { refresh }),
@@ -249,6 +235,7 @@ export class SearchSessionStore {
     signal?: AbortSignal,
     recipe?: SearchRecipe,
     refresh?: SearchSelectionRegistration["refresh"],
+    snapshotByteBudget?: number,
     environment?: SearchEnvironment,
   ): Promise<TextSearchSession | undefined> {
     try {
@@ -260,6 +247,7 @@ export class SearchSessionStore {
         signal,
         recipe,
         refresh,
+        snapshotByteBudget,
         environment,
       );
     } catch (error) {
@@ -481,13 +469,42 @@ export class SearchSessionStore {
     const refreshed: SearchSnapshot = {
       matches,
       complete: result.complete,
-      contentBySource: await snapshotContents(matches, signal, session.environment, session.read),
+      contentBySource: await snapshotContents(
+        matches,
+        signal,
+        session.snapshotByteBudget,
+        session.environment,
+        session.read,
+      ),
     };
     this.#sessions.set(session.id, { ...session, refreshedComplete: refreshed });
     return refreshed;
   }
 }
 
+function registerResultReferences(
+  store: ResultTargetStore | undefined,
+  matches: readonly TextSearchMatch[],
+  contents: ReadonlyMap<string, string>,
+  cwd: string,
+  complete: boolean,
+  read: SnapshotReader,
+): Pick<TextSearchSession, "target" | "matchTargets"> {
+  if (store === undefined) return {};
+  const documents = new Map(
+    [...contents].map(([source, content]) => [source, createTextDocument(source, content)]),
+  );
+  const targets = matches.map((match) => ({
+    source: match.source,
+    expectedContent: requiredValue(contents.get(match.source)),
+    ranges: [selectionRange(requiredValue(documents.get(match.source)), match, "match")],
+    readCurrent: (signal?: AbortSignal) => read(match.source, signal),
+  }));
+  return {
+    target: store.register(targets, cwd, complete),
+    matchTargets: targets.slice(0, 100).map((target) => store.register([target], cwd, complete)),
+  };
+}
 function parseSearchAnchor(value: string): ParsedSearchAnchor | undefined {
   const match = searchAnchorPattern.exec(value);
 
@@ -588,24 +605,84 @@ function matchedSourceText(
 async function snapshotContents(
   matches: readonly TextSearchMatch[],
   signal?: AbortSignal,
+  byteBudget?: number,
   environment?: SearchEnvironment,
   read?: SnapshotReader,
 ): Promise<ReadonlyMap<string, string>> {
-  const contentBySource = new Map<string, string>();
-  for (const source of new Set(matches.map((match) => match.source))) {
-    const content = await readOwnedText(source, signal, environment, read);
-    const document = createTextDocument(source, content);
-    for (const match of matches.filter((candidate) => candidate.source === source)) {
-      const line = document.lines[match.lineNumber - 1]?.content;
-      if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText) {
-        throw new SearchSnapshotChangedError(source);
-      }
+  const sources = [...new Set(matches.map((match) => match.source))];
+  if (byteBudget !== undefined) {
+    const contents = new Map<string, string>();
+    let remaining = byteBudget;
+    for (const source of sources) {
+      const content = await readBoundedSnapshot(source, remaining, signal, environment, read);
+      remaining -= Buffer.byteLength(content);
+      validateSnapshot(source, content, matches);
+      contents.set(source, content);
     }
-    contentBySource.set(source, content);
+    return contents;
+  }
+  const snapshots = await Promise.allSettled(
+    sources.map(async (source) => {
+      const content = await readOwnedText(source, signal, environment, read);
+      validateSnapshot(source, content, matches);
+      return [source, content] as const;
+    }),
+  );
+  const contentBySource = new Map<string, string>();
+  for (const snapshot of snapshots) {
+    if (snapshot.status === "rejected") throw snapshot.reason;
+    contentBySource.set(...snapshot.value);
   }
   return contentBySource;
 }
 
+function validateSnapshot(
+  source: string,
+  content: string,
+  matches: readonly TextSearchMatch[],
+): void {
+  const document = createTextDocument(source, content);
+  for (const match of matches.filter((candidate) => candidate.source === source)) {
+    const line = document.lines[match.lineNumber - 1]?.content;
+    if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText)
+      throw new SearchSnapshotChangedError(source);
+  }
+}
+async function readBoundedSnapshot(
+  source: string,
+  budget: number,
+  signal?: AbortSignal,
+  environment?: SearchEnvironment,
+  read?: SnapshotReader,
+): Promise<string> {
+  signal?.throwIfAborted();
+  if (source.includes("://")) {
+    const content = await readOwnedText(source, signal, environment, read);
+    if (Buffer.byteLength(content) > budget)
+      throw new Error("Candidate snapshot byte budget reached.");
+    return content;
+  }
+  const file = await open(source, "r");
+  try {
+    const info = await file.stat();
+    if (!info.isFile() || info.size > budget)
+      throw new Error("Candidate snapshot byte budget reached.");
+    const buffer = Buffer.alloc(Math.min(info.size + 1, budget + 1));
+    let length = 0;
+    while (length < buffer.length) {
+      signal?.throwIfAborted();
+      const read = await file.read(buffer, length, buffer.length - length, length);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    signal?.throwIfAborted();
+    if (length > info.size || length > budget)
+      throw new Error("Candidate file grew during snapshot capture.");
+    return buffer.subarray(0, length).toString("utf8");
+  } finally {
+    await file.close();
+  }
+}
 async function readCurrent(
   source: string,
   signal?: AbortSignal,

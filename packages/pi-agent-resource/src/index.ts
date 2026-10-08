@@ -1,3 +1,6 @@
+export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.js";
+export { resourceAccesses } from "./resource-access.js";
+export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.js";
 export {
   assertJsonData,
   MAX_STRUCTURED_BYTES,
@@ -9,15 +12,6 @@ export {
   type StructuredResult,
 } from "./tool-result.js";
 export { ResourceError } from "./resource-error.js";
-export {
-  connectResultTargets,
-  ResultTargetStore,
-  resultInputSchema,
-  verifyResultTargets,
-  type ResultRange,
-  type ResultSourceTarget,
-  type ResolvedResultTargets,
-} from "./result-targets.js";
 export type {
   AgentContent,
   AgentContentBlock,
@@ -96,3 +90,13 @@ export {
   isResourceResolutionAttempt,
   isResourceResolver,
 } from "./validation.js";
+
+export {
+  connectResultTargets,
+  verifyResultTargets,
+  ResultTargetStore,
+  resultInputSchema,
+  type ResultRange,
+  type ResultSourceTarget,
+  type ResolvedResultTargets,
+} from "./result-targets.js";

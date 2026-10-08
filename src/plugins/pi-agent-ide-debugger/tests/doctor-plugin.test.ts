@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -56,6 +56,63 @@ test("Doctor falls back to python3 when python is unavailable on Windows", async
   expect(result.actions).toEqual([]);
 });
 
+const adapterCases = [
+  {
+    language: "csharp",
+    runtimes: ["dotnet"],
+    adapter: "netcoredbg",
+    variable: "PI_NETCOREDBG_PATH",
+  },
+  { language: "ruby", runtimes: ["ruby"], adapter: "rdbg", variable: "PI_RUBY_DEBUG_PATH" },
+  { language: "php", runtimes: ["php", "node"], variable: "PI_PHP_DEBUG_PATH" },
+  { language: "lua", runtimes: ["lua", "node"], variable: "PI_LUA_DEBUG_PATH" },
+  { language: "shell", runtimes: ["bash", "node"], variable: "PI_BASH_DEBUG_PATH" },
+  { language: "powershell", runtimes: ["pwsh"], variable: "PI_POWERSHELL_EDITOR_SERVICES_PATH" },
+];
+
+test.skipIf(process.platform === "win32").each(adapterCases)(
+  "Doctor checks the $language adapter without Python",
+  async ({ language, runtimes, adapter, variable }) => {
+    const primaryRuntime = runtimes[0];
+    if (primaryRuntime === undefined) throw new Error("Missing adapter test runtime");
+    const bin = await fakeExecutable(primaryRuntime, "exit 0");
+    for (const runtime of runtimes.slice(1)) {
+      const executable = path.join(bin, runtime);
+      await writeFile(executable, "#!/bin/sh\nexit 0\n");
+      await chmod(executable, 0o755);
+    }
+    const adapterPath = path.join(bin, "configured-adapter");
+    const env = { PATH: bin, [variable]: adapterPath };
+    expect(
+      (await inspectDebuggerSetup(context(language, env))).actions?.map(({ category }) => category),
+    ).toEqual(["missing-adapter"]);
+
+    const python = path.join(bin, "python3");
+    await writeFile(python, "#!/bin/sh\nexit 0\n");
+    await chmod(python, 0o755);
+    expect(
+      (await inspectDebuggerSetup(context(language, env))).actions?.map(({ category }) => category),
+    ).toEqual(["missing-adapter"]);
+    await rm(python);
+    if (language === "powershell") {
+      await mkdir(path.join(adapterPath, "PowerShellEditorServices"), { recursive: true });
+      await writeFile(
+        path.join(adapterPath, "PowerShellEditorServices/Start-EditorServices.ps1"),
+        "",
+      );
+    } else {
+      await writeFile(adapterPath, adapter ? "#!/bin/sh\nexit 0\n" : "");
+      if (adapter) await chmod(adapterPath, 0o755);
+    }
+    expect((await inspectDebuggerSetup(context(language, env))).actions).toEqual([]);
+
+    const failingExecutable = adapter ? adapterPath : path.join(bin, primaryRuntime);
+    await writeFile(failingExecutable, "#!/bin/sh\nexit 1\n");
+    expect(
+      (await inspectDebuggerSetup(context(language, env))).actions?.map(({ category }) => category),
+    ).toEqual(["adapter-startup"]);
+  },
+);
 function context(language: string, env: NodeJS.ProcessEnv) {
   return {
     cwd: process.cwd(),

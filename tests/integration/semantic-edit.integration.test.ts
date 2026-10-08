@@ -3,16 +3,22 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { textResultChecks } from "#integration/support/text-result-checks.js";
+import {
+  enableNativeCodemode,
+  withTempWorkspace,
+} from "#integration/support/pi-runtime/fixtures.js";
 
-test("Apply copies and removes an exact LSP declaration without matching unrelated text", async () => {
+test("Native tools move an exact LSP declaration without matching unrelated text", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await writeFile(
       path.join(cwd, "tsconfig.json"),
       JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
@@ -26,18 +32,17 @@ test("Apply copies and removes an exact LSP declaration without matching unrelat
       testName: "semantic-copy-remove",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["codemode", "read", "search", "select", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "semantic-edit",
-              name: "apply",
+              name: "codemode",
               arguments: {
-                source:
-                  'const source = open("source.ts"); const destination = open("destination.ts"); const declaration = source.find("export class Example {\\n  value() { return 1; }\\n}\\n"); destination.insertAfter(destination.find("// destination"), "\\n" + declaration.text); source.remove(declaration); flush();',
+                code: 'const declaration=await tools.read({path:"symbol:source.ts#Example"}); if(typeof declaration!=="string") throw Error("Expected readable declaration"); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
               },
             }),
           ],
@@ -59,8 +64,60 @@ test("Apply copies and removes an exact LSP declaration without matching unrelat
   });
 });
 
-test("standalone declaration edits and Apply global mutations coexist without losing earlier effects", async () => {
+test("Copy warns that declaration fallback leaves imports and references unchanged", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
+    await writeFile(
+      path.join(cwd, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
+    );
+    await writeFile(path.join(cwd, "helper.ts"), "export const value = 1;\n");
+    const source = 'import { value } from "./helper";\nexport function greet() { return value; }\n';
+    const consumer = 'import { greet } from "./source";\nexport const result = greet();\n';
+    await writeFile(path.join(cwd, "source.ts"), source);
+    await writeFile(path.join(cwd, "consumer.ts"), consumer);
+    await writeFile(path.join(cwd, "destination.ts"), "// destination\n");
+    const run = await new PiIntegrationTest({
+      testName: "semantic-copy-warning",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["copy", "codemode"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "copy-declaration",
+              name: "copy",
+              arguments: {
+                path: "symbol:source.ts#greet",
+                target: "destination.ts",
+                targetStart: "end",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Copy only the declaration text; do not rewrite imports or references");
+    const execution = getToolExecution(run, "copy-declaration");
+    expect(execution.isError, JSON.stringify(execution)).toBe(false);
+    const output = getToolResultText(run, "copy-declaration");
+    expect(output).toContain("Text fallback: imports and references unchanged");
+    expect(run.tuiRenderedOutput).toContain("Text fallback: imports and references unchanged");
+    expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toBe(source);
+    expect(await readFile(path.join(cwd, "consumer.ts"), "utf8")).toBe(consumer);
+    const copied = await readFile(path.join(cwd, "destination.ts"), "utf8");
+    expect(copied).toContain("export function greet() { return value; }");
+    expect(copied).not.toContain("import { value }");
+  });
+});
+test("standalone declaration edits and moves preserve earlier effects", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await writeFile(
       path.join(cwd, "source.ts"),
       "export function first() { return 1; }\nexport function second() { return 2; }\n",
@@ -70,8 +127,8 @@ test("standalone declaration edits and Apply global mutations coexist without lo
       testName: "semantic-standalone-move",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["replace", "move", "apply"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -101,23 +158,10 @@ test("standalone declaration edits and Apply global mutations coexist without lo
           ],
           { stopReason: "toolUse" },
         ),
-        assistantMessage(
-          [
-            toolCall({
-              id: "no-semantic-insert",
-              name: "apply",
-              arguments: {
-                source:
-                  'if (typeof insertBefore !== "function" || typeof replace !== "function") throw new Error("Global mutation helpers are unavailable");',
-              },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
         assistantMessage([text("Done")]),
       ],
     }).run("Replace and move declarations, preserving explicit unsupported-operation boundaries");
-    for (const id of ["declaration-replace", "declaration-move", "no-semantic-insert"]) {
+    for (const id of ["declaration-replace", "declaration-move"]) {
       const execution = getToolExecution(run, id);
       expect(execution.isError, JSON.stringify(execution)).toBe(false);
     }
@@ -129,6 +173,7 @@ test("standalone declaration edits and Apply global mutations coexist without lo
 
 test("standalone replace renames cross-file references without replacing unrelated names", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await writeFile(
       path.join(cwd, "tsconfig.json"),
       JSON.stringify({ compilerOptions: { strict: true }, include: ["*.ts"] }),
@@ -142,7 +187,7 @@ test("standalone replace renames cross-file references without replacing unrelat
       testName: "semantic-native-rename-replace",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
       tools: ["replace"],
       timeoutMs: 120_000,
       conversation: [
@@ -170,8 +215,9 @@ test("standalone replace renames cross-file references without replacing unrelat
   });
 });
 
-test("Apply symbol search honors its file scope before applying the result limit", async () => {
+test("native symbol search honors its file scope before the result limit", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await writeFile(path.join(cwd, "tsconfig.json"), JSON.stringify({ include: ["*.ts"] }));
     await writeFile(path.join(cwd, "first.ts"), "export class ScopedExample {}\n");
     await writeFile(path.join(cwd, "second.ts"), "export class ScopedExample {}\n");
@@ -179,18 +225,19 @@ test("Apply symbol search honors its file scope before applying the result limit
       testName: "semantic-scoped-search",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["codemode", "read", "search", "select", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "scope",
-              name: "apply",
+              name: "codemode",
               arguments: {
-                source:
-                  'const hit = search({query:"symbols:ScopedExample",path:"second.ts",limit:1}); if(hit.data.hits.length !== 1 || hit.data.hits[0].filePath !== "second.ts") throw new Error(JSON.stringify(hit)); const excluded = search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}); if(excluded.data.hits.length !== 0) throw new Error("Excluded symbol returned");',
+                code:
+                  textResultChecks +
+                  'const hit=await tools.search({query:"symbols:ScopedExample",path:"second.ts",limit:1}); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
               },
             }),
           ],
@@ -206,6 +253,7 @@ test("Apply symbol search honors its file scope before applying the result limit
 
 test("AST search selections edit duplicate multiline nodes without text ambiguity", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await writeFile(
       path.join(cwd, "nodes.ts"),
       'console.log(\n  "same"\n); console.log(\n  "same"\n);\n',
@@ -214,18 +262,19 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
       testName: "semantic-ast-selection",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["codemode", "read", "search", "select", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "ast-edit",
-              name: "apply",
+              name: "codemode",
               arguments: {
-                source:
-                  'const found = search({query:"ast:console.log($ARG)",path:"nodes.ts"}); if(found.data.matches.length!==2) throw new Error("Missing AST selections"); const doc = open("nodes.ts"); doc.replace(doc.select(found.data.matches[1]), "logger.info(42)"); flush();',
+                code:
+                  textResultChecks +
+                  'const found=await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}); check(matches(found).length===2,"Duplicate AST nodes lost"); const edited=await tools.replace({path:matches(found)[1],text:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
               },
             }),
           ],
@@ -242,34 +291,31 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
   });
 });
 
-test("Apply refreshes editor handles and AST selections after checkpoints", async () => {
+test("native AST edits use fresh selections after automatic commits", async () => {
   await withTempWorkspace(async (cwd) => {
+    await enableNativeCodemode(cwd);
     await writeFile(path.join(cwd, "nodes.ts"), 'const emoji = "😀"; console.log("same");\n');
     const run = await new PiIntegrationTest({
       testName: "semantic-ast-refresh",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["apply"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["codemode", "read", "search", "select", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "refresh",
-              name: "apply",
+              name: "codemode",
               arguments: {
-                source: `
-const firstSearch = search({query: "ast:console.log($ARG)", path: "nodes.ts"});
-const first = open("nodes.ts");
-first.replace(first.select(firstSearch.data.matches[0]), 'logger.info("same")');
-flush();
-first.replace(first.find("emoji"), "symbol");
-flush();
-const secondSearch = search({query: "ast:logger.info($ARG)", path: "nodes.ts"});
-const second = open("nodes.ts");
-second.replace(second.select(secondSearch.data.matches[0]), "done()");
-flush();
+                code: `
+const check=result=>{if(typeof result!=="string")throw Error("Expected readable result");return result;};
+const firstSearch=check(await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}));
+check(await tools.replace({path:firstSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:'logger.info("same")'}));
+check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
+const secondSearch=check(await tools.search({query:"ast:logger.info($ARG)",path:"nodes.ts"}));
+check(await tools.replace({path:secondSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:"done()"}));
 `,
               },
             }),
@@ -278,7 +324,7 @@ flush();
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Refresh the editor handle and structural query after each checkpoint");
+    }).run("Refresh the structural query after edits");
     const execution = getToolExecution(run, "refresh");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     expect(await readFile(path.join(cwd, "nodes.ts"), "utf8")).toBe(

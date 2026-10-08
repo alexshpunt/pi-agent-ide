@@ -18,9 +18,13 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 export const deleteSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "File path or structured source selection. A structured input deletes only its exact text ranges and keeps the file; omit start/end.",
+      "File path, shell:<session>, debug:<session>, debug:<session>/breakpoint/<id>, unchanged source result or its UUID, or an array of results. An ordinary file path without start/end deletes the file. A text result input removes only selected text and keeps the file, even for a whole-file selection. For Read results from symbol:<file>#<selector>, deletion removes only the declaration text; imports and references are unchanged. Omit start/end for result inputs. Omit path when a supplied text anchor identifies the file.",
     ),
-    ...sourceRangeProperties(),
+    ...sourceRangeProperties({
+      start:
+        "Anchor or unique exact text locating the text to remove. Without end, exact text selects only that fragment; a line anchor selects its whole line. Omit when path already selects text.",
+      end: "Anchor or unique exact text locating the last line to remove. With start, removes whole lines including both boundary lines, even for SEARCH :match anchors. Both boundaries must be unique, in one file, and in forward order. Mixed anchor types are allowed. Omit when start alone selects the intended text.",
+    }),
   },
   { additionalProperties: false },
 );
@@ -34,9 +38,10 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
   name: "delete",
   wholeFileOperation: "delete",
   description:
-    "Use delete to permanently delete one regular file when an ordinary string path is supplied without text selectors, or to remove selected text. Structured path removes only its text ranges and keeps the file, even for a whole-file selection. Whole-file deletion rejects directories and symlinks.",
+    "Use delete to remove selected text, permanently delete a regular file, terminate a terminal or debugger session, or remove a debugger breakpoint. Whole-file deletion rejects directories and symlinks.",
 
-  promptSnippet: "Delete regular files, or delete selected text using exact matches or anchors",
+  promptSnippet:
+    "Delete files or selected text, terminate terminal or debugger sessions, or remove debugger breakpoints",
   parameters: deleteSchema,
   source: { field: "path", inherited: true },
   anchors: [

@@ -1,6 +1,6 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectResultTargets } from "pi-agent-resource";
-import { createReadResultTargetHandler } from "./tools/read/result-target.js";
+import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.js";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   ToolCallInterceptionRenderStore,
@@ -32,16 +32,22 @@ export default async function registerReadCore(
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "read-resources",
-      description: "Resource selection, windows, views, raw bytes, and continuation",
+      description: "Read results, selection boundaries, and composition",
       triggers: [{ tool: "read" }],
     }),
   ]);
   const core = createReadCore(parsePresentation(context?.preferences["ui.read"]));
   const targets = connectResultTargets(pi);
-  core.read.registerContributions("result-targets", {
-    handlers: [
-      { stage: "post-read", handler: createReadResultTargetHandler(targets, core.read.execute) },
-    ],
+  await core.registerPlugin({
+    protocol: READ_PROTOCOL,
+    apiVersion: READ_API_VERSION,
+    id: "result-targets",
+    setup(api) {
+      api.addHandler({
+        stage: "post-read",
+        handler: createReadResultTargetHandler(targets, core.read.execute),
+      });
+    },
   });
 
   const unsubscribeRegistration = pi.events.on(READ_PLUGIN_REGISTER_EVENT, (request) => {
@@ -57,7 +63,13 @@ export default async function registerReadCore(
   });
 
   const interceptionRendering = new ToolCallInterceptionRenderStore();
-  pi.registerTool(withToolCallInterceptionRendering(core.read.tool, interceptionRendering));
+  const definition = withToolCallInterceptionRendering(core.read.tool, interceptionRendering);
+  pi.registerTool(definition);
+  pi.on("before_agent_start", async () => {
+    await core.waitForPendingPlugins();
+    // Pi snapshots schemas when it wraps definitions. Refresh current plugin metadata for this run.
+    if (pi.getActiveTools().includes("read")) pi.registerTool(definition);
+  });
   pi.on("tool_result", (event) => {
     if (event.toolName !== "read" || !isRecord(event.details)) {
       return;

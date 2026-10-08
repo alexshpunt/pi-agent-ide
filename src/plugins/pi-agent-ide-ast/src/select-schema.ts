@@ -120,7 +120,7 @@ function scopedOperation<const Kind extends "within" | "intersection" | "differe
       scopes: {
         ...resultInputSchema,
         description:
-          "Comparison scopes: verified results, data, targets, item arrays, or a readable source string. Match sets by source, not array position.",
+          "Comparison scopes: unchanged results, issued UUIDs or item references, arrays of those strings, or a readable source path. Match sets by source, not array position.",
       },
     },
     { additionalProperties: false, description },
@@ -211,7 +211,7 @@ const structuralOperationSchema = Type.Union([
     {
       additionalProperties: false,
       description:
-        "Select an exact direct JS/TS call argument or parenthesized function parameter. inside keeps the element; around includes owned comma/whitespace. Prefer the following separator; last without a trailing comma uses the preceding gap; only elements own the list interior. Adjacent boundary comments reject around. No destination syntax repair.",
+        "Select an exact direct JS/TS call argument or parenthesized function parameter. inside keeps the element; around includes owned comma/whitespace. around includes the following gap; the last element without a trailing comma includes the preceding gap, and an only element includes the whole list interior. Adjacent boundary comments reject around. No destination syntax repair.",
     },
   ),
   Type.Object(
@@ -287,13 +287,15 @@ export const selectSchema = Type.Object(
     path: {
       ...resultInputSchema,
       description:
-        "Pass a compatible source result, its data or RESULT# target, a returned-item array, or a file path. Preview text and reconstructed coordinates are not source targets.",
+        "File path, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Pass the whole result; do not rebuild it from preview text.",
     },
-    operation: Type.Union([
-      structuralOperationSchema,
-      textOperationSchema,
-      geometryOperationSchema,
-    ]),
+    operation: Type.Union(
+      [structuralOperationSchema, textOperationSchema, geometryOperationSchema],
+      {
+        description:
+          "Choose a text, syntax or range-set operation. Text operations apply separately to each input region; range/lines require one source. Use UTF-16 bounds that do not split surrogate pairs or CRLF. Range-set operations match sources and snapshots, not array positions.",
+      },
+    ),
   },
   { additionalProperties: false },
 );

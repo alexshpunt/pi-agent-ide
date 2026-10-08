@@ -8,13 +8,9 @@ Default removes the selected scope’s override. Module descriptions show effect
 
 Feature overrides are stored under `flags` in `extensions.json`, keyed by their CLI name. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
 
-The Features tab includes **Disable Apply** (`pi-agent-ide-no-apply`). Enable it and reload to remove only the `apply` tool; standalone tools remain available. It defaults to off. The obsolete `old-tools` switch has been removed.
-
 Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Capture full displays**. Both default to off. Its text settings control the default sequence duration, frame interval, image scale, and a comma-separated list of exact executable file names that may be captured without arbitrary-window access. Press Enter to edit a text value, Enter again to commit it, then Ctrl+S to save.
 
-The UI tab contains separate presentation settings for Apply previews, diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
-
-Apply previews never execute arguments and do not indicate successful edits; operation results are shown separately. In compact mode, completed source is formatted before recognized helper calls are projected into concise operation headers. Incomplete code uses the recoverable source preview. Headers keep supplied anchors and compact long argument expressions with their source size; those sizes are not counts of applied edits. Full mode shows the complete display copy. Execution always receives the original source.
+The UI tab contains separate presentation settings for diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
 
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
@@ -28,17 +24,16 @@ Pi Agent IDE enables every built-in extension by default. Project and global con
 
 Tools use fixed native exposure; there are no IDE exposure overrides or named profiles.
 
-| Namespace      | Tools                            | Exposure     |
-| -------------- | -------------------------------- | ------------ |
-| `ide_read`     | `read`, `diff`                   | `direct`     |
-| `ide_search`   | `search`                         | `direct`     |
-| `ide_edit`     | `apply`                          | `model-only` |
-| `ide_edit`     | Standalone editing tools         | `direct`     |
-| `ide_terminal` | `bash` (`powershell` on Windows) | `direct`     |
-| `ide_git`      | `stage`, `unstage`               | `deferred`   |
-| `ide_debug`    | `debug`                          | `deferred`   |
+| Namespace      | Tools                            | Exposure   |
+| -------------- | -------------------------------- | ---------- |
+| `ide_read`     | `read`, `diff`                   | `direct`   |
+| `ide_search`   | `search`                         | `direct`   |
+| `ide_edit`     | Standalone editing tools         | `direct`   |
+| `ide_terminal` | `bash` (`powershell` on Windows) | `direct`   |
+| `ide_git`      | `stage`, `unstage`               | `deferred` |
+| `ide_debug`    | `debug`                          | `deferred` |
 
-Apply stays directly declared, including in Codemode-only mode. Nested calls and Codemode scripts cannot call it. Direct tools keep their normal calls and can also run through Codemode while active.
+Direct tools keep their normal calls and can also run through Codemode while active. Select derives exact boundaries; edits consume its snapshot-bound targets.
 
 Git staging and debugger tools are not declared ahead of time. Short agent guidance names the enabled capabilities and tells the agent to find them through native `tool_search`. IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
 
@@ -102,7 +97,7 @@ This is an unfinished part of LPT-149. Search, mixed Apply/transfers, undo, LSP 
 
 ## Animations and post-edit processing
 
-Apply stages guarded text and file operations against immutable snapshots. An explicit `apply()` validates and commits the current multi-file transaction. Invalid, stale, ambiguous, or overlapping changes fail before writing. A later execution failure triggers rollback and reports whether restoration completed. A script may commit several transactions; reads after a commit see its changes. Configured formatting runs once per surviving changed file at the end of the outer Apply call, and diagnostics start after post-processing. Copied and moved UTF-8 text targets also receive configured post-processing; binary contents stay unchanged.
+Standalone editing tools validate source snapshots before writing. Native Codemode commits eligible pending local edits before a dependent tool or when the script ends. Accepted child calls are not proof of persistence. Ordinary script errors keep accepted edits; aborts discard only pending work. Batched edits finish formatting and diagnostics at script end. Write commits earlier pending edits and finishes its own post-edit processing before returning. Text copy/move destinations receive post-processing; binary contents stay unchanged.
 
 Automatic diagnostic findings are grouped for five seconds from the first finding. The UI tab’s **Immediate diagnostic notices** option (`pi-agent-ide-no-diagnostic-buffer`) disables this delay. Combined notices keep each file and reporting tool identifiable. Empty completed diagnostic reads tell the agent that checks finished without findings, but do not draw an empty diagnostic panel. Pending, unavailable and incomplete checks are not reported as clean.
 
@@ -202,6 +197,20 @@ Regex diagnostic parsers run with multiline matching. Set `columnBase: 0` when a
 
 A runtime being installed does not prove its modules or language-server features are installed. For example, Taplo's npm build can format TOML but does not include its LSP. Use an LSP-enabled Taplo build for language-server diagnostics. Doctor reports the actual startup failure rather than treating that file as clean.
 
+## Java debugger
+
+Java uses Microsoft java-debug through a private JDT LS process on Linux and native Windows. Kotlin still uses fwcd's adapter.
+
+Install JDK 21 or newer, JDT LS 1.61.0, and `com.microsoft.java.debug.plugin-0.53.2.jar` from vscode-java-debug 0.59.0. Set these variables before starting Pi:
+
+- `PI_JAVA_PATH`: the Java executable. Otherwise Pi uses `JAVA_HOME/bin/java` (`java.exe` on Windows), then `java` on PATH.
+- `PI_JDTLS_HOME`: the extracted JDT LS directory, containing `plugins` and `config_linux` or `config_win`.
+- `PI_JAVA_DEBUG_PLUGIN_PATH`: the Java debug plugin jar.
+
+Compile with debug information (`javac -g`) before starting the session. Pi finds the main class in `build/classes/java/main`, `target/classes`, `out/production`, `bin`, or the project directory. This launch path does not resolve Maven/Gradle dependency classpaths.
+
+Create the session with `adapter: "java"` and the fully qualified `mainClass`. Use the returned resources to read source, set an anchored breakpoint, start, inspect locals, and continue. Pi keeps the target suspended until attach and breakpoint configuration finish. Deleting the session closes only its own target JVM and JDT LS process. Doctor checks the actual bridge rather than treating a Kotlin adapter as a Java dependency.
+
 ## Doctor
 
 Run `/pi-agent-ide-doctor` to check the effective tools for the current project. Doctor uses the same layered entries as runtime. For each applicable entry it shows the stable ID, source layer, command, and real probe result. A missing or failing command is reported instead of falling back to a lower layer.
@@ -273,7 +282,7 @@ Missing fields use these defaults. Invalid values stop the editor from loading. 
 
 ### Diff presentation
 
-Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, or Disabled diff panels. Compact is the default and shows a focused sliding window. Full shows every available diff row. Disabled hides diff rows but keeps mutation totals, status, failures, and warnings visible. Expanding a tool call temporarily shows the full diff. The setting applies to standalone mutations, the `diff` tool, and Apply results.
+Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, or Disabled diff panels. Compact is the default and shows a focused sliding window. Full shows every available diff row. Disabled hides diff rows but keeps mutation totals, status, failures, and warnings visible. Expanding a tool call temporarily shows the full diff. The setting applies to standalone mutations, native Codemode edit panels, and the `diff` tool.
 
 ## Extension config behavior
 

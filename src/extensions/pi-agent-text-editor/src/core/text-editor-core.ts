@@ -7,13 +7,6 @@ import type {
 } from "#src/api/file-operations.js";
 import { executeFileOperation, isUriSource } from "#src/core/file-operations.js";
 import { guardFileOperation, type FileGuardSnapshot } from "#src/core/file-operation-guards.js";
-import type { ApplyFileAccess, ApplyFileAccessProvider } from "#src/api/apply-files.js";
-import { createLocalFileAccess } from "#src/core/apply/transaction.js";
-import {
-  disposeApplyUndoOwner,
-  retainApplyUndoOwner,
-  type RetainedApplyUndo,
-} from "#src/core/apply/undo-runtime.js";
 import path from "node:path";
 import { deferPostEdit, collectPostEditNotifications } from "#src/core/post-edit-scope.js";
 import { requiredValue } from "pi-agent-invariant";
@@ -21,6 +14,10 @@ import {
   isAgentContent,
   ResourceError,
   isResourceResolutionAttempt,
+  resourceScheduler,
+  resourceAccesses,
+  type ResourceAccess,
+  type ResourceResolutionAttempt,
   type Resource,
   type ResourceResolver,
   type ResourceResolverContext,
@@ -58,7 +55,6 @@ import {
   isTextAnchorResolverRegistration,
   isTextEditorToolId,
   type PromptDescriptionSource,
-  type ScriptIndexOperation,
   type ResourceResolverRegistration,
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
@@ -90,11 +86,6 @@ import {
 } from "#src/core/text-change-engine.js";
 import { previewTextMutation } from "#src/core/text-mutation.js";
 import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.js";
-import {
-  ApplyUndoStore,
-  type ApplyUndoBeforeState,
-  type ApplyUndoResult,
-} from "#src/core/apply/apply-undo-store.js";
 
 import type {
   TextAnchorInspectionOutcome,
@@ -144,6 +135,53 @@ interface RegisteredResolver {
   readonly order: number;
 }
 
+/** Resolve owners once before scheduling, without reading or modifying their contents. */
+function scopedResolvers(
+  sources: readonly string[],
+  context: ResourceResolverContext,
+  resolvers: readonly RegisteredResolver[],
+  mode: ResourceAccess["mode"] = "write",
+): {
+  resolvers: readonly RegisteredResolver[];
+  accesses: Promise<readonly ResourceAccess[] | undefined>;
+} {
+  const cached = resolvers.map((registered) => {
+    const attempts = new Map<string, Promise<ResourceResolutionAttempt>>();
+    return {
+      ...registered,
+      resolver: {
+        ...registered.resolver,
+        tryResolve(source: string, request: ResourceResolverContext) {
+          let pending = attempts.get(source);
+          if (pending === undefined) {
+            pending = registered.resolver.tryResolve(source, request);
+            attempts.set(source, pending);
+          }
+          return pending;
+        },
+      },
+    };
+  });
+  const accesses = Promise.all(
+    sources.map(async (source) => {
+      try {
+        for (const { resolver } of cached) {
+          const attempt = await resolver.tryResolve(source, context);
+          if (!isResourceResolutionAttempt(attempt)) return undefined;
+          if (attempt.kind === "not-handled") continue;
+          if (attempt.kind === "failed") return undefined;
+          return await resourceAccesses(attempt.resource.source, context.cwd, mode);
+        }
+      } catch {
+        // Let the normal edit pipeline report the cached resolution failure.
+      }
+      return undefined;
+    }),
+  ).then((sets) =>
+    sets.some((set) => set === undefined) ? undefined : sets.flatMap((set) => set ?? []),
+  );
+  return { resolvers: cached, accesses };
+}
 interface ResolverContribution {
   readonly pluginId: string;
   readonly registration: ResourceResolverRegistration;
@@ -187,9 +225,7 @@ interface PluginContributionDraft {
   readonly editCompletionListeners?: TextEditCompletionListener[];
   readonly mutationGuards?: TextMutationGuardRegistration[];
   readonly toolRenderers?: TextEditorToolRendererRegistration[];
-  readonly scriptIndexOperations?: ScriptIndexOperation[];
   readonly fileOperationResolvers?: FileOperationResolver[];
-  readonly applyFileAccessProviders?: ApplyFileAccessProvider[];
 }
 
 interface PluginContributionController {
@@ -235,6 +271,11 @@ export interface TextResourceEditFailure {
   readonly resolverId?: string;
   readonly message: string;
   readonly cause?: unknown;
+  /** Failed restoration and prior absence prevent a confirmed unchanged-resource claim. */
+  readonly rollback?: {
+    readonly failed: readonly string[];
+    readonly originallyMissing: readonly string[];
+  };
 }
 
 export type TextResourceEditOutcome<Result> =
@@ -304,23 +345,6 @@ export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
 export interface TextEditorCore {
-  /** Record the complete pre-Apply state and return a session-scoped undo receipt. */
-  recordApplyUndo(
-    before: readonly ApplyUndoBeforeState[],
-    access?: ApplyFileAccess,
-  ): Promise<string>;
-  /** Build checkpoint file access from registered owners, without contacting targets. */
-  getApplyFileAccess(context: ResourceResolverContext): ApplyFileAccess;
-  /** Restore one Apply receipt after stale checks; multi-file restoration is not atomic. */
-  restoreApplyUndo(transaction: string, signal?: AbortSignal): Promise<ApplyUndoResult>;
-  /** Return whether an Apply receipt is still active in this session. */
-  hasApplyUndo(transaction: string): boolean;
-  /** Release session-scoped Apply receipts and their owned backups. */
-  disposeApplyUndo(): Promise<void>;
-  /** Drain mutations and transfer journals without releasing their original owners. */
-  detachApplyUndo(): Promise<RetainedApplyUndo>;
-  /** Adopt a single-use journal handoff before tools run in a reloaded session. */
-  adoptApplyUndo(retained: RetainedApplyUndo): Promise<void>;
   /** Capture the prior destination before a whole-file publication, then finalize its saved text. */
   prepareFilePostProcessing(
     source: string,
@@ -332,8 +356,16 @@ export interface TextEditorCore {
     context: ResourceResolverContext,
     before?: FileGuardSnapshot,
   ): Promise<TextResourceEditOutcome<undefined> | void>;
-  /** Serialize whole-file effects with text edits; the action must not enqueue another edit. */
-  enqueueFileOperation<T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T>;
+  /** Reserve complete file sets. Only an explicit transaction owner may enqueue covered nested edits. */
+  enqueueFileOperation<T>(
+    action: () => Promise<T>,
+    signal?: AbortSignal,
+    scope?: {
+      readonly sources: readonly string[];
+      readonly cwd: string;
+      readonly allowNestedEdits?: boolean;
+    },
+  ): Promise<T>;
   /** Dispatch a whole-file operation; callers serialize it with enqueueFileOperation. */
   executeFileOperation(
     operation: FileOperation,
@@ -389,8 +421,6 @@ export interface TextEditorCore {
   onMutationTool(listener: TextMutationToolListener): () => void;
   onDidEdit(listener: TextEditCompletionListener): () => void;
   getToolRenderer(tool: TextEditorToolId): TextEditorToolRendererRegistration | undefined;
-  /** Return a configured index operation for the Apply host. */
-  getScriptIndexOperation(name: string): ScriptIndexOperation | undefined;
   registerPlugin(plugin: TextEditorPlugin): Promise<void>;
   registerPostEditHandler(registration: TextPostEditHandlerRegistration): () => void;
   registerTool(tool: TextEditorToolId): void;
@@ -422,41 +452,16 @@ export function createTextEditorCore(
   const mutationTools = new Map<string, AnyTextMutationToolRegistration>();
   const mutationListeners = new Set<TextMutationToolListener>();
   const editCompletionListeners = new Set<TextEditCompletionListener>();
-  let localFileAccess = createLocalFileAccess();
-  let applyUndoStore = new ApplyUndoStore(localFileAccess.restore, localFileAccess.capture);
-  let ownsApplyUndo = true;
-  let acceptsApplyUndoHandoff = true;
-  let retainedApplyProviders: readonly ApplyFileAccessProvider[] = [];
-  editCompletionListeners.add((completion) => {
-    applyUndoStore.observeTextChange(
-      isUriSource(completion.resourceSource)
-        ? completion.resourceSource
-        : path.resolve(completion.cwd, completion.resourceSource),
-      (completion.beforePostProcessing ?? completion.before).content,
-      completion.after.content,
-      completion.postProcessing ?? "complete",
-    );
-  });
   const mutationGuards: TextMutationGuardRegistration[] = [];
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
-  const scriptIndexOperations = new Map<string, ScriptIndexOperation>();
   const fileOperationResolvers: FileOperationResolver[] = [];
-  const applyFileAccessProviders: ApplyFileAccessProvider[] = [];
   let registrationQueue = Promise.resolve();
-  // One core owns all IDE mutations, including ordinary tools and Apply. Queue the full
-  // read-modify-write window so aliases and multi-resource edits cannot lose updates.
-  let mutationTail: Promise<void> = Promise.resolve();
-  const enqueueMutation = <T>(action: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
-    const pending = mutationTail.then(() => {
-      signal?.throwIfAborted();
-      return action();
-    });
-    mutationTail = pending.then(
-      () => undefined,
-      () => undefined,
-    );
-    return pending;
-  };
+  const scheduler = resourceScheduler;
+  const enqueueMutation = <T>(
+    action: () => Promise<T>,
+    signal?: AbortSignal,
+    accesses?: Promise<readonly ResourceAccess[] | undefined>,
+  ): Promise<T> => scheduler.run(accesses, action, signal);
   const registerContributions = (draft: PluginContributionDraft): void => {
     validateContributionDraft(
       draft,
@@ -468,22 +473,8 @@ export function createTextEditorCore(
     );
 
     const incomingMutationNames = new Set<string>();
-    for (const provider of draft.applyFileAccessProviders ?? []) {
-      if (typeof provider !== "function") throw new TypeError("Invalid Apply file access provider");
-    }
     for (const resolver of draft.fileOperationResolvers ?? []) {
       if (typeof resolver !== "function") throw new TypeError("Invalid whole-file resolver");
-    }
-    const incomingIndexNames = new Set<string>();
-    for (const operation of draft.scriptIndexOperations ?? []) {
-      if (
-        !["stage", "unstage"].includes(operation.name) ||
-        typeof operation.execute !== "function" ||
-        scriptIndexOperations.has(operation.name) ||
-        incomingIndexNames.has(operation.name)
-      )
-        throw new Error(`Invalid or duplicate script index operation ${operation.name}`);
-      incomingIndexNames.add(operation.name);
     }
 
     for (const registration of draft.mutationTools ?? []) {
@@ -538,10 +529,7 @@ export function createTextEditorCore(
 
     handlers.push(...draft.handlers);
     fileOperationResolvers.push(...(draft.fileOperationResolvers ?? []));
-    applyFileAccessProviders.push(...(draft.applyFileAccessProviders ?? []));
     semanticHandlers.push(...(draft.semanticHandlers ?? []));
-    for (const operation of draft.scriptIndexOperations ?? [])
-      scriptIndexOperations.set(operation.name, operation);
     mutationGuards.push(...(draft.mutationGuards ?? []));
     promptContributions.push(...draft.promptContributions);
     writablePromptContributions.push(...draft.writablePromptContributions);
@@ -582,7 +570,6 @@ export function createTextEditorCore(
     context: ResourceResolverContext,
   ): Promise<void> => {
     if (mutationGuards.length === 0) return;
-    await core.getApplyFileAccess(context).validateFile({ kind: operation, ...input }, context.cwd);
     await guardFileOperation(
       operation,
       input,
@@ -599,79 +586,9 @@ export function createTextEditorCore(
     );
   };
   const core: TextEditorCore = {
-    recordApplyUndo(before, access) {
-      if (!ownsApplyUndo) throw new Error("Apply journal ownership was already transferred.");
-      acceptsApplyUndoHandoff = false;
-      return applyUndoStore.record(before, access ?? localFileAccess);
-    },
-    getApplyFileAccess(context) {
-      const access = applyFileAccessProviders.reduce(
-        (previous, provider) => provider(previous, context),
-        localFileAccess,
-      );
-      if (mutationGuards.length === 0) return access;
-      return {
-        ...access,
-        async performFile(operation, cwd) {
-          await guardOwnedFiles(operation.kind, operation, { ...context, cwd });
-          await access.performFile(operation, cwd);
-        },
-      };
-    },
-    restoreApplyUndo(transaction, signal) {
-      return enqueueMutation(
-        () =>
-          applyUndoStore.restore(
-            transaction,
-            signal,
-            core.getApplyFileAccess({ cwd: process.cwd() }).ownerKey,
-          ),
-        signal,
-      );
-    },
-    hasApplyUndo(transaction) {
-      return applyUndoStore.has(transaction);
-    },
-    disposeApplyUndo() {
-      return enqueueMutation(async () => {
-        if (!ownsApplyUndo) return;
-        await disposeApplyUndoOwner({
-          access: localFileAccess,
-          store: applyUndoStore,
-          providers: [...retainedApplyProviders, ...applyFileAccessProviders],
-        });
-      });
-    },
-    detachApplyUndo() {
-      return enqueueMutation(async () => {
-        if (!ownsApplyUndo) throw new Error("Apply journal ownership was already transferred.");
-        ownsApplyUndo = false;
-        return retainApplyUndoOwner({
-          access: localFileAccess,
-          store: applyUndoStore,
-          providers: [...retainedApplyProviders, ...applyFileAccessProviders],
-        });
-      });
-    },
-    adoptApplyUndo(retained) {
-      return enqueueMutation(async () => {
-        if (!ownsApplyUndo) throw new Error("Cannot adopt into a detached Apply core.");
-        if (!acceptsApplyUndoHandoff) throw new Error("Apply core already owns session journals.");
-        await disposeApplyUndoOwner({
-          access: localFileAccess,
-          store: applyUndoStore,
-          providers: retainedApplyProviders,
-        });
-        const owner = retained.take();
-        acceptsApplyUndoHandoff = false;
-        localFileAccess = owner.access;
-        applyUndoStore = owner.store;
-        retainedApplyProviders = owner.providers;
-      });
-    },
     async prepareFilePostProcessing(source, context) {
       const before =
-        editCompletionListeners.size > 1
+        editCompletionListeners.size > 0
           ? await readFileGuardSnapshot(
               source,
               context,
@@ -683,95 +600,109 @@ export function createTextEditorCore(
       return () => core.postProcessFile(source, context, before);
     },
     async postProcessFile(source, context, before) {
-      return enqueueMutation(async () => {
-        let resource: Resource;
-        let text: string;
-        let requestedSource = source;
-        let resolvedBy: string;
-        if (isUriSource(source) || isUriSource(context.cwd)) {
-          const prepared = await prepareTextResource(
-            source,
-            false,
-            false,
-            false,
-            context,
-            [...resolvers].sort(
-              (left, right) => left.priority - right.priority || left.order - right.order,
-            ),
-          );
-          if ("failure" in prepared)
-            throw Object.assign(new Error(prepared.failure.message), {
-              code: prepared.failure.code,
-              cause: prepared.failure.cause,
-            });
-          resource = prepared.resource;
-          resolvedBy = prepared.resolverId;
-          if (resource.readBytes !== undefined) {
-            const range = await resource.readBytes(0, 65536, context);
-            const bytes = Buffer.from(range.bytes);
-            if (bytes.includes(0)) return;
-            try {
-              new TextDecoder("utf-8", { fatal: true }).decode(bytes, {
-                stream: range.totalBytes > bytes.length,
+      return enqueueMutation(
+        async () => {
+          let resource: Resource;
+          let text: string;
+          let requestedSource = source;
+          let resolvedBy: string;
+          if (isUriSource(source) || isUriSource(context.cwd)) {
+            const prepared = await prepareTextResource(
+              source,
+              false,
+              false,
+              false,
+              context,
+              [...resolvers].sort(
+                (left, right) => left.priority - right.priority || left.order - right.order,
+              ),
+            );
+            if ("failure" in prepared)
+              throw Object.assign(new Error(prepared.failure.message), {
+                code: prepared.failure.code,
+                cause: prepared.failure.cause,
               });
-            } catch {
+            resource = prepared.resource;
+            resolvedBy = prepared.resolverId;
+            if (resource.readBytes !== undefined) {
+              const range = await resource.readBytes(0, 65536, context);
+              const bytes = Buffer.from(range.bytes);
+              if (bytes.includes(0)) return;
+              try {
+                new TextDecoder("utf-8", { fatal: true }).decode(bytes, {
+                  stream: range.totalBytes > bytes.length,
+                });
+              } catch {
+                return;
+              }
+            }
+            if (resource.read === undefined)
+              throw new Error("Owned file cannot be read for post-processing");
+            const content = await resource.read(context);
+            if (
+              !isAgentContent(content) ||
+              content.length !== 1 ||
+              content[0].type !== "text" ||
+              content[0].text.includes("\0")
+            )
               return;
+            text = content[0].text;
+          } else {
+            const file = path.resolve(context.cwd, source);
+            const stat = await lstat(file).catch(() => undefined);
+            if (!stat?.isFile() || stat.isSymbolicLink()) return;
+            const bytes = await readFile(file);
+            text = bytes.toString("utf8");
+            if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) return;
+            requestedSource = file;
+            resolvedBy = "filesystem";
+            resource = {
+              source: file,
+              async read() {
+                return [{ type: "text", text: await readFile(file, "utf8") }];
+              },
+            };
+          }
+          let prior = text;
+          if (before !== undefined) {
+            try {
+              prior = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+                before.bytes ?? new Uint8Array(),
+              );
+            } catch {
+              prior = "";
             }
           }
-          if (resource.read === undefined)
-            throw new Error("Owned file cannot be read for post-processing");
-          const content = await resource.read(context);
-          if (
-            !isAgentContent(content) ||
-            content.length !== 1 ||
-            content[0].type !== "text" ||
-            content[0].text.includes("\0")
-          )
-            return;
-          text = content[0].text;
-        } else {
-          const file = path.resolve(context.cwd, source);
-          const stat = await lstat(file).catch(() => undefined);
-          if (!stat?.isFile() || stat.isSymbolicLink()) return;
-          const bytes = await readFile(file);
-          text = bytes.toString("utf8");
-          if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) return;
-          requestedSource = file;
-          resolvedBy = "filesystem";
-          resource = {
-            source: file,
-            async read() {
-              return [{ type: "text", text: await readFile(file, "utf8") }];
-            },
-          };
-        }
-        let prior = text;
-        if (before !== undefined) {
-          try {
-            prior = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-              before.bytes ?? new Uint8Array(),
-            );
-          } catch {
-            prior = "";
-          }
-        }
-        return finalizeTextResource({
-          requestedSource,
-          outcomeSource: resource.source,
-          resource,
-          resolvedBy,
-          existed: before === undefined ? true : before.bytes !== undefined,
-          before: createTextDocument(resource.source, prior),
-          requestedText: text,
-          context,
-          presenters: [...presenters],
-          postEditHandlers: [...postEditHandlers.values()],
-          editCompletionListeners: [...editCompletionListeners],
-          result: undefined,
-        });
-      }, context.signal);
+          return finalizeTextResource({
+            requestedSource,
+            outcomeSource: resource.source,
+            resource,
+            resolvedBy,
+            existed: before === undefined ? true : before.bytes !== undefined,
+            before: createTextDocument(resource.source, prior),
+            requestedText: text,
+            context,
+            presenters: [...presenters],
+            postEditHandlers: [...postEditHandlers.values()],
+            editCompletionListeners: [...editCompletionListeners],
+            result: undefined,
+          });
+        },
+        context.signal,
+        resourceAccesses(source, context.cwd, "write"),
+      );
     },
-    enqueueFileOperation: enqueueMutation,
+    enqueueFileOperation(action, signal, scope) {
+      const accesses =
+        scope === undefined
+          ? undefined
+          : Promise.all(
+              scope.sources.map((source) => resourceAccesses(source, scope.cwd, "write")),
+            ).then((sets) => sets.flat());
+      return scheduler.run(accesses, action, signal, {
+        allowNestedWrites: scope?.allowNestedEdits === true,
+      });
+    },
     executeFileOperation: (operation, input, cwd, signal) =>
       executeFileOperation(
         operation,
@@ -809,9 +740,6 @@ export function createTextEditorCore(
     onDidEdit(listener): () => void {
       editCompletionListeners.add(listener);
       return () => editCompletionListeners.delete(listener);
-    },
-    getScriptIndexOperation(name) {
-      return scriptIndexOperations.get(name);
     },
     getSemanticMutationHandler(tool, input): TextSemanticMutationHandler | undefined {
       const matches = semanticHandlers.filter(
@@ -873,12 +801,13 @@ export function createTextEditorCore(
           (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
           left.order - right.order,
       );
+      const scoped = scopedResolvers([source], context, resolverSnapshot);
       return enqueueMutation(
         () =>
           editTextResource(
             source,
             context,
-            resolverSnapshot,
+            scoped.resolvers,
             anchorRegistry.snapshot(),
             presenterSnapshot,
             [...postEditHandlers.values()],
@@ -886,6 +815,7 @@ export function createTextEditorCore(
             operation,
           ),
         context.signal,
+        scoped.accesses,
       );
     },
     editTexts<Result>(
@@ -904,12 +834,17 @@ export function createTextEditorCore(
           (left.registration.priority ?? 0) - (right.registration.priority ?? 0) ||
           left.order - right.order,
       );
+      const scoped = scopedResolvers(
+        sources.map((request) => request.source),
+        context,
+        resolverSnapshot,
+      );
       return enqueueMutation(
         () =>
           editTextResources(
             sources,
             context,
-            resolverSnapshot,
+            scoped.resolvers,
             anchorRegistry.snapshot(),
             presenterSnapshot,
             [...postEditHandlers.values()],
@@ -918,18 +853,30 @@ export function createTextEditorCore(
             operation,
           ),
         context.signal,
+        scoped.accesses,
       );
     },
     previewTexts(sources, context, operation): Promise<TextMutationPreviewOutcome> {
       const resolverSnapshot = [...resolvers].sort(
         (left, right) => left.priority - right.priority || left.order - right.order,
       );
-      return previewTextResources(
-        sources,
+      const scoped = scopedResolvers(
+        sources.map((request) => request.source),
         context,
         resolverSnapshot,
-        anchorRegistry.snapshot(),
-        operation,
+        "read",
+      );
+      return scheduler.run(
+        scoped.accesses,
+        () =>
+          previewTextResources(
+            sources,
+            context,
+            scoped.resolvers,
+            anchorRegistry.snapshot(),
+            operation,
+          ),
+        context.signal,
       );
     },
     async executeEdit<Input, Result>(
@@ -1021,7 +968,6 @@ export function createTextEditorCore(
         (listener) => core.onDidEdit(listener),
         (request) => previewTextMutation(core, request),
         (section) => recoverySection(projectConfig, section),
-        (transaction, signal) => core.restoreApplyUndo(transaction, signal),
       );
       const ready = registrationQueue.then(async () => {
         try {
@@ -1126,6 +1072,10 @@ export function createTextEditorCore(
   return core;
 }
 
+function readFailureMessage(source: string, error: unknown): string {
+  return `Unable to read ${source}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
 async function inspectTextResource(
   request: TextAnchorInspectionRequest,
   resolvers: readonly RegisteredResolver[],
@@ -1174,7 +1124,7 @@ async function inspectTextResource(
     try {
       content = await resource.read(request.signal === undefined ? {} : { signal: request.signal });
     } catch (error) {
-      return { kind: "failed", reason: `Unable to read ${resource.source}`, cause: error };
+      return { kind: "failed", reason: readFailureMessage(resource.source, error), cause: error };
     }
 
     if (!isAgentContent(content) || content.length !== 1 || content[0].type !== "text") {
@@ -1317,21 +1267,28 @@ async function editTextResources<Result>(
 
   const prepared = new Map<string, PreparedTextResource>();
 
-  for (const source of sources) {
+  // Settle every read before releasing the transaction's resource reservations.
+  const reads = await Promise.allSettled(
+    sources.map((source) => {
+      const request = requiredValue(requestBySource.get(source));
+      return prepareTextResource(
+        source,
+        request.read,
+        request.allowReadFailure ?? false,
+        request.requireWrite ?? true,
+        context,
+        resolvers,
+      );
+    }),
+  );
+  for (const [index, read] of reads.entries()) {
+    if (read.status === "rejected") throw read.reason;
+    const source = requiredValue(sources[index]);
     const request = requiredValue(requestBySource.get(source));
-    const outcome = await prepareTextResource(
-      source,
-      request.read,
-      request.allowReadFailure ?? false,
-      request.requireWrite ?? true,
-      context,
-      resolvers,
-    );
-
+    const outcome = read.value;
     if ("failure" in outcome) {
       return { kind: "failed", failure: outcome.failure, completed: [] };
     }
-
     if (request.expectedExistence !== undefined && request.expectedExistence !== outcome.existed) {
       throw new Error(`Snapshot source ${source} was created or removed before the edit batch.`);
     }
@@ -1381,6 +1338,36 @@ async function editTextResources<Result>(
     }
   }
 
+  if (mutation.changes.size > 1) {
+    const identities = await Promise.all(
+      [...mutation.changes.keys()].map(async (source) => ({
+        source,
+        accesses: await resourceAccesses(
+          requiredValue(prepared.get(source)).resource.source,
+          context.cwd,
+          "write",
+        ),
+      })),
+    );
+    const owners = new Map<string, string>();
+    for (const { source, accesses } of identities) {
+      for (const { resource } of accesses) {
+        const owner = owners.get(resource);
+        if (owner !== undefined && owner !== source) {
+          return {
+            kind: "failed",
+            failure: {
+              code: "MUTATION_REJECTED",
+              source,
+              message: `Sources ${owner} and ${source} alias the same resource; use one source name for its edits.`,
+            },
+            completed: [],
+          };
+        }
+        owners.set(resource, source);
+      }
+    }
+  }
   const applied = new Map<string, TextChangeResult>();
 
   for (const [source, changes] of mutation.changes) {
@@ -1473,108 +1460,108 @@ async function editTextResources<Result>(
     }
   }
   context.signal?.throwIfAborted();
-  const completed: string[] = [];
-  const written: string[] = [];
-  const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
-
-  for (const source of sources) {
+  const written = sources.filter((source) => {
     const text = applied.get(source)?.content;
     const item = requiredValue(prepared.get(source));
-
-    if (text === undefined || (item.existed && text === item.before.content)) {
-      continue;
-    }
-
-    const finalContent: unknown = [{ type: "text", text }];
-
-    if (!isAgentContent(finalContent)) {
-      return {
-        kind: "failed",
-        failure: {
-          code: "INVALID_WRITE_CONTENT",
-          source,
-          message: `Text edit for ${source} produced invalid content`,
-        },
-        completed,
-      };
-    }
-
-    try {
+    return text !== undefined && (!item.existed || text !== item.before.content);
+  });
+  const writes = await Promise.allSettled(
+    written.map(async (source) => {
+      const item = requiredValue(prepared.get(source));
+      const text = requiredValue(applied.get(source)).content;
       await requiredValue(item.resource.write)(
-        finalContent,
+        [{ type: "text", text }],
         context.signal === undefined ? {} : { signal: context.signal },
       );
-    } catch (error) {
-      const rollbackFailures: string[] = [];
-      const rejectedBeforeWrite =
-        typeof error === "object" &&
-        error !== null &&
-        "effect" in error &&
-        error.effect === "not-applied";
-      const uncertainWrite =
-        typeof error === "object" &&
-        error !== null &&
-        "effect" in error &&
-        error.effect === "unknown";
-      // A missing acknowledgement is not permission to replay or compensate that write.
-      const rollbackSources =
-        rejectedBeforeWrite || uncertainWrite ? [...written] : [source, ...written];
-      for (const writtenSource of rollbackSources.reverse()) {
-        const writtenItem = requiredValue(prepared.get(writtenSource));
-        try {
-          await requiredValue(writtenItem.resource.write)(
-            [{ type: "text", text: writtenItem.before.content }],
-            {},
-          );
-        } catch {
-          rollbackFailures.push(writtenSource);
-        }
+    }),
+  );
+  const failedIndex = writes.findIndex((result) => result.status === "rejected");
+  if (failedIndex !== -1) {
+    const source = requiredValue(written[failedIndex]);
+    const item = requiredValue(prepared.get(source));
+    const failure = requiredValue(writes[failedIndex]);
+    const rollbackFailures: string[] = [];
+    // A refusal or lost acknowledgement never authorizes compensation of that source.
+    const writeEffect = (index: number): unknown => {
+      const result = writes[index];
+      const error: unknown = result?.status === "rejected" ? result.reason : undefined;
+      return error !== null && typeof error === "object" && "effect" in error
+        ? error.effect
+        : undefined;
+    };
+    const uncertainSources = written.filter((_, index) => writeEffect(index) === "unknown");
+    const rollbackSources = written.filter((_, index) => {
+      const effect = writeEffect(index);
+      return effect !== "not-applied" && effect !== "unknown";
+    });
+    rollbackFailures.push(...uncertainSources);
+    for (const writtenSource of [...rollbackSources].reverse()) {
+      const writtenItem = requiredValue(prepared.get(writtenSource));
+      try {
+        await requiredValue(writtenItem.resource.write)(
+          [{ type: "text", text: writtenItem.before.content }],
+          {},
+        );
+      } catch {
+        rollbackFailures.push(writtenSource);
       }
-      return {
-        kind: "failed",
-        failure: {
-          code: "WRITE_FAILED",
-          source,
-          resolverId: item.resolverId,
-          message: uncertainWrite
-            ? `Unable to confirm write ${source}; inspect the resource before retrying${rollbackFailures.length > 0 ? `; rollback failed for ${rollbackFailures.join(", ")}` : ""}`
-            : rollbackFailures.length > 0
-              ? `Unable to write ${source}; rollback failed for ${rollbackFailures.join(", ")}`
-              : rollbackSources.length === 0
-                ? `Unable to write ${source}; no IDE writes were applied`
-                : `Unable to write ${source}; completed writes were rolled back`,
-          cause: error,
-        },
-        completed: rollbackFailures,
-      };
     }
-
-    written.push(source);
-    completed.push(source);
+    const cause: unknown = failure.status === "rejected" ? failure.reason : undefined;
+    const originallyMissing = [...rollbackSources, ...uncertainSources].filter(
+      (writtenSource) => !requiredValue(prepared.get(writtenSource)).existed,
+    );
+    return {
+      kind: "failed",
+      failure: {
+        code: "WRITE_FAILED",
+        source,
+        resolverId: item.resolverId,
+        message: `Unable to write ${source}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        cause,
+        rollback: { failed: rollbackFailures, originallyMissing },
+      },
+      completed: [],
+    };
   }
+  const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
 
-  await collectPostEditNotifications(async () => {
-    for (const source of written) {
-      const text = requiredValue(applied.get(source)).content;
-      const item = requiredValue(prepared.get(source));
-      outcomes.push(
-        await finalizeTextResource({
-          requestedSource: item.requestedSource,
-          outcomeSource: item.requestedSource,
-          resource: item.resource,
-          resolvedBy: item.resolverId,
-          existed: item.existed,
-          before: item.before,
-          requestedText: text,
-          context,
-          presenters,
-          postEditHandlers,
-          editCompletionListeners,
-          result: mutation.result,
-        }),
-      );
-    }
-  });
+  let finalizingSource = written[0] ?? sources[0] ?? "";
+  try {
+    await collectPostEditNotifications(async () => {
+      for (const source of written) {
+        finalizingSource = source;
+        const text = requiredValue(applied.get(source)).content;
+        const item = requiredValue(prepared.get(source));
+        outcomes.push(
+          await finalizeTextResource({
+            requestedSource: item.requestedSource,
+            outcomeSource: item.requestedSource,
+            resource: item.resource,
+            resolvedBy: item.resolverId,
+            existed: item.existed,
+            before: item.before,
+            requestedText: text,
+            context,
+            presenters,
+            postEditHandlers,
+            editCompletionListeners,
+            result: mutation.result,
+          }),
+        );
+      }
+    });
+  } catch (error) {
+    return {
+      kind: "failed",
+      failure: {
+        code: "POST_WRITE_FAILED",
+        source: finalizingSource,
+        message: error instanceof Error ? error.message : String(error),
+        cause: error,
+      },
+      completed: written,
+    };
+  }
   return { kind: "completed", resources: outcomes, result: mutation.result };
 }
 
@@ -1713,7 +1700,7 @@ async function prepareTextResource(
               code: "READ_FAILED",
               source: attempt.resource.source,
               resolverId: resolver.id,
-              message: `Unable to read ${attempt.resource.source}`,
+              message: readFailureMessage(attempt.resource.source, error),
               cause: error,
             },
           };
@@ -1832,6 +1819,18 @@ async function finalizeTextResource<Result>(
     }
   }
 
+  if (!skipPostEdit && !deferred && request.context.signal?.aborted)
+    postEditContributions.push({
+      id: "post-edit-interruption",
+      data: {
+        diffStatuses: [
+          {
+            text: "Post-edit processing was interrupted. Read the saved file before retrying.",
+            tone: "warning",
+          },
+        ],
+      },
+    });
   let finalText = request.requestedText;
 
   if (!skipPostEdit && request.resource.read !== undefined) {
@@ -1859,7 +1858,13 @@ async function finalizeTextResource<Result>(
     ...(request.postProcessingFinal ? { beforePostProcessing: requestedAfter } : {}),
     after: finalAfter,
     intent: request.context.intent ?? "edit",
-    postProcessing: deferred ? "deferred" : request.postProcessingFinal ? "final" : "complete",
+    postProcessing: deferred
+      ? "deferred"
+      : request.context.signal?.aborted
+        ? "interrupted"
+        : request.postProcessingFinal
+          ? "final"
+          : "complete",
   };
 
   for (const listener of request.editCompletionListeners) {
@@ -2006,7 +2011,7 @@ async function editTextResource<Result>(
           code: "READ_FAILED",
           source: resource.source,
           resolverId: resolver.id,
-          message: `Unable to read ${resource.source}`,
+          message: readFailureMessage(resource.source, error),
           cause: error,
         },
       };
@@ -2209,7 +2214,6 @@ function createPluginContributionController(
   onDidEdit: (listener: TextEditCompletionListener) => () => void,
   previewMutation: (request: TextMutationPreviewRequest) => Promise<TextMutationPreviewOutcome>,
   recoveryConfig: (section: string) => TextEditorRecoveryConfigSection,
-  restoreApplyUndo: TextEditorPluginApi["restoreApplyUndo"],
 ): PluginContributionController {
   const setupDraft: PluginContributionDraft = {
     resolvers: [],
@@ -2225,9 +2229,7 @@ function createPluginContributionController(
     editCompletionListeners: [],
     mutationGuards: [],
     toolRenderers: [],
-    scriptIndexOperations: [],
     fileOperationResolvers: [],
-    applyFileAccessProviders: [],
   };
   let state: "active" | "closed" | "setup" = "setup";
   const assertAvailable = (): void => {
@@ -2309,7 +2311,6 @@ function createPluginContributionController(
     },
   });
   const api: TextEditorPluginApi = {
-    restoreApplyUndo,
     addMutationTool(registration): void {
       assertAvailable();
       assertTextMutationToolRegistration(registration);
@@ -2329,23 +2330,6 @@ function createPluginContributionController(
         mutationTools: [registration],
       });
     },
-    addApplyFileAccessProvider(provider): void {
-      assertAvailable();
-      if (typeof provider !== "function") throw new TypeError("Invalid Apply file access provider");
-      if (state === "setup") {
-        requiredValue(setupDraft.applyFileAccessProviders).push(provider);
-        return;
-      }
-      registerContributions({
-        resolvers: [],
-        anchorResolvers: [],
-        handlers: [],
-        promptContributions: [],
-        writablePromptContributions: [],
-        tools: [],
-        applyFileAccessProviders: [provider],
-      });
-    },
     addFileOperationResolver(resolver): void {
       assertAvailable();
       if (typeof resolver !== "function") throw new TypeError("Invalid whole-file resolver");
@@ -2361,22 +2345,6 @@ function createPluginContributionController(
         writablePromptContributions: [],
         tools: [],
         fileOperationResolvers: [resolver],
-      });
-    },
-    addScriptIndexOperation(operation): void {
-      assertAvailable();
-      if (state === "setup") {
-        requiredValue(setupDraft.scriptIndexOperations).push(operation);
-        return;
-      }
-      registerContributions({
-        resolvers: [],
-        anchorResolvers: [],
-        handlers: [],
-        promptContributions: [],
-        writablePromptContributions: [],
-        tools: [],
-        scriptIndexOperations: [operation],
       });
     },
     addToolRenderer(registration): void {

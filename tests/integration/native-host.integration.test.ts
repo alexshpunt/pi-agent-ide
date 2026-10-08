@@ -76,7 +76,9 @@ test.each([false, true])(
         expect(getToolResultText(result, "script")).toContain("sdk-deferred-marker");
       }
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      // The harness awaits PTY tree exit; Windows can release directory locks just after it.
+      // Retry removal briefly, but still fail if the workspace remains locked.
+      await rm(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
   },
 );

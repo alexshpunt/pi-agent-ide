@@ -4,7 +4,7 @@ set -euo pipefail
 args=()
 case "${PI_AGENT_IDE_TEST_SELECTION:-}" in
   exclude) args=(--exclude-tools debug,stage,unstage) ;;
-  allow) args=(--tools read,diff,apply,codemode,tool_search,ide_exposure_probe) ;;
+  allow) args=(--tools read,diff,codemode,tool_search,ide_exposure_probe) ;;
   no-tools) args=(--no-tools) ;;
   no-builtins) args=(--no-builtin-tools) ;;
   *) echo "Unknown IDE test tool selection" >&2; exit 2 ;;

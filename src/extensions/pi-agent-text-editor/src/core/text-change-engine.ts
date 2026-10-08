@@ -8,6 +8,8 @@ export interface TextRange {
 
 export interface TextChange extends TextRange {
   readonly insert: string;
+  /** Copy may retain a destination range even when its text is already identical. */
+  readonly allowUnchanged?: true;
 }
 
 export interface AppliedTextChange {
@@ -220,7 +222,9 @@ export function applyTextChanges(
   validateChanges(source.length, ordered);
   if (
     !(creating && source.length === 0) &&
-    ordered.some((change) => source.slice(change.from, change.to) === change.insert)
+    ordered.some(
+      (change) => !change.allowUnchanged && source.slice(change.from, change.to) === change.insert,
+    )
   ) {
     throw new Error("Text changes must change the document.");
   }

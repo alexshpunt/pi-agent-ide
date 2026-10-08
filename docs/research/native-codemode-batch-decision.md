@@ -1,5 +1,9 @@
 # Solution decision: accumulate sequential Codemode text edits
 
+This records the original batching decision. LPT-403 later removed Apply without changing the native batching policy.
+
+LPT-439 later made Write immediate: pending edits commit before Write, and Write saves and finishes its post-edit processing before returning. If an existing file already matches the supplied content, Write returns its whole-file selection without writing or running post-edit handlers. A missing empty file is still created. Write does not join the pending batch. The policy below still applies to other eligible text edits.
+
 ## Question
 
 Should sequential editor calls in native Codemode share only original coordinates, or also one combined write, and where should that batch end?

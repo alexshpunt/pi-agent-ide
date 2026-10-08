@@ -8,65 +8,6 @@ const target: ResultSourceTarget = {
 };
 
 describe("source result targets", () => {
-  test("verifies a remote snapshot only through its trusted owner and keeps that owner through composition", async () => {
-    const store = new ResultTargetStore();
-    const controller = new AbortController();
-    const seen: (AbortSignal | undefined)[] = [];
-    let current = target.expectedContent;
-    const remote = {
-      ...target,
-      source: "ssh://owned/work/a.txt",
-      async readCurrent(signal?: AbortSignal) {
-        seen.push(signal);
-        return current;
-      },
-    };
-    const reference = store.register([remote], "/workspace");
-    const selected = store.resolve([{ target: reference }, { target: reference }], "/workspace");
-    const composed = store.register(selected.targets, "/workspace");
-    await store.verify(store.resolve(composed, "/workspace"), controller.signal);
-    expect(seen).toEqual([controller.signal]);
-    current = "changed café\n";
-    await expect(store.verify(selected)).rejects.toThrow("stale");
-    const denied = store.register(
-      [
-        {
-          ...remote,
-          async readCurrent() {
-            throw Error("Owner guard denied");
-          },
-        },
-      ],
-      "/workspace",
-    );
-    await expect(store.verify(store.resolve(denied, "/workspace"))).rejects.toThrow(
-      "Owner guard denied",
-    );
-    expect(() =>
-      store.resolve({ source: remote.source, readCurrent: remote.readCurrent }, "/workspace"),
-    ).toThrow("no supported source target");
-  });
-
-  test("does not grant verified authority if cancellation happens during the owner's reread", async () => {
-    const store = new ResultTargetStore();
-    const controller = new AbortController();
-    const reference = store.register(
-      [
-        {
-          ...target,
-          source: "ssh://owned/work/a.txt",
-          async readCurrent() {
-            controller.abort(Error("Owned verification cancelled"));
-            return target.expectedContent;
-          },
-        },
-      ],
-      "/workspace",
-    );
-    await expect(
-      store.verify(store.resolve(reference, "/workspace"), controller.signal),
-    ).rejects.toThrow("Owned verification cancelled");
-  });
   test("keeps snapshot authority out of projected JSON and returned coordinates", () => {
     const store = new ResultTargetStore();
     const reference = store.register([target], "/workspace");

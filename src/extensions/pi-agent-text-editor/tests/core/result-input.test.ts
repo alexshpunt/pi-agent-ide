@@ -74,7 +74,7 @@ for (const complete of [true, false]) {
       const result = await tool.execute(
         "structured-replace",
         {
-          path: { target, source: "/wrong/source", range: { startColumn: 0, endColumn: 999 } },
+          path: target,
           text: "READY",
         },
         undefined,

@@ -10,6 +10,7 @@ import { SshBackendError, type SshBackend } from "./ssh.js";
 import { startSshDapTransport } from "./dap-transport.js";
 import { startSshTcpDapTransport } from "./dap-tcp-transport.js";
 import { prepareSshNodeDebugger } from "./dap-node-transport.js";
+import { prepareSshJavaDebugger } from "./dap-java-transport.js";
 import type { DebugSessionOptions } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 
 type StdioRecipe = {
@@ -175,7 +176,6 @@ function stdioRecipe(
         },
       };
     }
-    case "java":
     case "kotlin": {
       if (options.mainClass === undefined)
         throw new Error("Java and Kotlin debug sessions require mainClass");
@@ -272,6 +272,13 @@ export function createSshDebuggerWorkspaceOwner(
         const program = resolve(options.program).location.path;
         const nativeCwd = resolve(options.cwd).location.path;
         const source = resolve(options.sourceFile).location.path;
+        if (options.adapter === "java")
+          return await prepareSshJavaDebugger(
+            registry,
+            root.location.source,
+            { ...options, cwd: nativeCwd, program, sourceFile: source },
+            signal,
+          );
         if (
           options.adapter === "delve" ||
           options.adapter === "ruby" ||

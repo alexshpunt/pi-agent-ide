@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, test, vi } from "vitest";
 
-import { TempResourceStore } from "#src/core/tools/read/temp-resource-store.js";
+import { TempResourceStore } from "pi-agent-resource";
 
 const stores: TempResourceStore[] = [];
 const directories: string[] = [];

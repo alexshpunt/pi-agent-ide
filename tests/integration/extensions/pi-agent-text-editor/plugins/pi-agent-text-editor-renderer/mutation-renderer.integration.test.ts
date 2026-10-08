@@ -1227,7 +1227,7 @@ function verifyLargeWriteQuiescence(input: LargeWriteQuiescenceInput) {
 
 function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: string): number {
   const successorFrameIndex = input.frames.findIndex(({ text: frameText }) =>
-    frameText.includes("stream-ahead.txt"),
+    frameText.includes("read stream-ahead.txt"),
   );
   if (successorFrameIndex < 0) {
     throw new Error("No synchronized frame showed the later tool call");
@@ -1235,19 +1235,22 @@ function verifySuccessorCatchUp(input: LargeWriteQuiescenceInput, finalRow: stri
   const settledAfterSuccessor = input.frames
     .slice(successorFrameIndex)
     .find(({ text: frameText }) => {
-      // An expanded panel's header can be above the live viewport. Its visible tail
-      // still proves catch-up; the full final capture checks all rows separately.
-      const start = Math.max(0, frameText.indexOf("write large-write.txt"));
-      const end = frameText.indexOf("╯", start);
-      if (end < 0) return false;
-      const mutationPanel = frameText.slice(start, end + 1);
-      return mutationPanel.indexOf("▌") < 0 && mutationPanel.indexOf(finalRow) >= 0;
+      const successor = frameText.indexOf("read stream-ahead.txt");
+      if (successor < 0) return false;
+      // Expanded panels can scroll their header out of the native fullscreen viewport.
+      // oxlint-disable-next-line unicorn/prefer-set-has -- This is substring matching on a terminal frame, not array membership.
+      const mutationPanel = frameText.slice(0, successor);
+      return (
+        mutationPanel.includes("╯") &&
+        !mutationPanel.includes("▌") &&
+        mutationPanel.includes(finalRow)
+      );
     });
   if (settledAfterSuccessor === undefined) {
     throw new Error("The mutation animation did not settle after the later tool call appeared");
   }
   const successorFrame = input.frames[successorFrameIndex];
-  if (successorFrame === undefined) throw new Error("The successor frame is missing");
+  if (successorFrame === undefined) throw new Error("Missing successor frame");
   const visualCatchUpMs = input.frameDelaysMs
     .slice(successorFrame.frame, settledAfterSuccessor.frame)
     .reduce((sum, delay) => sum + delay, 0);

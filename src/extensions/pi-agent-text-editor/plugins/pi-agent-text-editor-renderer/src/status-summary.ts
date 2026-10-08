@@ -9,12 +9,25 @@ export function summarizeStatuses(
 ) {
   const formatted = new Set<string>();
   const formatters = new Set<string>();
+  const alreadyFormatted = new Set<string>();
+  const unchangedFormatters = new Set<string>();
   const remaining = new Map<string, { status: MutationDiffStatus; paths: Set<string> }>();
   for (const resource of resources)
     for (const status of resource.diffStatuses ?? []) {
-      if (status.formatter !== undefined && status.tone === "success") {
-        formatted.add(resource.path);
-        formatters.add(status.formatter);
+      if (
+        status.formatter !== undefined &&
+        status.tone === "success" &&
+        (status.formattingStatus === undefined ||
+          status.formattingStatus === "changed" ||
+          status.formattingStatus === "unchanged")
+      ) {
+        if (status.formattingStatus === "unchanged") {
+          alreadyFormatted.add(resource.path);
+          unchangedFormatters.add(status.formatter);
+        } else {
+          formatted.add(resource.path);
+          formatters.add(status.formatter);
+        }
         continue;
       }
       const key = JSON.stringify([status.text, status.tone]);
@@ -28,6 +41,8 @@ export function summarizeStatuses(
   return {
     formatted: [...formatted],
     formatters: [...formatters],
+    alreadyFormatted: [...alreadyFormatted],
+    unchangedFormatters: [...unchangedFormatters],
     statuses: [...remaining.values()].map(({ status, paths }) => ({ status, paths: [...paths] })),
   };
 }

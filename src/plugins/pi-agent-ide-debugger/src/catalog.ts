@@ -15,7 +15,7 @@ export const DEBUGGER_LANGUAGE_MATRIX: readonly DebuggerLanguageMatrixEntry[] = 
   { language: "dart", backend: "dart debug_adapter", status: "verified" },
   { language: "elixir", backend: "elixir-ls", status: "verified" },
   { language: "go", backend: "dlv dap", status: "verified" },
-  { language: "java", backend: "kotlin-debug-adapter", status: "verified" },
+  { language: "java", backend: "java-debug / JDT LS", status: "verified" },
   { language: "javascript", backend: "vscode-js-debug", status: "verified" },
   { language: "julia", backend: "DebugAdapter.jl", status: "verified" },
   { language: "kotlin", backend: "kotlin-debug-adapter", status: "verified" },
@@ -127,10 +127,26 @@ export const DEBUGGER_RECIPES: readonly ToolRecipe[] = [
     },
   },
   {
+    id: "java-debug",
+    name: "Microsoft Java Debug Server",
+    kind: "debugger",
+    languages: ["java"],
+    executables: ["java"],
+    dependencies: ["JDK 21+", "Eclipse JDT LS 1.61.0", "Microsoft java-debug 0.53.2"],
+    documentation: "https://github.com/microsoft/java-debug",
+    debugger: {
+      runtimeExecutables: ["java"],
+      adapterExecutables: ["java"],
+      platforms: ["linux", "win32"],
+      install:
+        "Install JDK 21+, Eclipse JDT LS 1.61.0 and the java-debug 0.53.2 plugin jar (from vscode-java-debug 0.59.0). Set PI_JAVA_PATH (or JAVA_HOME), PI_JDTLS_HOME and PI_JAVA_DEBUG_PLUGIN_PATH. Compile with javac -g before debugging. Pi owns a suspended target JVM and attaches through JDT LS; Kotlin still uses its own adapter.",
+    },
+  },
+  {
     id: "kotlin-debug-adapter",
     name: "Kotlin Debug Adapter",
     kind: "debugger",
-    languages: ["java", "kotlin"],
+    languages: ["kotlin"],
     executables: ["kotlin-debug-adapter"],
     dependencies: [
       "fwcd/kotlin-debug-adapter 0.4.4",

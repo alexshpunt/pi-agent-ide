@@ -1,5 +1,10 @@
 import { withBlockedToolResult } from "pi-agent-tool-call-interception";
-import { withStructuredResult, type ResultTargetStore } from "pi-agent-resource";
+import {
+  resourceAccesses,
+  resourceScheduler,
+  withStructuredResult,
+  type ResultTargetStore,
+} from "pi-agent-resource";
 import { searchDataSchema } from "#src/api/structured-result.js";
 
 import type { SearchPlugin } from "#src/api/plugin-protocol.js";
@@ -238,110 +243,150 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
       const emptyProtocol = /^[a-z][\w-]*:\s*$/iu.test(request.query);
       const protocolLike = /^[a-z][\w-]*:/iu.test(request.query);
       for (const entry of snapshot) {
-        if (emptyProtocol && !entry.registration.fallback) continue;
+        if (context.scope !== undefined && entry.registration.resolver.supportsResultScope !== true)
+          continue;
+        const structuralProtocol = /^(?:ast|symbols):/u.test(request.query);
+        if (entry.registration.fallback && structuralProtocol && context.scope !== undefined)
+          continue;
+        if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;
         if (context.scope !== undefined && resolver.supportsResultScope !== true) continue;
         if (context.scope !== undefined && entry.registration.fallback && protocolLike) continue;
-        let attempt: unknown;
 
         try {
-          context.signal?.throwIfAborted();
-          attempt = await resolver.tryResolve(request, context);
+          const scope = Promise.resolve().then(async () => {
+            const sources = await resolver.readResources?.(request, context);
+            if (sources === undefined) return [{ resource: "*", mode: "read" as const }];
+            return (
+              await Promise.all(
+                sources.map((source) => resourceAccesses(source, context.cwd, "read")),
+              )
+            ).flat();
+          });
+          const result = await resourceScheduler.run(
+            scope,
+            async (): Promise<SearchToolResult | undefined> => {
+              let attempt: unknown;
+
+              try {
+                context.signal?.throwIfAborted();
+                attempt = await resolver.tryResolve(request, context);
+              } catch (error) {
+                return failure(
+                  "RESOLVE_FAILED",
+                  messageFor(error, `Resolver ${resolver.id} failed`),
+                  resolver.id,
+                  error,
+                );
+              }
+
+              if (!isAttempt(attempt)) {
+                return failure(
+                  "INVALID_RESOLVER_RESULT",
+                  `Resolver ${resolver.id} returned an invalid result`,
+                  resolver.id,
+                );
+              }
+
+              if (attempt.kind === "not-handled") {
+                return undefined;
+              }
+
+              if (attempt.kind === "failed") {
+                return failure(
+                  "RESOLVE_FAILED",
+                  messageFor(attempt.error, `Resolver ${resolver.id} failed`),
+                  resolver.id,
+                  attempt.error,
+                );
+              }
+
+              try {
+                const formatted = await resolver.format(attempt.payload, context);
+
+                if (!isAgentToolResult(formatted)) {
+                  return failure(
+                    "FORMAT_FAILED",
+                    `Resolver ${resolver.id} formatter returned an invalid result`,
+                    resolver.id,
+                  );
+                }
+
+                const data = resolver.toScriptData?.(attempt.payload, formatted.details);
+                const missingAdapter = data === undefined;
+                return withStructuredResult(
+                  {
+                    content: [
+                      ...(entry.registration.fallback && protocolLike
+                        ? [
+                            {
+                              type: "text" as const,
+                              text: emptyProtocol
+                                ? "Search fallback: empty protocol query; searched the original text."
+                                : "Search fallback: unhandled protocol query; searched the original text.",
+                            },
+                            ...formatted.content,
+                          ]
+                        : formatted.content),
+                      ...(isRecord(data) && data.complete === false
+                        ? [
+                            {
+                              type: "text" as const,
+                              text: "Search coverage is incomplete. Do not conclude absence or use this result as an edit scope.",
+                            },
+                          ]
+                        : []),
+                    ],
+                    details: { resolverId: resolver.id, payload: formatted.details },
+                    ...(audience === "script" && {
+                      script: {
+                        resolverId: resolver.id,
+                        data: attempt.payload,
+                        details: formatted.details,
+                      },
+                    }),
+                    ...(formatted.usage !== undefined && { usage: formatted.usage }),
+                  },
+                  searchDataSchema,
+                  missingAdapter
+                    ? {
+                        status: "error",
+                        errors: [
+                          {
+                            code: "STRUCTURED_ADAPTER_REQUIRED",
+                            message: `Search resolver ${resolver.id} must provide toScriptData`,
+                          },
+                        ],
+                      }
+                    : formatted.isError
+                      ? {
+                          status: "error",
+                          data,
+                          errors: [
+                            {
+                              code: "RESOLVE_FAILED",
+                              message: `Search resolver ${resolver.id} returned an error`,
+                            },
+                          ],
+                        }
+                      : { status: "success", data, errors: [] },
+                );
+              } catch (error) {
+                return failure(
+                  "FORMAT_FAILED",
+                  messageFor(error, `Resolver ${resolver.id} formatter failed`),
+                  resolver.id,
+                  error,
+                );
+              }
+            },
+            context.signal,
+          );
+          if (result !== undefined) return result;
         } catch (error) {
           return failure(
             "RESOLVE_FAILED",
             messageFor(error, `Resolver ${resolver.id} failed`),
-            resolver.id,
-            error,
-          );
-        }
-
-        if (!isAttempt(attempt)) {
-          return failure(
-            "INVALID_RESOLVER_RESULT",
-            `Resolver ${resolver.id} returned an invalid result`,
-            resolver.id,
-          );
-        }
-
-        if (attempt.kind === "not-handled") {
-          continue;
-        }
-
-        if (attempt.kind === "failed") {
-          return failure(
-            "RESOLVE_FAILED",
-            messageFor(attempt.error, `Resolver ${resolver.id} failed`),
-            resolver.id,
-            attempt.error,
-          );
-        }
-
-        try {
-          const formatted = await resolver.format(attempt.payload, context);
-
-          if (!isAgentToolResult(formatted)) {
-            return failure(
-              "FORMAT_FAILED",
-              `Resolver ${resolver.id} formatter returned an invalid result`,
-              resolver.id,
-            );
-          }
-
-          const data = resolver.toScriptData?.(attempt.payload, formatted.details);
-          const missingAdapter = data === undefined;
-          return withStructuredResult(
-            {
-              content:
-                entry.registration.fallback && protocolLike
-                  ? [
-                      {
-                        type: "text",
-                        text: emptyProtocol
-                          ? "Search fallback: empty protocol query; searched the original text."
-                          : "Search fallback: unhandled protocol query; searched the original text.",
-                      },
-                      ...formatted.content,
-                    ]
-                  : formatted.content,
-              details: { resolverId: resolver.id, payload: formatted.details },
-              ...(audience === "script" && {
-                script: {
-                  resolverId: resolver.id,
-                  data: attempt.payload,
-                  details: formatted.details,
-                },
-              }),
-              ...(formatted.usage !== undefined && { usage: formatted.usage }),
-            },
-            searchDataSchema,
-            missingAdapter
-              ? {
-                  status: "error",
-                  errors: [
-                    {
-                      code: "STRUCTURED_ADAPTER_REQUIRED",
-                      message: `Search resolver ${resolver.id} must provide toScriptData`,
-                    },
-                  ],
-                }
-              : formatted.isError
-                ? {
-                    status: "error",
-                    data,
-                    errors: [
-                      {
-                        code: "RESOLVE_FAILED",
-                        message: `Search resolver ${resolver.id} returned an error`,
-                      },
-                    ],
-                  }
-                : { status: "success", data, errors: [] },
-          );
-        } catch (error) {
-          return failure(
-            "FORMAT_FAILED",
-            messageFor(error, `Resolver ${resolver.id} formatter failed`),
             resolver.id,
             error,
           );

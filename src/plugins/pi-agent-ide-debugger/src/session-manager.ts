@@ -13,6 +13,7 @@ import type {
   DebugWorkspaceOwnerResolver,
   OwnedDebugAdapter,
 } from "./workspace-owner.js";
+import { JavaDebugRuntime } from "./java-runtime.js";
 import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import {
   DapClient,
@@ -54,7 +55,12 @@ export interface DebugBreakpoint {
   readonly id: string;
   readonly source: string;
   readonly file: string;
-  readonly line: number;
+  /** Requested source line, kept when the adapter relocates the breakpoint. */
+  readonly requestedLine: number;
+  /** Current line reported by the adapter. */
+  line: number;
+  /** Adapter identity used by later binding-change events. */
+  adapterId?: number;
   verified: boolean;
 }
 
@@ -106,6 +112,7 @@ export interface DebugSession {
   controlClient?: DapClient;
   clients?: DapClient[];
   adapterProcess?: ChildProcess;
+  javaRuntime?: JavaDebugRuntime;
   adapterTemporaryDirectory?: string;
   targetReady?: Promise<void>;
   resolveTargetReady?: () => void;
@@ -150,7 +157,11 @@ interface EvaluateBody {
   readonly variablesReference?: number;
 }
 interface SetBreakpointsBody {
-  readonly breakpoints?: readonly { readonly verified?: boolean; readonly line?: number }[];
+  readonly breakpoints?: readonly {
+    readonly id?: number;
+    readonly verified?: boolean;
+    readonly line?: number;
+  }[];
 }
 
 /** Owns debug sessions and keeps DAP references scoped to their current stop. */
@@ -284,6 +295,7 @@ export class DebugSessionManager {
       id,
       source: `${session.source}/breakpoint/${id}`,
       file,
+      requestedLine: line,
       line,
       verified: false,
     };
@@ -304,7 +316,53 @@ export class DebugSessionManager {
 
   /** Launch the debuggee, configure breakpoints, and wait for a stop or termination. */
   async start(session: DebugSession, signal?: AbortSignal): Promise<DebugSession> {
+    if (session.options.adapter === "java" && this.#owner(session) === undefined)
+      return this.#startJava(session, signal);
     return this.#start(session, signal, 2);
+  }
+
+  async #startJava(session: DebugSession, signal?: AbortSignal): Promise<DebugSession> {
+    if (session.status !== "configured") throw new Error(`Session is already ${session.status}`);
+    const runtime = new JavaDebugRuntime();
+    session.javaRuntime = runtime;
+    const startupSignal = AbortSignal.any([
+      ...(signal === undefined ? [] : [signal]),
+      AbortSignal.timeout(30_000),
+    ]);
+    const abortStartup = (): void => {
+      void runtime.close();
+    };
+    session.status = "running";
+    this.#notify(session);
+    try {
+      const { client, attach } = await runtime.start(session.options, startupSignal);
+      session.client = client;
+      session.controlClient = client;
+      startupSignal.addEventListener("abort", abortStartup, { once: true });
+      session.clients = [client];
+      await initializeClient(client, "java", startupSignal);
+      await Promise.all([
+        client.waitForAnyEvent(["initialized"], 30_000, startupSignal),
+        client.request("attach", attach, { signal: startupSignal }),
+      ]);
+      await this.#configureBreakpoints(session, client, startupSignal);
+      // java-debug installs its event listeners before configurationDone resumes the JVM.
+      await client.request("configurationDone", undefined, { signal: startupSignal });
+      await this.#waitForStop(session, startupSignal);
+      if (this.snapshot(session).status === "terminated") await runtime.close();
+      return session;
+    } catch (error) {
+      await runtime.close();
+      session.javaRuntime = undefined;
+      session.client = undefined;
+      session.controlClient = undefined;
+      session.clients = undefined;
+      session.status = "configured";
+      this.#notify(session);
+      throw error;
+    } finally {
+      startupSignal.removeEventListener("abort", abortStartup);
+    }
   }
 
   async #start(
@@ -350,7 +408,7 @@ export class DebugSessionManager {
       await Promise.race([initialized, launch.then(() => initialized)]);
       await this.#configureBreakpoints(session, client, signal);
       const configurationDone = client.request("configurationDone", undefined, { signal });
-      if (session.options.adapter === "java" || session.options.adapter === "kotlin") {
+      if (session.options.adapter === "kotlin") {
         // kotlin-debug-adapter deliberately keeps this response pending for the session lifetime.
         void configurationDone.catch(() => {});
       } else {
@@ -401,6 +459,34 @@ export class DebugSessionManager {
     }
   }
 
+  /** Refresh execution state from events that arrived after a control wait ended. */
+  async refresh(session: DebugSession): Promise<void> {
+    if (session.client === undefined) return;
+    for (
+      let event = session.client.takeEvent(["breakpoint"]);
+      event !== undefined;
+      event = session.client.takeEvent(["breakpoint"])
+    ) {
+      this.#updateBreakpoint(session, event);
+    }
+    if (session.status === "terminated") return;
+    for (;;) {
+      const event = session.client.takeEvent([
+        ...(session.status === "running" ? ["stopped"] : []),
+        "terminated",
+        "exited",
+      ]);
+      if (event === undefined) return;
+      if (event.event === "stopped") await this.#captureStop(session, event);
+      else {
+        session.status = "terminated";
+        session.stop = undefined;
+        this.#notify(session);
+        await session.javaRuntime?.close();
+        return;
+      }
+    }
+  }
   /** Continue or step and wait for the next observable execution state. */
   async command(
     session: DebugSession,
@@ -408,6 +494,7 @@ export class DebugSessionManager {
     signal?: AbortSignal,
   ): Promise<DebugSession> {
     this.#owner(session);
+    await this.refresh(session);
     if (session.status !== "stopped" || session.stop === undefined) {
       throw new Error(`Cannot ${command} while session is ${session.status}`);
     }
@@ -418,6 +505,7 @@ export class DebugSessionManager {
     session.status = "running";
     this.#notify(session);
     await this.#waitForStop(session, signal);
+    if (this.snapshot(session).status === "terminated") await session.javaRuntime?.close();
     return session;
   }
 
@@ -428,10 +516,13 @@ export class DebugSessionManager {
     signal?: AbortSignal,
   ): Promise<DebugEvaluation> {
     this.#owner(session);
+    await this.refresh(session);
     if (session.status !== "stopped" || session.stop?.frame === undefined) {
       throw new Error(`Cannot evaluate while session is ${session.status}`);
     }
     const trimmed = expression.trim();
+    const stop = session.stop;
+    const frameId = session.stop.frame.id;
     if (trimmed.length === 0) throw new Error("Debug evaluation requires an expression");
     const response = await requiredClient(session).request<EvaluateBody>(
       "evaluate",
@@ -445,6 +536,8 @@ export class DebugSessionManager {
     if (typeof response.result !== "string") {
       throw new Error("Debug adapter returned no evaluation result");
     }
+    session.stop = { ...stop, variables: await this.#readVariables(session, frameId) };
+    this.#notify(session);
     return {
       expression: trimmed,
       result: response.result,
@@ -475,6 +568,7 @@ export class DebugSessionManager {
         .catch(() => {});
       await Promise.all((session.clients ?? [session.client]).map((client) => client.dispose()));
     }
+    await session.javaRuntime?.close();
     await terminateOwnedAdapterProcess(session.adapterProcess);
     await removeAdapterTemporaryDirectory(session);
     session.status = "terminated";
@@ -771,13 +865,16 @@ export class DebugSessionManager {
       "setBreakpoints",
       {
         source: { path: this.#owner(session)?.serverPath(file) ?? file, name: path.basename(file) },
-        breakpoints: breakpoints.map(({ line }) => ({ line })),
+        breakpoints: breakpoints.map(({ requestedLine }) => ({ line: requestedLine })),
         sourceModified: false,
       },
       { signal },
     );
     for (const [index, breakpoint] of breakpoints.entries()) {
-      breakpoint.verified = response.breakpoints?.[index]?.verified === true;
+      const bound = response.breakpoints?.[index];
+      breakpoint.verified = bound?.verified === true;
+      breakpoint.line = bound?.line ?? breakpoint.requestedLine;
+      breakpoint.adapterId = bound?.id;
     }
   }
 
@@ -826,22 +923,7 @@ export class DebugSessionManager {
       return;
     }
     if (event.event === "breakpoint") {
-      const changed = asRecord(body.breakpoint);
-      const changedSource = asRecord(changed.source);
-      for (const breakpoint of session.breakpoints.values()) {
-        if (
-          changed.verified === true &&
-          typeof changed.line === "number" &&
-          changed.line === breakpoint.line &&
-          typeof changedSource.path === "string" &&
-          sameFilePath(
-            this.#owner(session)?.resourcePath(changedSource.path) ?? changedSource.path,
-            breakpoint.file,
-          )
-        ) {
-          breakpoint.verified = true;
-        }
-      }
+      this.#updateBreakpoint(session, event);
       await this.#waitForStop(session, signal);
       return;
     }
@@ -917,6 +999,25 @@ export class DebugSessionManager {
     if (session.options.adapter === "shell") this.#notify(session);
   }
 
+  #updateBreakpoint(session: DebugSession, event: DapEvent): void {
+    const changed = asRecord(asRecord(event.body).breakpoint);
+    const source = asRecord(changed.source);
+    for (const breakpoint of session.breakpoints.values()) {
+      const matches =
+        typeof changed.id === "number" && breakpoint.adapterId !== undefined
+          ? changed.id === breakpoint.adapterId
+          : typeof source.path === "string" &&
+            sameFilePath(
+              this.#owner(session)?.resourcePath(source.path) ?? source.path,
+              breakpoint.file,
+            ) &&
+            changed.line === breakpoint.requestedLine;
+      if (!matches) continue;
+      if (typeof changed.line === "number") breakpoint.line = changed.line;
+      breakpoint.verified = changed.verified === true;
+    }
+    this.#notify(session);
+  }
   async #captureStop(session: DebugSession, event: DapEvent, notify = true): Promise<void> {
     const client = requiredClient(session);
     const body = asRecord(event.body);
@@ -941,27 +1042,7 @@ export class DebugSessionManager {
         }
       }
     }
-    const variables: DebugVariable[] = [];
-    if (frame !== undefined) {
-      const scopes =
-        (await client.request<ScopesBody>("scopes", { frameId: frame.id })).scopes ?? [];
-      const localScopes =
-        session.options.adapter === "r"
-          ? scopes
-          : scopes.filter((item) =>
-              [item.name.toLowerCase(), item.presentationHint?.toLowerCase()].some(
-                (value) => value?.includes("local") === true || value === "variables",
-              ),
-            );
-      for (const scope of localScopes) {
-        const values = await client.request<VariablesBody>("variables", {
-          variablesReference: scope.variablesReference,
-          start: 0,
-          count: 100,
-        });
-        variables.push(...(values.variables ?? []));
-      }
-    }
+    const variables = frame === undefined ? [] : await this.#readVariables(session, frame.id);
     session.stopGeneration++;
     session.stop = {
       generation: session.stopGeneration,
@@ -976,6 +1057,28 @@ export class DebugSessionManager {
     if (notify) this.#notify(session);
   }
 
+  async #readVariables(session: DebugSession, frameId: number): Promise<DebugVariable[]> {
+    const client = requiredClient(session);
+    const scopes = (await client.request<ScopesBody>("scopes", { frameId })).scopes ?? [];
+    const localScopes =
+      session.options.adapter === "r"
+        ? scopes
+        : scopes.filter((item) =>
+            [item.name.toLowerCase(), item.presentationHint?.toLowerCase()].some(
+              (value) => value?.includes("local") === true || value === "variables",
+            ),
+          );
+    const variables: DebugVariable[] = [];
+    for (const scope of localScopes) {
+      const values = await client.request<VariablesBody>("variables", {
+        variablesReference: scope.variablesReference,
+        start: 0,
+        count: 100,
+      });
+      variables.push(...(values.variables ?? []));
+    }
+    return variables;
+  }
   #notify(session: DebugSession): void {
     const snapshot = this.snapshot(session);
     for (const listener of this.#changeListeners) listener(snapshot);
@@ -1291,7 +1394,7 @@ async function adapterRecipe(
       launch: { ...common, type: "python", console: "internalConsole", justMyCode: false },
     };
   }
-  if (options.adapter === "java" || options.adapter === "kotlin") {
+  if (options.adapter === "kotlin") {
     if (options.mainClass === undefined) {
       throw new Error("Java and Kotlin debug sessions require mainClass");
     }

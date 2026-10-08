@@ -14,6 +14,7 @@ import {
 } from "#src/core/diagnostic-entry.js";
 import { runIdePostEditGate } from "#src/post-edit/gate.js";
 import { resetRegistry } from "#src/toolchain/registry.js";
+import registerCodeReview from "#src/code-review/extension.js";
 import {
   connectTextEditorPostEditHandler,
   afterPostEditScope,
@@ -103,5 +104,6 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
     unsubscribeDiagnostics();
   });
 
+  await registerCodeReview(pi);
   await core.waitForPendingPlugins();
 }

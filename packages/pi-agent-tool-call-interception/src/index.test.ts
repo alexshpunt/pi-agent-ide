@@ -42,6 +42,19 @@ const definition: ToolDefinition = {
   renderResult: () => new ResettingComponent("result\u001B[49mafter"),
 };
 
+test("keeps parameter schema callbacks live after wrapping", () => {
+  let revision = 0;
+  const dynamic: ToolDefinition = {
+    ...definition,
+    get parameters() {
+      return Type.Object({ path: Type.String({ description: String(revision) }) });
+    },
+  };
+  const wrapped = withToolCallInterceptionRendering(dynamic, new ToolCallInterceptionRenderStore());
+  expect(wrapped.parameters).toEqual(dynamic.parameters);
+  revision += 1;
+  expect(wrapped.parameters).toEqual(dynamic.parameters);
+});
 test("keeps description callbacks live after wrapping", () => {
   let revision = 0;
   const dynamic = {

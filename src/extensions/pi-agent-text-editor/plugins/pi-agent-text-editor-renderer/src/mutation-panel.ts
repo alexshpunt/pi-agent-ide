@@ -272,6 +272,14 @@ function renderTail(
       path: resource.path,
       diffStatuses: [
         ...(resource.diffStatuses ?? []),
+        ...(resource.model?.rows.some((row) => row.inlineUnavailable)
+          ? [
+              {
+                text: "Inline diff unavailable: comparison limit reached",
+                tone: "warning" as const,
+              },
+            ]
+          : []),
         ...(resource.model?.omittedChanges === undefined
           ? []
           : [
@@ -307,6 +315,17 @@ function renderTail(
       resources.length === 1
         ? `Formatted (${by})`
         : `Formatted ${grouped.formatted.length} files by ${by}`;
+    statuses.unshift(theme.fg("success", label.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")));
+  }
+  if (grouped.alreadyFormatted.length > 0) {
+    const by =
+      grouped.unchangedFormatters.length === 1
+        ? grouped.unchangedFormatters[0]
+        : `${grouped.unchangedFormatters.length} formatters`;
+    const label =
+      resources.length === 1
+        ? `Already formatted (${by})`
+        : `Already formatted ${grouped.alreadyFormatted.length} files by ${by}`;
     statuses.unshift(theme.fg("success", label.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")));
   }
   const text = [counts, ...statuses]

@@ -29,6 +29,8 @@ export interface MutationFormatting {
 export interface MutationDiffStatus {
   /** Formatter identity allows multi-file summaries without parsing display text. */
   readonly formatter?: string;
+  /** Observed formatter state for this label, kept distinct from file edit counts. */
+  readonly formattingStatus?: MutationFormatting["status"];
   readonly text: string;
   readonly tone?: "muted" | "success" | "warning" | "error";
 }
@@ -236,6 +238,8 @@ export interface FileMutationData {
 
   staleDiagnostic?: StaleAnchorDiagnostic | undefined;
   fileChangedStatement?: string | undefined;
+  /** Failed rollback resources; an empty list means all attempted writes were restored. */
+  rollback?: { readonly failedSources: readonly string[] } | undefined;
 
   // ── Transient engine fields ──
   snapshot?: MutationSnapshot | undefined;
@@ -267,7 +271,7 @@ export interface FileMutationData {
  * Phases are batch-wide (gate runs once for all files), not per-FMR.
  */
 export interface FileMutationBatchResult {
-  /** Observed effects of a failed execution, independent of its error state. */
+  /** Observed effects of an execution, including an explicit no-op. */
   readonly effect?: "applied" | "not-applied" | "unknown";
   /** Structured contributions from configured IDE mutation handlers. */
   readonly metadata?: Readonly<Record<string, unknown>>;
@@ -325,7 +329,21 @@ export class FileMutationResult {
   readonly data: FileMutationData;
 
   public constructor(data?: FileMutationData) {
-    this.data = data ?? {};
+    const formatting = data?.formatting;
+    this.data =
+      formatting === undefined || data?.diffStatuses === undefined
+        ? (data ?? {})
+        : {
+            ...data,
+            diffStatuses: data.diffStatuses.map((status) =>
+              status.formattingStatus !== undefined ||
+              formatting.formatter === undefined ||
+              status.formatter !== formatting.formatter ||
+              (status.tone !== "success" && status.tone !== "error")
+                ? status
+                : { ...status, formattingStatus: formatting.status },
+            ),
+          };
   }
 
   // ── Getters ──

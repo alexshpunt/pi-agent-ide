@@ -27,7 +27,8 @@ export {
 export { type ChangedRange, computeChangedRanges } from "#src/core/mutation-result/diff.js";
 export {
   mutationDataSchema,
-  mutationOutputSchema,
+  mutationResultSchema,
+  type BatchMutationData,
   structuredMutation,
   type MutationData,
 } from "#src/core/structured-result.js";

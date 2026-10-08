@@ -1,59 +1,51 @@
-# Native IDE results
+# Readable IDE results and private records
 
-Read, Search, text mutations, Apply, diff, Git index tools, and debugger creation declare an `outputSchema` and return `structuredContent`. Native Codemode receives that object. Normal calls keep their readable content and existing renderers. Renderer `details` are not a script API.
+IDE tools expose readable text in direct calls and native Codemode. The existing Read views, Search anchors, edit effects and diffs remain the agent-facing output. Select shows its selected text and item references. Agents do not receive the private result records or need to inspect their fields.
 
-The shared envelope is:
+## Composition
 
-```ts
-{ status: "success", data: /* tool data */, errors: [] }
-{ status: "error" | "partial", data?: /* observed data */, errors: [{ code, message, source? }] }
+Each result starts with a labelled system-result envelope containing a random UUID. It is not part of a file and must not be edited or inserted into file contents.
+
+```js
+const source = await tools.read({ path: "notes.txt" });
+const matches = await tools.search({ path: source, query: "old" });
+const selected = await tools.select({ path: matches, operation: { kind: "trim", side: "both" } });
+text(await tools.replace({ path: selected, text: "new" }));
 ```
 
-`success` means the requested operation completed, including a search with no matches. `partial` means some work completed while other work failed. Output clipping is reported separately; it does not make a successful read an execution failure. `error` and `partial` set native `isError`.
+Pass the unchanged result to a supported source parameter. Direct calls also accept its UUID. Store/load retains the result string across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
 
-Check `status` before using data. Domain errors with structured results resolve in native Codemode; they do not automatically throw. Invalid arguments, blocked calls, and cancellation can still reject. A mutation error does not imply rollback. Check its observed effects before retrying.
+A result identifies its backend-owned ranges, not the text in its preview. Shortened output does not clip a complete selection or make an incomplete selection complete. Read around a selection may show context without granting authority to edit it.
 
-## Data by tool
+## Reference ownership
 
-- **Read:** `kind` is `text`, `bytes`, `native`, or `resources`. Text has original numbered `lines`, line endings, optional editable `anchors`, and source-level `references`. Bytes have exact `bytes: number[]`, byte offset, selected length, and total size. Native content has ordered text/image `blocks`; pass an image block to `image(...)`. Multi-source selections keep separate child resources.
-- **Search:** `matches` have a source, exact line/column range, optional matched text, and optional `references.line` / `references.match` selectors. Columns are zero-based UTF-16 offsets. `complete` describes the backend search; `truncated` describes the public window. `all` selectors exist only for complete registered selections. File searches return paths. Other resolvers return their documented JSON domain data under `kind: "custom"`.
-- **Mutations:** `operationId` identifies the call. `effect` and per-source `files` distinguish `pending`, `applied`, `not-applied`, and `unknown`. Recovery candidates, semantic action fields, and transaction receipts are included when available. Full before/after documents are not copied into receipts.
-- **Flush:** `operations` link final effects and errors to accepted child call IDs. It also returns per-source effects. An empty flush succeeds with no operations. A failed flush retains writes that happened and never replays accepted edits.
-- **Apply:** `operations` keep read and mutation outcomes in call order, including failed work. `files` and `transactions` retain committed checkpoints after a later failure. `values` contain only output explicitly requested by the script, not hidden snapshots.
-- **Diff:** returns source identities, equality, added/removed counts, and bounded unified diff text. It does not repeat both source documents.
-- **Git index tools:** return action, change selector, file, index state, observed effect, and whether it was already in the requested state.
-- **Debugger:** creation returns session, source, and breakpoint resource references plus configuration and status. Debugger mutation actions return selected breakpoint or evaluation fields, not full session snapshots.
+The session registry issues UUIDs and maps them to source handles. A guessed or computed hash has no authority unless the registry issued that reference. UUIDs are opaque references, not content hashes or signatures.
 
-## Native editor commits
+The registry validates session/worktree ownership, exact full-output identity, successful source status and live snapshots. Copying a valid ID within its session is intentional reuse, not forgery. Altering the body while keeping the envelope is rejected. An ID cannot grant wider ranges than its original selection.
 
-Sequential local edits share original snapshots. Child success with `effect: "pending"` means accepted, not written. Await an explicit flush when the script needs the final receipt:
+Changed files permanently retire old source and derived references. Restoring the old bytes does not revive them. Actual edit completions and script boundaries observe filesystem generations; retained source bytes are verified before use. Reload and session changes clear the registry.
 
-```ts
-const found = await tools.search({ query: "old", path: "note.txt" });
-if (found.status !== "success") throw new Error(found.errors[0].message);
-const changed = await tools.replace({ path: found.data.matches[0].references.match, text: "new" });
-if (changed.status !== "success") throw new Error(changed.errors[0].message);
-const saved = await tools.flush({});
-text(saved);
-```
+Pending edits reserve source handles without granting authority to unconfirmed writes. A dependent source operation commits the batch before using such a handle. Failed or cancelled edits cannot confirm it. Independent peer edits retain their original snapshots until the common commit.
 
-Resource-owned selectors may commit immediately rather than joining the local batch. Another tool or parent completion also commits pending local edits. The parent Codemode result records automatic commits in `details.editorBatchResults`; those reports contain receipts, not source snapshots. Ordinary script errors keep accepted independent edits. Abort and deadline discard pending edits but do not undo earlier commits.
+Read-only views, raw bytes, images and directory listings do not acquire text-edit authority. Their IDs can identify the resource for another read. Live shell/debugger references can be used only with their owning resource operations. File deletion supplies no reusable text selection.
 
-## Bounds and continuation
+## Internal records
 
-Public structured results must be finite plain JSON and fit within 1 MiB. Text windows keep at most 2,000 lines and 512 KiB of serialized line data. Raw byte windows keep at most 32,768 bytes, within the normal raw-read display budget. Registered search results keep the first 100 matches and at most 4 KiB of matched text per match.
+Each tool owns its validated record. Read, Search, Select, Diff, terminals, Git and debugger operations keep their own domain adapters. File edit receipts contain only operation, observed effect, file states and an optional verified selection handle. Delete omits selection fields. The parent Codemode result retains committed operation effects and errors.
 
-Read `continuation` is a complete next request with a resolved source and absolute offset. Follow it rather than recomputing offsets from a rendered annotation. `fullResult` identifies retained complete output when available. A huge indivisible block or invalid adapter returns an explicit error rather than a clipped success. Temporary references belong to their runtime.
+The text registry stores only ownership, a digest of the issued text, source references, resource identities and whether the result can be consumed. It does not copy line arrays, removed file contents, image bytes or debugger records into a second ledger. Source ranges and snapshots remain in the source-target store.
 
-Native structured content is not copied into stored session messages. Existing compact renderer details stay separate. Scripts that explicitly print large data still store what they print.
-Guides attached to native structured child calls stay on the readable parent result, even when the script prints only selected data. They do not become fields in the public data schema.
+The unified registration adapter omits public outputSchema. Pi's supported Codemode execution path therefore returns each tool's existing text instead of structuredContent. Public tool_result hooks register the private source metadata and return the readable text with its envelope. This does not modify Pi, rewrite scripts, add VM methods, or recognize JSON in Codemode output.
 
-## Resolver adapters
+Nested image blocks are delivered on the parent Codemode result; their bytes are not printed as text. Images remain ordinary native image content.
+Read's private native record contains image type and MIME metadata, not another copy of the image bytes. Large images therefore do not overflow the JSON-record budget while their native content stays unchanged.
 
-Search resolvers must provide `toScriptData(payload, formattedDetails)`. Select documented JSON domain fields or use `selectionData` from `pi-agent-search/api/search`. Missing adapters fail with `STRUCTURED_ADAPTER_REQUIRED`; invalid schema or non-JSON values fail with `INVALID_STRUCTURED_RESULT`. Neither case falls back to display-text parsing or raw payload dumping.
+## Errors and writes
 
-Standard Read Resources use the core text/bytes/native projection. Read handlers that return their own result must supply `script: ReadScriptData`; custom content needs an explicit supported projection. Source-level references and line anchors come from presenters, not parsed annotations.
+Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the readable file/operation effects and final parent result before retrying. An error does not prove rollback.
 
-The shared validation helpers live in `pi-agent-resource`. Read and Search export their data/output schemas through their existing public tool APIs. Text mutation schemas and `structuredMutation` are exported through `pi-agent-text-editor/api/mutation-result`.
+Automatic batch boundaries save pending edits, not their final formatting. Write finishes its own post-edit processing before returning. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
 
-Shell command results keep their separate native process contract. This change does not add a shared result store, cross-session handles, binary editing, or a new Apply interpreter.
+After an exact-text selector fails, the tool returns current anchors and blocks further exact-text edits for that file. Use a current anchor for the next successful edit. Exact text is then available again.
+
+See [editing](./agent-guides/editing.md), [Read](./agent-guides/read-resources.md) and [Select](./agent-guides/select-code.md) for their source and boundary contracts.

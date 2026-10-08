@@ -45,6 +45,22 @@ export const indexChangeSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const unstageChangeSchema = Type.Object(
+  {
+    file: {
+      ...indexChangeSchema.properties.file,
+      description:
+        "Path to a tracked text file in the current Git worktree. Relative paths resolve from the workspace.",
+    },
+    change: {
+      ...indexChangeSchema.properties.change,
+      description:
+        'Select one complete current CHANGE#HASH anchor returned by read with views: ["changes"].',
+    },
+  },
+  { additionalProperties: false },
+);
+
 interface IndexChangeToolDetails {
   readonly action: ChangeIndexAction;
   readonly change: string;
@@ -62,7 +78,7 @@ export function registerIndexChangeTools(
   pi.registerTool(createIndexChangeTool("unstage", executor, queue));
 }
 
-/** Build one guarded index change shared by standalone tools and Apply. */
+/** Build one guarded index change tool. */
 export function createIndexChangeTool(
   action: ChangeIndexAction,
   executor: GitCommandExecutor,
@@ -70,6 +86,24 @@ export function createIndexChangeTool(
 ) {
   const execute = createIndexChangeExecutor(action, executor, queue);
   const pastTense = action === "stage" ? "Staged" : "Unstaged";
+  const parameters =
+    action === "stage"
+      ? {
+          ...indexChangeSchema,
+          properties: {
+            file: {
+              ...indexChangeSchema.properties.file,
+              description:
+                "Path to the tracked text file, absolute or relative to the current working directory.",
+            },
+            change: {
+              ...indexChangeSchema.properties.change,
+              description:
+                'Use the complete current CHANGE#HASH anchor shown by read with views: ["changes"].',
+            },
+          },
+        }
+      : unstageChangeSchema;
 
   return defineTool<typeof indexChangeSchema, IndexChangeToolDetails>({
     name: action,
@@ -87,8 +121,11 @@ export function createIndexChangeTool(
     label: action,
 
     promptSnippet: `${pastTense.slice(0, -1)} a selected Git change`,
-    description: `Use ${action} to ${action === "stage" ? "add one current Git change to the index" : "remove one current Git change from the index"}. Select the change with a CHANGE# anchor; worktree content is kept.`,
-    parameters: indexChangeSchema,
+    description:
+      action === "stage"
+        ? "Use stage to add one selected Git change to the index without changing the worktree file."
+        : "Use unstage to remove one selected Git change from the index. Worktree content is kept.",
+    parameters,
     outputSchema: indexOutputSchema,
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       try {
@@ -127,7 +164,7 @@ export function createIndexChangeTool(
   });
 }
 
-/** Shares guarded index execution between standalone tools and Apply without a synthetic tool context. */
+/** Execute a guarded index change without a synthetic tool context. */
 export function createIndexChangeExecutor(
   action: ChangeIndexAction,
   executor: GitCommandExecutor,
@@ -154,7 +191,11 @@ export function createIndexChangeExecutor(
         );
 
         if (creation.status !== "ready") {
-          throw new Error(creation.message);
+          throw new Error(
+            action === "stage"
+              ? `Cannot stage ${parameters.file}: ${creation.message}`
+              : creation.message,
+          );
         }
 
         const result = await creation.service.changeIndex(
@@ -170,10 +211,37 @@ export function createIndexChangeExecutor(
 
         if (result.status === "unavailable") {
           if ("failure" in result && result.failure !== undefined) throw result.failure;
-          throw Object.assign(new Error(result.message), { effect: "not-applied" });
+          if (action === "stage" && result.reason === "stale-selector") {
+            throw Object.assign(
+              new Error(
+                `${result.message}. Read ${parameters.file} with views: ["changes"] and use a current CHANGE# anchor.`,
+              ),
+              { effect: "not-applied" },
+            );
+          }
+          if (action === "stage" && result.reason === "index-write-failed" && !signal?.aborted) {
+            throw new Error(
+              `${result.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
+            );
+          }
+          throw Object.assign(
+            new Error(
+              action === "stage" && result.reason !== "index-write-failed"
+                ? `Cannot stage ${parameters.file}: ${result.message}`
+                : result.message,
+            ),
+            { effect: "not-applied" },
+          );
         }
 
         if (result.status === "not-applicable") {
+          if (action === "stage") {
+            const reason =
+              result.reason === "clean"
+                ? "the worktree text matches HEAD"
+                : "the file is not present in HEAD";
+            throw new Error(`Cannot stage ${parameters.file}: ${reason}.`);
+          }
           throw new Error(`${action} is not applicable to ${file}: ${result.reason}`);
         }
 

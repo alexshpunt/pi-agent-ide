@@ -92,7 +92,7 @@ export function selectPresentation(
         rows.push({
           kind: "note",
           expandedOnly: true,
-          text: "… more origins retained in structured result",
+          text: "… more origins retained in this result reference",
         });
     }
   }

@@ -2,7 +2,7 @@ import type { IPty } from "node-pty";
 import type { Terminal } from "@xterm/headless";
 import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
 
-export type TerminalWaitReason = "timeout" | "interactive";
+export type TerminalWaitReason = "timeout" | "interactive" | "steering";
 export type TerminalWaitOutcomeReason = TerminalWaitReason | "aborted";
 export type TerminalCompletionReason = "timeout";
 
@@ -48,6 +48,8 @@ export interface TerminalSession {
   completion: Promise<TerminalSession>;
   resolveCompletion: (session: TerminalSession) => void;
   completionDelivered: boolean;
+  /** Keep the one-time stale reminder state when this session survives a reload. */
+  staleReminderDelivered: boolean;
   waitReason?: TerminalWaitReason;
   completionReason?: TerminalCompletionReason;
   lastActivityAt: number;

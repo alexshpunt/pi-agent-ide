@@ -4,9 +4,17 @@ Pi Agent IDE explores a small tool surface for coding agents. The goal is to kee
 
 The project is experimental. The behavior below describes the current implementation, not a performance guarantee.
 
-## Native structured results
+## Readable results and composition
 
-IDE tools declare native result schemas. Codemode receives typed data and explicit success/error/partial outcomes instead of display strings. Check status and mutation effects before continuing or retrying. See [Native IDE results](./structured-results.md) for fields, resolver adapters, bounds, and `tools.flush({})`.
+IDE tools return readable text in direct calls and Codemode. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and automatic commit boundaries.
+
+## Shared output limits
+
+Every IDE tool, including nested calls and the combined Codemode result, shares a useful-text limit of 50 KiB or 2,000 lines. Images share a limit of 20 frames, 4,000,000 pixels and 20 MiB of image bytes per result. Notices, guides and composition references are added afterward and are not part of these budgets.
+
+When the shared text limit truncates a result, the complete useful text is saved to a private temporary file. The result names that file. Use Read with `offset` and `limit` to continue, or `raw:` byte windows for a line that is too large. The file is removed when its owning runtime is disposed. Media is resized or omitted, not archived.
+
+An explicit request limit still selects what the tool produces; the saved file does not undo that filter. Truncation does not shorten private source selections or change file-edit effects. Terminal results also link to their complete session log.
 
 ## Resource references
 
@@ -38,7 +46,7 @@ A source field such as `path` or mutation `target` is therefore a resource field
 - AST-aware code views;
 - LSP diagnostics, symbols, references, and call graphs.
 
-A read result may include anchors, diagnostics, Git changes, or structural markers. Large text results are bounded, and supported resolvers can retain the complete output in a temporary resource.
+A read result may include anchors, diagnostics, Git changes, or structural markers. Large text results are bounded. The shared limiter retains complete truncated text in a temporary file.
 
 Read sources are not assumed to be writable. The read and text-editor cores keep separate resolver registries so a derived view cannot be edited by accident.
 
@@ -52,7 +60,7 @@ When `path` is a typed text resource, `read` returns one independent chunk for e
 
 Use `read({path: "raw:sample.bin", offset: 0, limit: 64})` to inspect original local file bytes, including PDF and image headers. In `raw:` mode only, offset is zero-based in bytes (negative from EOF), and limit is a non-negative byte count. The output shows hexadecimal offsets, hex bytes, and printable ASCII. Follow its returned byte offset to continue. No views or text anchors apply.
 
-Inside Apply, the same call returns `kind: "bytes"`, `source`, `byteOffset`, `byteLength`, `totalBytes`, `bytes: number[]`, and `ok`. The script receives the complete selected range; the displayed answer stays bounded. Use `result(doc)` to retain the hex view rather than printing the byte array. This is read-only; byte editing and byte diff are not included.
+Codemode receives the same bounded hex view as a direct call. Use `text(result)` or return it to display that view. Follow the displayed offset or continuation reference. This is read-only; byte editing and byte diff are not included.
 
 ### Diagnostic completion
 
@@ -76,16 +84,12 @@ Window and display capture use `node-screenshots` on Linux and macOS. Desktop or
 
 ## Terminal sessions
 
-Native Codemode scripts receive a structured shell result. `output` holds up to 1 MiB of ANSI-free PTY output; empty output is `""`. Longer logs keep their first and last 512 KiB, cut at UTF-8 character boundaries. `truncated` reports missing output, not whether the process has finished. `output_ranges` gives the zero-based, end-exclusive byte ranges joined into `output`, with no added headings or omission marker. `full_output_path` points to the UTF-8 log, which keeps growing while the process runs and stays available until the session is deleted.
-
-The native fields `exit_code` and `wall_time_seconds` describe the process, not tool transport. `exit_code` is absent until known. IDE fields `session`, `source`, `status`, `background`, `wait_reason`, `completion_reason`, `signal`, and `error` describe the persistent session. A wait timeout leaves a running session, not a failed command. Nonzero exits and shell startup failures still return structured data to scripts. Normal model output and stored renderer details keep the shorter terminal preview limits.
+Codemode receives the same readable shell status and output as direct calls. The result includes its session source and a reference to the complete log when output is shortened. A wait timeout leaves a running session, not a failed command. Inspect the reported exit status and effects; failed tools can reject.
 
 ```ts
 const result = await tools.bash({ command: "your-command" });
-text({
-  status: result.status,
-  errors: result.output.split("\n").filter((line) => line.includes("error")),
-});
+text(result);
+text(await tools.read({ path: result }));
 ```
 
 `bash` (Linux/WSL) or `powershell` (Windows) starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.
@@ -93,7 +97,7 @@ text({
 Every run returns a stable `shell:<session>` source. Synchronous runs wait for the real exit status. Background runs return immediately, remain visible below the editor, and send one completion message that wakes the agent; nearby completions are combined without losing individual results. `/terminals` opens the active and recent session overlay.
 The UI tab in `/agent-ide-settings` controls persistent active-terminal presentation: Detailed cards (default), Compact count, or Off. Detailed cards replace the separate active count instead of showing both. This setting does not hide ordinary run results or completion messages.
 
-Use `read` on the returned source for status and bounded output. Compact cards show the latest 12 output rows and count omitted earlier rows; expanded cards show all retained rows. Add `views: ["image"]` to receive a PNG of the ANSI-aware virtual terminal screen. Use `write` to send exact text without Enter. Use `insert` for named keys and chords such as `Enter`, `Ctrl+C`, `Ctrl+Shift+Left`, or Unix caret controls such as `^U`; separate multiple keys with spaces or commas. Batched `apply` calls can send several terminal inputs without file formatting or diagnostics. Use `search` with the `shell:<session>` path to search retained output, including rows outside the current screen. `delete` terminates the owned process tree when needed, disposes the virtual screen, and removes the session. `replace` does not apply to terminal sessions.
+Use `read` on the returned source for status and bounded output. Compact cards show the latest 12 output rows and count omitted earlier rows; expanded cards show all retained rows. Add `views: ["image"]` to receive a PNG of the ANSI-aware virtual terminal screen. Use `write` to send exact text without Enter. Use `insert` for named keys and chords such as `Enter`, `Ctrl+C`, `Ctrl+Shift+Left`, or Unix caret controls such as `^U`; separate multiple keys with spaces or commas. A native Codemode script can send several terminal inputs without file formatting or diagnostics. Use `search` with the `shell:<session>` path to search retained output, including rows outside the current screen. `delete` terminates the owned process tree when needed, disposes the virtual screen, and removes the session. `replace` does not apply to terminal sessions.
 
 Deleting an active session first requests graceful termination, then forcefully terminates its process tree after the grace period. Deletion does not undo file or network effects. Sessions survive extension reloads in the current Pi process. Shutdown stops live processes; sessions are not reattached after restart.
 
@@ -107,6 +111,10 @@ Deleting an active session first requests graceful termination, then forcefully 
 A resolver decides whether it understands a query. The first successful resolver returns the result. Search plugins can add new query forms without adding another agent tool.
 
 Local text search tries literal terms first. If there are no matches, it retries unquoted terms as regex. If that also finds nothing, an ordinary multi-word query falls back to separate words. Each fallback is reported. Invalid optional regex is skipped, while I/O errors, cancellation, and regex runtime errors stay errors. `regex:<pattern>` forces regex-only matching and reports invalid patterns.
+
+After all ordinary attempts finish with zero matches, a single unquoted ASCII identifier can return separate possible-name groups. They cover naming-style changes, one extra or missing edge component, and small typos, strongest first. Each name is verified exactly in the same scope. These are spelling suggestions, not synonyms, automatic corrections, or proof of equivalent behavior. Quoted, Boolean, explicit regex and other protocol queries do not use this branch.
+
+Local groups provide current Read selections; a complete candidate all-reference refreshes only its exact alternative. URL groups reuse the already converted page text and provide URL line ranges without editable Search references. Name collection, capture and output have fixed budgets; a skip or limited capture is explicit. Narrow the scope if a budget is reached.
 
 Boolean queries keep their conditions across literal and regex attempts. They support uppercase `AND`, `OR`, infix `NOT`, `||`, and space-separated `|`. Adjacent terms imply `AND`; `AND` and `NOT` bind more tightly than `OR`. Parentheses containing Boolean operators group conditions. Regex groups, classes, and escapes stay inside terms: `(?:foo|bar)\d+ AND "keep.me" NOT ignored`. An unspaced `foo|bar` is searched as literal text first, then as regex alternatives. Single or double quotes keep a term literal in every attempt. Quoted and Boolean queries never fall back to separate words. Invalid Boolean expressions report the source column and expected syntax.
 

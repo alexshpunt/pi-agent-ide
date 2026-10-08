@@ -54,8 +54,6 @@ const tools: readonly (readonly [string, string, string])[] = [
     `${editor}/extension.ts`,
   ],
   ["undo", "M12 M13", "src/plugins/pi-agent-ide-changes/src/tool-text-undo.ts"],
-  ["apply", "M11 M12 M13 M18 M19 M21", `${editor}/apply/tool.ts`],
-  ["flush (native Codemode only)", "M09 M11", `${editor}/native-text-edit-batch.ts`],
   [
     "stage / unstage (deferred)",
     "M13",
@@ -137,12 +135,12 @@ const surfaces: readonly (readonly [string, string, string])[] = [
     "src/backend/debugger-registration.ts",
   ],
   [
-    "SEARCH# / RESULT# typed snapshots and sparse ranges",
+    "Published source results, SEARCH# / RESULT# snapshots and sparse ranges",
     "M06 M08 M09 M11 M14 M15",
     "packages/pi-agent-resource/src/result-targets.ts",
   ],
   ["CHANGE# and changes view", "M13", "src/backend/git-registration.ts"],
-  ["APPLY# / last undo receipts", "M12", `${editor}/apply/undo-runtime.ts`],
+  ["last text-editor undo", "M12", `${editor}/native-text-edit-batch.ts`],
   [
     "Mutation output targets: exact resulting text, destination-only transfers, restored presence/absence",
     "M06 M08 M09 M10 M12 M18 M25",

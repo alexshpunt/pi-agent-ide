@@ -67,6 +67,25 @@ test("groups repeated lines in one noisy file without consuming one row per matc
   ]);
 });
 
+test("counts compact summaries and details against the same item budget", () => {
+  const input = Array.from({ length: 18 }, (_, index) => matches(`/repo/${index}.ts`, 4)).flat();
+  const plan = planSearchPresentation(input, 1);
+  expect(plan.files).toHaveLength(1);
+});
+
+test("bounds the reported 10114-match search across 1725 generated files", () => {
+  const input = Array.from({ length: 1725 }, (_, index) =>
+    matches(`/repo/generated/${index.toString().padStart(4, "0")}.ts`, index < 1489 ? 6 : 5),
+  ).flat();
+  expect(input).toHaveLength(10114);
+  const plan = planSearchPresentation(input, 80);
+  const items = plan.files.reduce(
+    (count, file) =>
+      count + (file.kind === "detailed" ? file.matches.length : 1 + file.groups.length),
+    0,
+  );
+  expect(items).toBeLessThanOrEqual(80);
+});
 test("caps unique groups by the presentation budget", () => {
   const input = Array.from({ length: 60 }, (_, index) =>
     matches("/repo/large.txt", 1, `needle ${String(index)}`),
@@ -75,6 +94,6 @@ test("caps unique groups by the presentation budget", () => {
   const [file] = planSearchPresentation(input, 50).files;
 
   expect(file?.kind).toBe("compacted");
-  expect(file?.kind === "compacted" ? file.groups : []).toHaveLength(50);
+  expect(file?.kind === "compacted" ? file.groups : []).toHaveLength(49);
   expect(file?.kind === "compacted" ? file.uniqueLineCount : 0).toBe(60);
 });

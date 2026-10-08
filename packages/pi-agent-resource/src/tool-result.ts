@@ -25,7 +25,7 @@ export const resultErrorSchema = Type.Object(
 
 /** Build the common result contract around one tool's data schema. */
 export function structuredResultSchema(data: TSchema) {
-  return Type.Union([
+  const outcomes = Type.Union([
     Type.Object(
       {
         status: Type.Literal("success"),
@@ -43,6 +43,18 @@ export function structuredResultSchema(data: TSchema) {
       { additionalProperties: false },
     ),
   ]);
+  // Expose the common object fields without weakening outcome-specific validation.
+  return {
+    ...outcomes,
+    type: "object" as const,
+    properties: {
+      status: Type.Union([Type.Literal("success"), Type.Literal("error"), Type.Literal("partial")]),
+      data: Type.Optional(data),
+      errors: Type.Array(resultErrorSchema),
+    },
+    required: ["status", "errors"],
+    additionalProperties: false,
+  };
 }
 /** Maximum serialized public data; callers expose a smaller window or a full-result resource. */
 export const MAX_STRUCTURED_BYTES = 1024 * 1024;

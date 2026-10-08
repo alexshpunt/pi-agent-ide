@@ -16,7 +16,10 @@ export function parseJqView(views: readonly string[] | undefined): JqView | unde
   const jqViews = views?.filter((view) => view === "jq" || view.startsWith("jq:")) ?? [];
   if (jqViews.length === 0) return undefined;
   if (jqViews.length > 1) throw new Error("Read accepts only one jq view");
-  if (views?.length !== 1) throw new Error("The jq view cannot be combined with other views");
+  if (views?.length !== 1)
+    throw new Error(
+      "The jq view cannot be combined with other views. Keep only one jq:<filter> in views.",
+    );
   const selected = jqViews[0];
   if (selected === undefined || selected === "jq" || selected.slice(3).trim().length === 0)
     throw new Error('The jq view requires a filter, for example views: ["jq:.scripts"]');

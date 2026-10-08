@@ -43,6 +43,23 @@ test.each(["sample.ts", "ssh://fixture/work/sample.ts"])(
   },
 );
 
+test("overview recovery names the quoted original source without replacing its snapshot", async () => {
+  const file = `${process.cwd()}/source "quoted".ts`;
+  const input = context(source, file);
+  const result = await createAstOverflowHandler()(input);
+  if (result.kind !== "return") throw new Error("Missing overview");
+  const block = result.result.content[0];
+  if (block?.type !== "text") throw new Error("Missing text");
+  expect(block.text).toContain("the requested text exceeded the output limit.");
+  expect(block.text).toContain(
+    `Some source text is omitted. Read ${JSON.stringify(file)} with offset and limit for exact source text.`,
+  );
+  const action = /Read ("(?:[^"\\]|\\.)*") with offset and limit/.exec(block.text);
+  if (action?.[1] === undefined) throw new Error("Missing source action");
+  const recoveredSource: unknown = JSON.parse(action[1]);
+  expect(recoveredSource).toBe(file);
+  expect(input.state?.content).toEqual([{ type: "text", text: source }]);
+});
 test("Unicode before a collapsed body keeps source coordinates", async () => {
   const input = context(source.replace("checkout", "付款 🛒"));
   const result = await createAstOverflowHandler()(input);

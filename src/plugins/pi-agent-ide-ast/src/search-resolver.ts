@@ -2,6 +2,7 @@ import spawn from "cross-spawn";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { SearchEnvironment, SearchRequest, SearchResolver } from "pi-agent-search/api/search";
@@ -32,13 +33,17 @@ interface AstCapture {
   readonly range: AstGrepMatch["range"];
 }
 
-/** Search AST patterns inside exact source scopes and keep capture authority with each parent. */
+/** Search existing AST patterns inside exact source scopes and retain associated capture targets. */
 export function createAstSearchResolver(
   registerSelection: SearchPluginApi["registerSelection"],
 ): SearchResolver {
   return {
     id: "ast",
     supportsResultScope: true,
+    readResources: (request, context) =>
+      request.query.startsWith("ast:")
+        ? (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd])
+        : [],
     renderResult: renderSearchResult as SearchResolver["renderResult"],
     async tryResolve(request, context) {
       if (!request.query.startsWith("ast:")) {
@@ -122,6 +127,7 @@ export function createAstSearchResolver(
       );
       const data = selectionData(selected.matches, selected.complete, session.id, session);
       const captures: Record<string, ReturnType<typeof selectionData>["matches"]>[] = [];
+      const captureGroups: Record<string, { target: string; nodes: number }>[] = [];
       for (const raw of selected.raw.slice(0, data.matches.length)) {
         const groups = Object.entries({
           ...Object.fromEntries(
@@ -129,7 +135,8 @@ export function createAstSearchResolver(
           ),
           ...raw.metaVariables?.multi,
         });
-        const projected: [string, ReturnType<typeof selectionData>["matches"]][] = [];
+        const projected = [];
+        const groupsForMatch: Record<string, { target: string; nodes: number }> = {};
         for (const [name, nodes] of groups) {
           for (const node of nodes) {
             if (
@@ -144,7 +151,25 @@ export function createAstSearchResolver(
             context.signal,
             owner(raw.file),
           );
+          const group = await registerSelection(
+            {
+              request,
+              matches,
+              complete: selected.complete,
+              refresh: async () => {
+                throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
+              },
+            },
+            context,
+          );
+          groupsForMatch[name] = {
+            target: requiredValue(
+              selectionData(matches, selected.complete, undefined, group).target,
+            ),
+            nodes: matches.length,
+          };
           const nodesData: ReturnType<typeof selectionData>["matches"] = [];
+          // Shared Search previews hold 100 nodes. Register every capture chunk without dropping nodes.
           for (let offset = 0; offset < matches.length; offset += 100) {
             const chunk = matches.slice(offset, offset + 100);
             const captured = await registerSelection(
@@ -160,9 +185,10 @@ export function createAstSearchResolver(
             );
             nodesData.push(...selectionData(chunk, selected.complete, undefined, captured).matches);
           }
-          projected.push([name, nodesData]);
+          projected.push([name, nodesData] as const);
         }
         captures.push(Object.fromEntries(projected));
+        captureGroups.push(groupsForMatch);
       }
       if (context.scope !== undefined) await verifyResultTargets(context.scope, context.signal);
       return {
@@ -172,6 +198,7 @@ export function createAstSearchResolver(
             ...data,
             matches: data.matches.map((match, index) => ({ ...match, captures: captures[index] })),
           },
+          captureGroups,
           pattern,
           matches: selected.raw.map((match, index) => ({
             ...match,
@@ -194,7 +221,11 @@ export function createAstSearchResolver(
     },
     format(payload) {
       const result = payload as {
+        readonly data: {
+          matches: { captures?: Record<string, ReturnType<typeof selectionData>["matches"]> }[];
+        };
         readonly pattern: string;
+        readonly captureGroups: Record<string, { target: string; nodes: number }>[];
         readonly sessionId: string;
         readonly matches: readonly AstGrepMatch[];
         readonly complete: boolean;
@@ -208,18 +239,19 @@ export function createAstSearchResolver(
         };
       }
 
-      const lines = result.matches.flatMap((match, index) => [
-        `SEARCH#${result.sessionId}:${String(index + 1)}:match ${match.file}:${String(match.range.start.line + 1)}:${String(
-          match.range.start.column + 1,
-        )} ${match.language}`,
-        `   ${match.lines.trim()}`,
-      ]);
+      const lines = result.matches.flatMap((match, index) => {
+        const rows = [
+          `SEARCH#${result.sessionId}:${index + 1}:match ${match.file}:${match.range.start.line + 1}:${match.range.start.column + 1} ${match.language}`,
+          `   ${match.lines.trim()}`,
+        ];
+        for (const [name, group] of Object.entries(result.captureGroups[index] ?? {})) {
+          rows.push(`   capture ${name}: ${group.target} ${group.nodes} node(s)`);
+        }
+        return rows;
+      });
 
       if (result.complete)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact AST matches.`);
-      if (!result.complete) {
-        lines.push("Result limit reached.");
-      }
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],
@@ -285,6 +317,7 @@ function runAstGrep(
   signal?: AbortSignal,
   environment?: SearchEnvironment,
 ): Promise<AstGrepMatch[]> {
+  signal?.throwIfAborted();
   const arguments_ = ["run", "--pattern", pattern, "--json=compact", "--no-ignore", "parent"];
 
   for (const include of splitGlobs(request.include)) {

@@ -3,7 +3,7 @@ import { ResourceError } from "pi-agent-resource";
 import { expect, test } from "vitest";
 import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { executeScriptMutation, executeTextMutation } from "#src/core/text-mutation.js";
+import { executeTextMutation } from "#src/core/text-mutation.js";
 import { writeMutationTool } from "#src/tools/tool-text-write.js";
 
 for (const { declaredSafe, effect } of [
@@ -44,11 +44,7 @@ for (const { declaredSafe, effect } of [
     expect(ordinary.details.results?.[0]?.data.errors?.[0]?.code).toBe(code);
     expect(ordinary.details.effect).toBe(effect);
     expect(JSON.stringify(ordinary)).not.toContain("Private transport diagnostic");
-    const script = await executeScriptMutation(core, writeMutationTool, args, undefined, context);
-    expect(script).toMatchObject({ ok: false, effect, errors: [{ source, code }] });
-    expect(JSON.stringify(script)).not.toContain("Private transport diagnostic");
     if (effect === "unknown") {
-      expect(script.errors[0]?.message).toContain("inspect the resource before retrying");
       expect(JSON.stringify(ordinary)).toContain("inspect the resource before retrying");
     }
   });
