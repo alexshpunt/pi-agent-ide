@@ -45,6 +45,28 @@ export async function startIsolatedSshWebFixture() {
     };
     const owner = new SshBackendRegistry([target]).resolve(`ssh://fixture${fixture.workspace}`);
     if (!owner) throw new Error("No isolated SSH owner");
+    const probe = await owner.backend.execute(
+      "node",
+      [
+        "-e",
+        `
+        (async () => {
+          const {chromium} = require(process.env.PI_AGENT_IDE_PLAYWRIGHT_PATH);
+          let browser;
+          try {
+            browser = await chromium.launch({executablePath:process.env.PI_AGENT_IDE_BROWSER_PATH,headless:true,chromiumSandbox:false,timeout:30000});
+            const page = await browser.newPage();
+            await page.goto(process.argv[1]+"/browser",{waitUntil:"domcontentloaded",timeout:30000});
+          } finally { if (browser) await browser.close(); }
+        })().catch(error => { console.error(String(error)); process.exitCode=1; });
+      `,
+        proof.url,
+      ],
+      fixture.workspace,
+      { signal: AbortSignal.timeout(35_000), timeoutMs: 35_000 },
+    );
+    if (probe.exitCode !== 0)
+      throw Error("Isolated synthetic browser startup failed: " + probe.stderr.toString("utf8"));
     const native = await owner.backend.execute(
       "readlink",
       ["/proc/self/ns/net"],

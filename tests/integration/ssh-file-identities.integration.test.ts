@@ -115,7 +115,7 @@ test("identical absolute file paths stay target-owned across private mount names
       rawMode: false,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["read", "replace", "codemode"],
+      tools: ["read", "search", "replace", "codemode"],
       timeoutMs: 60000,
       conversation: [
         ...sources.map((source, index) =>
@@ -151,8 +151,11 @@ const sources=${JSON.stringify(sources)};
 
 for(let i=0;i<sources.length;i++) {
  const result=await tools.read({path:sources[i],views:["anchors"]});
- if(!result.includes(sources[i]) || !result.includes(["LEFT VERIFIED","right café"][i])) throw Error("Target identity crossed a namespace: "+result);
- text(result);
+ const expected=["LEFT VERIFIED","right café"][i];
+ if(!result.includes(expected)) throw Error("Target text crossed a namespace: "+result);
+ const found=await tools.search({path:result,query:expected});
+ if(!found.includes(sources[i])) throw Error("Read receipt lost its namespace owner: "+found);
+ text(found);
 }
 async function inspect(request) {
  try { return {text:await tools.read(request)}; } catch(error) { return {error:String(error)}; }

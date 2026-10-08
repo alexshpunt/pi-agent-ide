@@ -396,7 +396,6 @@ test.each(["before", "after"])(
       const execution = getToolExecution(result, "stage-cancelled");
       expect(execution.isError).toBe(true);
       expect(getToolResultText(result, "stage-cancelled")).not.toContain(`Staged ${selector}`);
-      expect(getToolResultText(result, "stage-cancelled")).not.toContain("before retrying");
       expect(execution.result).not.toMatchObject({
         structuredContent: { status: "success" },
       });

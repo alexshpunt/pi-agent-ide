@@ -2,6 +2,7 @@ import type { Capability } from "./validation.ts";
 
 // This declared inventory is reviewed separately from executable cases.
 const groups: [string[], string[]][] = [
+  [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],

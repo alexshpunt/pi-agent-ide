@@ -19,6 +19,30 @@ function add(
 }
 
 add(
+  "binary-copy-move",
+  ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
+  "Copy source.bin to copy.bin without decoding it. Report the Copy receipt. Search the unchanged Copy result for BAD and observe that it has no text selection; catch that expected rejection in Codemode. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",
+  [
+    {
+      tool: "copy",
+      args: { path: "source.bin", target: "copy.bin" },
+      contains: "No verified text selection",
+    },
+    {
+      tool: "search",
+      args: { query: "BAD" },
+      reuse: reuse(0),
+      error: true,
+      contains: "no reusable text selection",
+    },
+    { tool: "move", args: { path: "copy.bin", target: "existing.bin" } },
+  ],
+  {
+    files: { "source.bin": "binary\u0000bytes\n", "existing.bin": "prior\u0000bytes\n" },
+    expected: { "copy.bin": null, "existing.bin": "binary\u0000bytes\n" },
+  },
+);
+add(
   "read-text",
   ["read.text", "read.directory", "read.raw", "read.paging"],
   "Use read to list this directory, read only line 2 of task.txt, then read its first 4 original bytes through raw:. Report the line-2 value.",

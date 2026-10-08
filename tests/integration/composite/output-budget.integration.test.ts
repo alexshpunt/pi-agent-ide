@@ -228,10 +228,11 @@ test.each([undefined, 0, 1, 1999, 2000, 2001, 1000000])(
   },
   210000,
 );
-test("bounds Search items across protocols, globs, generated files and composed scopes", async () => {
-  const cwd = await workspace();
-  const cases: Record<string, unknown>[] = [];
-  for (const limit of [undefined, 1, 2, 79, 80, 81, 1000]) {
+test.each([undefined, 1, 2, 79, 80, 81, 1000])(
+  "bounds Search items across protocols, globs, generated files and composed scopes (limit=%s)",
+  async (limit) => {
+    const cwd = await workspace();
+    const cases: Record<string, unknown>[] = [];
     for (const query of [
       "needle",
       "regex:needle",
@@ -253,83 +254,87 @@ test("bounds Search items across protocols, globs, generated files and composed 
           ...(limit === undefined ? {} : { limit }),
         });
       }
-  }
-  try {
-    await mkdir(path.join(cwd, "generated"));
-    await Promise.all(
-      Array.from({ length: 1725 }, (_, index) =>
-        writeFile(
-          path.join(
-            cwd,
-            "generated",
-            `${index.toString().padStart(4, "0")}-${"long-path-".repeat(8)}.txt`,
+    try {
+      await mkdir(path.join(cwd, "generated"));
+      await Promise.all(
+        Array.from({ length: 1725 }, (_, index) =>
+          writeFile(
+            path.join(
+              cwd,
+              "generated",
+              `${index.toString().padStart(4, "0")}-${"long-path-".repeat(8)}.txt`,
+            ),
+            Array.from({ length: index < 1489 ? 6 : 5 }, (_, line) => `needle item${line}`).join(
+              "\n",
+            ),
           ),
-          Array.from({ length: index < 1489 ? 6 : 5 }, (_, line) => `needle item${line}`).join(
-            "\n",
-          ),
         ),
-      ),
-    );
-    await writeFile(
-      path.join(cwd, "large.ts"),
-      Array.from({ length: 4000 }, (_, index) => `const value${index} = ${index};`).join("\n"),
-    );
-    const resultFor = await runBatches(
-      {
-        testName: "search-limit-matrix",
-        timeoutMs: 90000,
-        artifactsDir: testArtifactsDir(import.meta.filename, path.join(root, ".tmp/test-runs")),
-        cwd,
-        extensions: [extension, "builtin:codemode"],
-        transport: "rpc",
-        tools: ["search", "read", "select", "codemode"],
-        isolateUserResources: true,
-      },
-      [
-        ...cases.map((args, index) =>
-          assistantMessage([toolCall({ id: `search-${index}`, name: "search", arguments: args })], {
-            stopReason: "toolUse",
-          }),
-        ),
-        assistantMessage(
-          [
-            toolCall({
-              id: "scoped-search",
-              name: "codemode",
-              arguments: {
-                code: 'const result = await tools.search({ query: "needle", path: "generated", limit: 1 }); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"generated/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }));',
-              },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-      ],
-    );
-    for (const [index, args] of cases.entries()) {
-      const result = resultFor(index);
-      expect(getToolResultMessage(result, `search-${index}`).isError, JSON.stringify(args)).toBe(
-        false,
       );
-      const output = getToolResultText(result, `search-${index}`);
-      expectBounded(output);
-      if (args.query === "needle" || args.query === "regex:needle") {
-        expect(output).toContain("10114 matches in 1725 files");
-        const items =
-          (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length +
-          (output.match(/\(compacted\)/gu) ?? []).length;
-        expect(items).toBeLessThanOrEqual(Number(args.limit ?? 50));
-        expect(items).toBeGreaterThan(0);
+      await writeFile(
+        path.join(cwd, "large.ts"),
+        Array.from({ length: 4000 }, (_, index) => `const value${index} = ${index};`).join("\n"),
+      );
+      const resultFor = await runBatches(
+        {
+          testName: "search-limit-matrix",
+          timeoutMs: 90000,
+          artifactsDir: testArtifactsDir(import.meta.filename, path.join(root, ".tmp/test-runs")),
+          cwd,
+          extensions: [extension, "builtin:codemode"],
+          transport: "rpc",
+          tools: ["search", "read", "select", "codemode"],
+          isolateUserResources: true,
+        },
+        [
+          ...cases.map((args, index) =>
+            assistantMessage(
+              [toolCall({ id: `search-${index}`, name: "search", arguments: args })],
+              {
+                stopReason: "toolUse",
+              },
+            ),
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: "scoped-search",
+                name: "codemode",
+                arguments: {
+                  code: 'const result = await tools.search({ query: "needle", path: "generated", limit: 1 }); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"generated/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }));',
+                },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+        ],
+      );
+      for (const [index, args] of cases.entries()) {
+        const result = resultFor(index);
+        expect(getToolResultMessage(result, `search-${index}`).isError, JSON.stringify(args)).toBe(
+          false,
+        );
+        const output = getToolResultText(result, `search-${index}`);
+        expectBounded(output);
+        if (args.query === "needle" || args.query === "regex:needle") {
+          expect(output).toContain("10114 matches in 1725 files");
+          const items =
+            (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length +
+            (output.match(/\(compacted\)/gu) ?? []).length;
+          expect(items).toBeLessThanOrEqual(Number(args.limit ?? 50));
+          expect(items).toBeGreaterThan(0);
+        }
       }
+      const result = resultFor(cases.length);
+      expect(getToolResultMessage(result, "scoped-search").isError).toBe(false);
+      expect(getToolResultText(result, "scoped-search")).toContain("5 matches");
+      expect(getToolResultText(result, "scoped-search")).toContain("1724-");
+      expectBounded(getToolResultText(result, "scoped-search"));
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
     }
-    const result = resultFor(cases.length);
-    expect(getToolResultMessage(result, "scoped-search").isError).toBe(false);
-    expect(getToolResultText(result, "scoped-search")).toContain("5 matches");
-    expect(getToolResultText(result, "scoped-search")).toContain("1724-");
-    expectBounded(getToolResultText(result, "scoped-search"));
-  } finally {
-    await rm(cwd, { recursive: true, force: true });
-  }
-}, 210000);
+  },
+  210000,
+);
 test("stresses array scopes, verified anchors and annotation views without widening limits", async () => {
   const cwd = await workspace();
   try {
