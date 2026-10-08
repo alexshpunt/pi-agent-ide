@@ -25,6 +25,7 @@ describe("pi-agent-text-editor tools", () => {
         cwd: directory,
         testName: "text-editor-write",
         tool: "write",
+        rawMode: false,
         tools,
         arguments: { path: relativeFile, content: "after\n" },
       });
@@ -35,7 +36,7 @@ describe("pi-agent-text-editor tools", () => {
         result.traceEvents.find((event) => event.type === "tools_configured")?.activeTools,
       ).toEqual(tools);
       expect(getToolExecution(result, mutationCallId).isError).toBe(false);
-      expectTextToolDiff(scenario, relativeFile, "before\n", "after\n");
+      expectTextToolDiff(scenario, relativeFile, "before\n", "after\n", "tui");
       await expect(readFile(file, "utf8")).resolves.toBe("after\n");
     });
   });

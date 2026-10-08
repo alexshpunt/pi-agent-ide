@@ -48,7 +48,7 @@ const run = await new PiIntegrationTest({
   testName: `capability-semantic-rename-${mode}`,
   artifactsDir: "/state/results",
   cwd,
-  piCommand: "/usr/bin/pi",
+  piCommand: "/source/node_modules/.bin/pi",
   transport: "rpc",
   timeoutMs: 90_000,
   extensions: ["/source/src/pi-agent-ide.ts", "builtin:codemode"],
