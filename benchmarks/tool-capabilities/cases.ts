@@ -251,6 +251,21 @@ add(
 );
 
 add(
+  "write-large-read",
+  ["compose.write-large-read"],
+  "Use one Codemode script to write large.txt with exactly 1024 copies of retained line followed by a newline (use repeat). Pass the returned Write result directly into Read with offset 1024 and limit 1. Print that Read result and report its last-line value. Do not shorten the saved content to match a display preview.",
+  [
+    { tool: "write", args: { path: "large.txt", content: "retained line\n".repeat(1024) } },
+    { tool: "read", args: { offset: 1024, limit: 1 }, reuse: reuse(0), contains: "retained line" },
+  ],
+  {
+    modes: ["codemode"],
+    expected: { "large.txt": "retained line\n".repeat(1024) },
+    answer: "retained line",
+  },
+);
+
+add(
   "replace-read-search",
   ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
   "Follow replace → read → search in that order. Use replace with the exact OLD fragment in task.txt to change it to NEW. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",

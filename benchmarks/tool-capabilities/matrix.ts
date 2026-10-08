@@ -14,6 +14,7 @@ const groups: [string[], string[]][] = [
   [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.write", "compose.write-read"], ["write-read"]],
+  [["compose.write-large-read"], ["write-large-read"]],
   [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
     ["replace-read-search"],

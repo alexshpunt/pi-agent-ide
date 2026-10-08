@@ -72,8 +72,8 @@ for (const name of ["before-save.note", "after-save.note", "unknown.note"] as co
       }
       expect(getToolResultText(run, "interrupted")).toMatch(/interrupted/i);
       expect(run.tuiRenderedOutput).toMatch(/interrupted/i);
-      expect(run.tuiRenderedOutput).not.toContain("Result unavailable; history is incomplete.");
-      expect(run.tuiRenderedOutput).not.toContain("Incomplete nested IDE presentation");
+      expect(run.tuiRenderedOutput).not.toContain("Result unavailable in this saved display.");
+      expect(run.tuiRenderedOutput).not.toContain("Nested IDE display:");
       if (name === "unknown.note") {
         expect(run.tuiRenderedOutput).toContain("Effects unknown · edit failed");
         expect(run.tuiRenderedOutput).not.toContain("Not changed · edit failed");
@@ -137,7 +137,7 @@ test("keeps deferred processing complete when its handler finishes after a scrip
     expect(getToolResultText(run, "interrupted")).not.toMatch(
       /post-edit processing was interrupted/i,
     );
-    expect(run.tuiRenderedOutput).not.toContain("Result unavailable; history is incomplete.");
+    expect(run.tuiRenderedOutput).not.toContain("Result unavailable in this saved display.");
   });
 });
 for (const ending of ["deadline", "ordinary-error"] as const) {
@@ -174,7 +174,7 @@ for (const ending of ["deadline", "ordinary-error"] as const) {
       expect(getToolExecution(run, "ended").isError).toBe(true);
       expect(await readFile(path.join(cwd, "completed.txt"), "utf8")).toBe("saved\n");
       expect(getToolResultText(run, "ended")).not.toMatch(/post-edit processing was interrupted/i);
-      expect(run.tuiRenderedOutput).not.toContain("Result unavailable; history is incomplete.");
+      expect(run.tuiRenderedOutput).not.toContain("Result unavailable in this saved display.");
     });
   });
 }
