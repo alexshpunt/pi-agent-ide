@@ -38,8 +38,8 @@ After the feature passes local verification, remove your temporary loader and pa
    - After the smoke test passes, call `pi_extension_dev_reload_self` with `confirm_state_loss: true`. Include the current worktree and exact verification steps in the continuation prompt. Reload may reset extension state; do not depend on it surviving.
    - Immediately after reload, exercise the changed tool or feature. Check the agent-facing output and, when it renders to the user, capture and inspect the real viewport with `inspect_tui`. Keep this as internal verification, not a separate GIF demonstration or acceptance gate.
 9. Remove the temporary local IDE setup and return to normal loading as described above. Check that temporary settings and loaders are absent from the staged diff. Commit and push only the task changes. Create a PR targeting `develop`, link the Linear task, and summarize the changes, checks, and checks not run.
-10. Open the created PR's URL in the user's browser and include the link in chat. Ask with `ask_user` whether they approve the current PR head or want changes. Do not merge the PR, remove the worktree, or mark the task done before explicit approval.
-11. If the user wants changes, make them, run focused checks, clean up temporary IDE setup, and update the same PR. Open the updated PR and ask for approval again. Approval applies only to the reviewed head.
+10. Read `../../../skills/review-pr/SKILL.md` and follow its review loop. Open the created PR in the user's browser, name the current head, and start the background review listener before going idle. Accept only the user's GitHub approval or explicit approval in this session for that shown head. Do not merge, remove the worktree, or mark the task done before approval.
+11. Handle comments and requested changes, run focused checks, clean up temporary IDE setup, and update the same PR. Show the updated head and resume the listener. Keep the cursor so feedback received while you were working is not lost. Approval applies only to the reviewed head.
 
 ## Merge and finish
 

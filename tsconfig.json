@@ -17,6 +17,7 @@
     "dev/**/*.ts",
     "packages/**/*.ts",
     "scripts/**/*.ts",
+    "skills/**/*.ts",
     "src/**/*.ts",
     "tests/**/*.ts"
   ],

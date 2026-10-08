@@ -104,6 +104,7 @@
     "#pi-agent-text-editor/*": "./src/extensions/pi-agent-text-editor/src/*",
     "#test-fixtures/pdf": "./packages/pi-agent-pdf/test/pdf-fixture.ts",
     "#capabilities/*": "./benchmarks/tool-capabilities/*",
+    "#skills/*": "./skills/*",
     "#scripts/*": "./scripts/*"
   },
   "exports": {
@@ -206,7 +207,7 @@
     "test:integration:live": "oxnode scripts/live-integration-test.ts",
     "test:integration:live:test": "oxnode scripts/live-integration-test.ts --named-test",
     "test:integration:report": "vitest run --config vitest.integration.config.mjs --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/integration.xml",
-    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts dev benchmarks",
+    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts skills dev benchmarks",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check ."
   },
