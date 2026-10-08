@@ -998,6 +998,8 @@ function userFacingFailure(
 ): string {
   const rollback = details?.results?.find((result) => result.data.rollback !== undefined)?.data
     .rollback;
+  if (rollback?.failedSources.length === 0 && details?.effect === "unknown")
+    return "Effects unknown · edit failed";
   if (rollback !== undefined) {
     return rollback.failedSources.length === 0
       ? "Rolled back · write failed"

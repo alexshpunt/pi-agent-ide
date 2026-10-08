@@ -74,10 +74,17 @@ test("whole-file transfers and last text undo publish only present native destin
             arguments: {
               code: `
 const source = await tools.read({path:${JSON.stringify(local)}});
-const copied = await tools.copy({path:source,target:${JSON.stringify(copied)}});
+let transferRefusal;
+try { await tools.copy({path:source,target:${JSON.stringify(copied)}}); } catch(error) { transferRefusal = String(error); }
+if (!transferRefusal?.includes("no reusable text selection")) throw Error("BOM conversion must not grant source coordinates: " + transferRefusal);
+const copied = await tools.copy({path:${JSON.stringify(local)},target:${JSON.stringify(copied)}});
+const copiedBytes = await tools.read({path:${JSON.stringify("raw:" + copied)},limit:3});
+if (!copiedBytes.includes("ef bb bf")) throw Error("Copy lost the UTF-8 BOM: " + copiedBytes);
 const copiedText = await tools.search({path:copied,query:"café"});
 if (!copiedText.includes("café")) throw Error(copiedText);
 const moved = await tools.move({path:copied,target:${JSON.stringify(moved)}});
+const movedBytes = await tools.read({path:${JSON.stringify("raw:" + moved)},limit:3});
+if (!movedBytes.includes("ef bb bf")) throw Error("Move lost the UTF-8 BOM: " + movedBytes);
 const movedText = await tools.search({path:moved,query:"café"});
 if (!movedText.includes(${JSON.stringify(moved)})) throw Error(movedText);
 const written = await tools.write({path:moved,content:"changed café\\r\\n"});
@@ -88,7 +95,11 @@ const found = await tools.search({path:restored,query:"prior"});
 if (!found.includes("prior") || !found.includes(${JSON.stringify(moved)})) throw Error(found);
 text({copied,moved,restored,found});
 const created = await tools.write({path:${JSON.stringify(created)},content:"created café"});
-const removed = await tools.delete({path:created});
+const cleared = await tools.delete({path:created});
+const emptyFile = await tools.read({path:${JSON.stringify(created)}});
+if (!emptyFile.includes("Empty source")) throw Error("Deleting a selection must leave the file present: " + emptyFile);
+const removed = await tools.delete({path:${JSON.stringify(created)}});
+text(cleared);
 let refusal;
 try { await tools.read({path:removed}); } catch(error) { refusal = String(error); }
 if (!refusal) throw Error("Restored absence must not grant text authority");
@@ -104,9 +115,10 @@ text({removed,refusal});
     }).run("Keep whole-file transfer bytes and restored source authority on their native owners.");
     for (const id of ["transfers"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
-    expect(
-      (await backend.read(`${fixture.workspace}/moved.txt`)).bytes.equals(Buffer.from(original)),
-    ).toBe(true);
+    // Last text undo restores decoded text, not the BOM consumed by the text converter.
+    expect((await backend.read(`${fixture.workspace}/moved.txt`)).bytes.toString("utf8")).toBe(
+      original.slice(1),
+    );
     await expect(backend.read(`${fixture.workspace}/copied.txt`)).rejects.toMatchObject({
       code: "ENOENT",
     });

@@ -4,6 +4,7 @@ import { afterAll, expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -96,7 +97,7 @@ test("ordinary and batched Git follow-up loss stays unknown after confirmed text
             id: "batched",
             name: "codemode",
             arguments: {
-              code: `text(await tools.restore_with_lost_reply({path:${JSON.stringify(file)}}));`,
+              code: `let failure; try { await tools.restore_with_lost_reply({path:${JSON.stringify(file)}}); } catch(error) { failure = String(error); } if (!failure) throw Error("Lost publication receipt must reject"); text(failure);`,
             },
           }),
         ]),
@@ -109,22 +110,20 @@ test("ordinary and batched Git follow-up loss stays unknown after confirmed text
       "Check truthful outcome reporting when a real Git publication loses its acknowledgement.",
     );
     expect(getToolExecution(run, "ordinary").isError).toBe(true);
-    expect(getToolResultText(run, "ordinary")).toContain("OUTCOME_UNKNOWN");
+    expect(getToolResultText(run, "ordinary")).toContain("effects are unknown");
+    expect(getToolExecutionDetails(getToolExecution(run, "ordinary"))).toMatchObject({
+      effect: "unknown",
+    });
     expect(getToolResultText(run, "ordinary")).toContain("Completed writes:");
     expect(getToolResultText(run, "ordinary")).not.toContain("No file was changed.");
     expect(getToolExecution(run, "batched").isError).toBe(false);
-    const output = getToolResultText(run, "batched");
-    const payload = output.split("\n").find((line) => line.startsWith('{"status":'));
-    if (payload === undefined) throw new Error("Missing structured tool output");
-    const result = JSON.parse(payload) as {
-      status: string;
-      data: { effect: string };
-    };
-    expect(result).toMatchObject({ status: "error", data: { effect: "unknown" } });
+    expect(getToolResultText(run, "batched")).toContain("effects are unknown");
+    expect(getToolResultText(run, "batched")).toContain("Completed writes:");
+    expect(getToolResultText(run, "batched")).not.toContain("No file was changed.");
     expect(getToolResultText(run, "read-restored")).toContain("before");
     expect(await git(["show", ":loss-owned.txt"])).toBe("before\n");
     expect((await owner.backend.read(owner.location.path)).bytes.toString("utf8")).toBe("before\n");
-    expect(run.tuiRenderedOutput).toContain("Outcome unknown");
+    expect(run.tuiRenderedOutput).toContain("Effects unknown · edit failed");
   } finally {
     await rm(cwd, { recursive: true, force: true });
     await fixture.stop();

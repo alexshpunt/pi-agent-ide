@@ -166,7 +166,8 @@ test("ordinary scoped SSH symbols and graphs preserve target identities and repo
     expect(getToolResultText(run, "broken")).toContain("Owned navigation failure");
     expect(getToolExecution(run, "unsupported").isError).toBe(true);
     expect(getToolResultText(run, "unsupported")).toContain("workspace/symbol is unavailable");
-    expect(getToolResultText(run, "native")).toContain(`"source":"${root}/note.ts"`);
+    expect(getToolExecution(run, "native").isError, getToolResultText(run, "native")).toBe(false);
+    expect(getToolResultText(run, "native")).toContain(`${root}/note.ts`);
     expect(getToolExecution(run, "exited").isError).toBe(true);
     expect(getToolExecution(run, "restarted").isError, getToolResultText(run, "restarted")).toBe(
       false,
@@ -250,7 +251,7 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
             id: "cancel-startup",
             name: "codemode",
             arguments: {
-              code: `const pending = tools.search({ query: "symbols:label", path: ${JSON.stringify(root)}, include: "*.ts" }); pending.catch(() => undefined); const observed = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} }); text(observed); await tools.delete({ path: observed.source });`,
+              code: `const pending = tools.search({ query: "symbols:label", path: ${JSON.stringify(root)}, include: "*.ts" }); pending.catch(() => undefined); const observed = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} }); text(observed); const session = observed.match(/^session: (shell:[^\\s]+)/m)?.[1]; if (!session) throw new Error("Bash did not publish its session"); await tools.delete({ path: session });`,
             },
           }),
         ]),
@@ -259,16 +260,20 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
             id: "check-reaped",
             name: "codemode",
             arguments: {
-              code: `const checked = await tools.bash({ command: ${JSON.stringify(`python3 -c ${quote("import os,sys; pid=open(sys.argv[1]).read().strip(); print(os.path.exists('/proc/'+pid))")} ${quote(marker)}`)}, cwd: ${JSON.stringify(root)} }); text(checked); await tools.delete({ path: checked.source });`,
+              code: `const checked = await tools.bash({ command: ${JSON.stringify(`python3 -c ${quote("import os,sys; pid=open(sys.argv[1]).read().strip(); print(os.path.exists('/proc/'+pid))")} ${quote(marker)}`)}, cwd: ${JSON.stringify(root)} }); text(checked); const session = checked.match(/^session: (shell:[^\\s]+)/m)?.[1]; if (!session) throw new Error("Bash did not publish its session"); await tools.delete({ path: session });`,
             },
           }),
         ]),
         assistantMessage([text("Stopped the abandoned owned startup.")]),
       ],
     }).run("Observe a real pending startup, then leave its native script without waiting for it.");
-    expect(getToolResultText(run, "cancel-startup")).toContain('"exit_code":0');
+    expect(
+      getToolExecution(run, "cancel-startup").isError,
+      getToolResultText(run, "cancel-startup"),
+    ).toBe(false);
+    expect(getToolResultText(run, "cancel-startup")).toContain("exitCode: 0");
     expect(getToolExecution(run, "check-reaped").isError).toBe(false);
-    expect(getToolResultText(run, "check-reaped")).toContain('"exit_code":0');
+    expect(getToolResultText(run, "check-reaped")).toContain("exitCode: 0");
     expect(getToolResultText(run, "check-reaped")).toContain("False");
     const pid = Number((await backend.read(marker)).bytes.toString("utf8"));
     expect(Number.isSafeInteger(pid)).toBe(true);

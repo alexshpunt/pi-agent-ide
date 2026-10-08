@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -120,7 +121,7 @@ test("ordinary and structured writes keep a committed SSH write unknown after re
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `text(await tools.write({path:${JSON.stringify(source)},content:"after\\n"}));`,
+              code: `let failure; try { await tools.write({path:${JSON.stringify(source)},content:"after\\n"}); } catch(error) { failure = String(error); } if (!failure) throw Error("An uncertain write must reject"); text(failure);`,
             },
           }),
         ]),
@@ -131,24 +132,22 @@ test("ordinary and structured writes keep a committed SSH write unknown after re
       ],
     }).run("Do not retry uncertain writes. Read the owned file to inspect the actual effect.");
     expect(getToolExecution(run, "ordinary").isError).toBe(true);
-    expect(getToolResultText(run, "ordinary")).toContain("OUTCOME_UNKNOWN");
+    expect(getToolResultText(run, "ordinary")).toContain("REMOTE_OPERATION_FAILED");
+    expect(getToolExecutionDetails(getToolExecution(run, "ordinary"))).toMatchObject({
+      effect: "unknown",
+    });
     expect(getToolResultText(run, "ordinary")).not.toContain("No file was changed.");
     expect(getToolResultText(run, "ordinary")).toContain("inspect the resource before retrying");
-    expect(getToolResultText(run, "ordinary")).not.toContain("rollback failed");
+    expect(getToolResultText(run, "ordinary")).not.toMatch(/rollback failed/iu);
     expect(getToolResultText(run, "read-after")).toContain("after");
     expect(getToolExecution(run, "reset").isError).toBe(false);
     expect(getToolExecution(run, "structured").isError).toBe(false);
-    const payload = getToolResultText(run, "structured")
-      .split("\n")
-      .find((line) => line.startsWith('{"status":'));
-    if (payload === undefined) throw new Error("Missing structured output");
-    expect(JSON.parse(payload) as unknown).toMatchObject({
-      status: "error",
-      data: { effect: "unknown" },
-    });
+    expect(getToolResultText(run, "structured")).toContain("REMOTE_OPERATION_FAILED");
+    expect(getToolResultText(run, "structured")).toContain("effects are unknown");
+    expect(getToolResultText(run, "structured")).not.toContain("No file was changed.");
     expect(getToolResultText(run, "read-final")).toContain("after");
     expect((await backend.read(file)).bytes.toString("utf8")).toBe("after\n");
-    expect(run.tuiRenderedOutput).toContain("Outcome unknown");
+    expect(run.tuiRenderedOutput).toContain("Effects unknown · edit failed");
     expect(run.tuiRenderedOutput).not.toContain("Not changed · edit failed");
   } finally {
     await rm(cwd, { recursive: true, force: true });

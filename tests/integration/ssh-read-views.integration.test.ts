@@ -214,6 +214,8 @@ text({note,raw,next,last,picture,pdf,readonly:true});
     expect(run.tuiRenderedOutput).toContain(`${remote}/note.txt`);
     expect(run.tuiRenderedOutput).toContain("café second");
     expect(run.tuiRenderedOutput).toContain("Owned second page 43");
+    // The controller may also be unprivileged; restore access only after checking refusal.
+    await chmod(path.join(fixture.workspace, "denied.txt"), 0o644);
     for (const [name, bytes] of files)
       expect(await readFile(path.join(fixture.workspace, name))).toEqual(Buffer.from(bytes));
   } finally {

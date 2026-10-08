@@ -1475,26 +1475,30 @@ async function editTextResources<Result>(
       );
     }),
   );
-  const failedIndex = writes.findIndex((result) => result.status === "rejected");
+  const writeEffect = (index: number): unknown => {
+    const result = writes[index];
+    const error: unknown = result?.status === "rejected" ? result.reason : undefined;
+    return error !== null && typeof error === "object" && "effect" in error
+      ? error.effect
+      : undefined;
+  };
+  // One uncertain peer makes the batch uncertain even if another write was safely refused.
+  const uncertainIndex = writes.findIndex((_, index) => writeEffect(index) === "unknown");
+  const failedIndex =
+    uncertainIndex === -1
+      ? writes.findIndex((result) => result.status === "rejected")
+      : uncertainIndex;
   if (failedIndex !== -1) {
     const source = requiredValue(written[failedIndex]);
     const item = requiredValue(prepared.get(source));
     const failure = requiredValue(writes[failedIndex]);
     const rollbackFailures: string[] = [];
     // A refusal or lost acknowledgement never authorizes compensation of that source.
-    const writeEffect = (index: number): unknown => {
-      const result = writes[index];
-      const error: unknown = result?.status === "rejected" ? result.reason : undefined;
-      return error !== null && typeof error === "object" && "effect" in error
-        ? error.effect
-        : undefined;
-    };
     const uncertainSources = written.filter((_, index) => writeEffect(index) === "unknown");
     const rollbackSources = written.filter((_, index) => {
       const effect = writeEffect(index);
       return effect !== "not-applied" && effect !== "unknown";
     });
-    rollbackFailures.push(...uncertainSources);
     for (const writtenSource of [...rollbackSources].reverse()) {
       const writtenItem = requiredValue(prepared.get(writtenSource));
       try {
@@ -1518,7 +1522,9 @@ async function editTextResources<Result>(
         resolverId: item.resolverId,
         message: `Unable to write ${source}: ${cause instanceof Error ? cause.message : String(cause)}`,
         cause,
-        rollback: { failed: rollbackFailures, originallyMissing },
+        ...(rollbackSources.length === 0
+          ? {}
+          : { rollback: { failed: rollbackFailures, originallyMissing } }),
       },
       completed: [],
     };
@@ -1898,7 +1904,15 @@ async function finalizeTextResource<Result>(
   };
 
   for (const { registration } of request.context.signal?.aborted ? [] : request.presenters) {
-    after = await registration.presenter.present(after, presentationContext);
+    try {
+      after = await registration.presenter.present(after, presentationContext);
+    } catch (error) {
+      // Presentation failed after saving; it does not make the confirmed write uncertain.
+      throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+        cause: error,
+        effect: "applied" as const,
+      });
+    }
   }
 
   return {

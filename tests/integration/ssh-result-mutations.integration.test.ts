@@ -107,7 +107,7 @@ text(moved);
 const moveScope = await tools.search({path:moved,query:"LOCAL"});
 const movedSpan = await tools.select({path:moveScope,operation:{kind:"sliceText",from:0}}); if (!movedSpan.includes("LOCAL")) throw Error(movedSpan);
 const empty = await tools.delete({path:[]});
-if (!empty.includes("No changes")) throw Error("Empty deletion is a no-op: " + empty);
+if (!/no changes/i.test(empty)) throw Error("Empty deletion is a no-op: " + empty);
 `,
             },
           }),

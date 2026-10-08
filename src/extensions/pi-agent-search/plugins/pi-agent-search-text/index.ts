@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { connectResultTargets } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -30,7 +31,11 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
     undefined,
     connectResultTargets(pi),
     async (source, cwd, signal) => {
-      if (read === undefined) throw new Error("The source snapshot reader is unavailable.");
+      if (read === undefined) {
+        // Standalone Search owns local files, but must never treat remote identities as paths.
+        if (source.includes("://")) throw new Error("No search snapshot owner for this source.");
+        return readFile(source, { encoding: "utf8", signal });
+      }
       const result = await read.read({ path: source }, { cwd, signal }, "script");
       if (result.isError || result.script?.kind !== "text" || result.script.source !== source)
         throw new Error(

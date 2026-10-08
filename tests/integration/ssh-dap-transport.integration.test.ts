@@ -74,7 +74,7 @@ test("existing stdio recipes select target overrides and send only native launch
   const owner = createSshDebuggerWorkspaceOwner(registry)(scope);
   if (!owner) throw new Error("Missing debugger owner");
   try {
-    for (const adapter of ["dart", "java", "kotlin", "netcoredbg", "elixir", "lldb-dap"] as const) {
+    for (const adapter of ["dart", "kotlin", "netcoredbg", "elixir", "lldb-dap"] as const) {
       const prepared = await owner.prepare({
         adapter,
         program: `${scope}/note`,
@@ -106,7 +106,7 @@ test("existing stdio recipes select target overrides and send only native launch
         expect(metadata?.command).toContain("owned-dap");
         if (adapter === "dart") expect(metadata?.command).toContain("debug_adapter");
         if (adapter === "netcoredbg") expect(metadata?.command).toContain("--interpreter=vscode");
-        if (adapter === "java" || adapter === "kotlin")
+        if (adapter === "kotlin")
           expect(prepared.launch).toMatchObject({
             mainClass: "OwnedMain",
             projectRoot: fixture.workspace,

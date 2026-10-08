@@ -123,9 +123,9 @@ const nextLine = await tools.read({path:"long.txt",offset:2});
 if(!nextLine.endsWith("last\n")) throw new Error(nextLine);
 const transformed = await tools.read({path:"values.txt",views:["jq:.payload"]});
 if(!transformed.includes("Output line 1") || !transformed.includes("Narrow the jq filter to return a smaller value.") || transformed.includes("raw:")) throw new Error(transformed);
-const saved = /Full output: (temp:[^. ]+)/u.exec(transformed);
-if(saved === null) throw new Error("Full jq output reference lost");
-store("oversizedJqOutput",saved[1]);
+const saved = /Full output: ("(?:[^"\\]|\\.)*"|temp:[^. ]+)/u.exec(transformed);
+if(saved === null) throw new Error("Full jq output reference lost: " + transformed);
+store("oversizedJqOutput",saved[1].startsWith('"') ? JSON.parse(saved[1]) : saved[1]);
 store("oversizedJqSource","values.txt");
 const smaller = await tools.read({path:"values.txt",views:["jq:.payload[0:64]"]});
 if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
@@ -133,7 +133,11 @@ text(capped); text(transformed); text(smaller);
 `,
       String.raw`
 const saved = await tools.read({path:load("oversizedJqOutput")});
-if(!saved.includes("58.6KB") || !saved.includes("source-specific tool")) throw new Error("Full saved output was not retained: " + saved);
+if(!saved.includes("58.6KB") || !saved.includes("original bytes")) throw new Error("Full saved output was not retained: " + saved);
+const action = /Read ("(?:[^"\\]|\\.)*") with offset=(\d+) and limit=(\d+) to inspect the original bytes/u.exec(saved);
+if(action === null) throw new Error("Saved output lost bounded byte recovery: " + saved);
+const bytes = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),limit:Number(action[3])});
+if(!bytes.includes("60003 bytes total") || !bytes.includes("Bytes 0..4096")) throw new Error(bytes);
 const smaller = await tools.read({path:load("oversizedJqSource"),views:["jq:.payload[0:64]"]});
 if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
 text(smaller);

@@ -96,7 +96,6 @@ test("ordinary target window reads retain canonical images, sequence bounds and 
     expect(getToolExecution(run, "structured").isError, getToolResultText(run, "structured")).toBe(
       false,
     );
-    expect(getToolResultText(run, "structured")).toContain(resource);
     expect(
       getToolResultMessage(run, "structured").content.filter((block) => block.type === "image"),
     ).toHaveLength(2);

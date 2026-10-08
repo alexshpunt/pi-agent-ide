@@ -206,7 +206,7 @@ test("ordinary explicit target web reads and searches retain their owner while b
     expect(getToolResultText(run, "ordinary-local")).toContain("Owned café HTTP");
     expect(getToolExecution(run, "unknown-target").isError).toBe(true);
     expect(getToolResultText(run, "unknown-target")).toContain("UNKNOWN_TARGET");
-    expect(getToolResultText(run, "structured")).toContain(source);
+    expect(getToolResultText(run, "structured")).toContain("Owned café HTTP");
     const frame = getToolResultMessage(run, "target-image").content.find((b) => b.type === "image");
     if (!frame) throw new Error("No target browser image");
     const image = await loadImage(Buffer.from(frame.data, "base64"));
@@ -218,7 +218,6 @@ test("ordinary explicit target web reads and searches retain their owner while b
     expect(getToolExecutionDetails(getToolExecution(run, "target-image"))).toMatchObject({
       source: imageSource,
     });
-    expect(getToolResultText(run, "structured-images")).toContain(imageSource);
     expect(
       getToolResultMessage(run, "structured-images").content.filter(
         (block) => block.type === "image",

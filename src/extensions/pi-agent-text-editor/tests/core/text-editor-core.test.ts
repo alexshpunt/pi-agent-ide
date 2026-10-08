@@ -454,6 +454,67 @@ test("does not compensate a resource whose write was explicitly not applied", as
   expect(values.get("conflict.txt")).toBe("external");
 });
 
+test.each([false, true])(
+  "a lost receipt stays uncertain without compensation (refused peer: %s)",
+  async (refusedPeer) => {
+    const core = createTextEditorCore();
+    let value = "before";
+    const writes: string[] = [];
+    await core.registerPlugin({
+      protocol: TEXT_EDITOR_PROTOCOL,
+      apiVersion: TEXT_EDITOR_API_VERSION,
+      id: "lost-write-receipt",
+      setup(api) {
+        api.addResolver({
+          resolver: {
+            id: "owned-uncertain-file",
+            async tryResolve(source) {
+              if (source !== "owned.txt" && source !== "refused.txt")
+                return { kind: "not-handled" };
+              return {
+                kind: "resolved",
+                resource: {
+                  source,
+                  async read() {
+                    return [{ type: "text", text: value }];
+                  },
+                  async write(content) {
+                    if (source === "refused.txt")
+                      throw Object.assign(new Error("Write refused"), { effect: "not-applied" });
+                    value = content[0].type === "text" ? content[0].text : "";
+                    writes.push(value);
+                    throw Object.assign(new Error("Receipt lost after saving"), {
+                      effect: "unknown",
+                    });
+                  },
+                },
+              };
+            },
+          },
+        });
+      },
+    });
+    const outcome = await core.editTexts(
+      (refusedPeer ? ["refused.txt", "owned.txt"] : ["owned.txt"]).map((source) => ({
+        source,
+        read: true,
+      })),
+      { cwd: "/workspace" },
+      async (texts) => ({
+        changes: new Map(
+          [...texts.keys()].map((source) => [source, [{ from: 0, to: 6, insert: "after" }]]),
+        ),
+        result: undefined,
+      }),
+    );
+    expect(outcome).toMatchObject({ kind: "failed", failure: { code: "WRITE_FAILED" } });
+    if (outcome.kind !== "failed") throw new Error("Expected a lost receipt");
+    expect(outcome.failure.rollback).toBeUndefined();
+    expect(outcome.failure.cause).toMatchObject({ effect: "unknown" });
+    expect(writes).toEqual(["after"]);
+    expect(value).toBe("after");
+  },
+);
 test("preserves every confirmed write when later presentation fails", async () => {
   const core = createTextEditorCore();
   const firstWrites: AgentContent[] = [];

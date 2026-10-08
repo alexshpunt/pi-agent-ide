@@ -389,6 +389,12 @@ describe("mutation renderer lifecycle", () => {
     { effect: "unknown", code: "CONNECTION_LOST", expected: "? Outcome unknown · connection lost" },
     { effect: "applied", code: "CONNECTION_LOST", expected: "✓ Applied · connection lost" },
     {
+      kind: "uncertain-peer",
+      effect: "unknown",
+      code: "WRITE_FAILED",
+      expected: "Effects unknown · edit failed",
+    },
+    {
       kind: "text-mutation",
       effect: "unknown",
       code: "POST_WRITE_FAILED",
@@ -437,11 +443,12 @@ describe("mutation renderer lifecycle", () => {
         {
           content: [{ type: "text", text: "private transport diagnostic and stack trace" }],
           details:
-            kind === "text-mutation"
+            kind === "text-mutation" || kind === "uncertain-peer"
               ? {
                   effect: effect === "unknown" ? "unknown" : "applied",
                   results: [
                     new FileMutationResult({
+                      ...(kind === "uncertain-peer" ? { rollback: { failedSources: [] } } : {}),
                       ok: false,
                       path: args.path,
                       errors: [
