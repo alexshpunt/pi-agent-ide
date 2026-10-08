@@ -79,7 +79,7 @@ test("ordinary process resources and searches separate identical PIDs in two rea
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `for (const scope of ${JSON.stringify(targets.map((target) => `ssh://${target.id}${target.workspace}`))}) { const result=await tools.search({query:"process:1",path:scope}); if(result.status!=="success" || result.data.kind!=="custom") throw new Error("No process snapshot"); text(result.data.value.processes.filter(process=>process.pid===1)); }`,
+              code: `for (const scope of ${JSON.stringify(targets.map((target) => `ssh://${target.id}${target.workspace}`))}) { const result=await tools.search({query:"process:1",path:scope}); if(!result.includes("process:"+scope.split("/").slice(0,3).join("/")+"/1") || !result.includes("Owned by Agent IDE: no")) throw new Error("No target process snapshot: "+result); text(result); }`,
             },
           }),
         ]),
@@ -109,9 +109,9 @@ test("ordinary process resources and searches separate identical PIDs in two rea
     }
     const structured = getToolResultText(run, "structured");
     expect(getToolExecution(run, "structured").isError).toBe(false);
-    expect(structured).toContain('"resource":"process:ssh://left/1"');
-    expect(structured).toContain('"resource":"process:ssh://right/1"');
-    expect(structured).toContain('"owned":false');
+    expect(structured).toContain("process:ssh://left/1");
+    expect(structured).toContain("process:ssh://right/1");
+    expect(structured).toContain("Owned by Agent IDE: no");
     expect(getToolExecution(run, "unconfigured").isError).toBe(true);
     expect(getToolResultText(run, "unconfigured")).toContain("UNKNOWN_TARGET");
     expect(run.tuiRenderedOutput).toContain("process:ssh://left/1");

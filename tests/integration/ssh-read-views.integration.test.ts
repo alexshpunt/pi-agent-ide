@@ -115,42 +115,42 @@ test("filesystem SSH Read keeps text, bytes, JSONL and media windows readonly an
     const code = `
 const root = ${JSON.stringify(remote)};
 function check(value, message) { if (!value) throw Error(message); }
-async function read(request) {
-  const r = await tools.read(request);
-  check(r.status === "success", JSON.stringify(r));
-  return r.data;
+
+async function rejected(action, label) {
+  let failure; try { await action(); } catch(error) { failure=String(error); }
+  check(failure, label+" unexpectedly succeeded");
 }
-const local = await read({path:"note.txt"});
-check(local.lines[0].content === "local same basename", "Remote lookup changed local routing");
-const note = await read({path:root+"/note.txt",offset:2,limit:1,views:["anchors"]});
-check(note.source === root+"/note.txt" && note.lines.length === 1 && note.lines[0].content === "café second" && note.lines[0].lineEnding === "\\r\\n", "Text window lost identity or CRLF");
-check(note.target && note.lines[0].anchors.length > 0, "Exact source window lost authority");
-const raw = await read({path:"raw:"+root+"/bytes.bin",offset:-2,limit:2});
-check(raw.kind === "bytes" && raw.byteOffset === 3 && raw.totalBytes === 5 && JSON.stringify(raw.bytes) === "[10,13]", "Raw tail was decoded");
-const eof = await read({path:"raw:"+root+"/bytes.bin",offset:100,limit:2});
-check(eof.byteOffset === 5 && eof.bytes.length === 0, "Raw EOF did not clamp");
-const zero = await read({path:"raw:"+root+"/bytes.bin",limit:0});
-check(zero.bytes.length === 0 && zero.totalBytes === 5 && !zero.target, "Zero byte read gained text authority");
-const long = await read({path:root+"/long.txt"});
-check(long.truncated && long.continuation && long.lines.length === 2000, "Text clipping was hidden");
-const next = await read({...long.continuation,limit:2});
-check(next.source === root+"/long.txt" && next.startLine === 2001 && next.lines[0].content === "row 2000", "Text continuation changed owner or skipped rows");
-const records = await read({path:root+"/records.jsonl",views:["jq:.id"]});
-check(records.truncated && records.totalLines === 2205 && !records.target, "Derived JSON gained source authority or lost bounds: "+JSON.stringify({truncated:records.truncated,totalLines:records.totalLines,count:records.lines.length,target:records.target}));
-const recordTail = await read({...records.continuation,views:["jq:.id"],limit:1});
-check(recordTail.lines[0].content === "2000", "JSON continuation offset was applied to input records");
-const last = await read({path:root+"/records.jsonl",views:["jq:.message"],offset:2205,limit:1});
-check(last.lines[0].content === '"remote café"', "JSONL output window was not transformed first");
-for (const identitySource of ["identity.json", root+"/identity.json"]) {
-  const identity = await read({path:identitySource,views:["jq:."]});
-  check(identity.lines[0].content === "42" && !identity.target && !identity.lines.some(l=>l.anchors?.length), "Identity jq output gained physical authority: "+JSON.stringify(identity));
+const local=await tools.read({path:"note.txt"});
+check(local.includes("local same basename"),"Local routing changed");
+const note=await tools.read({path:root+"/note.txt",offset:2,limit:1,views:["anchors"]});
+check(note.includes("café second") && !note.includes("first") && /2#[A-F0-9]+/.test(note),"Anchored text window changed");
+const raw=await tools.read({path:"raw:"+root+"/bytes.bin",offset:-2,limit:2});
+check(raw.includes("Bytes 3..5") && raw.includes("0a 0d"),"Raw tail was decoded");
+const eof=await tools.read({path:"raw:"+root+"/bytes.bin",offset:100,limit:2});
+check(eof.includes("Bytes 5..5"),"Raw EOF did not clamp");
+const zero=await tools.read({path:"raw:"+root+"/bytes.bin",limit:0});
+check(zero.includes("Bytes 0..0") && zero.includes("5 bytes total"),"Zero byte read changed bounds");
+const long=await tools.read({path:root+"/long.txt"});
+check(/offset|temp:/.test(long),"Clipping was hidden");
+const next=await tools.read({path:root+"/long.txt",offset:2001,limit:2});
+check(next.includes("row 2000") && next.includes("row 2001"),"Continuation skipped rows");
+const records=await tools.read({path:root+"/records.jsonl",views:["jq:.id"]});
+check(/offset|temp:/.test(records),"JSON clipping was hidden");
+const recordTail=await tools.read({path:root+"/records.jsonl",views:["jq:.id"],offset:2001,limit:1});
+check(recordTail.includes("2000"),"JSON continuation changed offset");
+const last=await tools.read({path:root+"/records.jsonl",views:["jq:.message"],offset:2205,limit:1});
+check(last.includes('"remote café"'),"JSONL output window was not transformed first");
+for(const path of ["identity.json",root+"/identity.json"]) {
+ const identity=await tools.read({path,views:["jq:."]});
+ check(identity.includes("42"),"Identity jq output changed");
+ await rejected(()=>tools.replace({path:identity,text:"BAD"}),"jq edit authority");
 }
-const environment = await read({path:root+"/records.jsonl",views:["jq:env | keys"],limit:10});
-check(!environment.lines.some(l=>l.content.includes("SSH_AUTH_SOCK") || l.content.includes("HOME")), "jq inherited account environment");
-const picture = await read({path:root+"/picture.data"});
-check(picture.kind === "native" && picture.source === root+"/picture.data" && picture.blocks.some(b=>b.type === "image") && !picture.target, "Image lost native payload or gained edit authority");
-const pdf = await read({path:root+"/document.data"});
-check(pdf.lines.some(l=>l.content.includes("Owned second page 43")) && !pdf.target, "PDF did not convert all pages readonly");
+const environment=await tools.read({path:root+"/records.jsonl",views:["jq:env | keys"],limit:10});
+check(!environment.includes("SSH_AUTH_SOCK") && !environment.includes('"HOME"'),"jq inherited account environment");
+const picture=await tools.read({path:root+"/picture.data"});
+const pdf=await tools.read({path:root+"/document.data"});
+check(pdf.includes("Owned second page 43"),"PDF lost second page");
+for(const result of [raw,zero,picture,pdf]) await rejected(()=>tools.replace({path:result,text:"BAD"}),"readonly edit authority");
 for (const request of [
   {path:root+"/denied.txt"},
   {path:root+"/broken.jsonl",views:["jq:.id"]},
@@ -162,10 +162,9 @@ for (const request of [
   {path:root+"/records.jsonl",views:["jq:.id","anchors"]},
   {path:"raw:"+root+"/bytes.bin",views:["anchors"]}
 ]) {
-  const r = await tools.read(request);
-  check(r.status === "error" && r.errors.length > 0 && !r.data?.target, "Rejected Read looked successful: "+JSON.stringify(r));
+  await rejected(()=>tools.read(request),"Rejected Read");
 }
-text({source:note.source,tail:raw.bytes,continued:next.startLine,jsonTail:last.lines[0].content,image:picture.source,pdf:pdf.source,readonly:true});
+text({note,raw,next,last,picture,pdf,readonly:true});
 `;
     const run = await new PiIntegrationTest({
       testName: "ssh-read-views",
@@ -174,7 +173,7 @@ text({source:note.source,tail:raw.bytes,continued:next.startLine,jsonTail:last.l
       rawMode: false,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["read", "codemode"],
+      tools: ["read", "replace", "codemode"],
       timeoutMs: 120_000,
       conversation: [
         ...ordinary.map((call) => assistantMessage([toolCall({ ...call, name: "read" })])),

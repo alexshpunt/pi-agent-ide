@@ -91,21 +91,11 @@ test("trusted hooks guard remote read paths and mixed moves, then see final nati
         name: "codemode",
         arguments: { code: `text(await tools.read({path:${JSON.stringify(secret)}}));` },
       },
-      {
-        id: "apply-read",
-        name: "apply",
-        arguments: { source: `read({path:${JSON.stringify(secret)}});` },
-      },
+
       { id: "throw", name: "read", arguments: { path: `${root}/throw.txt` } },
       { id: "local", name: "read", arguments: { path: "secret.json" } },
       { id: "mixed", name: "move", arguments: { path: local, target: locked, overwrite: true } },
-      {
-        id: "apply-mixed",
-        name: "apply",
-        arguments: {
-          source: `moveFile(${JSON.stringify(local)},${JSON.stringify(locked)},{overwrite:true}); flush();`,
-        },
-      },
+
       {
         id: "code-mixed",
         name: "codemode",
@@ -141,7 +131,7 @@ test("trusted hooks guard remote read paths and mixed moves, then see final nati
         path.resolve("tests/integration/support/ssh-user-hooks-extension.ts"),
         "builtin:codemode",
       ],
-      tools: ["read", "move", "copy", "write", "codemode", "apply"],
+      tools: ["read", "move", "copy", "write", "codemode"],
       timeoutMs: 60_000,
       conversation: [
         ...calls.map((call) => assistantMessage([toolCall(call)])),
@@ -155,15 +145,12 @@ test("trusted hooks guard remote read paths and mixed moves, then see final nati
     }
     expect(getToolResultText(run, "script")).toContain("Owned remote content is blocked");
     expect(getToolResultText(run, "script")).not.toContain("PRIVATE_OWNED_READ_CONTENT");
-    expect(getToolResultText(run, "apply-read")).toContain("Owned remote content is blocked");
-    expect(getToolResultText(run, "apply-read")).not.toContain("PRIVATE_OWNED_READ_CONTENT");
     expect(getToolExecution(run, "throw").isError).toBe(true);
     expect(getToolResultText(run, "throw")).toContain("Owned read hook refused");
     expect(getToolResultText(run, "throw")).not.toContain("PRIVATE_OWNED_READ_CONTENT");
     expect(getToolExecution(run, "local").isError).toBe(false);
     expect(getToolResultText(run, "local")).toContain("Allowed local café content");
     expect(getToolResultText(run, "mixed")).toContain("Owned remote destination is locked");
-    expect(getToolResultText(run, "apply-mixed")).toContain("Owned remote destination is locked");
     expect(getToolResultText(run, "code-mixed")).toContain("Owned remote destination is locked");
     expect(getToolExecution(run, "binary-copy").isError).toBe(false);
     expect((await backend.read(`${fixture.workspace}/target.bin`)).bytes).toEqual(binary);
@@ -257,7 +244,7 @@ test("scripted whole-file copies report the prior destination and final formatte
       Buffer.from(JSON.stringify(SSH_HOOK_FORMATTERS)),
       null,
     );
-    for (const name of ["apply.fixture", "code.fixture"])
+    for (const name of ["ordinary.fixture", "code.fixture"])
       await backend.write(
         `${fixture.workspace}/${name}`,
         Buffer.from(`prior ${name} café\n`),
@@ -295,16 +282,14 @@ test("scripted whole-file copies report the prior destination and final formatte
         path.resolve("tests/integration/support/ssh-user-hooks-extension.ts"),
         "builtin:codemode",
       ],
-      tools: ["apply", "codemode", "copy"],
+      tools: ["codemode", "copy"],
       timeoutMs: 60_000,
       conversation: [
         assistantMessage([
           toolCall({
-            id: "apply-copy",
-            name: "apply",
-            arguments: {
-              source: `copyFile(${JSON.stringify(local)},${JSON.stringify(`${root}/apply.fixture`)},{overwrite:true}); flush();`,
-            },
+            id: "ordinary-copy",
+            name: "copy",
+            arguments: { path: local, target: `${root}/ordinary.fixture`, overwrite: true },
           }),
         ]),
         assistantMessage([
@@ -319,11 +304,11 @@ test("scripted whole-file copies report the prior destination and final formatte
         assistantMessage([text("Checked both saved destinations.")]),
       ],
     }).run(
-      "Copy the owned fixture through both script interfaces and report final saved feedback.",
+      "Copy the owned fixture through standalone and native calls and report final saved feedback.",
     );
     const events = (await readFile(path.join(cwd, ".tmp/hook-events.jsonl"), "utf8")).split("\n");
     for (const [id, name] of [
-      ["apply-copy", "apply.fixture"],
+      ["ordinary-copy", "ordinary.fixture"],
       ["code-copy", "code.fixture"],
     ] as const) {
       expect(getToolExecution(run, id).isError).toBe(false);

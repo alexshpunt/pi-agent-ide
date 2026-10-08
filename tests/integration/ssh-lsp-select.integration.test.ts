@@ -104,30 +104,28 @@ test.each(["scope", "mutation"] as const)(
                 code: `
 const read = await tools.read({ path: ${JSON.stringify(`${root}/note.ts`)} });
 const seed = await tools.select({ path: read, operation: { kind: "range", startLine: 1, startColumn: 6, endLine: 1, endColumn: 11 } });
-if (seed.status !== "success") throw Error(JSON.stringify(seed));
-const strict = await tools.search({ query: "symbols:label", path: seed });
-if (strict.status !== "success" || strict.data.matches.length !== 1 || strict.data.matches[0]?.role !== "definition" || strict.data.matches[0]?.matchedText !== "label") throw Error(JSON.stringify(strict));
-const name = await tools.select({ path: strict, operation: { kind: "sliceText", from: 0 } });
-if (name.status !== "success" || name.data.items[0]?.preview !== "label") throw Error(JSON.stringify(name));
-if (${JSON.stringify(mode)} === "scope") {
-const local = await tools.read({ path: ${JSON.stringify(local)} });
-const overlap = await tools.select({ path: strict, operation: { kind: "intersection", scopes: local } });
-if (overlap.status !== "success" || overlap.data.totalItems !== 0) throw Error(JSON.stringify(overlap));
-const navigation = await tools.search({ query: "symbols:label", path: seed, navigation: "references" });
-if (navigation.status !== "success" || navigation.data.matches.length !== 2) throw Error(JSON.stringify(navigation));
-if (navigation.data.matches[1]?.source !== ${JSON.stringify(`${root}/reference.ts`)} || navigation.data.matches[1]?.role !== "reference") throw Error(JSON.stringify(navigation));
-if (new Set(navigation.data.matches.map(m => m.symbol.id)).size !== 1) throw Error("Lost originating declaration identity");
-const cut = await tools.select({ path: seed, operation: { kind: "sliceText", from: 1 } });
-const absent = await tools.search({ query: "symbols:label", path: cut });
-if (absent.status !== "success" || absent.data.matches.length !== 0) throw Error("Partial name must not widen: " + JSON.stringify(absent));
-text({ strict: strict.data, name: name.data, navigation: navigation.data, absent: absent.data });
+
+const strict=await tools.search({query:"symbols:label",path:seed});
+if(!strict.includes("definition label") || strict.includes("reference label")) throw Error(strict);
+const name=await tools.select({path:strict,operation:{kind:"sliceText",from:0}});
+if(!name.includes("label")) throw Error(name);
+if(${JSON.stringify(mode)} === "scope") {
+ const local=await tools.read({path:${JSON.stringify(local)}});
+ const overlap=await tools.select({path:strict,operation:{kind:"intersection",scopes:local}});
+ if(!overlap.includes("0 selection(s)")) throw Error(overlap);
+ const navigation=await tools.search({query:"symbols:label",path:seed,navigation:"references"});
+ if(!navigation.includes(${JSON.stringify(`${root}/reference.ts`)}) || !navigation.includes("reference label")) throw Error(navigation);
+ const declarations=[...navigation.matchAll(/declared at (.+)/g)].map(m=>m[1]);
+ if(declarations.length!==2 || new Set(declarations).size!==1) throw Error("Lost declaration identity: "+navigation);
+ const cut=await tools.select({path:seed,operation:{kind:"sliceText",from:1}});
+ const absent=await tools.search({query:"symbols:label",path:cut});
+ if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);
+ text({strict,name,navigation,absent});
 } else {
-const changed = await tools.replace({ path: name, text: "renamed" });
-if (changed.status !== "success" || changed.data.effect === "not-applied") throw Error(JSON.stringify(changed));
-text(changed);
-const stale = await tools.search({ query: "symbols:label", path: seed });
-if (stale.status !== "error") throw Error("Changed symbol snapshots must be stale: " + JSON.stringify(stale));
-text({ stale });
+ text(await tools.replace({path:name,text:"renamed"}));
+ let stale; try { await tools.search({query:"symbols:label",path:seed}); } catch(error) { stale=String(error); }
+ if(!stale || !/stale|changed/.test(stale)) throw Error("Changed snapshot was accepted: "+stale);
+ text({stale});
 }
 
 `,
@@ -142,8 +140,7 @@ text({ stale });
       );
       expect(getToolResultText(run, "ordinary")).not.toContain(`${root}/reference.ts`);
       expect(getToolExecution(run, "scoped").isError, getToolResultText(run, "scoped")).toBe(false);
-      if (mode === "scope")
-        expect(getToolResultText(run, "scoped")).toContain('"role":"reference"');
+      if (mode === "scope") expect(getToolResultText(run, "scoped")).toContain("reference label");
       else expect(getToolResultText(run, "scoped")).toContain("stale");
       expect((await backend.read(`${fixture.workspace}/note.ts`)).bytes.toString("utf8")).toBe(
         mode === "mutation" ? source.replace("label", "renamed") : source,

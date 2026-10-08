@@ -143,7 +143,7 @@ test("ordinary explicit target web reads and searches retain their owner while b
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r=await tools.read({path:${JSON.stringify(source)}}); if(r.status!=="success")throw Error(JSON.stringify(r)); text(r);`,
+              code: `const r=await tools.read({path:${JSON.stringify(source)}}); text(r);`,
             },
           }),
         ]),
@@ -162,7 +162,7 @@ test("ordinary explicit target web reads and searches retain their owner while b
             id: "structured-images",
             name: "codemode",
             arguments: {
-              code: `const r=await tools.read({path:${JSON.stringify(imageSource)},views:["sequence:duration=0.1,interval=0.1,scale=0.5"],limit:64,offset:1}); if(r.status!=="success") throw Error(JSON.stringify(r)); text({source:r.data.source,count:r.data.blocks.filter(b=>b.type==="image").length});`,
+              code: `const r=await tools.read({path:${JSON.stringify(imageSource)},views:["sequence:duration=0.1,interval=0.1,scale=0.5"],limit:64,offset:1}); text(r);`,
             },
           }),
         ]),
@@ -219,7 +219,11 @@ test("ordinary explicit target web reads and searches retain their owner while b
       source: imageSource,
     });
     expect(getToolResultText(run, "structured-images")).toContain(imageSource);
-    expect(getToolResultText(run, "structured-images")).toContain('"count":2');
+    expect(
+      getToolResultMessage(run, "structured-images").content.filter(
+        (block) => block.type === "image",
+      ),
+    ).toHaveLength(2);
     expect(getToolResultText(run, "target-pdf")).toContain("Owned target PDF value 42");
     const mediaFrame = getToolResultMessage(run, "target-media").content.find(
       (b) => b.type === "image",

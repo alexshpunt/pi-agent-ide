@@ -180,16 +180,13 @@ test.each(["full", "compact", "disabled"] as const)(
 const sources = ${JSON.stringify([local, localPeer, remote, remotePeer])};
 const outcomes = await Promise.allSettled(sources.map(path => tools.replace({path,start:"TODO",text:"READY"})));
 for (const outcome of outcomes) {
-  if (outcome.status !== "fulfilled" || outcome.value.status !== "success") throw Error(JSON.stringify(outcome));
+  if (outcome.status !== "fulfilled" || typeof outcome.value !== "string") throw Error(JSON.stringify(outcome));
   text(outcome.value);
 }
-const committed = await tools.flush({});
-if (committed.status !== "success") throw Error(JSON.stringify(committed));
-text(committed);
 for (const outcome of outcomes) {
   if (outcome.status !== "fulfilled") throw Error("Missing mutation result");
   const found = await tools.search({path:outcome.value,query:"READY"});
-  if (found.status !== "success" || found.data.matches.length !== 1) throw Error(JSON.stringify(found));
+  if (!found.includes("READY")) throw Error(found);
   text(found);
 }
 `,

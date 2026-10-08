@@ -154,12 +154,12 @@ test.each(["cold graph", "rename"] as const)(
               arguments: {
                 code: `
 const definition = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: ${JSON.stringify(`${root}/note.ts`)} });
-if (definition.status !== "success" || definition.data.matches.length !== 1 || definition.data.matches[0]?.role !== "definition") throw Error(JSON.stringify(definition));
+if(!definition.includes("definition ") || definition.includes("reference ")) throw Error(definition);
 const references = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: definition, navigation: "references" });
-if (references.status !== "success" || references.data.matches.length !== 3 || new Set(references.data.matches.map(m => m.symbol.id)).size !== 1) throw Error(JSON.stringify(references));
+const declarations=[...references.matchAll(/declared at (.+)/g)].map(m=>m[1]); if(declarations.length!==3 || new Set(declarations).size!==1) throw Error(references);
 const inspected = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} });
 text({ definition, references, inspected });
-await tools.delete({ path: inspected.source });
+const shell=/session: (shell:[a-zA-Z0-9-]+)/.exec(inspected)?.[1]; if(!shell) throw Error("No owned shell source"); await tools.delete({path:shell});
 `,
               },
             }),

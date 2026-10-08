@@ -93,7 +93,7 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
             id: "sequence",
             name: "codemode",
             arguments: {
-              code: `const r=await tools.read({path:${JSON.stringify(imageSource)},views:["sequence:duration=0.1,interval=0.1,scale=0.5"],limit:64,offset:1});if(r.status!=="success")throw Error(JSON.stringify(r));text({source:r.data.source,count:r.data.blocks.filter(b=>b.type==="image").length});`,
+              code: `const r=await tools.read({path:${JSON.stringify(imageSource)},views:["sequence:duration=0.1,interval=0.1,scale=0.5"],limit:64,offset:1});text(r);`,
             },
           }),
         ]),
@@ -122,7 +122,9 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
     paint.drawImage(image, 0, 0);
     expect([...paint.getImageData(0, 0, 1, 1).data]).toEqual([255, 0, 0, 255]);
     expect(getToolResultText(run, "sequence")).toContain(imageSource);
-    expect(getToolResultText(run, "sequence")).toContain('"count":2');
+    expect(
+      getToolResultMessage(run, "sequence").content.filter((block) => block.type === "image"),
+    ).toHaveLength(2);
     expect(run.tuiRenderedOutput).toContain(source);
     expect(run.tuiRenderedOutput).toContain("Isolated café HTTP");
     await expect(

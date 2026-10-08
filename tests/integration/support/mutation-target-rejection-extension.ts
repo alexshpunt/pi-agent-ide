@@ -5,16 +5,11 @@ export default function registerMutationTargetRejectionFixture(pi: ExtensionAPI)
   let acceptedTarget: string | undefined;
   pi.on("tool_result", (event) => {
     if (event.parentToolCallId !== "cancel" || event.toolName !== "replace") return;
-    const result: unknown = event.structuredContent;
-    if (result === null || typeof result !== "object" || !("data" in result)) return;
-    const data = result.data;
-    if (
-      data !== null &&
-      typeof data === "object" &&
-      "target" in data &&
-      typeof data.target === "string"
-    )
-      acceptedTarget = data.target;
+    const shown = event.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
+    acceptedTarget = /<uuid>([a-f\d-]{36})<\/uuid>/iu.exec(shown)?.[1];
   });
   pi.on("tool_call", (event) => {
     if (event.toolCallId !== "rejected" || event.toolName !== "codemode") return;

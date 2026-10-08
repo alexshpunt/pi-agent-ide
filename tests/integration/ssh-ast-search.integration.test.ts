@@ -104,7 +104,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r = await tools.search({query: "ast:console.info($VALUE)", path: ${JSON.stringify(scope)}}); if (r.status !== "success" || r.data.kind !== "matches" || r.data.matches.length !== 1 || r.data.matches[0].source !== ${JSON.stringify(note)} || r.data.matches[0].range.startColumn !== 22) throw new Error(JSON.stringify(r)); text(r);`,
+              code: `const r = await tools.search({query: "ast:console.info($VALUE)", path: ${JSON.stringify(scope)}}); if (!r.includes(${JSON.stringify(note)}) || !r.includes("console.info(label)")) throw new Error(r); text(r);`,
             },
           }),
         ]),

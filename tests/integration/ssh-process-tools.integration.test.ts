@@ -99,7 +99,20 @@ test("ordinary process search and read keep target PIDs separate from the contro
             id: "owned-structured",
             name: "codemode",
             arguments: {
-              code: `const child=await tools.bash({command:"exec python3 -c 'import time; time.sleep(60) # native-owned-channel'",cwd:${JSON.stringify(scope)},background:true}); try { if(!child.remote) throw new Error("Missing remote PID"); text(await tools.search({query:"process:"+child.remote.pid,path:${JSON.stringify(scope)}})); } finally { text(await tools.delete({path:child.source})); } const missing=await tools.read({path:"process:ssh://fixture/"+child.remote.pid}); text(missing); if(missing.status!=="error") throw new Error("Closed owned process still readable");`,
+              code: `const child=await tools.bash({command:"exec python3 -u -c 'import os,time; print(\\"OWNED_PID=\\"+str(os.getpid()),flush=True); time.sleep(60)'",cwd:${JSON.stringify(scope)},background:true});
+const shell=/session: (shell:[a-zA-Z0-9-]+)/.exec(child)?.[1];
+if(!shell) throw Error("No owned shell resource: "+child);
+const pid=/OWNED_PID=([0-9]+)/.exec(child)?.[1];
+if(!pid) throw Error("No native PID in owned output: "+child);
+const resource="process:ssh://fixture/"+pid;
+try {
+ const found=await tools.search({query:"process:"+pid,path:${JSON.stringify(scope)}});
+ if(!resource || !found.includes("Owned by Agent IDE: yes")) throw Error("Missing owned process identity: "+found);
+ text(found);
+} finally { text(await tools.delete({path:shell})); }
+let missing; try { await tools.read({path:resource}); } catch(error) { missing=String(error); }
+if(!missing || !missing.includes("ENOENT")) throw Error("Closed process still readable: "+missing);
+text(missing);`,
             },
           }),
         ]),
@@ -119,14 +132,14 @@ test("ordinary process search and read keep target PIDs separate from the contro
     expect(getToolExecution(run, "structured").isError).toBe(false);
     const structured = getToolResultText(run, "structured");
     expect(structured).toContain(resource);
-    expect(structured).toContain('"owned":false');
-    expect(structured).toContain('"identity":');
-    expect(structured).toContain('"executable":');
+    expect(structured).toContain("Owned by Agent IDE: no");
+    expect(structured).toContain("Identity:");
+    expect(structured).toContain("Executable:");
     expect(getToolExecution(run, "owned-structured").isError).toBe(false);
     const owned = getToolResultText(run, "owned-structured");
-    expect(owned).toContain('"owned":true');
-    expect(owned).toContain('"source":"shell:');
-    expect(owned).toContain('"identity":');
+    expect(owned).toContain("Owned by Agent IDE: yes");
+    expect(owned).toContain("shell:");
+    expect(owned).toContain("Identity:");
     expect(owned).toContain("ENOENT: process:ssh://fixture/");
     expect(run.tuiRenderedOutput).toContain(resource);
     expect(run.tuiRenderedOutput).toContain("Target: fixture");

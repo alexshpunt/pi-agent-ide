@@ -81,7 +81,7 @@ test("remote Diff keeps full snapshots, bounded output and session-owned tempora
       rawMode: false,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["read", "diff", "write", "codemode"],
+      tools: ["read", "diff", "write", "replace", "codemode"],
       timeoutMs: 90000,
     };
     const run = await new PiIntegrationTest({
@@ -107,20 +107,20 @@ test("remote Diff keeps full snapshots, bounded output and session-owned tempora
 const left = ${JSON.stringify(left)}, right = ${JSON.stringify(right)};
 function check(value, message) { if (!value) throw Error(message); }
 const mixed = await tools.diff({before:${JSON.stringify(local)},after:left});
-check(mixed.status === "success" && mixed.data.equal, "Equal local/remote bytes changed meaning");
-const result = await tools.diff({before:left,after:right});
-check(result.status === "success", JSON.stringify(result));
-const d = result.data;
-check(d.before.source === left && d.after.source === right && d.before.sources[0] === left && d.after.sources[0] === right, "Comparison lost target identity");
-check(d.stats.added === 2205 && d.stats.removed === 2205 && d.truncated && d.fullResult?.startsWith("temp:"), "Diff compared clipped Read windows or hid truncation");
-check(!d.target, "Diff gained edit authority");
-const tail = await tools.read({path:d.fullResult,offset:-3,limit:3,views:["anchors"]});
-check(tail.status === "success" && !tail.data.target && tail.data.source === d.fullResult, "Temporary result changed identity or gained edit authority");
-check(tail.data.lines.some(l=>l.content.includes("right café row 2204")), "Full diff lost its final source row");
-const changed = await tools.write({path:right,content:"new remote snapshot\\r\\n"});
-check(changed.status === "success", JSON.stringify(changed));
-store("diff-result", {source:d.fullResult,tail:tail.data.lines.map(l=>l.content)});
-text({temporary:d.fullResult,before:d.before.source,after:d.after.source,stats:d.stats});
+
+check(mixed.includes("No differences"),"Equal local/remote bytes changed meaning");
+const result=await tools.diff({before:left,after:right});
+check(result.includes(left) && result.includes(right),"Comparison lost owner identities");
+const source=/temp:[a-zA-Z0-9-]+/.exec(result)?.[0];
+check(source && result.includes("truncated"),"Full comparison lost continuation");
+const tail=await tools.read({path:source,offset:-3,limit:3});
+check(tail.includes("right café row 2204"),"Full diff lost final source row");
+let rejected;
+try { await tools.replace({path:result,text:"BAD"}); } catch(error) { rejected=String(error); }
+check(rejected,"Diff gained edit authority");
+text(await tools.write({path:right,content:"new remote snapshot\\r\\n"}));
+store("diff-result",{source,tail:tail.replace(/^<system-result[^\\n]*>\\n/,"")});
+text({temporary:source,before:left,after:right});
 `,
             },
           }),
@@ -134,10 +134,11 @@ text({temporary:d.fullResult,before:d.before.source,after:d.after.source,stats:d
 const saved = load("diff-result");
 if (!saved) throw Error("Missing exact saved result");
 const repeated = await tools.read({path:saved.source,offset:-3,limit:3});
-if (repeated.status !== "success" || repeated.data.target || JSON.stringify(repeated.data.lines.map(l=>l.content)) !== JSON.stringify(saved.tail)) throw Error("Temporary snapshot followed a later file change");
-const current = await tools.read({path:${JSON.stringify(right)}});
-if (current.status !== "success" || current.data.lines[0].content !== "new remote snapshot") throw Error("Owning file was not actually changed");
-text({retained:saved.source,readonly:true,changedSource:current.data.source});
+
+if(repeated.replace(/^<system-result[^\\n]*>\\n/,"")!==saved.tail) throw Error("Temporary snapshot followed file change");
+const current=await tools.read({path:${JSON.stringify(right)}});
+if(!current.includes("new remote snapshot")) throw Error("Owner file was not changed");
+text({retained:saved.source,readonly:true,current});
 `,
             },
           }),

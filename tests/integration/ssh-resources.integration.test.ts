@@ -95,9 +95,10 @@ test("real Pi reads and edits SSH resources without a separate tool workflow", a
       extensions: [
         path.resolve("src/pi-agent-ide.ts"),
         path.resolve("tests/integration/fixtures/ssh-resources.ts"),
+        "builtin:codemode",
       ],
-      tools: ["read", "replace", "copy", "move", "delete", "apply", "undo"],
-      // The guarded large-binary checkpoint and its undo each inspect native snapshots.
+      tools: ["read", "replace", "copy", "move", "delete", "write", "codemode"],
+      // Large transfers stay on their selected owners without a controller text snapshot.
       timeoutMs: 240000,
       conversation: [
         assistantMessage([
@@ -180,19 +181,19 @@ test("real Pi reads and edits SSH resources without a separate tool workflow", a
         ),
         assistantMessage([
           toolCall({
-            id: "mixed-apply",
-            name: "apply",
+            id: "mixed-transfers",
+            name: "codemode",
             arguments: {
-              source: `const remote = open(${JSON.stringify(note)});
-const local = open(${JSON.stringify(local)});
-remote.replace(remote.find("after"), "APPLIED");
-local.replace(local.find("local before"), "local after");
-createFile(${JSON.stringify(applyCreated)}, "created remotely");
-copyFile(${JSON.stringify(binary)}, ${JSON.stringify(applyCopy)});
-copyFile(${JSON.stringify(local)}, ${JSON.stringify(uploaded)});
-copyFile(${JSON.stringify(binary)}, ${JSON.stringify(downloaded)});
-copyFile(${JSON.stringify(large)}, ${JSON.stringify(largeCopy)});
-deleteFile(${JSON.stringify(large)});`,
+              code: `
+text(await tools.write({path:${JSON.stringify(applyCreated)},content:"created remotely"}));
+for (const [path,target] of ${JSON.stringify([
+                [binary, applyCopy],
+                [local, uploaded],
+                [binary, downloaded],
+                [large, largeCopy],
+              ])}) text(await tools.copy({path,target}));
+text(await tools.delete({path:${JSON.stringify(large)}}));
+`,
             },
           }),
         ]),
@@ -206,9 +207,14 @@ deleteFile(${JSON.stringify(large)});`,
         ]),
         assistantMessage([
           toolCall({
-            id: "undo-mixed-apply",
-            name: "undo",
-            arguments: { transaction: "APPLY#000000000000" },
+            id: "cleanup-transfers",
+            name: "codemode",
+            arguments: {
+              code: `
+text(await tools.move({path:${JSON.stringify(largeCopy)},target:${JSON.stringify(large)}}));
+for (const path of ${JSON.stringify([applyCreated, applyCopy, uploaded, downloaded])}) text(await tools.delete({path}));
+`,
+            },
           }),
         ]),
         assistantMessage([text("Finished")]),
@@ -240,14 +246,17 @@ deleteFile(${JSON.stringify(large)});`,
     expect(getToolResultText(run, "reread-conflict")).toContain("external");
     expect(await readFile(path.join(fixture.workspace, "note.txt"), "utf8")).toBe("after\n");
     expect(await readFile(path.join(fixture.workspace, "conflict.txt"), "utf8")).toBe("external\n");
-    expect(getToolExecution(run, "mixed-apply").isError).toBe(false);
-    const applyText = getToolResultText(run, "mixed-apply");
-    expect(applyText).toContain("copy: applied");
-    for (const source of [applyCopy, uploaded, downloaded]) expect(applyText).toContain(source);
-    expect(applyText).toMatch(/APPLY#[0-9A-F]{12}/u);
-    expect(run.tuiRenderedOutput).toContain("(copy): applied");
-    expect(getToolExecution(run, "undo-mixed-apply").isError).toBe(false);
-    expect(getToolResultText(run, "read-applied-note")).toContain("APPLIED");
+    expect(
+      getToolExecution(run, "mixed-transfers").isError,
+      getToolResultText(run, "mixed-transfers"),
+    ).toBe(false);
+    for (const source of [applyCopy, uploaded, downloaded])
+      expect(getToolResultText(run, "mixed-transfers")).toContain(source);
+    expect(
+      getToolExecution(run, "cleanup-transfers").isError,
+      getToolResultText(run, "cleanup-transfers"),
+    ).toBe(false);
+    expect(getToolResultText(run, "read-applied-note")).toContain("after");
     expect(getToolResultText(run, "read-applied-binary")).toContain("00 ff ef bb bf 0d 0a 41");
     expect(await readFile(local, "utf8")).toBe("local before");
     expect(await readFile(linkedNote, "utf8")).toBe("after\n");

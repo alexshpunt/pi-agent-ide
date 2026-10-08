@@ -75,7 +75,7 @@ test("ordinary target window reads retain canonical images, sequence bounds and 
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r=await tools.read({path:${JSON.stringify(resource)},views:["sequence:duration=0.1,interval=0.1,scale=0.5"],limit:8,offset:1}); if(r.status!=="success") throw Error(JSON.stringify(r)); const blocks=r.data.blocks; text({source:r.data.source,count:blocks.filter(b=>b.type==="image").length});`,
+              code: `const r=await tools.read({path:${JSON.stringify(resource)},views:["sequence:duration=0.1,interval=0.1,scale=0.5"],limit:8,offset:1}); text(r);`,
             },
           }),
         ]),
@@ -97,7 +97,9 @@ test("ordinary target window reads retain canonical images, sequence bounds and 
       false,
     );
     expect(getToolResultText(run, "structured")).toContain(resource);
-    expect(getToolResultText(run, "structured")).toContain('"count":2');
+    expect(
+      getToolResultMessage(run, "structured").content.filter((block) => block.type === "image"),
+    ).toHaveLength(2);
     expect(run.tuiRenderedOutput).toContain(resource);
     const deniedSettings = {
       noAnimations: true,

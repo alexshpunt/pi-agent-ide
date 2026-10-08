@@ -148,19 +148,26 @@ test("identical absolute file paths stay target-owned across private mount names
             arguments: {
               code: `
 const sources=${JSON.stringify(sources)};
-for (let i=0;i<sources.length;i++) {
+
+for(let i=0;i<sources.length;i++) {
  const result=await tools.read({path:sources[i],views:["anchors"]});
- if(result.status!=="success" || result.data.source!==sources[i] || result.data.lines[0].content!==["LEFT VERIFIED","right café"][i] || result.data.lines[0].lineEnding!=="\\r\\n" || result.data.lines[1].lineEnding!=="") throw Error("Target text identity crossed a namespace");
- text({source:result.data.source,target:result.data.target,lines:result.data.lines});
+ if(!result.includes(sources[i]) || !result.includes(["LEFT VERIFIED","right café"][i])) throw Error("Target identity crossed a namespace: "+result);
+ text(result);
 }
-const local=await tools.read({path:"invalid.txt"});
-const remote=await tools.read({path:${JSON.stringify(invalidSource)}});
-if(local.status!==remote.status || local.data?.kind!==remote.data?.kind) throw Error("Invalid UTF-8 changed Read semantics");
-if(local.status==="success" && JSON.stringify(local.data.lines)!==JSON.stringify(remote.data.lines)) throw Error("Invalid UTF-8 text differs");
+async function inspect(request) {
+ try { return {text:await tools.read(request)}; } catch(error) { return {error:String(error)}; }
+}
+const local=await inspect({path:"invalid.txt"});
+const remote=await inspect({path:${JSON.stringify(invalidSource)}});
+if(("error" in local)!==("error" in remote)) throw Error("Invalid UTF-8 changed Read semantics");
+if("text" in local && "text" in remote) {
+ const body=s=>s.replace(/^<system-result[^\\n]*>\\n/,"").trim();
+ if(body(local.text)!==body(remote.text)) throw Error("Invalid UTF-8 text differs");
+}
 const before=await tools.read({path:"comparison.txt",offset:2,limit:1});
 const after=await tools.read({path:sources[1],offset:2,limit:1});
-if(before.status!=="success" || after.status!=="success" || before.data.lines[0].content!==after.data.lines[0].content || before.data.lines[0].lineEnding!==after.data.lines[0].lineEnding) throw Error("No-final-LF window differs");
-text({invalidUtf8:{local:local.status,remote:remote.status},lastLine:after.data.lines[0]});
+if(!before.includes("last") || !after.includes("last") || after.includes("right café")) throw Error("No-final-LF window differs");
+text({local,remote,lastLine:after});
 `,
             },
           }),

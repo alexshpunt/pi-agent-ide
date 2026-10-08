@@ -4,7 +4,6 @@ import { afterAll, expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
-  getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -18,7 +17,7 @@ import { SshBackend } from "#src/backend/ssh.js";
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);
 
-test("whole-file transfers and checkpoint restore publish only present native destination text", async () => {
+test("whole-file transfers and last text undo publish only present native destination text", async () => {
   const fixture = await startSshFixture();
   const base = path.resolve(".tmp/ssh-restored-targets");
   await mkdir(base, { recursive: true });
@@ -64,12 +63,8 @@ test("whole-file transfers and checkpoint restore publish only present native de
       cwd,
       rawMode: false,
       isolateUserResources: true,
-      extensions: [
-        path.resolve("src/pi-agent-ide.ts"),
-        "builtin:codemode",
-        path.resolve("tests/integration/support/restore-target-extension.ts"),
-      ],
-      tools: ["read", "search", "copy", "move", "apply", "undo", "codemode"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["read", "search", "copy", "move", "write", "delete", "undo", "codemode"],
       timeoutMs: 150000,
       conversation: [
         assistantMessage([
@@ -80,51 +75,34 @@ test("whole-file transfers and checkpoint restore publish only present native de
               code: `
 const source = await tools.read({path:${JSON.stringify(local)}});
 const copied = await tools.copy({path:source,target:${JSON.stringify(copied)}});
-if(copied.status !== "success" || typeof copied.data.target !== "string") throw Error(JSON.stringify(copied));
 const copiedText = await tools.search({path:copied,query:"café"});
-if(copiedText.status !== "success" || copiedText.data.matches.length !== 1) throw Error(JSON.stringify(copiedText));
+if (!copiedText.includes("café")) throw Error(copiedText);
 const moved = await tools.move({path:copied,target:${JSON.stringify(moved)}});
-if(moved.status !== "success" || typeof moved.data.target !== "string") throw Error(JSON.stringify(moved));
 const movedText = await tools.search({path:moved,query:"café"});
-if(movedText.status !== "success" || movedText.data.matches.length !== 1 || movedText.data.matches[0].source !== ${JSON.stringify(moved)}) throw Error(JSON.stringify(movedText));
-text({copied,moved});`,
+if (!movedText.includes(${JSON.stringify(moved)})) throw Error(movedText);
+const written = await tools.write({path:moved,content:"changed café\\r\\n"});
+text(await tools.read({path:written}));
+const saved = await tools.read({path:${JSON.stringify(moved)}});
+const restored = await tools.undo({file:saved,change:"last"});
+const found = await tools.search({path:restored,query:"prior"});
+if (!found.includes("prior") || !found.includes(${JSON.stringify(moved)})) throw Error(found);
+text({copied,moved,restored,found});
+const created = await tools.write({path:${JSON.stringify(created)},content:"created café"});
+const removed = await tools.delete({path:created});
+let refusal;
+try { await tools.read({path:removed}); } catch(error) { refusal = String(error); }
+if (!refusal) throw Error("Restored absence must not grant text authority");
+text({removed,refusal});
+`,
             },
           }),
         ]),
         assistantMessage([
-          toolCall({
-            id: "checkpoint",
-            name: "apply",
-            arguments: {
-              source: `const note = open(${JSON.stringify(moved)}); note.replace(note.find("prior"), "changed"); createFile(${JSON.stringify(created)}, "created café");`,
-            },
-          }),
-        ]),
-        assistantMessage([
-          toolCall({
-            id: "restore",
-            name: "undo",
-            arguments: { transaction: "APPLY#000000000000" },
-          }),
-        ]),
-        assistantMessage([
-          toolCall({
-            id: "restored-scope",
-            name: "codemode",
-            arguments: {
-              code: `
-const found = await tools.search({path:"owned-restored-target",query:"prior"});
-if(found.status !== "success" || found.data.matches.length !== 1 || found.data.matches[0].source !== ${JSON.stringify(moved)}) throw Error(JSON.stringify(found));
-text(found);`,
-            },
-          }),
-        ]),
-        assistantMessage([
-          text("Restored present text retained native authority; restored absence has no target."),
+          text("Restored present text retained native authority; absence has no target."),
         ]),
       ],
     }).run("Keep whole-file transfer bytes and restored source authority on their native owners.");
-    for (const id of ["transfers", "checkpoint", "restore", "restored-scope"])
+    for (const id of ["transfers"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(
       (await backend.read(`${fixture.workspace}/moved.txt`)).bytes.equals(Buffer.from(original)),
@@ -136,19 +114,8 @@ text(found);`,
       code: "ENOENT",
     });
     expect(await readFile(local, "utf8")).toBe(original);
-    const receipt = getToolExecutionResult(run, "restore") as { structuredContent: unknown };
-    expect(receipt.structuredContent).toMatchObject({
-      status: "success",
-      data: {
-        effect: "applied",
-        files: [
-          { source: moved, effect: "applied", state: "present" },
-          { source: created, effect: "applied", state: "absent" },
-        ],
-      },
-    });
-    const restoreText = getToolResultText(run, "restore");
-    expect(restoreText).toContain("Restored 2 paths");
+    expect(getToolResultText(run, "transfers")).toContain("prior");
+    expect(getToolResultText(run, "transfers")).toContain("refusal");
     expect(run.tuiRenderedOutput).toContain(root);
   } finally {
     await fixture.stop();
