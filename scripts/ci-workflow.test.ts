@@ -4,13 +4,66 @@ import { expect, test } from "vitest";
 import { parse } from "yaml";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 
+interface WorkflowJob {
+  "continue-on-error"?: boolean;
+  steps: WorkflowStep[];
+}
 interface WorkflowStep {
   name: string;
   if?: string;
   with?: { name?: string; path?: string; "include-hidden-files"?: boolean };
   env?: Record<string, string>;
   run?: string;
+  "continue-on-error"?: boolean;
 }
+
+test("runs real debuggers outside blocking checks and shared CI statistics", () => {
+  const workflow = parse(
+    readFileSync(
+      path.join(findRepositoryRoot(import.meta.url), ".github/workflows/ci.yml"),
+      "utf8",
+    ),
+  ) as { jobs: Record<string, WorkflowJob> };
+  const blocking = workflow.jobs.validate;
+  expect(blocking?.["continue-on-error"]).not.toBe(true);
+  const integration = blocking?.steps.find((step) => step.name === "Run integration tests");
+  expect(integration?.["continue-on-error"]).not.toBe(true);
+  expect(integration?.run).toContain("--exclude 'tests/integration/debugger*.integration.test.ts'");
+  expect(blocking?.steps.find((step) => step.name === "Run unit tests")?.run).not.toContain(
+    "--exclude",
+  );
+  for (const name of ["debugger-core", "java-debugger-lifecycle", "debugger-matrix"]) {
+    const job = workflow.jobs[name];
+    expect(job, name).toBeDefined();
+    expect(job?.["continue-on-error"], name).toBe(true);
+    expect(
+      job?.steps.some((step) => step.run?.includes("debugger")),
+      name,
+    ).toBe(true);
+    expect(
+      job?.steps.some((step) => step.with?.path?.includes(".agents/tmp/test-results/")),
+      name,
+    ).toBe(false);
+  }
+  const core = workflow.jobs["debugger-core"];
+  expect(core?.steps.find((step) => step.name === "Run flaky debugger integration")?.run).toContain(
+    "tests/integration/debugger*.integration.test.ts",
+  );
+  const windows = workflow.jobs["validate-windows-core"];
+  expect(windows?.["continue-on-error"]).not.toBe(true);
+  expect(
+    windows?.steps.find((step) => step.name === "Run flaky Windows debugger lifecycle")?.[
+      "continue-on-error"
+    ],
+  ).toBe(true);
+  expect(
+    windows?.steps.find((step) => step.name === "Run Windows AST checks")?.["continue-on-error"],
+  ).not.toBe(true);
+  const traces = blocking?.steps.find((step) => step.name === "Retain failed anchor Pi traces");
+  expect(traces?.if).toBe("failure()");
+  expect(traces?.with?.path).toContain("anchor-tools.integration.test.ts/");
+  expect(traces?.with?.["include-hidden-files"]).toBe(true);
+});
 
 test("keeps unit failure evidence before success-only integration", () => {
   const workflow = parse(
@@ -42,7 +95,9 @@ test("keeps unit failure evidence before success-only integration", () => {
   expect(report.index).toBeGreaterThan(upload.index);
   expect(report.index).toBeLessThan(integration.index);
   expect(integration.step.if).toBe("success()");
-  expect(integration.step.run).toBe("pnpm test:integration:shards");
+  expect(integration.step.run).toBe(
+    "pnpm test:integration:shards --exclude 'tests/integration/debugger*.integration.test.ts'",
+  );
   expect(integration.step.env).toMatchObject({
     SHARDS: "4",
     REPORT_DIR: ".agents/tmp/test-results",
