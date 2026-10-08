@@ -264,12 +264,13 @@ export function createIdeTextResults(pi: ExtensionAPI) {
         const limited = await limitIdeOutput([...content, ...generated], "", saveFullOutput);
         return {
           content: [
-            {
-              type: "text",
-              text:
-                limited.text + (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
-            },
+            ...(limited.textTruncated
+              ? [{ type: "text" as const, text: limited.text }]
+              : content.filter((block) => block.type === "text")),
             ...limited.images,
+            ...(limited.notices.length
+              ? [{ type: "text" as const, text: `\n\n${limited.notices.join("\n")}` }]
+              : []),
             ...metadata,
           ],
         };

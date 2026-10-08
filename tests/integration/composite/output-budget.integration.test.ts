@@ -170,14 +170,23 @@ test.each([undefined, 0, 1, 1999, 2000, 2001, 1000000])(
     cases.push({
       name: "diff",
       args: {
-        before: { path: "large.ts", limit, views: ["anchors"] },
-        after: { path: "other.ts", limit, views: ["anchors"] },
+        before: { path: "comparison-before.txt", limit, views: ["anchors"] },
+        after: { path: "comparison-after.txt", limit, views: ["anchors"] },
       },
     });
+    // Stress Diff's byte budget without spending the RPC deadline on a 4000-line comparison.
+    const comparison = Array.from(
+      { length: 100 },
+      (_, index) => `before_${index} ${"😀".repeat(300)}`,
+    ).join("\n");
     try {
       await Promise.all([
         writeFile(path.join(cwd, "large.ts"), source),
-        writeFile(path.join(cwd, "other.ts"), source.replaceAll("needle", "other")),
+        writeFile(path.join(cwd, "comparison-before.txt"), comparison),
+        writeFile(
+          path.join(cwd, "comparison-after.txt"),
+          comparison.replaceAll("before_", "after_"),
+        ),
         writeFile(path.join(cwd, "bytes.bin"), Buffer.alloc(100000, 65)),
         writeFile(
           path.join(cwd, "data.json"),
@@ -211,6 +220,8 @@ test.each([undefined, 0, 1, 1999, 2000, 2001, 1000000])(
             /\n\n\[(?:Showing lines|Output truncated|Output line|Line |First output line|No lines selected|Offset |\d+ more)/u,
           )[0] ?? "";
         expectBounded(body);
+        if (entry.name === "diff" && (limit === undefined || limit >= 100))
+          expect(output).toContain("Diff output is truncated");
         if (entry.name === "read" && entry.limit !== undefined && entry.args.path === "large.ts")
           expect((body.match(/row_\d+/gu) ?? []).length).toBeLessThanOrEqual(
             Math.max(0, entry.limit),
@@ -239,13 +250,13 @@ test("bounds Search items across protocols, globs, generated files and composed 
       "files:*.txt",
       "ast:const $NAME = $VALUE;",
     ]) {
-      cases.push({ query, path: ".", ...(limit === undefined ? {} : { limit }) });
+      cases.push({ query, path: "matrix", ...(limit === undefined ? {} : { limit }) });
     }
     for (const caseSensitive of [false, true])
       for (const wholeWord of [false, true]) {
         cases.push({
           query: "needle",
-          path: "generated",
+          path: "matrix/generated",
           include: "*",
           exclude: "*.skip",
           caseSensitive,
@@ -254,14 +265,17 @@ test("bounds Search items across protocols, globs, generated files and composed 
         });
       }
   }
+  // Keep the reported large forest as its own regression, not 63 repeated filesystem scans.
+  cases.push({ query: "needle", path: "regression", limit: 80 });
   try {
-    await mkdir(path.join(cwd, "generated"));
-    await Promise.all(
-      Array.from({ length: 1725 }, (_, index) =>
+    await mkdir(path.join(cwd, "matrix", "generated"), { recursive: true });
+    await mkdir(path.join(cwd, "regression"));
+    await Promise.all([
+      ...Array.from({ length: 1725 }, (_, index) =>
         writeFile(
           path.join(
             cwd,
-            "generated",
+            "regression",
             `${index.toString().padStart(4, "0")}-${"long-path-".repeat(8)}.txt`,
           ),
           Array.from({ length: index < 1489 ? 6 : 5 }, (_, line) => `needle item${line}`).join(
@@ -269,9 +283,20 @@ test("bounds Search items across protocols, globs, generated files and composed 
           ),
         ),
       ),
-    );
+      ...Array.from({ length: 256 }, (_, index) =>
+        writeFile(
+          path.join(
+            cwd,
+            "matrix",
+            "generated",
+            `${index.toString().padStart(4, "0")}-${"long-path-".repeat(20)}.txt`,
+          ),
+          Array.from({ length: 8 }, (_, line) => `needle item${line}`).join("\n"),
+        ),
+      ),
+    ]);
     await writeFile(
-      path.join(cwd, "large.ts"),
+      path.join(cwd, "matrix", "large.ts"),
       Array.from({ length: 4000 }, (_, index) => `const value${index} = ${index};`).join("\n"),
     );
     const resultFor = await runBatches(
@@ -296,7 +321,7 @@ test("bounds Search items across protocols, globs, generated files and composed 
               id: "scoped-search",
               name: "codemode",
               arguments: {
-                code: 'const result = await tools.search({ query: "needle", path: "generated", limit: 1 }); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"generated/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }));',
+                code: 'const result = await tools.search({ query: "needle", path: "regression", limit: 1 }); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"regression/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }));',
               },
             }),
           ],
@@ -312,7 +337,9 @@ test("bounds Search items across protocols, globs, generated files and composed 
       const output = getToolResultText(result, `search-${index}`);
       expectBounded(output);
       if (args.query === "needle" || args.query === "regex:needle") {
-        expect(output).toContain("10114 matches in 1725 files");
+        expect(output).toContain(
+          args.path === "regression" ? "10114 matches in 1725 files" : "2048 matches in 256 files",
+        );
         const items =
           (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length +
           (output.match(/\(compacted\)/gu) ?? []).length;

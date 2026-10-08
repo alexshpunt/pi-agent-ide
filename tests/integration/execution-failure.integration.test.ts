@@ -15,7 +15,7 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
 for (const mode of ["standalone", "codemode"] as const) {
   test.each([
-    { name: "presenter.txt", effect: "applied", status: "Changed · edit failed" },
+    { name: "presenter.txt", effect: "applied", status: "Saved · post-write step failed" },
     { name: "post-handler.txt", effect: "unknown", status: "Effects unknown · edit failed" },
   ] as const)(`reports execution failure honestly in ${mode}: $name`, async (fixture) => {
     await withTempWorkspace(async (cwd) => {
