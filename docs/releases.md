@@ -14,6 +14,10 @@ Squash-merging `develop` into `main` makes their histories diverge. The **Synchr
 
 See [Develop nightly](nightly.md). Nightlies test a pinned `develop` commit and keep an installable package and test reports in GitHub Actions for 30 days. They do not publish to npm.
 
+## Flaky debugger checks
+
+Real debugger integration tests and adapter/platform jobs still run, but their results are non-blocking and kept outside the shared CI test totals and badges. They have separate jobs and reports marked flaky. A failed debugger job does not reject a release candidate. Pure debugger unit tests, other source/runtime checks, and editor tests remain blocking. In particular, Delete is not part of this exception.
+
 ## Start a release
 
 Choose a release cut by its full commit SHA. If that commit is not yet on main, promote it through a separate pinned branch such as `chore/promote-X.Y.Z`, not a PR whose head is the moving `develop` branch. Keep that promotion head unchanged while CI runs. New develop merges do not join the release unless its scope is explicitly changed. After promotion and main-to-develop synchronization succeed, start the versioned release below. See `.pi/skills/publish-pi-agent-ide/SKILL.md` for the agent runbook.

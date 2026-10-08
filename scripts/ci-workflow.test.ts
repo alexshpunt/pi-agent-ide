@@ -11,15 +11,57 @@ interface WorkflowStep {
   with?: { name?: string; path?: string; "include-hidden-files"?: boolean };
   env?: Record<string, string>;
   run?: string;
+  "continue-on-error"?: boolean;
 }
 
 interface WorkflowJob {
+  "continue-on-error"?: boolean;
   steps: WorkflowStep[];
   needs?: string[];
   if?: string;
   strategy?: { "fail-fast": boolean; matrix: { shard: number[] } };
 }
 
+test("runs real debuggers outside blocking checks and shared CI statistics", () => {
+  const workflow = parse(
+    readFileSync(
+      path.join(findRepositoryRoot(import.meta.url), ".github/workflows/ci.yml"),
+      "utf8",
+    ),
+  ) as { jobs: Record<string, WorkflowJob> };
+  for (const name of ["validate", "integration", "integration-namespaces", "validate-windows-core"])
+    expect(workflow.jobs[name]?.["continue-on-error"], name).not.toBe(true);
+  const integration = workflow.jobs.integration;
+  expect(integration?.steps.some((step) => step.name === "Run integration shard")).toBe(true);
+  for (const name of ["debugger-core", "java-debugger-lifecycle", "debugger-matrix"]) {
+    const job = workflow.jobs[name];
+    expect(job, name).toBeDefined();
+    expect(job?.["continue-on-error"], name).toBe(true);
+    expect(
+      job?.steps.some((step) => step.run?.includes("debugger")),
+      name,
+    ).toBe(true);
+    expect(
+      job?.steps.some((step) => step.with?.path?.includes(".agents/tmp/test-results/")),
+      name,
+    ).toBe(false);
+  }
+  expect(
+    workflow.jobs["debugger-core"]?.steps.find(
+      (step) => step.name === "Run flaky debugger integration",
+    )?.run,
+  ).toContain("tests/integration/debugger*.integration.test.ts");
+  expect(
+    workflow.jobs["validate-windows-core"]?.steps.find(
+      (step) => step.name === "Run flaky Windows debugger lifecycle",
+    )?.["continue-on-error"],
+  ).toBe(true);
+  expect(
+    workflow.jobs["validate-windows-core"]?.steps.find(
+      (step) => step.name === "Run Windows AST checks",
+    )?.["continue-on-error"],
+  ).not.toBe(true);
+});
 test("retains failures while every integration shard runs on its own runner", () => {
   const root = findRepositoryRoot(import.meta.url);
   const workflow = parse(readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8")) as {
@@ -82,6 +124,12 @@ test("retains failures while every integration shard runs on its own runner", ()
   expect(integrationReport.step.if).toBe(
     "always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != ''",
   );
+  for (const name of ["Retain failed anchor Pi traces", "Retain failed composition Pi traces"]) {
+    const retained = find("integration", name);
+    expect(retained.index).toBeGreaterThan(shard.index);
+    expect(retained.step.if).toBe("failure()");
+    expect(retained.step.with?.["include-hidden-files"]).toBe(true);
+  }
   const candidate = find("validate", "Build and install reproducible release candidate");
   expect(candidate.index).toBeGreaterThan(report.index);
   expect(candidate.step.if).toMatch(/^success\(\)/u);

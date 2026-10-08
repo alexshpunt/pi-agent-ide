@@ -74,15 +74,44 @@ test("TypeScript push diagnostics appear in focused, annotated, and combined rea
       artifactsDir: testArtifactsDir(import.meta.filename),
       testName: "typescript-push-diagnostic-reads",
       cwd: directory,
-      extensions: generatedExtensions.paths,
-      tools: ["read"],
+      extensions: [...generatedExtensions.paths, "builtin:codemode"],
+      tools: ["read", "codemode"],
       conversation: [
+        // Agent reads may truthfully return pending after five seconds. A script read
+        // explicitly waits for the completed check before testing all three presentations.
+        assistantMessage(
+          [
+            toolCall({
+              id: "diagnostic-ready",
+              name: "codemode",
+              arguments: {
+                code: 'await tools.read({path:"diagnostics:src/catalog.ts"}); text("Diagnostic check completed.");',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
         ...calls.map((call) =>
           assistantMessage([toolCall({ ...call, name: "read" })], { stopReason: "toolUse" }),
         ),
         assistantMessage([text("Diagnostic reads finished.")]),
       ],
     }).run("Read the TypeScript error through each diagnostics form.");
+    expect(
+      getToolExecution(result, "diagnostic-ready").isError,
+      getToolResultText(result, "diagnostic-ready"),
+    ).toBe(false);
+    const completed = getToolExecution(result, "diagnostic-ready/1");
+    expect(completed.isError).toBe(false);
+    expect(completed.result).toHaveProperty("details.diagnosticCheck", {
+      complete: true,
+      count: 1,
+      sources: ["typescript-language-server"],
+    });
+    expect(completed.result).toHaveProperty(
+      "content.0.text",
+      expect.stringContaining("typescript-language-server:2322"),
+    );
     for (const call of calls) {
       expect(getToolExecution(result, call.id).isError).toBe(false);
       const output = getToolResultText(result, call.id);

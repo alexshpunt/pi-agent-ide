@@ -138,6 +138,8 @@ const action = /Read ("(?:[^"\\]|\\.)*") with offset=(\d+) and limit=(\d+) to in
 if(action === null) throw new Error("Saved output lost bounded byte recovery: " + saved);
 const bytes = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),limit:Number(action[3])});
 if(!bytes.includes("60003 bytes total") || !bytes.includes("Bytes 0..4096")) throw new Error(bytes);
+const tail = await tools.read({path:JSON.parse(action[1]),offset:-16,limit:16});
+if(!tail.includes("60003 bytes total") || !tail.includes("79 79 79 79") || !tail.includes("22 0a")) throw new Error("Saved jq tail was lost: " + tail);
 const smaller = await tools.read({path:load("oversizedJqSource"),views:["jq:.payload[0:64]"]});
 if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
 text(smaller);
@@ -540,8 +542,10 @@ test.runIf(process.platform !== "win32")(
 const started=await tools.bash({command:"IFS= read -r answer; printf 'resource:%s' \"$answer\"",background:true});
 const uuid=/<uuid>([^<]+)<\/uuid>/.exec(started)?.[1];
 if(!uuid) throw Error("Missing shell result ID");
-await tools.write({path:uuid,content:"hello"});
-await tools.insert({path:started,text:"Enter"});
+const written=await tools.write({path:uuid,content:"hello"});
+if(!written.includes('Sent text "hello"') || written.includes("no verified text selection") || written.includes("ENOENT")) throw Error("Terminal Write was treated as a file: "+written);
+const entered=await tools.insert({path:started,text:"Enter"});
+if(!entered.includes("Sent keys Enter") || entered.includes("no verified text selection")) throw Error("Terminal Insert was treated as a file: "+entered);
 const shown=await tools.read({path:started});
 if(!shown.includes("resource:hello")) throw Error("Shell output lost: "+shown);
 let rejected=false; try { await tools.replace({path:shown,start:"hello",text:"BAD"}); } catch { rejected=true; }
@@ -553,6 +557,9 @@ text(await tools.delete({path:shown}));
         false,
       );
       expect(getToolResultText(run, "script-0")).toContain("Deleted terminal session");
+      expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-write");
+      expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-keys");
+      expect(getToolResultText(run, "script-0")).not.toContain("Saved file.");
     });
   },
 );

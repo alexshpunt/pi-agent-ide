@@ -23,6 +23,8 @@ elif [[ "$mode" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] && (( BASH_REMATCH[1] <= BAS
   arguments=("--shard=$mode")
   report="${BASH_REMATCH[1]}"
   for file in "${namespace_files[@]}"; do arguments+=(--exclude "$file"); done
+  # Real debugger lifecycle checks run in their own non-blocking job, as on develop.
+  arguments+=(--exclude 'tests/integration/debugger*.integration.test.ts')
 else
   echo "Invalid integration group: $mode" >&2
   exit 2

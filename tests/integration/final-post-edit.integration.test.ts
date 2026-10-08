@@ -85,7 +85,7 @@ ${fail ? 'throw new Error("planned failure");' : ""}
           .trim()
           .split("\n")
           .map((line) => JSON.parse(line) as { content: string });
-      // Independent files may finish in either order; each final content must appear once.
+      // Each Write finishes immediately; the later Replace has its own final processing.
       expect((await events("format-events.jsonl")).map((event) => event.content).sort()).toEqual([
         "final",
         "first",

@@ -271,7 +271,15 @@ export async function attachCommittedMutationTarget(
   destinationOnly = false,
   unchangedSnapshots: ReadonlyMap<string, string> = new Map(),
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
-  if (result.isError || typeof result.details.metadata?.resultTarget === "string") return result;
+  if (
+    result.isError ||
+    typeof result.details.metadata?.resultTarget === "string" ||
+    completions.some(
+      (completion) =>
+        completion.resolvedBy !== "filesystem" && !completion.resourceSource.startsWith("ssh://"),
+    )
+  )
+    return result;
   result = await attachFileMutationTargets(result, store, cwd, signal, readers.get(core));
   if (
     typeof result.details.metadata?.resultTarget === "string" ||

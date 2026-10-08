@@ -494,11 +494,13 @@ add(
     "compose.shell-input-read",
     "compose.shell-keys-read",
     "shell.keys",
+    "compose.shell-reference-after-input",
+    "shell.file-authority-refusal",
     "shell.delete",
     "process.discovery",
     "process.read",
   ],
-  "Start a Bash command that waits for one input line and then prints that line. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same live shell. Also read the completed shell using its original resource and search its retained output for hello. Also discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
+  "Start a Bash command that waits for one input line and then prints that line. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same live shell. Also read the completed shell using its original resource and search its retained output for hello. Attempt to replace hello through the returned terminal Read result and confirm refusal: terminal output grants no file-edit authority. Also discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -506,6 +508,12 @@ add(
     { tool: "read", reuse: reuse(1), contains: "hello" },
     { tool: "read", reuse: reuse(2), contains: "hello" },
     { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello" },
+    {
+      tool: "replace",
+      args: { start: "hello", text: "BAD" },
+      reuse: reuse(5),
+      error: true,
+    },
     {
       tool: "search",
       args: { query: "hello" },

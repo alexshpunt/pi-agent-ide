@@ -76,7 +76,7 @@ test.each([
       expect(captured.arguments).toContain(`--shard=${fixture.group}`);
       expect(
         captured.arguments.filter((value, index, values) => values[index - 1] === "--exclude"),
-      ).toEqual(namespaceFiles);
+      ).toEqual([...namespaceFiles, "tests/integration/debugger*.integration.test.ts"]);
     }
   } finally {
     await rm(cwd, { recursive: true, force: true });

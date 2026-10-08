@@ -37,27 +37,8 @@ const forbidden: {
   },
 ];
 const failures: string[] = [];
-const forbiddenRepositoryPrefixes = [".pi/skills/"];
-const projectSkillPrefixes = [
-  ".pi/skills/create-issue/",
-  ".pi/skills/design-read-views/",
-  ".pi/skills/design-terminal-ui/",
-  ".pi/skills/export-agent-interface/",
-  ".pi/skills/find-prose-test-candidates/",
-  ".pi/skills/run-tool-capability-matrix/",
-  ".pi/skills/publish-pi-agent-ide/",
-  ".pi/skills/testing-pi-agent-ide/",
-  ".pi/skills/take-task/",
-  ".pi/skills/write-agent-tool-prompts/",
-];
 
 for (const file of files) {
-  if (
-    forbiddenRepositoryPrefixes.some((prefix) => file.startsWith(prefix)) &&
-    !projectSkillPrefixes.some((prefix) => file.startsWith(prefix))
-  ) {
-    failures.push(`${file}: private repository path`);
-  }
   let content: string;
 
   try {

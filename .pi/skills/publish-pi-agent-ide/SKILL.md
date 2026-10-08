@@ -7,12 +7,18 @@ description: Prepare, validate, publish, or recover a pi-agent-ide release from 
 
 Release only the root `pi-agent-ide` package through GitHub Actions. Never run `npm publish` locally or publish a nightly artifact. Read `docs/releases.md` and the relevant release workflows before running them. This skill defines agent behavior; workflows and scripts define the executable checks. If they disagree, resolve the difference before proceeding.
 
+## Feature development is separate from release validation
+
+Land features through a PR to `develop`. Commit and push the changes, create the PR, and open its URL in the user's browser for review instead of showing GIFs. Merge only after explicit user approval of the current PR head. Ask again if that head changes, then clean up the merged feature worktree and branch.
+
+CI may run automatically on `develop`, but it is not a merge requirement. Do not trigger extra CI or wait for optional checks to merge an approved feature PR. Run only focused local checks during development, as described in `AGENTS.md`. Full integration suites and other broad, heavy test runs belong only in CI/CD, not local development. Keep required CI for promotion to `main`, release fixes on `main`, and release candidates. Report unexpected protection blockers instead of bypassing them.
+
 ## Pin the release scope first
 
 `develop` stays open throughout the release. Never ask other agents to stop merging features just to keep release CI stable.
 
 1. Identify the approved source commit and record its full SHA. “Current develop” means the commit selected now, not every later commit that reaches develop.
-2. If release preparation needs changes, use a separate worktree and a PR to develop. Wait for its CI and merge it. Record the resulting develop commit as the release cut.
+2. If release preparation needs changes, use a separate worktree and a PR to develop. Open the PR for user review and merge it after explicit approval of its current head, without waiting for optional develop CI. Record the resulting develop commit as the release cut.
 3. If the cut is not yet on main, create a separate promotion branch from that exact commit, such as `chore/promote-X.Y.Z`. Open its PR to main. Do not use the moving `develop` branch as the promotion PR head.
 4. Leave the promotion branch pinned while its CI runs. New develop merges belong to later work unless the user explicitly changes this release's scope. Do not merge or rebase newer develop commits into the promotion branch by default.
 5. Merge the verified promotion PR using its expected head SHA. Check that **Synchronize main into develop** succeeds before starting the versioned release.
