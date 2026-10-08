@@ -1,4 +1,5 @@
 import type { ResourceResolverContext } from "pi-agent-resource";
+import type { FileDeletionPolicy } from "./delete-guard.js";
 
 /** Whole-file operations, distinct from text-selection transfers and removal. */
 export const fileOperations = ["delete", "move", "copy"] as const;
@@ -33,4 +34,5 @@ export type FileOperationResolver = (
   operation: FileOperation,
   input: FileOperationInput,
   context: ResourceResolverContext,
+  deletion?: FileDeletionPolicy,
 ) => Promise<FileOperationResult | undefined>;

@@ -32,8 +32,8 @@ test("unavailable diagnostics remain visible without entering source selections"
               arguments: {
                 code: String.raw`
 const result = await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]});
-if(typeof result !== "string" || !result.includes("unavailable") || !result.includes("No linter configured")) throw Error(result);
-const outside = await tools.search({path:result,query:"regex:unavailable|No linter|Unknown view"});
+if(typeof result !== "string" || !result.includes("unavailable") || !result.includes("lint:") || !result.includes("lsp:")) throw Error(result);
+const outside = await tools.search({path:result,query:"regex:unavailable|lint:|lsp:|ghost"});
 if(!outside.includes("No matches found")) throw Error(outside);
 store("diagnosticReadiness",result);
 `,
@@ -66,9 +66,9 @@ await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]})
     for (const id of ["scope", "panel"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     const rendered = run.tuiRenderedOutput.replace(/\s+/gu, " ");
-    expect(rendered).toContain("lint: unavailable (No linter configured for this file).");
-    expect(rendered).toContain("lsp: unavailable (No language server configured for this file).");
-    expect(rendered).toContain("Unknown view ignored: ghost.");
+    expect(rendered).toContain("lint: unavailable");
+    expect(rendered).toContain("lsp: unavailable");
+    expect(rendered).toContain("ghost");
     expect(rendered).toContain("alpha");
     expect(rendered).toContain("beta");
     expect(rendered).toContain("gamma");

@@ -52,3 +52,37 @@ test.each([
     fixture.observed ? [{ source, effect: "applied", state: "present" }] : [],
   );
 });
+
+test("keeps restored and uncertain rollback resources beside confirmed applied peers", () => {
+  const restored = "/workspace/source.txt";
+  const failed = "/workspace/target.txt";
+  const outcome = mutationOutcome(
+    {
+      content: [],
+      isError: true,
+      details: {
+        effect: "unknown",
+        results: [
+          new FileMutationResult({
+            ok: false,
+            path: failed,
+            errors: [{ path: failed, code: "WRITE_FAILED", reason: "write rejected" }],
+            rollback: { failedSources: [failed], restoredSources: [restored] },
+          }),
+        ],
+      },
+    },
+    "move",
+    [completion],
+  );
+  expect(outcome.status).toBe("partial");
+  expect(outcome.data).toEqual({
+    operation: "move",
+    effect: "unknown",
+    files: [
+      { source: failed, effect: "unknown" },
+      { source: restored, effect: "not-applied" },
+      { source, effect: "applied", state: "present" },
+    ],
+  });
+});

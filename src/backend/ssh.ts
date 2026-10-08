@@ -290,6 +290,45 @@ export class SshBackend {
     this.checked(Type.Null(), data, filePath, true);
   }
 
+  /** Resolve a target-native path, requiring each followed entry to exist. */
+  async realpath(filePath: string, context: BackendOperationContext = {}): Promise<string> {
+    const data = await this.request({ operation: "realpath", path: filePath }, false, context);
+    this.checked(Type.String({ minLength: 1 }), data, filePath, false);
+    if (!data.startsWith("/"))
+      throw new SshBackendError("INVALID_RESPONSE", filePath, "not-applied");
+    return data;
+  }
+
+  /** Query target Git with inherited Git overrides removed and optional locks disabled. */
+  async queryGit(
+    cwd: string,
+    args: string[],
+    context: BackendOperationContext = {},
+  ): Promise<string> {
+    const data = await this.request({ operation: "git-query", path: cwd, args }, false, {
+      ...context,
+      timeoutMs: 5000,
+    });
+    this.checked(Type.String(), data, cwd, false);
+    return data;
+  }
+
+  /** Remove one policy-approved object after its final identity check.
+   * Recursive deletion never follows symlink entries. It has no rollback; failures
+   * after removal starts have unknown effects. Call only after host deletion policy.
+   */
+  async removeObject(
+    filePath: string,
+    revision: string,
+    context: BackendOperationContext = {},
+  ): Promise<void> {
+    const data = await this.request(
+      { operation: "delete-object", path: filePath, revision },
+      true,
+      context,
+    );
+    this.checked(Type.Null(), data, filePath, true);
+  }
   /** Remove the regular entry after an lstat metadata check, without downloading content. */
   async removeEntry(
     filePath: string,

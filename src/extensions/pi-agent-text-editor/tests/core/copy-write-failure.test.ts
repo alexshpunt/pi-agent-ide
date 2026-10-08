@@ -2,7 +2,7 @@ import { ResourceError } from "pi-agent-resource";
 import { expect, test } from "vitest";
 import { buildFailedCopyWriteResult } from "#src/core/text-mutation.js";
 
-for (const rollback of [undefined, { failed: [], originallyMissing: [] }]) {
+for (const rollback of [undefined, { failed: [], originallyMissing: [], restored: [] }]) {
   test(`Copy retains an uncertain write even when peers were rolled back (${rollback === undefined ? "no peers" : "restored peers"})`, () => {
     const source = "ssh://fixture/destination.txt";
     const result = buildFailedCopyWriteResult(
@@ -33,7 +33,7 @@ test("Copy reports a confirmed rollback as not applied", () => {
       source: "/destination.txt",
       message: "Write refused",
       cause: new ResourceError("CONFLICT", "/destination.txt", "not-applied"),
-      rollback: { failed: [], originallyMissing: [] },
+      rollback: { failed: [], originallyMissing: [], restored: [] },
     },
     [],
   );

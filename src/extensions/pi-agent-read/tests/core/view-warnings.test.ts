@@ -98,8 +98,10 @@ test("unknown views explain recovery without entering source lines or hiding val
       { path: "memory:notes", views: ["anchors", "ghost:value=1"] },
       { cwd: process.cwd() },
     );
-    const warning =
-      "Unknown view ignored: ghost:value=1. Remove it or choose a supported view from the views parameter.";
+    expect(result.details.ignoredViews).toEqual(["ghost:value=1"]);
+    expect(result.details.viewWarnings).toHaveLength(1);
+    const warning = result.details.viewWarnings?.[0];
+    expect(warning).toContain("ghost:value=1");
     expect(result.content).toEqual([
       { type: "text", text: `${warning}\nanchor|alpha\nanchor|beta` },
     ]);
@@ -112,7 +114,7 @@ test("unknown views explain recovery without entering source lines or hiding val
     )
       .render(52)
       .join("\n");
-    expect(rendered).toContain("Unknown view ignored: ghost:value=1.");
+    if (warning === undefined) throw new Error("Missing warning");
     expect(rendered.replaceAll("│", " ").replace(/\s+/gu, " ")).toContain(warning);
     expect(rendered).toContain("anchor|alpha");
     expect(rendered).toContain("anchor|beta");
@@ -138,11 +140,11 @@ test("unknown view warnings preserve all native blocks even when the image is fi
         { path: "memory:image", views: ["ghost"] },
         { cwd: process.cwd() },
       );
+      expect(result.details.ignoredViews).toEqual(["ghost"]);
+      expect(result.details.viewWarnings).toHaveLength(1);
+      expect(result.details.viewWarnings?.[0]).toContain("ghost");
       expect(result.content).toEqual([
-        {
-          type: "text",
-          text: "Unknown view ignored: ghost. Remove it or choose a supported view from the views parameter.",
-        },
+        { type: "text", text: result.details.viewWarnings?.[0] },
         ...content,
       ]);
       expect(result.details.lines).toBeUndefined();
@@ -186,11 +188,11 @@ test("native views handled before reading do not trigger a text-only warning", a
       { path: "capture:window", views: ["ghost"] },
       { cwd: process.cwd() },
     );
+    expect(unknown.details.ignoredViews).toEqual(["ghost"]);
+    expect(unknown.details.viewWarnings).toHaveLength(1);
+    expect(unknown.details.viewWarnings?.[0]).toContain("ghost");
     expect(unknown.content).toEqual([
-      {
-        type: "text",
-        text: "Unknown view ignored: ghost. Remove it or choose a supported view from the views parameter.",
-      },
+      { type: "text", text: unknown.details.viewWarnings?.[0] },
       image,
     ]);
   } finally {
@@ -204,11 +206,10 @@ test("a text view on native content explains why it did not apply", async () => 
       { path: "memory:image", views: ["anchors"] },
       { cwd: process.cwd() },
     );
+    expect(result.details.viewWarnings).toHaveLength(1);
+    expect(result.details.viewWarnings?.[0]).toContain("anchors");
     expect(result.content).toEqual([
-      {
-        type: "text",
-        text: "View not applied: anchors requires text. Read a text source to use anchors.",
-      },
+      { type: "text", text: result.details.viewWarnings?.[0] },
       image,
     ]);
     expect(result.details.lines).toBeUndefined();

@@ -91,6 +91,55 @@ describe("mutation renderer lifecycle", () => {
     expect(output).toContain("✓ Applied");
     expect(output).toContain("Review sees the final saved content.");
   });
+  test.each([
+    { effect: "applied", ok: true, label: "✓ Applied" },
+    { effect: "applied", ok: false, label: "✓ Applied" },
+    { effect: "not-applied", ok: false, label: "✗ Not applied" },
+    { effect: "unknown", ok: false, label: "Effects unknown" },
+  ])("whole-file move shows $effect independently of call success", ({ effect, ok, label }) => {
+    let renderer: TextEditorToolRendererRegistration | undefined;
+    const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+      onMutationTool(listener: (registration: unknown) => void) {
+        listener({ name: "move", source: { field: "path" } });
+      },
+      addToolRenderer(value: TextEditorToolRendererRegistration) {
+        renderer = value;
+      },
+    });
+    registerMutationRenderers(api, undefined, () => false);
+    if (!renderer?.renderResult) throw new Error("Missing renderer");
+    const output = renderer.renderResult(
+      {
+        content: [{ type: "text", text: `move: ${effect}` }],
+        details: {
+          results: [],
+          metadata: { semanticAction: { kind: "file-operation", operation: "move", effect, ok } },
+        },
+      },
+      { expanded: false, isPartial: false },
+      theme,
+      {
+        args: { path: "source.txt", target: "target.txt" },
+        toolCallId: "whole-file-move",
+        state: {},
+        lastComponent: undefined,
+        cwd: process.cwd(),
+        executionStarted: true,
+        argsComplete: true,
+        isPartial: false,
+        expanded: false,
+        showImages: true,
+        isError: !ok,
+        invalidate: vi.fn(),
+      },
+    );
+    const lines = output.render(80).join("\n");
+    expect(lines).toContain(label);
+    if (effect === "unknown") {
+      expect(lines).not.toContain("Not applied");
+      expect(lines).toContain("read source and destination before retrying");
+    }
+  });
   test("disabled animations skip preview work and timers but show the final diff", () => {
     const interval = vi.spyOn(globalThis, "setInterval");
     const previewMutation = vi.fn();
@@ -438,7 +487,12 @@ describe("mutation renderer lifecycle", () => {
       code: "UNSUPPORTED_SOURCE",
       expected: "✗ Not applied · no file provider for this resource",
     },
-    { effect: "unknown", code: "CONNECTION_LOST", expected: "? Outcome unknown · connection lost" },
+    {
+      effect: "unknown",
+      code: "CONNECTION_LOST",
+      expected:
+        "Effects unknown · delete failed; read the source before retrying · connection lost",
+    },
     { effect: "applied", code: "CONNECTION_LOST", expected: "✓ Applied · connection lost" },
     {
       kind: "uncertain-peer",
@@ -500,7 +554,9 @@ describe("mutation renderer lifecycle", () => {
                   effect: effect === "unknown" ? "unknown" : "applied",
                   results: [
                     new FileMutationResult({
-                      ...(kind === "uncertain-peer" ? { rollback: { failedSources: [] } } : {}),
+                      ...(kind === "uncertain-peer"
+                        ? { rollback: { failedSources: [], restoredSources: [] } }
+                        : {}),
                       ok: false,
                       path: args.path,
                       errors: [

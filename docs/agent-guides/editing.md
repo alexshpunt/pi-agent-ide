@@ -29,6 +29,7 @@ Read results select their requested source windows. Search results select exact 
 - `replace.path` replaces selected ranges. `delete.path` removes selected text but keeps the file, even for a whole-file selection.
 - `write.path` and `undo.file` require one whole-file selection. Partial and multi-file scopes are rejected, not widened.
 - `copy.path` / `move.path` select source ranges; `target` selects destination ranges. A zero-width destination inserts. Arrays pair in declared order, with equal counts and duplicates removed. Unequal counts and overlapping moves are rejected.
+- Move succeeds without writes for valid empty arrays and paired zero-width selections. Empty arrays return no selection; paired points return only the unchanged destination points. The usual validation and overlap guards still apply.
 - Ordinary destination file paths without text selectors require one whole-file source and keep byte-preserving file transfer behavior.
 - `insert` uses line-based insertion before or after its selected containing lines.
 
@@ -48,7 +49,7 @@ Independent calls share the original snapshots. Combine overlapping edits into o
 
 An omitted path can inherit the file identified by an anchor, the last read, or the preceding edit in the batch. Supply the path when that would be ambiguous.
 
-An ordinary `delete.path` without selectors deletes a complete regular file. A result input removes only selected text. Ordinary copy/move paths without selectors transfer whole files and replace an existing regular destination file.
+An ordinary `delete.path` without selectors deletes a whole file, directory, or symlink. Directory and link deletion applies Git protection and may require a user dialog; no agent flag replaces approval. Links are unlinked without following their targets. A result input removes only selected text. Ordinary copy/move paths without selectors transfer whole regular files and replace an existing regular destination file.
 
 Inside Codemode, await independent edits on disjoint resources concurrently and overlapping resources in order. Pass a pending edit result directly to another source tool for dependent work; that boundary commits the batch before consuming the result.
 

@@ -32,12 +32,12 @@ test("caller cancellation returns a failed Read, not a completed source or an or
     expect(result.script).toBeUndefined();
     expect(result.details.failure?.cause).toBe(reason);
     expect(result.details.failure?.code).toBe("RESOLVE_FAILED");
-    expect(result.content).toEqual([
-      {
-        type: "text",
-        text: 'Read cancelled for "memory:quoted\\"notes". No completed result was returned.',
-      },
-    ]);
+    const block = result.content[0];
+    if (block?.type !== "text") throw new Error("Missing cancellation output");
+    expect(block.text).toContain(JSON.stringify('memory:quoted"notes'));
+    expect(block.text).toContain("Read cancelled");
+    expect(block.text).not.toContain(reason.message);
+    expect(controller.signal.aborted).toBe(true);
     expect(calls).toBe(1);
   } finally {
     await read.dispose();

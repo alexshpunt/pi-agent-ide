@@ -52,7 +52,7 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
   }
 };
 
-/** Replace an overflowing read window with a source-numbered whole-file outline. */
+/** Present an overflowing read window as an outline without losing its source data. */
 export function createAstOverflowHandler(): ReadPostReadHandler {
   return async (context) => {
     const { state, result } = context;
@@ -83,6 +83,11 @@ export function createAstOverflowHandler(): ReadPostReadHandler {
     );
     return reduced === undefined
       ? { kind: "continue", context }
-      : { kind: "return", result: reduced };
+      : {
+          kind: "continue",
+          context,
+          // Keep canonical data added by other post-read transforms, including source targets.
+          transform: (result) => ({ ...reduced, script: result.script }),
+        };
   };
 }

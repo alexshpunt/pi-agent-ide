@@ -220,14 +220,9 @@ export class FileMutationAgentResult {
       }
     }
 
-    // A rejected mutation describes only the blocked operation, not changes
-    // already applied by the batch.
-    const isMutationRejected = fmr.errors.some((error) => error.code === "MUTATION_REJECTED");
-
+    // A failed call alone does not prove that files stayed unchanged.
     if (fmr.fileChangedStatement !== undefined) {
       lines.push("", fmr.fileChangedStatement);
-    } else if (!isMutationRejected) {
-      lines.push("", "No file was changed.");
     }
 
     // File-level errors (WriteResultDetails blocked/failed, etc.)

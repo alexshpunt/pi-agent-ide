@@ -1,5 +1,6 @@
 import type { CapabilityCase, RouteStep } from "./validation.ts";
 
+// Directory/symlink approval is a host UI policy, not an agent calling requirement.
 const both = ["direct", "codemode"];
 const reuse = (from: number, field: string | string[] = "path", kind = "result") => ({
   from,
@@ -7,7 +8,52 @@ const reuse = (from: number, field: string | string[] = "path", kind = "result")
   kind,
 });
 const textFile = { "task.txt": "keep\nOLD\nlast\n" };
+const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
+add(
+  "delete-objects",
+  ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
+  "Delete remove-tree recursively, then unlink link and broken-link using ordinary paths without text selectors. Leave sentinel.txt and tracked/data untouched.",
+  [
+    { tool: "delete", args: { path: "remove-tree" }, contains: "delete: applied" },
+    { tool: "delete", args: { path: "link" }, contains: "delete: applied" },
+    { tool: "delete", args: { path: "broken-link" }, contains: "delete: applied" },
+  ],
+  {
+    files: deleteFixture,
+    git: true,
+    setup: "delete-objects",
+    expected: {
+      "remove-tree": null,
+      "remove-tree/data": null,
+      "remove-tree/link": null,
+      link: null,
+      "broken-link": null,
+    },
+  },
+);
+add(
+  "delete-policy-gates",
+  ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
+  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Keep all fixture bytes unchanged and report the refusal reasons.",
+  [
+    {
+      tool: "delete",
+      args: { path: "tracked" },
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+    {
+      tool: "delete",
+      args: { path: ".git/config" },
+      error: true,
+      contains: "DELETE_PROTECTED_TARGET",
+    },
+    { tool: "delete", args: { path: "." }, error: true, contains: "DELETE_PROTECTED_TARGET" },
+    { tool: "delete", args: { path: "/" }, error: true, contains: "DELETE_PROTECTED_TARGET" },
+  ],
+  { files: deleteFixture, git: true },
+);
 function add(
   id: string,
   capabilities: string[],
@@ -76,6 +122,89 @@ add(
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+const overviewFixtures = [
+  { name: "lines", rows: 2100, padding: "  consume(value);" },
+  { name: "bytes", rows: 1000, padding: `  consume("${"界".repeat(30)}");` },
+].map(({ name, rows, padding }) => ({
+  name,
+  rows,
+  files: {
+    "large.ts": [
+      'function outsideBefore() { return "NEEDLE"; }',
+      "function checkout() {",
+      ...Array<string>(100).fill(padding),
+      '  consume("NEEDLE");',
+      ...Array<string>(rows - 100).fill(padding),
+      "}",
+      'function outsideAfter() { return "NEEDLE"; }',
+      "",
+    ].join("\n"),
+  },
+}));
+for (const { name, rows, files } of overviewFixtures) {
+  add(
+    `read-overview-search-${name}`,
+    ["read.overview-source", "compose.overview-search", "compose.overview-window"],
+    `Read all of large.ts so it returns a compact overview. Search for NEEDLE by passing that unchanged Read result or its UUID, not the file path. Then read large.ts with offset=2 and limit=${rows + 3}, and forward that new overview to Search for NEEDLE and outsideBefore. Report the source line of the body match and whether outsideBefore was found in the window. Do not edit anything.`,
+    [
+      { tool: "read", args: { path: "large.ts" }, contains: "Some source text is omitted." },
+      {
+        tool: "search",
+        args: { query: "NEEDLE" },
+        reuse: reuse(0),
+        contains: "3 matches in 1 file",
+      },
+      {
+        tool: "read",
+        args: { path: "large.ts", offset: 2, limit: rows + 3 },
+        contains: "outsideBefore",
+      },
+      {
+        tool: "search",
+        args: { query: "NEEDLE" },
+        reuse: reuse(2),
+        contains: "large.ts:103:12-18",
+      },
+      {
+        tool: "search",
+        args: { query: "outsideBefore" },
+        reuse: reuse(2),
+        contains: "No matches found",
+      },
+    ],
+    { files, expected: files },
+  );
+}
+const storedOverview = overviewFixtures[0];
+if (storedOverview === undefined) throw new Error("Missing overview fixture");
+add(
+  "read-overview-store",
+  ["compose.overview-store-load"],
+  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged overview result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. Finally try Search using the saved overview again and confirm stale-input rejection.",
+  [
+    {
+      tool: "read",
+      args: { path: "large.ts", offset: 2, limit: 2103 },
+      contains: "Some source text is omitted.",
+    },
+    {
+      tool: "search",
+      args: { query: "NEEDLE" },
+      reuse: { ...reuse(0), newParent: true },
+      contains: "large.ts:103:12-18",
+    },
+    { tool: "replace", args: { text: "FOUND" }, reuse: reuse(1) },
+    { tool: "search", args: { query: "NEEDLE" }, reuse: reuse(0), error: true },
+  ],
+  {
+    modes: ["codemode"],
+    files: storedOverview.files,
+    expected: {
+      "large.ts": storedOverview.files["large.ts"].replace('consume("NEEDLE")', 'consume("FOUND")'),
+    },
+  },
 );
 
 add(
@@ -187,15 +316,127 @@ add(
   { expected: { "task.txt": "keep\n\nlast\n" } },
 );
 
+const declarationFiles = {
+  "task.ts":
+    'import { value } from "./helper";\nexport function doomed() { return value; }\nexport const label = "doomed";\n',
+  "helper.ts": "export const value = 1;\n",
+  "consumer.ts": 'import { doomed } from "./task";\nexport const result = doomed();\n',
+  "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
+};
+const deletedDeclaration = {
+  ...declarationFiles,
+  "task.ts": 'import { value } from "./helper";\n\nexport const label = "doomed";\n',
+};
+
+add(
+  "delete-symbol",
+  ["edit.delete-declaration"],
+  "Read symbol:task.ts#doomed to confirm the declaration. Then delete that same direct symbol path without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not use the Read result as the Delete input for this route.",
+  [
+    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    {
+      tool: "delete",
+      args: { path: "symbol:task.ts#doomed", start: undefined, end: undefined },
+      contains: "Text fallback: imports and references unchanged",
+    },
+  ],
+  {
+    files: declarationFiles,
+    expected: deletedDeclaration,
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
+add(
+  "read-symbol-delete",
+  ["compose.symbol-read-delete"],
+  "Read symbol:task.ts#doomed, then pass its unchanged Read result or UUID to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
+  [
+    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    { tool: "delete", args: { start: undefined, end: undefined }, reuse: reuse(0) },
+  ],
+  {
+    files: declarationFiles,
+    expected: {
+      ...deletedDeclaration,
+      "task.ts": 'import { value } from "./helper";\nexport const label = "doomed";\n',
+    },
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
+const rejectedSymbols = ["symbol:task.ts", "symbol:task.ts#missing", "symbol:task.ts#ping"];
+const rejectionFiles = {
+  "task.ts": "export class First { ping() {} }\nexport class Second { ping() {} }\n",
+  "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
+  ...Object.fromEntries(rejectedSymbols.map((source) => [source, "must remain\n"])),
+};
+add(
+  "reject-symbol-delete",
+  ["edit.reject-symbol-delete"],
+  "Call delete without start/end on symbol:task.ts, symbol:task.ts#missing, and symbol:task.ts#ping. Each must reject its invalid, missing, or ambiguous declaration target. Do not try another deletion route. Keep every file unchanged, including the regular files whose literal names begin with symbol:.",
+  rejectedSymbols.map((source) => ({
+    tool: "delete",
+    args: { path: source, start: undefined, end: undefined },
+    error: true,
+  })),
+  {
+    files: rejectionFiles,
+    expected: rejectionFiles,
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
 add(
   "file-copy-move-delete",
   ["edit.copy-file", "edit.move-file", "edit.delete-file"],
-  "Use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, not result selections. The original must stay unchanged.",
+  "First use move with task.txt as both path and target; it must report not-applied. Then use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, not result selections. The original must stay unchanged.",
   [
+    {
+      tool: "move",
+      args: { path: "task.txt", target: "task.txt" },
+      error: true,
+      contains: "move: not-applied",
+    },
     { tool: "copy", args: { path: "task.txt", target: "copied.txt" } },
-    { tool: "move", args: { path: "copied.txt", target: "moved.txt" } },
+    { tool: "move", args: { path: "copied.txt", target: "moved.txt" }, contains: "move: applied" },
     { tool: "delete", args: { path: "moved.txt" } },
   ],
+);
+
+add(
+  "move-unknown-effects",
+  ["edit.move-effects"],
+  "Use whole-file move on .tmp/move-effects/unknown-after.txt to .tmp/move-effects/unknown-after-target.txt. This isolated fixture deliberately fails after execution starts. Preserve the unknown effect: do not call it not-applied and do not retry. Read the destination by its ordinary path to inspect the bytes and report that the Move effect is unknown. In Codemode, catch the failed call so the inspection still runs.",
+  [
+    {
+      tool: "move",
+      args: {
+        path: ".tmp/move-effects/unknown-after.txt",
+        target: ".tmp/move-effects/unknown-after-target.txt",
+      },
+      error: true,
+      contains: "move: unknown",
+    },
+    {
+      tool: "read",
+      args: { path: ".tmp/move-effects/unknown-after-target.txt" },
+      contains: "MOVED-BYTES",
+    },
+  ],
+  {
+    setup: "move-effects",
+    files: {
+      ".tmp/move-effects/owned.txt": "LPT-642 disposable fixtures\n",
+      ".tmp/move-effects/unknown-after.txt": "MOVED-BYTES\n",
+      ".tmp/move-effects/unknown-after-target.txt": "old target\n",
+    },
+    expected: {
+      ".tmp/move-effects/unknown-after.txt": null,
+      ".tmp/move-effects/unknown-after-target.txt": "MOVED-BYTES\n",
+    },
+    answer: "unknown",
+  },
 );
 
 add(
@@ -216,6 +457,39 @@ add(
   },
 );
 
+for (const scenario of ["restored", "target-failed", "target-failed-after-restore"] as const) {
+  const source = `.tmp/move-rollback/${scenario}-source.txt`;
+  const target = `.tmp/move-rollback/${scenario}-target.txt`;
+  const restored = scenario === "restored";
+  add(
+    `move-rollback-${scenario}`,
+    ["edit.move-rollback"],
+    `Move the complete move-me line from ${source} after top in ${target}. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read both files in later calls. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
+    [
+      {
+        tool: "move",
+        error: "direct",
+        args: {
+          path: source,
+          start: /move-me|[A-Z]+#|[0-9]+#/u,
+          target,
+          targetStart: /top|[A-Z]+#|[0-9]+#/u,
+        },
+      },
+      { tool: "read", args: { path: source }, contains: "move-me" },
+      { tool: "read", args: { path: target }, contains: "bottom" },
+    ],
+    {
+      setup: "move-rollback",
+      files: { [source]: "head\nmove-me\nend\n", [target]: "top\nbottom\n" },
+      expected: {
+        [target]: scenario === "target-failed" ? "top\nmove-me\nbottom\n" : "top\nbottom\n",
+      },
+      answer: restored ? "restored" : "unknown",
+    },
+  );
+}
+
 add(
   "paired-copy",
   ["compose.paired-sources-targets"],
@@ -233,6 +507,43 @@ add(
   {
     files: { "a.txt": "A\n", "b.txt": "B\n", "dest-a.txt": "old-a\n", "dest-b.txt": "old-b\n" },
     expected: { "dest-a.txt": "A\n", "dest-b.txt": "B\n" },
+  },
+);
+
+add(
+  "move-empty",
+  ["edit.move-empty"],
+  "Search task.txt and dest.txt separately for ABSENT to get two empty results. Pass both unchanged results as Move's source and target. It must succeed without changes. Search the unchanged Move result for source; it must find nothing. Do not edit any file.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "ABSENT" } },
+    { tool: "search", args: { path: "dest.txt", query: "ABSENT" } },
+    { tool: "move", reuse: [reuse(0), reuse(1, "target")], contains: "no changes" },
+    { tool: "search", args: { query: "source" }, reuse: reuse(2), contains: "No matches found" },
+  ],
+  {
+    files: { "task.txt": "source\n", "dest.txt": "destination\n" },
+    expected: { "task.txt": "source\n", "dest.txt": "destination\n" },
+  },
+);
+add(
+  "move-zero-width",
+  ["edit.move-zero-width", "compose.move-point-replace"],
+  "Read task.txt and select its point at offset 0 using sliceText from=0,to=0. Read dest.txt and select its point at offset 5 using sliceText from=5,to=5. Move the source point to the destination point using both unchanged Select results as path and target. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.",
+  [
+    { tool: "read", args: { path: "task.txt" } },
+    { tool: "select", args: { operation: { kind: "sliceText", from: 0, to: 0 } }, reuse: reuse(0) },
+    { tool: "read", args: { path: "dest.txt" } },
+    { tool: "select", args: { operation: { kind: "sliceText", from: 5, to: 5 } }, reuse: reuse(2) },
+    {
+      tool: "move",
+      reuse: [reuse(1), reuse(3, "target")],
+      contains: "No changes: zero-width selections.",
+    },
+    { tool: "replace", args: { text: "NEW " }, reuse: reuse(4) },
+  ],
+  {
+    files: { "task.txt": "source\n", "dest.txt": "left right\n" },
+    expected: { "task.txt": "source\n", "dest.txt": "left NEW right\n" },
   },
 );
 
@@ -262,16 +573,27 @@ add(
 
 add(
   "git-stage-unstage-undo",
-  ["git.changes", "git.stage", "git.unstage", "git.undo-change", "discovery.git"],
-  "Replace OLD with NEW in task.txt. Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Read changes again and unstage its current CHANGE anchor. Read changes once more and undo that current change. Leave source and index at the original clean state.",
+  ["git.changes", "git.stage", "git.stage-noop", "git.unstage", "git.undo-change", "discovery.git"],
+  "Replace OLD with NEW in task.txt. Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Repeat stage with that anchor and confirm it succeeds as already staged. Read changes again and unstage its current CHANGE anchor. Read changes once more and undo that current change. Leave source and index at the original clean state.",
   [
     { tool: "replace", args: { text: "NEW" } },
     { tool: "read", args: { path: "task.txt", views: ["changes"] } },
-    { tool: "stage", args: { file: "task.txt" }, reuse: reuse(1, "change", "change") },
+    {
+      tool: "stage",
+      args: { file: "task.txt" },
+      reuse: reuse(1, "change", "change"),
+      contains: "<system-result",
+    },
+    {
+      tool: "stage",
+      args: { file: "task.txt" },
+      reuse: reuse(1, "change", "change"),
+      contains: "already staged",
+    },
     { tool: "read", args: { path: "task.txt", views: ["changes"] } },
-    { tool: "unstage", args: { file: "task.txt" }, reuse: reuse(3, "change", "change") },
+    { tool: "unstage", args: { file: "task.txt" }, reuse: reuse(4, "change", "change") },
     { tool: "read", args: { path: "task.txt", views: ["changes"] } },
-    { tool: "undo", args: { file: "task.txt" }, reuse: reuse(5, "change", "change") },
+    { tool: "undo", args: { file: "task.txt" }, reuse: reuse(6, "change", "change") },
   ],
   { git: true },
 );
@@ -584,9 +906,10 @@ add(
     "debug.step-out",
     "debug.continue",
     "debug.delete-breakpoint",
+    "compose.debug-breakpoint-delete-read-session",
     "read.breakpoints",
   ],
-  "Discover debug and create a debugpy session for task.py. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start, then step into the twice function, step over its first assignment, and evaluate result while stopped. Step out, read the stopped session, delete the returned breakpoint resource, continue to completion, read the completed session, and delete the session. Read stopped state before each next control action. Report the evaluated result. Do not change source files.",
+  "Discover debug and create a debugpy session for task.py. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start, then step into the twice function, step over its first assignment, and evaluate result while stopped. Step out, read the stopped session, delete the returned breakpoint resource, read the session to confirm it is still stopped, continue to completion, read the completed session, and delete the session. Read stopped state before each next control action. Report the evaluated result. Do not change source files.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
@@ -611,6 +934,7 @@ add(
     { tool: "insert", args: { text: "step out" }, reuse: reuse(0, "path", "debug") },
     { tool: "read", reuse: reuse(0, "path", "debug") },
     { tool: "delete", reuse: reuse(2, "path", "breakpoint") },
+    { tool: "read", reuse: reuse(0, "path", "debug"), contains: "Status: stopped" },
     { tool: "insert", args: { text: "continue" }, reuse: reuse(0, "path", "debug") },
     { tool: "read", reuse: reuse(0, "path", "debug") },
     { tool: "delete", reuse: reuse(0, "path", "debug") },

@@ -40,7 +40,7 @@ test("whole-file owners receive original SSH identities before local path resolu
     };
   };
   const input = { path: "source.bin", target: "destination.bin" };
-  const result = await executeFileOperation("copy", input, "ssh://sandbox/tmp", undefined, [
+  const result = await executeFileOperation("copy", input, "ssh://sandbox/tmp", undefined, {}, [
     resolver,
   ]);
   expect(result).toMatchObject({ ok: true, path: "ssh://sandbox/tmp/source.bin" });
@@ -55,6 +55,7 @@ test("whole-file owner failures retain unknown effects instead of claiming no mu
     { path: "ssh://sandbox/source", target: "local" },
     "/local",
     undefined,
+    {},
     [
       async () => {
         throw Object.assign(new Error("Transport lost after publication started"), {
@@ -72,9 +73,42 @@ test("whole-file owner failures retain unknown effects instead of claiming no mu
   });
 });
 
+test("remote Delete inspection failures report no removal before permission", async () => {
+  let removalReached = false;
+  const result = await executeFileOperation(
+    "delete",
+    { path: "ssh://sandbox/project/folder" },
+    "/controller",
+    undefined,
+    {},
+    [
+      async (_operation, _input, _context, deletion) => {
+        await deletion?.prepare("/project/folder", "/project", {
+          realpath: async () => {
+            throw Object.assign(new Error("Read transport unavailable"), {
+              code: "CONNECTION_LOST",
+            });
+          },
+          inspect: async () => ({ kind: "directory", revision: "original" }),
+          read: async () => "",
+          git: async () => "",
+          source: (value) => `ssh://sandbox${value}`,
+        });
+        removalReached = true;
+        throw new Error("Removal must not be reached");
+      },
+    ],
+  );
+  expect(removalReached).toBe(false);
+  expect(result).toMatchObject({
+    ok: false,
+    effect: "not-applied",
+    error: { code: "CONNECTION_LOST" },
+  });
+});
 test("an owner throwing after a mutation cannot be reported as not applied", async () => {
   const cwd = await fixture();
-  const result = await executeFileOperation("delete", { path: "source" }, cwd, undefined, [
+  const result = await executeFileOperation("delete", { path: "source" }, cwd, undefined, {}, [
     async () => {
       await writeFile(path.join(cwd, "partial"), "owner changed this");
       throw new Error("Reply failed");
@@ -87,7 +121,7 @@ test("an owner throwing after a mutation cannot be reported as not applied", asy
 
 test("malformed whole-file owner results are unknown and never fall back locally", async () => {
   const cwd = await fixture();
-  const result = await executeFileOperation("delete", { path: "source" }, cwd, undefined, [
+  const result = await executeFileOperation("delete", { path: "source" }, cwd, undefined, {}, [
     async () => ({ kind: "file-operation", operation: "copy", ok: true, effect: "applied" }),
   ]);
   expect(result).toMatchObject({
@@ -110,6 +144,12 @@ test("unclaimed URI operations fail without touching a similarly named local pat
     error: { code: "UNSUPPORTED_SOURCE" },
   });
   expect(await readFile(misleading, "utf8")).toBe("keep local");
+});
+
+test("direct symbol deletion never enters whole-file mode", () => {
+  for (const source of ["symbol:source.ts#greet", "symbol:source.ts", "symbol:source.ts#missing"]) {
+    expect(isWholeFileInvocation("delete", { path: source })).toBe(false);
+  }
 });
 
 test("copies bytes, moves the copy, and removes only the moved file", async () => {
@@ -145,13 +185,9 @@ test("refuses directories and symbolic links without touching their contents", a
   await mkdir(path.join(cwd, "dir"));
   await symlink(path.join(cwd, "source"), path.join(cwd, "link"));
   for (const name of ["dir", "link"]) {
-    for (const operation of ["copy", "move", "delete"] as const) {
+    for (const operation of ["copy", "move"] as const) {
       expect(
-        await executeFileOperation(
-          operation,
-          { path: name, ...(operation === "delete" ? {} : { target: "new" }) },
-          cwd,
-        ),
+        await executeFileOperation(operation, { path: name, target: "new" }, cwd),
       ).toMatchObject({ ok: false, effect: "not-applied" });
     }
   }

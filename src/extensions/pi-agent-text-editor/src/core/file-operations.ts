@@ -1,4 +1,5 @@
-import { lstat, unlink } from "node:fs/promises";
+import { lstat, rm, unlink } from "node:fs/promises";
+import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.js";
 import path from "node:path";
 import fs from "fs-extra";
 import { Type } from "typebox";
@@ -17,7 +18,13 @@ const filePath = Type.String({
   description: "Regular file path, relative to cwd or absolute, or an owned resource URI.",
 });
 export const deleteFileParameters = Type.Object(
-  { path: filePath },
+  {
+    path: Type.String({
+      minLength: 1,
+      description:
+        "File, directory, or symlink path, relative to cwd or absolute, or an owned resource URI.",
+    }),
+  },
   { additionalProperties: false },
 );
 export const transferFileParameters = Type.Object(
@@ -43,6 +50,10 @@ const fileOperationResultSchema = Type.Object({
     Type.Object({ code: Type.String({ minLength: 1 }), message: Type.String() }),
   ),
 });
+/** Host-only deletion policy and optional removal primitive. */
+export interface FileOperationContext extends DeletePolicyContext {
+  readonly removeDirectory?: (source: string) => Promise<void>;
+}
 /** Recognize a host-owned whole-file receipt for shared output rendering. */
 export function isFileOperationResult(value: unknown): value is FileOperationResult {
   return Value.Check(fileOperationResultSchema, value);
@@ -59,12 +70,13 @@ export function formatFileOperation(value: FileOperationResult): string {
     .filter((line) => line !== undefined)
     .join("\n");
 }
-/** Uses maintained filesystem primitives; never decodes file contents or recursively deletes. */
+/** Uses filesystem primitives without decoding contents; Delete applies hooks and safety policy first. */
 export async function executeFileOperation(
   operation: FileOperation,
   input: unknown,
   cwd: string,
   signal?: AbortSignal,
+  deletion: FileOperationContext = {},
   resolvers: readonly FileOperationResolver[] = [],
   preflight?: (operation: FileOperation, input: FileOperationInput) => Promise<void>,
 ): Promise<FileOperationResult> {
@@ -81,11 +93,36 @@ export async function executeFileOperation(
     source = args.path;
     target = args.target;
     signal?.throwIfAborted();
-    await preflight?.(operation, args);
+    if (operation !== "delete") await preflight?.(operation, args);
     signal?.throwIfAborted();
     for (const resolve of resolvers) {
       started = true;
-      const outcome = await resolve(operation, args, { cwd, signal });
+      const outcome = await resolve(
+        operation,
+        args,
+        { cwd, signal },
+        operation === "delete"
+          ? {
+              async prepare(source, project, files) {
+                try {
+                  const event = await prepareDeletion(
+                    source,
+                    project,
+                    { ...deletion, files },
+                    signal,
+                  );
+                  if (event.kind === "file") await preflight?.(operation, args);
+                  return event;
+                } catch (error) {
+                  // This callback checks policy only; the provider has not received permission to remove.
+                  throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+                    effect: "not-applied",
+                  });
+                }
+              },
+            }
+          : undefined,
+      );
       if (outcome !== undefined) {
         if (
           !isFileOperationResult(outcome) ||
@@ -110,7 +147,11 @@ export async function executeFileOperation(
       });
     source = path.resolve(cwd, args.path);
     target = args.target === undefined ? undefined : path.resolve(cwd, args.target);
-    const sourceStat = await regularFile(source);
+    signal?.throwIfAborted();
+    const deleteEvent =
+      operation === "delete" ? await prepareDeletion(source, cwd, deletion, signal) : undefined;
+    const sourceStat = deleteEvent === undefined ? await regularFile(source) : undefined;
+    if (deleteEvent?.kind === "file") await preflight?.(operation, args);
     if (target !== undefined) {
       const targetStat = await optionalStat(target);
       if (targetStat !== undefined) {
@@ -120,7 +161,9 @@ export async function executeFileOperation(
           });
         if (
           source === target ||
-          (sourceStat.ino === targetStat.ino && sourceStat.dev === targetStat.dev)
+          (sourceStat !== undefined &&
+            sourceStat.ino === targetStat.ino &&
+            sourceStat.dev === targetStat.dev)
         )
           throw Object.assign(new Error("Source and target are the same file"), {
             code: "SAME_FILE",
@@ -129,8 +172,13 @@ export async function executeFileOperation(
     }
     signal?.throwIfAborted();
     started = true;
-    if (operation === "delete") await unlink(source);
-    else if (target !== undefined) {
+    if (deleteEvent !== undefined) {
+      if (deleteEvent.recursive) {
+        if (deletion.removeDirectory !== undefined)
+          await deletion.removeDirectory(deleteEvent.resolvedPath);
+        else await rm(deleteEvent.resolvedPath, { recursive: true, force: false });
+      } else await unlink(deleteEvent.resolvedPath);
+    } else if (target !== undefined) {
       if (operation === "copy") await fs.copy(source, target, { overwrite: true });
       else await fs.move(source, target, { overwrite: true });
     }

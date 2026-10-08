@@ -935,7 +935,7 @@ function wholeFileOperationSummary(details: unknown):
   }
   const label =
     effect === "unknown"
-      ? "? Outcome unknown"
+      ? `Effects unknown · ${"operation" in action ? String(action.operation) : "file operation"} failed; read ${"operation" in action && action.operation === "delete" ? "the source" : "source and destination"} before retrying`
       : effect === "applied"
         ? "✓ Applied"
         : "✗ Not applied";
@@ -1003,14 +1003,22 @@ function userFacingFailure(
   agentOutput: string,
   details: FileMutationBatchResult | undefined,
 ): string {
-  const rollback = details?.results?.find((result) => result.data.rollback !== undefined)?.data
-    .rollback;
-  if (rollback?.failedSources.length === 0 && details?.effect === "unknown")
-    return "Effects unknown · edit failed";
-  if (rollback !== undefined) {
-    return rollback.failedSources.length === 0
-      ? "Rolled back · write failed"
-      : "State unknown · rollback failed";
+  const rollbacks =
+    details?.results?.flatMap((result) => (result.data.rollback ? [result.data.rollback] : [])) ??
+    [];
+  if (rollbacks.length > 0) {
+    const failed = [...new Set(rollbacks.flatMap((rollback) => rollback.failedSources))];
+    const restored = [...new Set(rollbacks.flatMap((rollback) => rollback.restoredSources))];
+    if (failed.length === 0 && details?.effect === "unknown")
+      return [
+        "Effects unknown · edit failed",
+        ...(restored.length > 0 ? [`Rolled back: ${restored.join(", ")}`] : []),
+      ].join("\n");
+    return [
+      failed.length === 0 ? "Rolled back · write failed" : "State unknown · rollback failed",
+      ...(failed.length > 0 ? [`Unknown: ${failed.join(", ")}`] : []),
+      ...(restored.length > 0 ? [`Rolled back: ${restored.join(", ")}`] : []),
+    ].join("\n");
   }
   if (details?.effect === "unknown") return "Effects unknown · edit failed";
   if (details?.effect === "applied") return "Saved · post-write step failed";

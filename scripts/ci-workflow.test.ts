@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test } from "vitest";
@@ -15,9 +16,11 @@ interface WorkflowStep {
 }
 
 interface WorkflowJob {
+  name?: string;
+  outputs?: Record<string, string>;
   "continue-on-error"?: boolean;
   steps: WorkflowStep[];
-  needs?: string[];
+  needs?: string | string[];
   if?: string;
   strategy?: { "fail-fast": boolean; matrix: { shard: number[] } };
 }
@@ -83,11 +86,14 @@ test("retains failures while every integration shard runs on its own runner", ()
   const upload = find("validate", "Upload unit test report");
   const report = find("validate", "Report unit tests");
   expect(upload.index).toBe(unit.index + 1);
-  expect(upload.step.if).toBe("always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''");
+  expect(upload.step.if).toBe(
+    "needs.plan.outputs.full == 'true' && (always() && hashFiles('.agents/tmp/test-results/unit.xml') != '')",
+  );
   expect(upload.step.with?.path).toBe(".agents/tmp/test-results/unit.xml");
   expect(report.index).toBeGreaterThan(upload.index);
   const integration = job("integration");
-  expect(integration.needs).toBeUndefined();
+  expect(integration.needs).toBe("plan");
+  expect(integration.if).toContain("needs.plan.outputs.full == 'true'");
   expect(integration.strategy).toEqual({
     "fail-fast": false,
     matrix: { shard: [1, 2, 3, 4] },
@@ -114,8 +120,9 @@ test("retains failures while every integration shard runs on its own runner", ()
     expect(report.step.with?.path).toBe(".agents/tmp/test-results/integration-*.xml");
   }
   const aggregate = job("integration-report");
-  expect(aggregate.needs).toEqual(["integration", "integration-namespaces"]);
-  expect(aggregate.if).toBe("always()");
+  expect(aggregate.needs).toEqual(["plan", "integration", "integration-namespaces"]);
+  expect(aggregate.if).toContain("always()");
+  expect(aggregate.if).toContain("needs.plan.outputs.full == 'true'");
   expect(find("integration-report", "Checkout").index).toBeLessThan(
     find("integration-report", "Download integration reports").index,
   );
@@ -132,7 +139,8 @@ test("retains failures while every integration shard runs on its own runner", ()
   }
   const candidate = find("validate", "Build and install reproducible release candidate");
   expect(candidate.index).toBeGreaterThan(report.index);
-  expect(candidate.step.if).toMatch(/^success\(\)/u);
+  expect(candidate.step.if).toContain("success()");
+  expect(candidate.step.if).toContain("needs.plan.outputs.full == 'true'");
   const windowsSteps = job("validate-windows-core").steps.filter((entry) =>
     [
       "Verify Windows Pi 0.99.1 source and native tools",
@@ -151,4 +159,91 @@ test("retains failures while every integration shard runs on its own runner", ()
     expect(step.run).toContain("env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest");
     expect(step.run).not.toContain("pi-test run");
   }
+});
+
+test("the required Validate check fails instead of being skipped when planning fails", () => {
+  const workflow = parse(
+    readFileSync(
+      path.join(findRepositoryRoot(import.meta.url), ".github/workflows/ci.yml"),
+      "utf8",
+    ),
+  ) as { jobs: Record<string, WorkflowJob> };
+  const job = workflow.jobs.validate;
+  expect(job?.name).toBe("Validate");
+  expect(job?.needs).toContain("plan");
+  expect(job?.if).toContain("always()");
+  const guard = job?.steps.find((step) => step.name === "Require a valid CI plan");
+  expect(guard?.run).toBeDefined();
+  if (!guard?.run) throw Error("Missing required-check guard");
+  for (const [result, full, event, nightly, accepted] of [
+    ["failure", "false", "push", "false", false],
+    ["skipped", "true", "pull_request", "false", false],
+    ["success", "", "push", "false", false],
+    ["success", "false", "pull_request", "false", false],
+    ["success", "false", "push", "true", false],
+    ["success", "true", "pull_request", "false", true],
+    ["success", "false", "push", "false", true],
+  ] as const) {
+    const run = spawnSync("bash", ["-c", guard.run], {
+      env: {
+        ...process.env,
+        PLAN_RESULT: result,
+        RUN_FULL: full,
+        CI_EVENT: event,
+        CI_NIGHTLY: nightly,
+      },
+    });
+    expect(run.status === 0, `${result}/${full}/${event}/${nightly}`).toBe(accepted);
+  }
+});
+
+test("runs each configured-startup and interface check once and records only full core runs", () => {
+  const workflow = parse(
+    readFileSync(
+      path.join(findRepositoryRoot(import.meta.url), ".github/workflows/ci.yml"),
+      "utf8",
+    ),
+  ) as { jobs: Record<string, WorkflowJob> };
+  const validate = workflow.jobs.validate;
+  for (const name of [
+    "Verify normal configured startup",
+    "Capture agent interface",
+    "Retain agent interface",
+  ]) {
+    expect(
+      validate?.steps.filter((step) => step.name === name),
+      name,
+    ).toHaveLength(1);
+  }
+  for (const name of [
+    "Setup Linux tests",
+    "Run unit tests",
+    "Build and install reproducible release candidate",
+  ]) {
+    expect(validate?.steps.find((step) => step.name === name)?.if, name).toContain(
+      "needs.plan.outputs.full == 'true'",
+    );
+  }
+  expect(validate?.steps.find((step) => step.name === "Scan commit range")?.if).toBeUndefined();
+  const record = workflow.jobs["record-evidence"];
+  expect(record?.needs).toEqual([
+    "plan",
+    "validate",
+    "validate-windows-core",
+    "integration",
+    "integration-namespaces",
+    "integration-report",
+  ]);
+  expect(record?.if).toContain("needs.plan.outputs.full == 'true'");
+  expect(record?.if).toContain("needs.validate.result == 'success'");
+  expect(record?.if).toContain("needs['validate-windows-core'].result == 'success'");
+  for (const name of ["integration", "integration-namespaces", "integration-report"]) {
+    expect(record?.needs).toContain(name);
+    expect(record?.if).toContain(
+      name === "integration"
+        ? "needs.integration.result == 'success'"
+        : `needs['${name}'].result == 'success'`,
+    );
+  }
+  expect(workflow.jobs["validate-windows-core"]?.if).toContain("needs.plan.outputs.full == 'true'");
 });

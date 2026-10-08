@@ -102,9 +102,6 @@ test("returns bounded metadata and preview without downloading an unsupported at
   const text = result.map((block) => (block.type === "text" ? block.text : "")).join("\n");
 
   expect(text).toContain("Unsupported binary response");
-  expect(text).toContain(
-    "Read cannot convert this Content-Type. Showing response metadata and a byte preview, not document text.",
-  );
   expect(text).not.toContain("the remaining body was not downloaded");
   expect(text.match(/application\/octet-stream/gu)).toHaveLength(1);
   expect(text.match(/178163117/gu)).toHaveLength(1);

@@ -75,7 +75,7 @@ for (const mode of ["standalone", "codemode"] as const) {
     {
       name: "unavailable.txt",
       final: "after\n",
-      summary: "No formatter is available for this file.",
+      summary: undefined,
       footer: undefined,
     },
   ])(
@@ -95,7 +95,7 @@ for (const mode of ["standalone", "codemode"] as const) {
         await mkdir(path.dirname(path.join(cwd, source)), { recursive: true });
         await writeFile(path.join(cwd, source), "before\n");
         const checks = `const result=await tools.write({path:${JSON.stringify(source)},content:"after\\n"});
-if(!result.includes(${JSON.stringify(fixture.summary)})) throw Error("Missing formatting outcome: "+result);
+${fixture.summary === undefined ? "" : `if(!result.includes(${JSON.stringify(fixture.summary)})) throw Error("Missing formatting outcome: "+result);`}
 if(result.includes("Formatting:")) throw Error("Duplicate raw formatting status: "+result);
 if(!result.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Missing saved final text: "+result);
 ${fixture.name.endsWith(".note") ? 'if(!result.includes("Extra check finished")) throw Error("Lost another handler status: "+result); if(((result.split("\\n---\\n")[0]||"").match(/formatted|formatting failed/gi)||[]).length!==1) throw Error("Repeated formatting report: "+result);' : ""}
@@ -134,14 +134,23 @@ text("Formatting checked.");`;
         expect(await readFile(path.join(cwd, source), "utf8")).toBe(fixture.final);
         if (mode === "standalone") {
           const result = getToolResultText(run, "formatted");
-          expect(result).toContain(fixture.summary);
+          if (fixture.summary !== undefined) {
+            expect(result).toContain(fixture.summary);
+            expect(result.split(fixture.summary)).toHaveLength(2);
+          }
           expect(result).not.toContain("Formatting:");
-          expect(result.split(fixture.summary)).toHaveLength(2);
           if (fixture.name.endsWith(".note")) {
             expect(result).toContain("Extra check finished");
             const receipt = result.split("\n---\n")[0] ?? "";
             expect(receipt.match(/formatted|formatting failed/gi)).toHaveLength(1);
           }
+        }
+        if (fixture.name === "unavailable.txt") {
+          await expect(
+            readFile(path.join(cwd, ".tmp/post-edit-demo/events.jsonl")),
+          ).rejects.toMatchObject({ code: "ENOENT" });
+          expect(run.tuiRenderedOutput).not.toContain("Extra check finished");
+          expect(run.tuiRenderedOutput).not.toContain("Formatted (fixture)");
         }
         if (fixture.footer !== undefined) expect(run.tuiRenderedOutput).toContain(fixture.footer);
         if (fixture.name === "unchanged.note")

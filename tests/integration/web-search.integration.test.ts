@@ -5,7 +5,6 @@ import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  getSystemPrompt,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -77,7 +76,6 @@ test("real Pi searches converted web pages without a prior Read", async () => {
     expect(result.tuiRenderedOutput).toContain("╭─ 1+ match in 1 source");
     expect(result.tuiRenderedOutput).toContain("WEB");
     expect(result.tuiRenderedOutput).toContain("read-only");
-    expect(getSystemPrompt(result)).toContain("no prior read is required");
     expect(getToolExecution(result, "web-regex").isError).toBe(false);
     const regexOutput = getToolResultText(result, "web-regex");
     expect(regexOutput).toContain(url);

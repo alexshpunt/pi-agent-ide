@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import selectors
+import shutil
 import signal
 import stat
 import subprocess
@@ -209,6 +210,30 @@ def perform(request):
         except FileNotFoundError:
             pass
         os.rmdir(directory)
+        return None
+    if operation == "realpath":
+        return os.path.realpath(path, strict=True)
+    if operation == "git-query":
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        return git_command(path, request["args"], environment).decode("utf8")
+    if operation == "delete-object":
+        # Policy and dialogs run on the controller; verify the same native object here.
+        with locked_directory(os.path.dirname(path)):
+            info = os.lstat(path)
+            if fingerprint(path, b"", info) != request["revision"]:
+                raise OperationError("DELETE_TARGET_CHANGED")
+            if stat.S_ISDIR(info.st_mode):
+                if not shutil.rmtree.avoids_symlink_attacks:
+                    raise OperationError("DELETE_UNSAFE_PLATFORM")
+                effect = "unknown"
+                shutil.rmtree(path)
+            elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+                effect = "unknown"
+                os.unlink(path)
+            else:
+                raise OperationError("INVALID_FILE_TYPE")
+            effect = "applied"
         return None
     if operation == "lstat":
         info = os.lstat(path)

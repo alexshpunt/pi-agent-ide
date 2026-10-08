@@ -17,6 +17,7 @@ export function isWholeFileInvocation(
     input.path.length === 0 ||
     input.path.startsWith("SEARCH#") ||
     input.path.startsWith("RESULT#") ||
+    (operation === "delete" && input.path.startsWith("symbol:")) ||
     (typeof input.target === "string" && input.target.startsWith("RESULT#"))
   )
     return false;
@@ -30,10 +31,14 @@ export async function executeWholeFileTool(
   operation: FileOperation,
   input: Readonly<Record<string, unknown>>,
   signal: AbortSignal | undefined,
-  context: Pick<ExtensionContext, "cwd">,
+  context: Pick<ExtensionContext, "cwd"> & {
+    readonly hasUI?: boolean;
+    readonly ui?: Pick<ExtensionContext["ui"], "confirm">;
+  },
   verifySource?: () => Promise<void>,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   let finalize: Awaited<ReturnType<TextEditorCore["prepareFilePostProcessing"]>> | undefined;
+  const ui = context.hasUI ? context.ui : undefined;
   const outcome = await core.enqueueFileOperation(
     async (): Promise<FileOperationResult> => {
       try {
@@ -55,7 +60,28 @@ export async function executeWholeFileTool(
       }
       if (typeof input.target === "string")
         finalize = await core.prepareFilePostProcessing(input.target, { cwd: context.cwd, signal });
-      return core.executeFileOperation(operation, input, context.cwd, signal);
+      return core.executeFileOperation(operation, input, context.cwd, signal, {
+        beforeDelete: (event) => core.beforeDelete(event),
+        ...(ui !== undefined && {
+          confirm: async (event, reason) =>
+            ui.confirm(
+              "Delete permanently?",
+              [
+                event.path,
+                event.resolvedPath === event.path
+                  ? undefined
+                  : `Resolved path: ${event.resolvedPath}`,
+                event.recursive
+                  ? "Remove directory and all contents recursively."
+                  : "Unlink symlink only; leave its target untouched.",
+                reason,
+              ]
+                .filter((line) => line !== undefined)
+                .join("\n"),
+              { signal },
+            ),
+        }),
+      });
     },
     signal,
     {

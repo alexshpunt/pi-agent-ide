@@ -61,10 +61,10 @@ test("converts BMP to PNG and reports the conversion", async () => {
     throw new Error("BMP fixture did not convert");
   }
 
-  expect(outcome.content[0]).toEqual({
-    type: "text",
-    text: "Read image [image/png]\n[Image converted from image/bmp to image/png.]",
-  });
+  const note = outcome.content[0];
+  if (note.type !== "text") throw new Error("Missing conversion metadata");
+  expect(note.text).toContain("image/bmp");
+  expect(note.text).toContain("image/png");
   expect(outcome.content[1]).toMatchObject({ type: "image", mimeType: "image/png" });
 });
 
@@ -104,7 +104,13 @@ test("reports resize hints for images outside Pi dimensions", async () => {
     throw new Error("Wide BMP fixture did not convert");
   }
 
-  expect(outcome.content[0].text).toContain("original 2001x1, displayed at 2000x1");
+  expect(outcome.content[0].text).toContain("2001x1");
+  expect(outcome.content[0].text).toContain("2000x1");
+  const image = outcome.content.find((block) => block.type === "image");
+  if (image?.type !== "image") throw new Error("Missing resized image");
+  const bytes = Buffer.from(image.data, "base64");
+  expect(bytes.readUInt32BE(16)).toBe(2000);
+  expect(bytes.readUInt32BE(20)).toBe(1);
 });
 
 function createBmp(width: number, height: number): Buffer {

@@ -614,12 +614,9 @@ describe("text mutation renderer", () => {
       expect(finalContent).toContain("loadSecondaryValue");
       expect(finalContent).toContain("formatted outside generated viewport");
 
-      expect(rendered).not.toContain(
-        "final file result is in the last successful tool call for that file",
-      );
-      expect(getToolResultText(result, "replace-first-viewport")).toContain(
-        "final file result is in the last successful tool call for that file",
-      );
+      const earlier = getToolResultText(result, "replace-first-viewport");
+      expect(earlier).not.toContain("formattedContext");
+      expect(rendered).not.toContain(earlier.trim());
       expect(getToolResultText(result, "replace-second-viewport")).toContain(
         "formatted outside generated viewport",
       );

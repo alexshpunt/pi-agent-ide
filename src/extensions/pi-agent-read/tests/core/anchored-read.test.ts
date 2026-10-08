@@ -102,10 +102,11 @@ test("names the original source and absolute next line after an anchored window"
     const result = await executeRead(read, "notes.txt#l5", { limit: 2 });
     expect(result.details.startLine).toBe(5);
     expect(result.details.endLine).toBe(6);
-    expect(result.content[0]).toEqual({
-      type: "text",
-      text: 'l5\nl6\n\n[4 more lines in source. Read "notes.txt" with offset=7 to continue.]',
-    });
+    const block = result.content[0];
+    if (block?.type !== "text") throw new Error("Missing continuation output");
+    expect(block.text).toBe(`l5\nl6${result.details.outputNotice}`);
+    expect(result.details.outputNotice).toContain('"notes.txt"');
+    expect(result.details.outputNotice).toContain("offset=7");
     const next = await executeRead(read, "notes.txt", { offset: 7 });
     expect(next.content).toEqual([{ type: "text", text: "l7\nl8\nl9\nl10" }]);
   } finally {
@@ -125,9 +126,12 @@ test("automatic caps name the original source rather than an anchor-relative con
   try {
     const result = await read.execute({ path: "notes.txt#l5" }, { cwd: "/workspace" });
     const block = result.content[0];
-    expect(block?.type === "text" && block.text).toContain(
-      `[Showing lines 5-${DEFAULT_MAX_LINES + 4} of ${DEFAULT_MAX_LINES + 10} (${DEFAULT_MAX_LINES}-line limit). Read "notes.txt" with offset=${DEFAULT_MAX_LINES + 5} to continue.]`,
-    );
+    expect(block?.type === "text" && block.text).toContain('"notes.txt"');
+    expect(block?.type === "text" && block.text).toContain(`offset=${DEFAULT_MAX_LINES + 5}`);
+    expect(result.details.truncation).toMatchObject({
+      outputLines: DEFAULT_MAX_LINES,
+      truncatedBy: "lines",
+    });
     const next = await executeRead(read, "notes.txt", { offset: DEFAULT_MAX_LINES + 5 });
     const nextBlock = next.content[0];
     expect(

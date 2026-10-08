@@ -8,6 +8,30 @@ import {
   type TextDocument,
 } from "./text-editor.js";
 
+import type { BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";
+export type { BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";
+
+/** A policy over a whole file, directory, or symlink before removal. */
+export interface BeforeDeleteHook {
+  readonly id: string;
+  run(event: BeforeDeleteEvent): FileHookDecision | Promise<FileHookDecision>;
+}
+
+/** Register a fail-closed deletion policy; allowing never bypasses built-in safety or approval. */
+export function connectBeforeDeleteHook(
+  pi: ExtensionAPI,
+  hook: BeforeDeleteHook,
+): void | Promise<void> {
+  assertHook(hook);
+  return connectTextEditorPlugin(pi, {
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: `hook/before-delete/${hook.id}`,
+    setup(api) {
+      api.addDeleteGuard({ id: hook.id, guard: (event) => hook.run(event) });
+    },
+  });
+}
 /** The decision returned by a file policy hook. */
 export type FileHookDecision =
   | { readonly decision: "allow" }

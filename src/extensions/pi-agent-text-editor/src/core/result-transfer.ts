@@ -4,7 +4,7 @@ import type {
   TextMutationContext,
   TextMutationEdit,
 } from "#src/api/mutation-tool.js";
-import type { TextChange } from "./text-change-engine.js";
+import { TextChangeDocument, type TextChange } from "./text-change-engine.js";
 import {
   anchorSpanRange,
   insertionAfterAnchor,
@@ -26,6 +26,8 @@ interface TransferSpan {
 interface PreparedTransfer {
   readonly input: Readonly<Record<string, unknown>>;
   readonly empty: boolean;
+  /** Verified unchanged destination points; no editor operation is needed. */
+  readonly noOpTarget?: string;
   readonly verifyFileSource?: () => Promise<void>;
   readonly mutate?: (context: TextMutationContext) => Promise<TextMutation>;
 }
@@ -74,6 +76,28 @@ export async function prepareResultTransfer(
       "Transfer source and destination selection counts must match; no broadcast or concatenation.",
     );
   const empty = source?.targets.length === 0 || destination?.targets.length === 0;
+  if (operation === "move" && !empty && source !== undefined && destination !== undefined) {
+    const spans = (selected: ResolvedResultTargets): TransferSpan[] =>
+      selected.targets.map((target) => {
+        const range = target.ranges[0];
+        if (range === undefined) throw new Error("Transfer selection has no range.");
+        return {
+          source: target.source,
+          ...new TextChangeDocument(target.expectedContent).range(
+            range.start.lineNumber,
+            range.start.column,
+            range.end.lineNumber,
+            range.end.column,
+          ),
+        };
+      });
+    const sources = spans(source);
+    const destinations = spans(destination);
+    if ([...sources, ...destinations].every((span) => span.from === span.to)) {
+      assertMoveTargets(sources, destinations);
+      return { input, empty: false, noOpTarget: store.register(destination.targets, cwd) };
+    }
+  }
   return {
     input,
     empty,
@@ -157,14 +181,10 @@ export async function prepareResultTransfer(
         }
       }
       if (operation === "move") {
-        for (const sourceSpan of sources)
-          for (const transfer of planned)
-            if (
-              sourceSpan.source === transfer.target.source &&
-              sourceSpan.from <= transfer.target.to &&
-              transfer.target.from <= sourceSpan.to
-            )
-              throw new Error("Move target must not overlap or touch any source range.");
+        assertMoveTargets(
+          sources,
+          planned.map((transfer) => transfer.target),
+        );
         for (const span of sources)
           append(span, { from: span.from, to: span.to, insert: "" }, false);
       }
@@ -177,4 +197,14 @@ export async function prepareResultTransfer(
       return { edits };
     },
   };
+}
+
+function assertMoveTargets(
+  sources: readonly TransferSpan[],
+  destinations: readonly TransferSpan[],
+): void {
+  for (const source of sources)
+    for (const target of destinations)
+      if (source.source === target.source && source.from <= target.to && target.from <= source.to)
+        throw new Error("Move target must not overlap or touch any source range.");
 }

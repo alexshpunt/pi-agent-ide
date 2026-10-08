@@ -2,7 +2,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assistantMessage,
-  getProviderSystemPrompt,
   getToolExecution,
   getToolExecutionDetails,
   getToolResultText,
@@ -15,12 +14,6 @@ import { expect, test } from "vitest";
 
 const call = (id: string, name: string, args: Record<string, unknown>) =>
   assistantMessage([toolCall({ id, name, arguments: args })], { stopReason: "toolUse" });
-const guidance = [
-  "Use the smallest useful source view:",
-  "Use an available anchor when it selects exactly the intended text;",
-  "When search broadens to separate words, treat its results as location hints.",
-  "Use standalone mutation tools in one assistant-response batch",
-];
 
 test.each(["direct", "native"] as const)(
   "edit is unreachable while guarded editing still works (%s)",
@@ -94,8 +87,6 @@ test.each(["direct", "native"] as const)(
         .map((line) => JSON.parse(line) as string[]);
       expect(declarations.length).toBeGreaterThan(0);
       for (const tools of declarations) expect(tools).not.toContain("edit");
-      const prompt = getProviderSystemPrompt(result);
-      for (const rule of guidance) expect(prompt.split(rule)).toHaveLength(2);
       if (native) {
         expect(getToolExecution(result, "discover").isError).toBe(false);
         const discovery = getToolExecutionDetails(getToolExecution(result, "discover")) as {

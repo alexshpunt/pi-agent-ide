@@ -168,9 +168,8 @@ test("continuation hints name the original source with an absolute offset", asyn
     const firstDetails = getToolResultMessage<ReadResultDetails>(first, "first").details;
     expect(firstDetails.startLine).toBe(2);
     expect(typeof firstDetails.source).toBe("string");
-    expect(getToolResultText(first, "first")).toContain(
-      `Read ${JSON.stringify(firstDetails.source)} with offset=3 to continue.`,
-    );
+    expect(getToolResultText(first, "first")).toContain(JSON.stringify(firstDetails.source));
+    expect(getToolResultText(first, "first")).toContain("offset=3");
 
     const second = await runReadCalls({
       cwd: directory,
