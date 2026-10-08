@@ -1,0 +1,3494 @@
+{
+  "task": "LPT-655",
+  "interpretation": "Historical observations across separately frozen source digests. These are not a single final-revision run or a model reliability score. Original statuses are unchanged.",
+  "archive": {
+    "file": "lpt-655-capability-evidence.tar.gz",
+    "sha256": "8b5e03f4683d0700a58522430f5f04997e1b1f4a79b7498b191d7f36a064352d",
+    "location": "Local archive outside the worktree; exact path is recorded in the Linear Workpad."
+  },
+  "declared": {
+    "cases": [
+      {
+        "id": "read-text",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["read.text", "read.directory", "read.raw", "read.paging"]
+      },
+      {
+        "id": "read-jq",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["read.jq"]
+      },
+      {
+        "id": "read-search-replace",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["compose.read-search", "compose.search-replace"]
+      },
+      {
+        "id": "search-anchor-insert",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["search.text", "compose.search-insert", "edit.insert"]
+      },
+      {
+        "id": "search-query",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["search.boolean", "search.regex", "search.files", "search.flags"]
+      },
+      {
+        "id": "read-anchor-replace",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["read.anchors", "edit.replace-range"]
+      },
+      {
+        "id": "write-read",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["edit.write", "compose.write-read"]
+      },
+      {
+        "id": "replace-read-search",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"]
+      },
+      {
+        "id": "insert-before",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["edit.insert-before", "edit.insert-spacing"]
+      },
+      {
+        "id": "delete-selection",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["edit.delete-selection", "compose.search-delete"]
+      },
+      {
+        "id": "file-copy-move-delete",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["edit.copy-file", "edit.move-file", "edit.delete-file"]
+      },
+      {
+        "id": "selection-copy-move",
+        "modes": ["direct", "codemode"],
+        "capabilities": [
+          "edit.copy-selection",
+          "edit.move-selection",
+          "compose.select-copy",
+          "compose.select-move"
+        ]
+      },
+      {
+        "id": "paired-copy",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["compose.paired-sources-targets"]
+      },
+      {
+        "id": "read-diff",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["read.diff", "compose.read-diff"]
+      },
+      {
+        "id": "undo-last",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["edit.undo-last", "compose.mutation-undo"]
+      },
+      {
+        "id": "git-stage-unstage-undo",
+        "modes": ["direct", "codemode"],
+        "capabilities": [
+          "git.changes",
+          "git.stage",
+          "git.unstage",
+          "git.undo-change",
+          "discovery.git"
+        ]
+      },
+      {
+        "id": "select-range",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.range", "compose.read-select", "compose.select-replace"]
+      },
+      {
+        "id": "select-lines",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.lines", "compose.read-select", "compose.select-replace"]
+      },
+      {
+        "id": "select-between",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.between", "compose.read-select", "compose.select-replace"]
+      },
+      {
+        "id": "select-sliceText",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.sliceText", "compose.read-select", "compose.select-replace"]
+      },
+      {
+        "id": "select-trim",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.trim", "compose.read-select", "compose.select-replace"]
+      },
+      {
+        "id": "select-split",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.split", "compose.read-select", "compose.select-replace"]
+      },
+      {
+        "id": "select-columns",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.columns", "compose.read-select", "compose.select-replace"]
+      },
+      {
+        "id": "select-linesOf",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.linesOf"]
+      },
+      {
+        "id": "select-position",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.position"]
+      },
+      {
+        "id": "select-within",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.within"]
+      },
+      {
+        "id": "select-intersection",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.intersection"]
+      },
+      {
+        "id": "select-difference",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.difference"]
+      },
+      {
+        "id": "select-merge",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.merge"]
+      },
+      {
+        "id": "select-object-part",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.object", "select.part", "read.ast", "search.ast"]
+      },
+      {
+        "id": "read-ast-boundary",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["read.ast-view", "edit.scope-anchors"]
+      },
+      {
+        "id": "select-navigate",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.navigate"]
+      },
+      {
+        "id": "select-elementExtent",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["select.elementExtent"]
+      },
+      {
+        "id": "codemode-store",
+        "modes": ["codemode"],
+        "capabilities": ["codemode.store-load", "compose.cross-call"]
+      },
+      {
+        "id": "stale-recovery",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["compose.stale-recovery", "read.reference-recovery"]
+      },
+      {
+        "id": "shell-roundtrip",
+        "modes": ["direct", "codemode"],
+        "capabilities": [
+          "shell.execute",
+          "shell.read",
+          "shell.search",
+          "shell.input",
+          "shell.keys",
+          "shell.delete",
+          "process.discovery",
+          "process.read"
+        ]
+      },
+      {
+        "id": "shell-screen",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["shell.image", "shell.sequence"]
+      },
+      {
+        "id": "debug-roundtrip",
+        "modes": ["direct", "codemode"],
+        "capabilities": [
+          "debug.create",
+          "debug.read",
+          "debug.breakpoints",
+          "debug.start",
+          "debug.evaluate",
+          "debug.delete",
+          "discovery.debug"
+        ]
+      },
+      {
+        "id": "debug-controls",
+        "modes": ["direct", "codemode"],
+        "capabilities": [
+          "debug.step-into",
+          "debug.step-over",
+          "debug.step-out",
+          "debug.continue",
+          "debug.delete-breakpoint",
+          "read.breakpoints"
+        ]
+      },
+      {
+        "id": "lsp-read",
+        "modes": ["direct", "codemode"],
+        "capabilities": [
+          "lsp.symbols",
+          "lsp.references",
+          "lsp.graph",
+          "lsp.diagnostics",
+          "read.diagnostics-view"
+        ]
+      },
+      {
+        "id": "lsp-rename",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["lsp.rename", "compose.symbol-read-rename"]
+      },
+      {
+        "id": "read-media",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["read.image", "read.pdf"]
+      },
+      {
+        "id": "web-read-search",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["web.read", "web.search", "web.image", "web.sequence"]
+      },
+      {
+        "id": "vision-display-window",
+        "modes": ["direct", "codemode"],
+        "capabilities": ["vision.display", "vision.window", "vision.sequence"]
+      }
+    ],
+    "matrix": [
+      {
+        "id": "read.text",
+        "cases": ["read-text"]
+      },
+      {
+        "id": "read.directory",
+        "cases": ["read-text"]
+      },
+      {
+        "id": "read.raw",
+        "cases": ["read-text"]
+      },
+      {
+        "id": "read.paging",
+        "cases": ["read-text"]
+      },
+      {
+        "id": "read.jq",
+        "cases": ["read-jq"]
+      },
+      {
+        "id": "compose.read-search",
+        "cases": ["read-search-replace"]
+      },
+      {
+        "id": "compose.search-replace",
+        "cases": ["read-search-replace"]
+      },
+      {
+        "id": "search.text",
+        "cases": ["search-anchor-insert"]
+      },
+      {
+        "id": "compose.search-insert",
+        "cases": ["search-anchor-insert"]
+      },
+      {
+        "id": "edit.insert",
+        "cases": ["search-anchor-insert"]
+      },
+      {
+        "id": "search.boolean",
+        "cases": ["search-query"]
+      },
+      {
+        "id": "search.regex",
+        "cases": ["search-query"]
+      },
+      {
+        "id": "search.files",
+        "cases": ["search-query"]
+      },
+      {
+        "id": "search.flags",
+        "cases": ["search-query"]
+      },
+      {
+        "id": "read.anchors",
+        "cases": ["read-anchor-replace"]
+      },
+      {
+        "id": "edit.replace-range",
+        "cases": ["read-anchor-replace"]
+      },
+      {
+        "id": "edit.write",
+        "cases": ["write-read"]
+      },
+      {
+        "id": "compose.write-read",
+        "cases": ["write-read"]
+      },
+      {
+        "id": "edit.replace-exact",
+        "cases": ["replace-read-search"]
+      },
+      {
+        "id": "compose.mutation-read",
+        "cases": ["replace-read-search"]
+      },
+      {
+        "id": "compose.mutation-search",
+        "cases": ["replace-read-search"]
+      },
+      {
+        "id": "edit.insert-before",
+        "cases": ["insert-before"]
+      },
+      {
+        "id": "edit.insert-spacing",
+        "cases": ["insert-before"]
+      },
+      {
+        "id": "edit.delete-selection",
+        "cases": ["delete-selection"]
+      },
+      {
+        "id": "compose.search-delete",
+        "cases": ["delete-selection"]
+      },
+      {
+        "id": "edit.copy-file",
+        "cases": ["file-copy-move-delete"]
+      },
+      {
+        "id": "edit.move-file",
+        "cases": ["file-copy-move-delete"]
+      },
+      {
+        "id": "edit.delete-file",
+        "cases": ["file-copy-move-delete"]
+      },
+      {
+        "id": "edit.copy-selection",
+        "cases": ["selection-copy-move"]
+      },
+      {
+        "id": "edit.move-selection",
+        "cases": ["selection-copy-move"]
+      },
+      {
+        "id": "compose.select-copy",
+        "cases": ["selection-copy-move"]
+      },
+      {
+        "id": "compose.select-move",
+        "cases": ["selection-copy-move"]
+      },
+      {
+        "id": "compose.paired-sources-targets",
+        "cases": ["paired-copy"]
+      },
+      {
+        "id": "read.diff",
+        "cases": ["read-diff"]
+      },
+      {
+        "id": "compose.read-diff",
+        "cases": ["read-diff"]
+      },
+      {
+        "id": "edit.undo-last",
+        "cases": ["undo-last"]
+      },
+      {
+        "id": "compose.mutation-undo",
+        "cases": ["undo-last"]
+      },
+      {
+        "id": "git.changes",
+        "cases": ["git-stage-unstage-undo"]
+      },
+      {
+        "id": "git.stage",
+        "cases": ["git-stage-unstage-undo"]
+      },
+      {
+        "id": "git.unstage",
+        "cases": ["git-stage-unstage-undo"]
+      },
+      {
+        "id": "git.undo-change",
+        "cases": ["git-stage-unstage-undo"]
+      },
+      {
+        "id": "discovery.git",
+        "cases": ["git-stage-unstage-undo"]
+      },
+      {
+        "id": "compose.read-select",
+        "cases": [
+          "select-range",
+          "select-lines",
+          "select-between",
+          "select-sliceText",
+          "select-trim",
+          "select-split",
+          "select-columns"
+        ]
+      },
+      {
+        "id": "compose.select-replace",
+        "cases": [
+          "select-range",
+          "select-lines",
+          "select-between",
+          "select-sliceText",
+          "select-trim",
+          "select-split",
+          "select-columns"
+        ]
+      },
+      {
+        "id": "select.object",
+        "cases": ["select-object-part"]
+      },
+      {
+        "id": "select.part",
+        "cases": ["select-object-part"]
+      },
+      {
+        "id": "read.ast",
+        "cases": ["select-object-part"]
+      },
+      {
+        "id": "search.ast",
+        "cases": ["select-object-part"]
+      },
+      {
+        "id": "read.ast-view",
+        "cases": ["read-ast-boundary"]
+      },
+      {
+        "id": "edit.scope-anchors",
+        "cases": ["read-ast-boundary"]
+      },
+      {
+        "id": "select.navigate",
+        "cases": ["select-navigate"]
+      },
+      {
+        "id": "select.elementExtent",
+        "cases": ["select-elementExtent"]
+      },
+      {
+        "id": "codemode.store-load",
+        "cases": ["codemode-store"]
+      },
+      {
+        "id": "compose.cross-call",
+        "cases": ["codemode-store"]
+      },
+      {
+        "id": "compose.stale-recovery",
+        "cases": ["stale-recovery"]
+      },
+      {
+        "id": "read.reference-recovery",
+        "cases": ["stale-recovery"]
+      },
+      {
+        "id": "shell.execute",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "shell.read",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "shell.search",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "shell.input",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "shell.keys",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "shell.delete",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "process.discovery",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "process.read",
+        "cases": ["shell-roundtrip"]
+      },
+      {
+        "id": "shell.image",
+        "cases": ["shell-screen"]
+      },
+      {
+        "id": "shell.sequence",
+        "cases": ["shell-screen"]
+      },
+      {
+        "id": "debug.create",
+        "cases": ["debug-roundtrip"]
+      },
+      {
+        "id": "debug.read",
+        "cases": ["debug-roundtrip"]
+      },
+      {
+        "id": "debug.breakpoints",
+        "cases": ["debug-roundtrip"]
+      },
+      {
+        "id": "debug.start",
+        "cases": ["debug-roundtrip"]
+      },
+      {
+        "id": "debug.evaluate",
+        "cases": ["debug-roundtrip"]
+      },
+      {
+        "id": "debug.delete",
+        "cases": ["debug-roundtrip"]
+      },
+      {
+        "id": "discovery.debug",
+        "cases": ["debug-roundtrip"]
+      },
+      {
+        "id": "debug.step-into",
+        "cases": ["debug-controls"]
+      },
+      {
+        "id": "debug.step-over",
+        "cases": ["debug-controls"]
+      },
+      {
+        "id": "debug.step-out",
+        "cases": ["debug-controls"]
+      },
+      {
+        "id": "debug.continue",
+        "cases": ["debug-controls"]
+      },
+      {
+        "id": "debug.delete-breakpoint",
+        "cases": ["debug-controls"]
+      },
+      {
+        "id": "read.breakpoints",
+        "cases": ["debug-controls"]
+      },
+      {
+        "id": "lsp.symbols",
+        "cases": ["lsp-read"]
+      },
+      {
+        "id": "lsp.references",
+        "cases": ["lsp-read"]
+      },
+      {
+        "id": "lsp.graph",
+        "cases": ["lsp-read"]
+      },
+      {
+        "id": "lsp.diagnostics",
+        "cases": ["lsp-read"]
+      },
+      {
+        "id": "read.diagnostics-view",
+        "cases": ["lsp-read"]
+      },
+      {
+        "id": "lsp.rename",
+        "cases": ["lsp-rename"]
+      },
+      {
+        "id": "compose.symbol-read-rename",
+        "cases": ["lsp-rename"]
+      },
+      {
+        "id": "read.image",
+        "cases": ["read-media"]
+      },
+      {
+        "id": "read.pdf",
+        "cases": ["read-media"]
+      },
+      {
+        "id": "web.read",
+        "cases": ["web-read-search"]
+      },
+      {
+        "id": "web.search",
+        "cases": ["web-read-search"]
+      },
+      {
+        "id": "web.image",
+        "cases": ["web-read-search"]
+      },
+      {
+        "id": "web.sequence",
+        "cases": ["web-read-search"]
+      },
+      {
+        "id": "vision.display",
+        "cases": ["vision-display-window"]
+      },
+      {
+        "id": "vision.window",
+        "cases": ["vision-display-window"]
+      },
+      {
+        "id": "vision.sequence",
+        "cases": ["vision-display-window"]
+      },
+      {
+        "id": "select.range",
+        "cases": ["select-range"]
+      },
+      {
+        "id": "select.lines",
+        "cases": ["select-lines"]
+      },
+      {
+        "id": "select.between",
+        "cases": ["select-between"]
+      },
+      {
+        "id": "select.sliceText",
+        "cases": ["select-sliceText"]
+      },
+      {
+        "id": "select.trim",
+        "cases": ["select-trim"]
+      },
+      {
+        "id": "select.split",
+        "cases": ["select-split"]
+      },
+      {
+        "id": "select.columns",
+        "cases": ["select-columns"]
+      },
+      {
+        "id": "select.linesOf",
+        "cases": ["select-linesOf"]
+      },
+      {
+        "id": "select.position",
+        "cases": ["select-position"]
+      },
+      {
+        "id": "select.within",
+        "cases": ["select-within"]
+      },
+      {
+        "id": "select.intersection",
+        "cases": ["select-intersection"]
+      },
+      {
+        "id": "select.difference",
+        "cases": ["select-difference"]
+      },
+      {
+        "id": "select.merge",
+        "cases": ["select-merge"]
+      }
+    ]
+  },
+  "runs": [
+    {
+      "id": "2026-10-08T07-49-12.851Z-e1fa6c2b",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T07:49:12.854Z",
+      "cases": ["read-search-replace"],
+      "attempts": [
+        {
+          "case": "read-search-replace",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "infra_error",
+          "reasons": ["No final agent_settled event"],
+          "evidence": "luna-6-low--read-search-replace--direct--1"
+        },
+        {
+          "case": "read-search-replace",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "infra_error",
+          "reasons": ["No final agent_settled event"],
+          "evidence": "luna-6-low--read-search-replace--codemode--1"
+        }
+      ],
+      "timeoutMs": 90000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "acdd33db329412d67c6915376c964a17ceccb4dc29507649cb182f651d25ac22",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T07-52-18.365Z-9fc379d2",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T07:52:18.367Z",
+      "cases": ["read-search-replace"],
+      "attempts": [
+        {
+          "case": "read-search-replace",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-search-replace--direct--1"
+        },
+        {
+          "case": "read-search-replace",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-search-replace--codemode--1"
+        }
+      ],
+      "timeoutMs": 90000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "a1e9133d4f2bd400abb0c8901e37e275de98c45f15ae9ae7e48f19766a871590",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T08-00-13.105Z-56070f3b",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T08:00:13.107Z",
+      "cases": [
+        "read-text",
+        "read-jq",
+        "read-search-replace",
+        "search-anchor-insert",
+        "search-query",
+        "read-anchor-replace",
+        "write-read",
+        "replace-read-search",
+        "insert-before",
+        "delete-selection",
+        "file-copy-move-delete",
+        "selection-copy-move",
+        "paired-copy",
+        "read-diff",
+        "undo-last",
+        "git-stage-unstage-undo",
+        "select-range",
+        "select-lines",
+        "select-between",
+        "select-sliceText",
+        "select-trim",
+        "select-split",
+        "select-columns",
+        "select-linesOf",
+        "select-position",
+        "select-within",
+        "select-intersection",
+        "select-difference",
+        "select-merge",
+        "select-object-part",
+        "select-navigate",
+        "select-elementExtent",
+        "codemode-store",
+        "stale-recovery",
+        "shell-roundtrip",
+        "shell-screen",
+        "debug-roundtrip",
+        "lsp-read",
+        "lsp-rename",
+        "read-media",
+        "web-read-search",
+        "vision-display-window"
+      ],
+      "attempts": [
+        {
+          "case": "read-text",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--read-text--direct--1"
+        },
+        {
+          "case": "read-text",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-text--codemode--1"
+        },
+        {
+          "case": "read-jq",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-jq--direct--1"
+        },
+        {
+          "case": "read-jq",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-jq--codemode--1"
+        },
+        {
+          "case": "read-search-replace",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-search-replace--direct--1"
+        },
+        {
+          "case": "read-search-replace",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-search-replace--codemode--1"
+        },
+        {
+          "case": "search-anchor-insert",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--search-anchor-insert--direct--1"
+        },
+        {
+          "case": "search-anchor-insert",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--search-anchor-insert--codemode--1"
+        },
+        {
+          "case": "search-query",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--search-query--direct--1"
+        },
+        {
+          "case": "search-query",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--search-query--codemode--1"
+        },
+        {
+          "case": "read-anchor-replace",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-anchor-replace--direct--1"
+        },
+        {
+          "case": "read-anchor-replace",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: task.txt"
+          ],
+          "evidence": "luna-6-low--read-anchor-replace--codemode--1"
+        },
+        {
+          "case": "write-read",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--write-read--direct--1"
+        },
+        {
+          "case": "write-read",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--write-read--codemode--1"
+        },
+        {
+          "case": "replace-read-search",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--replace-read-search--direct--1"
+        },
+        {
+          "case": "replace-read-search",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--replace-read-search--codemode--1"
+        },
+        {
+          "case": "insert-before",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--insert-before--direct--1"
+        },
+        {
+          "case": "insert-before",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--insert-before--codemode--1"
+        },
+        {
+          "case": "delete-selection",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--delete-selection--direct--1"
+        },
+        {
+          "case": "delete-selection",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--delete-selection--codemode--1"
+        },
+        {
+          "case": "file-copy-move-delete",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--file-copy-move-delete--direct--1"
+        },
+        {
+          "case": "file-copy-move-delete",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: moved.txt"
+          ],
+          "evidence": "luna-6-low--file-copy-move-delete--codemode--1"
+        },
+        {
+          "case": "selection-copy-move",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: dest.txt"
+          ],
+          "evidence": "luna-6-low--selection-copy-move--direct--1"
+        },
+        {
+          "case": "selection-copy-move",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: dest.txt"
+          ],
+          "evidence": "luna-6-low--selection-copy-move--codemode--1"
+        },
+        {
+          "case": "paired-copy",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--paired-copy--direct--1"
+        },
+        {
+          "case": "paired-copy",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--paired-copy--codemode--1"
+        },
+        {
+          "case": "read-diff",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-diff--direct--1"
+        },
+        {
+          "case": "read-diff",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-diff--codemode--1"
+        },
+        {
+          "case": "undo-last",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--undo-last--direct--1"
+        },
+        {
+          "case": "undo-last",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--undo-last--codemode--1"
+        },
+        {
+          "case": "git-stage-unstage-undo",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--git-stage-unstage-undo--direct--1"
+        },
+        {
+          "case": "git-stage-unstage-undo",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--git-stage-unstage-undo--codemode--1"
+        },
+        {
+          "case": "select-range",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-range--direct--1"
+        },
+        {
+          "case": "select-range",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-range--codemode--1"
+        },
+        {
+          "case": "select-lines",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "outcome_failed",
+          "reasons": ["Unexpected final bytes: task.txt"],
+          "evidence": "luna-6-low--select-lines--direct--1"
+        },
+        {
+          "case": "select-lines",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "outcome_failed",
+          "reasons": ["Unexpected final bytes: task.txt"],
+          "evidence": "luna-6-low--select-lines--codemode--1"
+        },
+        {
+          "case": "select-between",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-between--direct--1"
+        },
+        {
+          "case": "select-between",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-between--codemode--1"
+        },
+        {
+          "case": "select-sliceText",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-sliceText--direct--1"
+        },
+        {
+          "case": "select-sliceText",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-sliceText--codemode--1"
+        },
+        {
+          "case": "select-trim",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-trim--direct--1"
+        },
+        {
+          "case": "select-trim",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-trim--codemode--1"
+        },
+        {
+          "case": "select-split",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-split--direct--1"
+        },
+        {
+          "case": "select-split",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-split--codemode--1"
+        },
+        {
+          "case": "select-columns",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-columns--direct--1"
+        },
+        {
+          "case": "select-columns",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-columns--codemode--1"
+        },
+        {
+          "case": "select-linesOf",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: task.txt"
+          ],
+          "evidence": "luna-6-low--select-linesOf--direct--1"
+        },
+        {
+          "case": "select-linesOf",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "outcome_failed",
+          "reasons": ["Unexpected final bytes: task.txt"],
+          "evidence": "luna-6-low--select-linesOf--codemode--1"
+        },
+        {
+          "case": "select-position",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-position--direct--1"
+        },
+        {
+          "case": "select-position",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-position--codemode--1"
+        },
+        {
+          "case": "select-within",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-within--direct--1"
+        },
+        {
+          "case": "select-within",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-within--codemode--1"
+        },
+        {
+          "case": "select-intersection",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-intersection--direct--1"
+        },
+        {
+          "case": "select-intersection",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-intersection--codemode--1"
+        },
+        {
+          "case": "select-difference",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-difference--direct--1"
+        },
+        {
+          "case": "select-difference",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-difference--codemode--1"
+        },
+        {
+          "case": "select-merge",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-merge--direct--1"
+        },
+        {
+          "case": "select-merge",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-merge--codemode--1"
+        },
+        {
+          "case": "select-object-part",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--select-object-part--direct--1"
+        },
+        {
+          "case": "select-object-part",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-object-part--codemode--1"
+        },
+        {
+          "case": "select-navigate",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--select-navigate--direct--1"
+        },
+        {
+          "case": "select-navigate",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--select-navigate--codemode--1"
+        },
+        {
+          "case": "select-elementExtent",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--select-elementExtent--direct--1"
+        },
+        {
+          "case": "select-elementExtent",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-elementExtent--codemode--1"
+        },
+        {
+          "case": "codemode-store",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--codemode-store--codemode--1"
+        },
+        {
+          "case": "stale-recovery",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--stale-recovery--direct--1"
+        },
+        {
+          "case": "stale-recovery",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: task.txt"
+          ],
+          "evidence": "luna-6-low--stale-recovery--codemode--1"
+        },
+        {
+          "case": "shell-roundtrip",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--shell-roundtrip--direct--1"
+        },
+        {
+          "case": "shell-roundtrip",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--shell-roundtrip--codemode--1"
+        },
+        {
+          "case": "shell-screen",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--shell-screen--direct--1"
+        },
+        {
+          "case": "shell-screen",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--shell-screen--codemode--1"
+        },
+        {
+          "case": "debug-roundtrip",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "unavailable",
+          "reasons": [
+            "Missing prerequisite: python3 -c 'import debugpy'",
+            "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'debugpy'\n"
+          ],
+          "evidence": "luna-6-low--debug-roundtrip--direct--1"
+        },
+        {
+          "case": "debug-roundtrip",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "unavailable",
+          "reasons": [
+            "Missing prerequisite: python3 -c 'import debugpy'",
+            "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'debugpy'\n"
+          ],
+          "evidence": "luna-6-low--debug-roundtrip--codemode--1"
+        },
+        {
+          "case": "lsp-read",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--lsp-read--direct--1"
+        },
+        {
+          "case": "lsp-read",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--lsp-read--codemode--1"
+        },
+        {
+          "case": "lsp-rename",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--lsp-rename--direct--1"
+        },
+        {
+          "case": "lsp-rename",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: task.ts"
+          ],
+          "evidence": "luna-6-low--lsp-rename--codemode--1"
+        },
+        {
+          "case": "read-media",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-media--direct--1"
+        },
+        {
+          "case": "read-media",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--read-media--codemode--1"
+        },
+        {
+          "case": "web-read-search",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--web-read-search--direct--1"
+        },
+        {
+          "case": "web-read-search",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--web-read-search--codemode--1"
+        },
+        {
+          "case": "vision-display-window",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "infra_error",
+          "reasons": ["Error: Unknown option: --pi-agent-ide-vision-windows\n"],
+          "evidence": "luna-6-low--vision-display-window--direct--1"
+        },
+        {
+          "case": "vision-display-window",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "infra_error",
+          "reasons": ["Error: Unknown option: --pi-agent-ide-vision-windows\n"],
+          "evidence": "luna-6-low--vision-display-window--codemode--1"
+        }
+      ],
+      "timeoutMs": 120000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "965605a3a3a70393e21b84290d84a66c6ae0116c2d60cc5e72d1781c772fdeb7",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T08-10-13.316Z-71d4aac5",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T08:10:13.317Z",
+      "cases": ["read-text", "search-anchor-insert", "search-query", "debug-roundtrip"],
+      "attempts": [
+        {
+          "case": "read-text",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-text--direct--1"
+        },
+        {
+          "case": "read-text",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-text--codemode--1"
+        },
+        {
+          "case": "search-anchor-insert",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--search-anchor-insert--direct--1"
+        },
+        {
+          "case": "search-anchor-insert",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--search-anchor-insert--codemode--1"
+        },
+        {
+          "case": "search-query",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--search-query--direct--1"
+        },
+        {
+          "case": "search-query",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--search-query--codemode--1"
+        },
+        {
+          "case": "debug-roundtrip",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--debug-roundtrip--direct--1"
+        },
+        {
+          "case": "debug-roundtrip",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--debug-roundtrip--codemode--1"
+        }
+      ],
+      "timeoutMs": 150000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "a4d06df31987e3627a85fb71d3b3533639f5f3a957ed22fe89a0700884d18805",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T08-17-03.182Z-00db6fd0",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T08:17:03.184Z",
+      "cases": [
+        "search-anchor-insert",
+        "search-query",
+        "read-anchor-replace",
+        "replace-read-search",
+        "insert-before",
+        "delete-selection",
+        "file-copy-move-delete",
+        "selection-copy-move",
+        "debug-controls"
+      ],
+      "attempts": [
+        {
+          "case": "search-anchor-insert",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--search-anchor-insert--direct--1"
+        },
+        {
+          "case": "search-anchor-insert",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--search-anchor-insert--codemode--1"
+        },
+        {
+          "case": "search-query",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--search-query--direct--1"
+        },
+        {
+          "case": "search-query",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--search-query--codemode--1"
+        },
+        {
+          "case": "read-anchor-replace",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-anchor-replace--direct--1"
+        },
+        {
+          "case": "read-anchor-replace",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-anchor-replace--codemode--1"
+        },
+        {
+          "case": "replace-read-search",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--replace-read-search--direct--1"
+        },
+        {
+          "case": "replace-read-search",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--replace-read-search--codemode--1"
+        },
+        {
+          "case": "insert-before",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--insert-before--direct--1"
+        },
+        {
+          "case": "insert-before",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--insert-before--codemode--1"
+        },
+        {
+          "case": "delete-selection",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--delete-selection--direct--1"
+        },
+        {
+          "case": "delete-selection",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--delete-selection--codemode--1"
+        },
+        {
+          "case": "file-copy-move-delete",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--file-copy-move-delete--direct--1"
+        },
+        {
+          "case": "file-copy-move-delete",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--file-copy-move-delete--codemode--1"
+        },
+        {
+          "case": "selection-copy-move",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--selection-copy-move--direct--1"
+        },
+        {
+          "case": "selection-copy-move",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--selection-copy-move--codemode--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--debug-controls--direct--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--debug-controls--codemode--1"
+        }
+      ],
+      "timeoutMs": 180000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "66f115cad83d5ebcb29f7ffbc1f4d04d1ebf72ad0fc7407e60c97de7fa099b42",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T08-30-23.817Z-e03f9a8c",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T08:30:23.819Z",
+      "cases": [
+        "git-stage-unstage-undo",
+        "select-lines",
+        "select-linesOf",
+        "select-object-part",
+        "select-navigate",
+        "select-elementExtent",
+        "debug-controls"
+      ],
+      "attempts": [],
+      "timeoutMs": 180000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "fc775a6e3004828d008f53fb52f11985b5bf19c97f884cbf7d996f327bb431fb",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T08-30-56.432Z-b47f71bc",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T08:30:56.434Z",
+      "cases": [
+        "git-stage-unstage-undo",
+        "select-lines",
+        "select-linesOf",
+        "select-object-part",
+        "select-navigate",
+        "select-elementExtent",
+        "debug-controls"
+      ],
+      "attempts": [
+        {
+          "case": "git-stage-unstage-undo",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--git-stage-unstage-undo--direct--1"
+        },
+        {
+          "case": "git-stage-unstage-undo",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--git-stage-unstage-undo--codemode--1"
+        },
+        {
+          "case": "select-lines",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-lines--direct--1"
+        },
+        {
+          "case": "select-lines",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-lines--codemode--1"
+        },
+        {
+          "case": "select-linesOf",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-linesOf--direct--1"
+        },
+        {
+          "case": "select-linesOf",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: task.txt"
+          ],
+          "evidence": "luna-6-low--select-linesOf--codemode--1"
+        },
+        {
+          "case": "select-object-part",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-object-part--direct--1"
+        },
+        {
+          "case": "select-object-part",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-object-part--codemode--1"
+        },
+        {
+          "case": "select-navigate",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--select-navigate--direct--1"
+        },
+        {
+          "case": "select-navigate",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-navigate--codemode--1"
+        },
+        {
+          "case": "select-elementExtent",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--select-elementExtent--direct--1"
+        },
+        {
+          "case": "select-elementExtent",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-elementExtent--codemode--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--debug-controls--direct--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--debug-controls--codemode--1"
+        }
+      ],
+      "timeoutMs": 180000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "fc775a6e3004828d008f53fb52f11985b5bf19c97f884cbf7d996f327bb431fb",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T08-47-41.907Z-db2ee8f3",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T08:47:41.909Z",
+      "cases": [
+        "read-ast-boundary",
+        "stale-recovery",
+        "shell-roundtrip",
+        "shell-screen",
+        "debug-controls",
+        "lsp-read",
+        "lsp-rename",
+        "read-media",
+        "vision-display-window"
+      ],
+      "attempts": [
+        {
+          "case": "read-ast-boundary",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--read-ast-boundary--direct--1"
+        },
+        {
+          "case": "read-ast-boundary",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: task.ts"
+          ],
+          "evidence": "luna-6-low--read-ast-boundary--codemode--1"
+        },
+        {
+          "case": "stale-recovery",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--stale-recovery--direct--1"
+        },
+        {
+          "case": "stale-recovery",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "outcome_failed",
+          "reasons": ["Unexpected final bytes: task.txt"],
+          "evidence": "luna-6-low--stale-recovery--codemode--1"
+        },
+        {
+          "case": "shell-roundtrip",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--shell-roundtrip--direct--1"
+        },
+        {
+          "case": "shell-roundtrip",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--shell-roundtrip--codemode--1"
+        },
+        {
+          "case": "shell-screen",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--shell-screen--direct--1"
+        },
+        {
+          "case": "shell-screen",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--shell-screen--codemode--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--debug-controls--direct--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--debug-controls--codemode--1"
+        },
+        {
+          "case": "lsp-read",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--lsp-read--direct--1"
+        },
+        {
+          "case": "lsp-read",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--lsp-read--codemode--1"
+        },
+        {
+          "case": "lsp-rename",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--lsp-rename--direct--1"
+        },
+        {
+          "case": "lsp-rename",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Unexpected final bytes: task.ts"
+          ],
+          "evidence": "luna-6-low--lsp-rename--codemode--1"
+        },
+        {
+          "case": "read-media",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-media--direct--1"
+        },
+        {
+          "case": "read-media",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--read-media--codemode--1"
+        },
+        {
+          "case": "vision-display-window",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed",
+            "Final answer does not contain the requested observed value"
+          ],
+          "evidence": "luna-6-low--vision-display-window--direct--1"
+        },
+        {
+          "case": "vision-display-window",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required execution order, arguments, result reuse, or route was not observed"
+          ],
+          "evidence": "luna-6-low--vision-display-window--codemode--1"
+        }
+      ],
+      "timeoutMs": 180000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "ecf18311d1e5f7fc3e24472b3afe3df136aa79c46a5be6739aa6e3e740d109e1",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T09-12-44.874Z-f794c358",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T09:12:44.876Z",
+      "cases": ["select-linesOf", "debug-controls", "read-media"],
+      "attempts": [
+        {
+          "case": "select-linesOf",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 3 (replace) was not observed with the required arguments, completed result, reuse, and route",
+            "Unexpected final bytes: task.txt"
+          ],
+          "evidence": "luna-6-low--select-linesOf--codemode--1"
+        },
+        {
+          "case": "select-linesOf",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 3 (replace) was not observed with the required arguments, completed result, reuse, and route",
+            "Unexpected final bytes: task.txt"
+          ],
+          "evidence": "luna-6-low--select-linesOf--codemode--2"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 7 (insert) was not observed with the required arguments, completed result, reuse, and route"
+          ],
+          "evidence": "luna-6-low--debug-controls--codemode--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--debug-controls--codemode--2"
+        },
+        {
+          "case": "read-media",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 1 (read) was not observed with the required arguments, completed result, reuse, and route"
+          ],
+          "evidence": "luna-6-low--read-media--codemode--1"
+        },
+        {
+          "case": "read-media",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 1 (read) was not observed with the required arguments, completed result, reuse, and route"
+          ],
+          "evidence": "luna-6-low--read-media--codemode--2"
+        }
+      ],
+      "timeoutMs": 180000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "79d39152c95b50c5cc04c2d661ecf6ad0b978a750979f185188bced5e0551612",
+      "attemptsPerRoute": 2
+    },
+    {
+      "id": "2026-10-08T09-12-51.675Z-f7eee8e9",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T09:12:51.678Z",
+      "cases": ["select-navigate", "select-elementExtent", "debug-controls"],
+      "attempts": [
+        {
+          "case": "select-navigate",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 1 (search) was not observed with the required arguments, completed result, reuse, and route"
+          ],
+          "evidence": "luna-6-low--select-navigate--direct--1"
+        },
+        {
+          "case": "select-navigate",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-navigate--direct--2"
+        },
+        {
+          "case": "select-elementExtent",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 1 (search) was not observed with the required arguments, completed result, reuse, and route"
+          ],
+          "evidence": "luna-6-low--select-elementExtent--direct--1"
+        },
+        {
+          "case": "select-elementExtent",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 1 (search) was not observed with the required arguments, completed result, reuse, and route"
+          ],
+          "evidence": "luna-6-low--select-elementExtent--direct--2"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--debug-controls--direct--1"
+        },
+        {
+          "case": "debug-controls",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--debug-controls--direct--2"
+        }
+      ],
+      "timeoutMs": 180000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "79d39152c95b50c5cc04c2d661ecf6ad0b978a750979f185188bced5e0551612",
+      "attemptsPerRoute": 2
+    },
+    {
+      "id": "2026-10-08T09-27-33.963Z-cfe0dd90",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T09:27:33.965Z",
+      "cases": ["select-elementExtent"],
+      "attempts": [
+        {
+          "case": "select-elementExtent",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--select-elementExtent--direct--1"
+        }
+      ],
+      "timeoutMs": 120000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "48c80c004d9ec9a94bca47bb90812c3c65f3b7454a10f1cde517cabb1b8ca10b",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T09-28-43.787Z-f7f84d1c",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T09:28:43.790Z",
+      "cases": ["select-linesOf"],
+      "attempts": [
+        {
+          "case": "select-linesOf",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "route_failed",
+          "reasons": [
+            "Required step 3 (replace) was not observed with the required arguments, completed result, reuse, and route",
+            "Unexpected final bytes: task.txt"
+          ],
+          "evidence": "luna-6-low--select-linesOf--codemode--1"
+        }
+      ],
+      "timeoutMs": 120000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "48c80c004d9ec9a94bca47bb90812c3c65f3b7454a10f1cde517cabb1b8ca10b",
+      "attemptsPerRoute": 1
+    },
+    {
+      "id": "2026-10-08T09-35-08.753Z-da0cf327",
+      "inventory": {
+        "pi": "1.1.0",
+        "tools": [
+          {
+            "name": "bash",
+            "namespace": "ide_terminal",
+            "exposure": "direct"
+          },
+          {
+            "name": "copy",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "debug",
+            "namespace": "ide_debug",
+            "exposure": "deferred"
+          },
+          {
+            "name": "delete",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "diff",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "insert",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "move",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "read",
+            "namespace": "ide_read",
+            "exposure": "direct"
+          },
+          {
+            "name": "replace",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "search",
+            "namespace": "ide_search",
+            "exposure": "direct"
+          },
+          {
+            "name": "select",
+            "namespace": "ide_select",
+            "exposure": "direct"
+          },
+          {
+            "name": "stage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "undo",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          },
+          {
+            "name": "unstage",
+            "namespace": "ide_git",
+            "exposure": "deferred"
+          },
+          {
+            "name": "write",
+            "namespace": "ide_edit",
+            "exposure": "direct"
+          }
+        ]
+      },
+      "profiles": [
+        {
+          "id": "luna-6-low",
+          "model": "openai-codex/gpt-6-luna",
+          "thinking": "low"
+        }
+      ],
+      "started": "2026-10-08T09:35:08.755Z",
+      "cases": ["read-ast-boundary"],
+      "attempts": [
+        {
+          "case": "read-ast-boundary",
+          "mode": "direct",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-ast-boundary--direct--1"
+        },
+        {
+          "case": "read-ast-boundary",
+          "mode": "codemode",
+          "model": "luna-6-low",
+          "status": "pass",
+          "reasons": [],
+          "evidence": "luna-6-low--read-ast-boundary--codemode--1"
+        }
+      ],
+      "timeoutMs": 120000,
+      "revision": "d2f2cc8870f6753698b5d2fafb8b77630ea8841e",
+      "sourceDigest": "99be7386a2a1c1cb2113d2d7c739b6068a7699e66c751f0825a7099097fa5747",
+      "attemptsPerRoute": 1
+    }
+  ]
+}
