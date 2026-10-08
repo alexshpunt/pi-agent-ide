@@ -16,6 +16,7 @@ export function isWholeFileInvocation(
     input.path.length === 0 ||
     input.path.startsWith("SEARCH#") ||
     input.path.startsWith("RESULT#") ||
+    (operation === "delete" && input.path.startsWith("symbol:")) ||
     (typeof input.target === "string" && input.target.startsWith("RESULT#"))
   )
     return false;

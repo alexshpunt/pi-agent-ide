@@ -163,6 +163,77 @@ add(
   { expected: { "task.txt": "keep\n\nlast\n" } },
 );
 
+const declarationFiles = {
+  "task.ts":
+    'import { value } from "./helper";\nexport function doomed() { return value; }\nexport const label = "doomed";\n',
+  "helper.ts": "export const value = 1;\n",
+  "consumer.ts": 'import { doomed } from "./task";\nexport const result = doomed();\n',
+  "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
+};
+const deletedDeclaration = {
+  ...declarationFiles,
+  "task.ts": 'import { value } from "./helper";\n\nexport const label = "doomed";\n',
+};
+
+add(
+  "delete-symbol",
+  ["edit.delete-declaration"],
+  "Read symbol:task.ts#doomed to confirm the declaration. Then delete that same direct symbol path without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not use the Read result as the Delete input for this route.",
+  [
+    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    {
+      tool: "delete",
+      args: { path: "symbol:task.ts#doomed", start: undefined, end: undefined },
+      contains: "Text fallback: imports and references unchanged",
+    },
+  ],
+  {
+    files: declarationFiles,
+    expected: deletedDeclaration,
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
+add(
+  "read-symbol-delete",
+  ["compose.symbol-read-delete"],
+  "Read symbol:task.ts#doomed, then pass its unchanged Read result or UUID to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
+  [
+    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    { tool: "delete", args: { start: undefined, end: undefined }, reuse: reuse(0) },
+  ],
+  {
+    files: declarationFiles,
+    expected: {
+      ...deletedDeclaration,
+      "task.ts": 'import { value } from "./helper";\nexport const label = "doomed";\n',
+    },
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
+const rejectedSymbols = ["symbol:task.ts", "symbol:task.ts#missing", "symbol:task.ts#ping"];
+const rejectionFiles = {
+  "task.ts": "export class First { ping() {} }\nexport class Second { ping() {} }\n",
+  "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
+  ...Object.fromEntries(rejectedSymbols.map((source) => [source, "must remain\n"])),
+};
+add(
+  "reject-symbol-delete",
+  ["edit.reject-symbol-delete"],
+  "Call delete without start/end on symbol:task.ts, symbol:task.ts#missing, and symbol:task.ts#ping. Each must reject its invalid, missing, or ambiguous declaration target. Do not try another deletion route. Keep every file unchanged, including the regular files whose literal names begin with symbol:.",
+  rejectedSymbols.map((source) => ({
+    tool: "delete",
+    args: { path: source, start: undefined, end: undefined },
+    error: true,
+  })),
+  {
+    files: rejectionFiles,
+    expected: rejectionFiles,
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
 add(
   "file-copy-move-delete",
   ["edit.copy-file", "edit.move-file", "edit.delete-file"],
