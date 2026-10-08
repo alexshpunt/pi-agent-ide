@@ -1,4 +1,5 @@
-import { lstat, unlink } from "node:fs/promises";
+import { lstat, rm, unlink } from "node:fs/promises";
+import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.js";
 import path from "node:path";
 import fs from "fs-extra";
 import { Type } from "typebox";
@@ -23,6 +24,10 @@ export const transferFileParameters = Type.Object(
   { additionalProperties: false },
 );
 
+/** Host dependencies for deletion; no tool argument can replace the filesystem primitive. */
+export interface FileOperationContext extends DeletePolicyContext {
+  readonly removeDirectory?: (source: string) => Promise<void>;
+}
 /** Plain receipt; unknown means the filesystem call failed after execution began. */
 export interface FileOperationResult {
   readonly kind: "file-operation";
@@ -55,12 +60,13 @@ export function formatFileOperation(value: FileOperationResult): string {
     .filter((line) => line !== undefined)
     .join("\n");
 }
-/** Uses maintained filesystem primitives; never decodes file contents or recursively deletes. */
+/** Uses filesystem primitives without decoding contents; Delete applies hooks and safety policy first. */
 export async function executeFileOperation(
   operation: FileOperation,
   input: unknown,
   cwd: string,
   signal?: AbortSignal,
+  deletion: FileOperationContext = {},
 ): Promise<FileOperationResult> {
   let started = false;
   let source: string | undefined;
@@ -75,7 +81,9 @@ export async function executeFileOperation(
     source = path.resolve(cwd, args.path);
     target = args.target === undefined ? undefined : path.resolve(cwd, args.target);
     signal?.throwIfAborted();
-    const sourceStat = await regularFile(source);
+    const deleteEvent =
+      operation === "delete" ? await prepareDeletion(source, cwd, deletion, signal) : undefined;
+    const sourceStat = deleteEvent === undefined ? await regularFile(source) : undefined;
     if (target !== undefined) {
       const targetStat = await optionalStat(target);
       if (targetStat !== undefined) {
@@ -85,7 +93,9 @@ export async function executeFileOperation(
           });
         if (
           source === target ||
-          (sourceStat.ino === targetStat.ino && sourceStat.dev === targetStat.dev)
+          (sourceStat !== undefined &&
+            sourceStat.ino === targetStat.ino &&
+            sourceStat.dev === targetStat.dev)
         )
           throw Object.assign(new Error("Source and target are the same file"), {
             code: "SAME_FILE",
@@ -94,8 +104,13 @@ export async function executeFileOperation(
     }
     signal?.throwIfAborted();
     started = true;
-    if (operation === "delete") await unlink(source);
-    else if (target !== undefined) {
+    if (deleteEvent !== undefined) {
+      if (deleteEvent.recursive) {
+        if (deletion.removeDirectory !== undefined)
+          await deletion.removeDirectory(deleteEvent.resolvedPath);
+        else await rm(deleteEvent.resolvedPath, { recursive: true, force: false });
+      } else await unlink(deleteEvent.resolvedPath);
+    } else if (target !== undefined) {
       if (operation === "copy") await fs.copy(source, target, { overwrite: true });
       else await fs.move(source, target, { overwrite: true });
     }

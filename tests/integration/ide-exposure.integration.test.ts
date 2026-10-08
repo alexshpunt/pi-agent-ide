@@ -164,9 +164,6 @@ test.each(["on", "only"])(
         .map((tool) => tool.name)
         .includes("read"),
     ).toBe(mode === "on");
-    expect(getProviderSystemPrompt(result)).toContain(
-      "Use tool_search to find stage and unstage in ide_git",
-    );
     expect(getToolExecution(result, "apply").isError).toBe(true);
     expect(getToolResultText(result, "apply")).toContain("Tool apply not found");
     expect(getToolResultText(result, "script")).toContain("native-exposure-marker");

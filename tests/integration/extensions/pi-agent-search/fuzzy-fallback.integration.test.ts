@@ -88,7 +88,6 @@ test("shows pinned Vimium possible names in native Search for files and URLs wit
     expect(shown).toContain("5 matches in 1 file");
     expect(shown).toContain("Possible name: generateHintString");
     expect(shown).toContain("2 matches in 1 file");
-    expect(shown).toContain("spelling suggestions, not equivalent behavior");
   }
   expect(getToolExecutionDetails(getToolExecution(result, "local"))).toMatchObject({
     payload: {

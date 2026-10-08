@@ -2,10 +2,24 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   connectAfterEditHook,
   connectBeforeEditHook,
+  connectBeforeDeleteHook,
   connectBeforeReadHook,
 } from "#src/api/hooks.js";
 
 export default function (pi: ExtensionAPI) {
+  void connectBeforeDeleteHook(pi, {
+    id: "allow-delete",
+    run: () => ({ decision: "allow" }),
+  });
+  void connectBeforeDeleteHook(pi, {
+    id: "protect-delete",
+    run: ({ resolvedPath }) => {
+      if (resolvedPath.endsWith("throw-delete")) throw new Error("delete hook exploded");
+      return resolvedPath.endsWith("locked-delete")
+        ? { decision: "deny", reason: "fixture deletion lock" }
+        : { decision: "allow" };
+    },
+  });
   void connectBeforeReadHook(pi, {
     id: "deny-secret",
     run: ({ resourceSource }) => {

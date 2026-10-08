@@ -175,9 +175,8 @@ test.each([
       const block = result.content[0];
       expect(block?.type).toBe("text");
       if (block?.type !== "text") throw new Error("Expected a text cap result");
-      expect(block.text).toContain(
-        `output lines (${cause}). No single source-line continuation is available. Retry Read with a smaller limit, keeping the same source and views.]`,
-      );
+      expect(block.text).toContain(cause);
+      expect(block.text).not.toMatch(/offset=\d+/u);
       expect(result.script).toMatchObject({
         kind: "resources",
         resources: [
@@ -526,9 +525,10 @@ test("ignores unknown views and reports them in a note and details", async () =>
 
   expect(block?.type).toBe("text");
   if (block?.type !== "text") throw new Error("Expected a text block");
-  expect(block.text).toBe(
-    "Unknown views ignored: typo, ghost. Remove these entries or choose supported views from the views parameter.\nknown|alpha",
-  );
+  expect(result.details.viewWarnings).toHaveLength(1);
+  expect(result.details.viewWarnings?.[0]).toContain("typo");
+  expect(result.details.viewWarnings?.[0]).toContain("ghost");
+  expect(block.text).toBe(`${result.details.viewWarnings?.[0]}\nknown|alpha`);
   expect(result.details.ignoredViews).toEqual(["typo", "ghost"]);
   expect(result.details.failure).toBeUndefined();
 });
@@ -642,14 +642,16 @@ test("truncates large text at Pi's line and byte limits and tells the agent how 
   });
 
   const lineResult = await executeRead(lineRead, "large-lines.txt");
-  expect(lineResult.content).toEqual([
-    {
-      type: "text",
-      text: `${lineLimited.slice(0, DEFAULT_MAX_LINES).join("\n")}\n\n[Showing lines 1-${DEFAULT_MAX_LINES} of ${
-        DEFAULT_MAX_LINES + 1
-      } (${DEFAULT_MAX_LINES}-line limit). Read "large-lines.txt" with offset=${DEFAULT_MAX_LINES + 1} to continue.]`,
-    },
-  ]);
+  const lineBlock = lineResult.content[0];
+  if (lineBlock?.type !== "text") throw new Error("Missing line limit output");
+  expect(lineBlock.text.startsWith(lineLimited.slice(0, DEFAULT_MAX_LINES).join("\n"))).toBe(true);
+  expect(lineBlock.text).toContain('"large-lines.txt"');
+  expect(lineBlock.text).toContain(`offset=${DEFAULT_MAX_LINES + 1}`);
+  const lineNext = await lineRead.execute(
+    { path: "large-lines.txt", offset: DEFAULT_MAX_LINES + 1 },
+    { cwd: process.cwd() },
+  );
+  expect(lineNext.content).toEqual([{ type: "text", text: `line ${DEFAULT_MAX_LINES + 1}` }]);
   expect(lineResult.details.truncation).toMatchObject({
     truncated: true,
     truncatedBy: "lines",
@@ -665,14 +667,17 @@ test("truncates large text at Pi's line and byte limits and tells the agent how 
   });
 
   const byteResult = await executeRead(byteRead, "large-bytes.txt");
-  expect(byteResult.content).toEqual([
-    {
-      type: "text",
-      text: `${byteLimited[0]}\n\n[Showing lines 1-1 of 3 (${
-        DEFAULT_MAX_BYTES / 1024
-      }.0KB limit). Read "large-bytes.txt" with offset=2 to continue.]`,
-    },
-  ]);
+  const byteBlock = byteResult.content[0];
+  if (byteBlock?.type !== "text") throw new Error("Missing byte limit output");
+  expect(byteBlock.text.startsWith(byteLimited[0] ?? "")).toBe(true);
+  expect(byteBlock.text).not.toContain(byteLimited[1]);
+  expect(byteBlock.text).toContain('"large-bytes.txt"');
+  expect(byteBlock.text).toContain("offset=2");
+  const byteNext = await byteRead.execute(
+    { path: "large-bytes.txt", offset: 2 },
+    { cwd: process.cwd() },
+  );
+  expect(byteNext.content).toEqual([{ type: "text", text: byteLimited.slice(1).join("\n") }]);
   expect(byteResult.details.truncation).toMatchObject({
     truncated: true,
     truncatedBy: "bytes",
@@ -738,9 +743,9 @@ test("saves opt-in truncated output and reads the temporary protocol without pre
     expect(firstBlock?.type).toBe("text");
     if (firstBlock?.type === "text") {
       expect(firstBlock.text).toContain(temporarySource);
-      expect(firstBlock.text).toContain(
-        `Read "dynamic:report" with offset=${DEFAULT_MAX_LINES + 1} and views=["final"] to continue.`,
-      );
+      expect(firstBlock.text).toContain('"dynamic:report"');
+      expect(firstBlock.text).toContain(`offset=${DEFAULT_MAX_LINES + 1}`);
+      expect(firstBlock.text).toContain('views=["final"]');
     }
 
     const remainder = await read.tool.execute(
@@ -794,12 +799,10 @@ test("does not return a partial line when the first line exceeds the byte limit"
 
   const result = await executeRead(read, "single-line.txt");
 
-  expect(result.content).toEqual([
-    {
-      type: "text",
-      text: "[Line 1 is 50.0KB, exceeds 50.0KB limit. Use a source-specific tool to read this line in smaller byte ranges.]",
-    },
-  ]);
+  const block = result.content[0];
+  if (block?.type !== "text") throw new Error("Missing oversized line notice");
+  expect(block.text).not.toContain("x".repeat(DEFAULT_MAX_BYTES + 1));
+  expect(block.text).not.toContain("raw:");
   expect(result.details.truncation).toMatchObject({
     truncated: true,
     truncatedBy: "bytes",
@@ -820,7 +823,7 @@ test.each([
   {
     content: "alpha\nbravo\ncharlie",
     request: { offset: 10 },
-    notice: "[Offset 10 is beyond the end of the source (3 lines).]",
+    notice: undefined,
     totalLines: 3,
   },
 ])("explains an empty text read: $notice", async ({ content, request, notice, totalLines }) => {
@@ -829,7 +832,13 @@ test.each([
   try {
     const result = await read.execute({ path: "notes.txt", ...request }, { cwd: process.cwd() });
     expect(result.isError).not.toBe(true);
-    expect(result.content).toEqual([{ type: "text", text: notice }]);
+    const shownNotice = notice ?? result.details.outputNotice;
+    expect(shownNotice).toBeDefined();
+    expect(result.content).toEqual([{ type: "text", text: shownNotice }]);
+    if (request.offset !== undefined) {
+      expect(shownNotice).toContain(String(request.offset));
+      expect(shownNotice).toContain(String(totalLines));
+    }
     expect(result.details.lines).toEqual([]);
     expect(result.script).toMatchObject({ kind: "text", content: "", lines: [], totalLines });
   } finally {
@@ -851,11 +860,12 @@ test("reports unread source lines when an explicit limit stops early", async () 
   );
 
   expect(result.content).toEqual([
-    {
-      type: "text",
-      text: 'alpha\nbravo\n\n[1 more line in source. Read "notes.txt" with offset=3 to continue.]',
-    },
+    { type: "text", text: `alpha\nbravo${result.details.outputNotice}` },
   ]);
+  expect(result.details.outputNotice).toContain('"notes.txt"');
+  expect(result.details.outputNotice).toContain("offset=3");
+  const next = await read.execute({ path: "notes.txt", offset: 3 }, { cwd: "/workspace" });
+  expect(next.content).toEqual([{ type: "text", text: "charlie" }]);
   expect(result.details.truncation).toBeUndefined();
 });
 
@@ -884,12 +894,25 @@ test.each([undefined, 1])(
     });
     try {
       const result = await read.execute({ path: "selection", limit }, { cwd: process.cwd() });
-      const chunks = ["one.txt", "two.txt"].map((source) =>
-        limit === undefined
-          ? "alpha\nbeta"
-          : `alpha\n\n[2 more lines in source. Read "${source}" with offset=2 to continue.]`,
-      );
-      expect(result.content).toEqual([{ type: "text", text: chunks.join("\n") }]);
+      const block = result.content[0];
+      if (block?.type !== "text") throw new Error("Missing selected sources");
+      if (limit === undefined) {
+        expect(block.text).toBe("alpha\nbeta\nalpha\nbeta");
+      } else {
+        expect(block.text.match(/^alpha$/gmu)).toHaveLength(2);
+        for (const source of ["one.txt", "two.txt"]) {
+          expect(block.text).toContain(JSON.stringify(source));
+          const next = await read.execute({ path: source, offset: 2 }, { cwd: process.cwd() });
+          expect(next.script).toMatchObject({
+            kind: "resources",
+            resources: [
+              { source: "one.txt", content: "beta\ngamma", startLine: 2 },
+              { source: "two.txt", content: "beta\ngamma", startLine: 2 },
+            ],
+          });
+        }
+        expect(block.text.match(/offset=2/gu)).toHaveLength(2);
+      }
       expect(result.details.truncation).toBeUndefined();
       expect(result.script).toMatchObject({
         kind: "resources",

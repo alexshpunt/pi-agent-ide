@@ -1,5 +1,17 @@
 import { spawn, execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile, stat } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  writeFile,
+  stat,
+  symlink,
+  lstat,
+} from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
@@ -214,6 +226,13 @@ export async function prepareTrial(
         "Initial fixture",
       ]);
     }
+    if (task.setup === "delete-objects") {
+      await mkdir(path.join(cwd, "remove-tree"));
+      await writeFile(path.join(cwd, "remove-tree", "data"), "REMOVE\n");
+      await symlink("/workspace/fixture/sentinel.txt", path.join(cwd, "remove-tree", "link"));
+      await symlink("sentinel.txt", path.join(cwd, "link"));
+      await symlink("missing", path.join(cwd, "broken-link"));
+    }
     const initial = await fixtureFiles(cwd);
     return { root, cwd, state, initial };
   } catch (error) {
@@ -229,7 +248,10 @@ export async function fixtureFiles(root: string, prefix = ""): Promise<Record<st
     if ([".git", ".pi", "node_modules"].includes(entry.name)) continue;
     const file = path.join(prefix, entry.name);
     if (entry.isDirectory()) Object.assign(entries, await fixtureFiles(root, file));
-    else entries[file] = await readFile(path.join(root, file));
+    else
+      entries[file] = entry.isSymbolicLink()
+        ? Buffer.from(`symlink:${await readlink(path.join(root, file))}`)
+        : await readFile(path.join(root, file));
   }
   return entries;
 }
@@ -247,6 +269,17 @@ export async function validateFiles(
     else wanted[file] = Buffer.from(text);
   }
   const problems: string[] = [];
+  for (const [file, text] of Object.entries(expected)) {
+    if (text !== null) continue;
+    const remains = await lstat(path.join(cwd, file)).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    );
+    if (remains) problems.push(`Expected deleted object still exists: ${file}`);
+  }
   for (const file of new Set([...Object.keys(actual), ...Object.keys(wanted)])) {
     if (!actual[file] || !wanted[file] || !actual[file].equals(wanted[file]))
       problems.push(`Unexpected final bytes: ${file}`);

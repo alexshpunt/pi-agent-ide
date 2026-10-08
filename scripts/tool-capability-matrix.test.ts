@@ -1,7 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile, access, readdir } from "node:fs/promises";
 import path from "node:path";
-import { cleanupTrial, prepareTrial, runProcess, sandboxArgs } from "#capabilities/sandbox.ts";
+import {
+  cleanupTrial,
+  prepareTrial,
+  runProcess,
+  sandboxArgs,
+  validateFiles,
+} from "#capabilities/sandbox.ts";
+import { capabilityCases } from "#capabilities/cases.ts";
 import { describe, expect, test } from "vitest";
 import {
   checkCoverage,
@@ -274,6 +281,43 @@ test("coverage rejects missing cases, uncovered live tools, and duplicate capabi
   expect(checkCoverage(matrix, [], ["read"]).length).toBeGreaterThan(0);
   expect(checkCoverage(matrix, cases, ["read", "new_tool"]).join(" ")).toContain("new_tool");
   expect(checkCoverage([...matrix, ...matrix], cases, ["read"]).join(" ")).toContain("duplicate");
+});
+
+test("deletion capability fixtures preserve symlink identities and detect leftover empty directories", async () => {
+  await mkdir(".tmp", { recursive: true });
+  const parent = await mkdtemp(path.resolve(".tmp/capability-delete-test-"));
+  const source = path.join(parent, "source");
+  await mkdir(source);
+  execFileSync("git", ["init", "-q", source]);
+  execFileSync("git", [
+    "-C",
+    source,
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "--allow-empty",
+    "-qm",
+    "fixture",
+  ]);
+  try {
+    const task = capabilityCases.find(({ id }) => id === "delete-objects");
+    if (task === undefined) throw new Error("Missing deletion capability case");
+    const trial = await prepareTrial(parent, source, task);
+    expect(trial.initial["broken-link"]?.toString()).toBe("symlink:missing");
+    expect(trial.initial.link?.toString()).toBe("symlink:sentinel.txt");
+    for (const name of ["remove-tree/data", "remove-tree/link", "link", "broken-link"])
+      await rm(path.join(trial.cwd, name));
+    expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([
+      "Expected deleted object still exists: remove-tree",
+    ]);
+    await rm(path.join(trial.cwd, "remove-tree"), { recursive: true });
+    expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([]);
+    expect(await readFile(path.join(trial.cwd, "sentinel.txt"), "utf8")).toBe("KEEP\n");
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
 });
 
 test("a timed-out case cannot touch the checkout and cleanup leaves unrelated files alone", async () => {

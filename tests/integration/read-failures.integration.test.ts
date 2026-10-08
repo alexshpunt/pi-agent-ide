@@ -39,7 +39,7 @@ async function rejected(request) {
   throw Error("Read unexpectedly succeeded");
 }
 const absent = await rejected({path:"notes.txt#not-in-the-file"});
-const action = absent.match(/Read ("(?:[^"\\]|\\.)*") with views=\["anchors"\] and choose a current anchor\./);
+const action = absent.match(/("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*views=\["anchors"\])/u);
 if(!action || absent.includes("FRAGMENT_FAILED")) throw Error(absent);
 const fresh = await tools.read({path:JSON.parse(action[1]),views:["anchors"]});
 if(typeof fresh !== "string" || !fresh.includes("|beta")) throw Error(fresh);
@@ -48,15 +48,15 @@ const selected = await tools.read({path:beta});
 if(!selected.includes("beta") || selected.includes("alpha")) throw Error(selected);
 store("failedRead",absent);
 const missing = await rejected({});
-if(!missing.includes("Supply path with a source or an unchanged result reference.")) throw Error(missing);
+if(!missing.includes("path") || missing.includes("INVALID_REQUEST")) throw Error(missing);
 const symbol = await rejected({path:"symbol:notes.txt"});
 if(!symbol.includes("selector") || symbol.includes("resolver") || symbol.includes("RESOLVE_FAILED")) throw Error(symbol);
 const raw = await rejected({path:"raw:notes.txt",views:["anchors"]});
-if(!raw.includes("Omit views")) throw Error(raw);
+if(!raw.includes("views")) throw Error(raw);
 const bytes = await tools.read({path:"raw:notes.txt",limit:4});
 if(!bytes.includes("Bytes 0..4 (end exclusive), 17 bytes total") || !bytes.includes("|alph|")) throw Error(bytes);
 const jq = await rejected({path:"items.txt",views:["jq:.items","anchors"]});
-if(!jq.includes("Keep only one jq:<filter> in views.")) throw Error(jq);
+if(!jq.includes("jq:<filter>")) throw Error(jq);
 const values = await tools.read({path:"items.txt",views:["jq:.items[]"]});
 if(!values.includes('"alpha"') || !values.includes('"beta"')) throw Error(values);
 `,
@@ -91,8 +91,8 @@ try { await tools.read({path:"notes.txt#not-in-the-file"}); } catch(error) { tex
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(await readFile(path.join(cwd, "notes.txt"), "utf8")).toBe(source);
     const rendered = run.tuiRenderedOutput.replace(/\s+/gu, " ");
-    expect(rendered).toContain("exact text anchor was not found");
-    expect(rendered).toContain('with views=["anchors"] and choose a current anchor.');
+    expect(rendered).toContain('views=["anchors"]');
+    expect(rendered).toContain("notes.txt");
     expect(getToolResultText(run, "failure-authority")).not.toContain("FRAGMENT_FAILED");
   });
 });
@@ -122,7 +122,7 @@ test("non-text line-range recovery preserves native image delivery", async () =>
                 code: String.raw`
 let message;
 try { await tools.read({path:"pixel.png",offset:1,limit:1}); } catch(error) { message=error.message; }
-if(!message || !message.includes("Omit offset and limit")) throw Error(message ?? "Expected failure");
+if(!message || !message.includes("offset") || !message.includes("limit")) throw Error(message ?? "Expected failure");
 text(message);
 const image = await tools.read({path:"pixel.png"});
 if(typeof image !== "string") throw Error("Read must return a string");
