@@ -318,6 +318,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Retain failed native Codemode Pi traces
+        if: failure()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: failed-native-codemode-pi-traces-${{ matrix.shard }}
+          path: .tmp/test-runs/tests/integration/native-codemode.integration.test.ts/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Retain failed semantic rename Pi traces
         if: failure()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

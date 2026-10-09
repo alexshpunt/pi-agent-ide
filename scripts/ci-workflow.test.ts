@@ -131,12 +131,21 @@ test("retains failures while every integration shard runs on its own runner", ()
   expect(integrationReport.step.if).toBe(
     "always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != ''",
   );
-  for (const name of ["Retain failed anchor Pi traces", "Retain failed composition Pi traces"]) {
+  for (const name of [
+    "Retain failed anchor Pi traces",
+    "Retain failed composition Pi traces",
+    "Retain failed semantic rename Pi traces",
+    "Retain failed native Codemode Pi traces",
+  ]) {
     const retained = find("integration", name);
     expect(retained.index).toBeGreaterThan(shard.index);
     expect(retained.step.if).toBe("failure()");
     expect(retained.step.with?.["include-hidden-files"]).toBe(true);
   }
+  const nativeTraces = find("integration", "Retain failed native Codemode Pi traces");
+  expect(nativeTraces.step.with?.path).toBe(
+    ".tmp/test-runs/tests/integration/native-codemode.integration.test.ts/",
+  );
   const candidate = find("validate", "Build and install reproducible release candidate");
   expect(candidate.index).toBeGreaterThan(report.index);
   expect(candidate.step.if).toContain("success()");
