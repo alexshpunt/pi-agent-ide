@@ -57,25 +57,25 @@ for (const mode of ["standalone", "codemode"] as const) {
     {
       name: "changed.note",
       final: "AFTER\n",
-      summary: "Formatted (fixture).",
+      notice: undefined,
       footer: "Formatted (fixture)",
     },
     {
       name: "unchanged.note",
       final: "after\n",
-      summary: "Already formatted (fixture).",
+      notice: undefined,
       footer: "Already formatted (fixture)",
     },
     {
       name: "failed.note",
       final: "after\n",
-      summary: "Formatting failed (fixture).",
+      notice: "Formatting failed.",
       footer: "Formatting failed (fixture)",
     },
     {
       name: "unavailable.txt",
       final: "after\n",
-      summary: undefined,
+      notice: undefined,
       footer: undefined,
     },
   ])(
@@ -95,10 +95,11 @@ for (const mode of ["standalone", "codemode"] as const) {
         await mkdir(path.dirname(path.join(cwd, source)), { recursive: true });
         await writeFile(path.join(cwd, source), "before\n");
         const checks = `const result=await tools.write({path:${JSON.stringify(source)},content:"after\\n"});
-${fixture.summary === undefined ? "" : `if(!result.includes(${JSON.stringify(fixture.summary)})) throw Error("Missing formatting outcome: "+result);`}
-if(result.includes("Formatting:")) throw Error("Duplicate raw formatting status: "+result);
-if(!result.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Missing saved final text: "+result);
-${fixture.name.endsWith(".note") ? 'if(!result.includes("Extra check finished")) throw Error("Lost another handler status: "+result); if(((result.split("\\n---\\n")[0]||"").match(/formatted|formatting failed/gi)||[]).length!==1) throw Error("Repeated formatting report: "+result);' : ""}
+${fixture.notice === undefined ? "" : `if(!result.includes(${JSON.stringify(fixture.notice)})) throw Error("Missing problem notice: "+result);`}
+const receipt=result.split("\\n\\n---\\n\\n# Guide:")[0]||"";
+if(receipt.includes("Final text") || receipt.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write receipt leaked file text: "+receipt);
+const saved=await tools.read({path:result});
+if(!saved.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write selection lost formatted bytes: "+saved);
 text("Formatting checked.");`;
         const run = await new PiIntegrationTest({
           testName: `write-formatting-${mode}-${fixture.name}`,
@@ -110,7 +111,7 @@ text("Formatting checked.");`;
             "builtin:codemode",
             path.resolve("tests/integration/support/write-formatting-probe.ts"),
           ],
-          tools: ["write", "codemode"],
+          tools: ["write", "read", "codemode"],
           conversation: [
             assistantMessage(
               [
@@ -133,17 +134,11 @@ text("Formatting checked.");`;
         ).toBe(false);
         expect(await readFile(path.join(cwd, source), "utf8")).toBe(fixture.final);
         if (mode === "standalone") {
-          const result = getToolResultText(run, "formatted");
-          if (fixture.summary !== undefined) {
-            expect(result).toContain(fixture.summary);
-            expect(result.split(fixture.summary)).toHaveLength(2);
-          }
-          expect(result).not.toContain("Formatting:");
-          if (fixture.name.endsWith(".note")) {
-            expect(result).toContain("Extra check finished");
-            const receipt = result.split("\n---\n")[0] ?? "";
-            expect(receipt.match(/formatted|formatting failed/gi)).toHaveLength(1);
-          }
+          const result = getToolResultText(run, "formatted").split("\n\n---\n\n# Guide:")[0] ?? "";
+          if (fixture.notice !== undefined) expect(result).toContain(fixture.notice);
+          expect(result).not.toContain("Final text");
+          expect(result).not.toContain("Extra check finished");
+          expect(result).not.toContain(fixture.final.trim());
         }
         if (fixture.name === "unavailable.txt") {
           await expect(
@@ -152,7 +147,8 @@ text("Formatting checked.");`;
           expect(run.tuiRenderedOutput).not.toContain("Extra check finished");
           expect(run.tuiRenderedOutput).not.toContain("Formatted (fixture)");
         }
-        if (fixture.footer !== undefined) expect(run.tuiRenderedOutput).toContain(fixture.footer);
+        if (fixture.footer !== undefined)
+          expect(run.tuiRenderedOutput.split(fixture.footer)).toHaveLength(2);
         if (fixture.name === "unchanged.note")
           expect(run.tuiRenderedOutput).not.toContain("· Formatted (fixture)");
         if (fixture.name.endsWith(".note")) {

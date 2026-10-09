@@ -32,7 +32,11 @@ test.each(["direct", "codemode"])(
         ],
         {
           env: {
-            PATH: "/usr/local/bin:/usr/bin:/bin",
+            // setup-node installs the global LSP beside this Node binary on CI.
+            // Its /opt toolchain is already mounted read-only by the sandbox.
+            PATH: [path.dirname(process.execPath), "/usr/local/bin", "/usr/bin", "/bin"].join(
+              path.delimiter,
+            ),
             HOME: "/state/home",
             PI_CODING_AGENT_DIR: "/state/agent",
             PI_OFFLINE: "1",
@@ -57,7 +61,7 @@ test.each(["direct", "codemode"])(
         unchangedAfterRejection: boolean;
         renameModes: string[];
       };
-      expect(result.route).toEqual({ passed: true, reasons: [] });
+      expect(result.route, execution.stdout).toEqual({ passed: true, reasons: [] });
       expect(result.errors).toEqual([]);
       expect(result.rejectedCount).toBe(1);
       expect(result.unchangedAfterRejection).toBe(true);
