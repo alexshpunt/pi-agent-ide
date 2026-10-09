@@ -32,7 +32,7 @@
 
 Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of development tools for understanding, changing, running, debugging, and observing software. The same tools work with local resources and configured Linux SSH targets.
 
-The tools are designed to combine. Read a source, find a match, derive an exact selection, and pass it straight into an edit. Use ordinary tool calls for simple work and Pi's native Codemode for dependent steps, branches, loops, and parallel work. The agent keeps guarded source references; you keep readable tool panels and diffs.
+The tools work together in both direct calls and Pi's native Codemode. The agent can carry a search result into a precise edit instead of reading the file again and guessing a location. You see the same readable tool panels and diffs in either mode.
 
 | Work                                 | Interfaces                                                    |
 | ------------------------------------ | ------------------------------------------------------------- |
@@ -45,9 +45,9 @@ The tools are designed to combine. Read a source, find a match, derive an exact 
 | Debug programs                       | `debug`, then `debug:` resources                              |
 | Work remotely                        | The same supported tools with `ssh://` paths and remote `cwd` |
 
-### Combine tools through native Codemode
+### Combine tools through direct calls or native Codemode
 
-Pi Agent IDE works with Pi's built-in Codemode and tool discovery. Scripts call the same tools as direct calls, not a separate editing API. A tool result can be passed unchanged into the next tool without reconstructing paths, line numbers, or internal records.
+All IDE tools support direct calls and Pi's built-in Codemode. The agent can combine reading, search, selection and editing into one workflow, with the same source checks and visible results in both modes.
 
 For example, this script finds a checklist item, selects its complete line, and marks it done:
 
@@ -57,10 +57,6 @@ const matches = await tools.search({ path: source, query: "- [ ] Update docs" })
 const lines = await tools.select({ path: matches, operation: { kind: "linesOf" } });
 text(await tools.replace({ path: lines, text: "- [x] Update docs\n" }));
 ```
-
-The same references work in direct calls and across Codemode scripts through `store`/`load`. Stale or incomplete source selections are rejected. Shortened display text does not shorten a complete selection.
-
-Independent edits can be submitted together. Dependent calls commit eligible pending edits before consuming their results; script completion saves the remaining batch. There is no `apply` or `flush` tool to call. A script error does not roll back accepted edits, so inspect reported effects before retrying. See [result composition](docs/structured-results.md) for reference lifetime and commit boundaries.
 
 ### Read anything through `read`
 
@@ -93,9 +89,9 @@ Views change how the same resource is presented. The agent can request source st
 
 ### Select and change exactly what you mean
 
-`select` derives ranges and insertion positions from an existing source or result. It can select complete lines, marker-delimited text, slices, or the overlap and difference between selections. For JavaScript and TypeScript without JSX/TSX, it can locate an enclosing function, choose its body or parameters, and navigate related constructs without guessing line numbers.
+`select` helps the agent change the intended part of a file: a line, a function body, a parameter list, or the overlap between selections. JavaScript and TypeScript structure is supported without JSX/TSX, so the agent can work with code boundaries rather than guessing line numbers.
 
-Language-server resources add declarations, references, call graphs, and diagnostics. Symbol-name replacement uses semantic rename across references instead of replacing every matching word. Supported behavior depends on the project's language server. See [selection](docs/agent-guides/select-code.md) and [code navigation](docs/agent-guides/search-code.md).
+Language-server support adds declarations, references, call graphs, diagnostics, and semantic rename across references. Available features depend on the project's language server. See [selection](docs/agent-guides/select-code.md) and [code navigation](docs/agent-guides/search-code.md).
 
 ### Review edits against your own rules
 
@@ -114,8 +110,6 @@ Editing uses direct semantic operations:
 
 See [directory and symlink operations](docs/directory-operations.md) for merge/replace behavior, guards, and failure effects.
 
-Text edits keep their source selections and snapshots. Whole-file and directory operations use ordinary source and destination paths. Check each operation's status and final effects before continuing.
-
 <div align="center">
 
 [![Pi Agent IDE editing examples](assets/summary/thumbs/editing.png)](assets/summary/editing.png)
@@ -132,7 +126,7 @@ Selections can come from exact text, anchors, search results, AST matches, or la
 
 ### Review and restore Git changes
 
-Read a file's `changes` view to inspect its current Git changes. Use the returned change anchors with `stage`, `unstage`, or `undo`; use `diff` to compare sources without changing them. Git undo restores the selected change in both the worktree and index. Text undo restores the last saved editing transaction. These are separate operations, not a blanket rollback of a Codemode script.
+The agent can compare changes, stage or unstage individual Git changes, and restore a selected change without discarding the rest of the file. Text edits also have their own undo. You can see what changed and recover at the level of the operation, rather than resetting all the work.
 
 ### Run through persistent terminal sessions
 
@@ -160,19 +154,17 @@ The agent can render websites as images, observe changing interfaces over time, 
 
 ### Use the same tools over SSH
 
-Configure a Linux SSH target once, then use `ssh://target/absolute/path` with the existing tools. Read and search remote files, edit with guarded selections, copy between local and remote locations, inspect Git changes, and run interactive Bash sessions with a remote `cwd`. Language servers, linters, formatters, and debugger adapters run on the selected target using its tools and project settings.
+Ask the agent to work on a remote Linux environment. It can read, search and edit files, copy between your machine and the server, work with Git, and run interactive commands through the same IDE tools. Language servers, linters, formatters and debugger adapters use the remote machine's tools and project settings.
 
-Process inspection, native window/display capture, and explicit `web:ssh://target/https://...` reads also keep their remote owner. Missing target dependencies fail without silently running a local substitute. Ordinary HTTP(S) URLs still run locally.
+Remote process inspection, supported window/display capture and remote web reads are available too. Missing remote dependencies are reported rather than silently replaced by local tools.
 
-Targets live in project or global `ssh.json` settings. Authentication and host-key trust stay in OpenSSH; Python 3 is required on the remote Linux machine. No permanent agent is installed there. A workspace is a path base, not a sandbox: the SSH account's permissions apply.
-
-Ask the agent to work on your remote environment. It reads `docs:ssh`, sets up project-local target settings by default, reloads the extensions, and verifies access through the IDE tools. It uses global settings only when you ask. See [SSH configuration](docs/configuration.md#ssh-targets) for the target format and prerequisites.
+SSH uses your existing OpenSSH authentication and host-key trust. The remote machine needs Python 3; no permanent agent is installed there. Operations have the permissions of the SSH account. The agent sets up project-local access by default unless you ask for global settings. See [SSH configuration](docs/configuration.md#ssh-targets).
 
 ### Keep context focused through progressive disclosure
 
-Pi Agent IDE does not put every capability guide into the system prompt. The agent can read focused `docs:` guides before using a feature; unread guides are also attached to the first matching tool result. Some tools, including debugger and Git staging tools, are discovered when needed.
+The agent gets detailed guides and optional tools when it needs them, instead of carrying every instruction throughout the task.
 
-Large text results are shortened with a reference to the saved full output, so the agent can read the omitted part. Display limits do not reduce complete source selections, and incomplete search coverage is marked explicitly. Write returns a compact agent-facing receipt while the user still sees the edit diff. See [output limits](docs/tools.md#shared-output-limits).
+Large results stay readable without losing the full text or the exact source selection. Compact edit receipts keep the agent's context small while you still see the full diff. See [tools and workflow](docs/tools.md) for the details.
 
 ### Extend the interfaces through protocols
 
@@ -182,7 +174,7 @@ Filesystem and HTTP reads, resource views, content converters, search backends, 
 
 A person can see the agent's edits, diffs, diagnostics, running processes, debugger state, and failures. Bounded presentation keeps live output readable without discarding the underlying result. Guarded snapshots and first-class undo make mistakes visible and recovery inexpensive.
 
-IDE tools called from native Codemode keep their custom panels in a separate block below the script, even when the script prints no results. Successful edits in one batch show one final diff per file, without intermediate edit cards or an extra block title. The panels survive session restore and tree navigation. Oversized or missing display data is marked as incomplete; rendering never repeats an operation or adds its cost again.
+Direct calls and native Codemode both show tool panels and diffs. A batch of edits shows the final diff for each file rather than a stack of intermediate cards. These panels remain available when you restore a session or navigate its history.
 
 <div align="center">
 
@@ -201,8 +193,6 @@ Windows and WSL are first-class supported environments alongside Linux. Run `/pi
 ### Built through data-driven development
 
 Pi Agent IDE is developed through daily use on real software and measured with the [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark). Every release is exercised against real editing tasks, and the measured result becomes part of the release evidence. The badge above links to the [latest accepted observation](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest), with its score and run details; the underlying observations are available in the [published dataset](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
-
-A separate [tool capability matrix](https://github.com/alexshpunt/pi-agent-ide/blob/main/benchmarks/tool-capabilities/README.md) checks whether a real model can use the designed tools and chains through direct calls and native Codemode. It checks execution routes as well as final outcomes and retains failed attempts. Free coverage checks make no model calls; a route that has not been run is not model-verified. This is different evidence from an editing benchmark score.
 
 The project is also used to develop itself. Weak interactions, missing affordances, and agent failure modes appear in real work instead of remaining theoretical. Problems are fixed as they are found, and the tools evolve through regular releases.
 
