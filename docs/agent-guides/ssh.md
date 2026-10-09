@@ -1,5 +1,28 @@
 # SSH resources
 
+## Set up a target
+
+When the user asks to connect to or work on a remote device or environment over SSH, set up a target before using remote resources. Use the existing tools; no separate SSH tool is needed.
+
+1. Read the current project's `.pi/pi-agent-ide/ssh.json` and reuse a matching target. If the file is missing, create it. Preserve unrelated targets and settings. Use project settings by default; use global settings only when the user explicitly asks. The global file is `~/.pi/agent/pi-agent-ide/ssh.json`, or `$PI_CODING_AGENT_DIR/pi-agent-ide/ssh.json` when that variable is set.
+2. Resolve the host from the user's request and existing OpenSSH configuration. Ask only for missing connection details or the remote workspace path when they cannot be established from the request or existing configuration. Keep keys, passwords and host-key trust in OpenSSH, not in IDE settings. Do not print credentials or disable host-key checks. Ask before changing authentication or trusting a new host key.
+3. Check access with local Bash: `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=10 HOST 'pwd; python3 --version'`. Add `-F /path/to/config` when using a custom OpenSSH config. Require Python 3 on the target. Inspect a failed connection before editing IDE settings; a target record cannot fix missing authentication or host trust.
+4. Add a target record with a unique `id`, a trusted OpenSSH `host` alias (optionally `user@alias`), and an absolute Linux `workspace` path. Use an existing workspace unless the task needs a new one. Use a short stable ID, such as `vps`. Optional `configFile` selects a local OpenSSH config; relative paths resolve beside `ssh.json`.
+5. Reload Pi extensions after adding or changing a target. Use the reload tool when available, or ask the user to run `/reload`. Reload can reset extension state; finish or stop owned live sessions first. Read `docs:ssh` again after reload to see the configured workspaces.
+6. Verify the target with `read` on its `ssh://` workspace and `bash` with that SSH `cwd`, for example `hostname; pwd`. Report the actual tool results. Do not claim remote IDE access from a successful plain SSH command alone.
+
+Example project `.pi/pi-agent-ide/ssh.json`:
+
+```json
+{
+  "targets": [{ "id": "vps", "host": "vps", "workspace": "/root" }]
+}
+```
+
+Project records replace complete global records with the same ID. Duplicate IDs in one file, unknown fields and invalid records fail startup. Keep machine-specific target settings out of shared Git history unless the user asks to share them.
+
+## Use remote resources
+
 Use the existing read and text-editing tools with `ssh://target/absolute/path`. Select a target from the configured workspaces below. Unknown targets fail without falling back to local files. The workspace is a relative-path base, not a sandbox; absolute paths use the remote account's permissions.
 
 Use `raw:ssh://target/absolute/path` to read original bytes with `offset` and `limit`. Raw reads do not convert content or accept views. Text snapshots have a 32 MiB transport limit; raw reads fetch bounded chunks instead. Separate byte windows are not an immutable snapshot.

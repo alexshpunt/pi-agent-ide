@@ -35,6 +35,7 @@ Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemod
 Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases; these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
 
 Temporary Delete cases likewise check the shared defaults and settings contract locally. Target-native account/config resolution is checked by transport tests, not a paid SSH case. Paid SSH temporary-deletion routes remain unverified.
+The `ssh-guide` case checks that Read exposes SSH setup guidance before any target is configured. It does not verify connection setup, reload, or remote operations. Its direct and Codemode routes remain unverified until a paid run.
 
 ## Isolation
 
