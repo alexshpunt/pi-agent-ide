@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { createTextDocument } from "pi-agent-text";
 import { truncateHead } from "@earendil-works/pi-coding-agent";
-import type { ReadPipelineContext } from "pi-agent-read/api/tools/read";
+import type { ReadPipelineContext, ReadToolResult } from "pi-agent-read/api/tools/read";
 import { createAstOverflowHandler } from "#src/overflow-handler.js";
 import { AstOutlineManager } from "#src/ast/outline.js";
 
@@ -23,16 +23,41 @@ function context(content = source, file = "sample.ts", displayed = content): Rea
   };
 }
 
+async function overview(input: ReadPipelineContext): Promise<ReadToolResult> {
+  const outcome = await createAstOverflowHandler()(input);
+  if (outcome.kind !== "continue" || outcome.transform === undefined || input.result === undefined)
+    throw new Error("Missing overview transform");
+  return outcome.transform(input.result);
+}
+
+test("overview preserves source-window data attached by an earlier transform", async () => {
+  const input = context();
+  const outcome = await createAstOverflowHandler()(input);
+  if (outcome.kind !== "continue" || outcome.transform === undefined || input.result === undefined)
+    throw new Error("Missing overview transform");
+  const script = {
+    kind: "text" as const,
+    source: "sample.ts",
+    content: "  check(value);\n",
+    lines: [{ lineNumber: 103, content: "  check(value);", lineEnding: "\n" }],
+    startLine: 103,
+    endLine: 103,
+    totalLines: 2102,
+    target: "RESULT#source-window",
+  };
+  const result = outcome.transform({ ...input.result, script });
+  expect(result.script).toBe(script);
+  expect(result.content).not.toEqual(input.result.content);
+});
 test("script data is never replaced with an overflow outline", async () => {
   const input: ReadPipelineContext = { ...context(), audience: "script" };
   expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
 });
-test("overflow returns the whole compact tree from the read snapshot", async () => {
-  const result = await createAstOverflowHandler()(context());
-  expect(result.kind).toBe("return");
-  if (result.kind !== "return") throw new Error("Missing overview");
-  expect(result.result.details.resolvedBy).toBe("ast-overflow");
-  const block = result.result.content[0];
+test("overflow presents the whole compact tree from the read snapshot", async () => {
+  const result = await overview(context());
+
+  expect(result.details.resolvedBy).toBe("ast-overflow");
+  const block = result.content[0];
   if (block?.type !== "text") throw new Error("Missing text");
   expect(truncateHead(block.text).truncated).toBe(false);
   expect(block.text).toContain('1 | test("checkout", () => {');
@@ -43,15 +68,13 @@ test("overflow returns the whole compact tree from the read snapshot", async () 
 test("overview recovery names the quoted original source without replacing its snapshot", async () => {
   const file = `${process.cwd()}/source "quoted".ts`;
   const input = context(source, file);
-  const result = await createAstOverflowHandler()(input);
-  if (result.kind !== "return") throw new Error("Missing overview");
-  const block = result.result.content[0];
+  const result = await overview(input);
+
+  const block = result.content[0];
   if (block?.type !== "text") throw new Error("Missing text");
-  expect(block.text).toContain("the requested text exceeded the output limit.");
-  expect(block.text).toContain(
-    `Some source text is omitted. Read ${JSON.stringify(file)} with offset and limit for exact source text.`,
-  );
-  const action = /Read ("(?:[^"\\]|\\.)*") with offset and limit/.exec(block.text);
+  expect(block.text).toContain("offset");
+  expect(block.text).toContain("limit");
+  const action = /("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*offset[^\n]*limit)/u.exec(block.text);
   if (action?.[1] === undefined) throw new Error("Missing source action");
   const recoveredSource: unknown = JSON.parse(action[1]);
   expect(recoveredSource).toBe(file);
@@ -59,10 +82,9 @@ test("overview recovery names the quoted original source without replacing its s
 });
 test("Unicode before a collapsed body keeps source coordinates", async () => {
   const input = context(source.replace("checkout", "付款 🛒"));
-  const result = await createAstOverflowHandler()(input);
-  expect(result.kind).toBe("return");
-  if (result.kind !== "return") throw new Error("Missing overview");
-  const block = result.result.content[0];
+  const result = await overview(input);
+
+  const block = result.content[0];
   if (block?.type !== "text") throw new Error("Missing text");
   expect(block.text).toContain('1 | test("付款 🛒", () => {');
   expect(block.text).toContain("2102 | });");
@@ -73,16 +95,15 @@ test("small windows in large files remain exact", async () => {
 });
 
 test("CRLF snapshots use the parser's line coordinates", async () => {
-  const result = await createAstOverflowHandler()(context(source.replaceAll("\n", "\r\n")));
-  expect(result.kind).toBe("return");
-  if (result.kind !== "return") throw new Error("Missing overview");
-  const block = result.result.content[0];
+  const result = await overview(context(source.replaceAll("\n", "\r\n")));
+
+  const block = result.content[0];
   if (block?.type !== "text") throw new Error("Missing text");
   expect(block.text).toContain("2102 | });");
 });
 test("byte overflow also triggers an overview", async () => {
   const input = context(`function work() {\n  return "${"x".repeat(60000)}";\n}\n`);
-  expect((await createAstOverflowHandler()(input)).kind).toBe("return");
+  expect((await overview(input)).details.resolvedBy).toBe("ast-overflow");
 });
 
 test("unsupported and invalid source keep normal truncation", async () => {
@@ -96,11 +117,10 @@ test("unsupported and invalid source keep normal truncation", async () => {
 
 test("flat oversized outlines reduce to file-only detail within budget", async () => {
   const input = context("import 'package';\n".repeat(2100));
-  const result = await createAstOverflowHandler()(input);
-  expect(result.kind).toBe("return");
-  if (result.kind !== "return") throw new Error("Missing overview");
-  expect(result.result.details.resolvedBy).toBe("ast-overflow");
-  const block = result.result.content[0];
+  const result = await overview(input);
+
+  expect(result.details.resolvedBy).toBe("ast-overflow");
+  const block = result.content[0];
   if (block?.type !== "text") throw new Error("Missing text");
   expect(truncateHead(block.text).truncated).toBe(false);
   expect(block.text).not.toContain("import 'package'");

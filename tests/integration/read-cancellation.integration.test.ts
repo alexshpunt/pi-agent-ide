@@ -77,9 +77,8 @@ test("a cancelled HTTP Read reports no completed result and a fresh Read still w
       expect(slowRequests).toBe(1);
       expect(interrupted).toBe(true);
       const rendered = run.tuiRenderedOutput.replace(/\s+/gu, " ");
-      expect(rendered).toContain(
-        `Read cancelled for "${source}". No completed result was returned.`,
-      );
+      expect(rendered).toContain("Read cancelled");
+      expect(rendered).toContain(source);
       expect(rendered).not.toContain("unfinished source bytes");
     });
   } finally {

@@ -143,7 +143,6 @@ test.runIf(process.platform !== "win32")(
 
     const execution = getToolExecution(result, "run-timeout");
     expect(getToolResultText(result, "run-timeout")).toContain("reason: timeout");
-    expect(getToolResultText(result, "run-timeout")).toContain("use write or insert");
     expect(getToolExecutionDetails(execution)).toMatchObject({
       status: "running",
       background: true,

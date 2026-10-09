@@ -89,6 +89,7 @@ import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception"
 import type { Static, TSchema } from "typebox";
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
 import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
+import { writeAgentResult } from "./write-agent-result.js";
 import { mutationResultSchema, structuredMutation } from "./structured-result.js";
 import type { ResultTargetStore } from "pi-agent-resource";
 
@@ -124,8 +125,8 @@ export function createTextTool<TParameters extends TSchema>(
       description: definition.description,
       parameters: definition.parameters,
       outputSchema: mutationResultSchema(definition.name),
+      // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
       prepareArguments: (arguments_) =>
-        // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
         prepareGuardedArguments(
           definition.parameters,
           arguments_,
@@ -220,6 +221,20 @@ export function createTextTool<TParameters extends TSchema>(
                     );
                     input = asMutationParameters<TParameters>(prepared.input);
                     verifyFileSource = prepared.verifyFileSource;
+                    if (prepared.noOpTarget !== undefined)
+                      return {
+                        content: [
+                          {
+                            type: "text",
+                            text: "No changes: zero-width selections. The result selects the unchanged destination points.",
+                          },
+                        ],
+                        details: {
+                          results: [],
+                          effect: "not-applied",
+                          metadata: { resultTarget: prepared.noOpTarget },
+                        },
+                      };
                     if (prepared.empty)
                       return {
                         content: [
@@ -348,7 +363,18 @@ export function createTextTool<TParameters extends TSchema>(
             undefined,
             definition.name === "copy",
           );
-          return structuredMutation(failed, definition.name, captured.completions, toolCallId);
+          return structuredMutation(
+            definition.name === "write"
+              ? writeAgentResult(
+                  failed,
+                  captured.completions,
+                  asMutationParameters<TParameters>(parameters)[definition.source.field],
+                )
+              : failed,
+            definition.name,
+            captured.completions,
+            toolCallId,
+          );
         }
         const completedValue =
           copyPlan.unchanged && captured.completions.length === 0 && !captured.value.isError
@@ -362,7 +388,7 @@ export function createTextTool<TParameters extends TSchema>(
             : captured.value;
         // Live-resource actions have their own receipts, not filesystem editor batches.
         if (captured.completions.every((completion) => completion.resolvedBy === "filesystem"))
-          recordNativeTextMutation(core, toolCallId, completedValue);
+          recordNativeTextMutation(core, toolCallId, definition.name, completedValue);
         const value =
           resultTargets &&
           ["replace", "insert", "write", "copy", "move", "undo"].includes(definition.name)
@@ -388,7 +414,15 @@ export function createTextTool<TParameters extends TSchema>(
                 )
             : completedValue;
         return structuredMutation(
-          definition.name === "copy" ? describeUnavailableCopyTarget(value) : value,
+          definition.name === "copy"
+            ? describeUnavailableCopyTarget(value)
+            : definition.name === "write"
+              ? writeAgentResult(
+                  value,
+                  captured.completions,
+                  asMutationParameters<TParameters>(parameters)[definition.source.field],
+                )
+              : value,
           definition.name,
           captured.completions,
           toolCallId,
@@ -410,9 +444,9 @@ export function createTextTool<TParameters extends TSchema>(
             insert:
               "For text edits, this result selects the inserted text, including supplied line separators. Specialized resources return their own action result.",
             write:
-              "For file writes, this result selects the whole file, not only its changed span.",
+              "For file writes, this result selects the whole file and returns a compact write receipt, not file content.",
             copy: "This result selects only the copied destination text; a whole-file copy selects the whole destination. Copy edits only the destination.",
-            move: "Use the Move result to work with the inserted destination text, including any added line separators. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
+            move: "Use the Move result to work with the inserted destination text, including any added line separators. Valid empty arrays and paired zero-width selections succeed without writes; paired points select only the unchanged destination points. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
             delete: "Delete returns no reusable text selection.",
             undo: "The result selects the whole restored text file, not only the reversed span.",
           } as Record<string, string>
@@ -1767,7 +1801,9 @@ function failureToolResult(
         ? "The edit was saved, but a post-write step failed. Run Read/Search before editing this resource again."
         : effect === "unknown"
           ? "The operation failed, and its effects are unknown. Read the affected resources before retrying."
-          : undefined
+          : code === "MUTATION_REJECTED"
+            ? undefined
+            : "No file was changed."
       : rollback.originallyMissing.length > 0
         ? "The file may now exist. Read the path before retrying."
         : uncertain
@@ -1777,9 +1813,18 @@ function failureToolResult(
     ok: false,
     path: source,
     errors: [{ path: source, code, reason }],
-    ...(fileChangedStatement === undefined ? {} : { fileChangedStatement }),
+    ...(fileChangedStatement === undefined
+      ? {}
+      : {
+          fileChangedStatement:
+            fileChangedStatement +
+            (rollback !== undefined && rollback.restored.length > 0
+              ? `\nRolled back: ${rollback.restored.join(", ")}.`
+              : ""),
+        }),
     ...(rollback !== undefined && {
       rollback: {
+        restoredSources: rollback.restored,
         failedSources: [...new Set([...rollback.failed, ...rollback.originallyMissing])],
       },
     }),

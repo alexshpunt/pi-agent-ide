@@ -7,6 +7,86 @@ import { createTextEditorCore } from "./text-editor-core.js";
 import { prepareResultTransfer } from "./result-transfer.js";
 import { executeWholeFileTool } from "./file-operation-tools.js";
 
+test.each([false, true])(
+  "Move returns unchanged destination points (same file: %s)",
+  async (sameFile) => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "move-no-op-"));
+    try {
+      const source = path.join(cwd, "source.txt");
+      const target = sameFile ? source : path.join(cwd, "target.txt");
+      await writeFile(source, "left right\n");
+      if (!sameFile) await writeFile(target, "left right\n");
+      const store = new ResultTargetStore();
+      const point = (file: string, column: number) =>
+        store.register(
+          [
+            {
+              source: file,
+              expectedContent: "left right\n",
+              ranges: [{ start: { lineNumber: 1, column }, end: { lineNumber: 1, column } }],
+            },
+          ],
+          cwd,
+        );
+      const destination = point(target, 5);
+      const prepared = await prepareResultTransfer(
+        "move",
+        { path: point(source, 0), target: destination },
+        store,
+        cwd,
+      );
+      expect(prepared.empty).toBe(false);
+      const reference = prepared.noOpTarget;
+      if (reference === undefined) throw new Error("Missing unchanged destination points.");
+      expect(store.resolve(reference, cwd)).toEqual(store.resolve(destination, cwd));
+      expect(prepared.mutate).toBeUndefined();
+      const multiple = await prepareResultTransfer(
+        "move",
+        {
+          path: [point(source, 0), point(source, 1), point(source, 0)],
+          target: [point(target, 5), point(target, 6), point(target, 5)],
+        },
+        store,
+        cwd,
+      );
+      if (multiple.noOpTarget === undefined) throw new Error("Missing paired destination points.");
+      expect(store.resolve(multiple.noOpTarget, cwd).targets[0]?.ranges).toHaveLength(2);
+      await expect(
+        prepareResultTransfer(
+          "move",
+          {
+            path: [point(source, 0), point(source, 1)],
+            target: destination,
+          },
+          store,
+          cwd,
+        ),
+      ).rejects.toThrow(/counts must match/u);
+      const incomplete = store.register(store.resolve(destination, cwd).targets, cwd, false);
+      await expect(
+        prepareResultTransfer("move", { path: point(source, 0), target: incomplete }, store, cwd),
+      ).rejects.toThrow(/Incomplete/u);
+      await expect(
+        prepareResultTransfer(
+          "move",
+          { path: point(source, 0), target: point(target, 99) },
+          store,
+          cwd,
+        ),
+      ).rejects.toThrow(/outside/u);
+      await expect(
+        prepareResultTransfer(
+          "move",
+          { path: point(source, 0), target: point(source, 0) },
+          store,
+          cwd,
+        ),
+      ).rejects.toThrow(/overlap or touch/u);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  },
+);
 test.each(["copy", "move"] as const)(
   "%s rechecks a whole-file result after waiting for queued edits",
   async (operation) => {

@@ -229,6 +229,27 @@ No tip appears when built-in mappings already cover the project. Empty projects,
 
 Each actionable state has its own stable fingerprint. The same state is shown once per project, while a materially different later problem can produce a new tip. Like other startup tips, it never enters model context. See [Startup tip provider](./extensions.md#startup-tip-provider) for the provider contract and persistence behavior.
 
+### Temporary-directory deletion
+
+Delete skips the external/non-Git confirmation for descendants of temporary roots. Defaults are `tmp`, `.tmp`, `temp`, and `.temp` under the current Git worktree root (or cwd without Git) and your home directory, plus the system temporary directory. The system root follows the OS environment, such as `TMPDIR` on Linux or `TEMP`/`TMP` on Windows.
+
+Configure this in `<agent-dir>/pi-agent-ide/deletion.json` globally, or `<project>/.pi/pi-agent-ide/deletion.json` for one project. `<agent-dir>` defaults to `~/.pi/agent` and follows `PI_CODING_AGENT_DIR`.
+
+```json
+{
+  "temporaryDirectories": {
+    "mode": "extend",
+    "paths": ["scratch", "~/build-scratch"]
+  }
+}
+```
+
+`extend` adds to the lower layer; `replace` replaces it. Layers apply in this order: defaults, global, project. A project replacement overrides both defaults and global settings. Use `{"temporaryDirectories":{"mode":"replace","paths":[]}}` to disable the exception.
+
+Relative global paths start at your home directory; relative project paths start at the worktree root, or cwd without Git. Absolute paths and a leading `~/` are supported. Globs and other shell expansion are not supported. Custom roots resolve symlinks; named defaults do not grant access to a redirected root's destination. Missing roots are skipped. Settings are read for each deletion and checked again before removal. Invalid settings block directory/symlink deletion rather than falling back.
+
+The exception does not apply to the temporary roots themselves, tracked/staged contents, failed Git checks inside the current project, or protected project/Git/filesystem paths. Parent links must resolve inside an allowed root. Unlinking the final symlink leaves its destination alone. Hooks still apply. Copy and Move keep their existing safeguards, and regular-file deletion is unchanged.
+
 ### Exact text recovery
 
 Exact text anchors work without configuration. Optional recovery settings live in `.pi/pi-agent-ide/text-editor.json`:

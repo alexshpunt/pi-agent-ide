@@ -1,0 +1,172 @@
+import type { Capability } from "./validation.ts";
+
+// This declared inventory is reviewed separately from executable cases.
+const groups: [string[], string[]][] = [
+  [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
+  [["read.jq"], ["read-jq"]],
+  [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  [
+    ["read.overview-source", "compose.overview-search", "compose.overview-window"],
+    ["read-overview-search-lines", "read-overview-search-bytes"],
+  ],
+  [["compose.overview-store-load"], ["read-overview-store"]],
+  [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
+  [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
+  [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
+  [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["codemode.silent-write"], ["write-silent"]],
+  [["compose.write-large-read"], ["write-large-read"]],
+  [
+    ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
+    ["replace-read-search"],
+  ],
+  [["edit.insert-before", "edit.insert-spacing"], ["insert-before"]],
+  [["edit.delete-selection", "compose.search-delete"], ["delete-selection"]],
+  [["edit.delete-declaration"], ["delete-symbol"]],
+  [["compose.symbol-read-delete"], ["read-symbol-delete"]],
+  [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
+  [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
+  [["edit.move-effects"], ["move-unknown-effects"]],
+  [
+    [
+      "edit.copy-directory",
+      "edit.move-directory",
+      "edit.copy-symlink",
+      "edit.move-symlink",
+      "edit.copy-merge-directory",
+      "edit.move-replace-directory",
+    ],
+    ["directory-transfers"],
+  ],
+  [["edit.transfer-refusal", "edit.move-policy-refusal"], ["directory-transfer-gates"]],
+  [
+    ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
+    ["delete-objects"],
+  ],
+  [["edit.delete-policy-refusal", "edit.delete-protected-path"], ["delete-policy-gates"]],
+  [["edit.delete-temporary-defaults"], ["delete-temporary-defaults"]],
+  [["edit.delete-temporary-config"], ["delete-temporary-config"]],
+  [
+    ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
+    ["selection-copy-move"],
+  ],
+  [
+    ["edit.move-rollback"],
+    [
+      "move-rollback-restored",
+      "move-rollback-target-failed",
+      "move-rollback-target-failed-after-restore",
+    ],
+  ],
+  [["compose.paired-sources-targets"], ["paired-copy"]],
+  [["edit.move-empty"], ["move-empty"]],
+  [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
+  [["read.diff", "compose.read-diff"], ["read-diff"]],
+  [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
+  [
+    [
+      "git.changes",
+      "git.stage",
+      "git.stage-noop",
+      "git.unstage",
+      "git.undo-change",
+      "discovery.git",
+    ],
+    ["git-stage-unstage-undo"],
+  ],
+  [
+    ["compose.read-select", "compose.select-replace"],
+    [
+      "select-range",
+      "select-lines",
+      "select-between",
+      "select-sliceText",
+      "select-trim",
+      "select-split",
+      "select-columns",
+    ],
+  ],
+  [["select.object", "select.part", "read.ast", "search.ast"], ["select-object-part"]],
+  [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
+  [["select.navigate"], ["select-navigate"]],
+  [["select.elementExtent"], ["select-elementExtent"]],
+  [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
+  [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
+  [
+    [
+      "shell.execute",
+      "shell.read",
+      "shell.search",
+      "shell.input",
+      "shell.keys",
+      "compose.shell-reference-after-input",
+      "shell.file-authority-refusal",
+      "shell.delete",
+      "process.discovery",
+      "process.read",
+    ],
+    ["shell-roundtrip"],
+  ],
+  [["shell.image", "shell.sequence"], ["shell-screen"]],
+  [
+    [
+      "debug.create",
+      "debug.read",
+      "debug.breakpoints",
+      "debug.start",
+      "debug.evaluate",
+      "debug.delete",
+      "discovery.debug",
+    ],
+    ["debug-roundtrip"],
+  ],
+  [
+    [
+      "debug.step-into",
+      "debug.step-over",
+      "debug.step-out",
+      "debug.continue",
+      "debug.delete-breakpoint",
+      "compose.debug-breakpoint-delete-read-session",
+      "read.breakpoints",
+    ],
+    ["debug-controls"],
+  ],
+  [
+    ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
+    ["lsp-read"],
+  ],
+  [
+    [
+      "lsp.rename",
+      "lsp.rename-cross-file",
+      "lsp.rename-keeps-unrelated-names",
+      "compose.symbol-read-rename",
+    ],
+    ["lsp-rename"],
+  ],
+  [["read.image", "read.pdf"], ["read-media"]],
+  [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
+  [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],
+];
+for (const kind of [
+  "range",
+  "lines",
+  "between",
+  "sliceText",
+  "trim",
+  "split",
+  "columns",
+  "linesOf",
+  "position",
+  "within",
+  "intersection",
+  "difference",
+  "merge",
+])
+  groups.push([[`select.${kind}`], [`select-${kind}`]]);
+
+/** Intended contracts and the cases that can establish them, not every tool permutation. */
+export const capabilityMatrix: Capability[] = groups.flatMap(([ids, cases]) =>
+  ids.map((id) => ({ id, cases })),
+);

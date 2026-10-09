@@ -63,6 +63,10 @@ CI uses the same four shards without changing test or job timeouts. Set `REPORT_
 
 `--no-extensions` also disables Pi's native built-ins. Native fixtures explicitly load `builtin:codemode`, `builtin:tool-search`, and `builtin:mcp`; ordinary fixtures do not. `native-host.integration.test.ts` checks the version inside the launched process, deferred discovery, nested execution, and isolation from personal MCP servers.
 
+### Paid model capability checks
+
+Tool changes also require reviewing the matrix and supported tool chains in `benchmarks/tool-capabilities/README.md` in the checkout. Run `pnpm check:capabilities` for its free schema/coverage gate; it is included in `pnpm check`. The real-model suite uses `pnpm validate:tools:models --run --model PROFILE_ID` only with explicit paid permission. It runs isolated cases and checks both outcomes and actual routes. It is not part of ordinary tests or CI.
+
 ### Watch integration tests live
 
 Use the project command to watch every test in one file:

@@ -52,7 +52,9 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         stage: "post-read",
         async handler(context) {
           const result = await overflow(context);
-          return result.kind === "return" ? result : scopes(result.context);
+          return result.kind === "return" || result.transform !== undefined
+            ? result
+            : scopes(result.context);
         },
       });
       api.describe({

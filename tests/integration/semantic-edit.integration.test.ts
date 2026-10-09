@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -106,8 +107,14 @@ test("Copy warns that declaration fallback leaves imports and references unchang
     const execution = getToolExecution(run, "copy-declaration");
     expect(execution.isError, JSON.stringify(execution)).toBe(false);
     const output = getToolResultText(run, "copy-declaration");
-    expect(output).toContain("Text fallback: imports and references unchanged");
-    expect(run.tuiRenderedOutput).toContain("Text fallback: imports and references unchanged");
+    const details = getToolExecutionDetails(execution) as {
+      results: { data: { diffStatuses?: { text: string; tone?: string }[] } }[];
+    };
+    const statuses = details.results.flatMap((result) => result.data.diffStatuses ?? []);
+    const warning = statuses.find((status) => status.tone === "warning");
+    if (warning === undefined) throw new Error("Missing declaration fallback warning");
+    expect(output).toContain(warning.text);
+    expect(run.tuiRenderedOutput).toContain(warning.text);
     expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toBe(source);
     expect(await readFile(path.join(cwd, "consumer.ts"), "utf8")).toBe(consumer);
     const copied = await readFile(path.join(cwd, "destination.ts"), "utf8");

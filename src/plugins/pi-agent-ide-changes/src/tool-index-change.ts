@@ -8,6 +8,7 @@ import {
   type ExtensionAPI,
   withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { resultError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
 const indexDataSchema = Type.Object(
@@ -127,6 +128,21 @@ export function createIndexChangeTool(
         : "Use unstage to remove one selected Git change from the index. Worktree content is kept.",
     parameters,
     outputSchema: indexOutputSchema,
+    // The full IDE removes private result metadata before calling this renderer.
+    ...(action === "stage" && {
+      renderResult(result, _options, theme) {
+        return new Text(
+          theme.fg(
+            "toolOutput",
+            result.content
+              .flatMap((block) => (block.type === "text" ? [block.text] : []))
+              .join("\n"),
+          ),
+          0,
+          0,
+        );
+      },
+    }),
     async execute(_toolCallId, parameters, signal, _onUpdate, context) {
       try {
         const result = await execute(parameters, signal, context);

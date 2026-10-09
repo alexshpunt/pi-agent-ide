@@ -29,12 +29,19 @@ Read results select their requested source windows. Search results select exact 
 - `replace.path` replaces selected ranges. `delete.path` removes selected text but keeps the file, even for a whole-file selection.
 - `write.path` and `undo.file` require one whole-file selection. Partial and multi-file scopes are rejected, not widened.
 - `copy.path` / `move.path` select source ranges; `target` selects destination ranges. A zero-width destination inserts. Arrays pair in declared order, with equal counts and duplicates removed. Unequal counts and overlapping moves are rejected.
-- Ordinary destination file paths without text selectors require one whole-file source and keep byte-preserving file transfer behavior.
+- Move succeeds without writes for valid empty arrays and paired zero-width selections. Empty arrays return no selection; paired points return only the unchanged destination points. The usual validation and overlap guards still apply.
+- Ordinary filesystem paths without selectors copy or move one whole object: a regular file, directory tree, or symlink. Result inputs remain text selections; a directory listing does not authorize a whole-directory transfer.
 - `insert` uses line-based insertion before or after its selected containing lines.
 
-Replace/insert results select their resulting text, including supplied line separators. Empty replacement selects the resulting position, not removed text. Copy/move results select only destination text. Whole-file transfers and write select the whole destination; undo selects restored files. Delete and binary operations provide no reusable text selection. If a result cannot supply a verified selection, inspect the file instead.
+Replace/insert results select their resulting text, including supplied line separators. Empty replacement selects the resulting position, not removed text. Copy/move results select only destination text. Whole regular-text-file transfers and write select the whole destination; undo selects restored files. Delete and binary operations provide no reusable text selection. If a result cannot supply a verified selection, inspect the file instead.
 
 Results are strict snapshots. Changed files permanently retire their old IDs, even if the old bytes are restored later. Session changes and reloads also retire IDs. Empty selections are valid no-ops; incomplete or expired selections cannot authorize edits. Diff text and invented coordinates do not grant source authority.
+
+## Whole filesystem objects
+
+Use ordinary paths without text selectors for whole-object Delete, Copy, and Move. Delete removes directory contents recursively and unlinks symlinks without following their targets. Copy merges directory contents into the exact target directory and keeps destination-only entries. Move replaces an existing target directory and removes destination-only entries. Both transfers create missing parents, preserve file bytes and symlink text, and reject symlink destinations, type conflicts, and overlapping trees. Relative links keep their text; moving them can change what they point to.
+
+Directory and symlink transfers have no reusable text selection. Read their ordinary paths to inspect them. A failure before filesystem execution reports `not-applied`; a failure after execution starts reports `unknown`. Inspect both paths before retrying an unknown transfer. Recursive transfers and cross-device Move have no atomic rollback. Cancellation before execution prevents a transfer; in-flight filesystem work may finish.
 
 ## Line separation
 

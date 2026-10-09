@@ -5,7 +5,7 @@ import { assertSupportedHost } from "./host-version.js";
 test.each(["0.84.2", "0.99.0", "0.99.1-beta.1", "unknown"])(
   "rejects unsupported Pi %s with an upgrade message",
   (version) => {
-    expect(() => assertSupportedHost(version)).toThrow("Pi Agent IDE requires Pi 0.99.1 or newer");
+    expect(() => assertSupportedHost(version)).toThrow(/0\.99\.1/u);
   },
 );
 

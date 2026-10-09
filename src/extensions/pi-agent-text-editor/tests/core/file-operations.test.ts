@@ -26,6 +26,12 @@ test("whole-file mode requires paths and no text selectors", () => {
   expect(isWholeFileInvocation("delete", {})).toBe(false);
 });
 
+test("direct symbol deletion never enters whole-file mode", () => {
+  for (const source of ["symbol:source.ts#greet", "symbol:source.ts", "symbol:source.ts#missing"]) {
+    expect(isWholeFileInvocation("delete", { path: source })).toBe(false);
+  }
+});
+
 test("copies bytes, moves the copy, and removes only the moved file", async () => {
   const cwd = await fixture();
   expect((await executeFileOperation("copy", { path: "source", target: "copy" }, cwd)).ok).toBe(
@@ -54,21 +60,13 @@ for (const operation of ["copy", "move"] as const) {
   });
 }
 
-test("refuses directories and symbolic links without touching their contents", async () => {
+test("refuses directory destinations for regular-file transfers", async () => {
   const cwd = await fixture();
   await mkdir(path.join(cwd, "dir"));
-  await symlink(path.join(cwd, "source"), path.join(cwd, "link"));
-  for (const name of ["dir", "link"]) {
-    for (const operation of ["copy", "move", "delete"] as const) {
-      expect(
-        await executeFileOperation(
-          operation,
-          { path: name, ...(operation === "delete" ? {} : { target: "new" }) },
-          cwd,
-        ),
-      ).toMatchObject({ ok: false, effect: "not-applied" });
-    }
-  }
+  for (const operation of ["copy", "move"] as const)
+    expect(
+      await executeFileOperation(operation, { path: "source", target: "dir" }, cwd),
+    ).toMatchObject({ ok: false, effect: "not-applied" });
   expect(await readFile(path.join(cwd, "source"))).toEqual(Buffer.from([0, 255, 10]));
 });
 

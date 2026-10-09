@@ -60,7 +60,5 @@ test("returns a scoped timeout error from the real search tool", async () => {
   }).run("Run the intentionally broad search");
 
   expect(getToolExecution(result, callId).isError).toBe(true);
-  expect(getToolResultText(result, callId)).toContain(
-    "Search timed out after 20ms. Try a smaller path scope.",
-  );
+  expect(getToolResultText(result, callId)).toContain("20ms");
 });

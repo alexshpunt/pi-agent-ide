@@ -293,17 +293,22 @@ function createRenderer(
           0,
         );
       }
-      const wholeFileSucceeded = wholeFileOperationSucceeded(result.details);
-      if (wholeFileSucceeded !== undefined) {
+      const wholeFileEffect = wholeFileOperationEffect(result.details);
+      if (wholeFileEffect !== undefined) {
+        const applied = wholeFileEffect === "applied";
+        const unknown = wholeFileEffect === "unknown";
+        const affected = registration.name === "delete" ? "the source" : "source and destination";
         return new Text(
           theme.fg(
-            wholeFileSucceeded ? "success" : "error",
-            wholeFileSucceeded
-              ? registration.name === "copy" &&
-                typeof result.details.metadata?.targetUnavailable === "string"
-                ? "✓ Applied · no verified text selection; read destination before further edits"
-                : "✓ Applied"
-              : "✗ Not applied",
+            unknown ? "warning" : applied ? "success" : "error",
+            unknown
+              ? `Effects unknown · ${registration.name} failed; read ${affected} before retrying`
+              : applied
+                ? registration.name === "copy" &&
+                  typeof result.details.metadata?.targetUnavailable === "string"
+                  ? "✓ Applied · no verified text selection; read destination before further edits"
+                  : "✓ Applied"
+                : "✗ Not applied",
           ),
           0,
           0,
@@ -892,15 +897,20 @@ function semanticRange(start: string, end: string): string {
     : `${start}–${end}`;
 }
 
-function wholeFileOperationSucceeded(details: unknown): boolean | undefined {
+function wholeFileOperationEffect(
+  details: unknown,
+): "applied" | "not-applied" | "unknown" | undefined {
   if (details === null || typeof details !== "object" || !("metadata" in details)) return undefined;
   const metadata = details.metadata;
   if (metadata === null || typeof metadata !== "object" || !("semanticAction" in metadata))
     return undefined;
   const action = metadata.semanticAction;
   if (action === null || typeof action !== "object" || !("kind" in action)) return undefined;
-  return action.kind === "file-operation" && "ok" in action && typeof action.ok === "boolean"
-    ? action.ok
+  if (action.kind !== "file-operation" || !("effect" in action)) return undefined;
+  return action.effect === "applied" ||
+    action.effect === "not-applied" ||
+    action.effect === "unknown"
+    ? action.effect
     : undefined;
 }
 
@@ -908,12 +918,17 @@ function userFacingFailure(
   agentOutput: string,
   details: FileMutationBatchResult | undefined,
 ): string {
-  const rollback = details?.results?.find((result) => result.data.rollback !== undefined)?.data
-    .rollback;
-  if (rollback !== undefined) {
-    return rollback.failedSources.length === 0
-      ? "Rolled back · write failed"
-      : "State unknown · rollback failed";
+  const rollbacks =
+    details?.results?.flatMap((result) => (result.data.rollback ? [result.data.rollback] : [])) ??
+    [];
+  if (rollbacks.length > 0) {
+    const failed = [...new Set(rollbacks.flatMap((rollback) => rollback.failedSources))];
+    const restored = [...new Set(rollbacks.flatMap((rollback) => rollback.restoredSources))];
+    return [
+      failed.length === 0 ? "Rolled back · write failed" : "State unknown · rollback failed",
+      ...(failed.length > 0 ? [`Unknown: ${failed.join(", ")}`] : []),
+      ...(restored.length > 0 ? [`Rolled back: ${restored.join(", ")}`] : []),
+    ].join("\n");
   }
   if (details?.effect === "unknown") return "Effects unknown · edit failed";
   if (details?.effect === "applied") return "Saved · post-write step failed";

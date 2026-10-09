@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
 import { executeFileOperation } from "#src/core/file-operations.js";
@@ -16,6 +17,7 @@ export function isWholeFileInvocation(
     input.path.length === 0 ||
     input.path.startsWith("SEARCH#") ||
     input.path.startsWith("RESULT#") ||
+    (operation === "delete" && input.path.startsWith("symbol:")) ||
     (typeof input.target === "string" && input.target.startsWith("RESULT#"))
   )
     return false;
@@ -29,9 +31,13 @@ export async function executeWholeFileTool(
   operation: FileOperation,
   input: Readonly<Record<string, unknown>>,
   signal: AbortSignal | undefined,
-  context: Pick<ExtensionContext, "cwd">,
+  context: Pick<ExtensionContext, "cwd"> & {
+    readonly hasUI?: boolean;
+    readonly ui?: Pick<ExtensionContext["ui"], "confirm">;
+  },
   verifySource?: () => Promise<void>,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
+  const ui = context.hasUI ? context.ui : undefined;
   const outcome = await core.enqueueFileOperation(
     async (): Promise<FileOperationResult> => {
       try {
@@ -51,7 +57,30 @@ export async function executeWholeFileTool(
           },
         };
       }
-      return executeFileOperation(operation, input, context.cwd, signal);
+      return executeFileOperation(operation, input, context.cwd, signal, {
+        beforeDelete: (event) => core.beforeDelete(event),
+        ...(ui !== undefined && {
+          confirm: async (event, reason) =>
+            ui.confirm(
+              operation === "move" ? "Move filesystem object?" : "Delete permanently?",
+              [
+                event.path,
+                event.resolvedPath === event.path
+                  ? undefined
+                  : `Resolved path: ${event.resolvedPath}`,
+                operation === "move" && event.path === path.resolve(context.cwd, String(input.path))
+                  ? `Move source to ${String(input.target)}; preserve link objects without following their targets.`
+                  : event.recursive
+                    ? "Remove directory and all contents recursively."
+                    : "Unlink symlink only; leave its target untouched.",
+                reason,
+              ]
+                .filter((line) => line !== undefined)
+                .join("\n"),
+              { signal },
+            ),
+        }),
+      });
     },
     signal,
     {
@@ -64,7 +93,7 @@ export async function executeWholeFileTool(
   if (outcome.ok && operation !== "copy" && outcome.path !== undefined)
     forgetDeferredPostEdit(outcome.path);
   let postProcessingError: string | undefined;
-  if (outcome.ok && outcome.target !== undefined) {
+  if (outcome.ok && outcome.target !== undefined && outcome.sourceKind === "file") {
     try {
       await core.postProcessFile(outcome.target, { cwd: context.cwd, signal });
     } catch (error) {

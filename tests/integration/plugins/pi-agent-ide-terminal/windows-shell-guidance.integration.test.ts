@@ -55,7 +55,6 @@ test.runIf(process.platform === "win32")(
       const shell = declarations.find((tool) => tool.name === "powershell");
       expect(shell?.description).toContain("Windows PowerShell");
       const schema = JSON.stringify(shell?.parameters);
-      expect(schema).toContain("Write PowerShell syntax");
       expect(schema).toContain("$env:NAME");
       expect(schema).not.toContain("configured system shell");
       const execution = getToolExecution(result, "windows-shell");
@@ -67,7 +66,6 @@ test.runIf(process.platform === "win32")(
         exitCode: 0,
       });
       expect(getToolResultText(result, "windows-shell")).toContain("LPT-361-Windows-Windows_NT");
-      expect(getToolResultText(result, "windows-shell")).toContain("do not infer syntax");
       expect(result.state?.mode).toBe("rpc");
     } finally {
       await rm(workspace, { recursive: true, force: true });

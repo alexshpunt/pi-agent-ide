@@ -20,10 +20,12 @@ import type { TextChange } from "#src/core/text-change-engine.js";
 export const moveSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Source file path, unchanged source result or its UUID; omit start/end for result inputs. Use one whole-file result when the destination is a file path without text selectors. Source/destination selections pair in declared order, with equal counts and duplicate ranges removed. Destinations must not overlap or touch source ranges.",
+      "Filesystem source path, unchanged source result or its UUID; omit start/end for result inputs. Use ordinary paths without selectors to move whole files, directory trees, or symlink objects without following their targets. Use one whole-file result when the destination is a file path without text selectors. Source/destination selections pair in declared order, with equal counts and duplicate ranges removed. Destinations must not overlap or touch source ranges.",
     ),
     ...sourceRangeProperties(),
-    ...targetProperties(),
+    ...targetProperties(
+      "Directory Move replaces the exact target directory, removing destination-only entries.",
+    ),
   },
   { additionalProperties: false },
 );
@@ -40,9 +42,9 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
   name: "move",
   wholeFileOperation: "move",
   description:
-    "Use move to move or rename one regular file, or to relocate selected text within or between files.",
+    "Use move to move or rename a file, directory tree, or symlink object, or to relocate selected text within or between files.",
 
-  promptSnippet: "Move or rename regular files, or move selected text within or between files",
+  promptSnippet: "Move filesystem objects or selected text",
   parameters: moveSchema,
   source: { field: "path", inherited: true, targets: [{ field: "target", fallbackTo: "path" }] },
   anchors: [

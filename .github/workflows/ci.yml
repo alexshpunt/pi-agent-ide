@@ -20,6 +20,7 @@ on:
 permissions:
   contents: read
   checks: write
+  actions: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -33,16 +34,82 @@ env:
   BADGE_TOKEN: ${{ secrets.GIST_TOKEN }}
 
 jobs:
-  validate:
-    name: Validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+  windows-image:
+    name: Inspect Windows runner image
+    runs-on: windows-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - name: Read runner image
+        id: image
+        shell: pwsh
+        run: |
+          $image = ''
+          if ($env:ImageOS -and $env:ImageVersion) {
+            $image = "$($env:ImageOS)/$($env:ImageVersion)"
+          }
+          "image=$image" >> $env:GITHUB_OUTPUT
 
+  plan:
+    name: Plan CI
+    needs: windows-image
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      full: ${{ steps.decision.outputs.full }}
+      source_run: ${{ steps.decision.outputs.source_run }}
+      reason: ${{ steps.decision.outputs.reason }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.source_ref || github.ref }}
+          ref: ${{ inputs.source_ref || github.sha }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Decide whether full checks are needed
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_WINDOWS_IMAGE: ${{ needs.windows-image.outputs.image }}
+          CI_NIGHTLY: ${{ inputs.nightly }}
+        run: node --experimental-strip-types scripts/ci-evidence-action.ts decide
+
+  validate:
+    name: Validate
+    needs: plan
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    outputs:
+      image: ${{ steps.identity.outputs.image }}
+      commit: ${{ steps.identity.outputs.commit }}
+      tree: ${{ steps.identity.outputs.tree }}
+    steps:
+      - name: Require a valid CI plan
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          RUN_FULL: ${{ needs.plan.outputs.full }}
+          CI_EVENT: ${{ github.event_name }}
+          CI_NIGHTLY: ${{ inputs.nightly }}
+        run: |
+          set -euo pipefail
+          test "$PLAN_RESULT" = success
+          test "$RUN_FULL" = true || test "$RUN_FULL" = false
+          if [[ "$CI_EVENT" != push || "$CI_NIGHTLY" == true ]]; then
+            test "$RUN_FULL" = true
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
           fetch-depth: 0
 
       - name: Setup Node
@@ -51,8 +118,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
 
-      - name: Setup npm and pnpm
-        run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
+      - name: Capture tested Linux identity
+        id: identity
+        run: node --experimental-strip-types scripts/ci-evidence-action.ts identity
 
       - name: Enforce main release freeze
         if: github.event_name == 'pull_request' && github.base_ref == 'main'
@@ -61,11 +129,28 @@ jobs:
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: node --experimental-strip-types scripts/release/merge-policy.ts
 
+      - name: Scan commit range
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+            if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="HEAD^"; fi
+          fi
+          node --experimental-strip-types scripts/security-scan.ts range "$base" HEAD
+
+      - name: Setup npm and pnpm
+        if: needs.plan.outputs.full == 'true'
+        run: npm install --global "npm@${NPM_VERSION}" "pnpm@${PNPM_VERSION}"
+
       - &core-runtime-tools
         name: Setup runtime tools
+        if: needs.plan.outputs.full == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install --yes build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc
+          sudo apt-get install --yes bubblewrap build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc
           sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
           curl --fail --location --silent --show-error \
             https://storage.googleapis.com/dart-archive/channels/stable/release/3.13.3/sdk/dartsdk-linux-x64-release.zip \
@@ -145,24 +230,15 @@ jobs:
           typescript-language-server --version
 
       - name: Install dependencies
+        if: needs.plan.outputs.full == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Scan commit range
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            base="${{ github.event.pull_request.base.sha }}"
-          else
-            base="${{ github.event.before }}"
-            if [[ -z "$base" || "$base" =~ ^0+$ ]]; then base="HEAD^"; fi
-          fi
-          pnpm security:scan -- range "$base" HEAD
-
       - name: Check source and package
+        if: needs.plan.outputs.full == 'true'
         run: pnpm check
 
       - name: Verify public tree and package artifact
+        if: needs.plan.outputs.full == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -171,12 +247,31 @@ jobs:
           test -n "$tarball"
           pnpm security:scan -- artifact "$tarball"
 
+      - name: Allow Bubblewrap user namespaces
+        if: needs.plan.outputs.full == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          restriction=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [[ -f "$restriction" && "$(cat "$restriction")" == 1 ]]; then
+            # Allow only the sandbox binary; keep the runner-wide restriction enabled.
+            printf '%s\n' \
+              'abi <abi/4.0>,' \
+              'include <tunables/global>' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' \
+              '  userns,' \
+              '}' | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser --replace /etc/apparmor.d/bwrap
+          fi
+          bwrap --die-with-parent --unshare-user --unshare-pid \
+            --ro-bind / / --proc /proc --dev /dev /bin/true
       - name: Run unit tests
+        if: needs.plan.outputs.full == 'true'
         id: unit-tests
         run: pnpm test:unit:report
 
       - name: Upload unit test report
-        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
+        if: needs.plan.outputs.full == 'true' && (always() && hashFiles('.agents/tmp/test-results/unit.xml') != '')
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: unit-test-results
@@ -186,7 +281,7 @@ jobs:
 
       - name: Report unit tests
         id: unit-report
-        if: always() && hashFiles('.agents/tmp/test-results/unit.xml') != ''
+        if: needs.plan.outputs.full == 'true' && (always() && hashFiles('.agents/tmp/test-results/unit.xml') != '')
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Unit tests
@@ -196,27 +291,28 @@ jobs:
 
       - name: Run integration tests
         id: integration-tests
-        if: success()
+        if: needs.plan.outputs.full == 'true' && (success())
         env:
-          SHARDS: "4"
+          # Keep source-loading Pi processes below the runner's contention peak.
+          SHARDS: "3"
           REPORT_DIR: .agents/tmp/test-results
         run: pnpm test:integration:shards --exclude 'tests/integration/debugger*.integration.test.ts'
 
       - name: Verify normal configured startup
-        if: success()
+        if: needs.plan.outputs.full == 'true' && (success())
         run: |
           pnpm exec pi install --approve --local "$GITHUB_WORKSPACE"
           pnpm exec oxnode scripts/dev/check-normal-startup.ts src/pi-agent-ide.ts
 
       - name: Capture agent interface
-        if: success()
+        if: needs.plan.outputs.full == 'true' && (success())
         run: >-
           pnpm dev:export-agent-interface --
           --transport rpc
           --tools read,search,select,diff,write,replace,insert,delete,copy,move,undo,bash,codemode,tool_search
 
       - name: Retain agent interface
-        if: always() && hashFiles('.tmp/prompt-snapshots/*.md') != ''
+        if: needs.plan.outputs.full == 'true' && (always() && hashFiles('.tmp/prompt-snapshots/*.md') != '')
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: agent-interface
@@ -226,7 +322,7 @@ jobs:
           retention-days: 30
 
       - name: Retain editor TUI traces
-        if: always() && steps.integration-tests.outcome == 'success'
+        if: needs.plan.outputs.full == 'true' && (always() && steps.integration-tests.outcome == 'success')
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: editor-tui-traces
@@ -240,7 +336,7 @@ jobs:
           retention-days: 30
 
       - name: Smoke test nightly package
-        if: success() && inputs.nightly
+        if: needs.plan.outputs.full == 'true' && (success() && inputs.nightly)
         shell: bash
         run: |
           set -euo pipefail
@@ -249,7 +345,7 @@ jobs:
           node --experimental-strip-types --input-type=module -e 'import { installTestPackage, verifyInstalledPackage } from "./scripts/release-candidate.ts"; installTestPackage(".agents/tmp/nightly-install", process.argv[1]); verifyInstalledPackage(".agents/tmp/nightly-install");' "$archive"
 
       - name: Retain nightly package
-        if: success() && inputs.nightly
+        if: needs.plan.outputs.full == 'true' && (success() && inputs.nightly)
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: nightly-package
@@ -259,11 +355,11 @@ jobs:
           retention-days: 30
 
       - name: Build and install reproducible release candidate
-        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main'
+        if: needs.plan.outputs.full == 'true' && (success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main')
         run: node --experimental-strip-types scripts/build-release-candidate.ts
 
       - name: Retain release candidate
-        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main'
+        if: needs.plan.outputs.full == 'true' && (success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release/') && github.base_ref == 'main')
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: release-candidate
@@ -273,7 +369,7 @@ jobs:
           retention-days: 30
 
       - name: Upload integration shard logs
-        if: always()
+        if: needs.plan.outputs.full == 'true' && (always())
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: integration-shard-logs
@@ -283,7 +379,7 @@ jobs:
           retention-days: 30
 
       - name: Retain failed anchor Pi traces
-        if: failure()
+        if: needs.plan.outputs.full == 'true' && (failure())
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: failed-anchor-pi-traces
@@ -292,8 +388,26 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Retain failed native Codemode Pi traces
+        if: needs.plan.outputs.full == 'true' && (failure())
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: failed-native-codemode-pi-traces
+          path: .tmp/test-runs/tests/integration/native-codemode.integration.test.ts/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Retain failed semantic rename Pi traces
+        if: needs.plan.outputs.full == 'true' && (failure())
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: failed-semantic-rename-pi-traces
+          path: .tmp/test-runs/tests/integration/capability-semantic-rename.integration.test.ts/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
       - name: Retain failed composition Pi traces
-        if: failure()
+        if: needs.plan.outputs.full == 'true' && (failure())
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: failed-composition-pi-traces
@@ -303,7 +417,7 @@ jobs:
           retention-days: 30
 
       - name: Upload test reports
-        if: always()
+        if: needs.plan.outputs.full == 'true' && (always())
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: test-results
@@ -313,7 +427,7 @@ jobs:
 
       - name: Report integration tests
         id: integration-report
-        if: always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != ''
+        if: needs.plan.outputs.full == 'true' && (always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != '')
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
           name: Integration tests
@@ -322,7 +436,7 @@ jobs:
           fail-on-error: false
 
       - name: Update unit badge
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && env.BADGE_TOKEN != '' && steps.unit-report.outcome == 'success'
+        if: needs.plan.outputs.full == 'true' && (always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && env.BADGE_TOKEN != '' && steps.unit-report.outcome == 'success')
         uses: Schneegans/dynamic-badges-action@28b0fa8bdeb46170ac397105ece0c1fe58f68910 # v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
@@ -334,7 +448,7 @@ jobs:
           isError: ${{ steps.unit-report.outputs.failed != '0' }}
 
       - name: Update integration badge
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && env.BADGE_TOKEN != '' && steps.integration-report.outcome == 'success'
+        if: needs.plan.outputs.full == 'true' && (always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && env.BADGE_TOKEN != '' && steps.integration-report.outcome == 'success')
         uses: Schneegans/dynamic-badges-action@28b0fa8bdeb46170ac397105ece0c1fe58f68910 # v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
@@ -345,7 +459,45 @@ jobs:
           color: ${{ steps.integration-report.outputs.failed == '0' && 'brightgreen' || 'red' }}
           isError: ${{ steps.integration-report.outputs.failed != '0' }}
 
+  record-evidence:
+    name: Record full CI evidence
+    needs: [plan, validate, validate-windows-core]
+    if: always() && (github.event_name == 'push' || github.event_name == 'pull_request') && !inputs.nightly && needs.plan.outputs.full == 'true' && needs.validate.result == 'success' && needs['validate-windows-core'].result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout tested product
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.validate.outputs.commit }}
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+      - name: Record complete full-run proof
+        id: record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_FULL: ${{ needs.plan.outputs.full }}
+          CI_LINUX_IMAGE: ${{ needs.validate.outputs.image }}
+          CI_WINDOWS_IMAGE: ${{ needs.validate-windows-core.outputs.image }}
+          CI_LINUX_TREE: ${{ needs.validate.outputs.tree }}
+          CI_WINDOWS_TREE: ${{ needs.validate-windows-core.outputs.tree }}
+        run: node --experimental-strip-types scripts/ci-evidence-action.ts record
+      - name: Retain full-run proof
+        if: steps.record.outputs.recorded == 'true'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: ci-evidence-${{ github.run_attempt }}
+          path: .agents/tmp/ci-evidence/evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
   debugger-core:
+    needs: plan
+    if: always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.full == 'true'
     name: Debugger core (flaky, non-blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -354,7 +506,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.source_ref || github.ref }}
+          ref: ${{ inputs.source_ref || github.sha }}
       - name: Setup Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -387,7 +539,12 @@ jobs:
           retention-days: 30
 
   validate-windows-core:
+    needs: plan
+    if: always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.full == 'true'
     name: Validate Windows core
+    outputs:
+      image: ${{ steps.identity.outputs.image }}
+      tree: ${{ steps.identity.outputs.tree }}
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -395,13 +552,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.source_ref || github.ref }}
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           package-manager-cache: false
+
+      - name: Capture tested Windows identity
+        id: identity
+        run: node --experimental-strip-types scripts/ci-evidence-action.ts identity
 
       - name: Setup npm and pnpm
         run: npm install --global "npm@$env:NPM_VERSION" "pnpm@$env:PNPM_VERSION"
@@ -551,6 +712,8 @@ jobs:
         run: node .agents/tmp/windows-checks/windows-debugger-check.mjs
 
   java-debugger-lifecycle:
+    needs: plan
+    if: always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.full == 'true'
     name: Java debugger (${{ matrix.os }}, flaky, non-blocking)
     continue-on-error: true
     runs-on: ${{ matrix.os }}
@@ -567,7 +730,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.source_ref || github.ref }}
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
@@ -623,6 +786,8 @@ jobs:
           if-no-files-found: error
 
   debugger-matrix:
+    needs: plan
+    if: always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.full == 'true'
     name: Debugger (${{ matrix.language }}, flaky, non-blocking)
     continue-on-error: true
     runs-on: ubuntu-latest
@@ -637,7 +802,7 @@ jobs:
         # actions/checkout v6
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
-          ref: ${{ inputs.source_ref || github.ref }}
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Setup Node
         # actions/setup-node v6

@@ -30,20 +30,20 @@ After the feature passes local verification, remove your temporary loader and pa
 5. Study the codebase and find what the task refers to. Read the relevant code, docs, and tests. Do not start implementing yet.
 6. Tell the user what the task asks for and what you found in the code. Discuss whether the task is still needed and how to do it. Use `ask_user` for decisions and unresolved scope. Wait for agreement before implementing.
 
-## Implement and ask for acceptance
+## Implement and open the PR
 
 7. Implement the agreed task in its worktree. Keep Linear up to date if the scope changes or work becomes blocked.
-8. Check that the result works. Run relevant checks and demonstrate the behavior. A full CI/CD run is not required, but do not skip checks needed to verify this task or checks required by the repository. For tool or extension changes, read `pi-feature-verification` and follow this order:
+8. Check the changed behavior with focused local checks: relevant unit tests, typecheck/lint, a targeted integration case, or a small live smoke check. Full integration suites and other broad, heavy test runs belong only in CI/CD; do not run them locally or through an umbrella check command. For tool or extension changes, read `pi-feature-verification` and follow this order:
    - Before reloading your working session, launch a separate Pi process from the current worktree with the normal project configuration. Use an in-memory session and no model prompt. Check that Pi starts, loads this worktree's extension without errors or duplicate registrations, and shuts down cleanly. Do not use `--no-extensions` or an explicit entrypoint: that would bypass the configuration you need to check. Inspect startup errors as well as the exit code. If the smoke test fails, fix it before reloading.
-   - After the smoke test passes, call `pi_extension_dev_reload_self` with `confirm_state_loss: true`. Include the current worktree and exact demonstration steps in the continuation prompt. Reload may reset extension state; do not depend on it surviving.
-   - Immediately after reload, exercise the changed tool or feature and demonstrate the result. Check the agent-facing output and, when it renders to the user, capture and inspect the real viewport with `inspect_tui`. Report what you observed, not just that tests passed.
-9. Remove the temporary local IDE setup and return to normal loading as described above. Tell the user the task is ready for their review. Show what changed, what you checked, and how they can verify it. Ask with `ask_user` whether they are satisfied or want changes.
-10. Wait for explicit acceptance, such as “OK”. If the user wants changes, make them, check them, and ask again. Do not create or merge the PR, remove the worktree, or mark the task done before acceptance.
+   - After the smoke test passes, call `pi_extension_dev_reload_self` with `confirm_state_loss: true`. Include the current worktree and exact verification steps in the continuation prompt. Reload may reset extension state; do not depend on it surviving.
+   - Immediately after reload, exercise the changed tool or feature. Check the agent-facing output and, when it renders to the user, capture and inspect the real viewport with `inspect_tui`. Keep this as internal verification, not a separate GIF demonstration or acceptance gate.
+9. Remove the temporary local IDE setup and return to normal loading as described above. Check that temporary settings and loaders are absent from the staged diff. Commit and push only the task changes. Create a PR targeting `develop`, link the Linear task, and summarize the changes, checks, and checks not run.
+10. Open the created PR's URL in the user's browser and include the link in chat. Ask with `ask_user` whether they approve the current PR head or want changes. Do not merge the PR, remove the worktree, or mark the task done before explicit approval.
+11. If the user wants changes, make them, run focused checks, clean up temporary IDE setup, and update the same PR. Open the updated PR and ask for approval again. Approval applies only to the reviewed head.
 
 ## Merge and finish
 
-11. After acceptance, check that temporary IDE settings and loaders are absent from the staged diff. Commit and push only the task changes. Create a PR targeting `develop` so the work is visible. Link the Linear task and summarize the changes and checks.
-12. Merge through the PR. Respect required repository checks; a full optional CI/CD run is not necessary. If merging is blocked, report the blocker and keep the branch and worktree.
+12. After explicit user approval, merge through the PR using the expected head SHA. CI may run automatically on `develop`, but it is not required for this merge. Do not trigger extra CI or wait for optional checks. If repository protection blocks the merge, report the blocker and keep the branch and worktree; do not bypass it. Required promotion and release CI checks are separate and still apply.
 13. After the merge succeeds, return from the task worktree with Teleport and remove that worktree. Delete the task branch locally and remotely once it is safe to do so. Do not remove other agents' work or unrelated changes.
 14. Move the Linear task to the appropriate completed status and attach the PR link. If the task was canceled instead, use the appropriate canceled status, not completed.
 15. Tell the user the task is merged and cleaned up, then stop.
