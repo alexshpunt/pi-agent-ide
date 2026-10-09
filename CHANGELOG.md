@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.3 — 2026-10-09
+
+### Directories and symlinks
+
+- Let Delete remove directories recursively and unlink symlinks, including broken links, without following their targets. Protect project roots, ancestors and Git control paths; require host approval for tracked/staged and external targets. Refusal or an unavailable dialog prevents removal.
+- Add `connectBeforeDeleteHook` for whole-object deletion and directory/symlink Move removal. A denied or failed hook blocks the operation; allowing never bypasses built-in protection.
+- Let Copy merge a directory into the exact target path while keeping destination-only entries. Let Move replace the exact target directory. Both preserve file bytes, empty directories and symlink text, and reject aliases, overlapping trees, symlink destinations and type conflicts before writing.
+- Allow configurable temporary roots for directory/symlink Delete. Defaults cover project and home temporary directories and the system temporary directory. Global and project settings can extend or replace them. Eligible descendants skip external/non-Git confirmation, but hooks, protected paths, tracked/staged contents and failed Git checks remain guarded.
+- Report recursive filesystem failures after dispatch as unknown effects. Recursive operations have no rollback; inspect source and target before retrying.
+
+### Editing and tool composition
+
+- Return compact file Write receipts instead of repeating file content, diffs and diagnostics in model context. Keep full user-facing panels and whole-file follow-up selections; terminal input keeps its own receipt.
+- Preserve per-resource Move rollback evidence. Distinguish restored resources from failed or uncertain restoration in agent results and user-facing diffs.
+- Accept empty Move selections and paired zero-width points as no-ops without writing. Paired points select only the unchanged destination.
+- Delete declarations through direct `symbol:` paths. Route `symbol:<file>#<selector>#name` replacement through semantic rename in native Codemode rather than declaration-text replacement.
+- Keep original source selections behind compact AST Read overviews. Follow-up tools use the requested source range, not the displayed outline.
+
+### Display and verification
+
+- Explain shortened arguments, omitted result displays, omitted call panels and unavailable results separately in saved nested IDE displays.
+- Hide internal result references from Stage's user-facing output and retain breakpoint-removal labels after deletion.
+- Add an opt-in real-model capability matrix for direct and native Codemode routes. Free coverage checks do not call models or prove model execution; paid runs retain their evidence.
+- Reuse recent full CI evidence only for identical trees and verification conditions. Promotion and versioned candidates still run their required full checks.
+- Permit Bubblewrap user namespaces through a per-binary AppArmor profile on restricted Ubuntu CI runners. Keep the runner-wide restriction enabled and require a real sandbox launch before unit checks.
+- Keep links to excluded tests and benchmarks usable in the public npm package by linking to the public repository.
+- Update integration checks for compact Write receipts while retaining saved-byte, formatting, hook, output-recovery and native-panel contracts. Run sandbox semantic rename with the pinned Pi host and CI language-server toolchain.
+- Reduce shared-runner integration concurrency to three processes to keep Pi startup within existing run limits and the complete suite within the unchanged job budget. Retain native Codemode failure traces.
+
 ## 0.7.2 — 2026-10-08
 
 ### Bounded output without losing the full result
