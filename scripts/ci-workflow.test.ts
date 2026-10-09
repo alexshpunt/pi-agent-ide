@@ -106,7 +106,7 @@ test("keeps unit failure evidence before success-only integration", () => {
     "pnpm test:integration:shards --exclude 'tests/integration/debugger*.integration.test.ts'",
   );
   expect(integration.step.env).toMatchObject({
-    SHARDS: "4",
+    SHARDS: "3",
     REPORT_DIR: ".agents/tmp/test-results",
   });
   const integrationReport = find("Report integration tests");
@@ -124,6 +124,12 @@ test("keeps unit failure evidence before success-only integration", () => {
   expect(compositionTraces.step.with?.["include-hidden-files"]).toBe(true);
   expect(compositionTraces.step.with?.path).toBe(
     ".tmp/test-runs/tests/integration/native-tool-composition.integration.test.ts/",
+  );
+  const nativeTraces = find("Retain failed native Codemode Pi traces");
+  expect(nativeTraces.step.if).toBe("needs.plan.outputs.full == 'true' && (failure())");
+  expect(nativeTraces.step.with?.["include-hidden-files"]).toBe(true);
+  expect(nativeTraces.step.with?.path).toBe(
+    ".tmp/test-runs/tests/integration/native-codemode.integration.test.ts/",
   );
   const candidate = find("Build and install reproducible release candidate");
   expect(candidate.index).toBeGreaterThan(integration.index);
