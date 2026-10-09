@@ -69,6 +69,12 @@ const groups: [string[], string[]][] = [
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
+  [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
+  [["edit.exact-eof"], ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"]],
+  [
+    ["codemode.parallel-edit-effects"],
+    ["parallel-edit-effects-all", "parallel-edit-effects-allSettled"],
+  ],
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
   [
     [

@@ -771,6 +771,77 @@ add(
   { files: { "a.txt": "OLD\n", "b.txt": "NEW\n" }, answer: "NEW" },
 );
 
+for (const [name, eol] of [
+  ["lf", "\n"],
+  ["crlf", "\r\n"],
+] as const) {
+  add(
+    `replace-line-boundary-${name}`,
+    ["edit.replace-line-endings"],
+    "Replace the exact heading ## OLD with ## NEW in heading.txt, without an end anchor or a newline in the replacement. Preserve the existing line endings and blank line before Body.",
+    [{ tool: "replace", args: { path: "heading.txt", start: "## OLD", text: "## NEW" } }],
+    {
+      files: { "heading.txt": `## OLD${eol}${eol}Body${eol}` },
+      expected: { "heading.txt": `## NEW${eol}${eol}Body${eol}` },
+    },
+  );
+}
+for (const [name, eol, ending] of [
+  ["lf", "\n", "\n"],
+  ["crlf", "\r\n", "\r\n"],
+  ["unterminated", "\n", ""],
+] as const) {
+  add(
+    `exact-eof-${name}`,
+    ["edit.exact-eof"],
+    "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Do not use an end anchor. Preserve unrelated bytes and each file's existing newline style.",
+    [
+      { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
+      { tool: "delete", args: { path: "block.txt", start: "Last\nBlock" } },
+    ],
+    {
+      files: {
+        "last.txt": `First${eol}Last${ending}`,
+        "block.txt": `First${eol}Last${eol}Block${ending}`,
+      },
+      expected: { "last.txt": `First${eol}Final${ending}`, "block.txt": `First${ending}` },
+    },
+  );
+}
+for (const method of ["all", "allSettled"] as const) {
+  add(
+    `parallel-edit-effects-${method}`,
+    ["codemode.parallel-edit-effects"],
+    `In one native Codemode script, use Promise.${method} to start six edits together, without awaiting an individual call first. Insert FIRST plus a newline after first, MIDDLE plus a newline after middle, and LAST plus a newline after last in insert.txt. Use ./insert.txt for the middle request. Concurrently delete the unique whole lines first, middle, and last from delete.txt, using ./delete.txt for the middle request. Check every result and print each receipt. Preserve all other bytes, including the existing blank lines and EOF.`,
+    [
+      { tool: "insert", args: { path: "insert.txt", anchor: "first", text: "FIRST\n" } },
+      {
+        tool: "insert",
+        args: { path: "./insert.txt", anchor: "middle", text: "MIDDLE\n" },
+        parallelWith: 0,
+      },
+      {
+        tool: "insert",
+        args: { path: "insert.txt", anchor: "last", text: "LAST\n" },
+        parallelWith: 1,
+      },
+      { tool: "delete", args: { path: "delete.txt", start: "first" } },
+      { tool: "delete", args: { path: "./delete.txt", start: "middle" }, parallelWith: 3 },
+      { tool: "delete", args: { path: "delete.txt", start: "last" }, parallelWith: 4 },
+    ],
+    {
+      modes: ["codemode"],
+      files: {
+        "insert.txt": "first\nmiddle\nlast\n",
+        "delete.txt": "keep\nfirst\n\nmiddle\n\nlast\n",
+      },
+      expected: {
+        "insert.txt": "first\nFIRST\nmiddle\nMIDDLE\nlast\nLAST\n",
+        "delete.txt": "keep\n\n\n",
+      },
+    },
+  );
+}
 add(
   "undo-last",
   ["edit.undo-last", "compose.mutation-undo"],
@@ -780,7 +851,11 @@ add(
     { tool: "undo", args: { file: "task.txt", change: "last" } },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD" },
   ],
-  { answer: "OLD" },
+  {
+    files: { "task.txt": "keep\r\nOLD\r\n" },
+    expected: { "task.txt": "keep\r\nOLD\r\n" },
+    answer: "OLD",
+  },
 );
 
 add(
