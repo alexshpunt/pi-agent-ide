@@ -15,6 +15,8 @@ export interface ResultRange {
 
 /** Backend-owned text targets; never accepted directly from untrusted JSON. */
 export interface ResultSourceTarget {
+  /** Trusted owning-provider reread; never accepted from agent-supplied coordinates. */
+  readonly readCurrent?: (signal?: AbortSignal) => Promise<string>;
   readonly source: string;
   readonly expectedContent: string;
   readonly ranges: readonly ResultRange[];
@@ -310,6 +312,7 @@ export class ResultTargetStore {
 
 function sourcePath(source: string, cwd: string): string {
   const file = source.startsWith("raw:") ? source.slice(4) : source;
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(file) && !file.startsWith("file:")) return file;
   if (file.startsWith("file:")) {
     try {
       return fileURLToPath(file);
@@ -337,7 +340,11 @@ export async function verifyResultTargets(
     signal?.throwIfAborted();
     let current = contents.get(target.source);
     if (current === undefined) {
-      current = await readFile(target.source, { encoding: "utf8", signal });
+      current =
+        target.readCurrent === undefined
+          ? await readFile(target.source, { encoding: "utf8", signal })
+          : await target.readCurrent(signal);
+      signal?.throwIfAborted();
       contents.set(target.source, current);
     }
     if (current !== target.expectedContent)
@@ -347,7 +354,13 @@ export async function verifyResultTargets(
 function combineTargets(targets: readonly ResultSourceTarget[]): ResultSourceTarget[] {
   const grouped = new Map<
     string,
-    { source: string; expectedContent: string; ranges: ResultRange[]; seen: Set<string> }
+    {
+      source: string;
+      expectedContent: string;
+      ranges: ResultRange[];
+      seen: Set<string>;
+      readCurrent?: ResultSourceTarget["readCurrent"];
+    }
   >();
   for (const target of targets) {
     const previous = grouped.get(target.source);
@@ -356,6 +369,7 @@ function combineTargets(targets: readonly ResultSourceTarget[]): ResultSourceTar
     const combined = previous ?? {
       source: target.source,
       expectedContent: target.expectedContent,
+      ...(target.readCurrent === undefined ? {} : { readCurrent: target.readCurrent }),
       ranges: [],
       seen: new Set<string>(),
     };

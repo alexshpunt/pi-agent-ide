@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { existsSync } from "node:fs";
 
-import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
+import { inspectRecipeEvidence, type RecipeEvidence } from "pi-agent-doctor/api/evidence";
 import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 import { hasConfiguredExecutable, loadLayeredToolConfig } from "pi-agent-ide/api/tool-config";
 
@@ -40,26 +40,78 @@ export class LspServerRegistry {
   */
   static async fromPackageDir(
     packageDir: string,
-    options: LayeredToolConfigOptions & { readonly recipes?: readonly ToolRecipe[] } = {},
+    options: LayeredToolConfigOptions & {
+      readonly recipes?: readonly ToolRecipe[];
+      /** Inspect native project evidence through the same owner as the configured processes. */
+      readonly recipeEvidence?: (
+        recipes: readonly ToolRecipe[],
+      ) => Promise<ReadonlyMap<string, RecipeEvidence>>;
+      /** Owner-side availability check; remote registries must not probe the controller. */
+      readonly executableAvailable?: (config: ServerConfig) => Promise<boolean>;
+      /** Probe a shipped candidate set in one owner request, avoiding per-tool transport startup. */
+      readonly executableAvailability?: (
+        configs: readonly ServerConfig[],
+      ) => Promise<readonly boolean[]>;
+    } = {},
   ): Promise<LspServerRegistry> {
+    options.signal?.throwIfAborted();
     const effective = await loadLayeredToolConfig(
       packageDir,
       "lsp-servers",
       (value) => parseLspConfig(value).servers,
       options,
     );
+    options.signal?.throwIfAborted();
+    if (
+      packageDir.startsWith("ssh://") &&
+      ((!options.executableAvailable && !options.executableAvailability) ||
+        (options.requireBuiltInEvidence && !options.recipeEvidence))
+    )
+      throw Object.assign(
+        new Error("Remote language server availability needs its workspace owner"),
+        { code: "UNSUPPORTED_SOURCE" },
+      );
     const environment = options.environment ?? process.env;
-    const available = await Promise.all(
-      effective.entries
-        .filter((entry) => entry.layer === "built-in")
-        .map(async (entry) => ({
+    const builtIns = effective.entries.filter((entry) => entry.layer === "built-in");
+    const available: { id: string; available: boolean }[] = [];
+    if (options.executableAvailability) {
+      const results = await options.executableAvailability(builtIns.map((entry) => entry.config));
+      if (
+        results.length !== builtIns.length ||
+        results.some((result) => typeof result !== "boolean")
+      )
+        throw new TypeError("Invalid owner executable availability report");
+      for (const [index, entry] of builtIns.entries())
+        available.push({ id: entry.id, available: results[index] === true });
+    } else if (options.executableAvailable) {
+      // Owner probes may open SSH connections; do not flood connection startup limits.
+      for (const entry of builtIns)
+        available.push({
           id: entry.id,
-          available: await hasConfiguredExecutable(entry.config, packageDir, environment),
-        })),
-    );
+          available: await options.executableAvailable(entry.config),
+        });
+    } else {
+      available.push(
+        ...(await Promise.all(
+          builtIns.map(async (entry) => ({
+            id: entry.id,
+            available: await hasConfiguredExecutable(
+              entry.config,
+              packageDir,
+              environment,
+              options.signal,
+            ),
+          })),
+        )),
+      );
+    }
+    options.signal?.throwIfAborted();
     const evidence = options.requireBuiltInEvidence
-      ? await inspectRecipeEvidence(packageDir, options.recipes ?? [])
+      ? options.recipeEvidence
+        ? await options.recipeEvidence(options.recipes ?? [])
+        : await inspectRecipeEvidence(packageDir, options.recipes ?? [], undefined, options.signal)
       : undefined;
+    options.signal?.throwIfAborted();
     return new LspServerRegistry(
       effective.entries,
       new Set(
@@ -71,7 +123,7 @@ export class LspServerRegistry {
           )
           .map((entry) => entry.id),
       ),
-      path.resolve(packageDir),
+      packageDir.startsWith("ssh://") ? packageDir : path.resolve(packageDir),
     );
   }
 
@@ -87,12 +139,19 @@ export class LspServerRegistry {
         sourcePath: "<memory>",
       })),
       new Set(),
-      path.resolve(projectRoot),
+      projectRoot.startsWith("ssh://") ? projectRoot : path.resolve(projectRoot),
     );
   }
 
   /** Resolve a file path or extension to servers in layer priority order. */
   resolve(file: string): ResolvedServer[] {
+    return this.candidates(file).filter(
+      (match) =>
+        !match.config.requireRootMarker || this.hasRootMarker(file, match.config.rootMarkers),
+    );
+  }
+
+  private candidates(file: string): ResolvedServer[] {
     const basename = path.basename(file);
     const extension = path.extname(file) || (file.startsWith(".") ? file : `.${file}`);
     const normalizeName = (name: string) =>
@@ -101,8 +160,6 @@ export class LspServerRegistry {
     for (const entry of this._entries) {
       if (!this._servers[entry.id]) continue;
 
-      if (entry.config.requireRootMarker && !this.hasRootMarker(file, entry.config.rootMarkers))
-        continue;
       for (const [languageId, language] of Object.entries(entry.config.languages)) {
         if (
           language.extensions.some(
@@ -124,6 +181,71 @@ export class LspServerRegistry {
     return matches;
   }
 
+  /** Resolve remote candidates using only their owner's marker checks. */
+  async resolveOwned(
+    file: string,
+    exists: (source: string) => Promise<boolean>,
+  ): Promise<ResolvedServer[]> {
+    if (!this._projectRoot.startsWith("ssh://")) return this.resolve(file);
+    const root = new URL(this._projectRoot);
+    const rootPath = decodeURIComponent(root.pathname);
+    const extensionOnly = file.startsWith(".") && !file.includes("/");
+    const selected = file.includes("://") ? new URL(file) : new URL(root.href);
+    const filePath = file.includes("://")
+      ? decodeURIComponent(selected.pathname)
+      : path.posix.resolve(rootPath, file);
+    const relative = path.posix.relative(rootPath, filePath);
+    if (
+      selected.origin !== root.origin ||
+      selected.host !== root.host ||
+      selected.protocol !== root.protocol ||
+      selected.username ||
+      selected.password ||
+      selected.port ||
+      selected.search ||
+      selected.hash ||
+      // Containment checks reject parent traversal; they do not construct paths.
+      // eslint-disable-next-line repo/no-parent-paths
+      relative === ".." ||
+      // eslint-disable-next-line repo/no-parent-paths
+      relative.startsWith("../")
+    )
+      throw Object.assign(new Error("Language server resource belongs to another owner"), {
+        code: "UNSUPPORTED_SOURCE",
+      });
+    const matches: ResolvedServer[] = [];
+    for (const candidate of this.candidates(extensionOnly ? file : filePath)) {
+      if (!candidate.config.requireRootMarker) {
+        matches.push(candidate);
+        continue;
+      }
+      let directory =
+        extensionOnly || filePath === rootPath ? rootPath : path.posix.dirname(filePath);
+      for (;;) {
+        let found = false;
+        for (const marker of candidate.config.rootMarkers) {
+          const markerPath = path.posix.resolve(directory, marker);
+          const markerRelative = path.posix.relative(rootPath, markerPath);
+          // Marker containment only; no parent-relative path is constructed.
+          // eslint-disable-next-line repo/no-parent-paths
+          if (markerRelative === ".." || markerRelative.startsWith("../")) continue;
+          const uri = new URL(root.href);
+          uri.pathname = markerPath.split("/").map(encodeURIComponent).join("/");
+          if (await exists(uri.href)) {
+            found = true;
+            break;
+          }
+        }
+        if (found) {
+          matches.push(candidate);
+          break;
+        }
+        if (directory === rootPath) break;
+        directory = path.posix.dirname(directory);
+      }
+    }
+    return matches;
+  }
   private hasRootMarker(file: string, markers: readonly string[]): boolean {
     let directory = path.dirname(path.resolve(this._projectRoot, file));
     if (file.startsWith(".") && !file.includes(path.sep)) directory = this._projectRoot;
@@ -139,9 +261,12 @@ export class LspServerRegistry {
     }
   }
 
-  /**
-  All effective server configurations by stable ID.
-  */
+  /** Canonical workspace used for marker resolution and remote document synchronization. */
+  get projectRoot(): string {
+    return this._projectRoot;
+  }
+
+  /** All effective server configurations by stable ID. */
   get servers(): Readonly<Record<string, ServerConfig>> {
     return this._servers;
   }
@@ -164,7 +289,13 @@ export class LspServerRegistry {
   Resolves a file extension to the canonical LSP languageId.
   */
   languageId(extension: string): string {
-    return this.resolve(extension)[0]?.languageId ?? extension.slice(1);
+    const file = extension.startsWith("ssh://")
+      ? decodeURIComponent(new URL(extension).pathname)
+      : extension;
+    const resolved = this._projectRoot.startsWith("ssh://")
+      ? this.candidates(file)
+      : this.resolve(file);
+    return resolved[0]?.languageId ?? extension.slice(1);
   }
 }
 

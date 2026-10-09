@@ -1,4 +1,4 @@
-import path from "node:path";
+import { resolveCodeViewPath } from "./reference.js";
 
 import { formatDiagnostic } from "#src/toolchain/diagnostic.js";
 
@@ -44,7 +44,7 @@ export function resolveDiagnosticViewPath(
     throw new Error(`${scheme}: requires a file path.`);
   }
 
-  return path.resolve(cwd, requestedPath);
+  return resolveCodeViewPath(requestedPath, cwd);
 }
 
 export function formatDiagnosticViewSource(scheme: string, filePath: string): string {

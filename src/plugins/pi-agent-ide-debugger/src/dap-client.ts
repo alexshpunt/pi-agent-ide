@@ -63,11 +63,21 @@ const REPLAYABLE_EVENTS = new Set([
   "custom",
 ]);
 const MAX_BUFFERED_EVENTS = 128;
+/** Backend-owned exact DAP streams. A lost transport must reject completion, not report exit success. */
+export interface DapTransport {
+  readonly readable: Readable;
+  readonly writable: Writable;
+  readonly completion: Promise<void>;
+  /** Stop only the process/channel this transport owns. Repeated client disposal calls it once. */
+  stop(): Promise<void>;
+}
 /** Framed JSON client for one Debug Adapter Protocol transport. */
 export class DapClient {
   readonly #readable: Readable;
   readonly #writable: Writable;
   readonly #ownedProcess?: ChildProcessWithoutNullStreams;
+  readonly #ownedTransport?: DapTransport;
+  #transportStop: Promise<void> | undefined;
   readonly #pending = new Map<number, PendingRequest>();
   readonly #events: DapEvent[] = [];
   readonly #waiters = new Set<EventWaiter>();
@@ -83,12 +93,22 @@ export class DapClient {
     readable: Readable,
     writable: Writable,
     ownedProcess?: ChildProcessWithoutNullStreams,
+    ownedTransport?: DapTransport,
   ) {
     this.#readable = readable;
     this.#writable = writable;
     this.#ownedProcess = ownedProcess;
+    this.#ownedTransport = ownedTransport;
+    if (ownedTransport) {
+      void ownedTransport.completion.then(
+        () => this.#close(new Error("Debug adapter transport completed")),
+        (error: unknown) =>
+          this.#close(error instanceof Error ? error : new Error("Debug adapter transport failed")),
+      );
+    }
     readable.on("data", (chunk: Buffer) => this.#consume(chunk));
     readable.once("error", (error) => this.#close(error));
+    writable.once("error", (error) => this.#close(error));
     readable.once("close", () => this.#close(new Error("Debug adapter connection closed")));
     if (ownedProcess !== undefined) {
       ownedProcess.stderr.on("data", (chunk: Buffer) => {
@@ -116,6 +136,10 @@ export class DapClient {
     return new DapClient(pipedChild.stdout, pipedChild.stdin, pipedChild);
   }
 
+  /** Adopt streams provided by a resource owner without creating a controller-native process. */
+  static fromTransport(transport: DapTransport): DapClient {
+    return new DapClient(transport.readable, transport.writable, undefined, transport);
+  }
   /** Adopt a connected DAP socket, optionally after an out-of-band initialize request. */
   static fromSocket(socket: net.Socket, nextSequence = 1): DapClient {
     const client = new DapClient(socket, socket);
@@ -261,8 +285,17 @@ export class DapClient {
     this.#writable.destroy();
     if (this.#ownedProcess !== undefined && !this.#ownedProcess.killed) this.#ownedProcess.kill();
     this.#close(new Error("Debug adapter closed"));
+    if (this.#ownedTransport && !this.#transportStop) {
+      this.#transportStop = Promise.resolve().then(() => this.#ownedTransport?.stop());
+      void this.#transportStop.catch(() => {});
+    }
   }
 
+  /** Close protocol requests and await owned backend cleanup. Cleanup failure remains observable. */
+  async dispose(): Promise<void> {
+    this.close();
+    await this.#transportStop;
+  }
   #send(message: unknown): void {
     const payload = Buffer.from(JSON.stringify(message), "utf8");
     this.#writable.write(

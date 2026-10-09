@@ -1,13 +1,66 @@
 import { describe, expect, test, vi } from "vitest";
+import { ResultTargetStore } from "pi-agent-resource";
 import { resourceScheduler } from "pi-agent-resource";
 import { createSearchCore } from "#src/core/search-core.js";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "#src/api/plugin-protocol.js";
 import type {
   SearchRequest,
+  SearchContext,
   SearchResolutionAttempt,
   SearchResolverRegistration,
 } from "#src/api/search.js";
 
+test("trusted Search API resolves scopes and guards them before any resolver runs", async () => {
+  const targets = new ResultTargetStore();
+  let blocked = false;
+  const cwd = process.cwd();
+  const reference = targets.register(
+    [
+      {
+        source: "ssh://left/work/note.ts",
+        expectedContent: "café\n",
+        ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 4 } }],
+        readCurrent: async () => {
+          if (blocked) throw new Error("Owned content is blocked");
+          return "café\n";
+        },
+      },
+    ],
+    cwd,
+    false,
+  );
+  const core = createSearchCore(targets);
+  const resolve = vi.fn((_request: SearchRequest, context: SearchContext) => {
+    expect(context.scope?.complete).toBe(false);
+    expect(context.scope?.targets[0]?.source).toBe("ssh://left/work/note.ts");
+    return { kind: "resolved" as const, payload: [] };
+  });
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "scoped-reader",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "text",
+          supportsResultScope: true,
+          tryResolve: resolve,
+          format: () => ({ content: [{ type: "text", text: "No matches found." }], details: {} }),
+          toScriptData: () => ({ kind: "matches", complete: false, matches: [] }),
+        },
+      });
+    },
+  });
+  expect(
+    (await core.execute({ query: "café", path: reference }, { cwd }, "script")).isError,
+  ).not.toBe(true);
+  expect(resolve).toHaveBeenCalledOnce();
+  blocked = true;
+  const denied = await core.execute({ query: "café", path: reference }, { cwd }, "script");
+  expect(denied.isError).toBe(true);
+  expect(resolve).toHaveBeenCalledOnce();
+  expect(JSON.stringify(denied.content)).toContain("Owned content is blocked");
+});
 async function setup(attempt: SearchResolutionAttempt | Error) {
   const core = createSearchCore();
   const specialized = vi.fn(() => {
@@ -48,6 +101,27 @@ async function setup(attempt: SearchResolutionAttempt | Error) {
   return { core, specialized, fallback };
 }
 
+test("reference navigation on a text query never reaches a scope owner or resolver", async () => {
+  const { core, specialized, fallback } = await setup({ kind: "resolved", payload: [] });
+  const owner = vi.fn(() => undefined);
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "navigation-owner",
+    setup(api) {
+      api.addEnvironmentProvider(owner);
+    },
+  });
+  const result = await core.execute(
+    { query: "needle", path: "ssh://unused/work", navigation: "references" },
+    { cwd: process.cwd() },
+  );
+  expect(result.isError).toBe(true);
+  expect(result.details.failure?.code).toBe("INVALID_REQUEST");
+  expect(owner).not.toHaveBeenCalled();
+  expect(specialized).not.toHaveBeenCalled();
+  expect(fallback).not.toHaveBeenCalled();
+});
 test("search waits for conflicting writes without blocking a disjoint query", async () => {
   const core = createSearchCore();
   const observed: string[] = [];
@@ -144,6 +218,46 @@ test("script search keeps resolver data and formatted reference data separately"
   });
   const ordinary = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() });
   expect(ordinary.script).toBeUndefined();
+});
+test("scope owner refusal prevents every resolver and failed setup retains no owner", async () => {
+  const { core, specialized, fallback } = await setup({ kind: "resolved", payload: [] });
+  let calls = 0;
+  await expect(
+    core.registerPlugin({
+      protocol: SEARCH_PROTOCOL,
+      apiVersion: SEARCH_API_VERSION,
+      id: "refused-owner",
+      setup(api) {
+        api.addEnvironmentProvider(() => {
+          calls += 1;
+          throw new Error("UNKNOWN_TARGET");
+        });
+        throw new Error("setup rejected");
+      },
+    }),
+  ).rejects.toThrow("setup rejected");
+  await core.execute({ query: "needle" }, { cwd: process.cwd() });
+  expect(calls).toBe(0);
+  specialized.mockClear();
+  fallback.mockClear();
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "owner",
+    setup(api) {
+      api.addEnvironmentProvider(() => {
+        throw new Error("UNKNOWN_TARGET");
+      });
+    },
+  });
+  const result = await core.execute(
+    { query: "needle", path: "ssh://missing/tmp" },
+    { cwd: process.cwd() },
+  );
+  expect(result.isError).toBe(true);
+  expect(JSON.stringify(result.content)).toContain("UNKNOWN_TARGET");
+  expect(specialized).not.toHaveBeenCalled();
+  expect(fallback).not.toHaveBeenCalled();
 });
 test.each(["ast:call($ARG)", "symbols:entry", "ast:", "symbols:"])(
   "does not turn unsupported scoped %s into text search",

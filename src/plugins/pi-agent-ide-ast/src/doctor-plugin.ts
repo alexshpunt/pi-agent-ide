@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
-import { probeExecutable } from "pi-agent-doctor/api/executable";
-
-import { hasConfiguredExecutable } from "pi-agent-ide/api/tool-config";
+import {
+  projectExecutableAvailable,
+  probeProjectExecutable,
+} from "pi-agent-doctor/api/project-probes";
 
 import { parseDocument } from "./ast/manager.js";
 
@@ -64,11 +65,7 @@ export const astDoctorPlugin: DoctorPlugin = {
         if (![...context.detectedLanguageIds].some((language) => supported.has(language))) {
           return {};
         }
-        const available = await hasConfiguredExecutable(
-          { command: ["ast-grep"] },
-          context.cwd,
-          context.env,
-        );
+        const available = await projectExecutableAvailable(context, "ast-grep");
         return available
           ? {}
           : {
@@ -105,7 +102,12 @@ export const astDoctorPlugin: DoctorPlugin = {
           }
 
           try {
-            const source = await readFile(file, "utf8");
+            context.signal?.throwIfAborted();
+            const source = context.workspace
+              ? await context.workspace.readText(file, context.signal)
+              : await readFile(file, { encoding: "utf8", signal: context.signal });
+            if (source === undefined) throw new Error(`Source disappeared: ${file}`);
+            context.signal?.throwIfAborted();
             const tree = await parseDocument(
               file,
               context.cwd,
@@ -117,6 +119,7 @@ export const astDoctorPlugin: DoctorPlugin = {
                 : { status: "pass" as const, message: `${language} parser loaded`, detail: file },
             );
           } catch (error) {
+            context.signal?.throwIfAborted();
             findings.push({
               status: "fail" as const,
               message: `${language}: ${error instanceof Error ? error.message : String(error)}`,
@@ -137,7 +140,7 @@ export const astDoctorPlugin: DoctorPlugin = {
           return [{ status: "skip", message: "No supported structural-search files found" }];
         }
 
-        const result = await probeExecutable("ast-grep", ["--version"], context.cwd, context.env);
+        const result = await probeProjectExecutable(context, "ast-grep", ["--version"]);
         return [
           result.ok
             ? { status: "pass", message: "ast-grep is available", detail: result.detail }

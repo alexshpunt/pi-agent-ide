@@ -88,8 +88,8 @@ test.runIf(process.platform !== "win32")(
       wait_reason: "interactive",
     });
     expect(waiting).not.toHaveProperty("exit_code");
-    manager.write(session.source, "y");
-    manager.sendKeys(session.source, "Enter");
+    await manager.write(session.source, "y");
+    await manager.sendKeys(session.source, "Enter");
     await manager.wait(session.source);
     const completed = await structuredShellResult(manager.snapshot(session));
     expect(completed).toMatchObject({ status: "completed", exit_code: 0, source: waiting.source });
@@ -112,8 +112,8 @@ test.runIf(process.platform !== "win32")(
     expect(result).toMatchObject({ status: "running", background: true });
     expect(result).not.toHaveProperty("exit_code");
     expect(result).not.toHaveProperty("wait_reason");
-    manager.write(session.source, "alive");
-    manager.sendKeys(session.source, "Enter");
+    await manager.write(session.source, "alive");
+    await manager.sendKeys(session.source, "Enter");
     await manager.wait(session.source);
     expect((await structuredShellResult(manager.snapshot(session))).output).toContain("alive");
   },

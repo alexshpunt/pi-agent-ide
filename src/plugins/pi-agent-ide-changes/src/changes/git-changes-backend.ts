@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { relativeGitSource, resolveGitSource } from "./git-paths.js";
 
 export interface GitCommandResult {
   readonly code: number;
@@ -10,7 +11,27 @@ export interface GitCommandResult {
   readonly stderr: string;
 }
 
+/** Expected repository state for one guarded index publication. */
+export interface GitIndexWrite {
+  readonly repositoryPath: string;
+  readonly mode: string;
+  readonly text: string;
+  readonly expectedHead: string;
+  readonly expectedIndexText: string;
+  readonly expectedIndexMode: string;
+  /** False expects no stage-zero entry, not an empty blob. */
+  readonly expectedIndexExists?: boolean;
+  readonly expectedWorktreeText?: string;
+}
 export interface GitCommandExecutor {
+  /** Return true only after publishing on this owner; false leaves local publication to the backend. */
+  writeIndex?(
+    update: GitIndexWrite,
+    options: { readonly cwd: string; readonly signal?: AbortSignal },
+  ): Promise<boolean>;
+  /** Read the worktree text on its owner for standalone stage and unstage. */
+  readText?(source: string, signal?: AbortSignal): Promise<string>;
+
   exec(
     command: string,
     arguments_: string[],
@@ -30,6 +51,7 @@ export interface TrackedFileVersions {
   readonly headText: string;
   readonly indexText: string;
   readonly indexMode: string;
+  readonly indexExists: boolean;
 }
 
 export type TrackedFileLookup =
@@ -77,7 +99,7 @@ export class GitChangesBackend {
 
     return {
       status: "ready",
-      backend: new GitChangesBackend(executor, path.resolve(result.stdout.trim())),
+      backend: new GitChangesBackend(executor, resolveGitSource(result.stdout.trim(), cwd)),
     };
   }
 
@@ -91,11 +113,16 @@ export class GitChangesBackend {
     cwd: string,
     signal?: AbortSignal,
   ): Promise<TrackedFileLookup> {
-    const absoluteSource = path.resolve(cwd, source);
-    const repoPath = path.relative(this.repositoryRoot, absoluteSource);
+    const absoluteSource = resolveGitSource(source, cwd);
+    const repoPath = relativeGitSource(this.repositoryRoot, absoluteSource);
 
-    // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
-    if (repoPath === ".." || repoPath.startsWith(`..${path.sep}`) || path.isAbsolute(repoPath)) {
+    if (
+      repoPath === undefined ||
+      // oxlint-disable-next-line repo/no-parent-paths -- reject sources outside this repository
+      repoPath === ".." ||
+      repoPath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(repoPath)
+    ) {
       return {
         status: "unavailable",
         reason: "outside-worktree",
@@ -189,6 +216,7 @@ export class GitChangesBackend {
       headText: headBlob.text,
       indexText,
       indexMode: indexEntry?.mode ?? headEntry.mode,
+      indexExists: indexEntry !== undefined,
     };
   }
 
@@ -197,7 +225,27 @@ export class GitChangesBackend {
     mode: string,
     text: string,
     signal?: AbortSignal,
+    expected?: Pick<
+      GitIndexWrite,
+      | "expectedHead"
+      | "expectedIndexText"
+      | "expectedIndexMode"
+      | "expectedIndexExists"
+      | "expectedWorktreeText"
+    >,
   ): Promise<void> {
+    if (
+      expected &&
+      this.executor.writeIndex &&
+      (await this.executor.writeIndex(
+        { repositoryPath: repoPath, mode, text, ...expected },
+        { cwd: this.repositoryRoot, ...(signal !== undefined && { signal }) },
+      ))
+    )
+      return;
+
+    if (this.repositoryRoot.startsWith("ssh://"))
+      throw new Error("Remote Git index writes require a guarded owner index writer");
     const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "pi-agent-index-"));
     const temporaryFile = path.join(temporaryDirectory, "content");
 
@@ -303,6 +351,10 @@ function parseIndexEntries(output: string): GitIndexEntry[] {
 
 export function extensionGitExecutor(pi: ExtensionAPI): GitCommandExecutor {
   return {
-    exec: (command, arguments_, options) => pi.exec(command, arguments_, options),
+    exec: (command, arguments_, options) => {
+      if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(options.cwd))
+        throw new Error(`No Git executor owns ${options.cwd}`);
+      return pi.exec(command, arguments_, options);
+    },
   };
 }

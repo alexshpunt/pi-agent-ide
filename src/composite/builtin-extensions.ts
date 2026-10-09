@@ -8,7 +8,7 @@ import { moduleLabels } from "./module-labels.js";
 export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
   builtin("ide.core", () => import("#src/core/extension.js")),
   builtin("ide.tips", () => import("#src/tips/extension.js")),
-  builtin("ide.doctor", () => import("#src/doctor/index.js")),
+  builtin("ide.doctor", () => import("#src/backend/doctor-registration.js")),
   builtin("ide.languages", () => import("#src/plugins/pi-agent-ide-languages/index.js"), [
     "ide.doctor",
   ]),
@@ -19,6 +19,7 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     () => import("#src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.js"),
     ["read.core", "editor.core"],
   ),
+  builtin("read.ssh", () => import("#src/backend/index.js"), ["read.filesystem"]),
   builtin(
     "read.filesystem.jq",
     () =>
@@ -43,11 +44,7 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
       import("#src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.js"),
     ["read.filesystem"],
   ),
-  builtin(
-    "read.web",
-    () => import("#src/extensions/pi-agent-read/extensions/pi-agent-web/index.js"),
-    ["read.core"],
-  ),
+  builtin("read.web", () => import("#src/backend/web-registration.js"), ["read.core"]),
   builtin(
     "read.web.html",
     () =>
@@ -115,27 +112,25 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     "search.core",
     "editor.core",
   ]),
-  builtin("ide.formatter", () => import("#src/plugins/pi-agent-ide-formatter/index.js"), [
-    "ide.core",
-  ]),
-  builtin("ide.lint", () => import("#src/plugins/pi-agent-ide-lint/index.js"), ["ide.core"]),
-  builtin("ide.changes", () => import("#src/plugins/pi-agent-ide-changes/index.js"), [
+  builtin("ide.formatter", () => import("#src/backend/formatter-registration.js"), ["ide.core"]),
+  builtin("ide.lint", () => import("#src/backend/lint-registration.js"), ["ide.core"]),
+  builtin("ide.changes", () => import("#src/backend/git-registration.js"), [
     "ide.core",
     "read.core",
     "editor.core",
   ]),
-  builtin("ide.lsp", () => import("#src/plugins/pi-agent-ide-lsp/index.js"), [
+  builtin("ide.lsp", () => import("#src/backend/lsp-registration.js"), [
     "ide.core",
     "read.core",
     "search.core",
   ]),
   builtin("ide.processes", () => import("#src/plugins/pi-agent-ide-processes/index.js")),
-  builtin("ide.vision", () => import("#src/plugins/pi-agent-ide-vision/index.js"), [
+  builtin("ide.vision", () => import("#src/backend/vision-registration.js"), [
     "ide.processes",
     "read.core",
     "search.core",
   ]),
-  builtin("ide.debugger", () => import("#src/plugins/pi-agent-ide-debugger/index.js"), [
+  builtin("ide.debugger", () => import("#src/backend/debugger-registration.js"), [
     "ide.processes",
     "read.core",
     "editor.core",

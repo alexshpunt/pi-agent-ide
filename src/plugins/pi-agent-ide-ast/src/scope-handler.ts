@@ -22,7 +22,7 @@ export function createAstScopePresenter(manager: AstScopeManager): TextLinePrese
   return {
     id: "ast-scopes",
     async present(document, context) {
-      if (context.resolvedBy !== "filesystem") {
+      if (context.resolvedBy !== "filesystem" && !document.source.startsWith("ssh://")) {
         return document;
       }
 

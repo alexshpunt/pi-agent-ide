@@ -19,7 +19,7 @@ The free regression tests cover route provenance and sandbox timeout/reset/clean
 
 Requirements: Linux or WSL, Node 24, Git, Bubblewrap with user namespaces enabled, installed Pi with native Codemode and tool discovery, and provider credentials. The free inventory prefers the globally installed Pi; without one it uses the checkout's SDK. `--pi /absolute/path/to/pi` selects an installed runtime explicitly. Paid runs need Pi and its dependencies inside the read-only system toolchain mounts (`/usr`, `/opt`, or the local bin/lib directories under the user home).
 
-On Ubuntu, AppArmor may also need a profile that permits user namespaces for `/usr/bin/bwrap`. CI loads that per-binary profile when the restriction is enabled, then checks a real sandbox launch. It does not disable the runner-wide restriction. See [Ubuntu's user namespace policy](https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces).
+On Ubuntu, AppArmor may also need a profile that permits user namespaces for `/usr/bin/bwrap`. CI loads that per-binary profile if a sandbox launch is blocked, then checks a real launch with user and PID namespaces. It does not disable the runner-wide restriction. See [Ubuntu's user namespace policy](https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces).
 
 ```bash
 pnpm validate:tools:models --run --model luna-6-low
@@ -32,6 +32,9 @@ No inference happens without both `--run` and an explicit model profile. The com
 Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 low was added by explicit task approval. New models belong in `models.json`, not in case definitions. Use the same tasks and validators for each model.
 
 Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
+Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases; these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
+
+Temporary Delete cases likewise check the shared defaults and settings contract locally. Target-native account/config resolution is checked by transport tests, not a paid SSH case. Paid SSH temporary-deletion routes remain unverified.
 
 ## Isolation
 

@@ -5,7 +5,7 @@ import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
 import { isExecutableAvailable } from "pi-agent-doctor/api/executable";
 
 import { projectIdeConfigPath } from "#src/api/tool-config.js";
-import type { DoctorToolSelection } from "#src/api/doctor.js";
+import type { DoctorToolSelection, DoctorWorkspace } from "#src/api/doctor.js";
 import type { ToolRecipe } from "#src/api/tool-catalog.js";
 import type { OwnedContribution } from "./core.js";
 
@@ -25,20 +25,36 @@ export async function discoverRecipeCandidates(
   detectedLanguageIds: ReadonlySet<string>,
   recipes: readonly OwnedContribution<ToolRecipe>[],
   environment: NodeJS.ProcessEnv = process.env,
+  signal?: AbortSignal,
+  workspace?: DoctorWorkspace,
 ): Promise<readonly RecipeCandidate[]> {
-  const nativeEvidence = await inspectRecipeEvidence(
-    cwd,
-    recipes.map((entry) => entry.value),
+  signal?.throwIfAborted();
+  const relevant = recipes.filter(({ value }) =>
+    value.languages.some((language) => detectedLanguageIds.has(language)),
   );
-  const managedRecipes = await managedRecipeIds(cwd);
+  const values = relevant.map((entry) => entry.value);
+  const nativeEvidence = workspace
+    ? await workspace.evidence(values, signal)
+    : await inspectRecipeEvidence(cwd, values, undefined, signal);
+  const managedRecipes = await managedRecipeIds(cwd, signal, workspace);
+  const names = [...new Set(values.flatMap((recipe) => recipe.executables))];
+  const available = workspace
+    ? await workspace.executableAvailability(
+        names.map((name) => ({ command: [name] })),
+        signal,
+      )
+    : undefined;
+  signal?.throwIfAborted();
+  if (
+    available &&
+    (available.length !== names.length || available.some((value) => typeof value !== "boolean"))
+  )
+    throw new TypeError("Invalid Doctor executable availability report");
   const candidates: RecipeCandidate[] = [];
 
-  for (const contribution of recipes) {
+  for (const contribution of relevant) {
+    signal?.throwIfAborted();
     const recipe = contribution.value;
-
-    if (recipe.languages.every((language) => !detectedLanguageIds.has(language))) {
-      continue;
-    }
 
     const evidence: string[] = [];
     let score = 1;
@@ -62,7 +78,9 @@ export async function discoverRecipeCandidates(
       evidence.push(`project dependency: ${dependency}`);
     }
 
-    const executable = await firstExecutable(cwd, recipe.executables, environment);
+    const executable = available
+      ? recipe.executables.find((name) => available[names.indexOf(name)] === true)
+      : await firstExecutable(cwd, recipe.executables, environment, signal);
 
     if (executable !== undefined) {
       score += 3;
@@ -129,14 +147,19 @@ async function firstExecutable(
   cwd: string,
   names: readonly string[],
   environment: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   for (const name of names) {
-    if (await isExecutableAvailable(name, cwd, environment)) return name;
+    if (await isExecutableAvailable(name, cwd, environment, signal)) return name;
   }
   return undefined;
 }
 
-async function managedRecipeIds(cwd: string): Promise<ReadonlySet<string>> {
+async function managedRecipeIds(
+  cwd: string,
+  signal?: AbortSignal,
+  workspace?: DoctorWorkspace,
+): Promise<ReadonlySet<string>> {
   const ids = new Set<string>();
 
   for (const [name, sectionName, kind] of [
@@ -145,7 +168,16 @@ async function managedRecipeIds(cwd: string): Promise<ReadonlySet<string>> {
     ["lsp-servers", "servers", "lsp"],
   ] as const) {
     try {
-      const value: unknown = JSON.parse(await readFile(projectIdeConfigPath(cwd, name), "utf8"));
+      signal?.throwIfAborted();
+      const file = workspace
+        ? (await workspace.configPaths(name, signal)).project
+        : projectIdeConfigPath(cwd, name);
+      const text = workspace
+        ? await workspace.readText(file, signal)
+        : await readFile(file, { encoding: "utf8", signal });
+      signal?.throwIfAborted();
+      if (text === undefined) continue;
+      const value: unknown = JSON.parse(text);
 
       if (typeof value !== "object" || value === null || Array.isArray(value)) {
         continue;
@@ -159,7 +191,13 @@ async function managedRecipeIds(cwd: string): Promise<ReadonlySet<string>> {
           ids.add(`${kind}:${id}`);
         }
       }
-    } catch {
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (
+        !(error instanceof SyntaxError) &&
+        !(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")
+      )
+        throw error;
       // A missing or invalid managed config provides no discovery evidence.
     }
   }

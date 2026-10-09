@@ -166,7 +166,8 @@ export async function registerSelect(pi: ExtensionAPI, read: ReadPluginApi): Pro
         },
         renderResult(result, options, theme) {
           const presentation = result.details as ResultPanelModel | undefined;
-          if (presentation) return new ResultPanel(presentation, theme, options.expanded);
+          if (typeof presentation?.summary === "string" && Array.isArray(presentation.rows))
+            return new ResultPanel(presentation, theme, options.expanded);
           return new Text(
             result.content
               .flatMap((block) => (block.type === "text" ? [block.text] : []))

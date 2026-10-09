@@ -8,10 +8,12 @@ export function createLspDiagnosticSource(
   managerFor: (
     cwd: string,
     external?: boolean,
+    signal?: AbortSignal,
   ) => Promise<Pick<LspManager, "getOrStart" | "languageId" | "onPushDiagnostics">>,
   resolveProject: (
     filePath: string,
     cwd: string,
+    signal?: AbortSignal,
   ) => Promise<{ readonly cwd: string; readonly external: boolean } | undefined> = (
     filePath,
     cwd,
@@ -20,16 +22,16 @@ export function createLspDiagnosticSource(
   return {
     id: "lsp",
     async diagnose(filePath, context) {
-      const project = await resolveProject(filePath, context.cwd);
+      const project = await resolveProject(filePath, context.cwd, context.signal);
       if (project === undefined)
         return {
           status: "unavailable",
           diagnostics: [],
           reason: "No local language-server project found for this file",
         };
-      const manager = await managerFor(project.cwd, project.external);
+      const manager = await managerFor(project.cwd, project.external, context.signal);
       context.signal.throwIfAborted();
-      const client = await manager.getOrStart(filePath, project.cwd, "diagnostics");
+      const client = await manager.getOrStart(filePath, project.cwd, "diagnostics", context.signal);
       context.signal.throwIfAborted();
       if (!client)
         return {

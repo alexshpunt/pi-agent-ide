@@ -5,6 +5,7 @@ import {
   unchangedCopySources,
 } from "./mutation-result-targets.js";
 import { requiredValue } from "pi-agent-invariant";
+import { postWriteFailureEffect } from "./text-mutation.js";
 import { renderTextAnchor } from "pi-agent-text";
 import {
   TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH,
@@ -85,7 +86,7 @@ export interface PlannedTextBatch {
     readonly callId: string;
     readonly source: string;
     readonly error: unknown;
-    readonly effect: "applied" | "not-applied";
+    readonly effect: "applied" | "not-applied" | "unknown";
   }[];
 }
 
@@ -450,7 +451,7 @@ export async function executeRegisteredTextBatch(
         callId: entry.callId,
         source: entry.mutation.edits.keys().next().value ?? "",
         error,
-        effect: "applied",
+        effect: postWriteFailureEffect(error),
       });
     }
   }
@@ -651,7 +652,7 @@ export async function executeRegisteredTextBatch(
     const failedResult = await buildFailedTextMutationResult(
       core,
       {
-        code: failure.effect === "applied" ? "POST_WRITE_FAILED" : "INVALID_REQUEST",
+        code: failure.effect === "not-applied" ? "INVALID_REQUEST" : "POST_WRITE_FAILED",
         source: failure.source,
         message: errorMessage(failure.error),
         cause: failure.error,

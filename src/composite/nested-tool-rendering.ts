@@ -10,6 +10,7 @@ import {
   type NativeEditBatchEvent,
 } from "#src/extensions/pi-agent-text-editor/src/api/native-edit-batch-event.js";
 import { compactMutationDetails } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/persisted-result.js";
+import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
 
 const ENTRY_TYPE = "ide-nested-results";
 const MAX_CALLS = 256;
@@ -351,9 +352,17 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
             call.renderArgs = {};
           call.rollback =
             details.results?.some((result) => result.data.rollback !== undefined) === true;
+          const targetUnavailable = (call.result?.details as FileMutationBatchResult | undefined)
+            ?.metadata?.targetUnavailable;
           retainResult(group, call, {
             content: batch.result.content,
-            details,
+            details:
+              typeof targetUnavailable === "string"
+                ? {
+                    ...details,
+                    metadata: { ...details.metadata, targetUnavailable },
+                  }
+                : details,
             isError: batch.result.isError === true || call.rollback,
           });
         }

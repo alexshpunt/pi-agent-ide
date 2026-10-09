@@ -11,6 +11,8 @@ export async function resolvePythonDebuggerCommand(
   cwd: string,
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
+  available: (command: string) => Promise<boolean> = (command) =>
+    isExecutableAvailable(command, cwd, env),
 ): Promise<DebuggerRuntimeCommand> {
   if (env.PI_PYTHON_PATH !== undefined) return { command: env.PI_PYTHON_PATH, args: [] };
   const candidates: readonly DebuggerRuntimeCommand[] =
@@ -25,7 +27,7 @@ export async function resolvePythonDebuggerCommand(
           { command: "python", args: [] },
         ];
   for (const candidate of candidates) {
-    if (await isExecutableAvailable(candidate.command, cwd, env)) return candidate;
+    if (await available(candidate.command)) return candidate;
   }
   return candidates[0] as DebuggerRuntimeCommand;
 }

@@ -9,6 +9,154 @@ import {
 } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 
+test("registered whole-file owners receive SSH inputs through core dispatch", async () => {
+  const core = createTextEditorCore();
+  const calls: unknown[] = [];
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "file-owner",
+    setup(api) {
+      api.addFileOperationResolver(async (operation, input, context) => {
+        calls.push({ operation, input, context });
+        return {
+          kind: "file-operation",
+          operation,
+          ok: true,
+          effect: "applied",
+          path: "ssh://sandbox/tmp/source",
+          target: "ssh://sandbox/tmp/target",
+        };
+      });
+    },
+  });
+  const input = { path: "source", target: "target" };
+  expect(await core.executeFileOperation("copy", input, "ssh://sandbox/tmp")).toMatchObject({
+    ok: true,
+    effect: "applied",
+    path: "ssh://sandbox/tmp/source",
+  });
+  expect(calls).toEqual([
+    { operation: "copy", input, context: { cwd: "ssh://sandbox/tmp", signal: undefined } },
+  ]);
+});
+
+test("failed plugin setup does not leak a whole-file owner", async () => {
+  const core = createTextEditorCore();
+  let called = false;
+  await expect(
+    core.registerPlugin({
+      protocol: TEXT_EDITOR_PROTOCOL,
+      apiVersion: TEXT_EDITOR_API_VERSION,
+      id: "failed-file-owner",
+      setup(api) {
+        api.addFileOperationResolver(async (operation, input) => {
+          called = true;
+          return {
+            kind: "file-operation",
+            operation,
+            ok: true,
+            effect: "applied",
+            path: input.path,
+          };
+        });
+        throw new Error("Setup failed");
+      },
+    }),
+  ).rejects.toThrow("Setup failed");
+  expect(
+    await core.executeFileOperation("delete", { path: "ssh://sandbox/file" }, "/local"),
+  ).toMatchObject({ ok: false, effect: "not-applied", error: { code: "UNSUPPORTED_SOURCE" } });
+  expect(called).toBe(false);
+});
+
+test("whole-file post-processing uses the URI owner instead of a local path", async () => {
+  const core = createTextEditorCore();
+  const source = "ssh://sandbox/file.txt";
+  const observed: unknown[] = [];
+  let reads = 0;
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "post-edit-owner",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "post-edit-owner",
+          async tryResolve(value) {
+            if (value !== source) return { kind: "not-handled" };
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  reads += 1;
+                  return [{ type: "text", text: "remote text" }];
+                },
+              },
+            };
+          },
+        },
+      });
+    },
+  });
+  core.registerPostEditHandler({
+    id: "observe-owned-text",
+    handler(transaction) {
+      observed.push({
+        source: transaction.source,
+        resourceSource: transaction.resourceSource,
+        text: transaction.requestedAfter.content,
+      });
+    },
+  });
+  await core.postProcessFile(source, { cwd: "/local" });
+  expect(reads).toBeGreaterThan(0);
+  expect(observed).toEqual([{ source, resourceSource: source, text: "remote text" }]);
+});
+
+test("whole-file binary post-processing skips text conversion and handlers", async () => {
+  const core = createTextEditorCore();
+  const source = "ssh://sandbox/file.bin";
+  let byteReads = 0;
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "binary-post-edit-owner",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "binary-post-edit-owner",
+          async tryResolve(value) {
+            if (value !== source) return { kind: "not-handled" };
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  throw new Error("Binary contents must not enter text conversion");
+                },
+                async readBytes() {
+                  byteReads += 1;
+                  return { bytes: new Uint8Array([0, 255]), byteOffset: 0, totalBytes: 2 };
+                },
+              },
+            };
+          },
+        },
+      });
+    },
+  });
+  core.registerPostEditHandler({
+    id: "reject-binary-text",
+    handler() {
+      throw new Error("Binary file must not be post-processed");
+    },
+  });
+  await core.postProcessFile(source, { cwd: "/local" });
+  expect(byteReads).toBe(1);
+});
+
 test("runs registered edit handlers around the core operation", async () => {
   const core = createTextEditorCore();
   const order: string[] = [];
@@ -246,6 +394,129 @@ test("rolls back earlier resources when a later write fails", async () => {
   expect(writes.get("first.txt")).toEqual(["first before changed", "first before"]);
 });
 
+test("does not compensate a resource whose write was explicitly not applied", async () => {
+  const core = createTextEditorCore();
+  const values = new Map([
+    ["first.txt", "before"],
+    ["conflict.txt", "before"],
+  ]);
+  const writes: string[] = [];
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "guarded-write-fixture",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "guarded-files",
+          async tryResolve(source) {
+            if (!values.has(source)) return { kind: "not-handled" };
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                async read() {
+                  return [{ type: "text", text: values.get(source) ?? "" }];
+                },
+                async write(content) {
+                  writes.push(source);
+                  if (source === "conflict.txt") {
+                    values.set(source, "external");
+                    throw Object.assign(new Error("snapshot conflict"), { effect: "not-applied" });
+                  }
+                  values.set(source, content[0].type === "text" ? content[0].text : "");
+                },
+              },
+            };
+          },
+        },
+      });
+    },
+  });
+  const outcome = await core.editTexts(
+    [...values.keys()].map((source) => ({ source, read: true })),
+    { cwd: "/workspace" },
+    async (texts) => ({
+      changes: new Map(
+        [...texts].map(([source, text]) => [
+          source,
+          [{ from: 0, to: text.length, insert: "after" }],
+        ]),
+      ),
+      result: undefined,
+    }),
+  );
+  expect(outcome).toMatchObject({
+    kind: "failed",
+    completed: [],
+    failure: { code: "WRITE_FAILED" },
+  });
+  expect(writes).toEqual(["first.txt", "conflict.txt", "first.txt"]);
+  expect(values.get("first.txt")).toBe("before");
+  expect(values.get("conflict.txt")).toBe("external");
+});
+
+test.each([false, true])(
+  "a lost receipt stays uncertain without compensation (refused peer: %s)",
+  async (refusedPeer) => {
+    const core = createTextEditorCore();
+    let value = "before";
+    const writes: string[] = [];
+    await core.registerPlugin({
+      protocol: TEXT_EDITOR_PROTOCOL,
+      apiVersion: TEXT_EDITOR_API_VERSION,
+      id: "lost-write-receipt",
+      setup(api) {
+        api.addResolver({
+          resolver: {
+            id: "owned-uncertain-file",
+            async tryResolve(source) {
+              if (source !== "owned.txt" && source !== "refused.txt")
+                return { kind: "not-handled" };
+              return {
+                kind: "resolved",
+                resource: {
+                  source,
+                  async read() {
+                    return [{ type: "text", text: value }];
+                  },
+                  async write(content) {
+                    if (source === "refused.txt")
+                      throw Object.assign(new Error("Write refused"), { effect: "not-applied" });
+                    value = content[0].type === "text" ? content[0].text : "";
+                    writes.push(value);
+                    throw Object.assign(new Error("Receipt lost after saving"), {
+                      effect: "unknown",
+                    });
+                  },
+                },
+              };
+            },
+          },
+        });
+      },
+    });
+    const outcome = await core.editTexts(
+      (refusedPeer ? ["refused.txt", "owned.txt"] : ["owned.txt"]).map((source) => ({
+        source,
+        read: true,
+      })),
+      { cwd: "/workspace" },
+      async (texts) => ({
+        changes: new Map(
+          [...texts.keys()].map((source) => [source, [{ from: 0, to: 6, insert: "after" }]]),
+        ),
+        result: undefined,
+      }),
+    );
+    expect(outcome).toMatchObject({ kind: "failed", failure: { code: "WRITE_FAILED" } });
+    if (outcome.kind !== "failed") throw new Error("Expected a lost receipt");
+    expect(outcome.failure.rollback).toBeUndefined();
+    expect(outcome.failure.cause).toMatchObject({ effect: "unknown" });
+    expect(writes).toEqual(["after"]);
+    expect(value).toBe("after");
+  },
+);
 test("preserves every confirmed write when later presentation fails", async () => {
   const core = createTextEditorCore();
   const firstWrites: AgentContent[] = [];

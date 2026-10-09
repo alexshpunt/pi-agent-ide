@@ -2,6 +2,7 @@ import { requiredValue } from "pi-agent-invariant";
 import { diffLines } from "diff";
 
 import { ChangeService } from "#src/changes/change-service.js";
+import { gitSourceDirectory } from "#src/changes/git-paths.js";
 
 import type { ChangeGroup } from "#src/changes/change-types.js";
 import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
@@ -24,11 +25,18 @@ export function createCurrentChangePresenter(executor: GitCommandExecutor): Text
   return {
     id: "current-git-changes",
     async present(document, context) {
-      if (context.purpose !== "read" || context.resolvedBy !== FILESYSTEM_RESOLVER_ID) {
+      if (
+        context.purpose !== "read" ||
+        (context.resolvedBy !== FILESYSTEM_RESOLVER_ID && !context.source.startsWith("ssh://"))
+      ) {
         return document;
       }
 
-      const creation = await ChangeService.create(executor, context.cwd, context.signal);
+      const creation = await ChangeService.create(
+        executor,
+        gitSourceDirectory(context.source, context.cwd),
+        context.signal,
+      );
 
       if (creation.status !== "ready") {
         return document;

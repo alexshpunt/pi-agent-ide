@@ -378,7 +378,15 @@ async function executeRead(
   outputSaver?: (text: string) => Promise<string>,
 ): Promise<ReadToolResult> {
   if (request.path?.startsWith("raw:"))
-    return readRaw(request, resolverContext, audience, resourceGuards);
+    return readRaw(
+      request,
+      resolverContext,
+      audience,
+      resourceGuards,
+      [...resolvers]
+        .sort((left, right) => left.priority - right.priority || left.order - right.order)
+        .map(({ resolver }) => resolver),
+    );
   resolverContext = { ...resolverContext, audience };
   const limitOutput: typeof limitReadOutput =
     audience === "script"
@@ -400,10 +408,7 @@ async function executeRead(
   const targetSnapshot = [...targetResolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
-  const rawRequestedViews = [
-    ...(request.views ?? []),
-    ...(audience === "script" ? viewSnapshot.map(({ registration }) => registration.view) : []),
-  ];
+  const rawRequestedViews = request.views ?? [];
   const requestedViews = new Set(rawRequestedViews.map(viewName));
   const knownViews = new Set([...viewSnapshot.map(({ registration }) => registration.view)]);
   const explicitViews = [...new Set(request.views ?? [])];
@@ -1009,10 +1014,19 @@ async function resolveSource(
       };
     }
 
+    let sourceText: string | undefined;
+    if (resource.sourceBytes !== undefined) {
+      try {
+        sourceText = new TextDecoder("utf8", { fatal: true }).decode(resource.sourceBytes);
+      } catch {
+        /* Non-text source bytes never grant text-edit authority. */
+      }
+    }
     return {
       kind: "continue",
       context: {
         ...initialContext,
+        ...(sourceText === undefined ? {} : { sourceText }),
         state: createReadState(content, resource.source, resolver.id, {
           preserveTruncatedOutput: registeredResolver.preserveTruncatedOutput,
           textMode: resolver.id === "temp" ? "final" : "normal",
@@ -1111,6 +1125,7 @@ async function runTextPresenters(
   const document = state.text;
   const presentationContext: TextPresentationContext = {
     purpose: "read",
+    ...(context.sourceText === undefined ? {} : { sourceText: context.sourceText }),
     audience: context.resolverContext.audience,
     requestedViews: context.request.views,
     source: state.source,

@@ -5,6 +5,9 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { stripVTControlCharacters } from "node:util";
+import { StringDecoder } from "node:string_decoder";
+import type { ResolvedSshSource } from "#src/backend/registry.js";
+import { remoteBashProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
 
 import type { Terminal as XtermTerminal } from "@xterm/headless";
 import type { IPty, IPtyForkOptions, IWindowsPtyForkOptions } from "node-pty";
@@ -31,6 +34,10 @@ export class TerminalSessionManager {
   readonly #changeListeners = new Set<SessionListener>();
   readonly #completionListeners = new Set<SessionListener>();
   readonly #outputLogs = new Map<string, number>();
+  readonly #pendingStarts = new Map<
+    string,
+    { readonly abort: AbortController; readonly completion: Promise<TerminalSession> }
+  >();
   #disposed = false;
 
   public constructor(createId: () => string = defaultSessionId) {
@@ -66,6 +73,17 @@ export class TerminalSessionManager {
       shell: session.shell.displayName,
       shellFamily: session.shell.family,
       ...(session.process === undefined ? {} : { pid: session.process.pid }),
+      ...(session.remote === undefined
+        ? {}
+        : {
+            remote: {
+              target: session.remote.target,
+              pid: session.remote.process.pid,
+              ...(session.remote.process.identity === undefined
+                ? {}
+                : { identity: session.remote.process.identity }),
+            },
+          }),
       background: session.background,
       status: session.status,
       ...(session.waitReason === undefined ? {} : { waitReason: session.waitReason }),
@@ -98,43 +116,8 @@ export class TerminalSessionManager {
     readonly cols?: number;
     readonly rows?: number;
   }): TerminalSession {
-    if (this.#disposed) throw new Error("Terminal session manager is closed");
-    const id = this.#createId();
-    if (!/^[a-f\d]{12}$/u.test(id) || this.#sessions.has(id)) {
-      throw new Error("Terminal session IDs must be unique 12-character hexadecimal values");
-    }
-    const fullOutputPath = createOutputLog(id);
-    this.#outputLogs.set(id, openSync(fullOutputPath, "a", 0o600));
-    const cols = options.cols ?? DEFAULT_COLS;
-    const rows = options.rows ?? DEFAULT_ROWS;
-    const screen = createScreen(cols, rows);
-    let resolveCompletion = (_session: TerminalSession): void => {};
-    const completion = new Promise<TerminalSession>((resolve) => {
-      resolveCompletion = resolve;
-    });
-    const base = {
-      id,
-      source: `shell:${id}`,
-      command: options.command,
-      background: options.background,
-      cwd: options.cwd,
-      shell: options.shell,
-      startedAt: Date.now(),
-      lastActivityAt: Date.now(),
-      cols,
-      rows,
-      fullOutputPath,
-      screen,
-      status: "running" as const,
-      output: "",
-      outputStart: 0,
-      screenReady: Promise.resolve(),
-      completion,
-      resolveCompletion,
-      completionDelivered: false,
-      staleReminderDelivered: false,
-    };
-
+    const base = this.#createSession(options);
+    const { id, cols, rows } = base;
     let process: IPty;
     try {
       const pty = require("node-pty") as {
@@ -165,7 +148,7 @@ export class TerminalSessionManager {
       };
       this.#sessions.set(id, session);
       this.#closeOutputLog(id);
-      resolveCompletion(session);
+      base.resolveCompletion(session);
       queueMicrotask(() => this.#emitCompleted(session));
       return session;
     }
@@ -188,6 +171,128 @@ export class TerminalSessionManager {
     });
     this.#emitChanged(session);
     return session;
+  }
+
+  #createSession(options: {
+    readonly command: string;
+    readonly background: boolean;
+    readonly cwd: string;
+    readonly shell: ShellProfile;
+    readonly cols?: number;
+    readonly rows?: number;
+  }): TerminalSession {
+    if (this.#disposed) throw new Error("Terminal session manager is closed");
+    const id = this.#createId();
+    if (!/^[a-f0-9]{12}$/u.test(id) || this.#sessions.has(id) || this.#pendingStarts.has(id))
+      throw new Error("Terminal session IDs must be unique 12-character hexadecimal values");
+    const fullOutputPath = createOutputLog(id);
+    this.#outputLogs.set(id, openSync(fullOutputPath, "a", 0o600));
+    const cols = options.cols ?? DEFAULT_COLS;
+    const rows = options.rows ?? DEFAULT_ROWS;
+    const screen = createScreen(cols, rows);
+    let resolveCompletion = (_session: TerminalSession): void => {};
+    const completion = new Promise<TerminalSession>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    return {
+      id,
+      source: `shell:${id}`,
+      command: options.command,
+      background: options.background,
+      cwd: options.cwd,
+      shell: options.shell,
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+      cols,
+      rows,
+      fullOutputPath,
+      screen,
+      status: "running",
+      output: "",
+      outputStart: 0,
+      screenReady: Promise.resolve(),
+      completion,
+      resolveCompletion,
+      completionDelivered: false,
+      staleReminderDelivered: false,
+    };
+  }
+
+  /** Start remote Bash through the same output, screen, input and session lifetime model. */
+  public async startRemote(options: {
+    readonly command: string;
+    readonly background: boolean;
+    readonly remote: ResolvedSshSource;
+    readonly cols?: number;
+    readonly rows?: number;
+    readonly signal?: AbortSignal;
+  }): Promise<TerminalSession> {
+    const shell = remoteBashProfile;
+    const base = this.#createSession({ ...options, cwd: options.remote.location.source, shell });
+    const startupAbort = new AbortController();
+    this.#pendingStarts.set(base.id, { abort: startupAbort, completion: base.completion });
+    const abortStartup = (): void => startupAbort.abort();
+    options.signal?.addEventListener("abort", abortStartup, { once: true });
+    if (options.signal?.aborted) abortStartup();
+    try {
+      const channel = await options.remote.backend
+        .startProcess(
+          shell.executable,
+          shell.commandArgs(options.command),
+          options.remote.location.path,
+          { pty: { cols: base.cols, rows: base.rows }, signal: startupAbort.signal },
+        )
+        .finally(() => options.signal?.removeEventListener("abort", abortStartup));
+      const session: TerminalSession = {
+        ...base,
+        remote: { target: options.remote.location.target, process: channel },
+      };
+      this.#sessions.set(session.id, session);
+      const decoder = new StringDecoder("utf8");
+      channel.stdout.on("data", (bytes: Buffer) =>
+        this.#appendOutput(session, decoder.write(bytes)),
+      );
+      channel.stderr.resume();
+      const finish = (): void => {
+        this.#appendOutput(session, decoder.end());
+        session.endedAt = Date.now();
+        this.#closeOutputLog(session.id);
+        session.resolveCompletion(session);
+        this.#emitChanged(session);
+        this.#emitCompleted(session);
+      };
+      void channel.completion.then(
+        ({ exitCode }) => {
+          session.exitCode = exitCode;
+          if (exitCode < 0) session.signal = -exitCode;
+          session.status =
+            session.status === "stopping" ? "stopped" : exitCode === 0 ? "completed" : "failed";
+          if (exitCode === 124 || exitCode === 137) session.completionReason = "timeout";
+          finish();
+        },
+        (error: unknown) => {
+          session.status = "lost";
+          session.error = errorMessage(error);
+          finish();
+        },
+      );
+      this.#emitChanged(session);
+      return session;
+    } catch (error) {
+      const session: TerminalSession = {
+        ...base,
+        status: "failed",
+        endedAt: Date.now(),
+        error: errorMessage(error),
+      };
+      this.#sessions.set(session.id, session);
+      this.#closeOutputLog(session.id);
+      session.resolveCompletion(session);
+      queueMicrotask(() => this.#emitCompleted(session));
+      return session;
+    } finally {
+      this.#pendingStarts.delete(base.id);
+    }
   }
 
   public async wait(sourceOrId: string, signal?: AbortSignal): Promise<TerminalSession> {
@@ -347,14 +452,21 @@ export class TerminalSessionManager {
     this.#emitChanged(session);
   }
 
-  public write(sourceOrId: string, data: string): void {
+  /** Deliver input locally or await its remote OS acknowledgement. */
+  public write(sourceOrId: string, data: string): void | Promise<void> {
     const session = this.requiredRunning(sourceOrId);
+    if (session.remote) {
+      return session.remote.process.write(Buffer.from(data)).catch((error: unknown) => {
+        session.error = errorMessage(error);
+        this.#emitChanged(session);
+        throw error;
+      });
+    }
     session.process?.write(data);
   }
 
-  public sendKeys(sourceOrId: string, keys: string): void {
-    const session = this.requiredRunning(sourceOrId);
-    session.process?.write(encodeTerminalKeys(keys));
+  public sendKeys(sourceOrId: string, keys: string): void | Promise<void> {
+    return this.write(sourceOrId, encodeTerminalKeys(keys));
   }
 
   public async stop(
@@ -417,6 +529,9 @@ export class TerminalSessionManager {
   public async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
+    const pending = [...this.#pendingStarts.values()];
+    for (const start of pending) start.abort.abort();
+    await Promise.all(pending.map((start) => start.completion));
     await Promise.all(
       [...this.#sessions.values()]
         .filter((session) => !isTerminalStatus(session.status))
@@ -605,6 +720,10 @@ function encodeTerminalKey(value: string): string {
 }
 
 async function terminateProcessTree(session: TerminalSession, force: boolean): Promise<void> {
+  if (session.remote) {
+    await session.remote.process.stop().catch(() => {});
+    return;
+  }
   const process = session.process;
   if (process === undefined) return;
   if (globalThis.process.platform !== "win32") {

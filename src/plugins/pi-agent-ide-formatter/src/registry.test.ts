@@ -7,6 +7,30 @@ import { afterEach, expect, test } from "vitest";
 import { FORMATTER_RECIPES } from "./catalog.js";
 import { FormatterCommandRegistry } from "./registry.js";
 
+test("owned formatter layers use owner probes and evidence without controller filesystem access", async () => {
+  const root = "ssh://formatter/srv/project";
+  const probes: string[] = [];
+  const registry = await FormatterCommandRegistry.fromDirectory(root, {
+    layerAccess: {
+      async paths() {
+        return {
+          project: `${root}/.pi/pi-agent-ide/formatters.json`,
+          global: "ssh://formatter/home/agent/formatters.json",
+        };
+      },
+      async readText() {
+        throw Object.assign(new Error("Missing owner configuration"), { code: "ENOENT" });
+      },
+    },
+    executableAvailability: async (configs) => {
+      probes.push(...configs.map((config) => config.command[0] ?? ""));
+      return configs.map(() => false);
+    },
+    recipeEvidence: async () => new Map(),
+  });
+  expect(probes.length).toBeGreaterThan(0);
+  expect(registry.resolve(`${root}/note.ts`, root)).toBeUndefined();
+});
 const directories: string[] = [];
 const originalAgentDirectory = process.env.PI_CODING_AGENT_DIR;
 

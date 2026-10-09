@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getToolCallNames, getToolExecution } from "pi-coding-agent-test";
+import { getToolCallNames, getToolExecution, getToolResultText } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
@@ -36,7 +36,12 @@ describe("pi-agent-text-editor tools", () => {
         result.traceEvents.find((event) => event.type === "tools_configured")?.activeTools,
       ).toEqual(tools);
       expect(getToolExecution(result, mutationCallId).isError).toBe(false);
+      const receipt = getToolResultText(result, mutationCallId);
+      expect(receipt).toContain("Saved file.");
+      expect(receipt).not.toContain("after\n");
       expectTextToolDiff(scenario, relativeFile, "before\n", "after\n", "tui");
+      for (const id of scenario.postflightCallIds)
+        expect(getToolResultText(result, id)).toContain("after");
       await expect(readFile(file, "utf8")).resolves.toBe("after\n");
     });
   });

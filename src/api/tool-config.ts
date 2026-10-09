@@ -145,10 +145,23 @@ export interface EffectiveToolConfig<T> {
   readonly paths: ToolConfigPaths;
 }
 
+/** Owned project and user-global config access. Missing optional files must throw ENOENT. */
+export interface ToolConfigLayerAccess {
+  paths(
+    projectRoot: string,
+    name: ToolConfigName,
+    signal?: AbortSignal,
+  ): Promise<Pick<ToolConfigPaths, "project" | "global">>;
+  readText(source: string, signal?: AbortSignal): Promise<string>;
+}
 /**
 Optional environment inputs used to resolve global tool configuration.
 */
 export interface LayeredToolConfigOptions {
+  /** Read project/global layers through their owner; built-in recipes stay with this package. */
+  readonly layerAccess?: ToolConfigLayerAccess;
+  /** Cancel layer discovery and reads before parsing or starting a configured tool. */
+  readonly signal?: AbortSignal;
   readonly environment?: NodeJS.ProcessEnv;
   readonly homeDirectory?: string;
 
@@ -168,7 +181,9 @@ export async function resolveExternalToolProjectRoot(
   filePath: string,
   configName: ToolConfigName,
   recipes: readonly ToolRecipe[],
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
+  signal?.throwIfAborted();
   const current = path.resolve(currentProjectRoot);
   const file = path.resolve(current, filePath);
   const relevantRecipes = recipes.filter((recipe) => recipeMatchesFile(recipe, file));
@@ -176,8 +191,9 @@ export async function resolveExternalToolProjectRoot(
 
   let directory = path.dirname(file);
   for (;;) {
-    if (await fileExists(projectIdeConfigPath(directory, configName))) return directory;
-    const evidence = await inspectRecipeEvidence(directory, relevantRecipes);
+    signal?.throwIfAborted();
+    if (await fileExists(projectIdeConfigPath(directory, configName), signal)) return directory;
+    const evidence = await inspectRecipeEvidence(directory, relevantRecipes, undefined, signal);
     if ([...evidence.values()].some((item) => item.score > 0)) return directory;
     const parent = path.dirname(directory);
     if (parent === directory) return undefined;
@@ -228,7 +244,17 @@ export async function loadLayeredToolConfig<T>(
   parseEntries: (value: unknown) => Readonly<Record<string, T>>,
   options: LayeredToolConfigOptions = {},
 ): Promise<EffectiveToolConfig<T>> {
-  const paths = resolveToolConfigPaths(projectRoot, name, options);
+  const signal = options.signal;
+  signal?.throwIfAborted();
+  const layerAccess = options.layerAccess;
+  if (projectRoot.includes("://") && !layerAccess)
+    throw Object.assign(new Error("No config owner for this project"), {
+      code: "UNSUPPORTED_SOURCE",
+    });
+  const paths = {
+    ...resolveToolConfigPaths(projectRoot, name, options),
+    ...(layerAccess ? await layerAccess.paths(projectRoot, name, signal) : {}),
+  };
   const layers = [
     { layer: "project", sourcePath: paths.project, optional: true },
     ...(options.includeGlobal === false
@@ -240,7 +266,16 @@ export async function loadLayeredToolConfig<T>(
   const claimedIds = new Set<string>();
 
   for (const source of layers) {
-    const parsed = await readToolConfigLayer(source, name, parseEntries);
+    signal?.throwIfAborted();
+    const parsed = await readToolConfigLayer(
+      source,
+      name,
+      parseEntries,
+      source.layer !== "built-in" && layerAccess
+        ? (value) => layerAccess.readText(value, signal)
+        : undefined,
+      signal,
+    );
 
     for (const [id, config] of Object.entries(parsed)) {
       if (claimedIds.has(id)) {
@@ -315,29 +350,104 @@ export async function hasConfiguredExecutable(
   config: ProcessConfig,
   projectRoot: string,
   environment: NodeJS.ProcessEnv = process.env,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  signal?.throwIfAborted();
   assertProcessConfig(config, "process");
   const executable = requiredValue(config.command[0]).replaceAll("{project}", projectRoot);
   const effectiveEnvironment = createConfiguredProcessEnvironment(config, projectRoot, environment);
-  return isExecutableAvailable(executable, projectRoot, effectiveEnvironment);
+  return isExecutableAvailable(executable, projectRoot, effectiveEnvironment, signal);
 }
 
-/**
-Runs a configured process after expanding placeholders.
-Project-local package binaries take priority over the configured process path.
-An optional abort signal terminates the child process.
-*/
+/** Owner probes and evidence for configured formatter and linter registries. */
+export interface ToolRuntimeConfigOptions extends LayeredToolConfigOptions {
+  readonly executableAvailability?: (
+    configs: readonly ProcessConfig[],
+    signal?: AbortSignal,
+  ) => Promise<readonly boolean[]>;
+  readonly recipeEvidence?: (
+    recipes: readonly ToolRecipe[],
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyMap<string, { readonly score: number }>>;
+}
 
+/** Resolve built-in availability and evidence without using controller probes for URI projects. */
+export async function toolRuntimeEvidence(
+  directory: string,
+  commands: readonly { readonly id: string; readonly config: ProcessConfig }[],
+  recipes: readonly ToolRecipe[],
+  options: ToolRuntimeConfigOptions,
+): Promise<{
+  available: ReadonlySet<string>;
+  evidence: ReadonlyMap<string, { readonly score: number }>;
+}> {
+  options.signal?.throwIfAborted();
+  if (directory.includes("://") && !options.executableAvailability)
+    throw Object.assign(new Error("Tool probes require their resource owner"), {
+      code: "UNSUPPORTED_SOURCE",
+    });
+  const availability = options.executableAvailability
+    ? await options.executableAvailability(
+        commands.map((entry) => entry.config),
+        options.signal,
+      )
+    : await Promise.all(
+        commands.map((entry) =>
+          hasConfiguredExecutable(
+            entry.config,
+            directory,
+            options.environment ?? process.env,
+            options.signal,
+          ),
+        ),
+      );
+  options.signal?.throwIfAborted();
+  if (
+    availability.length !== commands.length ||
+    availability.some((value) => typeof value !== "boolean")
+  )
+    throw new TypeError("Invalid tool executable availability report");
+  const evidence = options.recipeEvidence
+    ? await options.recipeEvidence(recipes, options.signal)
+    : await inspectRecipeEvidence(directory, recipes, undefined, options.signal);
+  options.signal?.throwIfAborted();
+  return {
+    available: new Set(
+      commands
+        .filter(
+          (entry, index) =>
+            availability[index] === true &&
+            (!options.requireBuiltInEvidence || (evidence.get(entry.id)?.score ?? 0) > 0),
+        )
+        .map((entry) => entry.id),
+    ),
+    evidence,
+  };
+}
+/** Source identities and cancellation for one configured command. */
+export interface ConfiguredProcessContext {
+  readonly projectRoot: string;
+  readonly filePath: string;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly signal?: AbortSignal;
+  readonly processAccess?: ConfiguredProcessAccess;
+}
+
+/** Runs a validated command in its resource owner's environment, without local fallback. */
+export interface ConfiguredProcessAccess {
+  run(config: ProcessConfig, context: ConfiguredProcessContext): Promise<ProcessResult>;
+}
+/** Runs a configured command through its owner, or uses the local process environment. */
 export async function runConfiguredProcess(
   config: ProcessConfig,
-  context: {
-    readonly projectRoot: string;
-    readonly filePath: string;
-    readonly env?: NodeJS.ProcessEnv;
-    readonly signal?: AbortSignal;
-  },
+  context: ConfiguredProcessContext,
 ): Promise<ProcessResult> {
   assertProcessConfig(config, "process");
+  if (context.processAccess) return context.processAccess.run(config, context);
+  if (context.projectRoot.includes("://") || context.filePath.includes("://"))
+    throw Object.assign(new Error("No process owner for this resource"), {
+      code: "UNSUPPORTED_SOURCE",
+    });
   const command = config.command.map((part) => expandPlaceholders(part, context));
   const executable = requiredValue(command[0]);
   const arguments_ = command.slice(1);
@@ -405,11 +515,9 @@ export async function runConfiguredFormatter(
   const result = await runConfiguredProcess(config.run, context);
 
   if (!result.ok) {
-    // A failed in-place formatter must not leave a partially formatted edit behind.
-    if (config.output === "in-place" && (await readFile(context.filePath, "utf8")) !== before) {
-      await writeFile(context.filePath, before, "utf8");
-    }
-    return { ok: false, changed: false };
+    // Preserve actual writes: a formatter failure does not authorize overwriting this file.
+    const after = await readFile(context.filePath, "utf8");
+    return { ok: false, changed: after !== before };
   }
 
   if (config.output === "stdout" && result.stdout !== before) {
@@ -579,12 +687,18 @@ async function readToolConfigLayer<T>(
   },
   name: ToolConfigName,
   parseEntries: (value: unknown) => Readonly<Record<string, T>>,
+  readText?: (source: string) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<Readonly<Record<string, T>>> {
+  signal?.throwIfAborted();
   let raw: string;
 
   try {
-    raw = await readFile(source.sourcePath, "utf8");
+    raw = readText
+      ? await readText(source.sourcePath)
+      : await readFile(source.sourcePath, { encoding: "utf8", signal });
   } catch (error) {
+    signal?.throwIfAborted();
     if (source.optional && isMissingFile(error)) {
       return {};
     }
@@ -595,6 +709,7 @@ async function readToolConfigLayer<T>(
     );
   }
 
+  signal?.throwIfAborted();
   try {
     return parseEntries(JSON.parse(raw));
   } catch (error) {
@@ -639,7 +754,8 @@ function expandPlaceholders(
     .replaceAll("{file}", context.filePath);
 }
 
-function recipeMatchesFile(recipe: ToolRecipe, file: string): boolean {
+/** Match a native recipe against a source basename and extension without filesystem access. */
+export function recipeMatchesFile(recipe: ToolRecipe, file: string): boolean {
   const extension = path.extname(file).toLowerCase();
   const basename = path.basename(file);
   const matches = (extensions: readonly string[], fileNames: readonly string[] = []): boolean =>
@@ -656,11 +772,14 @@ function recipeMatchesFile(recipe: ToolRecipe, file: string): boolean {
   }
   return false;
 }
-async function fileExists(file: string): Promise<boolean> {
+async function fileExists(file: string, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   try {
     await access(file);
+    signal?.throwIfAborted();
     return true;
   } catch {
+    signal?.throwIfAborted();
     return false;
   }
 }

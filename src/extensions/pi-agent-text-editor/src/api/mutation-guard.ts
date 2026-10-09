@@ -10,6 +10,8 @@ export interface TextMutationPlanResource {
   readonly before: TextDocument;
   readonly after: TextDocument;
   readonly changes: readonly AppliedTextChange[];
+  /** Whole-file binary snapshots. Text documents are empty when this field is present. */
+  readonly binary?: { readonly before: Uint8Array; readonly after: Uint8Array };
 }
 
 export interface TextMutationPlan {

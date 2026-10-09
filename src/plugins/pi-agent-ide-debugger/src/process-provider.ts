@@ -22,6 +22,8 @@ export function debuggerProcessProvider(manager: DebugSessionManager): AgentIdeP
         )
         .map((snapshot) => ({
           source: snapshot.source,
+          ...(snapshot.remote === undefined ? {} : { remote: snapshot.remote }),
+          owned: true,
           kind: "debugger",
           title: snapshot.options.adapter,
           description: snapshot.options.program,

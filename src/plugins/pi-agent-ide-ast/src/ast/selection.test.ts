@@ -154,6 +154,12 @@ test("deduplicates owners without losing origins and keeps sparse files separate
   expect(selected.regions[0]?.text).toBe(source);
 });
 
+test("rejects a seed that crosses one function boundary instead of reporting absence", async () => {
+  const source = 'export function greet(value: string) { return value + " café"; }\r\n';
+  await expect(
+    selectStructuralRegions(input(source, source.trimEnd()), enclosing, process.cwd()),
+  ).rejects.toThrow("narrower input");
+});
 test("returns valid absence for bodyless TS declarations and top-level calls", async () => {
   const source = "declare function task(value: number): void;";
   const owner = await selectStructuralRegions(input(source, "task"), enclosing, process.cwd());

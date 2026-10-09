@@ -4,17 +4,19 @@ import path from "node:path";
 import { resolveRipgrepExecutable } from "#src/ripgrep.js";
 
 import type { SearchRequest } from "pi-agent-search/api/search";
+import type { SearchEnvironment } from "pi-agent-search/api/search";
 
 export interface FileSearchResult {
   readonly files: readonly string[];
   readonly complete: boolean;
 }
 
-export function searchFiles(
+export async function searchFiles(
   query: string,
   request: SearchRequest,
   cwd: string,
   signal?: AbortSignal,
+  environment?: SearchEnvironment,
 ): Promise<FileSearchResult> {
   const limit = request.limit ?? 100;
   const arguments_ = [
@@ -34,9 +36,30 @@ export function searchFiles(
     arguments_.push("--glob", `!${exclude}`);
   }
 
-  if (request.path !== undefined) {
-    arguments_.push(request.path);
+  if (environment !== undefined) {
+    const target = environment.resolve(cwd, request.path ?? ".");
+    const directory = await environment.isDirectory(target, signal);
+    const searchCwd = directory ? target : environment.dirname(target);
+    arguments_.push("--", directory ? "." : `./${environment.basename(target)}`);
+    const files: string[] = [];
+    const result = await environment.runLines(
+      arguments_,
+      searchCwd,
+      (file) => {
+        const relative = file.replace(/^\.\//u, "");
+        if (matchFile(relative, query)) files.push(environment.resolve(searchCwd, file));
+      },
+      signal,
+    );
+    signal?.throwIfAborted();
+    if (result.code !== 0 && result.code !== 1)
+      throw new Error(result.stderr || "File search failed.");
+    files.sort((left, right) => left.localeCompare(right));
+    return { files: files.slice(0, limit), complete: files.length <= limit };
   }
+  if (request.path?.includes("://") || cwd.includes("://"))
+    throw new Error("No search environment owns this scope.");
+  if (request.path !== undefined) arguments_.push(request.path);
 
   return new Promise((resolve, reject) => {
     const child = spawn(resolveRipgrepExecutable(), arguments_, {

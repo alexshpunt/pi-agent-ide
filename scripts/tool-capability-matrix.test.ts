@@ -418,26 +418,27 @@ test("temporary deletion capability fixtures enforce defaults and replacement wi
     await rm(parent, { recursive: true, force: true });
   }
 });
-test("directory capability fixtures match actual transfers and refusal effects without inference", async () => {
-  await mkdir(".tmp", { recursive: true });
-  const parent = await mkdtemp(path.resolve(".tmp/capability-transfer-test-"));
-  const source = path.join(parent, "source");
-  await mkdir(source);
-  execFileSync("git", ["init", "-q", source]);
-  execFileSync("git", [
-    "-C",
-    source,
-    "-c",
-    "user.name=Fixture",
-    "-c",
-    "user.email=fixture@example.invalid",
-    "commit",
-    "--allow-empty",
-    "-qm",
-    "fixture",
-  ]);
-  try {
-    for (const id of ["directory-transfers", "directory-transfer-gates"]) {
+test.each(["directory-transfers", "directory-transfer-gates"])(
+  "directory capability fixture %s matches transfers and refusal effects without inference",
+  async (id) => {
+    await mkdir(".tmp", { recursive: true });
+    const parent = await mkdtemp(path.resolve(".tmp/capability-transfer-test-"));
+    const source = path.join(parent, "source");
+    await mkdir(source);
+    execFileSync("git", ["init", "-q", source]);
+    execFileSync("git", [
+      "-C",
+      source,
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "--allow-empty",
+      "-qm",
+      "fixture",
+    ]);
+    try {
       const task = capabilityCases.find((entry) => entry.id === id);
       if (task === undefined) throw new Error("Missing transfer capability case");
       const trial = await prepareTrial(parent, source, task);
@@ -449,11 +450,12 @@ test("directory capability fixtures match actual transfers and refusal effects w
       }
       expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([]);
       await cleanupTrial(parent, trial.root);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
     }
-  } finally {
-    await rm(parent, { recursive: true, force: true });
-  }
-});
+  },
+  15_000,
+);
 test("a timed-out case cannot touch the checkout and cleanup leaves unrelated files alone", async () => {
   await mkdir(".tmp", { recursive: true });
   const parent = await mkdtemp(path.resolve(".tmp/capability-sandbox-test-"));

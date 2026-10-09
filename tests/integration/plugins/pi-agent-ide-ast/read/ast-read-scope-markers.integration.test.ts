@@ -134,7 +134,7 @@ test("ast source returns a compressed outline with original file anchors", async
     const details = restoreReadDetails(message.details as ReadResultDetails, rendered) as {
       readonly source?: string;
     };
-    expect(details.source).toMatch(/^ast:\/.*\/outline\.ts$/u);
+    expect(details.source).toBe(file);
   });
 }, 60_000);
 

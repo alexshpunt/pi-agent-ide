@@ -6,15 +6,18 @@ import { Type } from "typebox";
 /** Observe writes inside Pi, before the test runner copies its workspace back. */
 export default function copyNoOpProbe(pi: ExtensionAPI): void {
   const results = new Map<string, string>();
-  pi.on("tool_result", (event) => {
-    if (event.toolName !== "copy") return;
-    results.set(
-      event.toolCallId,
-      event.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n"),
-    );
+  // Observe saved results after every tool-result handler has published its final text.
+  pi.on("context", (event) => {
+    for (const message of event.messages) {
+      if (message.role !== "toolResult" || message.toolName !== "copy") continue;
+      results.set(
+        message.toolCallId,
+        message.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n"),
+      );
+    }
   });
   pi.registerTool({
     name: "fixture_copy_result",

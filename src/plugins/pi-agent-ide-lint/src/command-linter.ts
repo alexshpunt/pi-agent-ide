@@ -9,6 +9,12 @@ import { parseDiagnostics } from "./diagnostics.js";
 import { LintCommandRegistry } from "./registry.js";
 
 import type { LinterCommandConfig, ProcessResult } from "pi-agent-ide/api/tool-config";
+import type { ConfiguredProcessContext } from "pi-agent-ide/api/tool-config";
+
+/** Owner execution and diagnostic-file filtering for one configured lint command. */
+export interface ConfiguredLinterContext extends ConfiguredProcessContext {
+  readonly acceptsFile?: (source: string) => boolean;
+}
 import type { Diagnostic, Linter, LintResult } from "pi-agent-ide/api/toolchain";
 
 /** A lint result with a short failure reason for doctor reports. */
@@ -21,13 +27,7 @@ export interface ConfiguredLintResult extends LintResult {
  */
 export async function runConfiguredLinter(
   config: LinterCommandConfig,
-  context: {
-    readonly projectRoot: string;
-    readonly filePath: string;
-    readonly env?: NodeJS.ProcessEnv;
-
-    readonly signal?: AbortSignal;
-  },
+  context: ConfiguredLinterContext,
 ): Promise<ConfiguredLintResult> {
   let result: ProcessResult;
 
@@ -37,7 +37,7 @@ export async function runConfiguredLinter(
     const inheritedEnvironment = context.env ?? process.env;
     result = await runConfiguredProcess(config.check, {
       ...context,
-      ...(isRuff
+      ...(isRuff && !context.processAccess
         ? {
             env: {
               ...inheritedEnvironment,
@@ -81,6 +81,7 @@ export async function runConfiguredLinter(
   diagnostics = diagnostics
     .filter((diagnostic) => {
       if (diagnostic.file === undefined) return true;
+      if (context.acceptsFile) return context.acceptsFile(diagnostic.file);
       const file = diagnostic.file.startsWith("file:")
         ? fileURLToPath(diagnostic.file)
         : diagnostic.file;
@@ -100,7 +101,10 @@ export async function runConfiguredLinter(
 /**
 Creates a linter backed by validated project commands.
 */
-export function createCommandLinter(registry: LintCommandRegistry): Linter {
+export function createCommandLinter(
+  registry: LintCommandRegistry,
+  run: typeof runConfiguredLinter = runConfiguredLinter,
+): Linter {
   return {
     kind: "linter",
     name: "command-lint",
@@ -116,7 +120,7 @@ export function createCommandLinter(registry: LintCommandRegistry): Linter {
 
       const command =
         fix === true && configured.fix !== undefined ? configured.fix : configured.check;
-      const result = await runConfiguredLinter(
+      const result = await run(
         { ...configured, check: command },
         { projectRoot: context.cwd, filePath },
       );

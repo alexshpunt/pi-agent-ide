@@ -38,7 +38,23 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
     apiVersion: READ_API_VERSION,
     id: "ast",
     async setup(api) {
-      api.addResolver({ resolver: createAstOutlineResolver(), renderResult: renderReadResult });
+      api.addResolver({
+        resolver: createAstOutlineResolver(undefined, async (source, context) => {
+          const result = await api.read({ path: source }, context, "script");
+          if (result.isError === true)
+            throw new Error(
+              result.details.failure?.message ??
+                "Could not acquire an owned text snapshot for the AST outline.",
+            );
+          if (result.script?.kind !== "text")
+            throw new Error("AST outlines require an owned text snapshot.");
+          return {
+            source: result.script.source,
+            lines: result.script.lines.map((line) => line.content),
+          };
+        }),
+        renderResult: renderReadResult,
+      });
       api.addHandler({
         stage: "read",
         when: { resolvedBy: "ast", contentKind: "text" },

@@ -39,6 +39,58 @@ afterEach(() => {
 });
 
 describe("mutation renderer lifecycle", () => {
+  test("whole-file Copy shows final saved feedback without a text diff", () => {
+    let renderer: TextEditorToolRendererRegistration | undefined;
+    const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+      onMutationTool(listener: (registration: unknown) => void) {
+        listener({ name: "copy", source: { field: "path" } });
+      },
+      addToolRenderer(value: TextEditorToolRendererRegistration) {
+        renderer = value;
+      },
+    });
+    registerMutationRenderers(api);
+    if (renderer?.renderResult === undefined) throw new Error("Missing Copy renderer");
+    const args = { path: "source.txt", target: "ssh://fixture/saved.txt" };
+    const component = renderer.renderResult(
+      {
+        content: [{ type: "text", text: "Saved." }],
+        details: {
+          results: [],
+          metadata: {
+            semanticAction: {
+              kind: "file-operation",
+              operation: "copy",
+              ok: true,
+              effect: "applied",
+              path: args.path,
+              target: args.target,
+              diffStatuses: [{ text: "Review sees the final saved content.", tone: "warning" }],
+            },
+          },
+        },
+      },
+      { expanded: false, isPartial: false },
+      theme,
+      {
+        args,
+        toolCallId: "whole-file-feedback",
+        invalidate: vi.fn(),
+        lastComponent: undefined,
+        state: {},
+        cwd: process.cwd(),
+        executionStarted: true,
+        argsComplete: true,
+        isPartial: false,
+        expanded: false,
+        showImages: true,
+        isError: false,
+      },
+    );
+    const output = component.render(100).join("\n");
+    expect(output).toContain("✓ Applied");
+    expect(output).toContain("Review sees the final saved content.");
+  });
   test.each([
     { effect: "applied", ok: true, label: "✓ Applied" },
     { effect: "applied", ok: false, label: "✓ Applied" },
@@ -428,6 +480,132 @@ describe("mutation renderer lifecycle", () => {
     expect(finalPanel).toContain("-1");
     expect(finalPanel).not.toContain("⠋");
   });
+
+  test.each([
+    {
+      effect: "not-applied",
+      code: "UNSUPPORTED_SOURCE",
+      expected: "✗ Not applied · no file provider for this resource",
+    },
+    {
+      effect: "unknown",
+      code: "CONNECTION_LOST",
+      expected:
+        "Effects unknown · delete failed; read the source before retrying · connection lost",
+    },
+    { effect: "applied", code: "CONNECTION_LOST", expected: "✓ Applied · connection lost" },
+    {
+      kind: "uncertain-peer",
+      effect: "unknown",
+      code: "WRITE_FAILED",
+      expected: "Effects unknown · edit failed",
+    },
+    {
+      kind: "text-mutation",
+      effect: "unknown",
+      code: "POST_WRITE_FAILED",
+      expected: "Effects unknown · edit failed",
+    },
+    {
+      kind: "text-mutation",
+      effect: "applied",
+      code: "POST_WRITE_FAILED",
+      expected: "Saved · post-write step failed",
+    },
+    {
+      kind: "direct-mutation",
+      effect: "applied",
+      code: "APPLY_UNDO_CLEANUP_FAILED",
+      expected: "✓ Applied · journal cleanup failed",
+    },
+    {
+      kind: "direct-mutation",
+      effect: "not-applied",
+      code: "APPLY_UNDO_OWNER_CHANGED",
+      expected: "✗ Not applied · resource owner changed",
+    },
+  ])(
+    "file and direct failures show $effect and a safe cause",
+    ({ kind, effect, code, expected }) => {
+      let renderer: TextEditorToolRendererRegistration | undefined;
+      const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+        onMutationTool(listener: (registration: unknown) => void): void {
+          listener({
+            name: kind === "direct-mutation" ? "undo" : "delete",
+            source: { field: "path" },
+          });
+        },
+        addToolRenderer(value: TextEditorToolRendererRegistration): void {
+          renderer = value;
+        },
+      });
+      registerMutationRenderers(api);
+      if (renderer?.renderResult === undefined) throw new Error("Missing delete renderer");
+      const args = {
+        path: "ssh://sandbox/file",
+        ...(kind === "direct-mutation" ? { transaction: "APPLY#000000000000" } : {}),
+      };
+      const component = renderer.renderResult(
+        {
+          content: [{ type: "text", text: "private transport diagnostic and stack trace" }],
+          details:
+            kind === "text-mutation" || kind === "uncertain-peer"
+              ? {
+                  effect: effect === "unknown" ? "unknown" : "applied",
+                  results: [
+                    new FileMutationResult({
+                      ...(kind === "uncertain-peer"
+                        ? { rollback: { failedSources: [], restoredSources: [] } }
+                        : {}),
+                      ok: false,
+                      path: args.path,
+                      errors: [
+                        {
+                          path: args.path,
+                          code,
+                          reason: "private transport diagnostic and stack trace",
+                        },
+                      ],
+                    }),
+                  ],
+                }
+              : {
+                  results: [],
+                  metadata: {
+                    semanticAction: {
+                      kind: kind ?? "file-operation",
+                      operation: "delete",
+                      ok: false,
+                      effect,
+                      path: args.path,
+                      error: { code, message: "private transport diagnostic and stack trace" },
+                    },
+                  },
+                },
+        },
+        { expanded: false, isPartial: false },
+        theme,
+        {
+          args,
+          toolCallId: "whole-file-failure",
+          invalidate: vi.fn(),
+          lastComponent: undefined,
+          state: {},
+          cwd: process.cwd(),
+          executionStarted: true,
+          argsComplete: true,
+          isPartial: false,
+          expanded: false,
+          showImages: true,
+          isError: true,
+        },
+      );
+      const output = component.render(100).join("\n");
+      expect(output).toContain(expected);
+      expect(output).not.toContain("private transport diagnostic");
+      expect(output).not.toContain("stack trace");
+    },
+  );
 
   test("labels resolved diff resources only when the tool call has no source path", () => {
     let renderer: TextEditorToolRendererRegistration | undefined;

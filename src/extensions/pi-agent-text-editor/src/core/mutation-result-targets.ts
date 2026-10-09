@@ -10,6 +10,53 @@ import type { TextMutation, TextMutationEdit } from "#src/api/mutation-tool.js";
 import { applyTextChanges } from "./text-change-engine.js";
 import { attachFileMutationTargets } from "./file-result-targets.js";
 
+import type { TextEditorCore } from "./text-editor-core.js";
+
+export type MutationSnapshotReader = (
+  source: string,
+  cwd: string,
+  signal?: AbortSignal,
+) => Promise<ResultSourceTarget>;
+const readers = new WeakMap<TextEditorCore, MutationSnapshotReader>();
+
+/** Keep mutation output authority on the same guarded Read owner as ordinary inputs. */
+export function setMutationSnapshotReader(
+  core: TextEditorCore,
+  reader: MutationSnapshotReader,
+): void {
+  readers.set(core, reader);
+}
+
+/** Recheck mapped text through the owning provider before registering any output authority. */
+export async function verifyMutationTargets(
+  core: TextEditorCore,
+  targets: readonly ResultSourceTarget[],
+  store: ResultTargetStore,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<readonly ResultSourceTarget[]> {
+  const reader = readers.get(core);
+  const verified: ResultSourceTarget[] = [];
+  for (const target of targets) {
+    signal?.throwIfAborted();
+    if (reader === undefined) {
+      verified.push(target);
+      continue;
+    }
+    const source = target.source.includes("://")
+      ? target.source
+      : cwd.startsWith("ssh://")
+        ? new URL(target.source, cwd.endsWith("/") ? cwd : cwd + "/").href
+        : path.resolve(cwd, target.source);
+    const fresh = await reader(source, cwd, signal);
+    if (fresh.source !== source || fresh.expectedContent !== target.expectedContent)
+      throw Error("Mutation target changed before publication; repeat Read/Search.");
+    verified.push({ ...fresh, ranges: target.ranges });
+  }
+  await store.verify({ targets: verified, complete: true }, signal);
+  return verified;
+}
+
 /** A call's changes retain ownership even when several calls commit together. */
 export interface OwnedMutationChanges {
   readonly callId: string;
@@ -53,7 +100,12 @@ export function committedMutationTargets(
     const completion = completions.findLast(
       (item) => item.source === source || item.resourceSource === source,
     );
-    if (completion && completion.resolvedBy !== "filesystem") continue;
+    if (
+      completion &&
+      completion.resolvedBy !== "filesystem" &&
+      !completion.resourceSource.startsWith("ssh://")
+    )
+      continue;
     const changes = mutations
       .flatMap((mutation) =>
         (mutation.edits.get(source)?.changes ?? []).map((change, index) => ({
@@ -142,27 +194,38 @@ export function describeUnavailableCopyTarget(
   };
 }
 
-/** Publish filesystem Write snapshots, never grant file authority to live resources. */
+/** Publish a successful file Write's verified whole-file snapshot, never an input action. */
 export async function attachWriteTarget(
   result: AgentToolResult<FileMutationBatchResult>,
-  completions: readonly TextEditCompletion[],
+  core: TextEditorCore,
   store: ResultTargetStore,
   cwd: string,
   signal?: AbortSignal,
+  completions: readonly Pick<TextEditCompletion, "source" | "resourceSource" | "resolvedBy">[] = [],
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (result.isError) return result;
   const file = result.details.results?.[0]?.data;
   if (file?.path === undefined || file.afterContent === undefined) return result;
-  if (completions.some((completion) => completion.resolvedBy !== "filesystem")) return result;
+  const completion = completions.findLast(
+    (item) => item.source === file.path || item.resourceSource === file.path,
+  );
+  if (
+    completion !== undefined &&
+    completion.resolvedBy !== "filesystem" &&
+    !completion.resourceSource.startsWith("ssh://")
+  )
+    return result;
   try {
     const content = file.afterContent;
     const lines = content.split(/\r\n|\r|\n/u);
     const targets: ResultSourceTarget[] = [
       {
-        source: path.resolve(
-          cwd,
-          file.path.startsWith("file://") ? fileURLToPath(file.path) : file.path,
-        ),
+        source: file.path.startsWith("ssh://")
+          ? file.path
+          : path.resolve(
+              cwd,
+              file.path.startsWith("file://") ? fileURLToPath(file.path) : file.path,
+            ),
         expectedContent: content,
         ranges: [
           {
@@ -172,12 +235,12 @@ export async function attachWriteTarget(
         ],
       },
     ];
-    await store.verify({ targets, complete: true }, signal);
+    const verified = await verifyMutationTargets(core, targets, store, cwd, signal);
     return {
       ...result,
       details: {
         ...result.details,
-        metadata: { ...result.details.metadata, resultTarget: store.register(targets, cwd) },
+        metadata: { ...result.details.metadata, resultTarget: store.register(verified, cwd) },
       },
     };
   } catch (error) {
@@ -198,6 +261,7 @@ export async function attachWriteTarget(
 export async function attachCommittedMutationTarget(
   result: AgentToolResult<FileMutationBatchResult>,
   completions: readonly TextEditCompletion[],
+  core: TextEditorCore,
   store: ResultTargetStore,
   callId: string,
   cwd: string,
@@ -210,10 +274,13 @@ export async function attachCommittedMutationTarget(
   if (
     result.isError ||
     typeof result.details.metadata?.resultTarget === "string" ||
-    completions.some((completion) => completion.resolvedBy !== "filesystem")
+    completions.some(
+      (completion) =>
+        completion.resolvedBy !== "filesystem" && !completion.resourceSource.startsWith("ssh://"),
+    )
   )
     return result;
-  result = await attachFileMutationTargets(result, store, cwd, signal);
+  result = await attachFileMutationTargets(result, store, cwd, signal, readers.get(core));
   if (
     typeof result.details.metadata?.resultTarget === "string" ||
     result.details.metadata?.targetUnavailable !== undefined
@@ -235,6 +302,16 @@ export async function attachCommittedMutationTarget(
     };
   const edits = new Map<string, TextMutationEdit>();
   for (const item of result.details.results ?? []) {
+    const completion = completions.findLast(
+      (candidate) =>
+        candidate.source === item.data.path || candidate.resourceSource === item.data.path,
+    );
+    if (
+      completion &&
+      completion.resolvedBy !== "filesystem" &&
+      !completion.resourceSource.startsWith("ssh://")
+    )
+      continue;
     if (!item.data.ok || !item.data.path || !item.data.rawChanges) return result;
     const planned = plannedEdits?.get(item.data.path);
     edits.set(
@@ -265,12 +342,12 @@ export async function attachCommittedMutationTarget(
     ).length;
     if (outputCount > 0 && targets.length !== outputCount)
       throw new Error("This operation did not produce confirmed filesystem targets.");
-    await store.verify({ targets, complete: true }, signal);
+    const verified = await verifyMutationTargets(core, targets, store, cwd, signal);
     return {
       ...result,
       details: {
         ...result.details,
-        metadata: { ...result.details.metadata, resultTarget: store.register(targets, cwd) },
+        metadata: { ...result.details.metadata, resultTarget: store.register(verified, cwd) },
       },
     };
   } catch (error) {

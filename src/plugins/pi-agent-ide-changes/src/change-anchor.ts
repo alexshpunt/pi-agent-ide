@@ -1,6 +1,7 @@
 import { TextAnchor, type TextAnchorResolver, type TextAnchorResolverContext } from "pi-agent-text";
 
 import { ChangeService } from "#src/changes/change-service.js";
+import { gitSourceDirectory } from "#src/changes/git-paths.js";
 
 import type { ChangeGroup, ChangeInspection } from "#src/changes/change-types.js";
 import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
@@ -26,11 +27,15 @@ export function createChangeAnchorRegistration(
   const inspect = async (
     context: TextAnchorResolverContext,
   ): Promise<ChangeInspection | undefined> => {
-    if (resourceSchemePattern.test(context.source)) {
+    if (resourceSchemePattern.test(context.source) && !context.source.startsWith("ssh://")) {
       return undefined;
     }
 
-    const creation = await ChangeService.create(executor, context.cwd, context.signal);
+    const creation = await ChangeService.create(
+      executor,
+      gitSourceDirectory(context.source, context.cwd),
+      context.signal,
+    );
 
     if (creation.status !== "ready") {
       throw new Error(creation.message);

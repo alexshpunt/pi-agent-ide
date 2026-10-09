@@ -4,6 +4,40 @@ import { afterEach, expect, test, vi } from "vitest";
 import { createFormatter } from "./formatter.js";
 import { FormatterCommandRegistry } from "./registry.js";
 
+test("formatter dispatch retains the source owner through project selection and execution", async () => {
+  const root = "ssh://formatter/srv/project";
+  const filePath = `${root}/note.fixture`;
+  const calls: string[] = [];
+  const formatter = createFormatter({
+    async resolveProject(source, cwd) {
+      calls.push(source, cwd);
+      return { cwd: root, external: true };
+    },
+    async loadRegistry(cwd) {
+      calls.push(cwd);
+      return FormatterCommandRegistry.fromConfig({
+        version: 1,
+        formatters: {
+          owned: {
+            extensions: [".fixture"],
+            run: { command: ["owner-format", "{file}"] },
+            output: "stdout",
+          },
+        },
+      });
+    },
+    async run(config, project, source) {
+      calls.push(config.run.command[0] ?? "", project, source);
+      return { ok: true, changed: true };
+    },
+  });
+  expect(await formatter.format({ filePath }, { cwd: "/controller/project" })).toEqual({
+    ok: true,
+    edits: 1,
+    formatter: "owner-format",
+  });
+  expect(calls).toEqual([filePath, "/controller/project", root, "owner-format", root, filePath]);
+});
 const directories: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();

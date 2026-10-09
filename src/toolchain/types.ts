@@ -19,6 +19,8 @@ export interface Diagnostic {
 }
 
 export interface ToolContext {
+  /** Requested cancellation; implementations should check before starting work and before publishing. */
+  readonly signal?: AbortSignal;
   cwd: string;
 }
 

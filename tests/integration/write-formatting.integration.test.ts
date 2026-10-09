@@ -57,25 +57,21 @@ for (const mode of ["standalone", "codemode"] as const) {
     {
       name: "changed.note",
       final: "AFTER\n",
-      notice: undefined,
       footer: "Formatted (fixture)",
     },
     {
       name: "unchanged.note",
       final: "after\n",
-      notice: undefined,
       footer: "Already formatted (fixture)",
     },
     {
       name: "failed.note",
       final: "after\n",
-      notice: "Formatting failed.",
       footer: "Formatting failed (fixture)",
     },
     {
       name: "unavailable.txt",
       final: "after\n",
-      notice: undefined,
       footer: undefined,
     },
   ])(
@@ -95,11 +91,13 @@ for (const mode of ["standalone", "codemode"] as const) {
         await mkdir(path.dirname(path.join(cwd, source)), { recursive: true });
         await writeFile(path.join(cwd, source), "before\n");
         const checks = `const result=await tools.write({path:${JSON.stringify(source)},content:"after\\n"});
-${fixture.notice === undefined ? "" : `if(!result.includes(${JSON.stringify(fixture.notice)})) throw Error("Missing problem notice: "+result);`}
 const receipt=result.split("\\n\\n---\\n\\n# Guide:")[0]||"";
-if(receipt.includes("Final text") || receipt.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write receipt leaked file text: "+receipt);
+if(!receipt.includes("Saved file.")) throw Error("Missing saved-file receipt: "+receipt);
+if(receipt.includes("Formatting:")) throw Error("Duplicate raw formatting status: "+receipt);
+if(receipt.includes("Final text") || receipt.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write leaked saved file text: "+receipt);
+if(receipt.includes("Formatting failed.")!==${fixture.name === "failed.note"}) throw Error("Wrong formatting failure notice: "+receipt);
 const saved=await tools.read({path:result});
-if(!saved.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write selection lost formatted bytes: "+saved);
+if(!saved.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Read lost saved final text: "+saved);
 text("Formatting checked.");`;
         const run = await new PiIntegrationTest({
           testName: `write-formatting-${mode}-${fixture.name}`,
@@ -135,10 +133,12 @@ text("Formatting checked.");`;
         expect(await readFile(path.join(cwd, source), "utf8")).toBe(fixture.final);
         if (mode === "standalone") {
           const result = getToolResultText(run, "formatted").split("\n\n---\n\n# Guide:")[0] ?? "";
-          if (fixture.notice !== undefined) expect(result).toContain(fixture.notice);
+          expect(result).toContain("Saved file.");
           expect(result).not.toContain("Final text");
-          expect(result).not.toContain("Extra check finished");
           expect(result).not.toContain(fixture.final.trim());
+          expect(result).not.toContain("Formatting:");
+          expect(result.includes("Formatting failed.")).toBe(fixture.name === "failed.note");
+          expect(result).not.toContain("Extra check finished");
         }
         if (fixture.name === "unavailable.txt") {
           await expect(

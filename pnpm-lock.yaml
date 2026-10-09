@@ -532,6 +532,12 @@ importers:
       pi-agent-invariant:
         specifier: workspace:^
         version: link:../../../../../packages/pi-agent-invariant
+      pi-agent-read:
+        specifier: workspace:^
+        version: link:../../../pi-agent-read
+      pi-agent-resource:
+        specifier: workspace:^
+        version: link:../../../../../packages/pi-agent-resource
       pi-agent-search:
         specifier: workspace:^
         version: link:../..

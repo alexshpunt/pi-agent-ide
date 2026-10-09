@@ -6,6 +6,7 @@ import {
   configureVision,
   parseDisplaySource,
   isExecutableAllowed,
+  isNativeExecutableAllowed,
   parseVisionView,
   readProcess,
   selectImage,
@@ -75,6 +76,13 @@ test("matches allowlisted executables by exact file name without case sensitivit
   configureVision({});
 });
 
+test("target executable authorization cannot accept a command-prefix filename", () => {
+  configureVision({ allowedExecutables: "python3" });
+  expect(isNativeExecutableAllowed("/usr/bin/python3")).toBe(true);
+  expect(isNativeExecutableAllowed("/tmp/python3 impostor")).toBe(false);
+  expect(isNativeExecutableAllowed("/tmp/notpython3")).toBe(false);
+  configureVision({});
+});
 describe("WSL window backend selection", () => {
   test("keeps Linux process identities on the local capture backend", () => {
     expect(usesWindowsHostWindowCapture(true, "local")).toBe(false);
@@ -179,4 +187,30 @@ test("process metadata marks a registry PID as Agent IDE owned", async () => {
     source: "shell:test",
     host: "local",
   });
+});
+
+test("a remote registry PID cannot grant ownership of an equal controller PID", async () => {
+  const registry = new AgentIdeProcessRegistry();
+  registry.add({
+    id: "remote",
+    list: () => [
+      {
+        source: "shell:remote",
+        kind: "terminal",
+        title: "remote",
+        description: "remote process",
+        status: "running",
+        pid: process.pid,
+        remote: { target: "fixture", pid: process.pid },
+        owned: true,
+        renderSummary: () => [],
+        renderDetail: () => ({ render: () => [], invalidate: () => {} }),
+        stop: () => Promise.resolve(),
+      },
+    ],
+    onDidChange: () => () => {},
+  });
+  const metadata = await readProcess(process.pid, registry);
+  expect(metadata.owned).toBe(false);
+  expect(metadata.source).toBeUndefined();
 });

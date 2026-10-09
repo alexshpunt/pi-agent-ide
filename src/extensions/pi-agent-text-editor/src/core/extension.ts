@@ -1,4 +1,6 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectResultTargets } from "pi-agent-resource";
+import { setMutationSnapshotReader } from "./mutation-result-targets.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -25,7 +27,6 @@ import {
 import { setTextAnchorRecoveryReader } from "#src/core/text-anchor-recovery.js";
 import { setTextEditBatchRenderArgumentSink } from "#src/core/text-edit-batch-registrar.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { connectResultTargets } from "pi-agent-resource";
 import { createResultTargetAnchors } from "#src/core/result-target-anchors.js";
 import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js";
 import { createTextTool } from "#src/core/text-mutation.js";
@@ -48,8 +49,8 @@ export default async function registerTextEditorCore(
     registerToolCallAnnotationSink(pi);
     interceptionRendering.clear();
   });
-  const mutationTools = new Set<string>();
   const resultTargets = connectResultTargets(pi);
+  const mutationTools = new Set<string>();
   const core = createTextEditorCore((registration, editor) => {
     mutationTools.add(registration.name);
     pi.registerTool(
@@ -101,6 +102,17 @@ export default async function registerTextEditorCore(
           "For source selections, limit caps each selected context window separately. Without limit, each selection supplies its natural line count, with at least one line.",
       });
     },
+  });
+  setMutationSnapshotReader(core, async (source, cwd, signal) => {
+    if (readApi === undefined) throw Error("Mutation targets require pi-agent-read.");
+    const result = await readApi.read({ path: source }, { cwd, signal }, "script");
+    if (result.isError || result.script?.kind !== "text" || result.script.target === undefined)
+      throw Error("Saved resource did not provide guarded text authority.");
+    const selected = resultTargets.resolve(result.script.target, cwd);
+    const target = selected.targets[0];
+    if (!selected.complete || selected.targets.length !== 1 || target === undefined)
+      throw Error("Saved resource did not provide one complete source snapshot.");
+    return target;
   });
   setTextAnchorRecoveryReader(core, (request, context) => {
     if (readApi === undefined) {

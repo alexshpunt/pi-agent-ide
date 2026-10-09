@@ -16,6 +16,9 @@ import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/to
 import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
 import { toolPresentation } from "#src/composite/presentation.js";
 import type { BuiltinExtensionContext } from "#src/composite/selection.js";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
+import { readSshTargets, resolveSshConfigPaths } from "#src/backend/config.js";
+import { SshBackendRegistry } from "#src/backend/registry.js";
 
 /** Register the platform-aware terminal runner and shell session resources. */
 export default async function registerTerminal(
@@ -40,6 +43,9 @@ export default async function registerTerminal(
     (takeReloadResource("terminal") as TerminalSessionManager | undefined) ??
     new TerminalSessionManager();
   const profile = resolveShellProfile();
+  const targets = new SshBackendRegistry(
+    await readSshTargets(resolveSshConfigPaths(resolvePiAgentIdeExtensionsConfigPaths())),
+  );
   const ui = new TerminalUi(pi, manager);
   const removeProcessProvider = agentIdeProcessRegistry(pi).add(terminalProcessProvider(manager));
 
@@ -50,6 +56,7 @@ export default async function registerTerminal(
     profile,
     ui,
     toolPresentation(context?.preferences["ui.terminal"]),
+    targets,
   );
 
   let removeSteeringObserver = (): void => {};

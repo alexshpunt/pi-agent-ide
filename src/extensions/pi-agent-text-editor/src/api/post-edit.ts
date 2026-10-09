@@ -91,6 +91,7 @@ export function isDiffStatusContribution(value: unknown): value is TextPostEditS
       diffStatuses: Type.Array(
         Type.Object({
           text: Type.String({ minLength: 1 }),
+          origin: Type.Optional(Type.Literal("after-edit")),
           formatter: Type.Optional(Type.String()),
           tone: Type.Optional(
             Type.Union(["muted", "success", "warning", "error"].map((tone) => Type.Literal(tone))),

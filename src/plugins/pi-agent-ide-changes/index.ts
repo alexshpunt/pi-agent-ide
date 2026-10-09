@@ -17,13 +17,22 @@ import {
 import { changesDoctorPlugin } from "#src/doctor-plugin.js";
 import { CHANGE_ANCHOR_KIND, createChangeAnchorRegistration } from "#src/change-anchor.js";
 import { extensionGitExecutor } from "#src/changes/git-changes-backend.js";
+export type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
 import { createCurrentChangePresenter } from "#src/current-change-presenter.js";
 import { IndexMutationQueue } from "#src/index-mutation-queue.js";
 import { LastTextTransactionStore } from "#src/last-text-transaction-store.js";
 import { registerIndexChangeTools } from "#src/tool-index-change.js";
 import { createUndoMutationTool } from "#src/tool-text-undo.js";
 
-export default async function registerGitChanges(pi: ExtensionAPI): Promise<void> {
+export default function registerGitChanges(pi: ExtensionAPI): Promise<void> {
+  return registerGitChangesWithExecutor(pi, extensionGitExecutor(pi));
+}
+
+/** Register Git views and mutations using the supplied owner-aware executor. */
+export async function registerGitChangesWithExecutor(
+  pi: ExtensionAPI,
+  executor: ReturnType<typeof extensionGitExecutor>,
+): Promise<void> {
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "git-changes",
@@ -31,7 +40,6 @@ export default async function registerGitChanges(pi: ExtensionAPI): Promise<void
       triggers: ["stage", "unstage", "undo"].map((tool) => ({ tool })),
     }),
   ]);
-  const executor = extensionGitExecutor(pi);
   const transactions = new LastTextTransactionStore();
   const indexQueue = new IndexMutationQueue();
   const presenter = createCurrentChangePresenter(executor);

@@ -12,7 +12,7 @@ function context(content = source, file = "sample.ts", displayed = content): Rea
     resolverContext: { cwd: process.cwd() },
     state: {
       source: file,
-      resolvedBy: "filesystem",
+      resolvedBy: file.startsWith("ssh://") ? "ssh" : "filesystem",
       preserveTruncatedOutput: true,
       textMode: "normal",
       contentKind: "text",
@@ -53,17 +53,19 @@ test("script data is never replaced with an overflow outline", async () => {
   const input: ReadPipelineContext = { ...context(), audience: "script" };
   expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
 });
-test("overflow presents the whole compact tree from the read snapshot", async () => {
-  const result = await overview(context());
-
-  expect(result.details.resolvedBy).toBe("ast-overflow");
-  const block = result.content[0];
-  if (block?.type !== "text") throw new Error("Missing text");
-  expect(truncateHead(block.text).truncated).toBe(false);
-  expect(block.text).toContain('1 | test("checkout", () => {');
-  expect(block.text).toContain("2102 | });");
-  expect(block.text).not.toContain("check(value)");
-});
+test.each(["sample.ts", "ssh://fixture/work/sample.ts"])(
+  "overflow returns the compact tree from the %s snapshot",
+  async (file) => {
+    const result = await overview(context(source, file));
+    expect(result.details.resolvedBy).toBe("ast-overflow");
+    const block = result.content[0];
+    if (block?.type !== "text") throw new Error("Missing text");
+    expect(truncateHead(block.text).truncated).toBe(false);
+    expect(block.text).toContain('1 | test("checkout", () => {');
+    expect(block.text).toContain("2102 | });");
+    expect(block.text).not.toContain("check(value)");
+  },
+);
 
 test("overview recovery names the quoted original source without replacing its snapshot", async () => {
   const file = `${process.cwd()}/source "quoted".ts`;

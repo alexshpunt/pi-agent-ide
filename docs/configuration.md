@@ -73,6 +73,28 @@ Restart Pi or use `/reload` after changing extension selection. Search timeout s
 
 Built-in entry modules are imported only after selection. Disabled built-ins, including those disabled through a dependency, are not imported by the catalog. Selected built-ins still register in catalog order. Shared libraries used by a selected built-in may still load.
 
+## SSH targets (work in progress)
+
+The **SSH files** module (`read.ssh`) reads a separate `ssh.json` beside each `extensions.json`. The global file follows `PI_CODING_AGENT_DIR`. Missing files configure no targets and open no connections. Project targets replace complete global records with the same `id`; other global targets remain available.
+
+```json
+{
+  "targets": [{ "id": "sandbox", "host": "vps", "workspace": "/srv/work" }]
+}
+```
+
+`host` is a trusted OpenSSH alias, optionally `user@alias`. Keys, passwords, host-key trust and agent access stay in OpenSSH configuration, not this file. Optional `configFile` selects a local OpenSSH config; relative paths resolve beside that `ssh.json`. Duplicate IDs within one scope, unknown fields and malformed records stop startup rather than silently enabling a different target.
+
+Use `ssh://sandbox/srv/work/file.txt` with the existing read and text mutation tools. Workspace is the remote path base, not an access boundary; the account's permissions control access. Connections use batch mode and strict host-key verification. Python 3 must be available remotely; no permanent helper is installed.
+
+Remote command channels use Linux child-subreaper support and Python's standard `ctypes` module. The kernel keeps orphaned descendants with their owning channel, including children that open new sessions. Cleanup waits for those children to exit and be reaped; it does not scan or signal unrelated processes. A denied signal or a cleanup deadline remains an explicit unknown result, not proof that the whole tree stopped.
+
+The terminal module reads the same targets. Set `bash`'s `cwd` to `ssh://sandbox/srv/work` to run remote Bash with a PTY. Existing shell resources support input and session cleanup. Remote process identity includes its target; it is never treated as a local PID.
+
+Use `raw:ssh://sandbox/path/file.bin` for original bytes. Offsets and limits count bytes; raw reads do not use text converters or accept views. Byte ranges can cross the text snapshot limit.
+
+This is an unfinished part of LPT-149. Search, mixed Apply/transfers, undo, LSP and debugger integrations are not yet connected. Current snapshots are limited to 32 MiB. The settings UI can enable or disable the module; editing target records currently requires the JSON file. Do not treat this first integration as full remote IDE support.
+
 ## Animations and post-edit processing
 
 Standalone editing tools validate source snapshots before writing. Native Codemode commits eligible pending local edits before a dependent tool or when the script ends. Accepted child calls are not proof of persistence. Ordinary script errors keep accepted edits; aborts discard only pending work. Batched edits finish formatting and diagnostics at script end. Write commits earlier pending edits and finishes its own post-edit processing before returning. Text copy/move destinations receive post-processing; binary contents stay unchanged.
@@ -193,6 +215,10 @@ Create the session with `adapter: "java"` and the fully qualified `mainClass`. U
 
 Run `/pi-agent-ide-doctor` to check the effective tools for the current project. Doctor uses the same layered entries as runtime. For each applicable entry it shows the stable ID, source layer, command, and real probe result. A missing or failing command is reported instead of falling back to a lower layer.
 
+Use `/pi-agent-ide-doctor ssh://target/path` for an explicitly configured Linux SSH project. Its inventory, project/user-global config and target-sensitive probes belong to that target. Native managed debugger path overrides are read from the target, not the controller. Pure-content adapters, such as jq and fetched-source parsers, stay local. Without a source, the command and passive startup tips keep their local scope. An unused target is not probed.
+
+For an SSH project with vision enabled, Doctor checks the native X11 connection and trusted X-Resource 1.2 support without taking a screenshot or grabbing the desktop. It reports display access and trusted window identity separately. Headless sessions and missing libraries remain warnings. This readiness check does not authorize any particular window or enable capture flags; each real capture still checks opt-in and the selected process.
+
 Doctor can still suggest a project override when project evidence points to a better installed tool. It shows the report before changing anything. `--apply` writes only to `<project>/.pi/pi-agent-ide/`; it never changes the global directory or built-in files. `--agent` delegates remaining setup work, and `--no-apply` skips suggested writes.
 
 The project directory may also contain extension and editor settings:
@@ -230,6 +256,8 @@ No tip appears when built-in mappings already cover the project. Empty projects,
 Each actionable state has its own stable fingerprint. The same state is shown once per project, while a materially different later problem can produce a new tip. Like other startup tips, it never enters model context. See [Startup tip provider](./extensions.md#startup-tip-provider) for the provider contract and persistence behavior.
 
 ### Temporary-directory deletion
+
+For SSH Delete, all paths and settings belong to the selected target: its account home, system temp, `PI_CODING_AGENT_DIR`, and project config. Local settings do not grant permission to remote paths.
 
 Delete skips the external/non-Git confirmation for descendants of temporary roots. Defaults are `tmp`, `.tmp`, `temp`, and `.temp` under the current Git worktree root (or cwd without Git) and your home directory, plus the system temporary directory. The system root follows the OS environment, such as `TMPDIR` on Linux or `TEMP`/`TMP` on Windows.
 

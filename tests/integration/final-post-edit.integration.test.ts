@@ -18,7 +18,7 @@ import {
 } from "#integration/support/pi-runtime/fixtures.js";
 
 test.each([false, true])(
-  "Native Codemode processes each Write and the final Replace once, even after a later failure=%s",
+  "Native Codemode finishes Write immediately and batches later edits, even after a failure=%s",
   async (fail) => {
     await withTempWorkspace(async (cwd) => {
       await enableNativeCodemode(cwd);
@@ -50,7 +50,7 @@ const check = result => { if(typeof result!=="string") throw Error("Expected rea
 check(await tools.write({path:"a.note",content:"first"}));
 check(await tools.write({path:"b.note",content:"second"}));
 const seen=check(await tools.read({path:"a.note"}));
-if(!seen.endsWith("FIRST")) throw Error("Write did not finish formatting");
+if(!seen.endsWith("FIRST")) throw Error("Write was not formatted before returning");
 check(await tools.replace({path:"a.note",start:"FIRST",text:"final"}));
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,

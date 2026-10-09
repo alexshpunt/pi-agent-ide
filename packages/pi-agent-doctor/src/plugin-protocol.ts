@@ -1,4 +1,7 @@
 import type { LanguageDefinition, ToolRecipe, ToolRecipeKind } from "./catalog.js";
+import type { DoctorWorkspace } from "./workspace.js";
+export type { DoctorCommand, DoctorProcessResult, DoctorWorkspace } from "./workspace.js";
+export { DOCTOR_TOOL_PATH_KEYS, type DoctorToolPathKey } from "./workspace.js";
 
 /**
 Shared protocol identifier.
@@ -38,6 +41,9 @@ export interface DoctorFinding {
 Project facts passed to an independent check.
 */
 export interface DoctorContext {
+  /** Explicit owner for URI projects. Missing owners must never fall back locally. */
+  readonly workspace?: DoctorWorkspace;
+  readonly signal?: AbortSignal;
   readonly cwd: string;
   readonly files: readonly string[];
   readonly detectedLanguageIds: ReadonlySet<string>;

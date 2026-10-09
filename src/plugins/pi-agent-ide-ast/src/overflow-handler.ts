@@ -11,7 +11,7 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
   const { source, resolvedBy, lines, totalLines, startLine } = result.details;
   if (
     source === undefined ||
-    resolvedBy !== "filesystem" ||
+    (resolvedBy !== "filesystem" && !source.startsWith("ssh://")) ||
     lines === undefined ||
     lines.length !== totalLines ||
     (startLine !== undefined && startLine !== 1)
@@ -61,7 +61,7 @@ export function createAstOverflowHandler(): ReadPostReadHandler {
       context.audience === "script" ||
       result === undefined ||
       state?.contentKind !== "text" ||
-      state.resolvedBy !== "filesystem" ||
+      (state.resolvedBy !== "filesystem" && !state.source.startsWith("ssh://")) ||
       block?.type !== "text" ||
       !truncateHead(block.text).truncated
     )

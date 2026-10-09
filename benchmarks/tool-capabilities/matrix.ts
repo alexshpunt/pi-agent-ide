@@ -2,6 +2,7 @@ import type { Capability } from "./validation.ts";
 
 // This declared inventory is reviewed separately from executable cases.
 const groups: [string[], string[]][] = [
+  [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
@@ -15,6 +16,7 @@ const groups: [string[], string[]][] = [
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
   [["codemode.silent-write"], ["write-silent"]],
+  [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
   [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
@@ -35,6 +37,7 @@ const groups: [string[], string[]][] = [
       "edit.move-symlink",
       "edit.copy-merge-directory",
       "edit.move-replace-directory",
+      "compose.object-transfer-refusal",
     ],
     ["directory-transfers"],
   ],
@@ -43,7 +46,10 @@ const groups: [string[], string[]][] = [
     ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
     ["delete-objects"],
   ],
-  [["edit.delete-policy-refusal", "edit.delete-protected-path"], ["delete-policy-gates"]],
+  [
+    ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
+    ["delete-policy-gates"],
+  ],
   [["edit.delete-temporary-defaults"], ["delete-temporary-defaults"]],
   [["edit.delete-temporary-config"], ["delete-temporary-config"]],
   [
@@ -98,6 +104,8 @@ const groups: [string[], string[]][] = [
       "shell.read",
       "shell.search",
       "shell.input",
+      "compose.shell-input-read",
+      "compose.shell-keys-read",
       "shell.keys",
       "compose.shell-reference-after-input",
       "shell.file-authority-refusal",

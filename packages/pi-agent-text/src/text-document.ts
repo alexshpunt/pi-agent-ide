@@ -42,6 +42,8 @@ export interface TextDocument {
 }
 
 export interface TextPresentationContext {
+  /** Physical file snapshot retained by Read. Derived views clear it; edit-diff callers may omit it. */
+  readonly sourceText?: string;
   readonly purpose: "read" | "edit-diff";
   /** Script data enrichment differs from explicitly requested views. */
   readonly audience?: "agent" | "script";

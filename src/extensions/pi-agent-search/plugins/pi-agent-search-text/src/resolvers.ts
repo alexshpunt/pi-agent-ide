@@ -73,7 +73,13 @@ export function createFileResolver(): SearchResolver {
       }
 
       const query = request.query.slice("files:".length).trim();
-      const result = await searchFiles(query, request, context.cwd, context.signal);
+      const result = await searchFiles(
+        query,
+        request,
+        context.cwd,
+        context.signal,
+        context.environment,
+      );
       return { kind: "resolved", payload: { query, ...result } satisfies FilePayload };
     },
     renderResult(result, options, theme) {
@@ -85,7 +91,9 @@ export function createFileResolver(): SearchResolver {
             ? data.files.map((file) => ({
                 kind: "source",
                 label: file,
-                link: pathToFileURL(path.resolve(data.cwd, file)).href,
+                link: file.startsWith("ssh://")
+                  ? file
+                  : pathToFileURL(path.resolve(data.cwd, file)).href,
               }))
             : [{ kind: "note", text: "No files found" }],
         },
@@ -141,7 +149,7 @@ function createMatchResolver(
       if (recipe === undefined) return { kind: "not-handled" };
       const result =
         context.scope === undefined
-          ? await runSearchRecipe(recipe, context.cwd, context.signal)
+          ? await runSearchRecipe(recipe, context.cwd, context.signal, context.environment)
           : await runScopedSearch(recipe, context.scope, context.cwd, context.signal);
       const fuzzy =
         context.scope === undefined &&
@@ -149,7 +157,12 @@ function createMatchResolver(
         result.complete &&
         result.matches.length === 0 &&
         isFuzzyQuery(request.query)
-          ? await searchFuzzy({ ...request, query: request.query }, context.cwd, context.signal)
+          ? await searchFuzzy(
+              { ...request, query: request.query },
+              context.cwd,
+              context.signal,
+              context.environment,
+            )
           : undefined;
       return {
         kind: "resolved",
@@ -175,6 +188,8 @@ function createMatchResolver(
         scope === undefined
           ? undefined
           : (signal) => runScopedSearch(result.recipe, scope, context.cwd, signal),
+        undefined,
+        context.environment,
       );
       if (result.fuzzy !== undefined) {
         const details = createSearchToolDetails(
@@ -205,8 +220,9 @@ function createMatchResolver(
               context.cwd,
               registrationSignal,
               recipe,
-              (signal) => searchFuzzyAlternative(recipe, context.cwd, signal),
+              (signal) => searchFuzzyAlternative(recipe, context.cwd, signal, context.environment),
               fuzzyLimits.vocabularyBytes,
+              context.environment,
             );
           } catch {
             context.signal?.throwIfAborted();
@@ -368,6 +384,7 @@ function previewLine(text: string): string {
   return `${text.slice(0, context)}${text.length > context ? "…" : ""}`;
 }
 function displaySource(source: string, cwd: string): string {
+  if (source.includes("://")) return source;
   const relative = path.relative(cwd, source);
   // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)

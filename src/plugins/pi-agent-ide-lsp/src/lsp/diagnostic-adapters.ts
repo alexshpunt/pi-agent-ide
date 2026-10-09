@@ -19,7 +19,7 @@ const typescript: CompletedDiagnosticAdapter = {
               command: "typescript.tsserverRequest",
               arguments: [
                 command,
-                { file: uri, includeLinePosition: true },
+                { file: client.serverDocumentPath(uri), includeLinePosition: true },
                 { isAsync: false, expectsResult: true },
               ],
             },

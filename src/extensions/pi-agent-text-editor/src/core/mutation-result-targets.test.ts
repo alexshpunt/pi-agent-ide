@@ -1,3 +1,4 @@
+import { createTextEditorCore } from "./text-editor-core.js";
 import { expect, test } from "vitest";
 import { createTextDocument } from "pi-agent-text";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
@@ -34,6 +35,7 @@ test("move cannot publish a removed position when a handler did not supply owned
       },
     },
     [completion("old", "")],
+    createTextEditorCore(),
     new ResultTargetStore(),
     "move",
     "/workspace",

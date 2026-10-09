@@ -1,13 +1,17 @@
-import { searchSymbols } from "./lsp/symbol-search.js";
+import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import {
+  selectionData,
+  type SearchPluginApi,
+  type SearchResolver,
+} from "pi-agent-search/api/search";
+import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.js";
 import path from "node:path";
-import { selectionData, renderSearchMatches } from "pi-agent-search/api/search";
+import { renderSearchMatches } from "pi-agent-search/api/search";
 import type { LspManager } from "./lsp/manager.js";
-import type { SymbolHit } from "./lsp/symbol-search.js";
-import type { SearchPluginApi, SearchResolver } from "pi-agent-search/api/search";
 
 /** Expose strict LSP discovery and explicit reference navigation as shared source targets. */
 export function createLspSearchResolver(
-  managerFor: (cwd: string) => Promise<LspManager>,
+  managerFor: (cwd: string, source?: string, signal?: AbortSignal) => Promise<LspManager>,
   registerSelection: SearchPluginApi["registerSelection"],
 ): SearchResolver {
   return {
@@ -23,16 +27,43 @@ export function createLspSearchResolver(
       const query = request.query.slice("symbols:".length).trim();
       if (query.length === 0)
         return { kind: "failed", error: new Error("symbols: query must not be empty") };
-      const manager = await managerFor(context.cwd);
-      const collect = (signal?: AbortSignal) =>
-        searchSymbols(
-          query,
-          context.cwd,
-          request.limit ?? 100,
-          signal,
-          { ...request, ...(context.scope === undefined ? {} : { resultScope: context.scope }) },
-          manager,
-        );
+      const scope = context.scope;
+      const groups = new Map<LspManager, ResolvedResultTargets["targets"][number][]>();
+      if (scope !== undefined) {
+        await verifyResultTargets(scope, context.signal);
+        for (const target of scope.targets) {
+          const manager = await managerFor(context.cwd, target.source, context.signal);
+          const group = groups.get(manager) ?? [];
+          group.push(target);
+          groups.set(manager, group);
+        }
+      } else {
+        groups.set(await managerFor(context.cwd, request.path, context.signal), []);
+      }
+      const limit = request.limit ?? 100;
+      const collect = async (signal?: AbortSignal) => {
+        const hits: SymbolHit[] = [];
+        let complete = scope?.complete ?? true;
+        for (const [manager, targets] of groups) {
+          const found = await searchSymbols(
+            query,
+            manager.workspaceRoot,
+            limit,
+            signal,
+            {
+              ...request,
+              ...(scope === undefined
+                ? {}
+                : { resultScope: { targets, complete: scope.complete } }),
+            },
+            manager,
+          );
+          hits.push(...found.hits);
+          complete = complete && found.complete;
+        }
+        if (scope !== undefined) await verifyResultTargets(scope, signal);
+        return { hits: hits.slice(0, limit), complete: complete && hits.length <= limit };
+      };
       const found = await collect(context.signal);
       const session = await registerSelection(
         {
@@ -40,8 +71,8 @@ export function createLspSearchResolver(
           matches: found.hits,
           complete: found.complete,
           refresh: async (signal) => {
-            const refreshed = await collect(signal);
-            return { matches: refreshed.hits, complete: refreshed.complete };
+            const next = await collect(signal);
+            return { matches: next.hits, complete: next.complete };
           },
         },
         context,
@@ -51,8 +82,8 @@ export function createLspSearchResolver(
         kind: "resolved",
         payload: {
           query,
-          hits: found.hits,
           sessionId: session.id,
+          hits: found.hits,
           complete: found.complete,
           navigation: request.navigation,
           data: {
@@ -104,7 +135,7 @@ export function createLspSearchResolver(
               .slice(0, 100)
               .map(
                 (hit, index) =>
-                  `SEARCH#${result.sessionId}:${index + 1}:match ${path.relative(context.cwd, hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · declared at ${path.relative(context.cwd, hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`,
+                  `SEARCH#${result.sessionId}:${index + 1}:match ${hit.source.startsWith("ssh://") ? hit.source : path.relative(context.cwd, hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · declared at ${hit.symbol.source.startsWith("ssh://") ? hit.symbol.source : path.relative(context.cwd, hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`,
               );
       if (result.complete && result.hits.length)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);

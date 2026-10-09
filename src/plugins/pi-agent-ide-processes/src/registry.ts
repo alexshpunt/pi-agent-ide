@@ -10,8 +10,15 @@ export interface AgentIdeProcess {
   readonly title: string;
   readonly description: string;
   readonly status: AgentIdeProcessStatus;
-  /** Native process ID when the provider owns the process. */
+  /** Controller-native process ID. Use remote for processes on another target. */
   readonly pid?: number;
+  /** Remote native PID and target identity. Never expose this PID as a controller process. */
+  readonly remote?: {
+    readonly target: string;
+    readonly pid: number;
+    /** Kernel lifetime captured by the owned channel; absent when the target cannot provide it. */
+    readonly identity?: string;
+  };
   /** True only when Agent IDE created and controls this process. */
   readonly owned?: boolean;
   renderSummary(theme: Theme): readonly string[];

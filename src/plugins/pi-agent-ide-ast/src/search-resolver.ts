@@ -5,7 +5,7 @@ import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
-import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
+import type { SearchEnvironment, SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 import { selectionData, containsSearchMatch } from "pi-agent-search/api/search";
 import { verifyResultTargets } from "pi-agent-resource";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
@@ -56,44 +56,62 @@ export function createAstSearchResolver(
         return { kind: "failed", error: new Error("ast: pattern must not be empty") };
       }
 
+      const owner = (source: string): SearchEnvironment | undefined =>
+        context.environmentForSource?.(source) ?? context.environment;
       const collect = async (signal?: AbortSignal) => {
         if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
-        const found = await runAstGrep(
-          pattern,
-          request,
-          context.cwd,
-          signal,
-          context.scope?.targets.map((target) => target.source),
-        );
-        found.sort(
+        const found: AstGrepMatch[] = [];
+        if (context.scope === undefined) {
+          found.push(
+            ...(await runAstGrep(pattern, request, context.cwd, signal, context.environment)),
+          );
+        } else {
+          for (const source of new Set(context.scope.targets.map((target) => target.source))) {
+            signal?.throwIfAborted();
+            found.push(
+              ...(await runAstGrep(
+                pattern,
+                { ...request, path: source },
+                context.cwd,
+                signal,
+                owner(source),
+              )),
+            );
+          }
+        }
+        const mapped = found.map((match) => ({
+          ...match,
+          file: resolveSource(context.cwd, match.file, owner(match.file)),
+        }));
+        mapped.sort(
           (a, b) =>
-            path.resolve(context.cwd, a.file).localeCompare(path.resolve(context.cwd, b.file)) ||
+            a.file.localeCompare(b.file) ||
             a.range.byteOffset.start - b.range.byteOffset.start ||
             a.range.byteOffset.end - b.range.byteOffset.end,
         );
-        const mapped = await selectionMatches(found, context.cwd, signal);
-        const eligible = found
-          .map((raw, index) => {
-            const selection = requiredValue(mapped[index]);
-            return {
-              selection,
-              raw: {
-                ...raw,
-                range: {
-                  ...raw.range,
-                  start: { line: selection.lineNumber - 1, column: selection.startColumn },
-                  end: {
-                    line: (selection.endLineNumber ?? selection.lineNumber) - 1,
-                    column: selection.endColumn,
-                  },
+        const eligible: { raw: AstGrepMatch; selection: SearchSelectionMatch }[] = [];
+        for (const match of mapped) {
+          const selection = (
+            await selectionMatches([match], context.cwd, signal, owner(match.file))
+          )[0];
+          if (selection === undefined) throw new Error("Missing AST selection snapshot");
+          if (context.scope !== undefined && !containsSearchMatch(context.scope, selection))
+            continue;
+          eligible.push({
+            selection,
+            raw: {
+              ...match,
+              range: {
+                ...match.range,
+                start: { line: selection.lineNumber - 1, column: selection.startColumn },
+                end: {
+                  line: (selection.endLineNumber ?? selection.lineNumber) - 1,
+                  column: selection.endColumn,
                 },
               },
-            };
-          })
-          .filter(
-            ({ selection }) =>
-              context.scope === undefined || containsSearchMatch(context.scope, selection),
-          );
+            },
+          });
+        }
         const kept = eligible.slice(0, request.limit ?? 100);
         if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
         return {
@@ -131,6 +149,7 @@ export function createAstSearchResolver(
             nodes.map((node) => ({ ...raw, ...node })),
             context.cwd,
             context.signal,
+            owner(raw.file),
           );
           const group = await registerSelection(
             {
@@ -246,20 +265,25 @@ async function selectionMatches(
   matches: readonly AstGrepMatch[],
   cwd: string,
   signal?: AbortSignal,
+  environment?: SearchEnvironment,
 ): Promise<SearchSelectionMatch[]> {
   const sources = new Map<string, Buffer>();
   for (const match of matches) {
-    const source = path.resolve(cwd, match.file);
+    const source = resolveSource(cwd, match.file, environment);
     if (sources.has(source)) continue;
-    const before = await stat(source);
-    const bytes = await readFile(source, { signal });
-    const after = await stat(source);
-    if (before.mtimeMs !== after.mtimeMs || before.size !== after.size)
-      throw new Error("AST source changed during search. Run the structural query again.");
-    sources.set(source, bytes);
+    if (environment !== undefined) {
+      sources.set(source, Buffer.from(await environment.readText(source, signal)));
+    } else {
+      const before = await stat(source);
+      const bytes = await readFile(source, { signal });
+      const after = await stat(source);
+      if (before.mtimeMs !== after.mtimeMs || before.size !== after.size)
+        throw new Error("AST source changed during search. Run the structural query again.");
+      sources.set(source, bytes);
+    }
   }
   return matches.map((match) => {
-    const source = path.resolve(cwd, match.file);
+    const source = resolveSource(cwd, match.file, environment);
     const bytes = sources.get(source);
     if (bytes === undefined) throw new Error("Missing AST source snapshot");
     const { start, end } = match.range.byteOffset;
@@ -291,10 +315,9 @@ function runAstGrep(
   request: SearchRequest,
   cwd: string,
   signal?: AbortSignal,
-  sources?: readonly string[],
+  environment?: SearchEnvironment,
 ): Promise<AstGrepMatch[]> {
   signal?.throwIfAborted();
-  if (sources?.length === 0) return Promise.resolve([]);
   const arguments_ = ["run", "--pattern", pattern, "--json=compact", "--no-ignore", "parent"];
 
   for (const include of splitGlobs(request.include)) {
@@ -305,7 +328,11 @@ function runAstGrep(
     arguments_.push("--globs", `!${exclude}`);
   }
 
-  arguments_.push(...(sources ?? [request.path ?? "."]));
+  if (environment !== undefined) {
+    return runOwnedAstGrep(environment, arguments_, request, cwd, signal);
+  }
+  resolveSource(cwd, request.path ?? ".");
+  arguments_.push(request.path ?? ".");
   return new Promise((resolve, reject) => {
     const child = spawn("ast-grep", arguments_, {
       cwd,
@@ -350,6 +377,37 @@ function runAstGrep(
   });
 }
 
+function resolveSource(cwd: string, source: string, environment?: SearchEnvironment): string {
+  if (environment !== undefined) return environment.resolve(cwd, source);
+  if (source.includes("://") || cwd.includes("://"))
+    throw new Error("No structural search owner for this resource.");
+  return path.resolve(cwd, source);
+}
+
+async function runOwnedAstGrep(
+  environment: SearchEnvironment,
+  arguments_: string[],
+  request: SearchRequest,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<AstGrepMatch[]> {
+  if (environment.execute === undefined)
+    throw new Error("This resource owner does not support structural search execution.");
+  const scope = environment.resolve(cwd, request.path ?? ".");
+  const directory = await environment.isDirectory(scope, signal);
+  const executionCwd = directory ? scope : environment.dirname(scope);
+  arguments_.push(directory ? "." : `./${environment.basename(scope)}`);
+  const result = await environment.execute("ast-grep", arguments_, executionCwd, signal);
+  signal?.throwIfAborted();
+  if (result.code !== 0 && result.code !== 1)
+    throw new Error(`Structural search failed with exit ${String(result.code)}.`);
+  const value: unknown = JSON.parse(result.stdout.length === 0 ? "[]" : result.stdout);
+  if (!Array.isArray(value)) throw new TypeError("ast-grep returned non-array JSON");
+  return (value as AstGrepMatch[]).map((match) => ({
+    ...match,
+    file: environment.resolve(executionCwd, match.file),
+  }));
+}
 function splitGlobs(value: string | undefined): string[] {
   return (
     value

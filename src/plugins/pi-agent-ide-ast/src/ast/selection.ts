@@ -54,13 +54,13 @@ function enclosing(
   }
   if (
     !owner &&
-    nodes.filter(
+    nodes.some(
       (n) => n.object === operation.object && n.node.startIndex < end && n.node.endIndex > start,
-    ).length > 1
+    )
   )
     throw new SelectionError(
       "AMBIGUOUS_SEED",
-      "The seed spans separate constructs; select narrower input ranges.",
+      "The seed crosses a construct boundary or spans separate constructs; select narrower input ranges.",
     );
   let level = 1;
   while (owner && level < (operation.level ?? 1)) {

@@ -49,6 +49,39 @@ export interface ProcessMetadata {
   readonly host: "local" | "windows";
 }
 
+/** Target-scoped read-only process metadata; discovery alone does not grant control or capture. */
+export interface RemoteProcessMetadata {
+  readonly pid: number;
+  readonly parentPid: number;
+  readonly command: string;
+  readonly started: string;
+  readonly identity: string;
+  readonly executable: string | null;
+  readonly owned: boolean;
+  readonly source?: string;
+  readonly host: "ssh";
+  readonly target: string;
+  readonly resource: string;
+}
+/** Match a read-only target snapshot to an active channel without granting ownership after PID reuse. */
+export function withRemoteProcessOwnership(
+  metadata: RemoteProcessMetadata,
+  registry: AgentIdeProcessRegistry,
+): RemoteProcessMetadata {
+  const owner = registry
+    .list()
+    .find(
+      (entry) =>
+        entry.owned === true &&
+        entry.remote?.target === metadata.target &&
+        entry.remote.pid === metadata.pid &&
+        entry.remote.identity === metadata.identity &&
+        (entry.status === "running" || entry.status === "stopping" || entry.status === "paused"),
+    );
+  return owner
+    ? { ...metadata, owned: true, source: owner.source }
+    : { ...metadata, owned: false, source: undefined };
+}
 export interface CaptureBackend {
   captureWindow(
     pid: number,
@@ -100,6 +133,10 @@ export function isExecutableAllowed(command: string): boolean {
   return allowedExecutables.has((command.includes("\\") ? windowsName : unixName).toLowerCase());
 }
 
+/** Check a native target executable path without treating its filename as command-line text. */
+export function isNativeExecutableAllowed(executable: string): boolean {
+  return allowedExecutables.has(executable.slice(executable.lastIndexOf("/") + 1).toLowerCase());
+}
 /** Parses image and sequence view strings with named capture parameters. */
 export function parseVisionView(
   views: readonly string[] | undefined,
@@ -177,7 +214,11 @@ export async function listProcesses(registry: AgentIdeProcessRegistry): Promise<
   const owned = new Map(
     registry
       .list()
-      .flatMap((process) => (process.pid === undefined ? [] : [[process.pid, process] as const])),
+      .flatMap((process) =>
+        process.remote !== undefined || process.pid === undefined
+          ? []
+          : [[process.pid, process] as const],
+      ),
   );
   if (process.platform !== "linux" && process.platform !== "darwin") {
     return [...owned].map(([pid, item]) => ({

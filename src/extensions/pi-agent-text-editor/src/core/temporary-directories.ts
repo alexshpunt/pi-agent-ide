@@ -1,37 +1,46 @@
-import { readFile, realpath } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import type { DeleteFileAccess } from "#src/api/delete-guard.js";
+import { localFileTransferAccess as localFiles } from "#src/api/native-files.js";
 
 interface TemporaryDirectorySettings {
   readonly mode: "replace" | "extend";
   readonly paths: readonly string[];
 }
 
-/** Load temporary roots for Delete: defaults, then global, then project settings. */
-export async function loadTemporaryDirectories(projectRoot: string): Promise<readonly string[]> {
-  const home = await realpath(os.homedir());
-  const agent = process.env.PI_CODING_AGENT_DIR?.trim();
+/** Load Delete roots on their owner: defaults, then native global and project settings.
+ * A provider without native account defaults keeps the strict deletion policy.
+ */
+export async function loadTemporaryDirectories(
+  projectRoot: string,
+  files: DeleteFileAccess = localFiles,
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  signal?.throwIfAborted();
+  if (files.temporaryEnvironment === undefined) return [];
+  const environment = await files.temporaryEnvironment(signal);
+  const paths = files.pathStyle === "native" ? path : path.posix;
+  const home = await files.realpath(environment.home);
   const names = ["tmp", ".tmp", "temp", ".temp"];
-  const system = await existingRoot(os.tmpdir());
+  const system = await existingRoot(environment.temporary, files, signal);
   // Named defaults do not grant permission to a symlink's destination outside the root.
   let roots = [
-    ...names.map((name) => path.join(projectRoot, name)),
-    ...names.map((name) => path.join(home, name)),
+    ...names.map((name) => paths.join(projectRoot, name)),
+    ...names.map((name) => paths.join(home, name)),
     ...(system === undefined ? [] : [system]),
   ];
   const layers = [
     {
-      file: path.join(
-        agent ? path.resolve(agent) : path.join(home, ".pi", "agent"),
+      file: paths.join(
+        environment.agentDirectory ?? paths.join(home, ".pi", "agent"),
         "pi-agent-ide",
         "deletion.json",
       ),
       base: home,
     },
-    { file: path.join(projectRoot, ".pi", "pi-agent-ide", "deletion.json"), base: projectRoot },
+    { file: paths.join(projectRoot, ".pi", "pi-agent-ide", "deletion.json"), base: projectRoot },
   ];
   for (const { file, base } of layers) {
-    const settings = await readSettings(file);
+    const settings = await readSettings(file, files, signal);
     if (settings === undefined) continue;
     const configured: string[] = [];
     for (const entry of settings.paths) {
@@ -39,20 +48,26 @@ export async function loadTemporaryDirectories(projectRoot: string): Promise<rea
         entry === "~"
           ? home
           : entry.startsWith("~/")
-            ? path.join(home, entry.slice(2))
-            : path.resolve(base, entry);
-      const root = await existingRoot(expanded);
+            ? paths.join(home, entry.slice(2))
+            : paths.resolve(base, entry);
+      const root = await existingRoot(expanded, files, signal);
       if (root !== undefined) configured.push(root);
     }
     roots = settings.mode === "replace" ? configured : [...roots, ...configured];
   }
+  signal?.throwIfAborted();
   return [...new Set(roots)].sort();
 }
 
-async function readSettings(file: string): Promise<TemporaryDirectorySettings | undefined> {
+async function readSettings(
+  file: string,
+  files: DeleteFileAccess,
+  signal?: AbortSignal,
+): Promise<TemporaryDirectorySettings | undefined> {
+  signal?.throwIfAborted();
   let source: string;
   try {
-    source = await readFile(file, "utf8");
+    source = await files.read(file);
   } catch (error) {
     if (isMissing(error)) return undefined;
     throw error;
@@ -80,9 +95,14 @@ async function readSettings(file: string): Promise<TemporaryDirectorySettings | 
   return { mode: settings.mode, paths: settings.paths as string[] };
 }
 
-async function existingRoot(directory: string): Promise<string | undefined> {
+async function existingRoot(
+  directory: string,
+  files: DeleteFileAccess,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  signal?.throwIfAborted();
   try {
-    return await realpath(directory);
+    return await files.realpath(directory);
   } catch (error) {
     if (isMissing(error)) return undefined;
     throw error;

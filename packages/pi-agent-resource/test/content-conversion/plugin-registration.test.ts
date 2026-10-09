@@ -33,6 +33,25 @@ test.each(["provider-first", "adapter-first"] as const)(
   },
 );
 
+test("late source providers share installed converters until the last owner shuts down", async () => {
+  const environment = createExtensionEnvironment();
+  const first = environment.createExtension();
+  const adapter = environment.createExtension();
+  const host = createContentHost(first.pi, readTarget);
+  await connectContentConverter(adapter.pi, textRegistration(readTarget));
+  const late = environment.createExtension();
+  const shared = createContentHost(late.pi, readTarget);
+  expect(shared).toBe(host);
+  await expect(shared.convert(input, {})).resolves.toEqual([{ type: "text", text: "fixture" }]);
+  await first.shutdown();
+  await expect(shared.convert(input, {})).resolves.toEqual([{ type: "text", text: "fixture" }]);
+  await late.shutdown();
+  await adapter.shutdown();
+  const next = environment.createExtension();
+  const nextHost = createContentHost(next.pi, readTarget);
+  expect(nextHost).not.toBe(host);
+  expect(nextHost.listDescriptions()).toEqual([]);
+});
 test("keeps registrations isolated by exact target", async () => {
   const pi = createExtensionApi();
   const readHost = createContentHost(pi, readTarget);

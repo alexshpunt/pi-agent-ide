@@ -5,6 +5,87 @@ import { afterEach, expect, test } from "vitest";
 
 import { LspServerRegistry, parseLspConfig } from "./registry.js";
 
+test("owned resolution checks remote root markers without consulting local files", async () => {
+  const config = parseLspConfig({
+    version: 1,
+    servers: {
+      owned: {
+        command: ["owned-language-server"],
+        rootMarkers: ["project.json"],
+        requireRootMarker: true,
+        languages: { typescript: { extensions: [".ts"] } },
+        capabilities: ["diagnostics"],
+      },
+    },
+  });
+  const registry = LspServerRegistry.fromConfig(config, "ssh://fixture/workspace");
+  const requests: string[] = [];
+  expect(
+    await registry.resolveOwned("ssh://fixture/workspace/src/note.ts", async (source) => {
+      requests.push(source);
+      return source === "ssh://fixture/workspace/project.json";
+    }),
+  ).toMatchObject([{ serverId: "owned" }]);
+  expect(requests).toEqual([
+    "ssh://fixture/workspace/src/project.json",
+    "ssh://fixture/workspace/project.json",
+  ]);
+  expect(await registry.resolveOwned(".ts", async () => false)).toEqual([]);
+  await expect(
+    registry.resolveOwned("ssh://other/workspace/note.ts", async () => true),
+  ).rejects.toMatchObject({ code: "UNSUPPORTED_SOURCE" });
+});
+test("owner availability probes do not open concurrent remote connections", async () => {
+  let active = false;
+  let probes = 0;
+  const registry = await LspServerRegistry.fromPackageDir("ssh://fixture/workspace", {
+    layerAccess: {
+      paths: async () => ({
+        global: "ssh://fixture/home/lsp.json",
+        project: "ssh://fixture/workspace/lsp.json",
+      }),
+      readText: async () => {
+        throw Object.assign(new Error("Missing owned config"), { code: "ENOENT" });
+      },
+    },
+    executableAvailable: async () => {
+      if (active) throw new Error("Remote connection startup limit exceeded");
+      active = true;
+      probes += 1;
+      await Promise.resolve();
+      active = false;
+      return false;
+    },
+  });
+  expect(probes).toBeGreaterThan(1);
+  expect(registry.resolve(".ts")).toEqual([]);
+});
+test("remote external recipes require owned native evidence, not controller probes", async () => {
+  const requests: string[] = [];
+  const registry = await LspServerRegistry.fromPackageDir("ssh://fixture/workspace", {
+    includeGlobal: false,
+    requireBuiltInEvidence: true,
+    layerAccess: {
+      paths: async () => ({
+        global: "ssh://fixture/home/lsp.json",
+        project: "ssh://fixture/workspace/lsp.json",
+      }),
+      readText: async () => {
+        throw Object.assign(new Error("Missing owned config"), { code: "ENOENT" });
+      },
+    },
+    executableAvailability: async (configs) =>
+      configs.map((config) => config.command[0] === "typescript-language-server"),
+    recipeEvidence: async () => {
+      requests.push("owned evidence");
+      return new Map([["typescript-language-server", { score: 6, config: "tsconfig.json" }]]);
+    },
+  });
+  expect(requests).toEqual(["owned evidence"]);
+  expect(await registry.resolveOwned(".ts", async () => true)).toEqual(
+    expect.arrayContaining([expect.objectContaining({ serverId: "typescript-language-server" })]),
+  );
+});
 const directories: string[] = [];
 const originalAgentDirectory = process.env.PI_CODING_AGENT_DIR;
 

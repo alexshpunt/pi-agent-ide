@@ -142,8 +142,8 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
     expect(outcome.reason).toBe("aborted");
     expect(manager.snapshot(session)).toMatchObject({ status: "running", background: true });
     expect(manager.snapshot(session)).not.toHaveProperty("waitReason");
-    manager.write(session.source, "hello");
-    manager.sendKeys(session.source, "Enter");
+    await manager.write(session.source, "hello");
+    await manager.sendKeys(session.source, "Enter");
     await manager.wait(session.source);
     expect(manager.snapshot(session).output).toContain("received:hello");
     expect(completions).toBe(1);
@@ -165,8 +165,8 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
 
     expect(outcome.reason).toBe("interactive");
     expect(manager.snapshot(session)).toMatchObject({ status: "running", background: true });
-    manager.write(session.source, "y");
-    manager.sendKeys(session.source, "Enter");
+    await manager.write(session.source, "y");
+    await manager.sendKeys(session.source, "Enter");
     await manager.wait(session.source);
     expect(manager.snapshot(session).output).toContain("choice:y");
   });
@@ -179,8 +179,8 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
       shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
     });
 
-    manager.write(session.source, "hello");
-    manager.sendKeys(session.source, "Enter");
+    await manager.write(session.source, "hello");
+    await manager.sendKeys(session.source, "Enter");
     await manager.wait(session.source);
 
     expect(manager.snapshot(session).output).toContain("received:hello");
@@ -197,7 +197,7 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
     const previousEnd = session.outputStart + session.output.length;
     const before = manager.screenRows(session);
 
-    manager.write(session.source, "cursor text");
+    await manager.write(session.source, "cursor text");
     await manager.waitForOutputAfter(session, previousEnd);
 
     const preview = manager.screenChangeWindow(session, before, 6).join("\n");

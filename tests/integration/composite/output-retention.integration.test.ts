@@ -65,8 +65,9 @@ test("reads complete saved text through line and byte windows after direct and n
                   `
           const full = Array.from({length:6000}, (_,index)=>"RETAINED_ROW_"+index+": "+"value ".repeat(20)).join("\\n");
           const written = await tools.write({path:"written.txt",content:full});
-          const displayed = await tools.read({path:written,limit:1000000});
-          const file = savedPath(displayed);
+          if (written.includes("RETAINED_ROW_")) throw new Error("Write leaked the file body");
+          const inspected = await tools.read({path:written,limit:1000000});
+          const file = savedPath(inspected);
           const tail = await tools.read({path:file,offset:-1,limit:1});
           if (!tail.includes("RETAINED_ROW_5999")) throw new Error("Saved nested Read tail was lost");
           const bytes = await tools.read({path:"raw:"+file,offset:-200,limit:200});
