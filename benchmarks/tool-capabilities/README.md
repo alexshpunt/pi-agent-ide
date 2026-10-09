@@ -62,6 +62,8 @@ The initial suite verification and retained findings are in [LPT-655 evidence](e
 
 The focused native Codemode semantic rename fix and its direct/Codemode rerun are in [LPT-660 evidence](evidence/LPT-660.md). These results do not replace the earlier failed attempts.
 
+The 0.8.1 editing checks are in [LPT-698/699/704/705 evidence](evidence/LPT-698-699-704-705.md). They include deterministic real-Pi replay and free coverage checks, not paid model results. `parallelWith` requires overlapping child execution in the same native Codemode script; sequential calls cannot pass the parallel route.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:

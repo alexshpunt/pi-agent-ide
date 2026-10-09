@@ -41,6 +41,8 @@ function fieldValue(value: unknown, field: string): unknown {
 /** One actual execution required to establish a capability. */
 export interface RouteStep {
   tool: string;
+  /** Require overlap with an earlier step's execution in the same native Codemode script. */
+  parallelWith?: number;
   /** At least one reviewed argument variant must match, in addition to args. */
   argsAny?: Record<string, unknown>[];
   args?: Record<string, unknown>;
@@ -207,6 +209,16 @@ export function validateRoute(
         continue;
       if (mode === "codemode" && !codemodeParents.has(event.parentToolCallId)) continue;
       if (mode === "direct" && event.parentToolCallId) continue;
+      if (step.parallelWith !== undefined) {
+        const prior = selected[step.parallelWith];
+        if (
+          mode !== "codemode" ||
+          prior === undefined ||
+          start.index >= prior.end ||
+          prior.parent !== event.parentToolCallId
+        )
+          continue;
+      }
       if (step.args && !matches(step.args, event.args)) continue;
       if (step.argsAny && !step.argsAny.some((args) => matches(args, event.args))) continue;
       const output = resultText(end.event);
