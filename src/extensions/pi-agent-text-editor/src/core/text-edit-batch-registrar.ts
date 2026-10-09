@@ -1,4 +1,5 @@
 import { connectResultTargets, type ResultTargetStore } from "pi-agent-resource";
+import { isResultInput } from "./result-transfer.js";
 import {
   committedMutationTargets,
   describeUnavailableCopyTarget,
@@ -111,7 +112,7 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
   const definition: ToolBatchDefinition<TextBatchState> = {
     sourceTools,
     syntheticTool: "__pi_agent_text_editor_batch",
-    resolveCall(call, inherited) {
+    resolveCall(call, inherited, context) {
       const registration = registrations.get(call.name);
 
       if (registration === undefined) {
@@ -135,6 +136,19 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
         })
       )
         return;
+      // Registered selections keep their own snapshot checks and execution pipeline.
+      // Plans capture arguments before tool_call normalizes issued result references.
+      try {
+        if (
+          [registration.source, ...(registration.source.targets ?? [])].some(({ field }) =>
+            isResultInput(resultTargets.source(call.arguments[field], context.cwd)),
+          )
+        )
+          return;
+      } catch {
+        // The direct source boundary reports unknown or expired references safely.
+        return;
+      }
       const explicit = call.arguments[registration.source.field];
       const inheritedSource =
         !(typeof explicit === "string" && explicit.length > 0) && registration.source.inherited

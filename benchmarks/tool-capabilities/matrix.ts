@@ -7,6 +7,11 @@ const groups: [string[], string[]][] = [
   [["read.jq"], ["read-jq"]],
   [["read.ssh-guide"], ["ssh-guide"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  [["compose.scoped-boolean"], ["read-scoped-boolean"]],
+  [["compose.select-delete"], ["select-result-delete"]],
+  [["compose.select-insert"], ["select-result-insert"]],
+  [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
+  [["edit.stale-insert-feedback"], ["stale-insert-recovery"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],

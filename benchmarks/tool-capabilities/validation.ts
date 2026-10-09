@@ -11,6 +11,8 @@ export interface RunEvent {
   result?: { content?: { type: string; text?: string }[] };
   message?: {
     role?: string;
+    toolCallId?: string;
+    isError?: boolean;
     stopReason?: string;
     errorMessage?: string;
     content?: { type: string; text?: string }[];
@@ -51,6 +53,10 @@ export interface RouteStep {
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
   parentExcludes?: string;
+  /** Require actual summary text in the completed Codemode parent. */
+  parentContains?: string;
+  /** Check finalized transcript feedback when validation skipped the tool-result hook. */
+  finalContains?: string;
   image?: boolean;
   /** Native text calls can be accepted before their parent reports a write failure. */
   error?: boolean | "direct";
@@ -223,14 +229,33 @@ export function validateRoute(
       if (step.argsAny && !step.argsAny.some((args) => matches(args, event.args))) continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
+      if (step.finalContains) {
+        const finalized = events.findLast(
+          (entry) =>
+            entry.type === "message_end" &&
+            entry.message?.role === "toolResult" &&
+            entry.message.toolCallId === event.toolCallId,
+        )?.message;
+        if (
+          !finalized ||
+          finalized.isError !== end.event.isError ||
+          !finalized.content?.some(
+            (block) => block.type === "text" && block.text?.includes(step.finalContains ?? ""),
+          )
+        )
+          continue;
+      }
       if (step.excludes && output.includes(step.excludes)) continue;
-      if (step.parentExcludes) {
+      if (step.parentExcludes || step.parentContains) {
         const parent = ends.get(event.parentToolCallId ?? "");
         if (
           !parent ||
           parent.index <= end.index ||
           parent.event.isError !== false ||
-          resultText(parent.event).includes(step.parentExcludes)
+          (step.parentExcludes !== undefined &&
+            resultText(parent.event).includes(step.parentExcludes)) ||
+          (step.parentContains !== undefined &&
+            !resultText(parent.event).includes(step.parentContains))
         )
           continue;
       }

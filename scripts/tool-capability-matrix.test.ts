@@ -81,6 +81,77 @@ describe("capability route evidence", () => {
         .passed,
     ).toBe(false);
   });
+  test("a required parent summary cannot be replaced by successful child receipts", () => {
+    const route = { steps: [{ tool: "replace", parentContains: "3 replacements in 1 file" }] };
+    const child = [
+      { type: "tool_execution_start", toolCallId: "parent", toolName: "codemode" },
+      {
+        type: "tool_execution_start",
+        toolCallId: "child",
+        parentToolCallId: "parent",
+        toolName: "replace",
+      },
+      {
+        type: "tool_execution_end",
+        toolCallId: "child",
+        isError: false,
+        result: { content: [{ type: "text", text: "Accepted" }] },
+      },
+    ];
+    const parent = (output: string, isError = false) => ({
+      type: "tool_execution_end",
+      toolCallId: "parent",
+      isError,
+      result: { content: [{ type: "text", text: output }] },
+    });
+    expect(
+      validateRoute(route, [...child, parent("3 replacements in 1 file")], "codemode").passed,
+    ).toBe(true);
+    expect(
+      validateRoute(route, [...child, parent("3 replacements in 3 files")], "codemode").passed,
+    ).toBe(false);
+    expect(validateRoute(route, child, "codemode").passed).toBe(false);
+    expect(
+      validateRoute(route, [...child, parent("3 replacements in 1 file", true)], "codemode").passed,
+    ).toBe(false);
+  });
+  test("final feedback checks do not confuse validation events with transcript results", () => {
+    const route = { steps: [{ tool: "insert", error: true, finalContains: "is stale" }] };
+    const validation = [
+      { type: "tool_execution_start", toolCallId: "call", toolName: "insert" },
+      {
+        type: "tool_execution_end",
+        toolCallId: "call",
+        isError: true,
+        result: { content: [{ type: "text", text: "Validation failed" }] },
+      },
+    ];
+    const final = {
+      type: "message_end",
+      message: {
+        role: "toolResult",
+        toolCallId: "call",
+        isError: true,
+        content: [{ type: "text", text: "Anchor is stale" }],
+      },
+    };
+    expect(validateRoute(route, [...validation, final], "direct").passed).toBe(true);
+    expect(validateRoute(route, validation, "direct").passed).toBe(false);
+    expect(
+      validateRoute(
+        route,
+        [...validation, { ...final, message: { ...final.message, toolCallId: "another" } }],
+        "direct",
+      ).passed,
+    ).toBe(false);
+    expect(
+      validateRoute(
+        route,
+        [...validation, { ...final, message: { ...final.message, isError: false } }],
+        "direct",
+      ).passed,
+    ).toBe(false);
+  });
   test("requires actual result reuse, not just the same tool names", () => {
     expect(validateRoute(task, events, "direct")).toEqual({ passed: true, reasons: [] });
     const bypass = events.map((event) =>

@@ -283,6 +283,80 @@ add(
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
+add(
+  "read-scoped-boolean",
+  ["compose.scoped-boolean"],
+  'Read only line 2 of task.txt. Forward that result or its UUID to Search with the unchanged query feature: "legacy​Checkout". Also search that same result for feature: AND outside. Find exactly one feature match and no outside match; do not search the file path or change bytes.',
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    {
+      tool: "search",
+      args: { query: 'feature: "legacy​Checkout"' },
+      reuse: reuse(0),
+      contains: "1 match in 1 file",
+    },
+    {
+      tool: "search",
+      args: { query: "feature: AND outside" },
+      reuse: reuse(0),
+      contains: "No matches found",
+    },
+  ],
+  {
+    files: {
+      "task.txt":
+        'outside feature: "legacy​Checkout"\nfeature: "legacy​Checkout"\noutside feature: "legacy​Checkout"\n',
+    },
+  },
+);
+for (const operation of ["delete", "insert"] as const) {
+  add(
+    `select-result-${operation}`,
+    [`compose.select-${operation}`],
+    `Select the second complete line of task.txt. Forward that selection result, its UUID or its full RESULT# item to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE before that line; keep every original byte."}`,
+    [
+      {
+        tool: "select",
+        args: { path: "task.txt", operation: { kind: "lines", first: 2, last: 2 } },
+      },
+      {
+        tool: operation,
+        ...(operation === "insert" && { args: { text: "BEFORE", before: true } }),
+        reuse: reuse(0),
+      },
+    ],
+    {
+      expected: {
+        "task.txt": operation === "delete" ? "keep\nlast\n" : "keep\nBEFORE\nOLD\nlast\n",
+      },
+    },
+  );
+}
+add(
+  "grouped-replace-file-count",
+  ["edit.grouped-file-count"],
+  "In one native Codemode script, sequentially select columns 0..3 of lines 1, 2, then 3 in task.txt and replace each issued selection with NEW. Await each replacement before selecting the next line so each gets a fresh snapshot. Keep the final newline. Inspect the final editor summary: it must report three replacements in one file, not three files.",
+  [1, 2, 3].flatMap((line, index): RouteStep[] => [
+    {
+      tool: "select",
+      args: {
+        path: "task.txt",
+        operation: { kind: "range", startLine: line, startColumn: 0, endLine: line, endColumn: 3 },
+      },
+    },
+    {
+      tool: "replace",
+      args: { text: "NEW" },
+      reuse: reuse(index * 2),
+      ...(line === 3 && { parentContains: "Applied 3 replacements in 1 file." }),
+    },
+  ]),
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "OLD\nOLD\nOLD\n" },
+    expected: { "task.txt": "NEW\nNEW\nNEW\n" },
+  },
+);
 const overviewFixtures = [
   { name: "lines", rows: 2100, padding: "  consume(value);" },
   { name: "bytes", rows: 1000, padding: `  consume("${"界".repeat(30)}");` },
@@ -1078,6 +1152,30 @@ add(
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
+  "stale-insert-recovery",
+  ["edit.stale-insert-feedback"],
+  "Read task.txt with anchors. Replace OLD with OLD plus a newline and ADDED. Attempt Insert with the OLD Read's line-3 hash anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-4 hash. Keep the other bytes.",
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "OLD\nADDED" } },
+    {
+      tool: "insert",
+      args: { path: "task.txt", anchor: /^3#[A-F\d]+$/u },
+      reuse: reuse(0, "anchor", "anchor"),
+      error: true,
+      finalContains: "is stale",
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "insert",
+      args: { path: "task.txt", text: "RECOVERED\n" },
+      reuse: reuse(3, "anchor", "anchor"),
+    },
+  ],
+  { modes: ["direct"], expected: { "task.txt": "keep\nOLD\nADDED\nlast\nRECOVERED\n" } },
 );
 
 add(

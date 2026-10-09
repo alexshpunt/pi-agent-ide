@@ -55,7 +55,12 @@ export async function searchText(
     throw new Error("Search supports one-line patterns only.");
   }
 
-  if (request.condition !== undefined) return searchBoolean(request, cwd, signal, environment);
+  if (request.condition !== undefined)
+    return searchBoolean(
+      request,
+      (pattern, onLine) => searchPattern(pattern, cwd, signal, onLine, undefined, environment),
+      signal,
+    );
   return searchPattern(request, cwd, signal, undefined, budget, environment);
 }
 
@@ -102,7 +107,15 @@ export async function searchTextContent(
   signal?: AbortSignal,
 ): Promise<TextSearchBackendResult> {
   if (request.condition !== undefined)
-    throw new Error("Boolean scoped search is not available yet.");
+    return searchBoolean(
+      request,
+      async (pattern, onLine) => {
+        const result = await searchTextContent(pattern, content, cwd, signal);
+        for (const match of result.matches) onLine?.(match.source, match.lineNumber);
+        return result;
+      },
+      signal,
+    );
   if (/\r|\n/u.test(request.query)) throw new Error("Search supports one-line patterns only.");
   const result = await runRipgrep(
     [
@@ -215,9 +228,8 @@ async function searchPattern(
 
 async function searchBoolean(
   request: TextSearchRequest,
-  cwd: string,
+  search: (pattern: TextSearchRequest, onLine?: MatchingLine) => Promise<TextSearchBackendResult>,
   signal?: AbortSignal,
-  environment?: SearchEnvironment,
 ): Promise<TextSearchBackendResult> {
   const condition = request.condition;
   if (condition === undefined) throw new Error("Boolean search requires a line condition.");
@@ -238,17 +250,13 @@ async function searchBoolean(
   for (const pattern of patterns) {
     signal?.throwIfAborted();
     const lines = new Set<string>();
-    await searchPattern(
+    await search(
       { ...scope, query: pattern, regex: true, wholeWord: false },
-      cwd,
-      signal,
       (source, lineNumber) => lines.add(JSON.stringify([source, lineNumber])),
-      undefined,
-      environment,
     );
     present.set(pattern, lines);
   }
-  const result = await searchText(scope, cwd, signal, undefined, environment);
+  const result = await search(scope);
   const selected = new Set<string>();
   const matches = result.matches.filter((match) => {
     const key = lineKey(match);
