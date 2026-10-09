@@ -31,10 +31,9 @@ export async function registerSshResources(
   pi: ExtensionAPI,
   targets: readonly SshTarget[],
 ): Promise<void> {
-  if (targets.length === 0) return;
   const guide = await loadPackagedAgentGuide({
     id: "ssh",
-    description: "Configured SSH targets and remote resource use",
+    description: "Set up SSH targets and use remote resources",
     triggers: [
       { tool: "read", resourcePrefixes: ["ssh://", "raw:ssh://", "ast:ssh://", "web:ssh://"] },
       { tool: "search", resourcePrefixes: ["ssh://", "web:ssh://"] },
@@ -50,9 +49,20 @@ export async function registerSshResources(
   connectAgentDocumentation(pi, [
     {
       ...guide,
-      markdown: `${guide.markdown}\n## Configured workspaces\n\n${targets.map((target) => `- \`${remoteLocation(target.id, target.workspace).source}\``).join("\n")}\n`,
+      markdown: `${guide.markdown}\n## Configured workspaces\n\n${targets.length === 0 ? "No SSH targets are configured. Follow the setup steps above." : targets.map((target) => `- \`${remoteLocation(target.id, target.workspace).source}\``).join("\n")}\n`,
     },
   ]);
+  await connectReadPlugin(pi, {
+    protocol: READ_PROTOCOL,
+    apiVersion: READ_API_VERSION,
+    id: "ssh-guidance",
+    setup(api) {
+      api.addPromptGuideline(
+        "When the user asks to connect to or work on a remote device or environment over SSH, read docs:ssh first and follow its setup and usage steps.",
+      );
+    },
+  });
+  if (targets.length === 0) return;
   const registry = new SshBackendRegistry(targets);
   // Reuse installed byte converters; readable images/PDFs never become writable text.
   const readHost = createContentHost(pi, { provider: "filesystem", capability: "read" });

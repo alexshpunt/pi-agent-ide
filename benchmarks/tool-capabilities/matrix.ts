@@ -5,6 +5,7 @@ const groups: [string[], string[]][] = [
   [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
+  [["read.ssh-guide"], ["ssh-guide"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],

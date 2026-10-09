@@ -32,6 +32,7 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
   const result = await run(workspace, [
     { id: "list", name: "read", arguments: { path: "docs:" } },
     { id: "guide", name: "read", arguments: { path: "docs:editing" } },
+    { id: "ssh-guide", name: "read", arguments: { path: "docs:ssh" } },
     { id: "unknown", name: "read", arguments: { path: "docs:missing" } },
   ]);
 
@@ -41,10 +42,14 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
   };
   expect(listDetails.kind).toBe("list");
   expect(listDetails.ids).toEqual(
-    expect.arrayContaining(["editing", "read-resources", "select-code"]),
+    expect.arrayContaining(["editing", "read-resources", "select-code", "ssh"]),
   );
   expect(getToolResultMessage(result, "guide").details).toMatchObject({
     documentation: { kind: "document", id: "editing" },
+  });
+  expect(getToolExecution(result, "ssh-guide").isError).toBe(false);
+  expect(getToolResultMessage(result, "ssh-guide").details).toMatchObject({
+    documentation: { kind: "document", id: "ssh" },
   });
   expect(getToolExecution(result, "unknown").isError).toBe(true);
   expect(getToolResultMessage(result, "unknown").details).toMatchObject({

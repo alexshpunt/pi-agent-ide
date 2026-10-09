@@ -11,6 +11,12 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "ssh-guide",
+  ["read.ssh-guide"],
+  "The workspace has no configured SSH targets. Read docs:ssh through Read to learn how to configure a target. Do not open a connection or change any settings.",
+  [{ tool: "read", args: { path: "docs:ssh" } }],
+);
+add(
   "delete-objects",
   ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
   "Delete remove-tree recursively, then unlink link and broken-link using ordinary paths without text selectors. Leave sentinel.txt and tracked/data untouched.",
