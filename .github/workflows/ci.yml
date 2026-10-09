@@ -294,7 +294,7 @@ jobs:
         if: needs.plan.outputs.full == 'true' && (success())
         env:
           # Keep source-loading Pi processes below the runner's contention peak.
-          SHARDS: "2"
+          SHARDS: "3"
           REPORT_DIR: .agents/tmp/test-results
         run: pnpm test:integration:shards --exclude 'tests/integration/debugger*.integration.test.ts'
 

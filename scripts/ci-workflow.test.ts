@@ -106,7 +106,7 @@ test("keeps unit failure evidence before success-only integration", () => {
     "pnpm test:integration:shards --exclude 'tests/integration/debugger*.integration.test.ts'",
   );
   expect(integration.step.env).toMatchObject({
-    SHARDS: "2",
+    SHARDS: "3",
     REPORT_DIR: ".agents/tmp/test-results",
   });
   const integrationReport = find("Report integration tests");
