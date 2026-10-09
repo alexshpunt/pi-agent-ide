@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.0 — 2026-10-09
+
+### SSH workspaces
+
+- Add configured Linux SSH targets to the existing IDE tools through `ssh://target/path`. Use project settings by default and global settings only when requested. Keep authentication and host-key trust in OpenSSH; unused targets open no startup connections.
+- Read remote files, directories and raw byte ranges. Search remote text, file paths and AST patterns with the target's installed tools. Keep returned anchors and source selections usable across follow-up calls and native Codemode.
+- Edit remote files with snapshot checks and text undo. Copy and Move files, directories and symlinks between local and remote locations or between configured targets. Apply deletion and transfer guards on the machine that owns each path.
+- Run Bash with a remote `cwd` and a real PTY. Keep shell output, interactive input, screen reads and completion notifications available through ordinary `shell:` resources.
+- Run language servers, linters and formatters on the selected target using its project settings and installed tools. Keep diagnostic paths, symbol navigation and semantic rename tied to that target.
+- Read remote Git changes and use Stage, Unstage and Undo against the target's worktree and index.
+- Launch target-owned debugger sessions with an SSH `cwd`. Keep source paths and breakpoint locations remote, and require the selected adapter on that target.
+- Add remote process discovery and metadata, native Linux window/display capture, and explicit `web:ssh://target/https://...` reads and browser captures. Missing target facilities fail without a local fallback; ordinary web URLs still run locally.
+- Let `/pi-agent-ide-doctor ssh://target/path` inspect and configure an explicitly selected remote project. Add `docs:ssh` setup guidance before any target exists and direct agents to read it when asked to work over SSH.
+
+### Remote safety and cleanup
+
+- Keep file selections, diagnostics, Git operations and process identities separated by target. Reject unknown targets and unsupported source combinations instead of silently using local files or tools.
+- Resolve temporary-deletion settings from the remote account and project. Local settings do not grant remote deletion permission; protected paths, tracked contents and hooks remain guarded.
+- Clean up only processes owned by each SSH command channel, including descendants that start new sessions. Report interrupted operations and uncertain cleanup honestly rather than claiming rollback or successful termination.
+
+### Verification and known limits
+
+- Add SSH integration coverage for tool composition, transfers, Git, language tools, debugger sessions, process cleanup, web reads and capture. Run namespace-sensitive cases in a separate unprivileged SSH job.
+- Split core Linux integration checks into four CI jobs with separate logs and reports, and combine their results for the required validation gate.
+- Split independent SSH hook checks into separate real-Pi sessions so Read guards, Move guards and saved-edit feedback keep their full coverage within the existing run limits.
+- Document a known Java/Kotlin adapter issue: `fwcd/kotlin-debug-adapter` 0.4.4 can run past verified breakpoints. The issue was reproduced locally and over SSH; those recipes remain available, but a verified breakpoint does not guarantee a stop.
+
 ## 0.7.3 — 2026-10-09
 
 ### Directories and symlinks
