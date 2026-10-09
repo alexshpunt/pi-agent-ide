@@ -32,8 +32,6 @@
 
 Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of development tools for understanding, changing, running, debugging, and observing software. The same tools work with local resources and configured Linux SSH targets.
 
-The tools work together in both direct calls and Pi's native Codemode. The agent can carry a search result into a precise edit instead of reading the file again and guessing a location. You see the same readable tool panels and diffs in either mode.
-
 | Work                                 | Interfaces                                                    |
 | ------------------------------------ | ------------------------------------------------------------- |
 | Inspect content and state            | `read` with source-specific views                             |
