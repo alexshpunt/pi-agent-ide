@@ -10,6 +10,41 @@ const reuse = (from: number, field: string | string[] = "path", kind = "result")
 const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
+// This route checks projected native text, not a live REA provider or runtime behavior.
+add(
+  "native-text-selection",
+  ["compose.native-text-selection"],
+  "Read snapshot.txt. Use text Select between int catalog_rank( and return iVar1; to isolate the native pseudocode body. Search that unchanged selection for strcmp, then Read the unchanged Search result. Search the same body selection for Ghidra and confirm it cannot see the provenance header. Keep all files unchanged; this static text does not prove runtime execution.",
+  [
+    { tool: "read", args: { path: "snapshot.txt" } },
+    {
+      tool: "select",
+      args: {
+        operation: {
+          kind: "between",
+          start: "int catalog_rank(",
+          end: "return iVar1;",
+          extent: "inside",
+        },
+      },
+      reuse: reuse(0),
+    },
+    {
+      tool: "search",
+      args: { query: "strcmp" },
+      reuse: reuse(1),
+      contains: 'strcmp(query,"native")',
+    },
+    { tool: "read", reuse: reuse(2), contains: 'strcmp(query,"native")' },
+    { tool: "search", args: { query: "Ghidra" }, reuse: reuse(1), contains: "No matches found" },
+  ],
+  {
+    files: {
+      "snapshot.txt":
+        'Provider: Ghidra\nAuthority: shipped-artifact, not runtime proof\n\nint catalog_rank(char *query)\n{\n  int iVar1;\n  iVar1 = strcmp(query,"native");\n  return iVar1;\n}\n',
+    },
+  },
+);
 add(
   "ssh-guide",
   ["read.ssh-guide"],
