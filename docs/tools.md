@@ -35,11 +35,17 @@ replace({ path: "src/file.ts:SEARCH#19AF:all:match", text: "new" }); // wrong
 
 A source field such as `path` or mutation `target` is therefore a resource field even when its name reflects the familiar filesystem case.
 
+## SSH resources
+
+Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, Select, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads and capture use explicit remote sources rather than changing where ordinary URLs execute.
+
+Authentication stays in OpenSSH. Target programs require their dependencies on that machine; missing support does not fall back to local execution. See [SSH configuration](./configuration.md#ssh-targets) and the [SSH guide](./agent-guides/ssh.md) for setup, prerequisites and supported sources.
+
 ## Read
 
 `read` resolves a source and returns agent-ready content. Built-in resolvers currently cover:
 
-- local text files and directories;
+- local and configured SSH text files and directories;
 - images and PDFs;
 - HTTP and HTTPS resources;
 - HTML converted to readable Markdown;
@@ -58,7 +64,7 @@ When `path` is a typed text resource, `read` returns one independent chunk for e
 
 ### Original bytes
 
-Use `read({path: "raw:sample.bin", offset: 0, limit: 64})` to inspect original local file bytes, including PDF and image headers. In `raw:` mode only, offset is zero-based in bytes (negative from EOF), and limit is a non-negative byte count. The output shows hexadecimal offsets, hex bytes, and printable ASCII. Follow its returned byte offset to continue. No views or text anchors apply.
+Use `read({path: "raw:sample.bin", offset: 0, limit: 64})` to inspect original file bytes, including PDF and image headers. For remote bytes, use `raw:ssh://target/path`. In `raw:` mode only, offset is zero-based in bytes (negative from EOF), and limit is a non-negative byte count. The output shows hexadecimal offsets, hex bytes, and printable ASCII. Follow its returned byte offset to continue. No views or text anchors apply.
 
 Codemode receives the same bounded hex view as a direct call. Use `text(result)` or return it to display that view. Follow the displayed offset or continuation reference. This is read-only; byte editing and byte diff are not included.
 
@@ -137,6 +143,12 @@ A `:line` range includes its LF or CRLF line ending. A whole-line replacement pr
 
 Per-result forms keep the search-time snapshot and fail as stale after their matched file changes. Complete `:all` forms rerun the original search recipe when a matched file changes, then select the current complete result set. Limited or otherwise incomplete searches omit the `:all` forms. A forged `:all` value for an incomplete search is rejected.
 
+## Select
+
+`select` derives source-backed ranges or positions without editing. Text operations include lines, slices, marker pairs, columns and insertion positions. Selection-set operations keep, intersect, subtract or merge ranges within each source. JavaScript and TypeScript AST operations can find enclosing constructs, their named parts and related nodes; JSX/TSX is not supported by these structural selections.
+
+Pass the returned result to Read, Search or an editing tool. Explicit boundary operations can expand a match to its containing line or construct, but displayed context alone does not expand its edit selection. See the [selection guide](./agent-guides/select-code.md).
+
 ## Editing
 
 Pi's built-in `edit` tool identifies a replacement with `oldText` and `newText`. Pi Agent IDE uses explicit mutation operations that can target snapshot, search, structural, and other registered anchors.
@@ -152,24 +164,19 @@ The text editor currently provides these mutation tools:
 
 They share the same Resource and anchor contracts. A mutation can resolve one or more Resources, validate its anchors against the current text, preview changes, run guards, write the result, and trigger post-edit feedback.
 
-A plain filesystem `path` names the Resource in which anchors are resolved. It is a scope, not an instruction to mutate the whole file. When an explicit anchor selects several Resources, a matching plain path limits the operation to that Resource; omitting the path applies it to the complete selection. A path outside the selection is rejected. `replace`, `delete`, and `insert` still need an anchor unless `path` is a typed text resource that already supplies ranges.
+Use an ordinary path without text selectors for whole-file Write or whole-object Delete, Copy, and Move. Copy and Move require an explicit destination path. They support regular files, directories and symlink objects, including local/SSH transfers. Directory merge/replace behavior, safety checks and uncertain effects are described in [directory operations](./directory-operations.md).
 
-A typed path applies the operation to its selected ranges:
+For selected-text work, a path identifies the source and anchors identify the span. Pass an unchanged Read, Search, Select or mutation result when it already selects the wanted text. `replace` changes each selected range; `delete` removes those ranges while keeping the file; `insert` adds text around the selected lines. A directory listing or read-only view does not grant text-edit authority.
 
-- `replace` replaces every range;
-- `delete` deletes every range;
-- `insert` inserts after every range by default, or before every range with `before: true`;
-- `copy` and `move` may use one selected range as their source span.
+Use Select to derive new boundaries rather than reconstructing them from previews. Copy and Move can pair source and destination selections, with equal counts. With ordinary file paths, text transfers use `targetStart` as the insertion anchor or `targetStart`/`targetEnd` as the replacement range. These selectors do not apply to whole-object transfers.
 
-An explicit compatible anchor can be combined with a typed path. The editor resolves it in every selected Resource and unions its range with the path ranges. Position anchors such as `begin`, `end`, and line hashes contribute their natural whole-line range. Different Resource sets, incompatible selection shapes, overlaps, reversed spans, ambiguous values, and stale values are rejected before any write.
+Use `start` alone for an exact fragment or one line anchor. With `end`, the range includes complete lines from the first containing line through the last. Snapshot-backed selectors reject changed files; missing or ambiguous exact text is rejected rather than guessed.
 
-When both `start` and `end` are supplied, they define one natural span from the start selection's left edge through the end selection's right edge. They must resolve to one Resource and one usable range at each endpoint. Without `end`, a search selection can apply independently to several ranges and Resources.
+Independent standalone edits in one tool-call batch use their original snapshots. Inside native Codemode, run dependent edits in order and independent resources concurrently. Dependent source-tool calls commit eligible pending edits before consuming their results; script completion saves the remaining batch. Write saves its file and finishes post-edit processing before returning. No Apply or Flush tool is needed.
 
-`copy` and `move` always need a destination selection. `target` is only the destination Resource scope and defaults to the source scope. `targetStart`, or a typed `target` that supplies its range, selects the destination. Without `targetEnd`, content is inserted after that selection. With `targetEnd`, the inclusive natural destination span is replaced.
+Check the final reported effects after failures or interruptions. An error does not prove rollback: earlier accepted edits can remain, and recursive operations have no atomic undo. Use text undo or Git-change undo deliberately; neither is a script-wide transaction. See [result composition](./structured-results.md) and the [editing guide](./agent-guides/editing.md) for reference lifetime and recovery.
 
-The editor resolves and reads every Resource, resolves every anchor, applies every change in memory, and runs guards before the first write. A failure in those steps writes nothing. If a later Resource write fails, the editor attempts to restore every Resource already touched and reports any rollback failure. There is no silent partial success.
-
-Path inheritance lets a later mutation reuse the most recently resolved Resource when the operation is unambiguous. Batched tool calls use the same mutation contracts as direct calls.
+An omitted path can reuse the last resolved source when it is unambiguous. Supply the path when several resources could be meant.
 
 ## Anchors
 

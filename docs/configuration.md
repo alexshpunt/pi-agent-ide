@@ -73,9 +73,11 @@ Restart Pi or use `/reload` after changing extension selection. Search timeout s
 
 Built-in entry modules are imported only after selection. Disabled built-ins, including those disabled through a dependency, are not imported by the catalog. Selected built-ins still register in catalog order. Shared libraries used by a selected built-in may still load.
 
-## SSH targets (work in progress)
+## SSH targets
 
 The **SSH files** module (`read.ssh`) reads a separate `ssh.json` beside each `extensions.json`. The global file follows `PI_CODING_AGENT_DIR`. Missing files configure no targets and open no connections. Project targets replace complete global records with the same `id`; other global targets remain available.
+
+Configure targets in the current project's `.pi/pi-agent-ide/ssh.json` by default. Use `~/.pi/agent/pi-agent-ide/ssh.json`, or `$PI_CODING_AGENT_DIR/pi-agent-ide/ssh.json`, only when global access is wanted. Keep personal target records out of shared Git history. Reload Pi after changing targets.
 
 ```json
 {
@@ -93,7 +95,11 @@ The terminal module reads the same targets. Set `bash`'s `cwd` to `ssh://sandbox
 
 Use `raw:ssh://sandbox/path/file.bin` for original bytes. Offsets and limits count bytes; raw reads do not use text converters or accept views. Byte ranges can cross the text snapshot limit.
 
-This is an unfinished part of LPT-149. Search, mixed Apply/transfers, undo, LSP and debugger integrations are not yet connected. Current snapshots are limited to 32 MiB. The settings UI can enable or disable the module; editing target records currently requires the JSON file. Do not treat this first integration as full remote IDE support.
+Remote resources also support Search, selections, text undo, Git changes and index operations, local/remote transfers, language servers, diagnostics, formatters, linters, and debugger sessions. These providers use the selected Linux target's tools and configuration. Run `/pi-agent-ide-doctor ssh://sandbox/srv/work --no-apply` to inspect an explicitly selected remote project without suggested writes.
+
+For target-native web access, use `web:ssh://sandbox/https://example.com`; ordinary HTTP(S) URLs execute locally. Browser rendering and captures require Node, `playwright-core`, and Chrome or Chromium on the target. Remote process metadata and window/display capture use target-owned resources; native capture also needs a supported graphical environment and the existing vision permissions. Missing dependencies fail without a local fallback.
+
+Text snapshots are limited to 32 MiB. Directory transfers and interrupted remote writes have no distributed rollback; inspect reported effects and both endpoints before retrying an uncertain operation. The settings UI can enable or disable SSH file support; target records are edited in JSON. The agent setup and resource workflow is in the [SSH guide](./agent-guides/ssh.md), available through `read` as `docs:ssh` even before a target is configured.
 
 ## Animations and post-edit processing
 
