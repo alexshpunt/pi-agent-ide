@@ -293,7 +293,8 @@ jobs:
         id: integration-tests
         if: needs.plan.outputs.full == 'true' && (success())
         env:
-          SHARDS: "4"
+          # Keep source-loading Pi processes below the runner's contention peak.
+          SHARDS: "2"
           REPORT_DIR: .agents/tmp/test-results
         run: pnpm test:integration:shards --exclude 'tests/integration/debugger*.integration.test.ts'
 
@@ -387,6 +388,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Retain failed native Codemode Pi traces
+        if: needs.plan.outputs.full == 'true' && (failure())
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: failed-native-codemode-pi-traces
+          path: .tmp/test-runs/tests/integration/native-codemode.integration.test.ts/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
       - name: Retain failed semantic rename Pi traces
         if: needs.plan.outputs.full == 'true' && (failure())
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
