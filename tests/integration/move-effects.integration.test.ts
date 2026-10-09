@@ -95,7 +95,7 @@ test("whole-file Move preserves unknown effects before and after fixture bytes c
       expect(getToolExecutionDetails(getToolExecution(run, id))).toMatchObject({
         metadata: { semanticAction: { ok: false, effect: "unknown" } },
       });
-      const output = getToolResultText(run, id);
+      const output = getToolResultText(run, id).split("\n\n---\n\n# Guide:")[0] ?? "";
       expect(output).toContain("move: unknown");
       expect(output).not.toContain("move: not-applied");
     }

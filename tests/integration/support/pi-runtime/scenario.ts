@@ -20,6 +20,8 @@ interface TextToolScenario {
   readonly tools?: readonly string[];
   readonly environment?: NodeJS.ProcessEnv;
   readonly isolateUserResources?: boolean;
+  /** Use native panels when checking the user-facing diff instead of raw tool text. */
+  readonly rawMode?: boolean;
   readonly arguments: Record<string, unknown>;
 
   /** Views requested after the edit when the scenario verifies explicit inspection. */
@@ -67,6 +69,7 @@ export async function runTextToolScenario(
     cwd: scenario.cwd,
     extensions: scenario.extensions,
     tools: scenario.tools ?? [scenario.tool, "read"],
+    ...(scenario.rawMode === undefined ? {} : { rawMode: scenario.rawMode }),
 
     ...(scenario.environment === undefined ? {} : { environment: scenario.environment }),
     ...(scenario.isolateUserResources === undefined
@@ -88,9 +91,13 @@ export function expectTextToolDiff(
   path: string,
   before: string,
   after: string,
+  presentation: "agent" | "tui" = "agent",
 ): void {
   const expected = expectedDiff(before, after);
-  const output = getToolResultText(scenario.result, scenario.mutationCallId);
+  const output =
+    presentation === "tui"
+      ? scenario.result.tuiRenderedOutput
+      : getToolResultText(scenario.result, scenario.mutationCallId);
   const lines = output.split("\n");
 
   expect(lines.slice(1).some((line) => /^[+ -]\|/u.test(line))).toBe(false);
@@ -171,7 +178,8 @@ function editedFiles(arguments_: Record<string, unknown>): readonly string[] {
   return [...files];
 }
 
-function readMessage(id: string, file: string, views: readonly string[] = ["anchors"]) {
+function readMessage(id: string | undefined, file: string, views: readonly string[] = ["anchors"]) {
+  if (id === undefined) throw new Error("Missing Read call ID");
   return assistantMessage(
     [
       toolCall({

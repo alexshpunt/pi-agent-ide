@@ -91,10 +91,11 @@ for (const mode of ["standalone", "codemode"] as const) {
         await mkdir(path.dirname(path.join(cwd, source)), { recursive: true });
         await writeFile(path.join(cwd, source), "before\n");
         const checks = `const result=await tools.write({path:${JSON.stringify(source)},content:"after\\n"});
-if(!result.includes("Saved file.")) throw Error("Missing saved-file receipt: "+result);
-if(result.includes("Formatting:")) throw Error("Duplicate raw formatting status: "+result);
-if(result.includes(${JSON.stringify(fixture.final)})) throw Error("Write leaked saved file text: "+result);
-if(result.includes("Formatting failed.")!==${fixture.name === "failed.note"}) throw Error("Wrong formatting failure notice: "+result);
+const receipt=result.split("\\n\\n---\\n\\n# Guide:")[0]||"";
+if(!receipt.includes("Saved file.")) throw Error("Missing saved-file receipt: "+receipt);
+if(receipt.includes("Formatting:")) throw Error("Duplicate raw formatting status: "+receipt);
+if(receipt.includes("Final text") || receipt.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write leaked saved file text: "+receipt);
+if(receipt.includes("Formatting failed.")!==${fixture.name === "failed.note"}) throw Error("Wrong formatting failure notice: "+receipt);
 const saved=await tools.read({path:result});
 if(!saved.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Read lost saved final text: "+saved);
 text("Formatting checked.");`;
@@ -131,9 +132,10 @@ text("Formatting checked.");`;
         ).toBe(false);
         expect(await readFile(path.join(cwd, source), "utf8")).toBe(fixture.final);
         if (mode === "standalone") {
-          const result = getToolResultText(run, "formatted");
+          const result = getToolResultText(run, "formatted").split("\n\n---\n\n# Guide:")[0] ?? "";
           expect(result).toContain("Saved file.");
-          expect(result).not.toContain(fixture.final);
+          expect(result).not.toContain("Final text");
+          expect(result).not.toContain(fixture.final.trim());
           expect(result).not.toContain("Formatting:");
           expect(result.includes("Formatting failed.")).toBe(fixture.name === "failed.note");
           expect(result).not.toContain("Extra check finished");
@@ -145,7 +147,8 @@ text("Formatting checked.");`;
           expect(run.tuiRenderedOutput).not.toContain("Extra check finished");
           expect(run.tuiRenderedOutput).not.toContain("Formatted (fixture)");
         }
-        if (fixture.footer !== undefined) expect(run.tuiRenderedOutput).toContain(fixture.footer);
+        if (fixture.footer !== undefined)
+          expect(run.tuiRenderedOutput.split(fixture.footer)).toHaveLength(2);
         if (fixture.name === "unchanged.note")
           expect(run.tuiRenderedOutput).not.toContain("· Formatted (fixture)");
         if (fixture.name.endsWith(".note")) {

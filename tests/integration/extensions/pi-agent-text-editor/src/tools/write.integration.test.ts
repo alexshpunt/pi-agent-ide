@@ -1,18 +1,13 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import {
-  getToolCallNames,
-  getToolExecution,
-  getToolExecutionDetails,
-  getToolResultText,
-} from "pi-coding-agent-test";
+import { getToolCallNames, getToolExecution, getToolResultText } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
 import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 import {
-  getTextToolMutationData,
+  expectTextToolDiff,
   runTextToolScenario,
 } from "#integration/support/pi-runtime/scenario.js";
 
@@ -30,6 +25,7 @@ describe("pi-agent-text-editor tools", () => {
         cwd: directory,
         testName: "text-editor-write",
         tool: "write",
+        rawMode: false,
         tools,
         arguments: { path: relativeFile, content: "after\n" },
       });
@@ -43,15 +39,7 @@ describe("pi-agent-text-editor tools", () => {
       const receipt = getToolResultText(result, mutationCallId);
       expect(receipt).toContain("Saved file.");
       expect(receipt).not.toContain("after\n");
-      expect(
-        getTextToolMutationData(getToolExecutionDetails(getToolExecution(result, mutationCallId))),
-      ).toMatchObject({
-        addedLines: 1,
-        removedLines: 1,
-        beforeContentMap: { [relativeFile]: "before\n" },
-        afterContent: "after\n",
-      });
-      expect(result.tuiRenderedOutput).toContain("after");
+      expectTextToolDiff(scenario, relativeFile, "before\n", "after\n", "tui");
       for (const id of scenario.postflightCallIds)
         expect(getToolResultText(result, id)).toContain("after");
       await expect(readFile(file, "utf8")).resolves.toBe("after\n");

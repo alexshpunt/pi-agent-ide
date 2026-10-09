@@ -127,10 +127,14 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
     expect(getToolExecution(run, "write-review").isError).toBe(false);
     expect(await readFile(path.join(cwd, "review.txt"), "utf8")).toBe("needs review");
     expect(getToolResultText(run, "write-review")).toContain("Saved edit needs review");
+    expect(getToolResultText(run, "write-review")).not.toContain(
+      "Post-edit processing was interrupted or incomplete.",
+    );
     expect(run.tuiRenderedOutput).toContain("Saved edit needs review");
     expect(getToolExecution(run, "write-after-fail").isError).toBe(false);
     expect(await readFile(path.join(cwd, "after.txt"), "utf8")).toBe("explode-after");
     expect(getToolResultText(run, "write-after-fail")).toContain("failed after the edit was saved");
+    expect(run.tuiRenderedOutput).toContain("failed after the edit was saved");
     expect(getToolExecution(run, "write-native-feedback").isError).toBe(false);
     const nativeFeedback = getToolResultText(run, "write-native-feedback");
     expect(nativeFeedback).toContain("Saved edit needs review");

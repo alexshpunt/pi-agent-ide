@@ -7,7 +7,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { capabilityCases } from "#capabilities/cases.ts";
-import { validateRoute, type RunEvent } from "#capabilities/validation.ts";
+import { resultText, validateRoute, type RunEvent } from "#capabilities/validation.ts";
 
 const mode = process.argv[2];
 if (mode !== "direct" && mode !== "codemode") throw Error("Choose direct or codemode");
@@ -48,6 +48,7 @@ const run = await new PiIntegrationTest({
   testName: `capability-semantic-rename-${mode}`,
   artifactsDir: "/state/results",
   cwd,
+  // Use the checkout's pinned host from the read-only source mount, not a global installation.
   piCommand: "/source/node_modules/.bin/pi",
   transport: "rpc",
   timeoutMs: 90_000,
@@ -72,6 +73,9 @@ const renames = executions.filter((event) => event.toolName === "replace" && !ev
 console.log(
   JSON.stringify({
     route: validateRoute(task, events, mode),
+    failures: executions
+      .filter((event) => event.isError)
+      .map((event) => ({ tool: event.toolName, id: event.toolCallId, text: resultText(event) })),
     errors: calls
       .filter((call) => call.id !== "rejected-rename" && getToolExecution(run, call.id).isError)
       .map((call) => call.id),
