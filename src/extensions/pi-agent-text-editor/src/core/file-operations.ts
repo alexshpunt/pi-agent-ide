@@ -1,20 +1,32 @@
 import { rm, unlink } from "node:fs/promises";
-import { prepareFileTransfer, type TransferKind } from "./file-transfers.js";
+import { prepareFileTransfer, prepareObjectTransfer, type TransferKind } from "./file-transfers.js";
 import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.js";
 import path from "node:path";
 import fs from "fs-extra";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-/** Whole-file operations, distinct from text-selection copy/move/remove. */
-export const fileOperations = ["delete", "move", "copy"] as const;
-export type FileOperation = (typeof fileOperations)[number];
+import type {
+  FileOperation,
+  FileOperationInput,
+  FileOperationResult,
+  FileOperationResolver,
+} from "#src/api/file-operations.js";
+export { fileOperations } from "#src/api/file-operations.js";
+export type { FileOperation, FileOperationResult } from "#src/api/file-operations.js";
 const filePath = Type.String({
   minLength: 1,
-  description: "Local file, directory, or symlink path, relative to cwd or absolute.",
+  description:
+    "File, directory, or symlink path, relative to cwd or absolute, or an owned resource URI.",
 });
 export const deleteFileParameters = Type.Object(
-  { path: filePath },
+  {
+    path: Type.String({
+      minLength: 1,
+      description:
+        "File, directory, or symlink path, relative to cwd or absolute, or an owned resource URI.",
+    }),
+  },
   { additionalProperties: false },
 );
 export const transferFileParameters = Type.Object(
@@ -25,30 +37,33 @@ export const transferFileParameters = Type.Object(
   { additionalProperties: false },
 );
 
-/** Host dependencies for deletion; no tool argument can replace the filesystem primitive. */
+const fileOperationResultSchema = Type.Object({
+  kind: Type.Literal("file-operation"),
+  operation: Type.Union([Type.Literal("copy"), Type.Literal("move"), Type.Literal("delete")]),
+  ok: Type.Boolean(),
+  effect: Type.Union([
+    Type.Literal("applied"),
+    Type.Literal("not-applied"),
+    Type.Literal("unknown"),
+  ]),
+  path: Type.Optional(Type.String({ minLength: 1 })),
+  target: Type.Optional(Type.String({ minLength: 1 })),
+  sourceKind: Type.Optional(
+    Type.Union([Type.Literal("file"), Type.Literal("directory"), Type.Literal("symlink")]),
+  ),
+  error: Type.Optional(
+    Type.Object({ code: Type.String({ minLength: 1 }), message: Type.String() }),
+  ),
+});
+/** Host-only deletion policy and optional removal primitive. */
 export interface FileOperationContext extends DeletePolicyContext {
+  /** Capture regular-file hooks before effects; object transfers do not read directories as text. */
+  readonly beforeFileTransfer?: () => Promise<void>;
   readonly removeDirectory?: (source: string) => Promise<void>;
 }
-/** Plain receipt; unknown means the filesystem call failed after execution began. */
-export interface FileOperationResult {
-  readonly kind: "file-operation";
-  readonly operation: FileOperation;
-  readonly ok: boolean;
-  readonly effect: "applied" | "not-applied" | "unknown";
-  readonly path?: string;
-  readonly target?: string;
-  readonly sourceKind?: TransferKind;
-  readonly error?: { readonly code: string; readonly message: string };
-}
-
 /** Recognize a host-owned whole-file receipt for shared output rendering. */
 export function isFileOperationResult(value: unknown): value is FileOperationResult {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    "kind" in value &&
-    value.kind === "file-operation"
-  );
+  return Value.Check(fileOperationResultSchema, value);
 }
 
 /** Compact whole-file operation summary. */
@@ -69,6 +84,8 @@ export async function executeFileOperation(
   cwd: string,
   signal?: AbortSignal,
   deletion: FileOperationContext = {},
+  resolvers: readonly FileOperationResolver[] = [],
+  preflight?: (operation: FileOperation, input: FileOperationInput) => Promise<void>,
 ): Promise<FileOperationResult> {
   let started = false;
   let source: string | undefined;
@@ -80,17 +97,82 @@ export async function executeFileOperation(
       throw Object.assign(new Error("Invalid file operation arguments"), {
         code: "INVALID_ARGUMENTS",
       });
-    const args = input as { path: string; target?: string };
+    const args = input as FileOperationInput;
+    source = args.path;
+    target = args.target;
+    signal?.throwIfAborted();
+    for (const resolve of resolvers) {
+      started = true;
+      const outcome = await resolve(
+        operation,
+        args,
+        { cwd, signal },
+        {
+          async prepare(source, project, files) {
+            try {
+              const event = await prepareDeletion(source, project, { ...deletion, files }, signal);
+              if (event.kind === "file") await preflight?.(operation, args);
+              return event;
+            } catch (error) {
+              throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+                effect: "not-applied",
+              });
+            }
+          },
+          async prepareTransfer(action, source, target) {
+            try {
+              const guard = await prepareObjectTransfer(action, source, target, deletion, signal);
+              if (guard.sourceKind === "file") {
+                await deletion.beforeFileTransfer?.();
+                await preflight?.(operation, args);
+              }
+              return guard;
+            } catch (error) {
+              // No permission to change either endpoint has been returned yet.
+              throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+                effect: "not-applied",
+              });
+            }
+          },
+        },
+      );
+      if (outcome !== undefined) {
+        if (
+          !isFileOperationResult(outcome) ||
+          outcome.operation !== operation ||
+          (outcome.ok &&
+            (outcome.effect !== "applied" ||
+              outcome.path === undefined ||
+              (operation !== "delete" && outcome.target === undefined)))
+        )
+          throw Object.assign(new Error("Invalid whole-file provider result"), {
+            code: "INVALID_PROVIDER_RESULT",
+            effect: "unknown",
+          });
+        return outcome;
+      }
+      started = false;
+      signal?.throwIfAborted();
+    }
+    if ([cwd, args.path, args.target].some((value) => value !== undefined && isUriSource(value)))
+      throw Object.assign(new Error("No whole-file provider owns this resource"), {
+        code: "UNSUPPORTED_SOURCE",
+      });
     source = path.resolve(cwd, args.path);
     target = args.target === undefined ? undefined : path.resolve(cwd, args.target);
     signal?.throwIfAborted();
     const deleteEvent =
       operation === "delete" ? await prepareDeletion(source, cwd, deletion, signal) : undefined;
+    if (deleteEvent?.kind === "file") await preflight?.(operation, args);
     const transfer =
       operation !== "delete" && target !== undefined
         ? await prepareFileTransfer(operation, source, target, cwd, deletion, signal)
         : undefined;
     sourceKind = transfer?.sourceKind;
+    if (sourceKind === "file") {
+      await deletion.beforeFileTransfer?.();
+      await preflight?.(operation, args);
+    }
     signal?.throwIfAborted();
     started = true;
     if (deleteEvent !== undefined) {
@@ -118,7 +200,7 @@ export async function executeFileOperation(
       kind: "file-operation",
       operation,
       ok: false,
-      effect: started ? "unknown" : "not-applied",
+      effect: failureEffect(error, started),
       ...(source === undefined ? {} : { path: source }),
       ...(target === undefined ? {} : { target }),
       error: {
@@ -130,4 +212,18 @@ export async function executeFileOperation(
       },
     };
   }
+}
+/** Detect explicit URI sources without mistaking Windows drive paths for schemes. */
+export function isUriSource(value: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:\/\//iu.test(value) && !/^[a-z]:[/\\]/iu.test(value);
+}
+function failureEffect(error: unknown, started: boolean): FileOperationResult["effect"] {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    (error.effect === "applied" || error.effect === "not-applied" || error.effect === "unknown")
+  )
+    return error.effect;
+  return started ? "unknown" : "not-applied";
 }

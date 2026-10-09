@@ -18,6 +18,25 @@ test("keeps zero-width positions visible, including an empty EOF line", () => {
   expect(panel.rows).toContainEqual({ kind: "note", text: "zero-width · 2:0" });
   expect(panel.rows.some((row) => row.kind === "source" && row.label === "caret.txt")).toBe(true);
 });
+test("remote selections keep the canonical SSH label and link instead of a controller file URL", () => {
+  const source = "ssh://left/work/note.ts";
+  const range = { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 4 } };
+  const model = selectPresentation(
+    [
+      {
+        target: { source, expectedContent: "café", ranges: [range] },
+        range,
+        text: "café",
+        origins: [],
+      },
+    ],
+    true,
+    0,
+    "/controller",
+  );
+  const header = model.rows.find((row) => row.kind === "source");
+  expect(header).toMatchObject({ label: source, link: source });
+});
 const theme = Object.assign(Object.create(null) as Theme, {
   fg: (_color: string, s: string) => s,
   bg: (_color: string, s: string) => `\u001B[48;5;25m${s}\u001B[49m`,

@@ -4,7 +4,7 @@ import { access } from "node:fs/promises";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
@@ -64,6 +64,7 @@ import {
 } from "#src/plugins/pi-agent-ide-debugger/src/ui.js";
 import { debuggerProcessProvider } from "#src/plugins/pi-agent-ide-debugger/src/process-provider.js";
 import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
+import type { DebugWorkspaceOwnerResolver } from "./src/workspace-owner.js";
 
 interface DebugToolDetails {
   readonly source?: string;
@@ -100,6 +101,7 @@ import {
   renderDebugSession,
   type DebugEvaluation,
   type DebugSession,
+  type DebugSessionOptions,
 } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 
 const debugParameters = Type.Object(
@@ -150,15 +152,34 @@ const debugParameters = Type.Object(
     cwd: Type.Optional(
       Type.String({
         description:
-          "Working directory. Defaults to the workspace. Relative paths resolve from the workspace.",
+          "Select a local working directory or ssh://target/absolute/path. Relative paths resolve from the workspace.",
       }),
     ),
   },
   { additionalProperties: false },
 );
 
-/** Register agent-native debug sessions backed by Debug Adapter Protocol adapters. */
-export default async function registerDebugger(pi: ExtensionAPI): Promise<void> {
+/** Bind configuration and source ownership without probing unrelated targets. */
+export interface DebuggerWorkspaceAccess {
+  readonly workspace: DebugWorkspaceOwnerResolver;
+  /** Resolve explicitly owned inputs; leave controller-local inputs to the local adapter. */
+  resolveOptions(
+    input: Static<typeof debugParameters>,
+    cwd: string,
+    signal?: AbortSignal,
+  ): Promise<DebugSessionOptions | undefined>;
+}
+
+/** Register standalone controller-local Debug Adapter Protocol sessions. */
+export default function registerDebugger(pi: ExtensionAPI): Promise<void> {
+  return registerDebuggerWithOwner(pi);
+}
+
+/** Register ordinary debugger resources with an optional explicitly owned workspace backend. */
+export async function registerDebuggerWithOwner(
+  pi: ExtensionAPI,
+  ownerAccess?: DebuggerWorkspaceAccess,
+): Promise<void> {
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "debugger",
@@ -174,6 +195,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
     retainedManager !== undefined && typeof retainedManager.evaluate === "function"
       ? retainedManager
       : new DebugSessionManager();
+  manager.setOwnerResolver(ownerAccess?.workspace);
   const deletedSnapshots = new Map<string, ReturnType<DebugSessionManager["snapshot"]>>();
   const readResolver = createDebugResourceResolver(manager, "debugger-source");
   const editorResolver = createDebugResourceResolver(manager, "debugger-input");
@@ -386,7 +408,7 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
       exposure: "deferred",
       namespace: {
         name: "ide_debug",
-        description: "Create local debugger sessions and inspect debug resources.",
+        description: "Create debugger sessions and inspect debug resources.",
       },
       annotations: {
         readOnlyHint: false,
@@ -397,22 +419,35 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
       label: "Debug session",
       promptSnippet: "Configure a local debugger session",
       description:
-        "Use debug to configure a local debugger session without launching the adapter or program.",
+        "Use debug to create a configured debugger session on a local or supported SSH workspace. This does not launch the program yet. The returned debug: resource survives extension reloads.",
       parameters: debugParameters,
       outputSchema: debugOutputSchema,
-      async execute(_toolCallId, input, _signal, _onUpdate, context) {
-        const cwd = path.resolve(context.cwd, input.cwd ?? ".");
-        const program = path.resolve(cwd, input.program);
+      async execute(_toolCallId, input, signal, _onUpdate, context) {
+        let cwd = input.cwd ?? context.cwd;
+        let program = input.program;
         try {
-          await access(program);
-          const session = manager.create({
-            adapter: input.adapter,
-            program,
-            sourceFile: path.resolve(cwd, input.source ?? input.program),
-            args: input.args ?? [],
-            cwd,
-            ...(input.mainClass === undefined ? {} : { mainClass: input.mainClass }),
-          });
+          signal?.throwIfAborted();
+          const owned = await ownerAccess?.resolveOptions(input, context.cwd, signal);
+          if (
+            owned === undefined &&
+            [cwd, program, input.source].some((source) => source?.includes("://"))
+          ) {
+            throw new Error(`No debugger workspace owner: ${program}`);
+          }
+          cwd = owned?.cwd ?? path.resolve(context.cwd, input.cwd ?? ".");
+          program = owned?.program ?? path.resolve(cwd, input.program);
+          if (owned === undefined) await access(program);
+          signal?.throwIfAborted();
+          const session = manager.create(
+            owned ?? {
+              adapter: input.adapter,
+              program,
+              sourceFile: path.resolve(cwd, input.source ?? input.program),
+              args: input.args ?? [],
+              cwd,
+              ...(input.mainClass === undefined ? {} : { mainClass: input.mainClass }),
+            },
+          );
           const details = debugDetails(manager, session);
           const { snapshot: _snapshot, stop: _stop, ...data } = details;
           return withStructuredResult(
@@ -443,11 +478,13 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
         }
       },
       renderCall(input, theme) {
-        const cwd = path.resolve(process.cwd(), typeof input.cwd === "string" ? input.cwd : ".");
-        const program = path.resolve(
-          cwd,
-          typeof input.program === "string" ? input.program : "program",
-        );
+        const rawCwd = typeof input.cwd === "string" ? input.cwd : ".";
+        const rawProgram = typeof input.program === "string" ? input.program : "program";
+        const cwd = rawCwd.startsWith("ssh://") ? rawCwd : path.resolve(process.cwd(), rawCwd);
+        const program =
+          rawProgram.startsWith("ssh://") || cwd.startsWith("ssh://")
+            ? rawProgram
+            : path.resolve(cwd, rawProgram);
         return renderDebugCall(
           typeof input.adapter === "string" ? input.adapter : "debugger",
           program,
@@ -470,14 +507,14 @@ export default async function registerDebugger(pi: ExtensionAPI): Promise<void> 
     }),
   );
 
-  pi.on("session_shutdown", (event) => {
+  pi.on("session_shutdown", async (event) => {
     removeProcessProvider();
     if (event.reason !== "quit") {
       retainReloadResource("debugger", manager);
       return;
     }
     forgetReloadResource("debugger", manager);
-    return manager.dispose();
+    await manager.dispose();
   });
 }
 

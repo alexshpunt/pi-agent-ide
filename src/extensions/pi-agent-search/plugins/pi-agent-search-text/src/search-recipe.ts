@@ -1,3 +1,4 @@
+import type { SearchEnvironment } from "pi-agent-search/api/search";
 import {
   searchText,
   type TextSearchRequest,
@@ -46,11 +47,12 @@ export async function runSearchRecipe(
   recipe: SearchRecipe,
   cwd: string,
   signal?: AbortSignal,
+  environment?: SearchEnvironment,
 ): Promise<
   TextSearchBackendResult & { readonly query: string; readonly notices: readonly string[] }
 > {
   let query = recipe.query;
-  let result = await searchText(recipe, cwd, signal);
+  let result = await searchText(recipe, cwd, signal, undefined, environment);
   const notices: string[] = [];
   for (const fallback of recipe.fallbacks ?? []) {
     if (result.matches.length > 0 || !result.complete) break;
@@ -60,6 +62,8 @@ export async function runSearchRecipe(
         { ...recipe, query: fallback.query, regex: true, condition: fallback.condition },
         cwd,
         signal,
+        undefined,
+        environment,
       );
       result = next;
       query = fallback.query;

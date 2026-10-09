@@ -85,7 +85,7 @@ export async function exportAgentInterface(options: Options): Promise<void> {
                   id: "interface-declarations",
                   name: "codemode",
                   arguments: {
-                    code: '// @options: {"max_output_tokens": 100000}\nreturn await Promise.all(ALL_TOOLS.map(async ({name}) => ({name, description: await describeTool(name)})));',
+                    code: '// @options: {"max_output_tokens": 100000}\ntext("INTERFACE_DECLARATIONS=" + JSON.stringify(await Promise.all(ALL_TOOLS.map(async ({name}) => ({name, description: await describeTool(name)})))));',
                   },
                 }),
               ],
@@ -113,9 +113,12 @@ export async function exportAgentInterface(options: Options): Promise<void> {
   if (discovery) {
     const message = getToolResultMessage(result, "interface-declarations");
     if (message.isError) throw new Error("Codemode interface discovery failed");
-    const block = message.content.at(-1);
-    if (block?.type !== "text") throw new Error("Codemode did not return discovery replies");
-    samples = JSON.parse(block.text) as DiscoveryReply[];
+    const output = message.content
+      .flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("\n");
+    const payload = /^INTERFACE_DECLARATIONS=(.+)$/mu.exec(output)?.[1];
+    if (payload === undefined) throw new Error("Codemode did not return discovery replies");
+    samples = JSON.parse(payload) as DiscoveryReply[];
     if (
       !samples.every(
         (sample) => typeof sample.name === "string" && typeof sample.description === "string",

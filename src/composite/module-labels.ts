@@ -29,6 +29,7 @@ export const moduleLabels = {
   ],
   "read.core": ["Read tools", "Read sources through the configured readers and views."],
   "read.filesystem": ["Local files", "Resolve files and folders from the local filesystem."],
+  "read.ssh": ["SSH files", "Read and edit configured SSH file sources through existing tools."],
   "read.filesystem.jq": ["JSON queries", "Query local JSON files through jq read views."],
   "read.filesystem.image": ["Local images", "Read local images as visual content."],
   "read.filesystem.pdf": ["Local PDFs", "Extract readable content from local PDF documents."],

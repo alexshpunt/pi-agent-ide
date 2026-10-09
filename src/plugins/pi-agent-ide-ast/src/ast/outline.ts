@@ -144,7 +144,9 @@ export class AstOutlineManager {
 
   public async readFileOutline(filePath: string, cwd: string): Promise<SourceViewBlock> {
     const absolutePath = resolvePath(filePath, cwd);
-    const displayPath = path.relative(cwd, absolutePath) || absolutePath;
+    const displayPath = absolutePath.includes("://")
+      ? absolutePath
+      : path.relative(cwd, absolutePath) || absolutePath;
 
     if (!isSupportedOutlinePath(absolutePath)) {
       throw new Error(`AST outline is not supported for ${displayPath}.`);
@@ -164,7 +166,9 @@ export class AstOutlineManager {
     fits?: (outline: SourceViewBlock) => boolean,
   ): Promise<SourceViewBlock> {
     const absolutePath = resolvePath(filePath, cwd);
-    const displayPath = path.relative(cwd, absolutePath) || absolutePath;
+    const displayPath = absolutePath.includes("://")
+      ? absolutePath
+      : path.relative(cwd, absolutePath) || absolutePath;
     if (!isSupportedOutlinePath(absolutePath)) {
       throw new Error(`AST outline is not supported for ${displayPath}.`);
     }
@@ -199,7 +203,9 @@ export class AstOutlineManager {
 
   public async formatFile(filePath: string, cwd: string): Promise<SourceMappedTextContent> {
     const absolutePath = resolvePath(filePath, cwd);
-    const displayPath = path.relative(cwd, absolutePath) || absolutePath;
+    const displayPath = absolutePath.includes("://")
+      ? absolutePath
+      : path.relative(cwd, absolutePath) || absolutePath;
 
     if (!isSupportedOutlinePath(absolutePath)) {
       const snapshot = await readTextFile(absolutePath);
@@ -385,6 +391,7 @@ function buildScopeMarkers(scopes: readonly ScopeEntry[]): Map<number, string[]>
 }
 
 function resolvePath(filePath: string, cwd: string): string {
+  if (filePath.startsWith("ssh://")) return filePath;
   if (filePath.startsWith("file://")) {
     return decodeURIComponent(filePath.slice("file://".length));
   }

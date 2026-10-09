@@ -36,8 +36,7 @@ import type { SearchToolDetails } from "#src/api/search.js";
 
 import { searchSchema } from "#src/api/search-parameters.js";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.js";
-import { resultError, withStructuredResult } from "pi-agent-resource";
-import { connectResultTargets } from "pi-agent-resource";
+import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
 
 /** Arguments accepted by the search tool. */
 export type SearchParameters = Static<typeof searchSchema>;
@@ -98,8 +97,8 @@ export default async function registerSearchCore(
       ],
     }),
   ]);
-  const core = createSearchCore();
   const targets = connectResultTargets(pi);
+  const core = createSearchCore(targets);
   const interceptionRendering = new ToolCallInterceptionRenderStore();
   const unsubscribe = pi.events.on(SEARCH_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isSearchPluginRegistrationRequest(request)) {

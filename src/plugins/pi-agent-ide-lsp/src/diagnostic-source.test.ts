@@ -18,19 +18,21 @@ test("uses the resolved external project for language-server diagnostics", async
     external: true,
   }));
 
+  const signal = new AbortController().signal;
   await expect(
     source.diagnose("/external/project/src/file.ts", {
       cwd: "/current/project",
       content: "bad",
-      signal: new AbortController().signal,
+      signal,
       publish: vi.fn(),
     }),
   ).resolves.toMatchObject({ status: "unavailable" });
-  expect(managerFor).toHaveBeenCalledWith("/external/project", true);
+  expect(managerFor).toHaveBeenCalledWith("/external/project", true, signal);
   expect(getOrStart).toHaveBeenCalledWith(
     "/external/project/src/file.ts",
     "/external/project",
     "diagnostics",
+    signal,
   );
 });
 test("late empty TypeScript pushes requery complete reports without resyncing the document", async () => {

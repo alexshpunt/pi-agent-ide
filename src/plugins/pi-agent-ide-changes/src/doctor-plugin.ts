@@ -1,5 +1,8 @@
-import { isExecutableAvailable, probeExecutable } from "pi-agent-doctor/api/executable";
-import { access } from "node:fs/promises";
+import {
+  projectExecutableAvailable,
+  probeProjectExecutable,
+  projectFileExists,
+} from "pi-agent-doctor/api/project-probes";
 import path from "node:path";
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
@@ -14,10 +17,15 @@ export const changesDoctorPlugin: DoctorPlugin = {
     api.addSetupCheck({
       id: "git",
       async inspect(context) {
-        if (!(await isGitProject(context.cwd))) {
+        if (
+          !(await projectFileExists(
+            context,
+            context.workspace ? `${context.cwd}/.git` : path.join(context.cwd, ".git"),
+          ))
+        ) {
           return {};
         }
-        return (await isExecutableAvailable("git", context.cwd, context.env))
+        return (await projectExecutableAvailable(context, "git"))
           ? {}
           : {
               actions: [
@@ -34,7 +42,7 @@ export const changesDoctorPlugin: DoctorPlugin = {
       id: "git",
       title: "Git changes",
       async run(context) {
-        const result = await probeExecutable("git", ["--version"], context.cwd, context.env);
+        const result = await probeProjectExecutable(context, "git", ["--version"]);
         return [
           result.ok
             ? { status: "pass", message: "Git is available", detail: result.detail }
@@ -48,12 +56,3 @@ export const changesDoctorPlugin: DoctorPlugin = {
     });
   },
 };
-
-async function isGitProject(cwd: string): Promise<boolean> {
-  try {
-    await access(path.join(cwd, ".git"));
-    return true;
-  } catch {
-    return false;
-  }
-}

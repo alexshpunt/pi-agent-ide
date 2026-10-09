@@ -66,8 +66,8 @@ test.runIf(process.platform !== "win32")(
         waitReason: "steering",
       });
       expect(notifyWaitTransition).not.toHaveBeenCalled();
-      manager.write(source, "hello");
-      manager.sendKeys(source, "Enter");
+      await manager.write(source, "hello");
+      await manager.sendKeys(source, "Enter");
       const completed = await manager.wait(source);
       expect(completed.output).toContain("received:hello");
       expect(formatAgentTerminalSnapshot(manager.snapshot(completed))).not.toContain("next:");

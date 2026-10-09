@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { ResourceError } from "pi-agent-resource";
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
@@ -311,8 +312,12 @@ export function createTextTool<TParameters extends TSchema>(
                     return failureToolResult(
                       "transaction" in input ? String(input.transaction) : "",
                       code,
-                      error instanceof Error ? error.message : String(error),
-                      "unknown",
+                      error instanceof ResourceError
+                        ? `${error.code}: ${error.source}`
+                        : error instanceof Error
+                          ? error.message
+                          : String(error),
+                      declaredMutationEffect(error),
                     );
                   }
                 }
@@ -387,7 +392,13 @@ export function createTextTool<TParameters extends TSchema>(
               }
             : captured.value;
         // Live-resource actions have their own receipts, not filesystem editor batches.
-        if (captured.completions.every((completion) => completion.resolvedBy === "filesystem"))
+        if (
+          captured.completions.every(
+            (completion) =>
+              completion.resolvedBy === "filesystem" ||
+              completion.resourceSource.startsWith("ssh://"),
+          )
+        )
           recordNativeTextMutation(core, toolCallId, definition.name, completedValue);
         const value =
           resultTargets &&
@@ -395,14 +406,16 @@ export function createTextTool<TParameters extends TSchema>(
             ? definition.name === "write"
               ? await attachWriteTarget(
                   completedValue,
-                  captured.completions,
+                  core,
                   resultTargets,
                   context.cwd,
                   signal,
+                  captured.completions,
                 )
               : await attachCommittedMutationTarget(
                   completedValue,
                   captured.completions,
+                  core,
                   resultTargets,
                   toolCallId,
                   context.cwd,
@@ -1396,6 +1409,15 @@ export function buildSuccessfulTextMutationResult(
   });
 }
 
+/** Aggregate a failed follow-up with text writes that have already completed. */
+export function postWriteFailureEffect(error: unknown): "applied" | "unknown" {
+  return error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    (error.effect === "applied" || error.effect === "not-applied")
+    ? "applied"
+    : "unknown";
+}
 async function completeTextMutation(
   outcome: TextResourcesEditOutcome<TextMutation>,
   source: string,
@@ -1458,16 +1480,25 @@ async function buildToolResult(
     if (operation === "copy" && outcome.failure.code === "WRITE_FAILED") {
       return buildFailedCopyWriteResult(outcome.failure, outcome.completed);
     }
+    const safe = outcome.failure.cause instanceof ResourceError ? outcome.failure.cause : undefined;
     const completed =
       outcome.completed.length === 0 ? "" : ` Completed writes: ${outcome.completed.join(", ")}.`;
-    const effect =
-      outcome.completed.length > 0
-        ? "applied"
-        : outcome.failure.code === "POST_WRITE_FAILED"
-          ? "unknown"
-          : "not-applied";
-    const message = `${outcome.failure.message.replace(/[.!?]+$/u, "")}.${completed}`;
-    return buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect);
+    const uncertainWrite = hasUnknownMutationEffect(outcome.failure.cause);
+    const effect = uncertainWrite
+      ? "unknown"
+      : outcome.failure.code === "POST_WRITE_FAILED"
+        ? postWriteFailureEffect(outcome.failure.cause)
+        : outcome.completed.length > 0
+          ? "applied"
+          : (safe?.effect ?? "not-applied");
+    const reason =
+      safe === undefined
+        ? outcome.failure.message
+        : `${safe.code}: ${source}${safe.effect === "unknown" ? "; inspect the resource before retrying" : ""}`;
+    const message = `${reason.replace(/[.!?]+$/u, "")}.${completed}`;
+    return safe === undefined
+      ? buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect)
+      : failureToolResult(source, safe.code, message, effect, outcome.failure.rollback);
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
@@ -1763,18 +1794,22 @@ export function buildFailedCopyWriteResult(
   failure: TextResourceEditFailure,
   unrestoredSources: readonly string[],
 ): AgentToolResult<FileMutationBatchResult> {
+  const uncertainWrite = hasUnknownMutationEffect(failure.cause);
   const rollbackFailed =
-    failure.rollback === undefined
+    uncertainWrite ||
+    (failure.rollback === undefined
       ? unrestoredSources.length > 0
-      : failure.rollback.failed.length > 0 || failure.rollback.originallyMissing.length > 0;
+      : failure.rollback.failed.length > 0 || failure.rollback.originallyMissing.length > 0);
   const effect = rollbackFailed ? "unknown" : "not-applied";
   const result = new FileMutationResult({
     ok: false,
     path: failure.source,
     errors: [{ path: failure.source, code: failure.code, reason: failure.message }],
-    fileChangedStatement: rollbackFailed
-      ? "Rollback failed. Read the listed destinations before retrying."
-      : "Copy failed. Destination changes were rolled back.",
+    fileChangedStatement: uncertainWrite
+      ? "Copy failed, and its effects are unknown. Read the affected destinations before retrying."
+      : rollbackFailed
+        ? "Rollback failed. Read the listed destinations before retrying."
+        : "Copy failed. Destination changes were rolled back.",
   });
   return {
     content: [new FileMutationAgentResult(result).toTextContent()],
@@ -1785,6 +1820,21 @@ export function buildFailedCopyWriteResult(
     },
   };
 }
+function hasUnknownMutationEffect(error: unknown): boolean {
+  return (
+    error !== null && typeof error === "object" && "effect" in error && error.effect === "unknown"
+  );
+}
+function declaredMutationEffect(error: unknown): "applied" | "not-applied" | "unknown" {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    (error.effect === "applied" || error.effect === "not-applied" || error.effect === "unknown")
+  )
+    return error.effect;
+  return "unknown";
+}
 function failureToolResult(
   source: string,
   code: string,
@@ -1794,7 +1844,9 @@ function failureToolResult(
   copyExecutionFailure = false,
 ): { content: [{ type: "text"; text: string }]; details: FileMutationBatchResult } {
   const uncertain =
-    rollback !== undefined && (rollback.failed.length > 0 || rollback.originallyMissing.length > 0);
+    effect === "unknown" ||
+    (rollback !== undefined &&
+      (rollback.failed.length > 0 || rollback.originallyMissing.length > 0));
   const fileChangedStatement =
     rollback === undefined
       ? effect === "applied"
@@ -1804,11 +1856,15 @@ function failureToolResult(
           : code === "MUTATION_REJECTED"
             ? undefined
             : "No file was changed."
-      : rollback.originallyMissing.length > 0
-        ? "The file may now exist. Read the path before retrying."
-        : uncertain
-          ? `Rollback failed for ${rollback.failed.join(", ")}. Current contents are unknown. Run Read/Search before editing these resources again.`
-          : "Attempted writes were rolled back.";
+      : effect === "unknown" &&
+          rollback.failed.length === 0 &&
+          rollback.originallyMissing.length === 0
+        ? "Confirmed peer writes were rolled back, but another write has unknown effects. Read the affected resources before retrying."
+        : rollback.originallyMissing.length > 0
+          ? "The file may now exist. Read the path before retrying."
+          : uncertain
+            ? `Rollback failed for ${rollback.failed.join(", ")}. Current contents are unknown. Run Read/Search before editing these resources again.`
+            : "Attempted writes were rolled back.";
   const result = new FileMutationResult({
     ok: false,
     path: source,

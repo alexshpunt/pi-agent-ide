@@ -31,7 +31,8 @@ export function selectPresentation(
     if (!remaining) break;
     const shown = selected.slice(0, remaining);
     remaining -= shown.length;
-    const label = path.relative(cwd, source) || path.basename(source);
+    const remote = source.startsWith("ssh://");
+    const label = remote ? source : path.relative(cwd, source) || path.basename(source);
     const previews: SourcePreview[] = [];
     let shortened = false;
     const content = selected[0]?.target.expectedContent.split(/\r\n|\n|\r/u) ?? [];
@@ -46,7 +47,7 @@ export function selectPresentation(
         previews.push({
           source,
           label,
-          link: pathToFileURL(source).href,
+          link: remote ? source : pathToFileURL(source).href,
           lineNumber: number,
           text,
           ranges: [

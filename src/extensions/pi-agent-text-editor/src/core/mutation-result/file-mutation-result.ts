@@ -27,6 +27,8 @@ export interface MutationFormatting {
 
 /** Plain-text, per-file status shown beside diff counts and retained in history. */
 export interface MutationDiffStatus {
+  /** Completion-hook feedback stays visible in compact Write receipts, unlike display-only checks. */
+  readonly origin?: "after-edit";
   /** Formatter identity allows multi-file summaries without parsing display text. */
   readonly formatter?: string;
   /** Observed formatter state for this label, kept distinct from file edit counts. */

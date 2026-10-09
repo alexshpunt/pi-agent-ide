@@ -1,10 +1,11 @@
 import path from "node:path";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
-import { executeFileOperation } from "#src/core/file-operations.js";
 import { forgetDeferredPostEdit } from "./post-edit-scope.js";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.js";
+import { isDiffStatusContribution } from "#src/api/post-edit.js";
+import type { MutationDiffStatus } from "#src/api/mutation-result.js";
 
 /** Return whether a hybrid text tool invocation addresses a complete file. */
 export function isWholeFileInvocation(
@@ -37,6 +38,7 @@ export async function executeWholeFileTool(
   },
   verifySource?: () => Promise<void>,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
+  let finalize: Awaited<ReturnType<TextEditorCore["prepareFilePostProcessing"]>> | undefined;
   const ui = context.hasUI ? context.ui : undefined;
   const outcome = await core.enqueueFileOperation(
     async (): Promise<FileOperationResult> => {
@@ -57,8 +59,15 @@ export async function executeWholeFileTool(
           },
         };
       }
-      return executeFileOperation(operation, input, context.cwd, signal, {
+      return core.executeFileOperation(operation, input, context.cwd, signal, {
         beforeDelete: (event) => core.beforeDelete(event),
+        beforeFileTransfer: async () => {
+          if (typeof input.target === "string")
+            finalize = await core.prepareFilePostProcessing(input.target, {
+              cwd: context.cwd,
+              signal,
+            });
+        },
         ...(ui !== undefined && {
           confirm: async (event, reason) =>
             ui.confirm(
@@ -93,9 +102,15 @@ export async function executeWholeFileTool(
   if (outcome.ok && operation !== "copy" && outcome.path !== undefined)
     forgetDeferredPostEdit(outcome.path);
   let postProcessingError: string | undefined;
-  if (outcome.ok && outcome.target !== undefined && outcome.sourceKind === "file") {
+  let diffStatuses: MutationDiffStatus[] = [];
+  if (outcome.ok && outcome.target !== undefined && (outcome.sourceKind ?? "file") === "file") {
     try {
-      await core.postProcessFile(outcome.target, { cwd: context.cwd, signal });
+      const saved = await finalize?.();
+      if (saved?.kind === "completed")
+        diffStatuses = saved.postEditContributions
+          .map((item) => item.data)
+          .filter(isDiffStatusContribution)
+          .flatMap((item) => item.diffStatuses);
     } catch (error) {
       postProcessingError = error instanceof Error ? error.message : String(error);
     }
@@ -108,6 +123,7 @@ export async function executeWholeFileTool(
           `${operation}: ${outcome.effect}`,
           outcome.path,
           outcome.target === undefined ? undefined : `Target: ${outcome.target}`,
+          ...diffStatuses.map((status) => status.text),
           postProcessingError === undefined
             ? undefined
             : `Post-processing failed: ${postProcessingError}`,
@@ -124,6 +140,7 @@ export async function executeWholeFileTool(
       metadata: {
         semanticAction: {
           ...outcome,
+          diffStatuses,
           ...(postProcessingError === undefined ? {} : { postProcessingError }),
           source: outcome.path,
         },

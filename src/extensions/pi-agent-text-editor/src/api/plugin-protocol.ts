@@ -26,10 +26,27 @@ import type {
   TextMutationToolRegistration,
 } from "#src/api/mutation-tool.js";
 import type { TextEditorToolRendererRegistration } from "#src/api/tool-renderer.js";
+import type { FileOperationResolver } from "#src/api/file-operations.js";
 
+export type {
+  FileOperation,
+  FileOperationInput,
+  FileOperationResult,
+  FileOperationResolver,
+} from "#src/api/file-operations.js";
+export type { DeleteFileAccess } from "#src/api/delete-guard.js";
+export type { FileOperationPolicy } from "#src/api/file-operations.js";
+export type {
+  FileObjectEntry,
+  FileObjectSnapshot,
+  FileTransferAccess,
+  FileTransferEndpoint,
+  FileTransferGuard,
+} from "#src/api/file-transfers.js";
+export { localFileTransferAccess, snapshotLocalObjects } from "#src/api/native-files.js";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 24;
+export const TEXT_EDITOR_API_VERSION = 32;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 
@@ -82,6 +99,8 @@ export interface TextEditorRecoveryConfigSection {
 }
 export interface TextEditorPluginApi {
   addResolver(registration: ResourceResolverRegistration): void;
+  /** Register an ordered whole-file owner; URI failures never fall back to local files. */
+  addFileOperationResolver(resolver: FileOperationResolver): void;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
   /** Reads this plugin's project recovery subsection. */

@@ -4,6 +4,7 @@ import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent
 import { createHash } from "node:crypto";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
+import type { SearchEnvironment } from "pi-agent-search/api/search";
 
 import {
   createTextDocument,
@@ -27,11 +28,12 @@ export type TextSearchMatch = SearchSelectionMatch;
 
 export interface TextSearchSession {
   readonly id: string;
-  readonly target?: string;
-  readonly matchTargets?: readonly string[];
   readonly query: string;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
+  /** Strict source handles stay separate from legacy refreshing SEARCH references. */
+  readonly target?: string;
+  readonly matchTargets?: readonly string[];
 }
 
 interface SearchSnapshot {
@@ -40,7 +42,11 @@ interface SearchSnapshot {
   readonly contentBySource: ReadonlyMap<string, string>;
 }
 
+type SnapshotReader = (source: string, signal?: AbortSignal) => Promise<string>;
+
 interface StoredSearchSession extends TextSearchSession, SearchSnapshot {
+  readonly read?: SnapshotReader;
+  readonly environment?: SearchEnvironment;
   readonly refresh?: SearchSelectionRegistration["refresh"];
   readonly recipe: SearchRecipe;
   readonly snapshotByteBudget?: number;
@@ -77,11 +83,13 @@ export function createSearchSessionIdentity(
   const root =
     cwd === undefined
       ? commonSourceDirectory(matches.map((match) => match.source))
-      : path.resolve(cwd);
+      : canonicalSource(cwd);
   const identity = matches
     .map((match) => ({
       match,
-      source: path.relative(root, path.resolve(match.source)),
+      source: match.source.includes("://")
+        ? canonicalSource(match.source)
+        : path.relative(root, path.resolve(match.source)),
     }))
     .sort(
       (left, right) =>
@@ -126,7 +134,7 @@ export function allocateSearchSessionId(
 function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unknown> {
   return {
     query: recipe.query,
-    path: path.resolve(cwd, recipe.path ?? "."),
+    path: resolveScope(cwd, recipe.path ?? "."),
     include: recipe.include ?? "",
     exclude: recipe.exclude ?? "",
     caseSensitive: recipe.caseSensitive === true,
@@ -154,6 +162,11 @@ export class SearchSessionStore {
   public constructor(
     private readonly createIdentity: typeof createSearchSessionIdentity = createSearchSessionIdentity,
     private readonly resultTargets?: ResultTargetStore,
+    private readonly readSource?: (
+      source: string,
+      cwd: string,
+      signal?: AbortSignal,
+    ) => Promise<string>,
   ) {}
 
   /** Capture current files; an optional byte budget also bounds reads if a file grows during capture. */
@@ -169,11 +182,21 @@ export class SearchSessionStore {
     },
     refresh?: SearchSelectionRegistration["refresh"],
     snapshotByteBudget?: number,
+    environment?: SearchEnvironment,
   ): Promise<TextSearchSession> {
     const matches = sourceMatches
-      .map((match) => ({ ...match, source: path.resolve(match.source) }))
+      .map((match) => ({ ...match, source: canonicalSource(match.source) }))
       .sort(compareMatches);
-    const contentBySource = await snapshotContents(matches, signal, snapshotByteBudget);
+    const readSource = this.readSource;
+    const read: SnapshotReader | undefined =
+      readSource === undefined ? undefined : (source, abort) => readSource(source, cwd, abort);
+    const contentBySource = await snapshotContents(
+      matches,
+      signal,
+      snapshotByteBudget,
+      environment,
+      read,
+    );
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
     const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
@@ -183,11 +206,20 @@ export class SearchSessionStore {
       matches,
       complete,
       contentBySource,
-      ...registerResultReferences(this.resultTargets, matches, contentBySource, cwd, complete),
+      read,
+      ...registerResultReferences(
+        this.resultTargets,
+        matches,
+        contentBySource,
+        cwd,
+        complete,
+        (source, abort) => readOwnedText(source, abort, environment, read),
+      ),
       ...(snapshotByteBudget === undefined ? {} : { snapshotByteBudget }),
       recipe,
+      environment,
       ...(refresh !== undefined && { refresh }),
-      cwd: path.resolve(cwd),
+      cwd: canonicalSource(cwd),
     };
     this.#idsByIdentity.set(identity, id);
     this.#sessions.set(id, session);
@@ -204,6 +236,7 @@ export class SearchSessionStore {
     recipe?: SearchRecipe,
     refresh?: SearchSelectionRegistration["refresh"],
     snapshotByteBudget?: number,
+    environment?: SearchEnvironment,
   ): Promise<TextSearchSession | undefined> {
     try {
       return await this.register(
@@ -215,6 +248,7 @@ export class SearchSessionStore {
         recipe,
         refresh,
         snapshotByteBudget,
+        environment,
       );
     } catch (error) {
       if (error instanceof SearchSnapshotChangedError) return undefined;
@@ -255,7 +289,7 @@ export class SearchSessionStore {
       try {
         const result =
           session.refresh === undefined
-            ? await runSearchRecipe(session.recipe, session.cwd, signal)
+            ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
             : await session.refresh(signal);
         observations.push({
           ...base,
@@ -317,7 +351,7 @@ export class SearchSessionStore {
     let session = this.#sessions.get(parsed.id);
     if (session === undefined) return staleAnchor();
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
-    const source = path.resolve(contextSource);
+    const source = canonicalSource(contextSource);
     let snapshot: SearchSnapshot = session;
     if (parsed.selector === "all") {
       if (session.refreshedComplete?.complete === true) {
@@ -335,7 +369,7 @@ export class SearchSessionStore {
         rejection: { code: "missing", reason: "search anchor does not select this resource" },
       };
     }
-    const current = await readCurrent(source, signal);
+    const current = await readCurrent(source, signal, session.environment, session.read);
     if (current === undefined) return staleAnchor(requiredValue(sourceMatches[0]).lineNumber);
     if (parsed.selector === "all" && current !== snapshot.contentBySource.get(source)) {
       snapshot = await this.#refresh(session, signal);
@@ -380,7 +414,7 @@ export class SearchSessionStore {
         selectMatches(snapshot, parsed.selector, parsed.mode).map((match) => match.source),
       );
       for (const source of sources) {
-        const current = await readCurrent(source);
+        const current = await readCurrent(source, undefined, session.environment, session.read);
         if (current !== snapshot.contentBySource.get(source)) {
           snapshot = await this.#refresh(session);
           if (!snapshot.complete) return missingCompleteAnchor();
@@ -393,7 +427,8 @@ export class SearchSessionStore {
       const source = selected[0]?.source;
       if (
         source !== undefined &&
-        (await readCurrent(source)) !== snapshot.contentBySource.get(source)
+        (await readCurrent(source, undefined, session.environment, session.read)) !==
+          snapshot.contentBySource.get(source)
       ) {
         return staleAnchor(selected[0]?.lineNumber);
       }
@@ -426,15 +461,21 @@ export class SearchSessionStore {
   async #refresh(session: StoredSearchSession, signal?: AbortSignal): Promise<SearchSnapshot> {
     const result =
       session.refresh === undefined
-        ? await runSearchRecipe(session.recipe, session.cwd, signal)
+        ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
         : await session.refresh(signal);
     const matches = result.matches
-      .map((match) => ({ ...match, source: path.resolve(match.source) }))
+      .map((match) => ({ ...match, source: canonicalSource(match.source) }))
       .sort(compareMatches);
     const refreshed: SearchSnapshot = {
       matches,
       complete: result.complete,
-      contentBySource: await snapshotContents(matches, signal, session.snapshotByteBudget),
+      contentBySource: await snapshotContents(
+        matches,
+        signal,
+        session.snapshotByteBudget,
+        session.environment,
+        session.read,
+      ),
     };
     this.#sessions.set(session.id, { ...session, refreshedComplete: refreshed });
     return refreshed;
@@ -447,6 +488,7 @@ function registerResultReferences(
   contents: ReadonlyMap<string, string>,
   cwd: string,
   complete: boolean,
+  read: SnapshotReader,
 ): Pick<TextSearchSession, "target" | "matchTargets"> {
   if (store === undefined) return {};
   const documents = new Map(
@@ -456,6 +498,7 @@ function registerResultReferences(
     source: match.source,
     expectedContent: requiredValue(contents.get(match.source)),
     ranges: [selectionRange(requiredValue(documents.get(match.source)), match, "match")],
+    readCurrent: (signal?: AbortSignal) => read(match.source, signal),
   }));
   return {
     target: store.register(targets, cwd, complete),
@@ -563,13 +606,15 @@ async function snapshotContents(
   matches: readonly TextSearchMatch[],
   signal?: AbortSignal,
   byteBudget?: number,
+  environment?: SearchEnvironment,
+  read?: SnapshotReader,
 ): Promise<ReadonlyMap<string, string>> {
   const sources = [...new Set(matches.map((match) => match.source))];
   if (byteBudget !== undefined) {
     const contents = new Map<string, string>();
     let remaining = byteBudget;
     for (const source of sources) {
-      const content = await readBoundedSnapshot(source, remaining, signal);
+      const content = await readBoundedSnapshot(source, remaining, signal, environment, read);
       remaining -= Buffer.byteLength(content);
       validateSnapshot(source, content, matches);
       contents.set(source, content);
@@ -578,10 +623,7 @@ async function snapshotContents(
   }
   const snapshots = await Promise.allSettled(
     sources.map(async (source) => {
-      const content = await readFile(source, {
-        encoding: "utf8",
-        ...(signal !== undefined && { signal }),
-      });
+      const content = await readOwnedText(source, signal, environment, read);
       validateSnapshot(source, content, matches);
       return [source, content] as const;
     }),
@@ -610,8 +652,16 @@ async function readBoundedSnapshot(
   source: string,
   budget: number,
   signal?: AbortSignal,
+  environment?: SearchEnvironment,
+  read?: SnapshotReader,
 ): Promise<string> {
   signal?.throwIfAborted();
+  if (source.includes("://")) {
+    const content = await readOwnedText(source, signal, environment, read);
+    if (Buffer.byteLength(content) > budget)
+      throw new Error("Candidate snapshot byte budget reached.");
+    return content;
+  }
   const file = await open(source, "r");
   try {
     const info = await file.stat();
@@ -633,14 +683,40 @@ async function readBoundedSnapshot(
     await file.close();
   }
 }
-async function readCurrent(source: string, signal?: AbortSignal): Promise<string | undefined> {
+async function readCurrent(
+  source: string,
+  signal?: AbortSignal,
+  environment?: SearchEnvironment,
+  read?: SnapshotReader,
+): Promise<string | undefined> {
   try {
-    return await readFile(source, { encoding: "utf8", ...(signal !== undefined && { signal }) });
+    return await readOwnedText(source, signal, environment, read);
   } catch {
     return undefined;
   }
 }
 
+function canonicalSource(source: string): string {
+  return source.includes("://") ? source : path.resolve(source);
+}
+function resolveScope(cwd: string, source: string): string {
+  if (source.includes("://")) return source;
+  return cwd.includes("://")
+    ? new URL(source, cwd.endsWith("/") ? cwd : cwd + "/").href
+    : path.resolve(cwd, source);
+}
+async function readOwnedText(
+  source: string,
+  signal?: AbortSignal,
+  environment?: SearchEnvironment,
+  read?: SnapshotReader,
+): Promise<string> {
+  signal?.throwIfAborted();
+  if (read !== undefined) return read(source, signal);
+  if (environment !== undefined) return environment.readText(source, signal);
+  if (source.includes("://")) throw new Error("No search snapshot owner for this source.");
+  return readFile(source, { encoding: "utf8", ...(signal !== undefined && { signal }) });
+}
 function staleAnchor(
   lineNumber = 1,
 ): Extract<TextAnchorResolutionAttempt, { readonly kind: "rejected" }> {

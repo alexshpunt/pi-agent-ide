@@ -24,6 +24,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
+import { isDiffStatusContribution } from "pi-agent-text-editor/api/post-edit";
+import type { MutationDiffStatus } from "pi-agent-text-editor/api/mutation-result";
 import type { AnyTextMutationToolRegistration } from "pi-agent-text-editor/api/mutation-tool";
 import type { TextEditorPluginApi } from "pi-agent-text-editor/api/plugin-protocol";
 import type { TextEditorToolRendererRegistration } from "pi-agent-text-editor/api/tool-renderer";
@@ -195,7 +197,6 @@ function createRenderer(
             generated,
             cwd: context.cwd,
           } satisfies PreviewRequest;
-
           if (!advancePreviewTarget(state, request, now)) {
             queuePreview(state, request, api, tool);
           }
@@ -293,23 +294,17 @@ function createRenderer(
           0,
         );
       }
-      const wholeFileEffect = wholeFileOperationEffect(result.details);
-      if (wholeFileEffect !== undefined) {
-        const applied = wholeFileEffect === "applied";
-        const unknown = wholeFileEffect === "unknown";
-        const affected = registration.name === "delete" ? "the source" : "source and destination";
+      const summary = wholeFileOperationSummary(result.details);
+      if (summary !== undefined) {
+        const unavailable =
+          typeof result.details.metadata?.targetUnavailable === "string"
+            ? " · no verified text selection; read destination before further edits"
+            : "";
         return new Text(
-          theme.fg(
-            unknown ? "warning" : applied ? "success" : "error",
-            unknown
-              ? `Effects unknown · ${registration.name} failed; read ${affected} before retrying`
-              : applied
-                ? registration.name === "copy" &&
-                  typeof result.details.metadata?.targetUnavailable === "string"
-                  ? "✓ Applied · no verified text selection; read destination before further edits"
-                  : "✓ Applied"
-                : "✗ Not applied",
-          ),
+          [
+            theme.fg(summary.color, summary.text + unavailable),
+            ...summary.diffStatuses.map((status) => theme.fg(status.tone ?? "muted", status.text)),
+          ].join("\n"),
           0,
           0,
         );
@@ -897,21 +892,111 @@ function semanticRange(start: string, end: string): string {
     : `${start}–${end}`;
 }
 
-function wholeFileOperationEffect(
-  details: unknown,
-): "applied" | "not-applied" | "unknown" | undefined {
+function wholeFileOperationSummary(details: unknown):
+  | {
+      text: string;
+      diffStatuses: readonly MutationDiffStatus[];
+      color: "error" | "warning" | "success";
+    }
+  | undefined {
   if (details === null || typeof details !== "object" || !("metadata" in details)) return undefined;
   const metadata = details.metadata;
   if (metadata === null || typeof metadata !== "object" || !("semanticAction" in metadata))
     return undefined;
   const action = metadata.semanticAction;
-  if (action === null || typeof action !== "object" || !("kind" in action)) return undefined;
-  if (action.kind !== "file-operation" || !("effect" in action)) return undefined;
-  return action.effect === "applied" ||
-    action.effect === "not-applied" ||
-    action.effect === "unknown"
-    ? action.effect
-    : undefined;
+  if (
+    action === null ||
+    typeof action !== "object" ||
+    !("kind" in action) ||
+    (action.kind !== "file-operation" && action.kind !== "direct-mutation") ||
+    !("ok" in action) ||
+    typeof action.ok !== "boolean"
+  )
+    return undefined;
+  const effect =
+    "effect" in action &&
+    (action.effect === "applied" || action.effect === "not-applied" || action.effect === "unknown")
+      ? action.effect
+      : action.ok
+        ? "applied"
+        : "not-applied";
+  let cause: string | undefined;
+  if ("postProcessingError" in action) cause = "post-processing failed";
+  else if (!action.ok) {
+    const error = "error" in action ? action.error : undefined;
+    const code =
+      error !== null &&
+      typeof error === "object" &&
+      "code" in error &&
+      typeof error.code === "string"
+        ? error.code
+        : undefined;
+    cause = code === undefined ? "file operation failed" : wholeFileFailureCause(code);
+  }
+  const label =
+    effect === "unknown"
+      ? `Effects unknown · ${"operation" in action ? String(action.operation) : "file operation"} failed; read ${"operation" in action && action.operation === "delete" ? "the source" : "source and destination"} before retrying`
+      : effect === "applied"
+        ? "✓ Applied"
+        : "✗ Not applied";
+  return {
+    text: cause === undefined ? label : `${label} · ${cause}`,
+    diffStatuses: isDiffStatusContribution(action) ? action.diffStatuses : [],
+    color:
+      effect === "not-applied"
+        ? "error"
+        : effect === "unknown" || cause !== undefined
+          ? "warning"
+          : "success",
+  };
+}
+
+function wholeFileFailureCause(code: string): string {
+  switch (code) {
+    case "APPLY_UNDO_OWNER_CHANGED": {
+      return "resource owner changed";
+    }
+    case "APPLY_UNDO_CLEANUP_FAILED": {
+      return "journal cleanup failed";
+    }
+    case "UNSUPPORTED_SOURCE": {
+      return "no file provider for this resource";
+    }
+    case "UNKNOWN_TARGET": {
+      return "SSH target is not configured";
+    }
+    case "CONNECTION_LOST": {
+      return "connection lost";
+    }
+    case "CONFLICT": {
+      return "file changed";
+    }
+    case "EEXIST": {
+      return "target already exists";
+    }
+    case "ENOENT": {
+      return "file was not found";
+    }
+    case "EACCES":
+    case "EPERM": {
+      return "permission denied";
+    }
+    case "INVALID_FILE_TYPE": {
+      return "a regular file is required";
+    }
+    case "SAME_FILE": {
+      return "source and target are the same file";
+    }
+    case "TIMEOUT": {
+      return "operation timed out";
+    }
+    case "CANCELLED": {
+      return "operation was canceled";
+    }
+    default: {
+      return "file operation failed";
+    }
+  }
 }
 
 function userFacingFailure(
@@ -924,6 +1009,11 @@ function userFacingFailure(
   if (rollbacks.length > 0) {
     const failed = [...new Set(rollbacks.flatMap((rollback) => rollback.failedSources))];
     const restored = [...new Set(rollbacks.flatMap((rollback) => rollback.restoredSources))];
+    if (failed.length === 0 && details?.effect === "unknown")
+      return [
+        "Effects unknown · edit failed",
+        ...(restored.length > 0 ? [`Rolled back: ${restored.join(", ")}`] : []),
+      ].join("\n");
     return [
       failed.length === 0 ? "Rolled back · write failed" : "State unknown · rollback failed",
       ...(failed.length > 0 ? [`Unknown: ${failed.join(", ")}`] : []),

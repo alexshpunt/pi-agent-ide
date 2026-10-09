@@ -4,10 +4,21 @@ import { runContributedChecks, runContributedSetupChecks } from "./core.js";
 import { discoverRecipeCandidates, selectSuggestedRecipes } from "./discovery.js";
 import { collectProjectFiles, detectProjectLanguages } from "./inventory.js";
 
-import type { DoctorFinding, DoctorSetupAction, DoctorToolSelection } from "#src/api/doctor.js";
+import type {
+  DoctorFinding,
+  DoctorSetupAction,
+  DoctorToolSelection,
+  DoctorWorkspace,
+} from "#src/api/doctor.js";
 import type { DoctorSnapshot } from "./core.js";
 import type { RecipeCandidate } from "./discovery.js";
 
+function assertWorkspace(cwd: string, workspace?: DoctorWorkspace): void {
+  if ((cwd.includes("://") && !workspace) || (workspace && workspace.source !== cwd))
+    throw Object.assign(new Error(`Doctor requires the owner of ${cwd}`), {
+      code: "UNSUPPORTED_SOURCE",
+    });
+}
 export interface DoctorSection {
   readonly title: string;
   readonly pluginId: string;
@@ -34,21 +45,40 @@ export async function inspectDoctorSetup(
   cwd: string,
   environment: NodeJS.ProcessEnv = process.env,
   signal?: AbortSignal,
+  workspace?: DoctorWorkspace,
 ): Promise<DoctorSetupRun> {
   signal?.throwIfAborted();
-  const files = await collectProjectFiles(cwd, signal);
+  assertWorkspace(cwd, workspace);
+  const files = workspace ? await workspace.files(signal) : await collectProjectFiles(cwd, signal);
   signal?.throwIfAborted();
   const detectedLanguages = detectProjectLanguages(
     files,
     snapshot.languages.map((entry) => entry.value),
+    workspace?.platform,
   );
   const detectedLanguageIds = new Set(detectedLanguages.keys());
-  const context = { cwd, files, detectedLanguageIds, detectedLanguages, env: environment };
+  const context = {
+    cwd,
+    files,
+    detectedLanguageIds,
+    detectedLanguages,
+    env: workspace ? { ...workspace.toolPaths } : environment,
+    signal,
+    workspace,
+  };
   const [candidates, setup] = await Promise.all([
-    discoverRecipeCandidates(cwd, detectedLanguageIds, snapshot.recipes, environment),
+    discoverRecipeCandidates(
+      cwd,
+      detectedLanguageIds,
+      snapshot.recipes,
+      workspace ? { ...workspace.toolPaths } : environment,
+      signal,
+      workspace,
+    ),
     runContributedSetupChecks(snapshot, context),
   ]);
 
+  signal?.throwIfAborted();
   const missingActions = new Map<string, DoctorSetupAction & { readonly pluginId: string }>();
   for (const language of detectedLanguageIds) {
     for (const kind of ["formatter", "linter", "lsp"] as const) {
@@ -97,17 +127,22 @@ export async function runDoctor(
   snapshot: DoctorSnapshot,
   cwd: string,
   environment: NodeJS.ProcessEnv = process.env,
+  signal?: AbortSignal,
+  workspace?: DoctorWorkspace,
 ): Promise<DoctorRun> {
-  const setup = await inspectDoctorSetup(snapshot, cwd, environment);
+  const setup = await inspectDoctorSetup(snapshot, cwd, environment, signal, workspace);
   const detectedLanguageIds = new Set(setup.detectedLanguages.keys());
   const context = {
     cwd,
     files: setup.files,
     detectedLanguageIds,
     detectedLanguages: setup.detectedLanguages,
-    env: environment,
+    env: workspace ? { ...workspace.toolPaths } : environment,
+    signal,
+    workspace,
   };
   const checks = await runContributedChecks(snapshot, context);
+  signal?.throwIfAborted();
   const projectFindings: DoctorFinding[] = [
     { status: "pass", message: `Project: ${cwd}` },
     setup.files.length > 0
@@ -204,6 +239,6 @@ export function buildDoctorAgentPrompt(run: DoctorRun): string {
     "Relevant registered recipes:",
     JSON.stringify(relevantRecipes, null, 2),
     "",
-    `Project root: ${path.resolve(run.cwd)}`,
+    `Project root: ${run.cwd.includes("://") ? run.cwd : path.resolve(run.cwd)}`,
   ].join("\n");
 }

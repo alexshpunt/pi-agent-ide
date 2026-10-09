@@ -22,6 +22,16 @@ test("final formatting updates undo's digest without replacing its pre-edit stat
   expect(store.restore("/workspace/file.ts", "/workspace", "LAST")).toBe("first");
 });
 
+test("final completion keeps publication history and reconciles the saved pre-format text", () => {
+  const store = new LastTextTransactionStore();
+  store.observe(completion("original", "first", "deferred"));
+  store.observe(completion("first", "last", "deferred"));
+  store.observe({
+    ...completion("first", "LAST", "final"),
+    beforePostProcessing: createTextDocument("/workspace/file.ts", "last"),
+  });
+  expect(store.restore("/workspace/file.ts", "/workspace", "LAST")).toBe("first");
+});
 test("finalization cannot bless an unrelated newer transaction", () => {
   const store = new LastTextTransactionStore();
   store.observe(completion("before", "newer", "deferred"));

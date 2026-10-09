@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import type { ResolvedResultTargets } from "pi-agent-resource";
+import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import { createTextDocument } from "pi-agent-text";
 import { searchTextContent } from "#src/search-backend.js";
 import type { TextSearchBackendResult } from "#src/search-backend.js";
@@ -27,8 +26,7 @@ export async function runScopedSearch(
     const seen = new Set<string>();
     for (const target of scope.targets) {
       signal?.throwIfAborted();
-      if ((await readFile(target.source, { encoding: "utf8", signal })) !== target.expectedContent)
-        throw new Error("Result target is stale; repeat Read/Search.");
+      await verifyResultTargets({ targets: [target], complete: scope.complete }, signal);
       const document = createTextDocument(target.source, target.expectedContent);
       const starts = [0];
       for (const line of document.lines)
@@ -40,7 +38,7 @@ export async function runScopedSearch(
         const result = await searchTextContent(
           { ...recipe, query, condition },
           document.content.slice(from, to),
-          cwd,
+          cwd.includes("://") ? process.cwd() : cwd,
           signal,
         );
         for (const match of result.matches) {
@@ -99,5 +97,6 @@ export async function runScopedSearch(
       notices.push("Search fallback: invalid regex skipped; literal search found no matches.");
     }
   }
+  await verifyResultTargets(scope, signal);
   return { ...result, query, notices };
 }

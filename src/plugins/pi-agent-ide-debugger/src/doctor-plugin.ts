@@ -1,6 +1,8 @@
-import { access } from "node:fs/promises";
-
-import { isExecutableAvailable, probeExecutable } from "pi-agent-doctor/api/executable";
+import {
+  projectExecutableAvailable,
+  probeProjectExecutable,
+  projectFileExists,
+} from "pi-agent-doctor/api/project-probes";
 import {
   DOCTOR_API_VERSION,
   DOCTOR_PROTOCOL,
@@ -41,7 +43,7 @@ export const debuggerDoctorPlugin: DoctorPlugin = {
 /** Inspect debugger selection and classify missing Linux prerequisites. */
 export async function inspectDebuggerSetup(
   context: DoctorContext,
-  platform: NodeJS.Platform = process.platform,
+  platform: NodeJS.Platform = context.workspace?.platform ?? process.platform,
 ): Promise<DoctorSetupInspection> {
   const recipes = new Map(
     [...context.detectedLanguageIds]
@@ -77,18 +79,14 @@ export async function inspectDebuggerSetup(
       });
       continue;
     }
-    const python =
-      recipe.id === "debugpy"
-        ? await resolvePythonDebuggerCommand(context.cwd, context.env, platform)
-        : undefined;
+    const python = recipe.id === "debugpy" ? await pythonCommand(context, platform) : undefined;
     const missingRuntime = await firstMissingExecutable(
       recipe.id === "java-debug"
         ? [javaExecutable(context.env)]
         : python === undefined
           ? debuggerRecipe.runtimeExecutables
           : [python.command],
-      context.cwd,
-      context.env,
+      context,
     );
     if (missingRuntime !== undefined) {
       actions.push({
@@ -98,7 +96,7 @@ export async function inspectDebuggerSetup(
       });
       continue;
     }
-    if (!(await adapterInstalled(recipe.id, context.cwd, context.env, platform))) {
+    if (!(await adapterInstalled(recipe.id, context, platform))) {
       actions.push({
         id: `debugger-${recipe.id}-adapter`,
         category: "missing-adapter",
@@ -106,7 +104,7 @@ export async function inspectDebuggerSetup(
       });
       continue;
     }
-    if (!(await adapterAvailable(recipe.id, context.cwd, context.env, platform))) {
+    if (!(await adapterAvailable(recipe.id, context, platform))) {
       actions.push({
         id: `debugger-${recipe.id}-startup`,
         category: "adapter-startup",
@@ -131,8 +129,8 @@ async function checkDebuggerAdapters(context: DoctorContext): Promise<readonly D
   }
   return Promise.all(
     recipes.map(async (recipe): Promise<DoctorFinding> => {
-      let result = await probeAdapter(recipe.id, context.cwd, context.env);
-      if (recipe.id === "java-debug" && result.ok) {
+      let result = await probeAdapter(recipe.id, context);
+      if (recipe.id === "java-debug" && result.ok && context.workspace === undefined) {
         const runtime = new JavaDebugRuntime();
         try {
           await runtime.connect(context.cwd, AbortSignal.timeout(20_000), context.env);
@@ -152,65 +150,72 @@ async function checkDebuggerAdapters(context: DoctorContext): Promise<readonly D
   );
 }
 
+async function probeJavaFiles(
+  context: DoctorContext,
+  platform: NodeJS.Platform,
+): Promise<{ ok: boolean; detail: string }> {
+  if (context.workspace !== undefined) {
+    return probeProjectExecutable(context, "python3", [
+      "-c",
+      "import glob,os,sys; home,plugin=sys.argv[1:]; launchers=glob.glob(os.path.join(home,'plugins','org.eclipse.equinox.launcher_*.jar')); ok=len(launchers)==1 and os.path.isfile(plugin) and os.path.isdir(os.path.join(home,'config_linux')); print('Java debugger files ready' if ok else 'Missing JDT LS or java-debug plugin'); sys.exit(0 if ok else 1)",
+      context.env.PI_JDTLS_HOME ?? "/opt/pi-debug-adapters/jdtls",
+      context.env.PI_JAVA_DEBUG_PLUGIN_PATH ??
+        "/opt/pi-debug-adapters/java-debug/com.microsoft.java.debug.plugin-0.53.2.jar",
+    ]);
+  }
+  try {
+    await javaDebuggerFiles(context.env, platform);
+    return { ok: true, detail: "Java debugger files ready" };
+  } catch (error) {
+    context.signal?.throwIfAborted();
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
 async function firstMissingExecutable(
   executables: readonly string[],
-  cwd: string,
-  env: NodeJS.ProcessEnv,
+  context: DoctorContext,
 ): Promise<string | undefined> {
   for (const executable of executables) {
-    if (!(await isExecutableAvailable(executable, cwd, env))) return executable;
+    if (!(await projectExecutableAvailable(context, executable))) return executable;
   }
   return undefined;
 }
 async function adapterInstalled(
   id: string,
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform = process.platform,
+  context: DoctorContext,
+  platform: NodeJS.Platform = context.workspace?.platform ?? process.platform,
 ): Promise<boolean> {
+  const { env } = context;
   if (id === "elixir-ls-debug-adapter") {
-    try {
-      await access(env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH);
-      return true;
-    } catch {
-      return false;
-    }
+    return adapterFileExists(context, env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH);
   }
   if (id === "vsc-debugger") {
     return (
-      await probeExecutable(
-        env.PI_R_PATH ?? "R",
-        [
-          "--vanilla",
-          "--quiet",
-          "-e",
-          "quit(status=if (requireNamespace('vscDebugger', quietly=TRUE)) 0 else 1)",
-        ],
-        cwd,
-        env,
-      )
+      await probeProjectExecutable(context, env.PI_R_PATH ?? "R", [
+        "--vanilla",
+        "--quiet",
+        "-e",
+        "quit(status=if (requireNamespace('vscDebugger', quietly=TRUE)) 0 else 1)",
+      ])
     ).ok;
   }
   if (id === "vscode-js-debug") {
-    try {
-      await access(env.PI_JS_DEBUG_PATH ?? DEFAULT_JS_DEBUG_PATH);
-      return true;
-    } catch {
-      return false;
-    }
+    return adapterFileExists(context, env.PI_JS_DEBUG_PATH ?? DEFAULT_JS_DEBUG_PATH);
   }
   if (id.startsWith("lldb-dap")) {
     return (
-      (await isExecutableAvailable(
+      (await projectExecutableAvailable(
+        context,
         env.PI_LLDB_DAP_PATH ?? (platform === "win32" ? "lldb-dap" : "lldb-dap-18"),
-        cwd,
-        env,
-      )) || (await isExecutableAvailable("lldb-dap", cwd, env))
+      )) || (await projectExecutableAvailable(context, "lldb-dap"))
     );
   }
-  if (id === "delve") return isExecutableAvailable(env.PI_DELVE_PATH ?? "dlv", cwd, env);
+  if (id === "delve") return projectExecutableAvailable(context, env.PI_DELVE_PATH ?? "dlv");
   if (id === "java-debug") {
     try {
+      if (context.workspace !== undefined) {
+        return (await probeJavaFiles(context, platform)).ok;
+      }
       await javaDebuggerFiles(env, platform);
       return true;
     } catch {
@@ -218,24 +223,21 @@ async function adapterInstalled(
     }
   }
   if (id === "kotlin-debug-adapter")
-    return isExecutableAvailable(
+    return projectExecutableAvailable(
+      context,
       env.PI_KOTLIN_DEBUG_ADAPTER_PATH ?? "kotlin-debug-adapter",
-      cwd,
-      env,
     );
   if (id === "julia-debug-adapter") {
-    try {
-      await access(`${env.PI_JULIA_DEBUG_PROJECT ?? "/opt/pi-debug-adapters/julia"}/Project.toml`);
-      return true;
-    } catch {
-      return false;
-    }
+    return adapterFileExists(
+      context,
+      `${env.PI_JULIA_DEBUG_PROJECT ?? "/opt/pi-debug-adapters/julia"}/Project.toml`,
+    );
   }
   if (id === "dart-debug-adapter")
-    return isExecutableAvailable(env.PI_DART_PATH ?? "dart", cwd, env);
+    return projectExecutableAvailable(context, env.PI_DART_PATH ?? "dart");
   if (id === "netcoredbg")
-    return isExecutableAvailable(env.PI_NETCOREDBG_PATH ?? "netcoredbg", cwd, env);
-  if (id === "rdbg") return isExecutableAvailable(env.PI_RUBY_DEBUG_PATH ?? "rdbg", cwd, env);
+    return projectExecutableAvailable(context, env.PI_NETCOREDBG_PATH ?? "netcoredbg");
+  if (id === "rdbg") return projectExecutableAvailable(context, env.PI_RUBY_DEBUG_PATH ?? "rdbg");
   const adapterFiles: Record<string, string> = {
     "vscode-php-debug":
       env.PI_PHP_DEBUG_PATH ?? "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js",
@@ -248,89 +250,69 @@ async function adapterInstalled(
   };
   const adapterFile = adapterFiles[id];
   if (adapterFile !== undefined) {
-    try {
-      await access(adapterFile);
-      return true;
-    } catch {
-      return false;
-    }
+    return adapterFileExists(context, adapterFile);
   }
   if (id !== "debugpy") return false;
-  const python = await resolvePythonDebuggerCommand(cwd, env, platform);
-  const probe = await probeExecutable(
-    python.command,
-    [
-      ...python.args,
-      "-c",
-      "import importlib.util; raise SystemExit(importlib.util.find_spec('debugpy') is None)",
-    ],
-    cwd,
-    env,
-  );
+  const python = await pythonCommand(context, platform);
+  const probe = await probeProjectExecutable(context, python.command, [
+    ...python.args,
+    "-c",
+    "import importlib.util; raise SystemExit(importlib.util.find_spec('debugpy') is None)",
+  ]);
   return probe.ok;
 }
 async function adapterAvailable(
   id: string,
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform = process.platform,
+  context: DoctorContext,
+  platform: NodeJS.Platform = context.workspace?.platform ?? process.platform,
 ): Promise<boolean> {
-  return (await probeAdapter(id, cwd, env, platform)).ok;
+  return (await probeAdapter(id, context, platform)).ok;
 }
 
 async function probeAdapter(
   id: string,
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform = process.platform,
+  context: DoctorContext,
+  platform: NodeJS.Platform = context.workspace?.platform ?? process.platform,
 ) {
+  const { env } = context;
   if (id === "elixir-ls-debug-adapter") {
-    return probeAdapterFile(env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH, cwd, env);
+    return probeAdapterFile(env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH, context);
   }
   if (id === "vsc-debugger") {
-    return probeExecutable(
-      env.PI_R_PATH ?? "R",
-      [
-        "--vanilla",
-        "--quiet",
-        "-e",
-        "library(vscDebugger); cat(as.character(packageVersion('vscDebugger')))",
-      ],
-      cwd,
-      env,
-    );
+    return probeProjectExecutable(context, env.PI_R_PATH ?? "R", [
+      "--vanilla",
+      "--quiet",
+      "-e",
+      "library(vscDebugger); cat(as.character(packageVersion('vscDebugger')))",
+    ]);
   }
   if (id === "dart-debug-adapter") {
-    return probeExecutable(env.PI_DART_PATH ?? "dart", ["--version"], cwd, env);
+    return probeProjectExecutable(context, env.PI_DART_PATH ?? "dart", ["--version"]);
   }
   if (id === "debugpy") {
-    const python = await resolvePythonDebuggerCommand(cwd, env, platform);
-    return probeExecutable(
-      python.command,
-      [...python.args, "-c", "import debugpy; print(debugpy.__version__)"],
-      cwd,
-      env,
-    );
+    const python = await pythonCommand(context, platform);
+    return probeProjectExecutable(context, python.command, [
+      ...python.args,
+      "-c",
+      "import debugpy; print(debugpy.__version__)",
+    ]);
   }
   if (id === "delve") {
-    return probeExecutable(env.PI_DELVE_PATH ?? "dlv", ["version"], cwd, env);
+    return probeProjectExecutable(context, env.PI_DELVE_PATH ?? "dlv", ["version"]);
   }
   if (id === "julia-debug-adapter") {
     const project = env.PI_JULIA_DEBUG_PROJECT ?? "/opt/pi-debug-adapters/julia";
-    return probeExecutable(
-      env.PI_JULIA_PATH ?? "julia",
-      [`--project=${project}`, "--startup-file=no", "-e", "using DebugAdapter"],
-      cwd,
-      env,
-    );
+    return probeProjectExecutable(context, env.PI_JULIA_PATH ?? "julia", [
+      `--project=${project}`,
+      "--startup-file=no",
+      "-e",
+      "using DebugAdapter",
+    ]);
   }
   if (id === "java-debug") {
-    try {
-      await javaDebuggerFiles(env, platform);
-    } catch (error) {
-      return { ok: false, detail: error instanceof Error ? error.message : String(error) };
-    }
-    const runtime = await probeExecutable(javaExecutable(env), ["-version"], cwd, env);
+    const files = await probeJavaFiles(context, platform);
+    if (!files.ok) return files;
+    const runtime = await probeProjectExecutable(context, javaExecutable(env), ["-version"]);
     if (!runtime.ok) return runtime;
     const major = /version "(\d+)/u.exec(runtime.detail)?.[1];
     return Number(major) >= 21
@@ -341,113 +323,110 @@ async function probeAdapter(
         };
   }
   if (id === "kotlin-debug-adapter") {
-    const adapter = await probeExecutable(
+    const adapter = await probeProjectExecutable(
+      context,
       env.PI_KOTLIN_DEBUG_ADAPTER_PATH ?? "kotlin-debug-adapter",
       ["--help"],
-      cwd,
-      env,
     );
     if (!adapter.ok) return adapter;
-    return probeExecutable("java", ["-version"], cwd, env);
+    return probeProjectExecutable(context, "java", ["-version"]);
   }
   if (id === "netcoredbg") {
-    const adapter = await probeExecutable(
-      env.PI_NETCOREDBG_PATH ?? "netcoredbg",
-      ["--version"],
-      cwd,
-      env,
-    );
+    const adapter = await probeProjectExecutable(context, env.PI_NETCOREDBG_PATH ?? "netcoredbg", [
+      "--version",
+    ]);
     if (!adapter.ok) return adapter;
-    return probeExecutable("dotnet", ["--version"], cwd, env);
+    return probeProjectExecutable(context, "dotnet", ["--version"]);
   }
   if (id.startsWith("lldb-dap")) {
     const command =
       env.PI_LLDB_DAP_PATH ??
       (platform === "win32"
         ? "lldb-dap"
-        : (await isExecutableAvailable("lldb-dap-18", cwd, env))
+        : (await projectExecutableAvailable(context, "lldb-dap-18"))
           ? "lldb-dap-18"
           : "lldb-dap");
-    return probeExecutable(command, ["--version"], cwd, env);
+    return probeProjectExecutable(context, command, ["--version"]);
   }
   if (id === "rdbg") {
-    return probeExecutable(env.PI_RUBY_DEBUG_PATH ?? "rdbg", ["--version"], cwd, env);
+    return probeProjectExecutable(context, env.PI_RUBY_DEBUG_PATH ?? "rdbg", ["--version"]);
   }
   if (id === "vscode-php-debug") {
-    const runtime = await probeExecutable(
-      env.PI_PHP_PATH ?? "php",
-      ["-r", "exit(extension_loaded('xdebug') ? 0 : 1);"],
-      cwd,
-      env,
-    );
+    const runtime = await probeProjectExecutable(context, env.PI_PHP_PATH ?? "php", [
+      "-r",
+      "exit(extension_loaded('xdebug') ? 0 : 1);",
+    ]);
     return runtime.ok
       ? probeAdapterFile(
           env.PI_PHP_DEBUG_PATH ?? "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js",
-          cwd,
-          env,
+          context,
         )
       : runtime;
   }
   if (id === "local-lua-debugger") {
-    const runtime = await probeExecutable(env.PI_LUA_PATH ?? "lua", ["-v"], cwd, env);
+    const runtime = await probeProjectExecutable(context, env.PI_LUA_PATH ?? "lua", ["-v"]);
     return runtime.ok
       ? probeAdapterFile(
           env.PI_LUA_DEBUG_PATH ??
             "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js",
-          cwd,
-          env,
+          context,
         )
       : runtime;
   }
   if (id === "vscode-bash-debug") {
-    const runtime = await probeExecutable(env.PI_BASH_PATH ?? "bash", ["--version"], cwd, env);
+    const runtime = await probeProjectExecutable(context, env.PI_BASH_PATH ?? "bash", [
+      "--version",
+    ]);
     return runtime.ok
       ? probeAdapterFile(
           env.PI_BASH_DEBUG_PATH ?? "/opt/pi-debug-adapters/bash-debug/extension/out/bashDebug.js",
-          cwd,
-          env,
+          context,
         )
       : runtime;
   }
   if (id === "powershell-editor-services-debug") {
-    const runtime = await probeExecutable(env.PI_PWSH_PATH ?? "pwsh", ["--version"], cwd, env);
+    const runtime = await probeProjectExecutable(context, env.PI_PWSH_PATH ?? "pwsh", [
+      "--version",
+    ]);
     const bundle =
       env.PI_POWERSHELL_EDITOR_SERVICES_PATH ?? "/opt/pi-debug-adapters/powershell-editor-services";
     return runtime.ok
-      ? probeAdapterFile(`${bundle}/PowerShellEditorServices/Start-EditorServices.ps1`, cwd, env)
+      ? probeAdapterFile(`${bundle}/PowerShellEditorServices/Start-EditorServices.ps1`, context)
       : runtime;
   }
   if (id !== "vscode-js-debug") {
     return { ok: false as const, detail: `Unknown debugger adapter: ${id}` };
   }
   const server = env.PI_JS_DEBUG_PATH ?? DEFAULT_JS_DEBUG_PATH;
-  try {
-    await access(server);
-  } catch {
+  if (!(await adapterFileExists(context, server)))
     return { ok: false as const, detail: `${server} does not exist` };
-  }
-  return probeExecutable(
-    process.execPath,
-    [
-      "-e",
-      "const fs=require('node:fs'); fs.accessSync(process.argv[1]); console.log(process.version)",
-      server,
-    ],
-    cwd,
-    env,
+  return probeProjectExecutable(context, context.workspace ? "node" : process.execPath, [
+    "-e",
+    "const fs=require('node:fs'); fs.accessSync(process.argv[1]); console.log(process.version)",
+    server,
+  ]);
+}
+
+async function probeAdapterFile(file: string, context: DoctorContext) {
+  if (!(await adapterFileExists(context, file)))
+    return { ok: false as const, detail: `${file} does not exist` };
+  return probeProjectExecutable(context, context.workspace ? "node" : process.execPath, [
+    "-e",
+    "const fs=require('node:fs'); fs.accessSync(process.argv[1])",
+    file,
+  ]);
+}
+
+async function pythonCommand(context: DoctorContext, platform: NodeJS.Platform) {
+  return resolvePythonDebuggerCommand(context.cwd, context.env, platform, (command) =>
+    projectExecutableAvailable(context, command),
   );
 }
 
-async function probeAdapterFile(file: string, cwd: string, env: NodeJS.ProcessEnv) {
-  try {
-    await access(file);
-  } catch {
-    return { ok: false as const, detail: `${file} does not exist` };
-  }
-  return probeExecutable(
-    process.execPath,
-    ["-e", "const fs=require('node:fs'); fs.accessSync(process.argv[1])", file],
-    cwd,
-    env,
-  );
+async function adapterFileExists(context: DoctorContext, file: string): Promise<boolean> {
+  if (!context.workspace) return projectFileExists(context, file);
+  const base = context.workspace.toNativeUri(context.cwd).replace(/\/?$/u, "/");
+  const nativePath = file.split("/").map(encodeURIComponent).join("/");
+  const source = context.workspace.fromNativeUri(new URL(nativePath, base).href);
+  return projectFileExists(context, source);
 }

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { resolveCodeViewPath } from "#src/code-view/reference.js";
 
 import type {
   IdeDiagnosticReport,
@@ -7,6 +8,7 @@ import type {
   IdeDiagnosticResult,
   IdeDiagnosticSnapshot,
   IdeDiagnosticSource,
+  IdeDiagnosticFileReader,
 } from "#src/api/plugin-protocol.js";
 import type { ToolContext } from "#src/toolchain/types.js";
 
@@ -49,6 +51,7 @@ export class DiagnosticStore {
       readWaitMs?: number;
       checkTimeoutMs?: number;
       concurrency?: number;
+      readers?: readonly IdeDiagnosticFileReader[];
     } = {},
   ) {}
 
@@ -64,8 +67,8 @@ export class DiagnosticStore {
   ): Promise<IdeDiagnosticSnapshot> {
     signal?.throwIfAborted();
     this.assertActive();
-    const absolute = path.resolve(cwd, filePath);
-    const content = await readFile(absolute, "utf8");
+    const absolute = resolveCodeViewPath(filePath, cwd);
+    const content = await this.readText(absolute, cwd, signal);
     this.assertActive();
     const state = this.ensure(absolute, content, cwd);
     if (mode === "complete") await this.waitComplete(state, signal);
@@ -73,7 +76,7 @@ export class DiagnosticStore {
       await waitAtMost(Promise.all(state.jobs), this.options.readWaitMs ?? 5000);
     signal?.throwIfAborted();
     this.assertActive();
-    const currentText = await readFile(absolute, "utf8");
+    const currentText = await this.readText(absolute, cwd, signal);
     this.assertActive();
     const current = this.ensure(absolute, currentText, cwd);
     if (mode === "complete" && current !== state)
@@ -121,7 +124,7 @@ export class DiagnosticStore {
   async takeNotifications(cwd: string): Promise<DiagnosticNotification[]> {
     const notifications: DiagnosticNotification[] = [];
     for (const state of [...this.dirty]) {
-      if (state.cwd !== path.resolve(cwd)) continue;
+      if (state.cwd !== (cwd.includes("://") ? cwd : path.resolve(cwd))) continue;
       this.dirty.delete(state);
       if (!(await this.isCurrent(state))) continue;
       const results = [...state.results.values()].filter(
@@ -146,10 +149,13 @@ export class DiagnosticStore {
           return `${result.source} ${counts.join(", ")}${result.status === "snapshot" ? " (snapshot; completion unknown)" : result.status === "unversioned" ? " (unversioned)" : ""}`;
         })
         .join("; ");
+      const source = state.filePath.includes("://")
+        ? state.filePath
+        : path.relative(cwd, state.filePath);
       notifications.push({
-        filePath: path.relative(cwd, state.filePath),
+        filePath: source,
         results,
-        text: `${JSON.stringify(path.relative(cwd, state.filePath))}: ${summary}.`,
+        text: `${JSON.stringify(source)}: ${summary}.`,
       });
     }
     return notifications;
@@ -167,8 +173,22 @@ export class DiagnosticStore {
     this.pump();
   }
 
+  private async readText(source: string, cwd: string, signal?: AbortSignal): Promise<string> {
+    for (const reader of this.options.readers ?? []) {
+      const content = await reader.readText(source, { cwd, signal });
+      if (content !== undefined) return content;
+    }
+    if (source.includes("://"))
+      throw Object.assign(new Error("No diagnostic reader for resource owner"), {
+        code: "UNSUPPORTED_SOURCE",
+      });
+    return readFile(source, { encoding: "utf8", signal });
+  }
   private key(filePath: string, cwd: string): string {
-    return JSON.stringify([path.resolve(cwd), path.resolve(cwd, filePath)]);
+    return JSON.stringify([
+      cwd.includes("://") ? cwd : path.resolve(cwd),
+      resolveCodeViewPath(filePath, cwd),
+    ]);
   }
 
   private ensure(filePath: string, content: string, cwd: string): FileState {
@@ -178,8 +198,8 @@ export class DiagnosticStore {
     previous?.controller.abort();
     if (previous) this.dirty.delete(previous);
     const state: FileState = {
-      cwd: path.resolve(cwd),
-      filePath: path.resolve(cwd, filePath),
+      cwd: cwd.includes("://") ? cwd : path.resolve(cwd),
+      filePath: resolveCodeViewPath(filePath, cwd),
       content,
       controller: new AbortController(),
       results: new Map(),
@@ -236,7 +256,9 @@ export class DiagnosticStore {
 
   private async isCurrent(state: FileState): Promise<boolean> {
     if (!this.active(state)) return false;
-    const content = await readFile(state.filePath, "utf8").catch(() => undefined);
+    const content = await this.readText(state.filePath, state.cwd, state.controller.signal).catch(
+      () => undefined,
+    );
     return this.active(state) && content === state.content;
   }
 

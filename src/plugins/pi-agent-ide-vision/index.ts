@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ResultPanel } from "pi-agent-tool-ui";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
+import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
+import { visionDoctorPlugin } from "./src/doctor-plugin.js";
 
 import type { BuiltinExtensionContext } from "#src/composite/selection.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -16,23 +18,56 @@ import {
   createCaptureBackend,
   getVisionDefaults,
   isExecutableAllowed,
+  isNativeExecutableAllowed,
   listProcesses,
   parseDisplaySource,
   parseVisionView,
   readProcess,
   type VisionOptions,
+  type ProcessMetadata,
+  type RemoteProcessMetadata,
+  withRemoteProcessOwnership,
 } from "#src/plugins/pi-agent-ide-vision/src/vision.js";
 
+/** Target-native capture. Registration checks opt-in and current target ownership before each frame. */
+export interface CaptureOwnerAccess {
+  /** Capture an explicitly owned web resource; never select a local browser for it. */
+  captureWeb?(source: string, signal?: AbortSignal): Promise<Uint8Array>;
+  captureWindow(
+    source: string,
+    process: RemoteProcessMetadata,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array>;
+  captureDisplay(source: string, index: number, signal?: AbortSignal): Promise<Uint8Array>;
+}
+/** Optional resource-owner metadata. Undefined means unclaimed, never a remote-to-local fallback. */
+export interface ProcessOwnerAccess {
+  read(source: string, signal?: AbortSignal): Promise<RemoteProcessMetadata | undefined>;
+  list(scope: string, signal?: AbortSignal): Promise<readonly RemoteProcessMetadata[] | undefined>;
+}
 /** Register process discovery and guarded visual capture resources. */
 export default async function registerVision(
   pi: ExtensionAPI,
   context?: BuiltinExtensionContext,
 ): Promise<void> {
+  await registerVisionWithOwner(pi, context);
+}
+
+/** Register existing process and capture interfaces with optional target-owned metadata. */
+export async function registerVisionWithOwner(
+  pi: ExtensionAPI,
+  context?: BuiltinExtensionContext,
+  processOwner?: ProcessOwnerAccess,
+  captureOwner?: CaptureOwnerAccess,
+): Promise<void> {
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "vision",
       description: "Window, display, image, and sequence capture",
-      triggers: [{ tool: "read", resourcePrefixes: ["window:", "display:"] }],
+      triggers: [
+        { tool: "read", resourcePrefixes: ["process:", "window:", "display:"] },
+        { tool: "read", resourcePrefixes: ["web:ssh://"], viewPrefixes: ["image", "sequence"] },
+      ],
     }),
   ]);
   const preferences = context?.preferences ?? {};
@@ -45,6 +80,7 @@ export default async function registerVision(
   const registry = agentIdeProcessRegistry(pi);
   const backend = createCaptureBackend();
   await Promise.all([
+    connectDoctorPlugin(pi, visionDoctorPlugin),
     connectReadPlugin(pi, {
       protocol: READ_PROTOCOL,
       apiVersion: READ_API_VERSION,
@@ -62,6 +98,92 @@ export default async function registerVision(
           async handler(context) {
             const source = context.request.path;
             if (source === undefined) return { kind: "continue", context };
+            if (source.startsWith("window:ssh://") || source.startsWith("display:ssh://")) {
+              try {
+                const window = source.startsWith("window:");
+                const uri = new URL(source.slice(window ? "window:".length : "display:".length));
+                if (
+                  uri.username ||
+                  uri.password ||
+                  uri.port ||
+                  uri.search ||
+                  (window
+                    ? uri.hash !== "" || !/^\/[1-9][0-9]*$/u.test(uri.pathname)
+                    : uri.pathname !== "/" || (uri.hash !== "" && !/^#\d+$/u.test(uri.hash)))
+                )
+                  throw new Error(`Invalid target capture resource: ${source}`);
+                if (!window && pi.getFlag("pi-agent-ide-vision-displays") !== true)
+                  return failed(
+                    source,
+                    "Display capture is disabled. Enable --pi-agent-ide-vision-displays to allow it.",
+                  );
+                if (!captureOwner)
+                  return failed(source, `Target capture is unavailable: ${source}`);
+                const index = window
+                  ? Number(uri.pathname.slice(1))
+                  : Number(uri.hash.slice(1) || "0");
+                if (!Number.isSafeInteger(index))
+                  throw new Error(`Invalid target capture resource: ${source}`);
+                const content = await captureImages(
+                  async () => {
+                    if (!window)
+                      return captureOwner.captureDisplay(
+                        source,
+                        index,
+                        context.resolverContext.signal,
+                      );
+                    const processSource = `process:ssh://${uri.hostname}/${index}`;
+                    const snapshot = await processOwner?.read(
+                      processSource,
+                      context.resolverContext.signal,
+                    );
+                    if (
+                      !snapshot ||
+                      snapshot.resource !== processSource ||
+                      snapshot.pid !== index ||
+                      snapshot.target !== uri.hostname
+                    )
+                      throw new Error(`Target process identity is unavailable: ${source}`);
+                    const metadata = withRemoteProcessOwnership(snapshot, registry);
+                    const executable = metadata.executable;
+                    // Use the native executable, not a command-line prefix or controller PID.
+                    if (
+                      !metadata.owned &&
+                      (!executable || !isNativeExecutableAllowed(executable)) &&
+                      pi.getFlag("pi-agent-ide-vision-arbitrary-windows") !== true
+                    )
+                      throw new Error(
+                        `Window capture is denied for the target executable: ${source}`,
+                      );
+                    return captureOwner.captureWindow(
+                      source,
+                      metadata,
+                      context.resolverContext.signal,
+                    );
+                  },
+                  options(context.request),
+                  context.resolverContext.signal,
+                );
+                return returned(source, content);
+              } catch (error) {
+                return failed(source, errorMessage(error));
+              }
+            }
+            if (source.startsWith("web:") && requestsScreenshot(context.request)) {
+              try {
+                const captureWeb = captureOwner?.captureWeb?.bind(captureOwner);
+                if (!captureWeb)
+                  return failed(source, `Target web capture is unavailable: ${source}`);
+                const content = await captureImages(
+                  () => captureWeb(source, context.resolverContext.signal),
+                  options(context.request),
+                  context.resolverContext.signal,
+                );
+                return returned(source, content);
+              } catch (error) {
+                return failed(source, errorMessage(error));
+              }
+            }
             const displayIndex = parseDisplaySource(source);
             if (displayIndex !== undefined) {
               if (pi.getFlag("pi-agent-ide-vision-displays") !== true) {
@@ -80,6 +202,18 @@ export default async function registerVision(
               } catch (error) {
                 return failed(source, errorMessage(error));
               }
+            }
+            try {
+              const owned = await processOwner?.read(source, context.resolverContext.signal);
+              if (owned)
+                return returned(source, [
+                  {
+                    type: "text",
+                    text: formatProcess(withRemoteProcessOwnership(owned, registry)),
+                  },
+                ]);
+            } catch (error) {
+              return failed(source, errorMessage(error));
             }
             const processPid = prefixedPid(source, "process:");
             if (processPid !== undefined) {
@@ -130,7 +264,7 @@ export default async function registerVision(
         });
         api.describe({
           path: () =>
-            `process:PID — process metadata. window:PID — capture a window of an IDE-owned or allowlisted process${pi.getFlag("pi-agent-ide-vision-arbitrary-windows") === true ? "; arbitrary windows are enabled" : "; other processes require --pi-agent-ide-vision-arbitrary-windows"}. display: or display:#N — display capture with a zero-based index; ${pi.getFlag("pi-agent-ide-vision-displays") === true ? "enabled" : "requires --pi-agent-ide-vision-displays"}. HTTP(S) URLs accept image or sequence screenshots.`,
+            `process:ssh://target/PID, window:ssh://target/PID and display:ssh://target/ select configured Linux SSH targets; missing target facilities fail without local fallback. web:ssh://target/https://… captures with target-installed Playwright/Chromium. process:PID — process metadata. window:PID — capture a window of an IDE-owned or allowlisted process${pi.getFlag("pi-agent-ide-vision-arbitrary-windows") === true ? "; arbitrary windows are enabled" : "; other processes require --pi-agent-ide-vision-arbitrary-windows"}. display: or display:#N — display capture with a zero-based index; ${pi.getFlag("pi-agent-ide-vision-displays") === true ? "enabled" : "requires --pi-agent-ide-vision-displays"}. HTTP(S) URLs accept image or sequence screenshots.`,
           views: () => {
             const defaults = getVisionDefaults();
             return `image or image:scale=S,region=X,Y,W,H — one screenshot. sequence or sequence:duration=D,interval=I,scale=S,region=X,Y,W,H — timed frames. Only one image/sequence view per request. duration and interval are seconds and only valid for sequence: 0 < D <= 10, I > 0, at most 20 frames (floor(D/I)+1). Scale satisfies 0 < S <= 1. Region uses normalized x,y,width,height: x,y >= 0, width,height > 0, and the rectangle must fit in 0..1; crop runs before scaling. Settings are optional; defaults: duration=${defaults.durationSeconds}, interval=${defaults.intervalSeconds}, scale=${defaults.scale}.`;
@@ -153,20 +287,43 @@ export default async function registerVision(
             id: "processes",
             readResources: (request) => (/^process:/iu.test(request.query) ? undefined : []),
             toScriptData(payload) {
-              const processes = payload as Awaited<ReturnType<typeof listProcesses>>;
+              const processes = payload as readonly (ProcessMetadata | RemoteProcessMetadata)[];
               return {
                 kind: "custom",
                 resolverId: "processes",
                 value: {
-                  processes: processes.map((item) => ({ pid: item.pid, command: item.command })),
+                  processes: processes.map((item) => ({
+                    pid: item.pid,
+                    command: item.command,
+                    ...(item.host === "ssh"
+                      ? {
+                          host: item.host,
+                          target: item.target,
+                          resource: item.resource,
+                          identity: item.identity,
+                          owned: item.owned,
+                          parentPid: item.parentPid,
+                          started: item.started,
+                          executable: item.executable,
+                          ...(item.source === undefined ? {} : { source: item.source }),
+                        }
+                      : {}),
+                  })),
                 },
               };
             },
-            async tryResolve(request) {
+            async tryResolve(request, context) {
               const match = /^process:(.*)$/isu.exec(request.query);
               if (match === null) return { kind: "not-handled" as const };
               const query = (match[1] ?? "").trim().toLowerCase();
-              const matches = (await listProcesses(registry))
+              const scope = request.path ?? context.cwd;
+              const remote = await processOwner?.list(scope, context.signal);
+              if (scope.includes("://") && remote === undefined)
+                throw new Error("Process scope has no resource owner");
+              const matches = (
+                remote?.map((item) => withRemoteProcessOwnership(item, registry)) ??
+                (await listProcesses(registry))
+              )
                 .filter(
                   (item) =>
                     query.length === 0 ||
@@ -195,7 +352,7 @@ export default async function registerVision(
               );
             },
             format(payload) {
-              const processes = payload as Awaited<ReturnType<typeof listProcesses>>;
+              const processes = payload as readonly (ProcessMetadata | RemoteProcessMetadata)[];
               return {
                 content: [
                   {
@@ -212,7 +369,7 @@ export default async function registerVision(
           },
         });
         api.describe(
-          "process:<query> finds running processes by PID or command for process:PID metadata reads and guarded window:PID capture.",
+          "process:<query> finds running processes by PID or command. Select a configured Linux target with an SSH path; its results retain process:ssh://target/PID, target and kernel start identity. Use process:PID for local metadata. Use window:ssh://target/PID for authorized target capture, never window:PID with a remote PID. Discovery alone does not grant capture or process control.",
         );
       },
     }),
@@ -266,11 +423,15 @@ function failed(source: string, message: string) {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
-function formatProcess(item: Awaited<ReturnType<typeof readProcess>>): string {
+function formatProcess(item: ProcessMetadata | RemoteProcessMetadata): string {
   return [
     `PID: ${item.pid}`,
+    ...(item.host === "ssh"
+      ? [`Target: ${item.target}`, `Resource: ${item.resource}`, `Identity: ${item.identity}`]
+      : []),
     `Command: ${item.command}`,
     `Owned by Agent IDE: ${item.owned ? "yes" : "no"}`,
+    ...(item.host === "ssh" && item.executable !== null ? [`Executable: ${item.executable}`] : []),
     ...(item.parentPid === undefined ? [] : [`Parent PID: ${item.parentPid}`]),
     ...(item.started === undefined ? [] : [`Started: ${item.started}`]),
     ...(item.source === undefined ? [] : [`Agent IDE source: ${item.source}`]),

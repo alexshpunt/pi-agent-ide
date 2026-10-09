@@ -3,6 +3,53 @@ import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
 import { expect, test, vi } from "vitest";
 import { registerSelect } from "./tool-select.js";
 
+test("Select renders a guarded Read failure without treating structured error metadata as a result panel", async () => {
+  const registerTool = vi.fn<ExtensionAPI["registerTool"]>();
+  const pi = Object.assign(Object.create(null) as ExtensionAPI, {
+    registerTool,
+    on: vi.fn(),
+    events: { emit: vi.fn(), on: () => () => {} },
+  });
+  const read = Object.assign(Object.create(null) as ReadPluginApi, {
+    async read() {
+      return { isError: true, content: [{ type: "text", text: "Owned read denied" }] };
+    },
+  });
+  await registerSelect(pi, read);
+  const definition = registerTool.mock.calls[0]?.[0];
+  if (!definition) throw Error("Select was not registered");
+  const context = Object.assign(Object.create(null) as Parameters<typeof definition.execute>[4], {
+    cwd: process.cwd(),
+  });
+  const result = await definition.execute(
+    "guarded",
+    { path: "ssh://owned/work/secret.ts", operation: { kind: "position", edge: "after" } },
+    undefined,
+    undefined,
+    context,
+  );
+  const renderContext = Object.assign(
+    Object.create(null) as Parameters<NonNullable<ToolDefinition["renderResult"]>>[3],
+    {
+      isError: true,
+      isPartial: false,
+      expanded: true,
+      cwd: process.cwd(),
+      state: {},
+      args: {},
+      toolCallId: "guarded",
+      executionStarted: true,
+      argsComplete: true,
+    },
+  );
+  const component = definition.renderResult?.(
+    { ...result, details: { documentation: { kind: "attachment", ids: ["select-code"] } } },
+    { expanded: true, isPartial: false },
+    theme,
+    renderContext,
+  );
+  expect(component?.render(80).join("\n")).toContain("Select could not read this source");
+});
 const backgrounds = {
   toolPendingBg: "\u001B[48;5;235m",
   toolSuccessBg: "\u001B[48;5;236m",

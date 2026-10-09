@@ -1,9 +1,22 @@
 import { lstat, readFile } from "node:fs/promises";
+import type {
+  FileOperation,
+  FileOperationInput,
+  FileOperationResolver,
+  FileOperationResult,
+} from "#src/api/file-operations.js";
+import {
+  executeFileOperation,
+  isUriSource,
+  type FileOperationContext,
+} from "#src/core/file-operations.js";
+import { guardFileOperation, type FileGuardSnapshot } from "#src/core/file-operation-guards.js";
 import path from "node:path";
 import { deferPostEdit, collectPostEditNotifications } from "#src/core/post-edit-scope.js";
 import { requiredValue } from "pi-agent-invariant";
 import {
   isAgentContent,
+  ResourceError,
   isResourceResolutionAttempt,
   resourceScheduler,
   resourceAccesses,
@@ -218,6 +231,7 @@ interface PluginContributionDraft {
   readonly mutationGuards?: TextMutationGuardRegistration[];
   readonly deleteGuards?: DeleteGuardRegistration[];
   readonly toolRenderers?: TextEditorToolRendererRegistration[];
+  readonly fileOperationResolvers?: FileOperationResolver[];
 }
 
 interface PluginContributionController {
@@ -245,6 +259,7 @@ export interface TextMutationResult<Result> {
 
 export interface TextResourceEditFailure {
   readonly code:
+    | "CONFLICT"
     | "INVALID_REQUEST"
     | "INVALID_RESOLVER_RESULT"
     | "INVALID_RESOURCE_CONTENT"
@@ -340,8 +355,17 @@ export interface TextResourcesEditContext
 export interface TextEditorCore {
   /** Run whole-object deletion policies in registration order; denial and errors block removal. */
   beforeDelete(event: BeforeDeleteEvent): Promise<void>;
-  /** Finalize a surviving local text file after a whole-file operation; binary files are untouched. */
-  postProcessFile(source: string, context: ResourceResolverContext): Promise<void>;
+  /** Capture the prior destination before a whole-file publication, then finalize its saved text. */
+  prepareFilePostProcessing(
+    source: string,
+    context: ResourceResolverContext,
+  ): Promise<() => Promise<TextResourceEditOutcome<undefined> | void>>;
+  /** Finalize saved text through its owner and return formatter and advisory hook contributions. */
+  postProcessFile(
+    source: string,
+    context: ResourceResolverContext,
+    before?: FileGuardSnapshot,
+  ): Promise<TextResourceEditOutcome<undefined> | void>;
   /** Reserve complete file sets. Only an explicit transaction owner may enqueue covered nested edits. */
   enqueueFileOperation<T>(
     action: () => Promise<T>,
@@ -352,6 +376,14 @@ export interface TextEditorCore {
       readonly allowNestedEdits?: boolean;
     },
   ): Promise<T>;
+  /** Dispatch a whole-file operation; callers serialize it with enqueueFileOperation. */
+  executeFileOperation(
+    operation: FileOperation,
+    input: unknown,
+    cwd: string,
+    signal?: AbortSignal,
+    deletion?: FileOperationContext,
+  ): Promise<FileOperationResult>;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
   resolveTextAnchorResources(
@@ -434,6 +466,7 @@ export function createTextEditorCore(
   const mutationGuards: TextMutationGuardRegistration[] = [];
   const deleteGuards: DeleteGuardRegistration[] = [];
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
+  const fileOperationResolvers: FileOperationResolver[] = [];
   let registrationQueue = Promise.resolve();
   const scheduler = resourceScheduler;
   const enqueueMutation = <T>(
@@ -452,6 +485,9 @@ export function createTextEditorCore(
     );
 
     const incomingMutationNames = new Set<string>();
+    for (const resolver of draft.fileOperationResolvers ?? []) {
+      if (typeof resolver !== "function") throw new TypeError("Invalid whole-file resolver");
+    }
 
     for (const registration of draft.mutationTools ?? []) {
       assertTextMutationToolRegistration(registration);
@@ -504,6 +540,7 @@ export function createTextEditorCore(
     }
 
     handlers.push(...draft.handlers);
+    fileOperationResolvers.push(...(draft.fileOperationResolvers ?? []));
     semanticHandlers.push(...(draft.semanticHandlers ?? []));
     mutationGuards.push(...(draft.mutationGuards ?? []));
     deleteGuards.push(...(draft.deleteGuards ?? []));
@@ -540,6 +577,27 @@ export function createTextEditorCore(
     }
   };
 
+  const guardOwnedFiles = async (
+    operation: FileOperation,
+    input: FileOperationInput,
+    context: ResourceResolverContext,
+  ): Promise<void> => {
+    if (mutationGuards.length === 0) return;
+    await guardFileOperation(
+      operation,
+      input,
+      { ...context, intent: "mixed" },
+      (source) =>
+        readFileGuardSnapshot(
+          source,
+          context,
+          [...resolvers].sort(
+            (left, right) => left.priority - right.priority || left.order - right.order,
+          ),
+        ),
+      [...mutationGuards],
+    );
+  };
   const core: TextEditorCore = {
     async beforeDelete(event) {
       for (const registration of [...deleteGuards]) {
@@ -552,32 +610,105 @@ export function createTextEditorCore(
             new Error(
               `Delete blocked by hook ${registration.id}: ${error instanceof Error ? error.message : String(error)}`,
             ),
-            { code: "DELETE_HOOK_REJECTED" },
+            { code: "DELETE_HOOK_REJECTED", effect: "not-applied" },
           );
         }
       }
     },
-    async postProcessFile(source, context) {
-      await enqueueMutation(
+    async prepareFilePostProcessing(source, context) {
+      const before =
+        editCompletionListeners.size > 0
+          ? await readFileGuardSnapshot(
+              source,
+              context,
+              [...resolvers].sort(
+                (left, right) => left.priority - right.priority || left.order - right.order,
+              ),
+            )
+          : undefined;
+      return () => core.postProcessFile(source, context, before);
+    },
+    async postProcessFile(source, context, before) {
+      return enqueueMutation(
         async () => {
-          const file = path.resolve(context.cwd, source);
-          const stat = await lstat(file).catch(() => undefined);
-          if (!stat?.isFile() || stat.isSymbolicLink()) return;
-          const bytes = await readFile(file);
-          const text = bytes.toString("utf8");
-          if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) return;
-          await finalizeTextResource({
-            requestedSource: file,
-            outcomeSource: file,
-            resource: {
+          let resource: Resource;
+          let text: string;
+          let requestedSource = source;
+          let resolvedBy: string;
+          if (isUriSource(source) || isUriSource(context.cwd)) {
+            const prepared = await prepareTextResource(
+              source,
+              false,
+              false,
+              false,
+              context,
+              [...resolvers].sort(
+                (left, right) => left.priority - right.priority || left.order - right.order,
+              ),
+            );
+            if ("failure" in prepared)
+              throw Object.assign(new Error(prepared.failure.message), {
+                code: prepared.failure.code,
+                cause: prepared.failure.cause,
+              });
+            resource = prepared.resource;
+            resolvedBy = prepared.resolverId;
+            if (resource.readBytes !== undefined) {
+              const range = await resource.readBytes(0, 65536, context);
+              const bytes = Buffer.from(range.bytes);
+              if (bytes.includes(0)) return;
+              try {
+                new TextDecoder("utf-8", { fatal: true }).decode(bytes, {
+                  stream: range.totalBytes > bytes.length,
+                });
+              } catch {
+                return;
+              }
+            }
+            if (resource.read === undefined)
+              throw new Error("Owned file cannot be read for post-processing");
+            const content = await resource.read(context);
+            if (
+              !isAgentContent(content) ||
+              content.length !== 1 ||
+              content[0].type !== "text" ||
+              content[0].text.includes("\0")
+            )
+              return;
+            text = content[0].text;
+          } else {
+            const file = path.resolve(context.cwd, source);
+            const stat = await lstat(file).catch(() => undefined);
+            if (!stat?.isFile() || stat.isSymbolicLink()) return;
+            const bytes = await readFile(file);
+            text = bytes.toString("utf8");
+            if (bytes.includes(0) || !Buffer.from(text).equals(bytes)) return;
+            requestedSource = file;
+            resolvedBy = "filesystem";
+            resource = {
               source: file,
               async read() {
                 return [{ type: "text", text: await readFile(file, "utf8") }];
               },
-            },
-            resolvedBy: "filesystem",
-            existed: true,
-            before: createTextDocument(file, text),
+            };
+          }
+          let prior = text;
+          if (before !== undefined) {
+            try {
+              prior = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+                before.bytes ?? new Uint8Array(),
+              );
+            } catch {
+              prior = "";
+            }
+          }
+          return finalizeTextResource({
+            requestedSource,
+            outcomeSource: resource.source,
+            resource,
+            resolvedBy,
+            existed: before === undefined ? true : before.bytes !== undefined,
+            before: createTextDocument(resource.source, prior),
             requestedText: text,
             context,
             presenters: [...presenters],
@@ -601,6 +732,16 @@ export function createTextEditorCore(
         allowNestedWrites: scope?.allowNestedEdits === true,
       });
     },
+    executeFileOperation: (operation, input, cwd, signal, deletion) =>
+      executeFileOperation(
+        operation,
+        input,
+        cwd,
+        signal,
+        deletion,
+        [...fileOperationResolvers],
+        (kind, args) => guardOwnedFiles(kind, args, { cwd, signal }),
+      ),
     addAnchorResolver(registration): void {
       if (!isTextAnchorResolverRegistration(registration)) {
         throw new TypeError("Invalid text anchor resolver");
@@ -1315,6 +1456,39 @@ async function editTextResources<Result>(
   }
 
   // A guard may finish after cancellation; reject before the first write.
+  // An async policy can yield to an external writer. Recheck every prepared read
+  // before any publication; this is not an atomic lock against later writers.
+  if (mutationGuards.length > 0) {
+    for (const source of sources) {
+      const request = requiredValue(requestBySource.get(source));
+      if (!request.read) continue;
+      const item = requiredValue(prepared.get(source));
+      const current = await prepareTextResource(
+        source,
+        true,
+        request.allowReadFailure ?? false,
+        request.requireWrite ?? true,
+        context,
+        resolvers,
+      );
+      if ("failure" in current) return { kind: "failed", failure: current.failure, completed: [] };
+      if (
+        current.resource.source !== item.resource.source ||
+        current.existed !== item.existed ||
+        current.before.content !== item.before.content
+      ) {
+        return {
+          kind: "failed",
+          failure: {
+            code: "CONFLICT",
+            source,
+            message: `Resource changed during its mutation guard: ${source}`,
+          },
+          completed: [],
+        };
+      }
+    }
+  }
   context.signal?.throwIfAborted();
   const written = sources.filter((source) => {
     const text = applied.get(source)?.content;
@@ -1331,14 +1505,31 @@ async function editTextResources<Result>(
       );
     }),
   );
-  const failedIndex = writes.findIndex((result) => result.status === "rejected");
+  const writeEffect = (index: number): unknown => {
+    const result = writes[index];
+    const error: unknown = result?.status === "rejected" ? result.reason : undefined;
+    return error !== null && typeof error === "object" && "effect" in error
+      ? error.effect
+      : undefined;
+  };
+  // One uncertain peer makes the batch uncertain even if another write was safely refused.
+  const uncertainIndex = writes.findIndex((_, index) => writeEffect(index) === "unknown");
+  const failedIndex =
+    uncertainIndex === -1
+      ? writes.findIndex((result) => result.status === "rejected")
+      : uncertainIndex;
   if (failedIndex !== -1) {
     const source = requiredValue(written[failedIndex]);
     const item = requiredValue(prepared.get(source));
     const failure = requiredValue(writes[failedIndex]);
     const rollbackFailures: string[] = [];
-    // All attempts have settled; even a rejected write may have changed its resource.
-    for (const writtenSource of [...written].reverse()) {
+    // A refusal or lost acknowledgement never authorizes compensation of that source.
+    const uncertainSources = written.filter((_, index) => writeEffect(index) === "unknown");
+    const rollbackSources = written.filter((_, index) => {
+      const effect = writeEffect(index);
+      return effect !== "not-applied" && effect !== "unknown";
+    });
+    for (const writtenSource of [...rollbackSources].reverse()) {
       const writtenItem = requiredValue(prepared.get(writtenSource));
       try {
         await requiredValue(writtenItem.resource.write)(
@@ -1350,7 +1541,7 @@ async function editTextResources<Result>(
       }
     }
     const cause: unknown = failure.status === "rejected" ? failure.reason : undefined;
-    const originallyMissing = written.filter(
+    const originallyMissing = [...rollbackSources, ...uncertainSources].filter(
       (writtenSource) => !requiredValue(prepared.get(writtenSource)).existed,
     );
     return {
@@ -1361,13 +1552,18 @@ async function editTextResources<Result>(
         resolverId: item.resolverId,
         message: `Unable to write ${source}: ${cause instanceof Error ? cause.message : String(cause)}`,
         cause,
-        rollback: {
-          failed: rollbackFailures,
-          originallyMissing,
-          restored: written.filter(
-            (source) => !rollbackFailures.includes(source) && !originallyMissing.includes(source),
-          ),
-        },
+        ...(rollbackSources.length === 0
+          ? {}
+          : {
+              rollback: {
+                failed: rollbackFailures,
+                originallyMissing,
+                restored: written.filter(
+                  (source) =>
+                    !rollbackFailures.includes(source) && !originallyMissing.includes(source),
+                ),
+              },
+            }),
       },
       completed: [],
     };
@@ -1414,6 +1610,57 @@ async function editTextResources<Result>(
   return { kind: "completed", resources: outcomes, result: mutation.result };
 }
 
+async function readFileGuardSnapshot(
+  source: string,
+  context: ResourceResolverContext,
+  resolvers: readonly RegisteredResolver[],
+): Promise<FileGuardSnapshot> {
+  const maxBytes = 32 * 1024 * 1024;
+  if (!isUriSource(source) && !isUriSource(context.cwd)) {
+    const file = path.resolve(context.cwd, source);
+    try {
+      const entry = await lstat(file);
+      if (!entry.isFile() || entry.isSymbolicLink())
+        throw new ResourceError("INVALID_FILE_TYPE", file, "not-applied");
+      return { source: file, bytes: await readFile(file, { signal: context.signal }) };
+    } catch (error) {
+      if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT")
+        return { source: file };
+      throw error;
+    }
+  }
+  const prepared = await prepareTextResource(source, false, false, false, context, resolvers);
+  if ("failure" in prepared) throw new ResourceError(prepared.failure.code, source, "not-applied");
+  const resource = prepared.resource;
+  if (resource.readBytes === undefined)
+    throw new ResourceError("UNSUPPORTED_CAPABILITY", resource.source, "not-applied");
+  try {
+    const chunks: Buffer[] = [];
+    let offset = 0;
+    let total: number | undefined;
+    do {
+      context.signal?.throwIfAborted();
+      const range = await resource.readBytes(offset, maxBytes, context);
+      if (
+        !Number.isSafeInteger(range.totalBytes) ||
+        range.totalBytes < 0 ||
+        range.byteOffset !== offset ||
+        (total !== undefined && range.totalBytes !== total) ||
+        range.bytes.length > range.totalBytes - offset ||
+        (range.bytes.length === 0 && offset < range.totalBytes)
+      )
+        throw new ResourceError("INVALID_RESPONSE", resource.source, "not-applied");
+      total = range.totalBytes;
+      chunks.push(Buffer.from(range.bytes));
+      offset += range.bytes.length;
+    } while (offset < total);
+    return { source: resource.source, bytes: Buffer.concat(chunks) };
+  } catch (error) {
+    if (error instanceof ResourceError && error.code === "ENOENT")
+      return { source: resource.source };
+    throw error;
+  }
+}
 async function prepareTextResource(
   source: string,
   read: boolean,
@@ -1652,7 +1899,8 @@ async function finalizeTextResource<Result>(
     resolvedBy: request.resolvedBy,
     cwd: request.context.cwd,
     existed: request.existed,
-    before: request.postProcessingFinal ? requestedAfter : request.before,
+    before: request.before,
+    ...(request.postProcessingFinal ? { beforePostProcessing: requestedAfter } : {}),
     after: finalAfter,
     intent: request.context.intent ?? "edit",
     postProcessing: deferred
@@ -1674,6 +1922,7 @@ async function finalizeTextResource<Result>(
             diffStatuses: [
               {
                 text: feedback.feedback,
+                origin: "after-edit",
                 tone: feedback.tone === "info" ? "muted" : feedback.tone,
               },
             ],
@@ -1695,7 +1944,15 @@ async function finalizeTextResource<Result>(
   };
 
   for (const { registration } of request.context.signal?.aborted ? [] : request.presenters) {
-    after = await registration.presenter.present(after, presentationContext);
+    try {
+      after = await registration.presenter.present(after, presentationContext);
+    } catch (error) {
+      // Presentation failed after saving; it does not make the confirmed write uncertain.
+      throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+        cause: error,
+        effect: "applied" as const,
+      });
+    }
   }
 
   return {
@@ -2027,6 +2284,7 @@ function createPluginContributionController(
     mutationGuards: [],
     deleteGuards: [],
     toolRenderers: [],
+    fileOperationResolvers: [],
   };
   let state: "active" | "closed" | "setup" = "setup";
   const assertAvailable = (): void => {
@@ -2125,6 +2383,23 @@ function createPluginContributionController(
         writablePromptContributions: [],
         tools: [],
         mutationTools: [registration],
+      });
+    },
+    addFileOperationResolver(resolver): void {
+      assertAvailable();
+      if (typeof resolver !== "function") throw new TypeError("Invalid whole-file resolver");
+      if (state === "setup") {
+        requiredValue(setupDraft.fileOperationResolvers).push(resolver);
+        return;
+      }
+      registerContributions({
+        resolvers: [],
+        anchorResolvers: [],
+        handlers: [],
+        promptContributions: [],
+        writablePromptContributions: [],
+        tools: [],
+        fileOperationResolvers: [resolver],
       });
     },
     addToolRenderer(registration): void {

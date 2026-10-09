@@ -22,9 +22,13 @@ export function terminalProcessProvider(manager: TerminalSessionManager): AgentI
             description: snapshot.command,
             status: snapshot.status === "stopping" ? ("stopping" as const) : ("running" as const),
             ...(snapshot.pid === undefined ? {} : { pid: snapshot.pid, owned: true }),
+            ...(snapshot.remote === undefined ? {} : { remote: snapshot.remote, owned: true }),
             renderSummary: (theme) => renderActiveTerminal(snapshot, theme).split("\n"),
             renderDetail: (theme) => renderTerminalResult(snapshot, true, theme),
-            sendInput: (data) => manager.write(snapshot.source, data),
+            sendInput: (data) => {
+              // Manager publishes remote input failures on the session.
+              void Promise.resolve(manager.write(snapshot.source, data)).catch(() => {});
+            },
             stop: () => manager.delete(snapshot.source),
           };
         }),

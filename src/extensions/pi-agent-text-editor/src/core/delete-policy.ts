@@ -1,19 +1,15 @@
-import { execFile } from "node:child_process";
-import { lstat, readFile, realpath } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import { loadTemporaryDirectories } from "./temporary-directories.js";
 import { requiredValue } from "pi-agent-invariant";
-import type { BeforeDeleteEvent } from "#src/api/delete-guard.js";
-
-const exec = promisify(execFile);
+import type { BeforeDeleteEvent, DeleteFileAccess } from "#src/api/delete-guard.js";
+import { localFileTransferAccess as localFiles } from "#src/api/native-files.js";
 
 /** Host-only deletion dependencies; these are not agent parameters. */
 export interface DeletePolicyContext {
   readonly beforeDelete?: (event: BeforeDeleteEvent) => Promise<void>;
   readonly confirm?: (event: BeforeDeleteEvent, reason: string) => Promise<boolean>;
+  readonly files?: DeleteFileAccess;
 }
-
 interface Project {
   readonly root?: string;
   readonly controls: readonly string[];
@@ -22,7 +18,7 @@ interface Project {
 
 /** A host approval that must be checked again immediately before removal. */
 export interface DeletionGuard {
-  readonly event: BeforeDeleteEvent;
+  readonly event: BeforeDeleteEvent & { readonly revision: string };
   readonly verify: () => Promise<void>;
 }
 
@@ -32,7 +28,7 @@ export async function prepareDeletion(
   cwd: string,
   context: DeletePolicyContext,
   signal?: AbortSignal,
-): Promise<BeforeDeleteEvent> {
+): Promise<BeforeDeleteEvent & { readonly revision: string }> {
   const guard = await prepareDeletionGuard(source, cwd, context, signal, true);
   await guard.verify();
   return guard.event;
@@ -46,8 +42,17 @@ export async function prepareDeletionGuard(
   signal?: AbortSignal,
   allowTemporary = false,
 ): Promise<DeletionGuard> {
-  const before = await inspectDeletion(source, cwd, signal, allowTemporary);
-  await context.beforeDelete?.(before.event);
+  const before = await inspectDeletion(source, cwd, signal, context.files, allowTemporary);
+  const event =
+    context.files === undefined
+      ? before.event
+      : {
+          ...before.event,
+          path: context.files.source(before.event.path),
+          resolvedPath: context.files.source(before.event.resolvedPath),
+          cwd: context.files.source(before.event.cwd),
+        };
+  await context.beforeDelete?.(event);
   signal?.throwIfAborted();
   if (before.reason !== undefined) {
     if (context.confirm === undefined)
@@ -55,17 +60,17 @@ export async function prepareDeletionGuard(
         "DELETE_CONFIRMATION_REQUIRED",
         `Deletion blocked: no user dialog is available. ${before.reason}`,
       );
-    if (!(await context.confirm(before.event, before.reason)))
+    if (!(await context.confirm(event, before.reason)))
       fail("DELETE_NOT_APPROVED", "Deletion was not approved by the user.");
   }
   signal?.throwIfAborted();
   return {
-    event: before.event,
+    event: { ...before.event, revision: before.revision },
     verify: async () => {
       signal?.throwIfAborted();
       let after;
       try {
-        after = await inspectDeletion(source, cwd, signal, allowTemporary);
+        after = await inspectDeletion(source, cwd, signal, context.files, allowTemporary);
       } catch (error) {
         signal?.throwIfAborted();
         fail(
@@ -87,49 +92,51 @@ async function inspectDeletion(
   source: string,
   cwd: string,
   signal: AbortSignal | undefined,
+  files: DeleteFileAccess | undefined,
   allowTemporary: boolean,
 ) {
+  const access = files ?? localFiles;
+  const paths = files === undefined || files.pathStyle === "native" ? path : path.posix;
   signal?.throwIfAborted();
   // Resolve ancestors without dereferencing the link that will be unlinked.
-  const resolvedPath = path.join(await realpath(path.dirname(source)), path.basename(source));
-  const stat = await lstat(resolvedPath);
-  const kind = stat.isSymbolicLink()
-    ? "symlink"
-    : stat.isDirectory()
-      ? "directory"
-      : stat.isFile()
-        ? "file"
-        : undefined;
-  if (kind === undefined)
+  const resolvedPath = paths.join(
+    await access.realpath(paths.dirname(source)),
+    paths.basename(source),
+  );
+  const stat = await access.inspect(resolvedPath);
+  const kind = stat.kind;
+  if (kind === "other")
     fail("INVALID_FILE_TYPE", "Delete supports regular files, directories, and symlinks.");
-  const project = await findProject(cwd, signal);
-  const boundary = project.root ?? (await realpath(cwd));
-  assertUnprotected(resolvedPath, boundary, project.controls);
+  const project = await findProject(cwd, signal, files);
+  const boundary = project.root ?? (await access.realpath(cwd));
+  assertUnprotected(resolvedPath, boundary, project.controls, paths);
 
   const temporaryRoots =
-    allowTemporary && kind !== "file" ? await loadTemporaryDirectories(boundary) : [];
+    allowTemporary && kind !== "file"
+      ? await loadTemporaryDirectories(boundary, access, signal)
+      : [];
   const temporary =
-    !temporaryRoots.some((root) => path.relative(root, resolvedPath) === "") &&
-    temporaryRoots.some((root) => contains(root, resolvedPath));
+    !temporaryRoots.some((root) => paths.relative(root, resolvedPath) === "") &&
+    temporaryRoots.some((root) => contains(root, resolvedPath, paths));
   let reason: string | undefined;
   let tracked: string[] = [];
   if (kind !== "file") {
     if (!project.gitAvailable || project.root === undefined) {
       // Broken Git metadata must not bypass the tracking check inside the current project.
-      if (!temporary || (project.root !== undefined && contains(project.root, resolvedPath)))
+      if (!temporary || (project.root !== undefined && contains(project.root, resolvedPath, paths)))
         reason = "No Git worktree or reliable Git check is available.";
-    } else if (!contains(project.root, resolvedPath)) {
+    } else if (!contains(project.root, resolvedPath, paths)) {
       if (!temporary) reason = "Target is outside the current Git worktree.";
     } else {
       try {
         const entries = (
-          await git(project.root, ["ls-files", "--cached", "--full-name", "-z"], signal)
+          await access.git(project.root, ["ls-files", "--cached", "--full-name", "-z"], signal)
         )
           .split("\0")
           .filter(Boolean);
         tracked = entries
           .filter((entry) =>
-            contains(resolvedPath, path.resolve(requiredValue(project.root), entry)),
+            contains(resolvedPath, paths.resolve(requiredValue(project.root), entry), paths),
           )
           .sort();
         if (tracked.length > 0)
@@ -151,15 +158,11 @@ async function inspectDeletion(
   return {
     event,
     reason,
+    revision: stat.revision,
     snapshot: JSON.stringify({
       resolvedPath,
       kind,
-      dev: stat.dev,
-      ino: stat.ino,
-      birthtime: stat.birthtimeMs,
-      ctime: stat.ctimeMs,
-      mtime: stat.mtimeMs,
-      size: stat.size,
+      revision: stat.revision,
       boundary,
       controls: project.controls,
       temporaryRoots,
@@ -174,26 +177,47 @@ export async function assertUnprotectedTransferPath(
   resolvedPath: string,
   cwd: string,
   signal?: AbortSignal,
+  files?: DeleteFileAccess,
 ): Promise<void> {
-  const project = await findProject(cwd, signal);
-  assertUnprotected(resolvedPath, project.root ?? (await realpath(cwd)), project.controls);
+  const access = files ?? localFiles;
+  const paths = files === undefined || files.pathStyle === "native" ? path : path.posix;
+  const project = await findProject(cwd, signal, files);
+  assertUnprotected(
+    resolvedPath,
+    project.root ?? (await access.realpath(cwd)),
+    project.controls,
+    paths,
+  );
 }
 
-function assertUnprotected(resolvedPath: string, boundary: string, controls: readonly string[]) {
+function assertUnprotected(
+  resolvedPath: string,
+  boundary: string,
+  controls: readonly string[],
+  paths = path,
+) {
   if (
-    contains(resolvedPath, boundary) ||
-    resolvedPath === path.parse(resolvedPath).root ||
-    controls.some((control) => contains(control, resolvedPath) || contains(resolvedPath, control))
+    contains(resolvedPath, boundary, paths) ||
+    resolvedPath === paths.parse(resolvedPath).root ||
+    controls.some(
+      (control) => contains(control, resolvedPath, paths) || contains(resolvedPath, control, paths),
+    )
   )
     fail(
       "DELETE_PROTECTED_TARGET",
       `Cannot remove or overwrite protected project, ancestor, filesystem root, or Git control path: ${resolvedPath}`,
     );
 }
-async function findProject(cwd: string, signal?: AbortSignal): Promise<Project> {
+async function findProject(
+  cwd: string,
+  signal?: AbortSignal,
+  files?: DeleteFileAccess,
+): Promise<Project> {
+  const access = files ?? localFiles;
+  const paths = files === undefined || files.pathStyle === "native" ? path : path.posix;
   try {
     const output = (
-      await git(
+      await access.git(
         cwd,
         [
           "rev-parse",
@@ -208,11 +232,13 @@ async function findProject(cwd: string, signal?: AbortSignal): Promise<Project> 
       .trimEnd()
       .split("\n");
     if (output.length !== 3) throw new Error("Unexpected Git worktree paths");
-    const [root, gitDir, commonDir] = await Promise.all(output.map((entry) => realpath(entry)));
+    const [root, gitDir, commonDir] = await Promise.all(
+      output.map((entry) => access.realpath(entry)),
+    );
     return {
       root,
       controls: [
-        path.join(requiredValue(root), ".git"),
+        paths.join(requiredValue(root), ".git"),
         requiredValue(gitDir),
         requiredValue(commonDir),
       ].sort(),
@@ -221,64 +247,52 @@ async function findProject(cwd: string, signal?: AbortSignal): Promise<Project> 
   } catch {
     signal?.throwIfAborted();
     // Preserve root/control protection even when Git is unavailable or its metadata is broken.
-    let directory = await realpath(cwd);
+    let directory = await access.realpath(cwd);
     for (;;) {
-      const marker = path.join(directory, ".git");
-      const stat = await lstat(marker).catch((error: NodeJS.ErrnoException) => {
+      const marker = paths.join(directory, ".git");
+      const stat = await access.inspect(marker).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return undefined;
         throw error;
       });
       if (stat !== undefined) {
         const controls = [marker];
-        if (stat.isDirectory() || stat.isSymbolicLink()) controls.push(await realpath(marker));
-        else if (stat.isFile()) {
-          const content = await readFile(marker, "utf8");
+        if (stat.kind === "directory" || stat.kind === "symlink")
+          controls.push(await access.realpath(marker));
+        else if (stat.kind === "file") {
+          const content = await access.read(marker);
           const reference = /^gitdir: (.+)\r?\n?$/u.exec(content)?.[1];
           if (reference === undefined)
             fail("DELETE_GIT_PROTECTION_FAILED", "Cannot identify current Git control data.");
-          const gitDir = await realpath(path.resolve(directory, reference));
+          const gitDir = await access.realpath(paths.resolve(directory, reference));
           controls.push(gitDir);
-          const common = await readFile(path.join(gitDir, "commondir"), "utf8").catch(
-            (error: NodeJS.ErrnoException) => {
+          const common = await access
+            .read(paths.join(gitDir, "commondir"))
+            .catch((error: NodeJS.ErrnoException) => {
               if (error.code === "ENOENT") return undefined;
               throw error;
-            },
-          );
+            });
           if (common !== undefined)
-            controls.push(await realpath(path.resolve(gitDir, common.trimEnd())));
+            controls.push(await access.realpath(paths.resolve(gitDir, common.trimEnd())));
         } else fail("DELETE_GIT_PROTECTION_FAILED", "Cannot identify current Git control data.");
         return { root: directory, controls: controls.sort(), gitAvailable: false };
       }
-      const parent = path.dirname(directory);
+      const parent = paths.dirname(directory);
       if (parent === directory) return { controls: [], gitAvailable: false };
       directory = parent;
     }
   }
 }
 
-async function git(cwd: string, args: string[], signal?: AbortSignal): Promise<string> {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
-  );
-  const { stdout } = await exec("git", ["-C", cwd, ...args], {
-    env: { ...env, GIT_OPTIONAL_LOCKS: "0" },
-    signal,
-    timeout: 5000,
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  return stdout;
-}
-
-function contains(parent: string, child: string): boolean {
-  const relative = path.relative(parent, child);
+function contains(parent: string, child: string, paths = path): boolean {
+  const relative = paths.relative(parent, child);
   return (
     relative === "" ||
     // This checks containment; it does not construct a parent-relative path.
     // eslint-disable-next-line repo/no-parent-paths
-    (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))
+    (!paths.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${paths.sep}`))
   );
 }
 
 function fail(code: string, message: string): never {
-  throw Object.assign(new Error(message), { code });
+  throw Object.assign(new Error(message), { code, effect: "not-applied" });
 }

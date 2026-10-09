@@ -7,7 +7,13 @@ import {
   type ReadPlugin,
 } from "pi-agent-read/api/plugin-protocol";
 import { createReadResultRenderer } from "pi-agent-read/api/rendering";
-import { type ContentTarget, createContentHost, renderContentDescription } from "pi-agent-resource";
+import {
+  type ContentHost,
+  type ContentTarget,
+  type ResourceResolver,
+  createContentHost,
+  renderContentDescription,
+} from "pi-agent-resource";
 
 import { webDoctorPlugin } from "#src/doctor-plugin.js";
 import { createWebResolver } from "#src/resolver.js";
@@ -22,9 +28,20 @@ import { createWebSearchResolver } from "#src/search.js";
 const readTarget = { provider: "web", capability: "read" } satisfies ContentTarget;
 const renderWebResult = createReadResultRenderer({ kind: "markdown", label: "WEB" });
 
+/** Build an explicit execution owner's resolver using the existing conversion host. */
+export type WebResolverOwner = (host: ContentHost) => ResourceResolver;
+
 export default async function registerWeb(pi: ExtensionAPI): Promise<void> {
+  await registerWebWithOwner(pi);
+}
+
+/** Keep ordinary URLs local and route only explicitly scoped web resources to their owner. */
+export async function registerWebWithOwner(
+  pi: ExtensionAPI,
+  owner?: WebResolverOwner,
+): Promise<void> {
   const readHost = createContentHost(pi, readTarget);
-  const webResolver = createWebResolver(readHost);
+  const webResolver = createWebResolver(readHost, { owner: owner?.(readHost) });
   const plugin = {
     protocol: READ_PROTOCOL,
     apiVersion: READ_API_VERSION,
@@ -37,7 +54,12 @@ export default async function registerWeb(pi: ExtensionAPI): Promise<void> {
       });
       api.describe({
         path: () =>
-          renderContentDescription("HTTP(S) URL — remote content.", readHost.listDescriptions()),
+          renderContentDescription(
+            owner
+              ? "HTTP(S) URLs use local HTTP/browser execution; web:ssh://target/https://… explicitly uses the configured target. Web content is read-only. Target browser fallback requires target-installed Node, playwright-core and Chrome/Chromium. Browser reads enable page JavaScript and disable the Chromium sandbox, using a fresh temporary profile."
+              : "HTTP(S) URL — remote content.",
+            readHost.listDescriptions(),
+          ),
       });
     },
   } satisfies ReadPlugin;
@@ -53,7 +75,9 @@ export default async function registerWeb(pi: ExtensionAPI): Promise<void> {
         "HTTP(S) Search reuses converted page text for zero-result identifier spelling suggestions. Candidate groups carry the URL and line ranges, never editable SEARCH references.",
       );
       api.addPromptGuideline(
-        "Use search with an HTTP(S) path to find text on a web page; no prior read is required.",
+        owner
+          ? "Use search with an HTTP(S) path for local web execution or web:ssh://target/https://… for explicit target execution; no prior read is required."
+          : "Use search with an HTTP(S) path to find text on a web page; no prior read is required.",
       );
     },
   } satisfies SearchPlugin;

@@ -1,5 +1,11 @@
 # Visual capture workflow
 
+Use `search` with `process:<query>` and an SSH `path` to inspect a configured Linux target. Read its returned `process:ssh://target/PID` for target metadata and kernel start identity. Use `window:ssh://target/PID` for that target's application window; never put a remote PID into local `window:PID`. Window capture requires an active IDE-owned process, an exact native executable allowlist match, or the arbitrary-window opt-in. Each frame checks the current target process and start identity, then verifies the X server's local client PID before reading pixels. A window's advertised PID alone never authorizes capture.
+
+Use `display:ssh://target/` or `display:ssh://target/#N` for a target X11 screen only when display capture is enabled. Target capture needs Python and an accessible X11 session with libX11. Window capture also needs libX11-xcb, libxcb and X-Resource 1.2 native client identity support. A headless, inaccessible, ambiguous or obscured window fails without controller or root-image fallback. Target acquisition is bounded to 16 million pixels per frame and 20MB of PNG data. The ordinary region, scale, grid and sequence rules below still apply; transformations happen locally after target acquisition.
+
+Use `web:ssh://target/https://example.com/page` with `image` or `sequence` views for target browser screenshots. Ordinary HTTP(S) sources still capture locally. The target needs Node, `playwright-core` and Chrome/Chromium; missing dependencies never select a controller browser. Browser capture uses a fresh profile with JavaScript enabled and the Chromium sandbox disabled. Crop, scale and grid apply to the fetched full-page PNG, just as for local URL capture.
+
 Discover a process first with `process:<query>`, then read `window:<PID>` for an allowed application window. Use `display:` or `display:#N` only when display capture is enabled. Add `views: ["image"]` for a still image or `views: ["sequence"]` when motion or timing requires multiple frames.
 
 Tune sequence duration, interval, scale, and region only when defaults do not fit. Region uses normalized `x,y,width,height` and is applied before scaling. For image grids, use `limit` as the square cell size and `offset` as a zero-based row-major cell index. Avoid capturing unrelated desktop content.

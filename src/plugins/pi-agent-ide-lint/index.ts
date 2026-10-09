@@ -13,19 +13,48 @@ import { lintDoctorPlugin } from "./src/doctor-plugin.js";
 import { LintCommandRegistry } from "./src/registry.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ConfiguredLinterContext, ConfiguredLintResult } from "./src/command-linter.js";
+import type { LinterCommandConfig } from "pi-agent-ide/api/tool-config";
+export { LintCommandRegistry } from "./src/registry.js";
+export { LINTER_RECIPES } from "./src/catalog.js";
+export { runConfiguredLinter } from "./src/command-linter.js";
+export type { ConfiguredLinterContext, ConfiguredLintResult } from "./src/command-linter.js";
+
+/** Keep lint project selection, configuration and execution with the source owner. */
+export interface LintRuntime {
+  resolveProject(
+    source: string,
+    cwd: string,
+  ): Promise<{ projectRoot: string; external: boolean } | undefined>;
+  loadRegistry(cwd: string, external: boolean): Promise<LintCommandRegistry>;
+  run(config: LinterCommandConfig, context: ConfiguredLinterContext): Promise<ConfiguredLintResult>;
+}
 
 export default async function registerLint(pi: ExtensionAPI): Promise<void> {
+  await registerLintWithOwner(pi);
+}
+
+/** Register ordinary lint checks and diagnostic resources with optional owner callbacks. */
+export async function registerLintWithOwner(
+  pi: ExtensionAPI,
+  runtime?: LintRuntime,
+): Promise<void> {
   const registries = new Map<string, Promise<LintCommandRegistry>>();
   const registryFor = (cwd: string, external = false): Promise<LintCommandRegistry> => {
     const key = JSON.stringify([cwd, external]);
     let registry = registries.get(key);
     if (registry === undefined) {
-      registry = loadRegistry(cwd, external);
+      registry = runtime ? runtime.loadRegistry(cwd, external) : loadRegistry(cwd, external);
       registries.set(key, registry);
     }
     return registry;
   };
   const resolveProject = async (filePath: string, cwd: string) => {
+    if (runtime) return runtime.resolveProject(filePath, cwd);
+    if (filePath.includes("://") || cwd.includes("://"))
+      throw Object.assign(new Error("Linter requires its resource owner"), {
+        code: "UNSUPPORTED_SOURCE",
+      });
     const projectRoot = await resolveExternalToolProjectRoot(
       cwd,
       filePath,
@@ -50,7 +79,9 @@ export default async function registerLint(pi: ExtensionAPI): Promise<void> {
       const project = await resolveProject(input.filePath, context.cwd);
       if (project === undefined) return { ok: true, diagnostics: [] };
       const readyRegistry = await registryFor(project.projectRoot, project.external);
-      return createCommandLinter(readyRegistry).lint(input, { cwd: project.projectRoot });
+      return createCommandLinter(readyRegistry, runtime?.run).lint(input, {
+        cwd: project.projectRoot,
+      });
     },
   } satisfies IdeTool;
   const idePlugin = {
@@ -68,7 +99,7 @@ export default async function registerLint(pi: ExtensionAPI): Promise<void> {
             return {
               status: "unavailable",
               diagnostics: [],
-              reason: "No local linter project found for this file",
+              reason: "No linter project found for this file",
             };
           const registry = await registryFor(project.projectRoot, project.external);
           context.signal.throwIfAborted();
@@ -80,7 +111,7 @@ export default async function registerLint(pi: ExtensionAPI): Promise<void> {
               reason: "No linter configured for this file",
             };
           const source = configuredExecutableName(config.check.command);
-          const result = await runConfiguredLinter(config, {
+          const result = await (runtime?.run ?? runConfiguredLinter)(config, {
             projectRoot: project.projectRoot,
             filePath,
             signal: context.signal,

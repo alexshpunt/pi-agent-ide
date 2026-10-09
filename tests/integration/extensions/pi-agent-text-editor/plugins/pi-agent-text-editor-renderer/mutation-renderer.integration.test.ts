@@ -508,6 +508,8 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "inherited-path.ts", source);
       const result = await new PiIntegrationTest({
         testName: "text-editor-renderer-inherited-path-streaming",
+        // Both completed panels and postflight output must fit in the final viewport.
+        tuiSize: { cols: 160, rows: 100 },
         cwd: directory,
         extensions: extensions.paths.map((extension) =>
           extension === defaultTextEditorExtension ? rendererTestStand : extension,
@@ -563,8 +565,7 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "post-edit-viewport.ts", source);
       const result = await new PiIntegrationTest({
         testName: "text-editor-renderer-batched-viewports",
-        // Keep both mutation cards and the postflight Read in the final viewport.
-        tuiSize: { cols: 160, rows: 80 },
+        tuiSize: { cols: 160, rows: 100 },
         cwd: directory,
         extensions: extensions.paths.map((extension) =>
           extension === defaultTextEditorExtension ? rendererTestStand : extension,

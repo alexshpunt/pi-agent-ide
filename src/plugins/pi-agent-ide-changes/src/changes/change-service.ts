@@ -110,6 +110,7 @@ export class ChangeService {
 
     const segment = requiredValue(group.segments[0]);
     const update: GitIndexUpdate = {
+      expectedWorktreeText: input.worktreeText,
       head: inspection.head,
       repositoryPath: inspection.repositoryPath,
       headStart: segment.headStart,
@@ -124,6 +125,7 @@ export class ChangeService {
         status: "unavailable",
         reason: "index-write-failed",
         message: errorMessage(error),
+        failure: error instanceof Error ? error : new Error(errorMessage(error)),
       };
     }
 
@@ -165,6 +167,7 @@ export class ChangeService {
             headStart: segment.headStart,
             headEnd: segment.headEnd,
             replacementText: segment.headText,
+            expectedWorktreeText: worktreeText,
           } satisfies GitIndexUpdate);
 
     return {
@@ -202,7 +205,21 @@ export class ChangeService {
       return;
     }
 
-    await this.git.writeIndexFile(update.repositoryPath, versions.indexMode, nextIndexText, signal);
+    await this.git.writeIndexFile(
+      update.repositoryPath,
+      versions.indexMode,
+      nextIndexText,
+      signal,
+      {
+        expectedHead: versions.head,
+        expectedIndexText: versions.indexText,
+        expectedIndexMode: versions.indexMode,
+        expectedIndexExists: versions.indexExists,
+        ...(update.expectedWorktreeText !== undefined && {
+          expectedWorktreeText: update.expectedWorktreeText,
+        }),
+      },
+    );
   }
 }
 

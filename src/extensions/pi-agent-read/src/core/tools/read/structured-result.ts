@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { structuredResultSchema, withStructuredResult } from "pi-agent-resource";
+import { ResourceError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
 import type { ReadScriptData, ReadToolResult } from "#src/api/tools/read.js";
 import type { TextLine } from "pi-agent-text";
 
@@ -157,6 +157,7 @@ function publicData(value: ReadScriptData): unknown {
   return {
     kind: value.kind,
     source: value.source,
+    ...(value.target === undefined ? {} : { target: value.target }),
     lines,
     startLine: lines[0]?.lineNumber ?? 0,
     endLine: lines.at(-1)?.lineNumber ?? 0,
@@ -173,6 +174,7 @@ function publicData(value: ReadScriptData): unknown {
 /** Require resolver-owned script data. Never reconstruct it from rendered content or renderer details. */
 export function structuredRead(result: ReadToolResult): ReadToolResult {
   const failure = result.details.failure;
+  const safe = failure?.cause instanceof ResourceError ? failure.cause : undefined;
   if (result.isError || failure !== undefined)
     return withStructuredResult(result, readDataSchema, {
       status: "error",
@@ -183,8 +185,11 @@ export function structuredRead(result: ReadToolResult): ReadToolResult {
         : {}),
       errors: [
         {
-          code: failure?.code ?? "READ_FAILED",
-          message: failure?.message ?? "Read failed",
+          code: safe?.code ?? failure?.code ?? "READ_FAILED",
+          message:
+            safe === undefined
+              ? (failure?.message ?? "Read failed")
+              : `${safe.code}: ${failure?.source ?? safe.source}`,
           ...(failure?.source === undefined ? {} : { source: failure.source }),
         },
       ],

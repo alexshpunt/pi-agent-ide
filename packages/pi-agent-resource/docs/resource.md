@@ -21,6 +21,18 @@ export interface ResourceOperationContext {
 
 export type ResourceRead = (context: ResourceOperationContext) => Promise<AgentContent>;
 
+export interface ResourceByteRange {
+  readonly bytes: Uint8Array;
+  readonly byteOffset: number;
+  readonly totalBytes: number;
+}
+
+export type ResourceByteRead = (
+  offset: number,
+  limit: number | undefined,
+  context: ResourceOperationContext,
+) => Promise<ResourceByteRange>;
+
 export type ResourceWrite = (
   content: AgentContent,
   context: ResourceOperationContext,
@@ -28,6 +40,7 @@ export type ResourceWrite = (
 
 export interface ResourceBase {
   readonly source: string;
+  readonly readBytes?: ResourceByteRead;
   readonly skipPostEdit?: boolean;
 }
 
@@ -87,9 +100,19 @@ if (resource.read !== undefined) {
 
 `read` materializes and returns one complete `AgentContent` value.
 
-The resource contract does not provide streaming, byte ranges, line ranges, projection, or truncation. A consuming core applies those behaviors after reading when they belong to that capability.
+The content read does not provide streaming, line ranges, projection, or truncation. A consuming core applies those behaviors after reading. Original byte ranges use the separate optional `readBytes` operation.
 
 A successful read always returns non-empty `AgentContent`.
+
+## Original byte operation
+
+`readBytes` is optional. It returns original bytes without decoding or content conversion. Its presence does not grant write access or replace the required read/write capability shape.
+
+Offsets count bytes from the start; negative offsets count from EOF. Clamp offsets outside the file to its boundaries. A missing limit reads the remaining bytes; zero reads none. Return the absolute byteOffset, actual bytes and totalBytes. Consumers reject invalid coordinates or bytes outside the requested range.
+
+Consumers run access guards before calling readBytes. Providers must keep payload reads out of source resolution so denied access does not fetch the bytes. Honor cancellation and finish operation-local cleanup as for read.
+
+This operation does not promise an immutable snapshot across separate byte windows.
 
 ## Write operation
 
@@ -114,6 +137,8 @@ The context contains no generic metadata extension point.
 ## Failures
 
 A source-specific read or write failure rejects the operation promise with the source error.
+
+A write rejection may carry `effect: "not-applied"`. This is a source guarantee that the rejected call made no stored change, not a claim that the source still matches an earlier read. Consumers can skip compensation of that rejected Resource while restoring earlier successful writes. Missing or other effect values do not provide this guarantee.
 
 `pi-agent-resource` does not wrap failures in a common `ResourceError` and does not return tagged success or failure outcomes from resource operations.
 

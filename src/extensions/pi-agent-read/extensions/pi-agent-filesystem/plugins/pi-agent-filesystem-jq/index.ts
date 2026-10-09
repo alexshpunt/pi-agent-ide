@@ -40,10 +40,14 @@ const readPlugin = {
     });
     api.addHandler({
       stage: "read",
-      when: { resolvedBy: "filesystem", contentKind: "text" },
+      when: { resolvedBy: "any", contentKind: "text" },
       async handler(context) {
         const state = context.state;
-        if (state?.contentKind !== "text") return { kind: "continue", context };
+        if (
+          state?.contentKind !== "text" ||
+          (state.resolvedBy !== "filesystem" && state.resolvedBy !== "ssh")
+        )
+          return { kind: "continue", context };
         let selected: ReturnType<typeof parseJqView>;
         try {
           selected = parseJqView(context.request.views);
@@ -68,7 +72,10 @@ const readPlugin = {
           text: createTextDocument(state.source, output),
           preserveTruncatedOutput: true,
         };
-        return { kind: "continue", context: { ...context, state: transformed } };
+        return {
+          kind: "continue",
+          context: { ...context, sourceText: undefined, state: transformed },
+        };
       },
     });
     api.describe({
@@ -107,7 +114,12 @@ const doctorPlugin = {
     api.addSetupCheck({
       id: "jq",
       async inspect(context) {
-        return (await isExecutableAvailable("jq", context.cwd, context.env))
+        return (await isExecutableAvailable(
+          "jq",
+          context.workspace ? process.cwd() : context.cwd,
+          context.workspace ? process.env : context.env,
+          context.signal,
+        ))
           ? {}
           : {
               actions: [
@@ -123,10 +135,25 @@ const doctorPlugin = {
       id: "jq",
       title: "JSON jq views",
       async run(context) {
-        const result = await probeExecutable("jq", ["--version"], context.cwd, context.env);
+        context.signal?.throwIfAborted();
+        // jq transforms fetched bytes on the controller, including snapshots from an SSH owner.
+        const result = await probeExecutable(
+          "jq",
+          ["--version"],
+          context.workspace ? process.cwd() : context.cwd,
+          context.workspace ? process.env : context.env,
+          context.signal,
+        );
+        context.signal?.throwIfAborted();
         return [
           result.ok
-            ? { status: "pass", message: "jq is available", detail: result.detail }
+            ? {
+                status: "pass",
+                message: "jq is available",
+                detail: context.workspace
+                  ? `Controller content adapter: ${result.detail}`
+                  : result.detail,
+              }
             : { status: "fail", message: "jq is not available", detail: result.detail },
         ];
       },

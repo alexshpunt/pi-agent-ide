@@ -1,20 +1,16 @@
-import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
 import { FORMATTER_RECIPES } from "./catalog.js";
-
 import {
-  hasConfiguredExecutable,
+  toolRuntimeEvidence,
   loadLayeredToolConfig,
   selectConfiguredEntry,
   parseFormattersConfig,
 } from "pi-agent-ide/api/tool-config";
-
 import type {
   EffectiveToolConfigEntry,
   FormatterCommandConfig,
   FormattersConfig,
-  LayeredToolConfigOptions,
+  ToolRuntimeConfigOptions,
 } from "pi-agent-ide/api/tool-config";
-
 /**
 Validated formatter commands in project, global, and built-in priority order.
 */
@@ -31,7 +27,7 @@ export class FormatterCommandRegistry {
   */
   public static async fromDirectory(
     directory: string,
-    options: LayeredToolConfigOptions = {},
+    options: ToolRuntimeConfigOptions = {},
   ): Promise<FormatterCommandRegistry> {
     const effective = await loadLayeredToolConfig(
       directory,
@@ -39,35 +35,20 @@ export class FormatterCommandRegistry {
       (value) => parseFormattersConfig(value).formatters,
       options,
     );
-    const environment = options.environment ?? process.env;
-    const available = await Promise.all(
+    const { available, evidence } = await toolRuntimeEvidence(
+      directory,
       effective.entries
         .filter((entry) => entry.layer === "built-in")
-        .map(async (entry) => ({
-          id: entry.id,
-          available: await hasConfiguredExecutable(entry.config.run, directory, environment),
-        })),
+        .map((entry) => ({ id: entry.id, config: entry.config.run })),
+      FORMATTER_RECIPES,
+      options,
     );
-    const evidence = await inspectRecipeEvidence(directory, FORMATTER_RECIPES);
     const entries = [...effective.entries].sort((left, right) =>
       left.layer === "built-in" && right.layer === "built-in"
         ? (evidence.get(right.id)?.score ?? 0) - (evidence.get(left.id)?.score ?? 0)
         : 0,
     );
-    return new FormatterCommandRegistry(
-      entries,
-      new Set(
-        available
-          .filter(
-            (entry) =>
-              entry.available &&
-              (!options.requireBuiltInEvidence || (evidence.get(entry.id)?.score ?? 0) > 0),
-          )
-          .map((entry) => entry.id),
-      ),
-
-      evidence,
-    );
+    return new FormatterCommandRegistry(entries, available, evidence);
   }
 
   /**

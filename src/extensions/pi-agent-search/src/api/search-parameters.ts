@@ -20,8 +20,12 @@ export const searchSchema = Type.Object(
           "Only for symbols: queries. Explicitly follow symbols represented inside path to their references outside that scope. Without navigation, all returned ranges stay inside path.",
       }),
     ),
-    include: Type.Optional(Type.String({ description: "Optional include glob for local search" })),
-    exclude: Type.Optional(Type.String({ description: "Optional exclude glob for local search" })),
+    include: Type.Optional(
+      Type.String({ description: "Optional include glob for local or SSH files" }),
+    ),
+    exclude: Type.Optional(
+      Type.String({ description: "Optional exclude glob for local or SSH files" }),
+    ),
     caseSensitive: Type.Optional(Type.Boolean({ description: "Match letter case" })),
     wholeWord: Type.Optional(Type.Boolean({ description: "Match complete words" })),
     limit: Type.Optional(

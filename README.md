@@ -30,9 +30,31 @@
 
 ## Summary
 
-Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a unified set of first-class development tools. Each tool represents an intent instead of one particular implementation. The agent uses the same small set of semantic interfaces across files, source code, terminals, debuggers, web pages, images, processes, application windows, and displays.
+Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of development tools for understanding, changing, running, debugging, and observing software. The same tools work with local resources and configured Linux SSH targets.
 
-The interfaces are designed to combine. A search result can become an edit selection. A running process can become a terminal, debugger, or visual resource. A source read can expose anchors, syntax, diagnostics, or language-server information without sending the agent through a separate workflow for each capability.
+| Work                                 | Interfaces                                                    |
+| ------------------------------------ | ------------------------------------------------------------- |
+| Inspect content and state            | `read` with source-specific views                             |
+| Find text, paths, code and processes | `search`                                                      |
+| Derive exact text and AST selections | `select`                                                      |
+| Change text and filesystem objects   | `write`, `replace`, `insert`, `delete`, `copy`, `move`        |
+| Compare, stage and restore changes   | `diff`, `stage`, `unstage`, `undo`                            |
+| Run and interact with commands       | `bash` or `powershell`, then `shell:` resources               |
+| Debug programs                       | `debug`, then `debug:` resources                              |
+| Work remotely                        | The same supported tools with `ssh://` paths and remote `cwd` |
+
+### Combine tools through direct calls or native Codemode
+
+All IDE tools support direct calls and Pi's built-in Codemode. The agent can combine reading, search, selection and editing into one workflow, with the same source checks and visible results in both modes.
+
+For example, this script finds a checklist item, selects its complete line, and marks it done:
+
+```js
+const source = await tools.read({ path: "notes.md" });
+const matches = await tools.search({ path: source, query: "- [ ] Update docs" });
+const lines = await tools.select({ path: matches, operation: { kind: "linesOf" } });
+text(await tools.replace({ path: lines, text: "- [x] Update docs\n" }));
+```
 
 ### Read anything through `read`
 
@@ -63,6 +85,12 @@ Views change how the same resource is presented. The agent can request source st
 
 </div>
 
+### Select and change exactly what you mean
+
+`select` helps the agent change the intended part of a file: a line, a function body, a parameter list, or the overlap between selections. JavaScript and TypeScript structure is supported without JSX/TSX, so the agent can work with code boundaries rather than guessing line numbers.
+
+Language-server support adds declarations, references, call graphs, diagnostics, and semantic rename across references. Available features depend on the project's language server. See [selection](docs/agent-guides/select-code.md) and [code navigation](docs/agent-guides/search-code.md).
+
 ### Review edits against your own rules
 
 Optional [Jev code review](docs/code-review.md) checks small saved diffs against natural-language YAML rules you supply. It delivers background hints without replacing normal diagnostics. A separately enabled skill helps turn your review feedback into proposed rules, saved only after confirmation. Both features are off by default.
@@ -80,8 +108,6 @@ Editing uses direct semantic operations:
 
 See [directory and symlink operations](docs/directory-operations.md) for merge/replace behavior, guards, and failure effects.
 
-Independent edits can be submitted together as a tool-call batch. For conditional or dependent work, native Codemode composes the same guarded tools with Read, Search and Select results. Check each operation's status and final effects; a script error does not roll back accepted edits. Diffing and staging are first-class tools too.
-
 <div align="center">
 
 [![Pi Agent IDE editing examples](assets/summary/thumbs/editing.png)](assets/summary/editing.png)
@@ -95,6 +121,10 @@ Selections can come from exact text, anchors, search results, AST matches, or la
 [![Searching and replacing through guarded selections](assets/summary/thumbs/search-and-replace.png)](assets/summary/search-and-replace.png)
 
 </div>
+
+### Review and restore Git changes
+
+The agent can compare changes, stage or unstage individual Git changes, and restore a selected change without discarding the rest of the file. Text edits also have their own undo. You can see what changed and recover at the level of the operation, rather than resetting all the work.
 
 ### Run through persistent terminal sessions
 
@@ -120,11 +150,19 @@ Debugger sessions use the same resource model. The agent can set breakpoints, in
 
 The agent can render websites as images, observe changing interfaces over time, and inspect windows opened by its own processes. Arbitrary windows and full displays require separate explicit opt-in settings. Images can be downscaled, limited to normalized regions, or divided into grid cells so the model receives the useful area instead of every source pixel.
 
+### Use the same tools over SSH
+
+Ask the agent to work on a remote Linux environment. It can read, search and edit files, copy between your machine and the server, work with Git, and run interactive commands through the same IDE tools. Language servers, linters, formatters and debugger adapters use the remote machine's tools and project settings.
+
+Remote process inspection, supported window/display capture and remote web reads are available too. Missing remote dependencies are reported rather than silently replaced by local tools.
+
+SSH uses your existing OpenSSH authentication and host-key trust. The remote machine needs Python 3; no permanent agent is installed there. Operations have the permissions of the SSH account. The agent sets up project-local access by default unless you ask for global settings. See [SSH configuration](docs/configuration.md#ssh-targets).
+
 ### Keep context focused through progressive disclosure
 
-Pi Agent IDE does not load every capability guide into the system prompt. Detailed instructions are disclosed when the agent first uses the relevant tool and remain available as readable documentation through `read`.
+The agent gets detailed guides and optional tools when it needs them, instead of carrying every instruction throughout the task.
 
-The agent receives the complete contract when it needs it. Unrelated capabilities do not consume context throughout the rest of the task, and large results remain progressively readable instead of flooding the context or terminal.
+Large results stay readable without losing the full text or the exact source selection. Compact edit receipts keep the agent's context small while you still see the full diff. See [tools and workflow](docs/tools.md) for the details.
 
 ### Extend the interfaces through protocols
 
@@ -134,7 +172,7 @@ Filesystem and HTTP reads, resource views, content converters, search backends, 
 
 A person can see the agent's edits, diffs, diagnostics, running processes, debugger state, and failures. Bounded presentation keeps live output readable without discarding the underlying result. Guarded snapshots and first-class undo make mistakes visible and recovery inexpensive.
 
-IDE tools called from native Codemode keep their custom panels in a separate block below the script, even when the script prints no results. Successful edits in one batch show one final diff per file, without intermediate edit cards or an extra block title. The panels survive session restore and tree navigation. Oversized or missing display data is marked as incomplete; rendering never repeats an operation or adds its cost again.
+Direct calls and native Codemode both show tool panels and diffs. A batch of edits shows the final diff for each file rather than a stack of intermediate cards. These panels remain available when you restore a session or navigate its history.
 
 <div align="center">
 
@@ -145,6 +183,8 @@ IDE tools called from native Codemode keep their custom panels in a separate blo
 ### Work across languages and platforms
 
 Built-in debugger recipes cover C, C++, C#, Dart, Elixir, Go, Java, JavaScript, Julia, Kotlin, Lua, PHP, PowerShell, Python, R, Ruby, Rust, shell scripts, Swift, TypeScript, and Zig. Formatting, linting, AST, language-server, and debugger support follows the tools and configuration available in each project.
+
+Known issue: the Java/Kotlin adapter (`fwcd/kotlin-debug-adapter` 0.4.4) can run past verified breakpoints. This was reproduced with JDK 17 and 21 both locally and over SSH. Those recipes remain available, but a verified breakpoint is not proof that execution will stop there.
 
 Windows and WSL are first-class supported environments alongside Linux. Run `/pi-agent-ide-doctor` to see the exact capabilities available on the current machine.
 
@@ -192,6 +232,8 @@ Doctor reports the effective project, global, and built-in mappings, their sourc
 
 Doctor shows its report before changing anything. If project evidence points to a different installed tool, it can write a project-only override under `.pi/pi-agent-ide/`. It never changes global or built-in configuration. Native files such as `eslint.config.js`, `.clang-format`, and `pyproject.toml` remain unchanged.
 
+For a configured remote project, use `/pi-agent-ide-doctor ssh://target/path`. Target checks use that machine's tools and settings; suggested overrides stay in that remote project.
+
 Run `/pi-agent-ide-doctor` again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
 
 ## Customization
@@ -216,15 +258,19 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 
 ## Documentation
 
-| Document                                   | Contents                                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------ |
-| [Tools and workflow](./docs/tools.md)      | Read, vision, search, editing, anchors, and feedback                                 |
-| [Architecture](./docs/architecture.md)     | Module boundaries, protocols, and the umbrella extension                             |
-| [Configuration](./docs/configuration.md)   | Run `/pi-agent-ide-doctor`, configure project tools and search, or disable built-ins |
-| [File hooks](./docs/user-hooks.md)         | Inspect, change, or deny reads and edits                                             |
-| [Writing extensions](./docs/extensions.md) | Add resolvers, views, anchors, search backends, and IDE plugins                      |
-| [Development](./docs/development.md)       | Work from a checkout, test, and run modular mode                                     |
-| [Releases](./docs/releases.md)             | Nightly builds, release branches, verification, and npm publication                  |
+| Document                                               | Contents                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ |
+| [Tools and workflow](./docs/tools.md)                  | Reading, search, selections, editing, terminals, and feedback            |
+| [Result composition](./docs/structured-results.md)     | Passing results between tools, reference lifetime, and commit boundaries |
+| [Selection](./docs/agent-guides/select-code.md)        | Text ranges, AST parts, and combining selections                         |
+| [Directory operations](./docs/directory-operations.md) | Copy, Move, Delete, symlinks, guards, and partial failures               |
+| [Configuration](./docs/configuration.md)               | Project tools, SSH targets, Doctor, and presentation settings            |
+| [SSH guide](./docs/agent-guides/ssh.md)                | Agent setup and supported remote operations                              |
+| [File hooks](./docs/user-hooks.md)                     | Inspect, change, or deny reads and edits                                 |
+| [Writing extensions](./docs/extensions.md)             | Resolvers, views, anchors, search backends, and IDE plugins              |
+| [Architecture](./docs/architecture.md)                 | Module boundaries, protocols, and the umbrella extension                 |
+| [Development](./docs/development.md)                   | Checkout setup, tests, and modular mode                                  |
+| [Releases](./docs/releases.md)                         | Nightly builds, release candidates, verification, and publication        |
 
 ## License
 

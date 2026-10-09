@@ -202,7 +202,7 @@ test.each([
   "no-worktree",
   "missing-head",
 ])(
-  "identifies the Stage file for %s without changing Unstage",
+  "resolves Stage and Unstage sources for %s",
   async (state) => {
     await withTempWorkspace(async (directory) => {
       await withTempWorkspace(async (outsideDirectory) => {
@@ -241,8 +241,8 @@ test.each([
             reason = `${fileName} has unresolved Git index entries`;
           } else {
             requestedFile = path.join(outsideDirectory, fileName);
-            await writeFile(requestedFile, current, "utf8");
-            reason = `${requestedFile} is outside `;
+            await initializeRepository(outsideDirectory, requestedFile);
+            reason = "";
           }
         }
         const hasIndex = state !== "no-worktree" && state !== "missing-head";
@@ -260,14 +260,32 @@ test.each([
           timeoutMs: 120_000,
           conversation: [
             toolMessage("stage-source-error", "stage", { file: requestedFile, change: selector }),
+            ...(state === "outside-worktree"
+              ? [
+                  toolMessage("read-owner-staged", "read", {
+                    path: requestedFile,
+                    views: ["changes"],
+                  }),
+                ]
+              : []),
             toolMessage("unstage-source-error", "unstage", {
               file: requestedFile,
               change: selector,
             }),
-            assistantMessage([text("The unsupported source was not changed")]),
+            assistantMessage([text("The selected Git source was inspected")]),
           ],
-        }).run("Reject the unavailable Git source and identify the requested Stage file");
+        }).run("Use the selected file’s Git repository and report unsupported sources");
 
+        if (state === "outside-worktree") {
+          for (const id of ["stage-source-error", "read-owner-staged", "unstage-source-error"])
+            expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
+          expect(getToolResultText(result, "read-owner-staged")).toContain(`${selector} · staged`);
+          await expect(readIndexFile(outsideDirectory)).resolves.toBe(baseline);
+          await expect(readFile(indexFile)).resolves.toEqual(indexBefore);
+          await expect(readIndexFile(directory)).resolves.toBe(baseline);
+          await expect(readFile(requestedFile, "utf8")).resolves.toBe(current);
+          return;
+        }
         expect(getToolExecution(result, "stage-source-error").isError).toBe(true);
         expect(getToolResultText(result, "stage-source-error")).toContain(
           `Cannot stage ${requestedFile}: ${reason}`,
@@ -376,7 +394,6 @@ test.each(["before", "after"])(
       const execution = getToolExecution(result, "stage-cancelled");
       expect(execution.isError).toBe(true);
       expect(getToolResultText(result, "stage-cancelled")).not.toContain(`Staged ${selector}`);
-      expect(getToolResultText(result, "stage-cancelled")).not.toContain("before retrying");
       expect(execution.result).not.toMatchObject({
         structuredContent: { status: "success" },
       });

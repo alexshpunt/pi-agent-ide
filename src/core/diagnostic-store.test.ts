@@ -10,6 +10,46 @@ import type {
   IdeDiagnosticSource,
 } from "#src/api/plugin-protocol.js";
 
+test("owned diagnostic snapshots retain URI identity and refuse unclaimed resources", async () => {
+  const source = "ssh://fixture/workspace/note.ts";
+  const calls: string[] = [];
+  const store = new DiagnosticStore(
+    [
+      {
+        id: "owned",
+        async diagnose(file, context) {
+          calls.push(file);
+          expect(context.content).toBe("café");
+          return {
+            status: "ready",
+            diagnostics: [
+              { line: 1, column: 1, severity: "warning", code: "owner", message: "Owner finding" },
+            ],
+          };
+        },
+      },
+    ],
+    {
+      readers: [
+        {
+          id: "fixture",
+          readText: (file) => Promise.resolve(file === source ? "café" : undefined),
+        },
+      ],
+    },
+  );
+  try {
+    const snapshot = await store.read(source, { cwd: "/controller", mode: "complete" });
+    expect(snapshot.filePath).toBe(source);
+    expect(calls).toEqual([source]);
+    expect(await store.takeNotifications("/controller")).toMatchObject([{ filePath: source }]);
+    await expect(
+      store.read("ssh://unknown/workspace/note.ts", { cwd: "/controller" }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_SOURCE" });
+  } finally {
+    store.dispose();
+  }
+});
 const clean: IdeDiagnosticReport = { status: "ready", diagnostics: [] };
 const broken: IdeDiagnosticReport = {
   status: "ready",

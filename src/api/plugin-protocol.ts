@@ -2,7 +2,7 @@ import type { Diagnostic, IdeTool, ToolContext } from "#src/toolchain/types.js";
 
 export const IDE_PROTOCOL = "pi-agent-ide" as const;
 
-export const IDE_API_VERSION = 4 as const;
+export const IDE_API_VERSION = 5 as const;
 
 export const IDE_CORE_READY_EVENT = "pi-agent-ide/core/ready" as const;
 
@@ -55,11 +55,21 @@ export interface IdeDiagnosticReadContext extends ToolContext {
   readonly mode?: "snapshot" | "complete";
   readonly signal?: AbortSignal;
 }
+/** Claim source snapshots for diagnostics; undefined leaves the source to another reader. */
+export interface IdeDiagnosticFileReader {
+  readonly id: string;
+  readText(
+    source: string,
+    context: ToolContext & { readonly signal?: AbortSignal },
+  ): Promise<string | undefined>;
+}
 /** Services available while an IDE plugin registers tools and diagnostics. */
 export interface IdePluginApi {
   addTool(tool: IdeTool): void;
   /** Registers background diagnostics shared by notifications and diagnostic reads. */
   addDiagnosticSource(source: IdeDiagnosticSource): void;
+  /** Register an owner reader after successful plugin setup; unclaimed URIs never become local files. */
+  addDiagnosticFileReader(reader: IdeDiagnosticFileReader): void;
   /** Reuses current results or starts checks, with bounded waiting and explicit readiness. */
   readDiagnostics(
     filePath: string,

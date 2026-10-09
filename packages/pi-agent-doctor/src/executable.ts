@@ -32,12 +32,14 @@ export function projectProcessEnvironment(
   return effective;
 }
 
-/** Returns whether an executable is available without starting it. */
+/** Check availability without starting a process; cancellation is checked between native filesystem calls. */
 export async function isExecutableAvailable(
   command: string,
   cwd: string,
   environment: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  signal?.throwIfAborted();
   const effective = projectProcessEnvironment(cwd, environment);
   const locations =
     path.isAbsolute(command) || path.dirname(command) !== "."
@@ -67,12 +69,16 @@ export async function isExecutableAvailable(
     ...suffixes.map((suffix) => `${location}${suffix}`),
   ]);
   for (const candidate of candidates) {
+    signal?.throwIfAborted();
     try {
       await access(candidate, constants.X_OK);
-
-      if (!(await stat(candidate)).isFile()) continue;
+      signal?.throwIfAborted();
+      const information = await stat(candidate);
+      signal?.throwIfAborted();
+      if (!information.isFile()) continue;
       return true;
     } catch {
+      signal?.throwIfAborted();
       // Try the next executable location.
     }
   }
@@ -84,14 +90,16 @@ export type ExecutableProbeResult =
   | { readonly ok: true; readonly detail: string }
   | { readonly ok: false; readonly detail: string };
 
-/** Start an external command and capture a short version or error description. */
+/** Capture a version or error description; await the owned leader's close on timeout or cancellation. */
 export function probeExecutable(
   command: string,
   arguments_: readonly string[],
   cwd: string,
   environment: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
 ): Promise<ExecutableProbeResult> {
-  return new Promise((resolve) => {
+  if (signal?.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
     const child = spawn(command, arguments_, {
       cwd,
       env: projectProcessEnvironment(cwd, environment),
@@ -100,27 +108,49 @@ export function probeExecutable(
     });
     let stdout = "";
     let stderr = "";
-    let settled = false;
-    const timeout = setTimeout(() => {
+    let timedOut = false;
+    let stopping = false;
+    let spawnError: string | undefined;
+    let forceStop: ReturnType<typeof setTimeout> | undefined;
+    const stop = (): void => {
+      if (stopping) return;
+      stopping = true;
       child.kill();
-      finish(false, `${command} did not respond within 5 seconds`);
-    }, 5_000);
-    const finish = (ok: boolean, detail: string): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve(ok ? { ok: true, detail } : { ok: false, detail });
+      forceStop = setTimeout(() => child.kill("SIGKILL"), 1_000);
+      forceStop.unref();
     };
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      stop();
+    }, 5_000);
+    signal?.addEventListener("abort", stop, { once: true });
 
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => (stdout += chunk));
     child.stderr?.on("data", (chunk: string) => (stderr += chunk));
-    child.once("error", (error) => finish(false, error.message));
-    child.once("close", (code) => {
-      const output = (stdout.trim() || stderr.trim()).split(/\r?\n/u)[0];
-      finish(code === 0, output || `${command} exited with code ${String(code)}`);
+    child.once("error", (error) => {
+      spawnError = error.message;
     });
+    child.once("close", (code) => {
+      clearTimeout(timeout);
+      clearTimeout(forceStop);
+      signal?.removeEventListener("abort", stop);
+      if (signal?.aborted) {
+        reject(signal.reason);
+        return;
+      }
+      if (timedOut) {
+        resolve({ ok: false, detail: `${command} did not respond within 5 seconds` });
+        return;
+      }
+      const output = (stdout.trim() || stderr.trim()).split(/\r?\n/u)[0];
+      resolve({
+        ok: spawnError === undefined && code === 0,
+        detail: spawnError ?? (output || `${command} exited with code ${String(code)}`),
+      });
+    });
+    if (signal?.aborted) stop();
     timeout.unref();
   });
 }

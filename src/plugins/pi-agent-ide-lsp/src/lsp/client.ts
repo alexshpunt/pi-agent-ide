@@ -18,9 +18,12 @@ import { URI } from "vscode-uri";
 
 import type { LspDiagnostic } from "./types.js";
 
-import { LspFileWatchers } from "./file-watchers.js";
+import { LspFileWatchers, type LspFileWatcherSubscriptions } from "./file-watchers.js";
 
 import { TransportWriter } from "./transport-writer.js";
+import { documentUri } from "./document-uri.js";
+import { waitWithSignal } from "./abort.js";
+import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.js";
 
 /** Latest push observation for an open document, without a completion guarantee. */
 export interface LspDiagnosticPublication {
@@ -36,16 +39,21 @@ export interface LspDiagnosticPublication {
  */
 export class LspClient {
   private _process: ChildProcess | null = null;
+  private _ownedProcess: LspOwnedProcess | null = null;
+  private _ownedStartup: Promise<LspOwnedProcess> | undefined;
+  private readonly _ownerTransport: LspOwnerTransport | undefined;
   private _connection: MessageConnection | null = null;
   private _initialized = false;
   private _serverCapabilities: Record<string, unknown> | null = null;
   private _disposed = false;
+  private _shutdownPromise: Promise<void> | undefined;
 
   private _crashed = false;
 
   private _stderr = "";
 
-  private _fileWatchers: LspFileWatchers | undefined;
+  private _fileWatchers: LspFileWatcherSubscriptions | undefined;
+  private _fileWatcherCleanup: Promise<void> = Promise.resolve();
   private readonly _handlers = new Map<string, ((parameters: unknown) => void)[]>();
   private readonly _documentVersions = new Map<string, number>();
 
@@ -72,6 +80,7 @@ export class LspClient {
     initOptions?: Record<string, unknown>;
     settings?: Record<string, unknown>;
     timeoutMs?: number;
+    ownerTransport?: LspOwnerTransport;
   }) {
     this.serverId = parameters.serverId;
     this.rootUri = parameters.rootUri;
@@ -81,6 +90,7 @@ export class LspClient {
     this._initOptions = parameters.initOptions;
     this._settings = parameters.settings;
     this._timeoutMs = parameters.timeoutMs ?? 30_000;
+    this._ownerTransport = parameters.ownerTransport;
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────
@@ -95,6 +105,11 @@ export class LspClient {
 
   get pid(): number | null {
     return this._process?.pid ?? null;
+  }
+
+  /** Remote process identity; pid remains null for these servers. */
+  get remote(): LspOwnedProcess["remote"] | undefined {
+    return this._ownedProcess?.remote;
   }
 
   /** Executable used to start this server, independent of its configured ID. */
@@ -157,7 +172,27 @@ export class LspClient {
     return this._activeDiagnosticRequests.has(uri);
   }
 
-  async start(): Promise<void> {
+  /** Start this client with cancellation of its owned startup work. */
+  async start(signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
+    try {
+      await this._start(signal);
+    } catch (error) {
+      try {
+        await this.shutdown();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [signal?.aborted ? signal.reason : error, cleanupError],
+          `[lsp] ${this.serverId}: startup and cleanup failed`,
+          { cause: cleanupError },
+        );
+      }
+      signal?.throwIfAborted();
+      throw error;
+    }
+  }
+
+  private async _start(signal?: AbortSignal): Promise<void> {
     if (this._initialized) {
       return;
     }
@@ -166,38 +201,72 @@ export class LspClient {
       throw new Error(`[lsp] ${this.serverId}: disposed`);
     }
 
+    if (!this.rootUri.startsWith("file://") && !this._ownerTransport) {
+      throw Object.assign(
+        new Error("No language server process transport for this resource owner"),
+        { code: "UNSUPPORTED_SOURCE" },
+      );
+    }
+    await this._closeFileWatchers();
+    signal?.throwIfAborted();
+    // Shutdown can dispose this client while watcher cleanup is awaited.
+    // eslint-disable-next-line typescript/no-unnecessary-condition
+    if (this._disposed) throw new Error(`[lsp] ${this.serverId}: disposed`);
     const bin = requiredValue(this._command[0]);
-    const projectRoot = URI.parse(this.rootUri).fsPath;
+    const projectRoot = this._ownerTransport
+      ? decodeURIComponent(new URL(this.rootUri).pathname)
+      : URI.parse(this.rootUri).fsPath;
 
     const workspaceFolders = [
-      { uri: this.rootUri, name: path.basename(projectRoot) || projectRoot },
+      {
+        uri: this._ownerTransport?.toServerUri(this.rootUri) ?? this.rootUri,
+        name: path.basename(projectRoot) || projectRoot,
+      },
     ];
 
-    const childProcess = spawnProcess(bin, this._args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      cwd: projectRoot,
-      env: createConfiguredProcessEnvironment(
-        { command: this._command, env: this._env },
-        projectRoot,
-        process.env,
-      ),
+    this._ownedStartup = this._ownerTransport?.start({
+      rootUri: this.rootUri,
+      command: this._command,
+      env: this._env,
+      signal,
     });
-    this._process = childProcess;
-    const spawnPromise = waitForSpawn(childProcess);
+    const ownedProcess = await this._ownedStartup;
+    this._ownedProcess = ownedProcess ?? null;
+    signal?.throwIfAborted();
+    // An owner can become ready while shutdown is waiting for it.
+    // eslint-disable-next-line typescript/no-unnecessary-condition
+    if (this._disposed) throw new Error(`[lsp] ${this.serverId}: disposed`);
+    const childProcess = ownedProcess
+      ? undefined
+      : spawnProcess(bin, this._args, {
+          stdio: ["pipe", "pipe", "pipe"],
+          ...(signal && { signal }),
+          cwd: projectRoot,
+          env: createConfiguredProcessEnvironment(
+            { command: this._command, env: this._env },
+            projectRoot,
+            process.env,
+          ),
+        });
+    this._process = childProcess ?? null;
+    const spawnPromise = childProcess ? waitForSpawn(childProcess) : Promise.resolve();
+    const stdin = requiredValue(ownedProcess?.stdin ?? childProcess?.stdin);
+    const stdout = requiredValue(ownedProcess?.stdout ?? childProcess?.stdout);
+    const stderr = requiredValue(ownedProcess?.stderr ?? childProcess?.stderr);
 
     // Consume process stream errors so a failed optional server cannot
     // become an uncaught exception in the host process.
-    childProcess.stdin?.on("error", () => void 0);
-    childProcess.stdout?.on("error", () => void 0);
-    childProcess.stderr?.on("error", () => void 0);
+    stdin.on("error", () => void 0);
+    stdout.on("error", () => void 0);
+    stderr.on("error", () => void 0);
 
     this._stderr = "";
-    childProcess.stderr?.setEncoding("utf8");
-    childProcess.stderr?.on("data", (chunk: string) => {
+    stderr.setEncoding("utf8");
+    stderr.on("data", (chunk: string) => {
       this._stderr = (this._stderr + chunk).slice(-4096);
     });
 
-    childProcess.on("error", (error) => {
+    childProcess?.on("error", (error) => {
       const code = "code" in error ? (error as { code?: unknown }).code : undefined;
 
       if (code !== "ENOENT") {
@@ -210,26 +279,40 @@ export class LspClient {
       this._process = null;
     });
 
-    childProcess.on("exit", (code, _signal) => {
-      this._fileWatchers?.dispose();
+    const onExit = (code: number | null) => {
+      if (ownedProcess ? this._ownedProcess !== ownedProcess : this._process !== childProcess)
+        return;
+      void this._closeFileWatchers();
       if (!this._disposed && code !== 0 && code !== null) {
         this._crashed = true;
       }
 
       this._connection?.dispose();
       this._connection = null;
+      this._diagnosticPublications.clear();
+      this._activeDiagnosticRequests.clear();
+      this._diagnosticMode = "unknown";
       this._process = null;
       this._initialized = false;
-    });
+    };
+    childProcess?.on("exit", onExit);
+    void ownedProcess?.completion.then(
+      ({ exitCode }) => onExit(exitCode),
+      () => {
+        if (this._ownedProcess !== ownedProcess) return;
+        this._crashed = true;
+        onExit(null);
+      },
+    );
 
-    await spawnPromise;
+    await waitWithSignal(spawnPromise, signal);
     const connection = createMessageConnection(
-      new StreamMessageReader(requiredValue(childProcess.stdout)),
-      new TransportWriter(requiredValue(childProcess.stdin), (error) => {
+      new StreamMessageReader(stdout),
+      new TransportWriter(stdin, (error) => {
         if (this._connection !== connection || this._disposed) return;
         this._crashed = true;
         this._initialized = false;
-        this._fileWatchers?.dispose();
+        void this._closeFileWatchers();
         connection.dispose();
         console.error(`[lsp] ${this.serverId}: transport write failed:`, error);
       }),
@@ -240,13 +323,14 @@ export class LspClient {
       console.error(`[lsp] ${this.serverId}: connection error:`, error);
     });
 
-    this._fileWatchers = new LspFileWatchers(
-      projectRoot,
-      (change) => {
-        this._sendNotification("workspace/didChangeWatchedFiles", { changes: [change] });
-      },
-      (error) => console.error(`[lsp] ${this.serverId}: file watcher failed:`, error),
-    );
+    const changed = (change: { uri: string; type: 1 | 2 | 3 }) => {
+      this._sendNotification("workspace/didChangeWatchedFiles", { changes: [change] });
+    };
+    const failed = (error: Error) =>
+      console.error(`[lsp] ${this.serverId}: file watcher failed:`, error);
+    this._fileWatchers = this._ownerTransport
+      ? this._ownerTransport.fileWatchers?.(this.rootUri, changed, failed)
+      : new LspFileWatchers(projectRoot, changed, failed);
     this._connection.onRequest(
       "client/registerCapability",
       async (parameters: {
@@ -261,7 +345,9 @@ export class LspClient {
           if (registration.method === "workspace/didChangeConfiguration") continue;
           if (registration.method !== "workspace/didChangeWatchedFiles")
             throw new Error(`Unsupported dynamic capability: ${registration.method}`);
-          await this._fileWatchers?.register(
+          if (!this._fileWatchers)
+            throw new Error("File watching is unavailable for this server owner");
+          await this._fileWatchers.register(
             registration.id,
             registration.registerOptions?.watchers ?? [],
           );
@@ -271,9 +357,9 @@ export class LspClient {
     );
     this._connection.onRequest(
       "client/unregisterCapability",
-      (parameters: { unregisterations: { id: string }[] }) => {
+      async (parameters: { unregisterations: { id: string }[] }) => {
         for (const registration of parameters.unregisterations)
-          this._fileWatchers?.unregister(registration.id);
+          await this._fileWatchers?.unregister(registration.id);
         return null;
       },
     );
@@ -298,8 +384,12 @@ export class LspClient {
 
     // Forward all incoming notifications to registered handlers
     this._connection.onNotification((method, ...parameters) => {
+      const owner = this._ownerTransport;
+      const mapped = owner
+        ? mapLspUris(parameters[0], (uri) => owner.fromServerUri(uri))
+        : parameters[0];
       if (method === "textDocument/publishDiagnostics") {
-        const publication = parameters[0] as
+        const publication = mapped as
           | { uri?: unknown; version?: unknown; diagnostics?: unknown }
           | undefined;
         if (
@@ -317,7 +407,7 @@ export class LspClient {
         }
       }
       for (const handler of this._handlers.get(method) ?? []) {
-        handler(parameters[0] as unknown);
+        handler(mapped);
       }
     });
 
@@ -327,36 +417,42 @@ export class LspClient {
       capabilities: Record<string, unknown>;
     }
 
-    const initResult = await withTimeout(
-      this._connection.sendRequest<InitResult>("initialize", {
-        processId: process.pid,
-        rootUri: this.rootUri,
+    const initResult = await waitWithSignal(
+      withTimeout(
+        this._connection.sendRequest<InitResult>("initialize", {
+          processId: this._ownerTransport ? null : process.pid,
+          rootUri: this._ownerTransport?.toServerUri(this.rootUri) ?? this.rootUri,
 
-        workspaceFolders,
-        capabilities: {
-          workspace: {
-            applyEdit: false,
+          workspaceFolders,
+          capabilities: {
+            workspace: {
+              applyEdit: false,
 
-            configuration: true,
+              configuration: true,
 
-            workspaceFolders: true,
+              workspaceFolders: true,
 
-            didChangeWatchedFiles: { dynamicRegistration: true, relativePatternSupport: true },
-            symbol: { dynamicRegistration: false },
+              didChangeWatchedFiles: {
+                dynamicRegistration: this._fileWatchers !== undefined,
+                relativePatternSupport: this._fileWatchers !== undefined,
+              },
+              symbol: { dynamicRegistration: false },
+            },
+            textDocument: {
+              synchronization: { didOpen: true, didChange: true, didClose: true },
+              publishDiagnostics: { relatedInformation: true },
+
+              diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
+              documentSymbol: { hierarchicalDocumentSymbolSupport: true },
+              foldingRange: { lineFoldingOnly: true },
+            },
           },
-          textDocument: {
-            synchronization: { didOpen: true, didChange: true, didClose: true },
-            publishDiagnostics: { relatedInformation: true },
-
-            diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
-            documentSymbol: { hierarchicalDocumentSymbolSupport: true },
-            foldingRange: { lineFoldingOnly: true },
-          },
-        },
-        initializationOptions: this._initOptions,
-      }),
-      this._timeoutMs,
-      `[lsp] ${this.serverId}: initialize timed out`,
+          initializationOptions: this._initOptions,
+        }),
+        this._timeoutMs,
+        `[lsp] ${this.serverId}: initialize timed out`,
+      ),
+      signal,
     ).catch((error: unknown) => {
       const detail = this._stderr.trim();
       if (!detail) throw error;
@@ -376,6 +472,7 @@ export class LspClient {
     if (this._crashed)
       throw new Error(`[lsp] ${this.serverId}: transport failed during initialization`);
 
+    signal?.throwIfAborted();
     this._initialized = true;
     this._serverCapabilities = initResult.capabilities;
 
@@ -387,21 +484,23 @@ export class LspClient {
     // LSP server lives for the session duration — no idle timeout
   }
 
-  async restart(): Promise<void> {
-    this._fileWatchers?.dispose();
+  async restart(signal?: AbortSignal): Promise<void> {
+    await this.shutdown();
+    void this._closeFileWatchers();
     this._connection?.dispose();
     this._connection = null;
     this._process = null;
     this._initialized = false;
     this._crashed = false;
     this._disposed = false;
+    this._shutdownPromise = undefined;
     this._documentVersions.clear();
     this._documentContents.clear();
     this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
-    await this.start();
+    await this.start(signal);
   }
 
   // ── LSP protocol ───────────────────────────────────────────────────
@@ -414,25 +513,36 @@ export class LspClient {
   ): Promise<T> {
     this._assertReady();
     signal?.throwIfAborted();
-    if (!signal) return requiredValue(this._connection).sendRequest(method, parameters);
+    const owner = this._ownerTransport;
+    const requestParameters = owner
+      ? mapLspUris(parameters, (uri) => owner.toServerUri(uri))
+      : parameters;
+    const mapResult = (result: unknown): T =>
+      (owner ? mapLspUris(result, (uri) => owner.fromServerUri(uri)) : result) as T;
+    if (!signal)
+      return mapResult(
+        await requiredValue(this._connection).sendRequest(method, requestParameters),
+      );
     const cancellation = new CancellationTokenSource();
     let onAbort: (() => void) | undefined;
     try {
       const request = requiredValue(this._connection).sendRequest<T>(
         method,
-        parameters,
+        requestParameters,
         cancellation.token,
       );
-      return await Promise.race([
-        request,
-        new Promise<never>((_resolve, reject) => {
-          onAbort = () => {
-            cancellation.cancel();
-            reject(signal.reason);
-          };
-          signal.addEventListener("abort", onAbort, { once: true });
-        }),
-      ]);
+      return mapResult(
+        await Promise.race([
+          request,
+          new Promise<never>((_resolve, reject) => {
+            onAbort = () => {
+              cancellation.cancel();
+              reject(signal.reason);
+            };
+            signal.addEventListener("abort", onAbort, { once: true });
+          }),
+        ]),
+      );
     } finally {
       if (onAbort) signal.removeEventListener("abort", onAbort);
       cancellation.dispose();
@@ -448,11 +558,13 @@ export class LspClient {
   private _sendNotification(method: string, parameters: unknown): void {
     const connection = this._connection;
     if (!connection) return;
-    void connection.sendNotification(method, parameters).catch((error: unknown) => {
+    const owner = this._ownerTransport;
+    const mapped = owner ? mapLspUris(parameters, (uri) => owner.toServerUri(uri)) : parameters;
+    void connection.sendNotification(method, mapped).catch((error: unknown) => {
       if (this._connection !== connection || this._disposed) return;
       this._crashed = true;
       this._initialized = false;
-      this._fileWatchers?.dispose();
+      void this._closeFileWatchers();
       connection.dispose();
       console.error(`[lsp] ${this.serverId}: notification ${method} failed:`, error);
     });
@@ -480,13 +592,17 @@ export class LspClient {
   // ── document management ────────────────────────────────────────────
 
   toUri(input: string): string {
-    if (input.startsWith("file://")) {
-      return input;
-    }
-
-    return URI.file(input).toString();
+    return documentUri(input, this.rootUri);
   }
 
+  /** Resolve an owned document to the server path for raw, non-LSP protocol commands. */
+  serverDocumentPath(uri: string): string {
+    const canonical = this.toUri(uri);
+    const wireUri = this._ownerTransport?.toServerUri(canonical) ?? canonical;
+    return this._ownerTransport
+      ? decodeURIComponent(new URL(wireUri).pathname)
+      : URI.parse(wireUri).fsPath;
+  }
   openDocument(uri: string, text: string, languageId: string, version = 1): void {
     const currentVersion = this._documentVersions.get(uri);
 
@@ -551,14 +667,15 @@ export class LspClient {
 
   // ── cleanup ────────────────────────────────────────────────────────
 
-  async shutdown(): Promise<void> {
-    if (this._disposed) {
-      return;
-    }
+  /** Await the same owned cleanup for every caller, including during failed startup. */
+  shutdown(): Promise<void> {
+    return (this._shutdownPromise ??= this._shutdown());
+  }
 
+  private async _shutdown(): Promise<void> {
     this._disposed = true;
 
-    this._fileWatchers?.dispose();
+    const watcherCleanup = this._closeFileWatchers();
 
     if (this._connection && this._initialized) {
       try {
@@ -580,12 +697,16 @@ export class LspClient {
     this._connection?.dispose();
     this._connection = null;
 
-    if (this._process && !this._process.killed) {
-      this._process.kill("SIGTERM");
+    const owned = this._ownedProcess ?? (await this._ownedStartup?.catch(() => undefined));
+    this._ownedProcess = null;
+    this._ownedStartup = undefined;
+    const ownedCleanup = Promise.resolve().then(() => owned?.stop());
+    const child = this._process;
+    this._process = null;
+    if (child && !child.killed) {
+      child.kill("SIGTERM");
       setTimeout(() => {
-        if (this._process && !this._process.killed) {
-          this._process.kill("SIGKILL");
-        }
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
       }, 2000).unref();
     }
 
@@ -596,12 +717,33 @@ export class LspClient {
     this._diagnosticMode = "unknown";
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
+    const results = await Promise.allSettled([ownedCleanup, watcherCleanup]);
+    const failures: unknown[] = [];
+    for (const result of results) {
+      if (result.status === "rejected") failures.push(result.reason);
+    }
+    if (failures.length > 0)
+      throw new AggregateError(failures, `[lsp] ${this.serverId}: owned cleanup failed`);
   }
 
-  dispose(): void {
-    void this.shutdown();
+  /** Await owned shutdown and keep any cleanup failure visible to the caller. */
+  dispose(): Promise<void> {
+    return this.shutdown();
   }
 
+  private _closeFileWatchers(): Promise<void> {
+    const watchers = this._fileWatchers;
+    this._fileWatchers = undefined;
+    if (watchers) {
+      this._fileWatcherCleanup = this._fileWatcherCleanup
+        .catch(() => undefined)
+        .then(() => watchers.dispose());
+      void this._fileWatcherCleanup.catch((error: unknown) => {
+        console.error(`[lsp] ${this.serverId}: file watcher cleanup failed:`, error);
+      });
+    }
+    return this._fileWatcherCleanup;
+  }
   // ── internal ───────────────────────────────────────────────────────
 
   private _assertReady(): void {

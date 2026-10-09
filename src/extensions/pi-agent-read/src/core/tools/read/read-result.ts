@@ -9,7 +9,12 @@ import type {
   ReadToolResult,
   UnsupportedContentBlockDetail,
 } from "#src/api/tools/read.js";
-import type { AgentContent, ImageContent, TextContent } from "pi-agent-resource";
+import {
+  ResourceError,
+  type AgentContent,
+  type ImageContent,
+  type TextContent,
+} from "pi-agent-resource";
 
 export function createReadState(
   content: AgentContent,
@@ -191,6 +196,25 @@ export function withReadCancellation(
 
 /** Show an actionable failure while retaining the original record for private adapters. */
 export function failureResult(failure: ReadFailure): ReadToolResult {
+  const safe = failure.cause instanceof ResourceError ? failure.cause : undefined;
+  if (safe !== undefined) {
+    failure = {
+      ...failure,
+      source: failure.source ?? safe.source,
+      message: `${safe.code}: ${failure.source ?? safe.source}`,
+      cause: new ResourceError(safe.code, safe.source, safe.effect),
+    };
+  } else if (
+    failure.cause instanceof Error &&
+    "code" in failure.cause &&
+    !["ENOENT", "EACCES", "EPERM"].includes(String(failure.cause.code))
+  ) {
+    failure = {
+      ...failure,
+      message: `${failure.code}: ${failure.source ?? "source"}`,
+      cause: undefined,
+    };
+  }
   return {
     content: [
       {

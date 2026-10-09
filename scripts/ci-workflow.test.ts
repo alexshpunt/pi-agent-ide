@@ -5,21 +5,24 @@ import { expect, test } from "vitest";
 import { parse } from "yaml";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 
-interface WorkflowJob {
-  needs?: string | string[];
-  if?: string;
-  name?: string;
-  outputs?: Record<string, string>;
-  "continue-on-error"?: boolean;
-  steps: WorkflowStep[];
-}
 interface WorkflowStep {
   name: string;
   if?: string;
+  uses?: string;
   with?: { name?: string; path?: string; "include-hidden-files"?: boolean };
   env?: Record<string, string>;
   run?: string;
   "continue-on-error"?: boolean;
+}
+
+interface WorkflowJob {
+  name?: string;
+  outputs?: Record<string, string>;
+  "continue-on-error"?: boolean;
+  steps: WorkflowStep[];
+  needs?: string | string[];
+  if?: string;
+  strategy?: { "fail-fast": boolean; matrix: { shard: number[] } };
 }
 
 test("runs real debuggers outside blocking checks and shared CI statistics", () => {
@@ -29,14 +32,10 @@ test("runs real debuggers outside blocking checks and shared CI statistics", () 
       "utf8",
     ),
   ) as { jobs: Record<string, WorkflowJob> };
-  const blocking = workflow.jobs.validate;
-  expect(blocking?.["continue-on-error"]).not.toBe(true);
-  const integration = blocking?.steps.find((step) => step.name === "Run integration tests");
-  expect(integration?.["continue-on-error"]).not.toBe(true);
-  expect(integration?.run).toContain("--exclude 'tests/integration/debugger*.integration.test.ts'");
-  expect(blocking?.steps.find((step) => step.name === "Run unit tests")?.run).not.toContain(
-    "--exclude",
-  );
+  for (const name of ["validate", "integration", "integration-namespaces", "validate-windows-core"])
+    expect(workflow.jobs[name]?.["continue-on-error"], name).not.toBe(true);
+  const integration = workflow.jobs.integration;
+  expect(integration?.steps.some((step) => step.name === "Run integration shard")).toBe(true);
   for (const name of ["debugger-core", "java-debugger-lifecycle", "debugger-matrix"]) {
     const job = workflow.jobs[name];
     expect(job, name).toBeDefined();
@@ -50,105 +49,114 @@ test("runs real debuggers outside blocking checks and shared CI statistics", () 
       name,
     ).toBe(false);
   }
-  const core = workflow.jobs["debugger-core"];
-  expect(core?.steps.find((step) => step.name === "Run flaky debugger integration")?.run).toContain(
-    "tests/integration/debugger*.integration.test.ts",
-  );
-  const windows = workflow.jobs["validate-windows-core"];
-  expect(windows?.["continue-on-error"]).not.toBe(true);
   expect(
-    windows?.steps.find((step) => step.name === "Run flaky Windows debugger lifecycle")?.[
-      "continue-on-error"
-    ],
+    workflow.jobs["debugger-core"]?.steps.find(
+      (step) => step.name === "Run flaky debugger integration",
+    )?.run,
+  ).toContain("tests/integration/debugger*.integration.test.ts");
+  expect(
+    workflow.jobs["validate-windows-core"]?.steps.find(
+      (step) => step.name === "Run flaky Windows debugger lifecycle",
+    )?.["continue-on-error"],
   ).toBe(true);
   expect(
-    windows?.steps.find((step) => step.name === "Run Windows AST checks")?.["continue-on-error"],
+    workflow.jobs["validate-windows-core"]?.steps.find(
+      (step) => step.name === "Run Windows AST checks",
+    )?.["continue-on-error"],
   ).not.toBe(true);
-  const traces = blocking?.steps.find((step) => step.name === "Retain failed anchor Pi traces");
-  expect(traces?.if).toBe("needs.plan.outputs.full == 'true' && (failure())");
-  expect(traces?.with?.path).toContain("anchor-tools.integration.test.ts/");
-  expect(traces?.with?.["include-hidden-files"]).toBe(true);
 });
-
-test("keeps unit failure evidence before success-only integration", () => {
-  const workflow = parse(
-    readFileSync(
-      path.join(findRepositoryRoot(import.meta.url), ".github/workflows/ci.yml"),
-      "utf8",
-    ),
-  ) as {
-    jobs: {
-      validate: { steps: WorkflowStep[] };
-      "validate-windows-core": { steps: WorkflowStep[] };
-    };
+test("retains failures while every integration shard runs on its own runner", () => {
+  const root = findRepositoryRoot(import.meta.url);
+  const workflow = parse(readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8")) as {
+    jobs: Record<string, WorkflowJob>;
   };
-  const steps = workflow.jobs.validate.steps;
-  const find = (name: string) => {
+  const job = (name: string): WorkflowJob => {
+    const selected = workflow.jobs[name];
+    if (selected === undefined) throw new Error(`Missing CI job: ${name}`);
+    return selected;
+  };
+  const find = (jobName: string, name: string) => {
+    const steps = job(jobName).steps;
     const index = steps.findIndex((entry) => entry.name === name);
     const step = steps[index];
-    if (step === undefined) throw new Error(`Missing CI step: ${name}`);
+    if (step === undefined) throw new Error(`Missing CI step: ${jobName}/${name}`);
     return { index, step };
   };
-  const unit = find("Run unit tests");
-  const upload = find("Upload unit test report");
-  const report = find("Report unit tests");
-  const integration = find("Run integration tests");
-
+  const unit = find("validate", "Run unit tests");
+  const upload = find("validate", "Upload unit test report");
+  const report = find("validate", "Report unit tests");
   expect(upload.index).toBe(unit.index + 1);
   expect(upload.step.if).toBe(
     "needs.plan.outputs.full == 'true' && (always() && hashFiles('.agents/tmp/test-results/unit.xml') != '')",
   );
   expect(upload.step.with?.path).toBe(".agents/tmp/test-results/unit.xml");
   expect(report.index).toBeGreaterThan(upload.index);
-  expect(report.index).toBeLessThan(integration.index);
-  expect(integration.step.if).toBe("needs.plan.outputs.full == 'true' && (success())");
-  expect(integration.step.run).toBe(
-    "pnpm test:integration:shards --exclude 'tests/integration/debugger*.integration.test.ts'",
-  );
-  expect(integration.step.env).toMatchObject({
-    SHARDS: "3",
-    REPORT_DIR: ".agents/tmp/test-results",
+  const integration = job("integration");
+  expect(integration.needs).toBe("plan");
+  expect(integration.if).toContain("needs.plan.outputs.full == 'true'");
+  expect(integration.strategy).toEqual({
+    "fail-fast": false,
+    matrix: { shard: [1, 2, 3, 4] },
   });
-  const integrationReport = find("Report integration tests");
+  const shard = find("integration", "Run integration shard");
+  expect(shard.step.run).toBe('bash scripts/test-integration-ci.sh "${{ matrix.shard }}/4"');
+  expect(shard.step.if).toBeUndefined();
+  expect(find("integration-namespaces", "Run namespace integration tests").step.run).toContain(
+    "sudo env",
+  );
+  expect(find("integration-namespaces", "Run namespace integration tests").step.run).toContain(
+    "scripts/test-integration-ci.sh namespaces",
+  );
+  for (const job of ["validate", "integration", "integration-namespaces"]) {
+    expect(find(job, "Setup Linux tests").step.uses).toBe("./.github/actions/setup-linux-tests");
+  }
+  for (const job of ["integration", "integration-namespaces"]) {
+    const logs = find(job, "Upload integration shard logs");
+    const report = find(job, "Upload integration report");
+    expect(logs.step.if).toBe("always()");
+    expect(logs.step.with?.["include-hidden-files"]).toBe(true);
+    expect(logs.step.with?.path).toBe(".tmp/integration-ci/*.log");
+    expect(report.step.if).toBe("always()");
+    expect(report.step.with?.path).toBe(".agents/tmp/test-results/integration-*.xml");
+  }
+  const aggregate = job("integration-report");
+  expect(aggregate.needs).toEqual(["plan", "integration", "integration-namespaces"]);
+  expect(aggregate.if).toContain("always()");
+  expect(aggregate.if).toContain("needs.plan.outputs.full == 'true'");
+  expect(find("integration-report", "Checkout").index).toBeLessThan(
+    find("integration-report", "Download integration reports").index,
+  );
+  const integrationReport = find("integration-report", "Report integration tests");
   expect(integrationReport.step.with?.path).toBe(".agents/tmp/test-results/integration-*.xml");
   expect(integrationReport.step.if).toBe(
-    "needs.plan.outputs.full == 'true' && (always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != '')",
+    "always() && hashFiles('.agents/tmp/test-results/integration-*.xml') != ''",
   );
-  const logs = find("Upload integration shard logs");
-  expect(logs.step.if).toBe("needs.plan.outputs.full == 'true' && (always())");
-  expect(logs.step.with?.["include-hidden-files"]).toBe(true);
-  expect(logs.step.with?.path).toBe(".tmp/integration-shards.*/*.log");
-  const compositionTraces = find("Retain failed composition Pi traces");
-  expect(compositionTraces.index).toBeGreaterThan(integration.index);
-  expect(compositionTraces.step.if).toBe("needs.plan.outputs.full == 'true' && (failure())");
-  expect(compositionTraces.step.with?.["include-hidden-files"]).toBe(true);
-  expect(compositionTraces.step.with?.path).toBe(
-    ".tmp/test-runs/tests/integration/native-tool-composition.integration.test.ts/",
-  );
-  const nativeTraces = find("Retain failed native Codemode Pi traces");
-  expect(nativeTraces.step.if).toBe("needs.plan.outputs.full == 'true' && (failure())");
-  expect(nativeTraces.step.with?.["include-hidden-files"]).toBe(true);
+  for (const name of [
+    "Retain failed anchor Pi traces",
+    "Retain failed composition Pi traces",
+    "Retain failed semantic rename Pi traces",
+    "Retain failed native Codemode Pi traces",
+  ]) {
+    const retained = find("integration", name);
+    expect(retained.index).toBeGreaterThan(shard.index);
+    expect(retained.step.if).toBe("failure()");
+    expect(retained.step.with?.["include-hidden-files"]).toBe(true);
+  }
+  const nativeTraces = find("integration", "Retain failed native Codemode Pi traces");
   expect(nativeTraces.step.with?.path).toBe(
     ".tmp/test-runs/tests/integration/native-codemode.integration.test.ts/",
   );
-  const candidate = find("Build and install reproducible release candidate");
-  expect(candidate.index).toBeGreaterThan(integration.index);
-  expect(candidate.step.if).toContain("needs.plan.outputs.full == 'true'");
+  const candidate = find("validate", "Build and install reproducible release candidate");
+  expect(candidate.index).toBeGreaterThan(report.index);
   expect(candidate.step.if).toContain("success()");
-  const shardScript = readFileSync(
-    path.join(findRepositoryRoot(import.meta.url), "scripts/test-integration-shards.sh"),
-    "utf8",
-  );
-  // Fixtures have distinct configurations; retained shared hosts must not accumulate in CI.
-  expect(shardScript).toContain("env -u PI_INTEGRATION_TEST_RUNNER pnpm exec");
-  expect(shardScript).not.toContain("pnpm exec pi-test run");
-  const windowsSteps = workflow.jobs["validate-windows-core"].steps.filter((entry) =>
+  expect(candidate.step.if).toContain("needs.plan.outputs.full == 'true'");
+  const windowsSteps = job("validate-windows-core").steps.filter((entry) =>
     [
       "Verify Windows Pi 0.99.1 source and native tools",
       "Verify Windows installed package and host boundaries",
     ].includes(entry.name),
   );
-  const windowsTraces = workflow.jobs["validate-windows-core"].steps.find(
+  const windowsTraces = job("validate-windows-core").steps.find(
     (entry) => entry.name === "Retain Windows host traces",
   );
   expect(windowsTraces?.if).toBe("always()");
@@ -210,7 +218,6 @@ test("runs each configured-startup and interface check once and records only ful
     "Verify normal configured startup",
     "Capture agent interface",
     "Retain agent interface",
-    "Retain editor TUI traces",
   ]) {
     expect(
       validate?.steps.filter((step) => step.name === name),
@@ -218,10 +225,8 @@ test("runs each configured-startup and interface check once and records only ful
     ).toHaveLength(1);
   }
   for (const name of [
-    "Setup runtime tools",
-    "Install dependencies",
+    "Setup Linux tests",
     "Run unit tests",
-    "Run integration tests",
     "Build and install reproducible release candidate",
   ]) {
     expect(validate?.steps.find((step) => step.name === name)?.if, name).toContain(
@@ -230,9 +235,24 @@ test("runs each configured-startup and interface check once and records only ful
   }
   expect(validate?.steps.find((step) => step.name === "Scan commit range")?.if).toBeUndefined();
   const record = workflow.jobs["record-evidence"];
-  expect(record?.needs).toEqual(["plan", "validate", "validate-windows-core"]);
+  expect(record?.needs).toEqual([
+    "plan",
+    "validate",
+    "validate-windows-core",
+    "integration",
+    "integration-namespaces",
+    "integration-report",
+  ]);
   expect(record?.if).toContain("needs.plan.outputs.full == 'true'");
   expect(record?.if).toContain("needs.validate.result == 'success'");
   expect(record?.if).toContain("needs['validate-windows-core'].result == 'success'");
+  for (const name of ["integration", "integration-namespaces", "integration-report"]) {
+    expect(record?.needs).toContain(name);
+    expect(record?.if).toContain(
+      name === "integration"
+        ? "needs.integration.result == 'success'"
+        : `needs['${name}'].result == 'success'`,
+    );
+  }
   expect(workflow.jobs["validate-windows-core"]?.if).toContain("needs.plan.outputs.full == 'true'");
 });

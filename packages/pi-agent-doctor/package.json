@@ -23,6 +23,10 @@
       "types": "./src/executable.ts",
       "default": "./src/executable.ts"
     },
+    "./api/project-probes": {
+      "types": "./src/project-probes.ts",
+      "default": "./src/project-probes.ts"
+    },
     "./api/plugin-protocol": {
       "types": "./src/plugin-protocol.ts",
       "default": "./src/plugin-protocol.ts"

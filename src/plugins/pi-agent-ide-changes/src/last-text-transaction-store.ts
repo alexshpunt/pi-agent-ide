@@ -17,7 +17,8 @@ export class LastTextTransactionStore {
     const key = sourceKey(completion.resourceSource, completion.cwd);
     if (completion.postProcessing === "final") {
       const previous = this.#transactions.get(key);
-      if (previous && previous.afterDigest === textDigest(completion.before.content))
+      const saved = completion.beforePostProcessing ?? completion.before;
+      if (previous && previous.afterDigest === textDigest(saved.content))
         this.#transactions.set(key, {
           ...previous,
           afterDigest: textDigest(completion.after.content),

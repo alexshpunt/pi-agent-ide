@@ -1,7 +1,7 @@
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 import { URI } from "vscode-uri";
 
-import { hasConfiguredExecutable } from "pi-agent-ide/api/tool-config";
+import { doctorRuntimeOptions, doctorExecutableAvailable } from "pi-agent-ide/api/doctor";
 
 import { LSP_RECIPES } from "./catalog.js";
 import { LspClient } from "./lsp/client.js";
@@ -14,6 +14,7 @@ import type {
   DoctorSetupInspection,
 } from "pi-agent-doctor/api/plugin-protocol";
 import type { ResolvedServer } from "./lsp/types.js";
+import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 
 /**
 Doctor contribution owned by the LSP plugin.
@@ -37,9 +38,7 @@ export const lspDoctorPlugin: DoctorPlugin = {
       title: "LSP",
       async run(context) {
         try {
-          const registry = await LspServerRegistry.fromPackageDir(context.cwd, {
-            environment: context.env,
-          });
+          const registry = await LspServerRegistry.fromPackageDir(context.cwd, lspOptions(context));
           const applicable = applicableServers(registry, context.files);
 
           if (applicable.length === 0) {
@@ -51,9 +50,17 @@ export const lspDoctorPlugin: DoctorPlugin = {
           return await Promise.all(
             applicable.map(async (server): Promise<DoctorFinding> => {
               const label = `${server.serverId} [${server.layer}] command ${JSON.stringify(server.config.command)}`;
+              const workspace = context.workspace;
               const client = new LspClient({
                 serverId: server.serverId,
-                rootUri: URI.file(context.cwd).toString(),
+                rootUri: workspace ? context.cwd : URI.file(context.cwd).toString(),
+                ...(workspace && {
+                  ownerTransport: {
+                    start: (input) => workspace.start(input.command, input.env, input.signal),
+                    toServerUri: (uri) => workspace.toNativeUri(uri),
+                    fromServerUri: (uri) => workspace.fromNativeUri(uri),
+                  },
+                }),
                 command: server.config.command,
                 env: definedEnvironment(context.env, server.config.env),
                 ...(server.config.initializationOptions && {
@@ -64,7 +71,7 @@ export const lspDoctorPlugin: DoctorPlugin = {
               });
 
               try {
-                await client.start();
+                await client.start(context.signal);
                 return {
                   status: "pass",
                   message: `${label}: initialized`,
@@ -77,11 +84,12 @@ export const lspDoctorPlugin: DoctorPlugin = {
                   detail: server.sourcePath,
                 };
               } finally {
-                await client.shutdown().catch(() => {});
+                await client.shutdown();
               }
             }),
           );
         } catch (error) {
+          context.signal?.throwIfAborted();
           return [
             {
               status: "fail",
@@ -96,9 +104,7 @@ export const lspDoctorPlugin: DoctorPlugin = {
 
 async function inspectLspSetup(context: DoctorContext): Promise<DoctorSetupInspection> {
   try {
-    const registry = await LspServerRegistry.fromPackageDir(context.cwd, {
-      environment: context.env,
-    });
+    const registry = await LspServerRegistry.fromPackageDir(context.cwd, lspOptions(context));
     const selections = [];
     const actions = new Map<string, { readonly id: string; readonly message: string }>();
 
@@ -111,7 +117,7 @@ async function inspectLspSetup(context: DoctorContext): Promise<DoctorSetupInspe
       }
 
       selections.push({ kind: "lsp" as const, languageId, toolId: selected.serverId });
-      if (!(await hasConfiguredExecutable(selected.config, context.cwd, context.env))) {
+      if (!(await doctorExecutableAvailable(context, selected.config))) {
         actions.set(selected.serverId, {
           id: `lsp-${selected.serverId}-unavailable`,
           message: `Configured language server ${selected.serverId} cannot run ${JSON.stringify(selected.config.command)}`,
@@ -121,6 +127,7 @@ async function inspectLspSetup(context: DoctorContext): Promise<DoctorSetupInspe
 
     return { selections, actions: [...actions.values()] };
   } catch (error) {
+    context.signal?.throwIfAborted();
     return {
       actions: [
         {
@@ -132,6 +139,15 @@ async function inspectLspSetup(context: DoctorContext): Promise<DoctorSetupInspe
   }
 }
 
+function lspOptions(context: DoctorContext) {
+  const workspace = context.workspace;
+  return {
+    ...doctorRuntimeOptions(context),
+    recipeEvidence: workspace
+      ? (recipes: readonly ToolRecipe[]) => workspace.evidence(recipes, context.signal)
+      : undefined,
+  };
+}
 function applicableServers(
   registry: LspServerRegistry,
   files: readonly string[],

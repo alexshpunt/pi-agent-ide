@@ -43,7 +43,10 @@ export default async function registerReadCore(
     apiVersion: READ_API_VERSION,
     id: "result-targets",
     setup(api) {
-      api.addHandler({ stage: "post-read", handler: createReadResultTargetHandler(targets) });
+      api.addHandler({
+        stage: "post-read",
+        handler: createReadResultTargetHandler(targets, core.read.execute),
+      });
     },
   });
 

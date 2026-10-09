@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 
 import {
   defineTool,
@@ -29,6 +28,7 @@ const indexDataSchema = Type.Object(
 export const indexOutputSchema = structuredResultSchema(indexDataSchema);
 
 import { ChangeService } from "#src/changes/change-service.js";
+import { gitSourceDirectory, resolveGitSource } from "#src/changes/git-paths.js";
 
 import type { ChangeIndexAction } from "#src/changes/change-types.js";
 import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
@@ -170,7 +170,7 @@ export function createIndexChangeTool(
               action,
               change: parameters.change,
               file: resolveFile(parameters.file, context.cwd),
-              effect: "unknown",
+              effect: publicationEffect(error),
             },
             errors: [failure],
           },
@@ -197,8 +197,14 @@ export function createIndexChangeExecutor(
 
     return withFileMutationQueue(file, () =>
       queue.run(async () => {
-        const worktreeText = await readFile(file, "utf8");
-        const creation = await ChangeService.create(executor, context.cwd, signal);
+        const worktreeText = executor.readText
+          ? await executor.readText(file, signal)
+          : await readFile(file, "utf8");
+        const creation = await ChangeService.create(
+          executor,
+          gitSourceDirectory(file, context.cwd),
+          signal,
+        );
 
         if (creation.status !== "ready") {
           throw new Error(
@@ -220,9 +226,25 @@ export function createIndexChangeExecutor(
         );
 
         if (result.status === "unavailable") {
+          if ("failure" in result && result.failure !== undefined) {
+            if (action === "stage" && result.reason === "index-write-failed") {
+              const failure = resultError(result.failure, "INDEX_CHANGE_FAILED", parameters.file);
+              throw Object.assign(
+                new Error(
+                  `${failure.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
+                  { cause: result.failure },
+                ),
+                { effect: publicationEffect(result.failure) },
+              );
+            }
+            throw result.failure;
+          }
           if (action === "stage" && result.reason === "stale-selector") {
-            throw new Error(
-              `${result.message}. Read ${parameters.file} with views: ["changes"] and use a current CHANGE# anchor.`,
+            throw Object.assign(
+              new Error(
+                `${result.message}. Read ${parameters.file} with views: ["changes"] and use a current CHANGE# anchor.`,
+              ),
+              { effect: "not-applied" },
             );
           }
           if (action === "stage" && result.reason === "index-write-failed" && !signal?.aborted) {
@@ -230,10 +252,13 @@ export function createIndexChangeExecutor(
               `${result.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
             );
           }
-          throw new Error(
-            action === "stage" && result.reason !== "index-write-failed"
-              ? `Cannot stage ${parameters.file}: ${result.message}`
-              : result.message,
+          throw Object.assign(
+            new Error(
+              action === "stage" && result.reason !== "index-write-failed"
+                ? `Cannot stage ${parameters.file}: ${result.message}`
+                : result.message,
+            ),
+            { effect: "not-applied" },
           );
         }
 
@@ -269,5 +294,16 @@ export function createIndexChangeExecutor(
 }
 function resolveFile(file: string, cwd: string): string {
   const normalized = file.startsWith("@") ? file.slice(1) : file;
-  return path.resolve(cwd, normalized);
+  return resolveGitSource(normalized, cwd);
+}
+
+function publicationEffect(error: unknown): "applied" | "not-applied" | "unknown" {
+  if (
+    error !== null &&
+    typeof error === "object" &&
+    "effect" in error &&
+    (error.effect === "applied" || error.effect === "not-applied")
+  )
+    return error.effect;
+  return "unknown";
 }

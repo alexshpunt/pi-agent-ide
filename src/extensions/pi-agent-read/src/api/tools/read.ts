@@ -143,11 +143,13 @@ export interface ReadNativeState extends ReadStateBase {
 export type ReadState = ReadTextState | ReadNativeState;
 
 export interface ReadPipelineContext {
+  /** Original UTF-8 file snapshot from this acquisition. Derived-view handlers clear it, even when their output matches the source. */
+  readonly sourceText?: string;
+  /** Original strict selection handle; surrounding Read lines do not widen its authority. */
+  readonly sourceTarget?: string;
   /** Data execution keeps full requested content; presentation handlers must not compact it. */
   readonly audience?: "agent" | "script";
   readonly request: ReadRequest;
-  /** Original RESULT# scope bounds source authority even when Read shows surrounding lines. */
-  readonly sourceTarget?: string;
   readonly resolverContext: ResourceResolverContext;
   readonly state?: ReadState;
   readonly result?: ReadToolResult;

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   formatCodeViewReference,
+  resolveCodeViewPath,
   formatSourceViewResults,
   formatSymbolSelector,
   renderSourceViewLine,
@@ -60,10 +61,10 @@ export async function resolveLspDeclaration(
   signal?: AbortSignal,
 ): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
   throwIfAborted(signal);
-  const before = await readFile(filePath, "utf8");
-  const document = await openCodeDocument(manager, filePath, cwd);
+  const before = await manager.readSourceText(filePath, signal);
+  const document = await openCodeDocument(manager, filePath, cwd, signal);
   const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-  const after = await readFile(document.filePath, "utf8");
+  const after = await manager.readSourceText(document.filePath, signal);
   throwIfAborted(signal);
   if (before !== after)
     throw new Error("The symbol source changed during resolution. Read it again before editing.");
@@ -78,10 +79,10 @@ export async function resolveLspRenameTarget(
   signal?: AbortSignal,
 ) {
   throwIfAborted(signal);
-  const content = await readFile(filePath, "utf8");
-  const document = await openCodeDocument(manager, filePath, cwd);
+  const content = await manager.readSourceText(filePath, signal);
+  const document = await openCodeDocument(manager, filePath, cwd, signal);
   const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-  if (content !== (await readFile(filePath, "utf8")))
+  if (content !== (await manager.readSourceText(filePath, signal)))
     throw new Error("The rename source changed during resolution.");
   throwIfAborted(signal);
   return {
@@ -104,9 +105,9 @@ export async function readLspSymbolBody(
   signal?: AbortSignal,
 ): Promise<SourceMappedTextContent> {
   throwIfAborted(signal);
-  const document = await openCodeDocument(manager, filePath, cwd);
+  const document = await openCodeDocument(manager, filePath, cwd, signal);
   const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-  const snapshot = await readTextFile(document.filePath);
+  const snapshot = await readTextFile(document.filePath, manager, signal);
   throwIfAborted(signal);
 
   const startLine = symbol.range.start.line + 1;
@@ -147,7 +148,7 @@ export async function readLspSymbolGraph(
   signal?: AbortSignal,
 ): Promise<string> {
   throwIfAborted(signal);
-  const document = await openCodeDocument(manager, filePath, cwd);
+  const document = await openCodeDocument(manager, filePath, cwd, signal);
   const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
   const relations = await queryRelations(document, symbol, signal);
   const locations = new LocationPresenter(cwd);
@@ -161,7 +162,7 @@ export async function readLspFileGraph(
   signal?: AbortSignal,
 ): Promise<string> {
   throwIfAborted(signal);
-  const document = await openCodeDocument(manager, filePath, cwd);
+  const document = await openCodeDocument(manager, filePath, cwd, signal);
   const locations = new LocationPresenter(cwd);
   const lines = [
     `## file graph: ${document.displayPath}`,
@@ -229,11 +230,10 @@ async function openCodeDocument(
   manager: LspManager,
   filePath: string,
   cwd: string,
+  signal?: AbortSignal,
 ): Promise<LspCodeDocument> {
-  const absolutePath = path.isAbsolute(filePath)
-    ? path.normalize(filePath)
-    : path.resolve(cwd, filePath);
-  const opened = await manager.openFile(absolutePath, cwd, "symbols");
+  const absolutePath = resolveCodeViewPath(filePath, cwd);
+  const opened = await manager.openFile(absolutePath, cwd, "symbols", signal);
 
   if (!opened) {
     throw new Error(
@@ -241,7 +241,7 @@ async function openCodeDocument(
     );
   }
 
-  const rawSymbols = await requestDocumentSymbols(opened.client, opened.uri);
+  const rawSymbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
   const symbols = normalizeDocumentSymbols(rawSymbols).sort(compareSymbols);
   return {
     client: opened.client,
@@ -304,37 +304,11 @@ async function queryRelations(
 ): Promise<SymbolRelations> {
   const position = symbol.selectionRange.start;
   const [references, calls] = await Promise.all([
-    optionalRequest(
-      requestReferences(document.client, document.uri, position),
-      [] as readonly LspLocation[],
-      signal,
-    ),
-    optionalRequest(
-      requestCallHierarchy(document.client, document.uri, position),
-      { items: [], incoming: [], outgoing: [] },
-      signal,
-    ),
+    requestReferences(document.client, document.uri, position, signal),
+    requestCallHierarchy(document.client, document.uri, position, signal),
   ]);
   throwIfAborted(signal);
   return { references, calls };
-}
-
-async function optionalRequest<T>(
-  request: Promise<T>,
-  fallback: T,
-  signal: AbortSignal | undefined,
-): Promise<T> {
-  try {
-    const result = await request;
-    throwIfAborted(signal);
-    return result;
-  } catch (error) {
-    if (signal?.aborted === true) {
-      throw abortReason(signal, error);
-    }
-
-    return fallback;
-  }
 }
 
 async function formatSymbolGraph(
@@ -502,8 +476,14 @@ interface TextFileSnapshot {
   readonly content: string;
 }
 
-async function readTextFile(filePath: string): Promise<TextFileSnapshot> {
-  const buffer = await readFile(filePath);
+async function readTextFile(
+  filePath: string,
+  manager: LspManager,
+  signal?: AbortSignal,
+): Promise<TextFileSnapshot> {
+  const buffer = filePath.startsWith("ssh://")
+    ? Buffer.from(await manager.readSourceBytes(filePath, signal))
+    : await readFile(filePath, { signal });
 
   if (buffer.byteLength > 256 * 1024) {
     throw new Error(`File exceeds the 262144-byte code-view limit: ${filePath}`);
@@ -549,6 +529,7 @@ function filePathFromUri(uri: string): string {
 }
 
 function displayFilePath(filePath: string, cwd: string): string {
+  if (filePath.startsWith("ssh://")) return filePath;
   const relative = path.relative(cwd, filePath);
 
   // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal

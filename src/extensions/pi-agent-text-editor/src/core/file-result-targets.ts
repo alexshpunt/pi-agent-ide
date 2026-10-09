@@ -10,11 +10,23 @@ export async function attachFileMutationTargets(
   store: ResultTargetStore,
   cwd: string,
   signal?: AbortSignal,
+  reader?: (source: string, cwd: string, signal?: AbortSignal) => Promise<ResultSourceTarget>,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   const action = result.details.metadata?.semanticAction;
   if (action === null || typeof action !== "object") return result;
   const semantic = action as Record<string, unknown>;
   if (semantic.ok !== true || semantic.postProcessingError !== undefined) return result;
+  if (semantic.sourceKind === "directory" || semantic.sourceKind === "symlink")
+    return {
+      ...result,
+      details: {
+        ...result.details,
+        metadata: {
+          ...result.details.metadata,
+          targetUnavailable: "Target is not a regular text file; no text selection is available.",
+        },
+      },
+    };
   const sources =
     semantic.kind === "file-operation" && typeof semantic.target === "string"
       ? [semantic.target]
@@ -24,9 +36,26 @@ export async function attachFileMutationTargets(
   const targets: ResultSourceTarget[] = [];
   let unavailable: string | undefined;
   for (const source of sources) {
-    const file = path.resolve(cwd, source);
+    const file = source.startsWith("ssh://") ? source : path.resolve(cwd, source);
     try {
       signal?.throwIfAborted();
+      if (file.startsWith("ssh://")) {
+        if (reader === undefined)
+          throw new Error("Remote destination requires its guarded Read owner.");
+        const fresh = await reader(file, cwd, signal);
+        const lines = fresh.expectedContent.split(/\r\n|\r|\n/u);
+        targets.push({
+          ...fresh,
+          ranges: [
+            {
+              start: { lineNumber: 1, column: 0 },
+              end: { lineNumber: lines.length, column: lines.at(-1)?.length ?? 0 },
+            },
+          ],
+        });
+        states.push({ source: fresh.source, state: "present" });
+        continue;
+      }
       const stat = await lstat(file);
       states.push({ source: file, state: "present" });
       if (!stat.isFile() || stat.isSymbolicLink())

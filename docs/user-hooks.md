@@ -45,6 +45,8 @@ export default function (pi: ExtensionAPI) {
 
 The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools, including calls through native Codemode. A denial or thrown error leaves every Resource unchanged.
 
+Whole-file move plans include both the source removal and the destination replacement. Copy plans include the modified destination. For non-UTF-8 files, `resource.binary.before` and `resource.binary.after` contain exact bytes; the text documents are empty instead of showing a lossy conversion. The guard runs before publication or source removal, and changed participants are rejected before effects.
+
 ## Protect whole objects from deletion
 
 ```ts
@@ -63,9 +65,9 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-This hook covers whole-object Delete calls for regular files, directories, and symlinks, plus directory/symlink Move source removal and existing destination removal. Both standalone and native Codemode calls use it. It does not cover selected-text removal, terminal/debugger actions, Copy, or ordinary-file Move. The event provides `path` (absolute requested path), `resolvedPath` (parent symlinks resolved, final symlink left alone), `cwd`, `kind`, `recursive`, and an optional abort `signal`. It runs once before removal and any user dialog. A denial or thrown error blocks removal; allowing does not override another hook or built-in protection.
+This hook covers whole-object Delete calls for regular files, directories, and symlinks, plus directory/symlink Move source removal and existing destination removal. Both standalone and native Codemode calls use it. It does not cover selected-text removal, terminal/debugger actions, Copy, or ordinary-file Move. The event provides `path` (absolute requested path, or canonical SSH URI), `resolvedPath` (parent symlinks resolved, final symlink left alone), `cwd`, `kind`, `recursive`, and an optional abort `signal`. SSH events keep the target owner on all three paths; filesystem and Git checks run on that target. It runs once before removal and any user dialog. A denial or thrown error blocks removal; allowing does not override another hook or built-in protection.
 
-Delete removes directories recursively and unlinks symlinks, including broken ones, without traversing their targets. The built-in policy uses the Git worktree containing Pi's cwd. Tracked or newly staged targets require a user dialog. External directories and symlinks and targets without a Git worktree require a dialog unless they are eligible descendants of a [temporary root](./configuration.md#temporary-directory-deletion). Failed Git checks inside the current project still require a dialog. Untracked directories and symlinks inside that worktree need no dialog. Ordinary files keep their existing policy.
+Delete removes directories recursively and unlinks symlinks, including broken ones, without traversing their targets. The built-in policy uses the Git worktree containing Pi's cwd. For SSH it uses the selected target's project directory, not the controller's cwd. Tracked or newly staged targets require a user dialog. External directories and symlinks and targets without a Git worktree require a dialog unless they are eligible descendants of a [temporary root](./configuration.md#temporary-directory-deletion). SSH temporary roots and settings come from that target's account and project. Failed Git checks inside the current project still require a dialog. Untracked directories and symlinks inside that worktree need no dialog. Ordinary files keep their existing policy.
 
 The dialog names the exact target, reason, and operation. Refusal, dismissal, cancellation, or an unavailable dialog prevents removal. Project roots, their ancestors, filesystem roots, and current Git control paths are always blocked, even when a hook allows. Git control protection also covers regular-file `.git` markers. Without Git, cwd and its ancestors are protected.
 
@@ -89,6 +91,6 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-This hook runs after post-processing and the final reread. Feedback appears in the agent result and beside the diff. Errors are reported as feedback; a successful write is never rolled back.
+This hook runs after post-processing and the final reread. Feedback appears in the agent result and beside the diff, including in compact Write receipts and silent Codemode writes. A remark does not mean processing was interrupted. Errors are reported as feedback; a successful write is never rolled back. Write still leaves file text, diffs, and successful formatting details out of the agent receipt; use Read for the saved content.
 
 Hooks run in registration order. The first denial stops a before hook chain. IDs must be unique within each hook kind. Registrations belong to the Pi session and are removed on shutdown or reload.

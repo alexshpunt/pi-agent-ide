@@ -11,6 +11,12 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "ssh-guide",
+  ["read.ssh-guide"],
+  "The workspace has no configured SSH targets. Read docs:ssh through Read to learn how to configure a target. Do not open a connection or change any settings.",
+  [{ tool: "read", args: { path: "docs:ssh" } }],
+);
+add(
   "delete-objects",
   ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
   "Delete remove-tree recursively, then unlink link and broken-link using ordinary paths without text selectors. Leave sentinel.txt and tracked/data untouched.",
@@ -36,8 +42,8 @@ add(
 );
 add(
   "delete-policy-gates",
-  ["edit.delete-policy-refusal", "edit.delete-protected-path"],
-  "Request whole-object deletion of tracked and .git/config through Delete. Both should be blocked in this non-interactive runtime. Keep all fixture bytes unchanged and report the two refusal reasons.",
+  ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
+  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Keep all fixture bytes unchanged and report the refusal reasons.",
   [
     {
       tool: "delete",
@@ -51,6 +57,8 @@ add(
       error: true,
       contains: "DELETE_PROTECTED_TARGET",
     },
+    { tool: "delete", args: { path: "." }, error: true, contains: "DELETE_PROTECTED_TARGET" },
+    { tool: "delete", args: { path: "/" }, error: true, contains: "DELETE_PROTECTED_TARGET" },
   ],
   { files: deleteFixture, git: true },
 );
@@ -63,8 +71,9 @@ add(
     "edit.move-symlink",
     "edit.copy-merge-directory",
     "edit.move-replace-directory",
+    "compose.object-transfer-refusal",
   ],
-  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
+  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. Search the unchanged first Copy receipt for BAD and observe that it has no reusable text selection; catch that expected error in Codemode. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
   [
     {
       tool: "copy",
@@ -93,6 +102,13 @@ add(
       contains: "move: applied",
     },
     { tool: "read", args: { path: "moved-target/nested/empty" } },
+    {
+      tool: "search",
+      args: { query: "BAD" },
+      reuse: reuse(0),
+      error: true,
+      contains: "no reusable text selection",
+    },
   ],
   {
     files: deleteFixture,
@@ -207,6 +223,30 @@ function add(
   cases.push({ id, capabilities, prompt, steps, modes: both, files: textFile, ...extras });
 }
 
+add(
+  "binary-copy-move",
+  ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
+  "Copy source.bin to copy.bin without decoding it. Report the Copy receipt. Search the unchanged Copy result for BAD and observe that it has no text selection; catch that expected rejection in Codemode. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",
+  [
+    {
+      tool: "copy",
+      args: { path: "source.bin", target: "copy.bin" },
+      contains: "No verified text selection",
+    },
+    {
+      tool: "search",
+      args: { query: "BAD" },
+      reuse: reuse(0),
+      error: true,
+      contains: "no reusable text selection",
+    },
+    { tool: "move", args: { path: "copy.bin", target: "existing.bin" } },
+  ],
+  {
+    files: { "source.bin": "binary\u0000bytes\n", "existing.bin": "prior\u0000bytes\n" },
+    expected: { "copy.bin": null, "existing.bin": "binary\u0000bytes\n" },
+  },
+);
 add(
   "read-text",
   ["read.text", "read.directory", "read.raw", "read.paging"],
@@ -400,6 +440,25 @@ add(
   { expected: { "answer.txt": "ready\n" }, answer: "ready" },
 );
 
+add(
+  "write-hook-read",
+  ["edit.write-hook-feedback", "compose.write-hook-read"],
+  "Write review.txt containing exactly WRITE_HOOK_BODY review plus a newline. Report the saved-check hook's remark from the compact Write receipt, then pass that unchanged result into Read and report the saved value. Do not treat the remark as a failed or interrupted write.",
+  [
+    {
+      tool: "write",
+      args: { path: "review.txt", content: "WRITE_HOOK_BODY review\n" },
+      contains: "Saved edit needs review",
+      excludes: "WRITE_HOOK_BODY",
+    },
+    { tool: "read", reuse: reuse(0), contains: "WRITE_HOOK_BODY review" },
+  ],
+  {
+    setup: "write-hook",
+    expected: { "review.txt": "WRITE_HOOK_BODY review\n" },
+    answer: "Saved edit needs review",
+  },
+);
 add(
   "write-silent",
   ["codemode.silent-write"],
@@ -966,6 +1025,8 @@ add(
     "shell.read",
     "shell.search",
     "shell.input",
+    "compose.shell-input-read",
+    "compose.shell-keys-read",
     "shell.keys",
     "compose.shell-reference-after-input",
     "shell.file-authority-refusal",
@@ -973,16 +1034,18 @@ add(
     "process.discovery",
     "process.read",
   ],
-  "Start a Bash command that waits for one input line and then prints that line. Use its returned shell resource: write the text hello without Enter, insert the Enter key, read the completed shell, and search its retained output for hello. Attempt to replace hello through the returned terminal Read result and confirm refusal: terminal output grants no file-edit authority. Also discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
+  "Start a Bash command that waits for one input line and then prints that line. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same live shell. Also read the completed shell using its original resource and search its retained output for hello. Attempt to replace hello through the returned terminal Read result and confirm refusal: terminal output grants no file-edit authority. Also discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
     { tool: "insert", args: { text: "Enter" }, reuse: reuse(0, "path", "shell") },
+    { tool: "read", reuse: reuse(1), contains: "hello" },
+    { tool: "read", reuse: reuse(2), contains: "hello" },
     { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello" },
     {
       tool: "replace",
       args: { start: "hello", text: "BAD" },
-      reuse: reuse(3),
+      reuse: reuse(5),
       error: true,
     },
     {
@@ -995,7 +1058,7 @@ add(
     { tool: "read", args: { path: /process:\d+/ } },
     { tool: "delete", reuse: reuse(0, "path", "shell") },
   ],
-  { answer: "hello" },
+  { expected: textFile, answer: "hello" },
 );
 
 add(

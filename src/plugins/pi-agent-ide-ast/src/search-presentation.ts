@@ -79,10 +79,11 @@ function createFilePresentation(
         logicalMatchIds: [...new Set(line.logicalMatchIds)],
       };
     });
-  const source = path.resolve(cwd, file);
+  const remote = file.includes("://");
+  const source = remote ? file : path.resolve(cwd, file);
   return {
-    path: path.relative(cwd, source),
-    link: pathToFileURL(source).href,
+    path: remote ? source : path.relative(cwd, source),
+    link: remote ? source : pathToFileURL(source).href,
     matchCount: matches.length,
     lines: resultLines,
   };

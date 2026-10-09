@@ -95,8 +95,9 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
       });
       api.onDidEdit(async (completion) => {
         await record(completion.cwd, {
-          // An interrupted final notification can describe already-saved bytes without a new edit.
+          // Final notifications can describe already-saved bytes without a new edit.
           type:
+            completion.beforePostProcessing !== undefined ||
             completion.postProcessing === "final" ||
             (completion.postProcessing === "interrupted" &&
               completion.before.content === completion.after.content)

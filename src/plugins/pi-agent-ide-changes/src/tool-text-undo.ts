@@ -4,6 +4,7 @@ import { resultInputSchema } from "pi-agent-resource";
 
 import { CHANGE_ANCHOR_KIND } from "#src/change-anchor.js";
 import { ChangeService } from "#src/changes/change-service.js";
+import { gitSourceDirectory } from "#src/changes/git-paths.js";
 
 import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
 import type { IndexMutationQueue } from "#src/index-mutation-queue.js";
@@ -62,7 +63,11 @@ export function createUndoMutationTool(
         restoredText = transactions.restore(source, context.cwd, context.sourceDocument.content);
       } else {
         await context.resolveAnchor("change");
-        const creation = await ChangeService.create(executor, context.cwd, context.signal);
+        const creation = await ChangeService.create(
+          executor,
+          gitSourceDirectory(source, context.cwd),
+          context.signal,
+        );
 
         if (creation.status !== "ready") {
           throw new Error(creation.message);

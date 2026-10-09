@@ -8,7 +8,9 @@ export function createLineHashPresenter(): TextLinePresenter {
     present(document, context) {
       const presented = document.lines.map((line) => {
         const sourceLine =
-          context.resolvedBy === "filesystem"
+          (context.resolvedBy === "filesystem" || context.resolvedBy === "ssh") &&
+          ((context.purpose === "edit-diff" && context.sourceText === undefined) ||
+            context.sourceText === document.content)
             ? { lineNumber: line.lineNumber, content: line.content }
             : getTextSourceLine(line);
         return sourceLine === undefined
