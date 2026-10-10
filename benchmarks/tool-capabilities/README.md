@@ -77,6 +77,8 @@ The packaged guide Search checks are in [LPT-723 evidence](evidence/LPT-723.md).
 
 The compact Codemode and saved UI preference checks are in [LPT-674 evidence](evidence/LPT-674.md). They include retained failed attempts, deterministic native rendering/settings checks and live viewport captures. No new paid-route claim is made.
 
+The registered settings catalog and setup skill checks are in [LPT-676 evidence](evidence/LPT-676.md). They separate deterministic Read/Search and live package-loading evidence from pending independent skill behavior and unrun paid routes.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:

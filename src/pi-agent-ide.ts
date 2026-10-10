@@ -8,6 +8,8 @@ import { disabledByPreset } from "#src/composite/presets.js";
 import { selectBuiltinExtensions } from "#src/composite/selection.js";
 import { registerModuleSettings } from "#src/composite/module-settings.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
+import { connectAgentDocumentation } from "#src/api/documentation.js";
+import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.js";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
 import { registerCodemodeRendering } from "#src/composite/codemode-rendering.js";
@@ -141,6 +143,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     default: false,
   });
   registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
+  connectAgentDocumentation(pi, [createIdeSettingsDocumentation(flags.definitions)]);
   const presetDisabled = disabledByPreset(BUILTIN_EXTENSIONS, config.preset ?? "full");
   const { enabled } = selectBuiltinExtensions(
     BUILTIN_EXTENSIONS,
