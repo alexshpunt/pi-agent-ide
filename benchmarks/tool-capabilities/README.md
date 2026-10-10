@@ -70,6 +70,8 @@ The intercepted-feedback and release-hygiene follow-up is in [LPT-715 evidence](
 
 The direct selection-batch and issued Search-scope fixes are in [LPT-719/721 evidence](evidence/LPT-719-721.md). The batch route requires matching call ids in one completed assistant message, not sequential retries. All new paid routes remain unrun.
 
+The packaged guide Search checks are in [LPT-723 evidence](evidence/LPT-723.md). They retain the baseline and regex-routing failures, focused direct/Codemode regressions, and live agent/TUI checks. Paid routes remain unrun.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
