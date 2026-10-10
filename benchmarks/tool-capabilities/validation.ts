@@ -57,6 +57,8 @@ export interface RouteStep {
   parentContains?: string;
   /** Check finalized transcript feedback when validation skipped the tool-result hook. */
   finalContains?: string;
+  /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
+  finalMaxBytes?: number;
   image?: boolean;
   /** Native text calls can be accepted before their parent reports a write failure. */
   error?: boolean | "direct";
@@ -229,7 +231,7 @@ export function validateRoute(
       if (step.argsAny && !step.argsAny.some((args) => matches(args, event.args))) continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
-      if (step.finalContains) {
+      if (step.finalContains !== undefined || step.finalMaxBytes !== undefined) {
         const finalized = events.findLast(
           (entry) =>
             entry.type === "message_end" &&
@@ -238,10 +240,18 @@ export function validateRoute(
         )?.message;
         if (
           !finalized ||
+          !Array.isArray(finalized.content) ||
           finalized.isError !== end.event.isError ||
-          !finalized.content?.some(
-            (block) => block.type === "text" && block.text?.includes(step.finalContains ?? ""),
-          )
+          (step.finalContains !== undefined &&
+            !finalized.content.some(
+              (block) => block.type === "text" && block.text?.includes(step.finalContains ?? ""),
+            )) ||
+          (step.finalMaxBytes !== undefined &&
+            Buffer.byteLength(
+              finalized.content
+                .flatMap((block) => (block.type === "text" ? [block.text ?? ""] : []))
+                .join("\n"),
+            ) > step.finalMaxBytes)
         )
           continue;
       }

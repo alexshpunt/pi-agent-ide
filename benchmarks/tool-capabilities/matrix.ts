@@ -11,7 +11,7 @@ const groups: [string[], string[]][] = [
   [["compose.select-delete"], ["select-result-delete"]],
   [["compose.select-insert"], ["select-result-insert"]],
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
-  [["edit.stale-insert-feedback"], ["stale-insert-recovery"]],
+  [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],

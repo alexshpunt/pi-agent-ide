@@ -152,6 +152,43 @@ describe("capability route evidence", () => {
       ).passed,
     ).toBe(false);
   });
+  test("final feedback byte limits count all UTF-8 text blocks, not an earlier result", () => {
+    const events = [
+      { type: "tool_execution_start", toolCallId: "call", toolName: "insert" },
+      {
+        type: "tool_execution_end",
+        toolCallId: "call",
+        isError: true,
+        result: { content: [{ type: "text", text: "oversized".repeat(100) }] },
+      },
+      {
+        type: "message_end",
+        message: {
+          role: "toolResult",
+          toolCallId: "call",
+          isError: true,
+          content: [
+            { type: "text", text: "stale" },
+            { type: "text", text: "😀" },
+          ],
+        },
+      },
+    ];
+    const route = (finalMaxBytes: number) => ({
+      steps: [{ tool: "insert", error: true, finalMaxBytes }],
+    });
+    expect(validateRoute(route(10), events, "direct").passed).toBe(true);
+    expect(validateRoute(route(9), events, "direct").passed).toBe(false);
+    expect(validateRoute(route(0), events, "direct").passed).toBe(false);
+    expect(validateRoute(route(10), events.slice(0, 2), "direct").passed).toBe(false);
+    const missingContent = {
+      type: "message_end",
+      message: { role: "toolResult", toolCallId: "call", isError: true },
+    };
+    expect(validateRoute(route(10), [...events.slice(0, 2), missingContent], "direct").passed).toBe(
+      false,
+    );
+  });
   test("requires actual result reuse, not just the same tool names", () => {
     expect(validateRoute(task, events, "direct")).toEqual({ passed: true, reasons: [] });
     const bypass = events.map((event) =>
