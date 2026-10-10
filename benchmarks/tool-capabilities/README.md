@@ -66,6 +66,8 @@ The 0.8.1 editing checks are in [LPT-698/699/704/705 evidence](evidence/LPT-698-
 
 The current tooling checks are in [LPT-708/710/711 evidence](evidence/LPT-708-710-711.md). They separate deterministic regressions, current-session live/TUI checks, the retained initial live failure and unrun paid routes. Final transcript feedback can differ from an earlier execution-end validation event; both stay in the evidence.
 
+The intercepted-feedback and release-hygiene follow-up is in [LPT-715 evidence](evidence/LPT-715.md). Its real-Pi checks cover both the finalized message and the provider boundary. The paid stale-feedback case has a finalized UTF-8 byte limit; this does not claim paid coverage of the oversized provider-boundary reproduction.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
