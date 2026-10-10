@@ -216,6 +216,7 @@ export async function runSettingsSkillSmoke(args: readonly string[]): Promise<vo
         nativeCode = (args as { code?: unknown }).code;
         return new Text("probe", 0, 0);
       },
+      renderResult: () => new Text("probe result", 0, 0),
     };
     const renderers = session.extensionRunner.resolveToolRenderers("codemode", () => base);
     if (renderers?.renderCall === undefined) throw new Error("Missing Codemode renderer");
