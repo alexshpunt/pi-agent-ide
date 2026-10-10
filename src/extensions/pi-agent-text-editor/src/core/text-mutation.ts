@@ -347,15 +347,9 @@ export function createTextTool<TParameters extends TSchema>(
                       }),
                     getLastResolvedSource(),
                   );
-                return executeTextToolWithBatch(
-                  toolCallId,
-                  directExecute,
-                  signal,
-                  onUpdate,
-                  context,
-                );
+                return directExecute();
               };
-              return execute();
+              return executeTextToolWithBatch(toolCallId, execute, signal, onUpdate, context);
             }),
           definition.name === "write",
         );

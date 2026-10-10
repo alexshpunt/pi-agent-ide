@@ -3,11 +3,14 @@ import { type FileMutationBatchResult, FileMutationResult } from "#src/api/mutat
 import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
 
+import type { ResultSourceTarget } from "pi-agent-resource";
 import type { OriginalToolCall } from "#src/core/text-edit-batch-coordinator.js";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 
 export interface TextBatchParams {
   readonly edits: readonly TextBatchEntry[];
+  /** Backend-owned selections captured before any call in this batch writes. */
+  readonly selections?: ReadonlyMap<string, ResultSourceTarget>;
   /** Optional whole-file revisions that every affected source must still match. */
   readonly expectedContent?: ReadonlyMap<string, string>;
   /** Reject creation or deletion by another writer while a batch is pending. */
@@ -28,8 +31,8 @@ export interface TextBatchDetails extends FileMutationBatchResult {
   readonly displayResults?: readonly FileMutationResult[];
   /** Original call id for each user-facing result. */
   readonly callIdsByDisplayResult?: readonly string[];
-  /** Per-call Copy receipts retain destination authority and their own failure evidence. */
-  readonly copyResults?: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>>;
+  /** Per-call receipts retain only their own output selection and failure evidence. */
+  readonly mutationResults?: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>>;
 }
 
 function resultPath(result: FileMutationResult): string | undefined {
@@ -56,8 +59,8 @@ export function splitTextBatchResult(
 
   return new Map(
     calls.map((call) => {
-      const copyResult = details?.copyResults?.get(call.id);
-      if (copyResult) return [call.id, copyResult];
+      const mutationResult = details?.mutationResults?.get(call.id);
+      if (mutationResult) return [call.id, mutationResult];
       const agentResults = coalesceResults(agentResultsByCall.get(call.id) ?? []);
       const displayResults = coalesceResults(displayResultsByCall.get(call.id) ?? []);
       return [

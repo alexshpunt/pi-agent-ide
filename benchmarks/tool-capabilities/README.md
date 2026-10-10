@@ -68,6 +68,8 @@ The current tooling checks are in [LPT-708/710/711 evidence](evidence/LPT-708-71
 
 The intercepted-feedback and release-hygiene follow-up is in [LPT-715 evidence](evidence/LPT-715.md). Its real-Pi checks cover both the finalized message and the provider boundary. The paid stale-feedback case has a finalized UTF-8 byte limit; this does not claim paid coverage of the oversized provider-boundary reproduction.
 
+The direct selection-batch and issued Search-scope fixes are in [LPT-719/721 evidence](evidence/LPT-719-721.md). The batch route requires matching call ids in one completed assistant message, not sequential retries. All new paid routes remain unrun.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:

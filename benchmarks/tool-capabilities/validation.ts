@@ -15,7 +15,7 @@ export interface RunEvent {
     isError?: boolean;
     stopReason?: string;
     errorMessage?: string;
-    content?: { type: string; text?: string }[];
+    content?: { type: string; text?: string; id?: string }[];
     model?: string;
     provider?: string;
   };
@@ -45,6 +45,8 @@ export interface RouteStep {
   tool: string;
   /** Require overlap with an earlier step's execution in the same native Codemode script. */
   parallelWith?: number;
+  /** Require two direct tool calls in the same completed assistant message, not a retry. */
+  sameAssistantWith?: number;
   /** At least one reviewed argument variant must match, in addition to args. */
   argsAny?: Record<string, unknown>[];
   args?: Record<string, unknown>;
@@ -224,6 +226,25 @@ export function validateRoute(
           prior === undefined ||
           start.index >= prior.end ||
           prior.parent !== event.parentToolCallId
+        )
+          continue;
+      }
+      if (step.sameAssistantWith !== undefined) {
+        const prior = selected[step.sameAssistantWith];
+        if (
+          mode !== "direct" ||
+          prior === undefined ||
+          !events.some(
+            (entry) =>
+              entry.type === "message_end" &&
+              entry.message?.role === "assistant" &&
+              entry.message.content?.some(
+                (block) => block.type === "toolCall" && block.id === event.toolCallId,
+              ) &&
+              entry.message.content.some(
+                (block) => block.type === "toolCall" && block.id === prior.event.toolCallId,
+              ),
+          )
         )
           continue;
       }

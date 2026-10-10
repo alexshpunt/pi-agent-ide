@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { expect, test, onTestFinished } from "vitest";
+import { ResultTargetStore } from "pi-agent-resource";
 
 import {
   allocateSearchSessionId,
@@ -22,6 +23,49 @@ function searchMatch(source: string, matchedText: string): TextSearchMatch {
   };
 }
 
+test("numbered line aliases keep complete containing lines and expire after source changes", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-line-alias-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  const original = "prefix OLD\r\nTAIL\r\n";
+  await writeFile(source, original);
+  const targets = new ResultTargetStore();
+  const session = await new SearchSessionStore(undefined, targets).register(
+    "OLD\\r\\nTAIL",
+    [
+      {
+        source,
+        lineNumber: 1,
+        endLineNumber: 2,
+        startColumn: 7,
+        endColumn: 4,
+        matchedText: "OLD\r\nTAIL",
+        lineText: "prefix OLD",
+      },
+    ],
+    false,
+    cwd,
+  );
+  const reference = `SEARCH#${session.id}:1:line`;
+  const selected = targets.resolve(reference, cwd);
+  expect(selected.complete).toBe(true);
+  expect(selected.targets[0]).toMatchObject({
+    source,
+    expectedContent: original,
+    ranges: [
+      {
+        start: { lineNumber: 1, column: 0 },
+        end: { lineNumber: 3, column: 0 },
+        linewise: true,
+      },
+    ],
+  });
+  await targets.verify(selected);
+  await writeFile(source, "changed\r\n");
+  await expect(targets.verify(selected)).rejects.toThrow(/stale/u);
+  await writeFile(source, original);
+  expect(() => targets.resolve(reference, cwd)).toThrow(/expired/u);
+});
 test("keeps changed search results displayable without registering anchors", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-changing-snapshot-"));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
@@ -38,6 +82,88 @@ test("keeps changed search results displayable without registering anchors", asy
   expect(session).toBeUndefined();
 });
 
+test("Search input scopes preserve numbered snapshots, refresh all, and accept empty refreshed scopes", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-input-scope-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  await writeFile(source, "old\n");
+  const store = new SearchSessionStore();
+  let refreshes = 0;
+  const session = await store.register(
+    "original",
+    [searchMatch(source, "old")],
+    true,
+    cwd,
+    undefined,
+    { query: "original", regex: false },
+    async () => {
+      refreshes++;
+      return { matches: refreshes === 1 ? [searchMatch(source, "new")] : [], complete: true };
+    },
+  );
+  const first = await store.resolveSearchScope(`SEARCH#${session.id}:1:match`, { cwd });
+  expect(first?.targets[0]).toMatchObject({
+    source,
+    expectedContent: "old\n",
+    ranges: [
+      {
+        start: { lineNumber: 1, column: 0 },
+        end: { lineNumber: 1, column: 3 },
+      },
+    ],
+  });
+  await writeFile(source, "new\n");
+  await expect(store.resolveSearchScope(`SEARCH#${session.id}:1:line`, { cwd })).rejects.toThrow(
+    /stale/u,
+  );
+  const refreshed = await store.resolveSearchScope(`SEARCH#${session.id}:all:line`, { cwd });
+  expect(refreshed).toMatchObject({
+    complete: true,
+    targets: [
+      {
+        source,
+        expectedContent: "new\n",
+        ranges: [
+          {
+            start: { lineNumber: 1, column: 0 },
+            end: { lineNumber: 2, column: 0 },
+            linewise: true,
+          },
+        ],
+      },
+    ],
+  });
+  expect(await refreshed?.targets[0]?.readCurrent?.()).toBe("new\n");
+  expect(refreshes).toBe(1);
+  await writeFile(source, "gone\n");
+  await expect(
+    store.resolveSearchScope(`SEARCH#${session.id}:all:match`, { cwd }),
+  ).resolves.toEqual({ complete: true, targets: [] });
+  expect(refreshes).toBe(2);
+});
+
+test("Search input scopes reject unknown, cross-worktree and incomplete all references", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-input-guards-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  await writeFile(source, "old\n");
+  const store = new SearchSessionStore();
+  const partial = await store.register("old", [searchMatch(source, "old")], false, cwd);
+  await expect(store.resolveSearchScope(`SEARCH#${partial.id}:all:line`, { cwd })).rejects.toThrow(
+    /limited/u,
+  );
+  await expect(
+    store.resolveSearchScope(`SEARCH#${partial.id}:1:line`, { cwd: path.join(cwd, "other") }),
+  ).rejects.toThrow(/stale/u);
+  await expect(store.resolveSearchScope("SEARCH#FFFF:1:line", { cwd })).rejects.toThrow(/stale/u);
+  await expect(store.resolveSearchScope("SEARCH#not-issued", { cwd })).rejects.toThrow(
+    /Invalid Search reference/u,
+  );
+  await expect(store.resolveSearchScope("note.txt", { cwd })).resolves.toBeUndefined();
+  await expect(
+    store.resolveSearchScope(`SEARCH#${partial.id}:1:line`, { cwd }),
+  ).resolves.toMatchObject({ targets: [{ source }] });
+});
 test("search session ids start at four characters and grow on collision", () => {
   const firstIdentity = `ABCD0${"0".repeat(59)}`;
   const secondIdentity = `ABCD1${"0".repeat(59)}`;

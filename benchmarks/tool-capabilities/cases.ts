@@ -309,6 +309,140 @@ add(
     },
   },
 );
+add(
+  "search-issued-scope",
+  ["compose.search-issued-scope"],
+  "Search task.txt for title. Use its issued SEARCH :all:line as the scope for legacyCheckout: there must be zero matches, because all feature lines are gaps. Search its first :line for first (one match), then its first :match for first (zero). Keep the bytes unchanged and use the exact issued selectors, not a file path or UUID.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "title" } },
+    {
+      tool: "search",
+      args: { path: /^SEARCH#[A-F0-9]+:all:line$/, query: "legacyCheckout" },
+      reuse: reuse(0),
+      contains: "No matches found",
+    },
+    {
+      tool: "search",
+      args: { path: /^SEARCH#[A-F0-9]+:1:line$/, query: "first" },
+      reuse: reuse(0),
+      contains: "1 match in 1 file",
+    },
+    {
+      tool: "search",
+      args: { path: /^SEARCH#[A-F0-9]+:1:match$/, query: "first" },
+      reuse: reuse(0),
+      contains: "No matches found",
+    },
+  ],
+  {
+    files: {
+      "task.txt":
+        "title first\nfeature legacyCheckout\ntitle middle\nfeature legacyCheckout\ntitle final\n",
+    },
+  },
+);
+for (const operation of ["delete", "insert"] as const) {
+  add(
+    `search-line-batch-${operation}`,
+    [
+      `edit.search-line-batch-${operation}`,
+      ...(operation === "insert" ? ["compose.batch-insert-search"] : []),
+    ],
+    `Search task.txt for OLD. In ONE assistant message issue three direct ${operation} calls with the three issued numbered SEARCH :line references as path. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    [
+      { tool: "search", args: { path: "task.txt", query: "OLD" } },
+      ...[1, 2, 3].map((index): RouteStep => ({
+        tool: operation,
+        args: {
+          path: new RegExp(`^SEARCH#[A-F0-9]+:${index}:line$`, "u"),
+          ...(operation === "insert" && { text: "ADDED", before: true }),
+        },
+        reuse: reuse(0),
+        ...(index > 1 && { sameAssistantWith: 1 }),
+      })),
+      ...(operation === "insert"
+        ? [1, 2, 3].flatMap((index): RouteStep[] => [
+            {
+              tool: "search",
+              args: { query: "ADDED" },
+              reuse: reuse(index),
+              contains: "1 match in 1 file",
+            },
+            {
+              tool: "search",
+              args: { query: "OLD OR keep" },
+              reuse: reuse(index),
+              contains: "No matches found",
+            },
+          ])
+        : []),
+    ],
+    {
+      modes: ["direct"],
+      files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nOLD\n" },
+      expected: {
+        "task.txt":
+          operation === "delete"
+            ? "keep1\nkeep2\nkeep3\n"
+            : "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+      },
+    },
+  );
+}
+for (const operation of ["replace", "delete", "insert"] as const) {
+  add(
+    `selection-batch-${operation}`,
+    [
+      `edit.selection-batch-${operation}`,
+      ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
+    ],
+    `Select complete lines 2, 4 and 6 of task.txt separately before editing. In ONE assistant message issue three direct ${operation} calls, forwarding each corresponding selection result/UUID/RESULT# item without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    [
+      ...[2, 4, 6].map((line): RouteStep => ({
+        tool: "select",
+        args: { path: "task.txt", operation: { kind: "lines", first: line, last: line } },
+      })),
+      ...[0, 1, 2].map((index): RouteStep => ({
+        tool: operation,
+        reuse: reuse(index),
+        ...(index > 0 && { sameAssistantWith: 3 }),
+        ...(operation === "replace"
+          ? { args: { text: "NEW\n" } }
+          : operation === "insert"
+            ? { args: { text: "ADDED", before: true } }
+            : {}),
+      })),
+      ...(operation === "replace"
+        ? [3, 4, 5].flatMap((index): RouteStep[] => [
+            {
+              tool: "search",
+              args: { query: "NEW" },
+              reuse: reuse(index),
+              contains: "1 match in 1 file",
+            },
+            {
+              tool: "search",
+              args: { query: "OLD OR keep" },
+              reuse: reuse(index),
+              contains: "No matches found",
+            },
+          ])
+        : []),
+    ],
+    {
+      modes: ["direct"],
+      files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nOLD\n" },
+      expected: {
+        "task.txt":
+          operation === "replace"
+            ? "keep1\nNEW\nkeep2\nNEW\nkeep3\nNEW\n"
+            : operation === "delete"
+              ? "keep1\nkeep2\nkeep3\n"
+              : "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+      },
+    },
+  );
+}
 for (const operation of ["delete", "insert"] as const) {
   add(
     `select-result-${operation}`,
@@ -670,6 +804,30 @@ add(
     files: rejectionFiles,
     expected: rejectionFiles,
     prerequisite: "command -v typescript-language-server",
+  },
+);
+
+add(
+  "mixed-file-delete-text-edit",
+  ["compose.file-delete-text-edit"],
+  "Submit Insert and three whole-file Deletes in one assistant message. Insert ADDED plus a newline after keep in note.txt. Delete a.txt, b.txt and c.txt by ordinary paths without start/end. Keep note.txt and its other bytes; do not turn the file deletions into text selections.",
+  [
+    { tool: "insert", args: { path: "note.txt", anchor: "keep", text: "ADDED\n" } },
+    ...["a.txt", "b.txt", "c.txt"].map((source): RouteStep => ({
+      tool: "delete",
+      args: { path: source, start: undefined, end: undefined },
+      sameAssistantWith: 0,
+    })),
+  ],
+  {
+    modes: ["direct"],
+    files: {
+      "note.txt": "keep\nnext\n",
+      "a.txt": "remove\n",
+      "b.txt": "remove\n",
+      "c.txt": "remove\n",
+    },
+    expected: { "note.txt": "keep\nADDED\nnext\n", "a.txt": null, "b.txt": null, "c.txt": null },
   },
 );
 

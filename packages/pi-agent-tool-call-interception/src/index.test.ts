@@ -109,6 +109,8 @@ function context(state: {
   return {
     args: {},
     toolCallId: "call-1",
+    durationMs: undefined,
+    outputPad: 0,
     invalidate() {},
     lastComponent: undefined,
     state: {},

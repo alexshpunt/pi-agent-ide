@@ -198,7 +198,7 @@ Pi Agent IDE is experimental and under active development. Interfaces and behavi
 
 ## Installation
 
-Install [Pi](https://pi.dev/) **0.99.1 or newer** first, then install Pi Agent IDE from npm. Development and integration tests use Pi 1.0.0. Older hosts are rejected with an upgrade message.
+Install [Pi](https://pi.dev/) **0.99.1 or newer** first, then install Pi Agent IDE from npm. Development and integration tests use Pi 1.1.0. Older hosts are rejected with an upgrade message.
 
 ```bash
 pi install npm:pi-agent-ide

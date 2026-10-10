@@ -49,7 +49,13 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
               : kind === "item"
                 ? /(RESULT#[a-f\d-]{36})/u
                 : kind === "search"
-                  ? /(SEARCH#[A-F\d]+:\d+:line)/u
+                  ? new RegExp(`(SEARCH#[A-F\\d]+:${line ?? "\\d+"}:line)`, "u")
+                  : kind === "searchmatch"
+                    ? new RegExp(`(SEARCH#[A-F\\d]+:${line ?? "\\d+"}:match)`, "u")
+                    : kind === "searchallline"
+                      ? /(SEARCH#[A-F\d]+:all:line)/u
+                      : kind === "searchallmatch"
+                        ? /(SEARCH#[A-F\d]+:all:match)/u
                   : new RegExp(`(?:^|\\n)\\s*(${line}#[A-F\\d]{4,64})`, "u");
           const value = expression.exec(shown)?.[1];
           if (!value) throw new Error(`Missing ${kind} reference in ${id}`);
@@ -60,7 +66,7 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
             for await (const event of delegate(currentModel, transcript, options)) {
               const forwarded = JSON.parse(
                 JSON.stringify(event).replace(
-                  /\$issued-(uuid|item|search|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu,
+                  /\$issued-(uuid|item|search(?:match|allline|allmatch)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu,
                   reference,
                 ),
               ) as AssistantMessageEvent;

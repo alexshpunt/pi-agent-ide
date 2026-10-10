@@ -7,8 +7,8 @@ export interface NativeEditBatchEvent {
   readonly calls: readonly string[];
   /** Successful Copy calls that retained identical destination text without a write. */
   readonly unchangedCopyCalls?: readonly string[];
-  /** Per-call Copy receipts keep destination authority and rollback evidence. */
-  readonly copyResults?: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>>;
+  /** Per-call receipts keep only their own output selection and failure evidence. */
+  readonly mutationResults?: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>>;
   readonly result: AgentToolResult<FileMutationBatchResult>;
 }
 

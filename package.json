@@ -163,6 +163,10 @@
       "types": "./src/api/read.ts",
       "default": "./src/api/read.ts"
     },
+    "./api/content": {
+      "types": "./src/api/content.ts",
+      "default": "./src/api/content.ts"
+    },
     "./api/resource": {
       "types": "./src/api/resource.ts",
       "default": "./src/api/resource.ts"
@@ -220,6 +224,7 @@
     "node-screenshots": "0.2.8",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-documentation": "workspace:^",
+    "pi-agent-image": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-pdf": "workspace:^",
     "pi-agent-read": "workspace:^",
@@ -233,9 +238,9 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0",
-    "@earendil-works/pi-tui": "1.0.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "@oxlint/plugins": "^1.87.0",
     "@types/cross-spawn": "^6.0.6",
     "@typescript/native": "npm:typescript@^7.0.2",

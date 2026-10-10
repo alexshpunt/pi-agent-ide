@@ -7,8 +7,8 @@
     "#src/*": "./src/*"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.0.0",
-    "@earendil-works/pi-tui": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "diff": "^9.0.0",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
