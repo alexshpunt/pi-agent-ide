@@ -29,20 +29,19 @@ export async function prepareDeletion(
   context: DeletePolicyContext,
   signal?: AbortSignal,
 ): Promise<BeforeDeleteEvent & { readonly revision: string }> {
-  const guard = await prepareDeletionGuard(source, cwd, context, signal, true);
+  const guard = await prepareDeletionGuard(source, cwd, context, signal);
   await guard.verify();
   return guard.event;
 }
 
-/** Keep approval checks for multi-object removals; only Delete opts into temporary cleanup. */
+/** Apply the same approval policy to Delete and each removed Move endpoint. */
 export async function prepareDeletionGuard(
   source: string,
   cwd: string,
   context: DeletePolicyContext,
   signal?: AbortSignal,
-  allowTemporary = false,
 ): Promise<DeletionGuard> {
-  const before = await inspectDeletion(source, cwd, signal, context.files, allowTemporary);
+  const before = await inspectDeletion(source, cwd, signal, context.files);
   const event =
     context.files === undefined
       ? before.event
@@ -70,7 +69,7 @@ export async function prepareDeletionGuard(
       signal?.throwIfAborted();
       let after;
       try {
-        after = await inspectDeletion(source, cwd, signal, context.files, allowTemporary);
+        after = await inspectDeletion(source, cwd, signal, context.files);
       } catch (error) {
         signal?.throwIfAborted();
         fail(
@@ -93,7 +92,6 @@ async function inspectDeletion(
   cwd: string,
   signal: AbortSignal | undefined,
   files: DeleteFileAccess | undefined,
-  allowTemporary: boolean,
 ) {
   const access = files ?? localFiles;
   const paths = files === undefined || files.pathStyle === "native" ? path : path.posix;
@@ -112,12 +110,8 @@ async function inspectDeletion(
   assertUnprotected(resolvedPath, boundary, project.controls, paths);
 
   const temporaryRoots =
-    allowTemporary && kind !== "file"
-      ? await loadTemporaryDirectories(boundary, access, signal)
-      : [];
-  const temporary =
-    !temporaryRoots.some((root) => paths.relative(root, resolvedPath) === "") &&
-    temporaryRoots.some((root) => contains(root, resolvedPath, paths));
+    kind !== "file" ? await loadTemporaryDirectories(boundary, resolvedPath, access, signal) : [];
+  const temporary = temporaryRoots.some((root) => contains(root, resolvedPath, paths));
   let reason: string | undefined;
   let tracked: string[] = [];
   if (kind !== "file") {

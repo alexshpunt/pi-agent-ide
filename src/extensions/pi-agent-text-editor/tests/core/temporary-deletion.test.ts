@@ -13,7 +13,10 @@ let home: string;
 let system: string;
 let agent: string;
 beforeEach(async () => {
-  root = await mkdtemp(path.join(os.tmpdir(), "ide-temp-delete-"));
+  // Negative cases must not inherit a real /tmp ancestor.
+  const fixtures = path.join(os.homedir(), ".cache", "pi-agent-ide-policy-fixtures");
+  await mkdir(fixtures, { recursive: true });
+  root = await mkdtemp(path.join(fixtures, "case-"));
   cwd = path.join(root, "project");
   home = path.join(root, "home");
   system = path.join(root, "system");
@@ -80,11 +83,35 @@ test("keeps tracked approval even when the worktree is inside system temp", asyn
   });
 });
 
-test("does not relax Git failures or deletion of the temp root itself", async () => {
+test("does not relax Git failures inside the current project", async () => {
   const target = await folder(path.join(cwd, "tmp", "scratch"));
   await writeFile(path.join(cwd, ".git", "index"), "bad index");
   expect(await remove(target)).toMatchObject({ error: { code: "DELETE_NOT_APPROVED" } });
-  expect(await remove(system)).toMatchObject({ error: { code: "DELETE_NOT_APPROVED" } });
+});
+
+test("cleans exact temporary names anywhere, including the named directory itself", async () => {
+  const confirm = vi.fn(async () => false);
+  for (const name of ["tmp", ".tmp", "temp", ".temp"]) {
+    const temporary = path.join(home, "nested", name);
+    const target = await folder(path.join(temporary, "scratch"));
+    expect(await remove(target, home, confirm)).toMatchObject({ ok: true });
+    await folder(temporary);
+    expect(await remove(temporary, home, confirm)).toMatchObject({ ok: true });
+    await expect(lstat(temporary)).rejects.toMatchObject({ code: "ENOENT" });
+  }
+  expect(await remove(system, home, confirm)).toMatchObject({ ok: true });
+  expect(confirm).not.toHaveBeenCalled();
+});
+
+test("does not treat similar directory names as temporary", async () => {
+  const confirm = vi.fn(async () => false);
+  for (const name of ["my-tmp", "tmp-other", "templates", ".temporary"])
+    expect(
+      await remove(await folder(path.join(home, name, "scratch")), cwd, confirm),
+    ).toMatchObject({
+      error: { code: "DELETE_NOT_APPROVED" },
+    });
+  expect(confirm).toHaveBeenCalledTimes(4);
 });
 
 test("replaces defaults, extends lower layers and resolves relative and home paths", async () => {
@@ -107,13 +134,15 @@ test("replaces defaults, extends lower layers and resolves relative and home pat
   expect(await remove(standard)).toMatchObject({ error: { code: "DELETE_NOT_APPROVED" } });
 });
 
-test("extends defaults and excludes roots even when temporary roots overlap", async () => {
+test("extends defaults and allows configured roots even when they overlap", async () => {
   const nested = path.join(system, "nested-root");
   await folder(path.join(nested, "scratch"));
   await config(globalConfig(), "extend", [nested]);
-  expect(await remove(nested)).toMatchObject({ error: { code: "DELETE_NOT_APPROVED" } });
-  expect(await remove(path.join(nested, "scratch"))).toMatchObject({ ok: true });
+  expect(await remove(nested)).toMatchObject({ ok: true });
   expect(await remove(await folder(path.join(system, "standard")))).toMatchObject({ ok: true });
+  const custom = await folder(path.join(home, "custom-root"));
+  await config(projectConfig(), "replace", [custom]);
+  expect(await remove(custom)).toMatchObject({ ok: true });
 });
 
 test("does not trust a default named root redirected outside its base", async () => {
@@ -167,12 +196,64 @@ test("keeps hooks and rechecks changed temp classification before removal", asyn
   expect(await readFile(path.join(target, "data"), "utf8")).toBe("keep");
 });
 
-test("keeps Move approval for an external temp directory", async () => {
-  const target = await folder(path.join(system, "scratch"));
+test("moves temporary sources and replaces temporary directories without approval", async () => {
+  const confirm = vi.fn(async () => false);
+  const source = await folder(path.join(home, "nested", "tmp"));
+  const target = await folder(path.join(home, "nested", ".temp"));
+  await writeFile(path.join(target, "old"), "remove");
   expect(
-    await executeFileOperation("move", { path: target, target: path.join(system, "moved") }, cwd),
-  ).toMatchObject({ error: { code: "DELETE_CONFIRMATION_REQUIRED" } });
+    await executeFileOperation("move", { path: source, target }, cwd, undefined, { confirm }),
+  ).toMatchObject({ ok: true, effect: "applied" });
+  expect(confirm).not.toHaveBeenCalled();
   expect(await readFile(path.join(target, "data"), "utf8")).toBe("keep");
+  await expect(lstat(source)).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(lstat(path.join(target, "old"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+test("temporary sources do not exempt ordinary or tracked Move destinations", async () => {
+  const source = await folder(path.join(home, "tmp", "source"));
+  const external = await folder(path.join(home, "ordinary"));
+  const tracked = await folder(path.join(cwd, "nested", "temp"));
+  await exec("git", ["-C", cwd, "add", "nested/temp/data"]);
+  for (const target of [external, tracked]) {
+    const confirm = vi.fn(async () => false);
+    expect(
+      await executeFileOperation("move", { path: source, target }, cwd, undefined, { confirm }),
+    ).toMatchObject({ error: { code: "DELETE_NOT_APPROVED" }, effect: "not-applied" });
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ path: target }),
+      expect.any(String),
+    );
+    expect(await readFile(path.join(source, "data"), "utf8")).toBe("keep");
+  }
+});
+
+test("Copy merges temporary directories without removing destination-only files", async () => {
+  const source = await folder(path.join(home, "nested", "tmp"));
+  const target = await folder(path.join(home, "nested", "temp"));
+  await writeFile(path.join(target, "extra"), "retain");
+  const confirm = vi.fn(async () => false);
+  expect(
+    await executeFileOperation("copy", { path: source, target }, cwd, undefined, { confirm }),
+  ).toMatchObject({ ok: true, effect: "applied" });
+  expect(confirm).not.toHaveBeenCalled();
+  expect(await readFile(path.join(target, "extra"), "utf8")).toBe("retain");
+  expect(await readFile(path.join(source, "data"), "utf8")).toBe("keep");
+});
+
+test("replacement settings disable nested default names for Delete and Move", async () => {
+  await config(projectConfig(), "replace", []);
+  const source = await folder(path.join(home, "nested", "tmp"));
+  for (const operation of ["delete", "move"] as const) {
+    expect(
+      await executeFileOperation(
+        operation,
+        { path: source, ...(operation === "move" ? { target: path.join(home, "moved") } : {}) },
+        cwd,
+      ),
+    ).toMatchObject({ error: { code: "DELETE_CONFIRMATION_REQUIRED" } });
+  }
 });
 
 test("invalid settings fail closed before deletion", async () => {

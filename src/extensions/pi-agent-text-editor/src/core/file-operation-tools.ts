@@ -2,10 +2,28 @@ import path from "node:path";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
 import { forgetDeferredPostEdit } from "./post-edit-scope.js";
-import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentToolResult,
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.js";
 import { isDiffStatusContribution } from "#src/api/post-edit.js";
 import type { MutationDiffStatus } from "#src/api/mutation-result.js";
+
+function emitBlocked(
+  events: Pick<ExtensionAPI["events"], "emit"> | undefined,
+  active: boolean,
+): void {
+  try {
+    events?.emit(
+      "herdr:blocked",
+      active ? { active: true, label: "Waiting for user response" } : { active: false },
+    );
+  } catch {
+    // Header status must not change the user's decision or fail filesystem work.
+  }
+}
 
 /** Return whether a hybrid text tool invocation addresses a complete file. */
 export function isWholeFileInvocation(
@@ -26,7 +44,7 @@ export function isWholeFileInvocation(
   return operation === "delete" || (typeof input.target === "string" && input.target.length > 0);
 }
 
-/** Execute the complete-file mode shared by copy, move, and delete. */
+/** Execute whole-object operations; terminal approval dialogs report waiting through host events. */
 export async function executeWholeFileTool(
   core: TextEditorCore,
   operation: FileOperation,
@@ -34,9 +52,11 @@ export async function executeWholeFileTool(
   signal: AbortSignal | undefined,
   context: Pick<ExtensionContext, "cwd"> & {
     readonly hasUI?: boolean;
+    readonly mode?: ExtensionContext["mode"];
     readonly ui?: Pick<ExtensionContext["ui"], "confirm">;
   },
   verifySource?: () => Promise<void>,
+  events?: Pick<ExtensionAPI["events"], "emit">,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   let finalize: Awaited<ReturnType<TextEditorCore["prepareFilePostProcessing"]>> | undefined;
   const ui = context.hasUI ? context.ui : undefined;
@@ -69,25 +89,33 @@ export async function executeWholeFileTool(
             });
         },
         ...(ui !== undefined && {
-          confirm: async (event, reason) =>
-            ui.confirm(
-              operation === "move" ? "Move filesystem object?" : "Delete permanently?",
-              [
-                event.path,
-                event.resolvedPath === event.path
-                  ? undefined
-                  : `Resolved path: ${event.resolvedPath}`,
-                operation === "move" && event.path === path.resolve(context.cwd, String(input.path))
-                  ? `Move source to ${String(input.target)}; preserve link objects without following their targets.`
-                  : event.recursive
-                    ? "Remove directory and all contents recursively."
-                    : "Unlink symlink only; leave its target untouched.",
-                reason,
-              ]
-                .filter((line) => line !== undefined)
-                .join("\n"),
-              { signal },
-            ),
+          confirm: async (event, reason) => {
+            const waitingEvents = context.mode === "tui" ? events : undefined;
+            emitBlocked(waitingEvents, true);
+            try {
+              return await ui.confirm(
+                operation === "move" ? "Move filesystem object?" : "Delete permanently?",
+                [
+                  event.path,
+                  event.resolvedPath === event.path
+                    ? undefined
+                    : `Resolved path: ${event.resolvedPath}`,
+                  operation === "move" &&
+                  event.path === path.resolve(context.cwd, String(input.path))
+                    ? `Move source to ${String(input.target)}; preserve link objects without following their targets.`
+                    : event.recursive
+                      ? "Remove directory and all contents recursively."
+                      : "Unlink symlink only; leave its target untouched.",
+                  reason,
+                ]
+                  .filter((line) => line !== undefined)
+                  .join("\n"),
+                { signal },
+              );
+            } finally {
+              emitBlocked(waitingEvents, false);
+            }
+          },
         }),
       });
     },

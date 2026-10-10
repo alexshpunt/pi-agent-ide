@@ -60,6 +60,7 @@ export default async function registerTextEditorCore(
         interceptionRendering,
         () => getLastResolvedResource(pi)?.source,
         resultTargets,
+        pi.events,
       ),
     );
   });

@@ -68,8 +68,19 @@ const groups: [string[], string[]][] = [
     ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
     ["delete-policy-gates"],
   ],
-  [["edit.delete-temporary-defaults"], ["delete-temporary-defaults"]],
-  [["edit.delete-temporary-config"], ["delete-temporary-config"]],
+  [
+    [
+      "edit.delete-temporary-defaults",
+      "edit.delete-temporary-roots",
+      "edit.delete-temporary-names",
+    ],
+    ["delete-temporary-defaults"],
+  ],
+  [["edit.delete-temporary-config", "edit.move-temporary-config"], ["delete-temporary-config"]],
+  [
+    ["edit.move-temporary-defaults", "edit.copy-temporary-directory"],
+    ["move-temporary-directories"],
+  ],
   [
     ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
     ["selection-copy-move"],

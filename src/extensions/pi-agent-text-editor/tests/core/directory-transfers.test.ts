@@ -25,7 +25,10 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 async function fixture() {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-directory-transfer-"));
+  // Ordinary external paths must not inherit the temporary-directory exception.
+  const fixtures = path.join(os.homedir(), ".cache", "pi-agent-ide-transfer-fixtures");
+  await mkdir(fixtures, { recursive: true });
+  const cwd = await mkdtemp(path.join(fixtures, "case-"));
   roots.push(cwd);
   execFileSync("git", ["init", "-q", cwd]);
   await mkdir(path.join(cwd, "source", "nested", "empty"), { recursive: true });

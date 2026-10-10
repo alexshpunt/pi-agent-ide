@@ -263,9 +263,9 @@ Each actionable state has its own stable fingerprint. The same state is shown on
 
 ### Temporary-directory deletion
 
-For SSH Delete, all paths and settings belong to the selected target: its account home, system temp, `PI_CODING_AGENT_DIR`, and project config. Local settings do not grant permission to remote paths.
+For SSH Delete and Move removal checks, all paths and settings belong to the selected target: its account home, system temp, `PI_CODING_AGENT_DIR`, and project config. Local settings do not grant permission to remote paths.
 
-Delete skips the external/non-Git confirmation for descendants of temporary roots. Defaults are `tmp`, `.tmp`, `temp`, and `.temp` under the current Git worktree root (or cwd without Git) and your home directory, plus the system temporary directory. The system root follows the OS environment, such as `TMPDIR` on Linux or `TEMP`/`TMP` on Windows.
+Delete and Move removal checks skip the external/non-Git confirmation for temporary roots and their descendants. By default, any exact `tmp`, `.tmp`, `temp`, or `.temp` component in the resolved path makes it temporary. Similar names such as `my-tmp` do not qualify. The system temporary directory also qualifies and follows the OS environment, such as `TMPDIR` on Linux or `TEMP`/`TMP` on Windows.
 
 Configure this in `<agent-dir>/pi-agent-ide/deletion.json` globally, or `<project>/.pi/pi-agent-ide/deletion.json` for one project. `<agent-dir>` defaults to `~/.pi/agent` and follows `PI_CODING_AGENT_DIR`.
 
@@ -280,9 +280,9 @@ Configure this in `<agent-dir>/pi-agent-ide/deletion.json` globally, or `<projec
 
 `extend` adds to the lower layer; `replace` replaces it. Layers apply in this order: defaults, global, project. A project replacement overrides both defaults and global settings. Use `{"temporaryDirectories":{"mode":"replace","paths":[]}}` to disable the exception.
 
-Relative global paths start at your home directory; relative project paths start at the worktree root, or cwd without Git. Absolute paths and a leading `~/` are supported. Globs and other shell expansion are not supported. Custom roots resolve symlinks; named defaults do not grant access to a redirected root's destination. Missing roots are skipped. Settings are read for each deletion and checked again before removal. Invalid settings block directory/symlink deletion rather than falling back.
+Relative global paths start at your home directory; relative project paths start at the worktree root, or cwd without Git. Absolute paths and a leading `~/` are supported. Globs and other shell expansion are not supported. Custom roots resolve symlinks; default name matching uses resolved parent paths, not a symlink spelling. Missing configured roots are skipped. Settings are read for each removal and checked again before effects. Invalid settings block directory/symlink removal rather than falling back.
 
-The exception does not apply to the temporary roots themselves, tracked/staged contents, failed Git checks inside the current project, or protected project/Git/filesystem paths. Parent links must resolve inside an allowed root. Unlinking the final symlink leaves its destination alone. Hooks still apply. Copy and Move keep their existing safeguards, and regular-file deletion is unchanged.
+Tracked/staged contents, failed Git checks inside the current project, and protected project/Git/filesystem paths keep their safeguards. Parent links must resolve inside an allowed root or to a path with an eligible name. Unlinking the final symlink leaves its destination alone. Hooks still apply. Move checks its source and any replaced directory separately; a temporary source does not exempt an ordinary destination. Copy still merges directories and keeps destination-only files. Regular-file deletion is unchanged.
 
 ### Exact text recovery
 

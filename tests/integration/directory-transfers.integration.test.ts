@@ -16,6 +16,85 @@ import {
   withTempWorkspace,
 } from "#integration/support/pi-runtime/fixtures.js";
 
+test("temporary directory roots transfer and delete without host dialogs on both routes", async () => {
+  await withTempWorkspace(async (external) => {
+    await withTempWorkspace(async (cwd) => {
+      execFileSync("git", ["init", "-q", cwd]);
+      await enableNativeCodemode(cwd);
+      const calls = [];
+      for (const route of ["direct", "script"]) {
+        const source = path.join(external, route, "nested", ".temp");
+        const copy = path.join(external, route, "copies", ".tmp");
+        const move = path.join(external, route, "moves", "temp");
+        const remove = path.join(external, route, "cleanup", "tmp");
+        for (const directory of [source, copy, move, remove])
+          await mkdir(directory, { recursive: true });
+        await writeFile(path.join(source, "data"), "source bytes");
+        await writeFile(path.join(copy, "keep"), "destination only");
+        await writeFile(path.join(move, "old"), "replace me");
+        await writeFile(path.join(remove, "data"), "remove me");
+        for (const [operation, input] of [
+          ["copy", { path: source, target: copy }],
+          ["move", { path: source, target: move }],
+          ["delete", { path: remove }],
+        ] as const) {
+          calls.push(
+            route === "direct"
+              ? toolCall({ id: `${route}-${operation}`, name: operation, arguments: input })
+              : toolCall({
+                  id: `${route}-${operation}`,
+                  name: "codemode",
+                  arguments: {
+                    code: `text(await tools.${operation}(${JSON.stringify(input)}));`,
+                  },
+                }),
+          );
+        }
+      }
+      const run = await new PiIntegrationTest({
+        testName: "temporary-objects-both-routes",
+        rawMode: false,
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        extensions: [
+          "builtin:codemode",
+          path.resolve("src/pi-agent-ide.ts"),
+          path.resolve("tests/integration/support/delete-dialog-extension.ts"),
+        ],
+        tools: ["copy", "move", "delete", "codemode"],
+        conversation: [
+          ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
+          assistantMessage([text("Done")]),
+        ],
+      }).run("Copy, move and delete nested temporary roots without asking for approval");
+      for (const route of ["direct", "script"]) {
+        for (const operation of ["copy", "move", "delete"]) {
+          expect(getToolExecution(run, `${route}-${operation}`).isError).toBe(false);
+          expect(getToolResultText(run, `${route}-${operation}`)).toContain(
+            `${operation}: applied`,
+          );
+        }
+        for (const target of ["copies/.tmp", "moves/temp"])
+          expect(await readFile(path.join(external, route, target, "data"), "utf8")).toBe(
+            "source bytes",
+          );
+        expect(await readFile(path.join(external, route, "copies/.tmp/keep"), "utf8")).toBe(
+          "destination only",
+        );
+        for (const removed of ["nested/.temp", "moves/temp/old", "cleanup/tmp"])
+          await expect(lstat(path.join(external, route, removed))).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+      }
+      await expect(lstat(path.join(cwd, "dialog-decisions.jsonl"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(
+        JSON.parse(await readFile(path.join(cwd, "herdr-events.json"), "utf8")) as unknown,
+      ).toEqual([]);
+    });
+  });
+});
 // Use the existing Delete integration pattern: real tools, isolated Git, and both call routes.
 test("transfers trees and standalone links with merge and replace semantics through both routes", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -214,6 +293,17 @@ test("Move source and replacement gates cannot be bypassed through native Codemo
       true,
       true,
     ]);
+    for (const decision of decisions)
+      expect(decision).toMatchObject({ blockedAtOpen: { active: true } });
+    const blocked: unknown = JSON.parse(
+      await readFile(path.join(cwd, "herdr-events.json"), "utf8"),
+    );
+    expect(blocked).toEqual(
+      decisions.flatMap(() => [
+        { active: true, label: expect.any(String) as unknown },
+        { active: false },
+      ]),
+    );
   });
 });
 

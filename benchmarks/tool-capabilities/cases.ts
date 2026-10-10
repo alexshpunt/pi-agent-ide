@@ -164,38 +164,56 @@ add(
 );
 add(
   "delete-temporary-defaults",
-  ["edit.delete-temporary-defaults"],
-  "Delete tmp/scratch, .tmp/scratch, temp/scratch, and .temp/scratch through ordinary Delete paths. This workspace has no Git; temporary descendants need no approval. Leave sentinel.txt unchanged.",
-  ["tmp", ".tmp", "temp", ".temp"].map((name) => ({
-    tool: "delete",
-    args: { path: `${name}/scratch` },
-    contains: "delete: applied",
-  })),
+  ["edit.delete-temporary-defaults", "edit.delete-temporary-roots", "edit.delete-temporary-names"],
+  "Delete nested/tmp/scratch, nested/.tmp/scratch, nested/temp/scratch, and nested/.temp/scratch through ordinary Delete paths. Then delete each named root itself: nested/tmp, nested/.tmp, nested/temp, and nested/.temp. This workspace has no Git; exact temporary path components need no approval. Leave sentinel.txt unchanged.",
+  [
+    ...["tmp", ".tmp", "temp", ".temp"].map((name) => ({
+      tool: "delete",
+      args: { path: `nested/${name}/scratch` },
+      contains: "delete: applied",
+    })),
+    ...["tmp", ".tmp", "temp", ".temp"].map((name) => ({
+      tool: "delete",
+      args: { path: `nested/${name}` },
+      contains: "delete: applied",
+    })),
+  ],
   {
     setup: "delete-temporary-no-git",
     files: {
       "sentinel.txt": "KEEP\n",
       ...Object.fromEntries(
-        ["tmp", ".tmp", "temp", ".temp"].map((name) => [`${name}/scratch/data`, "REMOVE\n"]),
+        ["tmp", ".tmp", "temp", ".temp"].flatMap((name) => [
+          [`nested/${name}/scratch/data`, "REMOVE\n"],
+          [`nested/${name}/root-data`, "REMOVE\n"],
+        ]),
       ),
     },
     expected: Object.fromEntries(
       ["tmp", ".tmp", "temp", ".temp"].flatMap((name) => [
-        [`${name}/scratch`, null],
-        [`${name}/scratch/data`, null],
+        [`nested/${name}`, null],
+        [`nested/${name}/scratch`, null],
+        [`nested/${name}/scratch/data`, null],
+        [`nested/${name}/root-data`, null],
       ]),
     ),
   },
 );
 add(
   "delete-temporary-config",
-  ["edit.delete-temporary-config"],
-  "Delete custom/scratch. The project deletion setting replaces default temporary roots with custom. Request Delete on tmp/scratch too: it must require approval unavailable in this non-interactive runtime. Leave tmp/scratch/data and sentinel.txt unchanged. In Codemode catch the expected refusal.",
+  ["edit.delete-temporary-config", "edit.move-temporary-config"],
+  "Delete the custom root itself. The project deletion setting replaces default temporary roots with custom. Request Delete and Move on nested/tmp too: both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode catch the expected refusals.",
   [
-    { tool: "delete", args: { path: "custom/scratch" }, contains: "delete: applied" },
+    { tool: "delete", args: { path: "custom" }, contains: "delete: applied" },
     {
       tool: "delete",
-      args: { path: "tmp/scratch" },
+      args: { path: "nested/tmp" },
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+    {
+      tool: "move",
+      args: { path: "nested/tmp", target: "moved" },
       error: true,
       contains: "DELETE_CONFIRMATION_REQUIRED",
     },
@@ -206,11 +224,44 @@ add(
       ".pi/pi-agent-ide/deletion.json": JSON.stringify({
         temporaryDirectories: { mode: "replace", paths: ["custom"] },
       }),
-      "custom/scratch/data": "REMOVE\n",
-      "tmp/scratch/data": "KEEP\n",
+      "custom/data": "REMOVE\n",
+      "nested/tmp/data": "KEEP\n",
       "sentinel.txt": "KEEP\n",
     },
-    expected: { "custom/scratch": null, "custom/scratch/data": null },
+    expected: { custom: null, "custom/data": null, moved: null },
+  },
+);
+add(
+  "move-temporary-directories",
+  ["edit.move-temporary-defaults", "edit.copy-temporary-directory"],
+  "Move nested/tmp over nested/temp, replacing its old contents without an approval dialog. Then Copy nested/temp into nested/.tmp, preserving the destination-only copy-only file. Use ordinary directory paths. This workspace has no Git; temporary roots and descendants are eligible. Leave sentinel.txt unchanged.",
+  [
+    {
+      tool: "move",
+      args: { path: "nested/tmp", target: "nested/temp" },
+      contains: "move: applied",
+    },
+    {
+      tool: "copy",
+      args: { path: "nested/temp", target: "nested/.tmp" },
+      contains: "copy: applied",
+    },
+  ],
+  {
+    setup: "delete-temporary-no-git",
+    files: {
+      "nested/tmp/data": "MOVE\n",
+      "nested/temp/old": "REMOVE\n",
+      "nested/.tmp/copy-only": "KEEP\n",
+      "sentinel.txt": "KEEP\n",
+    },
+    expected: {
+      "nested/tmp": null,
+      "nested/tmp/data": null,
+      "nested/temp/old": null,
+      "nested/temp/data": "MOVE\n",
+      "nested/.tmp/data": "MOVE\n",
+    },
   },
 );
 function add(
