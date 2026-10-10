@@ -61,7 +61,7 @@ test("trusted Search API resolves scopes and guards them before any resolver run
   expect(resolve).toHaveBeenCalledOnce();
   expect(JSON.stringify(denied.content)).toContain("Owned content is blocked");
 });
-async function setup(attempt: SearchResolutionAttempt | Error) {
+async function setup(attempt: SearchResolutionAttempt | Error, supportsResultScope = false) {
   const core = createSearchCore();
   const specialized = vi.fn(() => {
     if (attempt instanceof Error) throw attempt;
@@ -75,6 +75,7 @@ async function setup(attempt: SearchResolutionAttempt | Error) {
     {
       resolver: {
         id: "text",
+        supportsResultScope,
         tryResolve: fallback,
         format: () => ({ content: [{ type: "text", text: "local hits" }], details: {} }),
       },
@@ -84,6 +85,7 @@ async function setup(attempt: SearchResolutionAttempt | Error) {
     {
       resolver: {
         id: "special",
+        supportsResultScope,
         tryResolve: specialized,
         format: () => ({ content: [{ type: "text", text: "No symbols found." }], details: {} }),
       },
@@ -356,6 +358,17 @@ test("keeps complete zero-match results free of incomplete warnings", async () =
 });
 
 describe("search fallback dispatch", () => {
+  test("a literal colon prefix reaches the text fallback inside the unchanged result scope", async () => {
+    const { core, fallback } = await setup({ kind: "not-handled" }, true);
+    const scope = { targets: [], complete: true };
+    const request = { query: 'feature: "legacy​Checkout"' };
+    const result = await core.execute(request, { cwd: process.cwd(), scope });
+    expect(result.details.resolverId).toBe("text");
+    expect(fallback).toHaveBeenCalledOnce();
+    expect(fallback).toHaveBeenCalledWith(request, expect.objectContaining({ scope }));
+    expect(fallback.mock.calls[0]?.[0]).toEqual(request);
+    expect(JSON.stringify(result.content)).toContain("local hits");
+  });
   test.each(["symbols:", "ast:", "regex:", "files:", "custom:   "])(
     "routes empty %s straight to local text",
     async (query) => {

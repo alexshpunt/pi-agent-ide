@@ -251,7 +251,8 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;
         if (context.scope !== undefined && resolver.supportsResultScope !== true) continue;
-        if (context.scope !== undefined && entry.registration.fallback && protocolLike) continue;
+        // Unknown colon prefixes can be source text (for example, feature: "legacy").
+        // The fallback still searches only the verified scope; structural protocols stay above.
 
         try {
           const scope = Promise.resolve().then(async () => {

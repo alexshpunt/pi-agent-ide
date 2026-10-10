@@ -3,7 +3,7 @@ Runtime for intercepting streamed Pi tool calls.
 */
 
 import { Allow } from "partial-json";
-import { resultError, withStructuredResult } from "pi-agent-resource";
+import { assertJsonData, resultError, withStructuredResult } from "pi-agent-resource";
 import { mutationDataSchema } from "#src/core/structured-result.js";
 import {
   isToolCallAnnotation,
@@ -328,6 +328,27 @@ class InterceptorImpl implements ToolCallInterceptor {
       await this.finalizeRecovery();
       this.annotateIncompleteCalls();
 
+      if (event.message.role === "toolResult") {
+        const record = this.toolCallRecords.get(event.message.toolCallId);
+        const guardResult = record?.blockExecution ? record.guardResult : undefined;
+        if (guardResult) {
+          // Schema validation can finish before tool_call/tool_result for an aborted prefix.
+          // Keep the saved guard outcome; never make the incomplete call executable.
+          this.toolCallRecords.delete(event.message.toolCallId);
+          const details = guardResult.details;
+          if (details !== undefined) assertJsonData(details);
+          const batchEntryIndex = this.toolCallBatchEntryIndexes.get(event.message.toolCallId);
+          if (batchEntryIndex !== undefined) this.completedBatchEntryIndexes.add(batchEntryIndex);
+          return {
+            message: {
+              ...event.message,
+              content: guardResult.content,
+              ...(details !== undefined && { details }),
+              isError: true,
+            },
+          };
+        }
+      }
       if (event.message.role !== "assistant") {
         return;
       }

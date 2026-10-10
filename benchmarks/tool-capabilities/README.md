@@ -64,6 +64,8 @@ The focused native Codemode semantic rename fix and its direct/Codemode rerun ar
 
 The 0.8.1 editing checks are in [LPT-698/699/704/705 evidence](evidence/LPT-698-699-704-705.md). They include deterministic real-Pi replay and free coverage checks, not paid model results. `parallelWith` requires overlapping child execution in the same native Codemode script; sequential calls cannot pass the parallel route.
 
+The current tooling checks are in [LPT-708/710/711 evidence](evidence/LPT-708-710-711.md). They separate deterministic regressions, current-session live/TUI checks, the retained initial live failure and unrun paid routes. Final transcript feedback can differ from an earlier execution-end validation event; both stay in the evidence.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:

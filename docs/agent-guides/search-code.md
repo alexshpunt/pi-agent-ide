@@ -41,7 +41,7 @@ A replace/insert result searches only that call's resulting text, including an e
 
 Use a displayed item or capture reference for a subset. The whole result retains its complete stored scope; editing copied preview text never narrows that scope.
 
-Incomplete registered result scopes cannot authorize edits, even through non-empty subsets. A numbered local text Search reference remains editable while its file snapshot is current, even if collection was incomplete. Use it only for its containing line or exact match, not as a complete match set. Empty arrays select no sources; they do not default to the workspace. Result-scoped text Boolean queries and text include/exclude globs remain unsupported. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
+Incomplete registered result scopes cannot authorize edits, even through non-empty subsets. A numbered local text Search reference remains editable while its file snapshot is current, even if collection was incomplete. Use it only for its containing line or exact match, not as a complete match set. Empty arrays select no sources; they do not default to the workspace. Result-scoped Boolean text queries check each line inside each selected range separately; conditions cannot borrow terms from gaps or neighboring text. Text include/exclude globs remain unsupported for result scopes. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
 
 ## AST search
 
