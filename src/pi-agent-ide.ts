@@ -10,6 +10,7 @@ import { registerModuleSettings } from "#src/composite/module-settings.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
+import { registerCodemodeRendering } from "#src/composite/codemode-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
 
@@ -23,7 +24,10 @@ Registers the configured built-ins as one Pi Agent IDE extension.
 */
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
-  const nestedRendering = createNestedIdeRendering(pi);
+  const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
+  const compactCodemode = config.preferences?.["ui.codemode"] !== "full";
+  registerCodemodeRendering(pi, compactCodemode);
+  const nestedRendering = createNestedIdeRendering(pi, compactCodemode);
   const textResults = createIdeTextResults(nestedRendering.api);
   const availability = createIdeToolAvailability(textResults.api);
   pi.on("before_provider_request", (event, context) => {
@@ -81,7 +85,6 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         : `${systemPrompt}\n\n<ide_discovery>\n${guidance.join("\n")}\n</ide_discovery>`;
     return prompt === event.systemPrompt ? undefined : { systemPrompt: prompt };
   });
-  const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
   const flags = createFeatureFlags(pi, {
     "pi-agent-ide-no-animations": config.noAnimations ?? false,
     "pi-agent-ide-no-post-processing": config.noPostProcessing ?? false,

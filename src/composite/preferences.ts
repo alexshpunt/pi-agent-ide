@@ -32,6 +32,18 @@ function presentationPreference(id: string, name: string, description: string): 
 
 /** Registered presentation preferences. */
 export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
+  {
+    kind: "choice",
+    id: "ui.codemode",
+    name: "Codemode",
+    description: "Keep native call summaries compact, or show script and output previews.",
+    default: "compact",
+    group: "ui",
+    values: [
+      { value: "compact", label: "Compact" },
+      { value: "full", label: "Detailed" },
+    ],
+  },
   presentationPreference(
     "ui.diffs",
     "Diffs",

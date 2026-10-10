@@ -4,6 +4,16 @@ import { effectiveToolPresentation, toolPresentation } from "./presentation.js";
 
 const presentationIds = ["ui.diffs", "ui.read", "ui.search", "ui.terminal"];
 
+test("Codemode offers compact and detailed UI choices with a compact default", () => {
+  const preference = AGENT_IDE_PREFERENCES.find((item) => item.id === "ui.codemode");
+  expect(preference).toMatchObject({ kind: "choice", group: "ui", default: "compact" });
+  if (preference?.kind !== "choice") throw new Error("Missing Codemode choice");
+  expect(preference.values).toEqual([
+    { value: "compact", label: "Compact" },
+    { value: "full", label: "Detailed" },
+  ]);
+});
+
 test("tool presentation choices are available in UI settings with compact defaults", () => {
   const preferences = presentationIds.map((id) =>
     AGENT_IDE_PREFERENCES.find((preference) => preference.id === id),
