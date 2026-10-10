@@ -9,6 +9,9 @@ import {
   type AgentDocumentation,
 } from "#src/api/documentation.js";
 import { AgentDocumentationRegistry } from "#src/documentation/registry.js";
+import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
+import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
+import { createDocumentationSearchResolver } from "#src/documentation/search.js";
 
 interface RegistrationRequest {
   readonly documents: readonly AgentDocumentation[];
@@ -75,6 +78,15 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
     },
   });
 
+  await connectSearchPlugin(pi, {
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "agent-documentation",
+    setup(api) {
+      // Claim docs: scopes before filesystem query-protocol resolvers.
+      api.addResolver({ resolver: createDocumentationSearchResolver(registry), priority: -20 });
+    },
+  });
   pi.on("session_start", (_event, context) => {
     restoreClaims(context.sessionManager.getBranch(), registry, claimed);
   });

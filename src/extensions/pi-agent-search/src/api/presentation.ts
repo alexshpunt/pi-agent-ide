@@ -37,7 +37,15 @@ export function renderSearchMatches(
           source: match.source,
           label,
           ...(link === undefined ? {} : { link }),
-          ...(!local ? { badge: /^https?:/iu.test(match.source) ? "WEB" : "SH" } : {}),
+          ...(!local
+            ? {
+                badge: match.source.startsWith("docs:")
+                  ? "DOC"
+                  : /^https?:/iu.test(match.source)
+                    ? "WEB"
+                    : "SH",
+              }
+            : {}),
           lineNumber: match.lineNumber + index,
           text,
           ranges: [
@@ -56,7 +64,7 @@ export function renderSearchMatches(
   rows.push(...metadata.map((text) => ({ kind: "note" as const, text, expandedOnly: true })));
   const count = `${matches.length}${complete ? "" : "+"}`;
   const sources = new Set(matches.map((m) => m.source));
-  const local = matches.every((m) => path.isAbsolute(m.source));
+  const local = matches.length > 0 && matches.every((m) => path.isAbsolute(m.source));
   return new ResultPanel(
     {
       summary: `${count} ${matches.length === 1 ? "match" : "matches"} in ${sources.size} ${local ? (sources.size === 1 ? "file" : "files") : sources.size === 1 ? "source" : "sources"}`,

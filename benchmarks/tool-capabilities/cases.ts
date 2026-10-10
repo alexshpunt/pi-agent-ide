@@ -11,6 +11,63 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "docs-search",
+  ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
+  "Read docs:editing. Choose one unquoted word from that guide's body and search docs:editing for that exact word with caseSensitive true, wholeWord true, and limit 10. The result must contain guide-body locations under docs:editing, not editable Search references. Then search all guide bodies with path docs:all, query regex:^#, and limit 1000. Confirm it finds docs:editing body headings rather than just the guide listing. Do not change files.",
+  [
+    { tool: "read", args: { path: "docs:editing" } },
+    {
+      tool: "search",
+      args: {
+        path: "docs:editing",
+        query: /^[\p{L}\p{N}_-]+$/u,
+        caseSensitive: true,
+        wholeWord: true,
+        limit: 10,
+      },
+      contains: "docs:editing:",
+      excludes: "SEARCH#",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:all", query: "regex:^#", limit: 1000 },
+      contains: "docs:editing:",
+      excludes: "RESULT#",
+    },
+  ],
+  { expected: textFile },
+);
+add(
+  "docs-search-status",
+  ["search.docs-limit", "search.docs-empty", "search.docs-unknown", "search.docs-bare"],
+  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:editing with query regex:(?!) and confirm a successful empty result. Search bare docs: and observe an error directing you to docs:all. Finally search docs:lpt-723-missing and observe an unknown-documentation-ID error, not a filesystem search or zero matches. Catch the expected error in Codemode. Do not change files.",
+  [
+    {
+      tool: "search",
+      args: { path: "docs:all", query: "regex:.", limit: 1 },
+      contains: "incomplete",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:editing", query: "regex:(?!)" },
+      contains: "No matches",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:lpt-723-missing", query: "unused" },
+      error: true,
+      contains: "Unknown documentation ID: lpt-723-missing",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:", query: "unused" },
+      error: true,
+      contains: "Use docs:all",
+    },
+  ],
+  { expected: textFile },
+);
+add(
   "ssh-guide",
   ["read.ssh-guide"],
   "The workspace has no configured SSH targets. Read docs:ssh through Read to learn how to configure a target. Do not open a connection or change any settings.",
