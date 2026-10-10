@@ -18,9 +18,9 @@ export default function (pi: ExtensionAPI): void {
       })();
       const [removed, captured] = await Promise.allSettled([operation, capture]);
       const content: AgentToolResult<undefined>["content"] = [];
-      if (captured.status === "fulfilled") content.push(...captured.value.content);
+      if (captured.status === "fulfilled") content.push(...captured.value.result.content);
       else content.push({ type: "text", text: `Capture failed: ${String(captured.reason)}` });
-      if (removed.status === "fulfilled") content.push(...removed.value.content);
+      if (removed.status === "fulfilled") content.push(...removed.value.result.content);
       else content.push({ type: "text", text: `Delete failed: ${String(removed.reason)}` });
       return { content, details: undefined };
     },
