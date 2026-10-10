@@ -10,7 +10,10 @@ const groups: [string[], string[]][] = [
     ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
     ["docs-search"],
   ],
-  [["search.docs-limit", "search.docs-empty", "search.docs-unknown"], ["docs-search-status"]],
+  [
+    ["search.docs-limit", "search.docs-empty", "search.docs-unknown", "search.docs-bare"],
+    ["docs-search-status"],
+  ],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
   [["compose.search-issued-scope"], ["search-issued-scope"]],

@@ -316,11 +316,16 @@ test.each(["direct", "codemode"] as const)(
   async (mode) => {
     const workspace = await createWorkspace();
     const calls = [
-      { id: "docs-all", name: "search", arguments: { path: "docs:", query: "unique-doc-needle" } },
+      {
+        id: "docs-all",
+        name: "search",
+        arguments: { path: "docs:all", query: "unique-doc-needle" },
+      },
+      { id: "docs-bare", name: "search", arguments: { path: "docs:", query: "unique-doc-needle" } },
       {
         id: "docs-regex",
         name: "search",
-        arguments: { path: "docs:", query: "regex:^unique-doc-needle", limit: 3 },
+        arguments: { path: "docs:all", query: "regex:^unique-doc-needle", limit: 3 },
       },
       {
         id: "docs-one",
@@ -392,6 +397,7 @@ test.each(["direct", "codemode"] as const)(
     expect(resultText("docs-one")).toContain("incomplete");
     expect(resultText("docs-empty")).toContain("No matches");
     expect(resultText("docs-missing")).toContain("Unknown documentation ID");
+    expect(resultText("docs-bare")).toContain("Use docs:all");
     expect(resultText("docs-all")).not.toContain("SEARCH#");
     const attached = documentationDetails(result, "after-docs-search") as {
       kind: string;
@@ -410,6 +416,7 @@ test.each(["direct", "codemode"] as const)(
         ["docs:search-fixture-two", 2],
       ]);
       expect(getToolExecution(result, "docs-missing").isError).toBe(true);
+      expect(getToolExecution(result, "docs-bare").isError).toBe(true);
     }
   },
 );

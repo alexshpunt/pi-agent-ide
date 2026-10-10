@@ -69,7 +69,7 @@ Append `#name` to an exact symbol resource only for a native language-server ren
 
 ## Other search protocols
 
-Use `path: "docs:"` to search every available packaged guide body, or `path: "docs:<id>"` for one guide. Use a literal or `regex:` query with `caseSensitive`, `wholeWord`, and `limit` as needed. File globs and structural queries do not apply. Matches show the guide source, line, and excerpt without editable references. Read that `docs:<id>` source for context or the full guide; search excerpts do not count as reading it. Read `docs:` to list the available IDs.
+Use `path: "docs:all"` to search every available packaged guide body, or `path: "docs:<id>"` for one guide. Use a literal or `regex:` query with `caseSensitive`, `wholeWord`, and `limit` as needed. File globs and structural queries do not apply. Matches show the guide source, line, and excerpt without editable references. Read that `docs:<id>` source for context or the full guide; search excerpts do not count as reading it. Read `docs:` to list the available IDs. Search requires `docs:all` or `docs:<id>`; bare `docs:` is not a search scope.
 
 Use an HTTP(S) URL as `path` for local web execution, or `web:ssh://target/https://example.com/page` for explicit target execution. Search converted page text with a literal or `regex:` query; no prior Read is needed. Web results keep the requested source and do not expose editable `SEARCH#` references. Use Read on that source for more context.
 

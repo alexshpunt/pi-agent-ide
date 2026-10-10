@@ -35,8 +35,15 @@ export function createDocumentationSearchResolver(
           error: new Error("Use a text or regex: query for docs: resources."),
         };
       const id = source.slice("docs:".length);
-      const guide = id.length === 0 ? undefined : registry.get(id);
-      if (id.length > 0 && guide === undefined)
+      if (id.length === 0)
+        return {
+          kind: "failed",
+          error: new Error(
+            "Use docs:all to search all guides or docs:<id> for one guide. Read docs: to list IDs.",
+          ),
+        };
+      const guide = id === "all" ? undefined : registry.get(id);
+      if (id !== "all" && guide === undefined)
         return { kind: "failed", error: new Error(`Unknown documentation ID: ${id}`) };
       const pattern = searchPattern(request);
       const matches: SearchSelectionMatch[] = [];
