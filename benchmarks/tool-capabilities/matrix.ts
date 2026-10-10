@@ -45,6 +45,7 @@ const groups: [string[], string[]][] = [
   [["compose.symbol-read-delete"], ["read-symbol-delete"]],
   [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
   [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
+  [["compose.file-delete-text-edit"], ["mixed-file-delete-text-edit"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
   [
     [

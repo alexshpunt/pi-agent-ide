@@ -62,9 +62,9 @@ test("numbered line aliases keep complete containing lines and expire after sour
   });
   await targets.verify(selected);
   await writeFile(source, "changed\r\n");
-  await expect(targets.verify(selected)).rejects.toThrow();
+  await expect(targets.verify(selected)).rejects.toThrow(/stale/u);
   await writeFile(source, original);
-  expect(() => targets.resolve(reference, cwd)).toThrow();
+  expect(() => targets.resolve(reference, cwd)).toThrow(/expired/u);
 });
 test("keeps changed search results displayable without registering anchors", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-changing-snapshot-"));
@@ -113,7 +113,9 @@ test("Search input scopes preserve numbered snapshots, refresh all, and accept e
     ],
   });
   await writeFile(source, "new\n");
-  await expect(store.resolveSearchScope(`SEARCH#${session.id}:1:line`, { cwd })).rejects.toThrow();
+  await expect(store.resolveSearchScope(`SEARCH#${session.id}:1:line`, { cwd })).rejects.toThrow(
+    /stale/u,
+  );
   const refreshed = await store.resolveSearchScope(`SEARCH#${session.id}:all:line`, { cwd });
   expect(refreshed).toMatchObject({
     complete: true,
@@ -147,14 +149,16 @@ test("Search input scopes reject unknown, cross-worktree and incomplete all refe
   await writeFile(source, "old\n");
   const store = new SearchSessionStore();
   const partial = await store.register("old", [searchMatch(source, "old")], false, cwd);
-  await expect(
-    store.resolveSearchScope(`SEARCH#${partial.id}:all:line`, { cwd }),
-  ).rejects.toThrow();
+  await expect(store.resolveSearchScope(`SEARCH#${partial.id}:all:line`, { cwd })).rejects.toThrow(
+    /limited/u,
+  );
   await expect(
     store.resolveSearchScope(`SEARCH#${partial.id}:1:line`, { cwd: path.join(cwd, "other") }),
-  ).rejects.toThrow();
-  await expect(store.resolveSearchScope("SEARCH#FFFF:1:line", { cwd })).rejects.toThrow();
-  await expect(store.resolveSearchScope("SEARCH#not-issued", { cwd })).rejects.toThrow();
+  ).rejects.toThrow(/stale/u);
+  await expect(store.resolveSearchScope("SEARCH#FFFF:1:line", { cwd })).rejects.toThrow(/stale/u);
+  await expect(store.resolveSearchScope("SEARCH#not-issued", { cwd })).rejects.toThrow(
+    /Invalid Search reference/u,
+  );
   await expect(store.resolveSearchScope("note.txt", { cwd })).resolves.toBeUndefined();
   await expect(
     store.resolveSearchScope(`SEARCH#${partial.id}:1:line`, { cwd }),

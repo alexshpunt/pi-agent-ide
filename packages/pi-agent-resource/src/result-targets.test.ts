@@ -16,18 +16,18 @@ describe("source result targets", () => {
       targets: [target],
       complete: true,
     });
-    expect(() => store.resolve("SEARCH#ABCD:1:line", "/other")).toThrow();
+    expect(() => store.resolve("SEARCH#ABCD:1:line", "/other")).toThrow(/another worktree/u);
     expect(() =>
       store.registerSearchReference("SEARCH#ABCD:1:line", "SEARCH#ABCD:1:line", "/workspace"),
-    ).toThrow();
+    ).toThrow(/registered result target/u);
     expect(() =>
       store.registerSearchReference("SEARCH#ABCD:all:line", selected, "/workspace"),
-    ).toThrow();
+    ).toThrow(/numbered Search references/u);
     expect(() =>
       store.registerSearchReference("SEARCH#ABCD:2:line", "RESULT#missing", "/workspace"),
-    ).toThrow();
+    ).toThrow(/registered result target/u);
     store.invalidate(target.source);
-    expect(() => store.resolve("SEARCH#ABCD:1:line", "/workspace")).toThrow();
+    expect(() => store.resolve("SEARCH#ABCD:1:line", "/workspace")).toThrow(/expired/u);
   });
   test("keeps snapshot authority out of projected JSON and returned coordinates", () => {
     const store = new ResultTargetStore();

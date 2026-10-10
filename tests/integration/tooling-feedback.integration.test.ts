@@ -55,6 +55,48 @@ async function run(cwd: string, name: string, conversation: AssistantMessageScen
   }).run("Use the issued source ranges and report the real effect.");
 }
 
+test("whole-file Delete keeps its filesystem route beside a text edit batch", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "keep\nnext\n");
+    const removed = ["a.txt", "b.txt", "c.txt"];
+    for (const file of removed) await writeFile(path.join(cwd, file), "remove\n");
+    const calls = [
+      {
+        id: "edit",
+        name: "insert",
+        arguments: { path: "note.txt", anchor: "keep", text: "ADDED\n" },
+      },
+      ...removed.map((file, index) => ({
+        id: `remove${index}`,
+        name: "delete",
+        arguments: { path: file },
+      })),
+    ];
+    const result = await run(cwd, "filesystem-delete-beside-edit", [
+      assistantMessage(
+        calls.map((entry) => toolCall(entry)),
+        { stopReason: "toolUse" },
+      ),
+    ]);
+    for (const entry of calls)
+      expect(getToolExecution(result, entry.id).isError, getToolResultText(result, entry.id)).toBe(
+        false,
+      );
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("keep\nADDED\nnext\n");
+    const events = result.traceEvents.flatMap((trace) =>
+      "event" in trace && trace.event && typeof trace.event === "object"
+        ? [trace.event as RunEvent]
+        : [],
+    );
+    const definition = capabilityCases.find((entry) => entry.id === "mixed-file-delete-text-edit");
+    if (definition === undefined) throw new Error("Missing mixed file-delete case");
+    expect(validateRoute(definition, events, "direct")).toEqual({ passed: true, reasons: [] });
+    for (const file of removed)
+      await expect(readFile(path.join(cwd, file), "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+  });
+});
 const sameFileEdits = [
   {
     tool: "replace",

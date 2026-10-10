@@ -808,6 +808,30 @@ add(
 );
 
 add(
+  "mixed-file-delete-text-edit",
+  ["compose.file-delete-text-edit"],
+  "Submit Insert and three whole-file Deletes in one assistant message. Insert ADDED plus a newline after keep in note.txt. Delete a.txt, b.txt and c.txt by ordinary paths without start/end. Keep note.txt and its other bytes; do not turn the file deletions into text selections.",
+  [
+    { tool: "insert", args: { path: "note.txt", anchor: "keep", text: "ADDED\n" } },
+    ...["a.txt", "b.txt", "c.txt"].map((source): RouteStep => ({
+      tool: "delete",
+      args: { path: source, start: undefined, end: undefined },
+      sameAssistantWith: 0,
+    })),
+  ],
+  {
+    modes: ["direct"],
+    files: {
+      "note.txt": "keep\nnext\n",
+      "a.txt": "remove\n",
+      "b.txt": "remove\n",
+      "c.txt": "remove\n",
+    },
+    expected: { "note.txt": "keep\nADDED\nnext\n", "a.txt": null, "b.txt": null, "c.txt": null },
+  },
+);
+
+add(
   "file-copy-move-delete",
   ["edit.copy-file", "edit.move-file", "edit.delete-file"],
   "First use move with task.txt as both path and target; it must report not-applied. Then use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, not result selections. The original must stay unchanged.",

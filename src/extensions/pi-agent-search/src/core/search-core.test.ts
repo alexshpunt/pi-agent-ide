@@ -307,10 +307,8 @@ test("issued-scope providers register atomically and refuse before resolver exec
     { cwd: process.cwd() },
   );
   expect(result.isError).toBe(true);
-  expect(result.details.failure).toMatchObject({
-    code: "RESOLVE_FAILED",
-    message: expect.stringContaining("UNKNOWN_SCOPE"),
-  });
+  expect(result.details.failure?.code).toBe("RESOLVE_FAILED");
+  expect(result.details.failure?.message).toContain("UNKNOWN_SCOPE");
   expect(specialized).not.toHaveBeenCalled();
   expect(fallback).not.toHaveBeenCalled();
 });

@@ -207,7 +207,7 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
             if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
             if (targets !== undefined) await targets.verify(scope, context.signal);
             context = { ...context, scope };
-            request = { ...request, path: undefined };
+            request = Object.assign({}, request, { path: undefined });
             break;
           }
         }
@@ -221,7 +221,7 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
           const scope = targets.resolve(input.path, context.cwd);
           await targets.verify(scope, context.signal);
           context = { ...context, scope };
-          request = { ...request, path: undefined };
+          request = Object.assign({}, request, { path: undefined });
         }
         if (context.scope !== undefined) {
           const ownerContext = context;

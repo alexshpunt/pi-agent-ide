@@ -173,6 +173,13 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
         // The direct source boundary reports unknown or expired references safely.
         return;
       }
+      // Whole-object Delete belongs to the filesystem pipeline, not the text planner.
+      if (
+        registration.name === "delete" &&
+        selection === undefined &&
+        (registration.anchors ?? []).every(({ field }) => call.arguments[field] === undefined)
+      )
+        return;
       const explicit = selection?.source ?? call.arguments[registration.source.field];
       const inheritedSource =
         !(typeof explicit === "string" && explicit.length > 0) && registration.source.inherited

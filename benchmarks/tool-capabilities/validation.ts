@@ -241,7 +241,7 @@ export function validateRoute(
               entry.message.content?.some(
                 (block) => block.type === "toolCall" && block.id === event.toolCallId,
               ) &&
-              entry.message.content?.some(
+              entry.message.content.some(
                 (block) => block.type === "toolCall" && block.id === prior.event.toolCallId,
               ),
           )
