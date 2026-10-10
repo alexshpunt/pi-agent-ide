@@ -12,6 +12,8 @@ Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Captu
 
 The UI tab contains separate presentation settings for diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
 
+Codemode has its own **Compact** or **Detailed** choice in the UI tab. Compact is the default: keep Pi's native call summaries and errors, but hide collapsed JavaScript and detailed output. Detailed restores native script and output previews; expansion shows full details in either mode. The saved value is `preferences["ui.codemode"]`: `compact` or `full`. Project overrides Global; Default removes only the selected scope's override. Reload or restart applies the saved choice.
+
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
 New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Features or UI tab; no separate menu entry is needed.

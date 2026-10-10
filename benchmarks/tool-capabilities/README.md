@@ -75,6 +75,8 @@ The direct selection-batch and issued Search-scope fixes are in [LPT-719/721 evi
 
 The packaged guide Search checks are in [LPT-723 evidence](evidence/LPT-723.md). They retain the baseline and regex-routing failures, focused direct/Codemode regressions, and live agent/TUI checks. Paid routes remain unrun.
 
+The compact Codemode and saved UI preference checks are in [LPT-674 evidence](evidence/LPT-674.md). They include retained failed attempts, deterministic native rendering/settings checks and live viewport captures. No new paid-route claim is made.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
