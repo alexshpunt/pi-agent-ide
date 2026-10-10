@@ -1,0 +1,40 @@
+{
+  "skill_name": "configure-agent-ide",
+  "evals": [
+    {
+      "id": 1,
+      "name": "project-detailed",
+      "prompt": "Сделай вывод Codemode подробным в настройках этого проекта. Остальные настройки не меняй. Не перезагружай Pi сейчас, просто скажи, что сохранено и что ещё нужно для применения.",
+      "expected_output": "Load the shipped skill, inspect supported settings and both scopes, save only Project ui.codemode=full, preserve unrelated fields and Global bytes, and explain pending reload.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "restore-default",
+      "prompt": "Верни настройку вывода Codemode для этого проекта в Default, чтобы она снова наследовалась из Global. Другие настройки не меняй. Не перезагружай Pi сейчас.",
+      "expected_output": "Remove only the Project ui.codemode override. Preserve Global bytes and unrelated fields; a fresh runtime resolves the inherited Global value.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "already-detailed",
+      "prompt": "Сделай вывод Codemode подробным в настройках этого проекта. Остальные настройки не меняй. Не перезагружай Pi сейчас, просто скажи, что сохранено и что ещё нужно для применения.",
+      "expected_output": "Recognize the already-matching Project override without any mutation call or configuration-byte/mtime change.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "ambiguous-scope",
+      "prompt": "Сделай вывод Codemode подробным.",
+      "expected_output": "Ask whether to change Project or Global, leaving both files unchanged.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "documentation-disabled",
+      "prompt": "Сделай вывод Codemode подробным в настройках этого проекта. Остальные настройки не меняй. Не перезагружай Pi сейчас, просто скажи, что сохранено и что ещё нужно для применения.",
+      "expected_output": "Use installed-package information or report the unavailable guide honestly. Do not enable the documentation module or other modules; preserve scope and unrelated settings.",
+      "files": []
+    }
+  ]
+}
