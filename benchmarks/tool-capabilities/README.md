@@ -34,7 +34,10 @@ Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 lo
 Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
 Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases; these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
 
-Temporary Delete cases likewise check the shared defaults and settings contract locally. Target-native account/config resolution is checked by transport tests, not a paid SSH case. Paid SSH temporary-deletion routes remain unverified.
+Temporary Delete and Move cases check exact nested names, roots themselves, replacement settings, and Copy merge behavior locally. Target-native account/config resolution is checked by transport tests, not a paid SSH case. Paid SSH temporary-removal routes remain unverified.
+
+Filesystem approval waiting is verified by focused real-Pi TUI tests and a live Herdr capture, not by the headless paid cases. A headless case cannot prove the header or answer a user dialog.
+
 The `ssh-guide` case checks that Read exposes SSH setup guidance before any target is configured. It does not verify connection setup, reload, or remote operations. Its direct and Codemode routes remain unverified until a paid run.
 
 ## Isolation

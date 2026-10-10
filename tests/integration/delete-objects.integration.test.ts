@@ -187,6 +187,17 @@ test("requires host user decisions for tracked deletion through direct and nativ
       .split("\n")
       .map((line) => JSON.parse(line) as { message: string; approved: boolean });
     expect(decisions.map(({ approved }) => approved)).toEqual([false, true, false, true]);
+    for (const decision of decisions)
+      expect(decision).toMatchObject({ blockedAtOpen: { active: true } });
+    const blocked: unknown = JSON.parse(
+      await readFile(path.join(cwd, "herdr-events.json"), "utf8"),
+    );
+    expect(blocked).toEqual(
+      decisions.flatMap(() => [
+        { active: true, label: expect.any(String) as unknown },
+        { active: false },
+      ]),
+    );
     expect(decisions.map(({ message }) => path.basename(message.split("\n")[0] ?? ""))).toEqual(
       targets,
     );

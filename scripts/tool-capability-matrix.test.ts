@@ -504,8 +504,11 @@ test("deletion capability fixtures preserve symlink identities and detect leftov
   }
 });
 
-test("temporary deletion capability fixtures enforce defaults and replacement without inference", async () => {
-  const parent = await mkdtemp(path.join(os.tmpdir(), "capability-temp-delete-"));
+test("temporary directory capability fixtures enforce defaults, roots, moves, and replacement without inference", async () => {
+  // Keep default-name coverage outside any actual system temporary ancestor.
+  const fixtures = path.join(os.homedir(), ".cache", "pi-agent-ide-capability-fixtures");
+  await mkdir(fixtures, { recursive: true });
+  const parent = await mkdtemp(path.join(fixtures, "case-"));
   const source = path.join(parent, "source");
   await mkdir(source);
   execFileSync("git", ["init", "-q", source]);
@@ -522,7 +525,11 @@ test("temporary deletion capability fixtures enforce defaults and replacement wi
     "fixture",
   ]);
   try {
-    for (const id of ["delete-temporary-defaults", "delete-temporary-config"]) {
+    for (const id of [
+      "delete-temporary-defaults",
+      "delete-temporary-config",
+      "move-temporary-directories",
+    ]) {
       const task = capabilityCases.find((entry) => entry.id === id);
       if (task === undefined) throw new Error("Missing temporary deletion case");
       const trial = await prepareTrial(parent, source, task);
@@ -531,7 +538,9 @@ test("temporary deletion capability fixtures enforce defaults and replacement wi
       });
       await expect(access(path.join(source, ".git"))).resolves.toBeUndefined();
       for (const step of task.steps) {
-        const result = await executeFileOperation("delete", step.args, trial.cwd);
+        if (step.tool !== "delete" && step.tool !== "move" && step.tool !== "copy")
+          throw new Error("Unexpected temporary-directory operation");
+        const result = await executeFileOperation(step.tool, step.args, trial.cwd);
         expect(result.ok).toBe(!step.error);
         if (step.error) expect(result.error?.code).toBe("DELETE_CONFIRMATION_REQUIRED");
       }
