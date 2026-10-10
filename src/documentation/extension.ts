@@ -83,7 +83,8 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
     apiVersion: SEARCH_API_VERSION,
     id: "agent-documentation",
     setup(api) {
-      api.addResolver({ resolver: createDocumentationSearchResolver(registry) });
+      // Claim docs: scopes before filesystem query-protocol resolvers.
+      api.addResolver({ resolver: createDocumentationSearchResolver(registry), priority: -20 });
     },
   });
   pi.on("session_start", (_event, context) => {

@@ -318,6 +318,11 @@ test.each(["direct", "codemode"] as const)(
     const calls = [
       { id: "docs-all", name: "search", arguments: { path: "docs:", query: "unique-doc-needle" } },
       {
+        id: "docs-regex",
+        name: "search",
+        arguments: { path: "docs:", query: "regex:^unique-doc-needle", limit: 3 },
+      },
+      {
         id: "docs-one",
         name: "search",
         arguments: { path: "docs:search-fixture-one", query: "unique-doc-needle", limit: 1 },
@@ -381,6 +386,8 @@ test.each(["direct", "codemode"] as const)(
         .join("\n");
     expect(resultText("docs-all")).toContain("docs:search-fixture-one:2:");
     expect(resultText("docs-all")).toContain("docs:search-fixture-two:2:");
+    expect(resultText("docs-regex")).toContain("docs:search-fixture-one:2:");
+    expect(resultText("docs-regex")).toContain("docs:search-fixture-two:2:");
     expect(resultText("docs-one")).not.toContain("docs:search-fixture-two");
     expect(resultText("docs-one")).toContain("incomplete");
     expect(resultText("docs-empty")).toContain("No matches");
