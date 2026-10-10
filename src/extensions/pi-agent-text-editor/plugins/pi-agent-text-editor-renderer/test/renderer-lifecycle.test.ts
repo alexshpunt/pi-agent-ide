@@ -623,6 +623,121 @@ describe("mutation renderer lifecycle", () => {
     },
   );
 
+  test.each([false, true])(
+    "unknown text saves show a safe cause and recovery when expanded=%s",
+    (expanded) => {
+      let renderer: TextEditorToolRendererRegistration | undefined;
+      const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+        onMutationTool(listener: (registration: unknown) => void): void {
+          listener({ name: "write", source: { field: "path" } });
+        },
+        addToolRenderer(value: TextEditorToolRendererRegistration): void {
+          renderer = value;
+        },
+      });
+      registerMutationRenderers(api);
+      if (renderer?.renderResult === undefined) throw new Error("Missing write renderer");
+      const source = "linear://fixture/document/saved/content";
+      const raw = "private transport diagnostic and stack trace; bearer PRIVATE_TOKEN";
+      const component = renderer.renderResult(
+        {
+          content: [{ type: "text", text: `${raw}\nLINEAR_SAVED_CONTENT_MISMATCH` }],
+          details: {
+            effect: "unknown",
+            results: [
+              new FileMutationResult({
+                ok: false,
+                path: source,
+                errors: [
+                  {
+                    path: source,
+                    code: "WRITE_FAILED",
+                    reason: `Unable to write ${source}: LINEAR_SAVED_CONTENT_MISMATCH: ${source}. ${raw}`,
+                  },
+                ],
+              }),
+            ],
+          },
+        },
+        { expanded, isPartial: false },
+        theme,
+        {
+          args: { path: source },
+          toolCallId: "uncertain-saved-content",
+          invalidate: vi.fn(),
+          lastComponent: undefined,
+          state: {},
+          cwd: process.cwd(),
+          durationMs: undefined,
+          outputPad: 0,
+          executionStarted: true,
+          argsComplete: true,
+          isPartial: false,
+          expanded,
+          showImages: true,
+          isError: true,
+        },
+      );
+      const output = component.render(60).join("\n");
+      expect(output).toContain("Effects unknown · edit failed");
+      expect(output).toContain("saved content differs from requested text");
+      expect(output).toContain("LINEAR_SAVED_CONTENT_MISMATCH");
+      expect(output).toContain("Read the affected resource before retrying.");
+      expect(output).not.toContain("private transport diagnostic");
+      expect(output).not.toContain("stack trace");
+      expect(output).not.toContain("PRIVATE_TOKEN");
+    },
+  );
+
+  test("unknown provider diagnostics do not suppress the safe recovery instruction", () => {
+    let renderer: TextEditorToolRendererRegistration | undefined;
+    const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+      onMutationTool(listener: (registration: unknown) => void): void {
+        listener({ name: "write", source: { field: "path" } });
+      },
+      addToolRenderer(value: TextEditorToolRendererRegistration): void {
+        renderer = value;
+      },
+    });
+    registerMutationRenderers(api);
+    if (renderer?.renderResult === undefined) throw new Error("Missing write renderer");
+    const component = renderer.renderResult(
+      {
+        content: [{ type: "text", text: "PRIVATE_TOKEN and untrusted diagnostic" }],
+        details: {
+          effect: "unknown",
+          results: [
+            new FileMutationResult({
+              ok: false,
+              errors: [{ path: "resource", code: "PRIVATE_TOKEN", reason: "untrusted diagnostic" }],
+            }),
+          ],
+        },
+      },
+      { expanded: false, isPartial: false },
+      theme,
+      {
+        args: { path: "resource" },
+        toolCallId: "unknown-cause",
+        invalidate: vi.fn(),
+        lastComponent: undefined,
+        state: {},
+        cwd: process.cwd(),
+        durationMs: undefined,
+        outputPad: 0,
+        executionStarted: true,
+        argsComplete: true,
+        isPartial: false,
+        expanded: false,
+        showImages: true,
+        isError: true,
+      },
+    );
+    const output = component.render(100).join("\n");
+    expect(output).toContain("Read the affected resource before retrying.");
+    expect(output).not.toContain("PRIVATE_TOKEN");
+    expect(output).not.toContain("untrusted diagnostic");
+  });
   test("labels resolved diff resources only when the tool call has no source path", () => {
     let renderer: TextEditorToolRendererRegistration | undefined;
     const api = Object.assign(Object.create(null) as TextEditorPluginApi, {

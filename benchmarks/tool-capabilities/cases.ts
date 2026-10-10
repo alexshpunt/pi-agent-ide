@@ -957,6 +957,31 @@ add(
 );
 
 add(
+  "write-unknown-effects",
+  ["edit.write-failure-recovery", "compose.uncertain-write-read"],
+  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns LINEAR_SAVED_CONTENT_MISMATCH with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, catch the failed Write so the Read still runs. This headless case checks recovery, not the TUI failure panel.",
+  [
+    {
+      tool: "write",
+      args: { path: "fixture://saved-mismatch/content", content: "changed\n" },
+      error: true,
+      contains: "LINEAR_SAVED_CONTENT_MISMATCH",
+      excludes: "No file was changed.",
+    },
+    {
+      tool: "read",
+      args: { path: "fixture://saved-mismatch/content" },
+      contains: "changed",
+    },
+  ],
+  {
+    setup: "write-effects",
+    files: { "saved.md": "before\n" },
+    expected: { "saved.md": "changed\n", "attempts.jsonl": '{"content":"changed\\n"}\n' },
+    answer: "unknown",
+  },
+);
+add(
   "move-unknown-effects",
   ["edit.move-effects"],
   "Use whole-file move on .tmp/move-effects/unknown-after.txt to .tmp/move-effects/unknown-after-target.txt. This isolated fixture deliberately fails after execution starts. Preserve the unknown effect: do not call it not-applied and do not retry. Read the destination by its ordinary path to inspect the bytes and report that the Move effect is unknown. In Codemode, catch the failed call so the inspection still runs.",

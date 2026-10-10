@@ -77,6 +77,8 @@ The packaged guide Search checks are in [LPT-723 evidence](evidence/LPT-723.md).
 
 The compact Codemode and saved UI preference checks are in [LPT-674 evidence](evidence/LPT-674.md). They include retained failed attempts, deterministic native rendering/settings checks and live viewport captures. No new paid-route claim is made.
 
+The uncertain-write failure checks are in [LPT-746 evidence](evidence/LPT-746.md). They cover safe causes and recovery in direct/native Codemode panels, keep the failed startup and timeout attempts visible, and leave paid recovery routes unverified.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:

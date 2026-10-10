@@ -40,6 +40,7 @@ const groups: [string[], string[]][] = [
   [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [["codemode.silent-write"], ["write-silent"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
