@@ -154,6 +154,15 @@ export class ResultTargetStore {
     }
   }
 
+  /** Bind a numbered Search selector to its owner's registered snapshot; all-selectors keep refreshing. */
+  public registerSearchReference(reference: string, target: string, cwd: string): void {
+    if (!/^SEARCH#[A-F\d]{4,64}:[1-9]\d*:(line|match)$/u.test(reference))
+      throw new Error("Only numbered Search references can alias a snapshot.");
+    if (!this.#entries.has(target))
+      throw new Error("A Search reference needs a registered result target.");
+    this.resolve(target, cwd);
+    this.#matchReferences.set(reference, target);
+  }
   /** Register readable output without exposing the stored tool data to the agent. */
   public publish(outcome: unknown, text: string, cwd: string, resources: string[] = []): string {
     const id = randomUUID();

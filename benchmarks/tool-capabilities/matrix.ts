@@ -8,6 +8,17 @@ const groups: [string[], string[]][] = [
   [["read.ssh-guide"], ["ssh-guide"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
+  [["compose.search-issued-scope"], ["search-issued-scope"]],
+  [["compose.batch-insert-search"], ["search-line-batch-insert"]],
+  [["compose.batch-replace-search"], ["selection-batch-replace"]],
+  ...["delete", "insert"].map((operation): [string[], string[]] => [
+    [`edit.search-line-batch-${operation}`],
+    [`search-line-batch-${operation}`],
+  ]),
+  ...["replace", "delete", "insert"].map((operation): [string[], string[]] => [
+    [`edit.selection-batch-${operation}`],
+    [`selection-batch-${operation}`],
+  ]),
   [["compose.select-delete"], ["select-result-delete"]],
   [["compose.select-insert"], ["select-result-insert"]],
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],

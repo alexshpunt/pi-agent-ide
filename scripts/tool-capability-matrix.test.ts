@@ -46,6 +46,22 @@ const events = [
 const task = { steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }] };
 
 describe("capability route evidence", () => {
+  test("direct batch evidence requires both call ids in one completed assistant message", () => {
+    const route = { steps: [{ tool: "read" }, { tool: "search", sameAssistantWith: 0 }] };
+    const message = (ids: string[]) => ({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: ids.map((id) => ({ type: "toolCall", id })),
+      },
+    });
+    expect(validateRoute(route, [message(["r", "s"]), ...events], "direct").passed).toBe(true);
+    expect(validateRoute(route, [message(["r"]), message(["s"]), ...events], "direct").passed).toBe(
+      false,
+    );
+    expect(validateRoute(route, [message(["r", "other"]), ...events], "direct").passed).toBe(false);
+    expect(validateRoute(route, events, "direct").passed).toBe(false);
+  });
   test("silent Write requires a completed parent without the child file body", () => {
     const route = { steps: [{ tool: "write", parentExcludes: "FILE_BODY" }] };
     const child = [

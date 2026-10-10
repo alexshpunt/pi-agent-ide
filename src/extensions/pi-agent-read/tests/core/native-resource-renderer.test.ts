@@ -31,6 +31,8 @@ const context = (
   lastComponent,
   cwd,
   toolCallId: "read-test",
+  durationMs: undefined,
+  outputPad: 0,
   invalidate() {},
   state: {},
   executionStarted: true,

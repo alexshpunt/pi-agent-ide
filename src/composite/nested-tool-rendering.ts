@@ -319,7 +319,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
           });
           continue;
         }
-        const copyResult = batch.copyResults?.get(id);
+        const copyResult = batch.mutationResults?.get(id);
         const rollback = copyResult?.details.metadata?.copyRollback;
         if (
           call.name === "copy" &&

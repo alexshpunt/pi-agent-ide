@@ -12,6 +12,7 @@ import type {
   SearchActionRegistration,
   SearchEnvironmentProvider,
   SearchSelectionProvider,
+  SearchScopeProvider,
   SearchContext,
   SearchDescriptionSource,
   SearchPluginApi,
@@ -54,6 +55,7 @@ export interface SearchCore {
 export function createSearchCore(targets?: ResultTargetStore): SearchCore {
   const resolvers: RegisteredResolver[] = [];
   const environments: SearchEnvironmentProvider[] = [];
+  const scopeProviders: SearchScopeProvider[] = [];
   let selectionProvider: SearchSelectionProvider | undefined;
   const actions = new Map<string, SearchActionRegistration>();
   const promptGuidelines = new Map<string, SearchDescriptionSource[]>();
@@ -76,11 +78,15 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
       const ready = queue.then(async () => {
         const draftResolvers: SearchResolverRegistration[] = [];
         const draftEnvironments: SearchEnvironmentProvider[] = [];
+        const draftScopes: SearchScopeProvider[] = [];
         const draftActions: SearchActionRegistration[] = [];
         let draftSelectionProvider: SearchSelectionProvider | undefined;
         let draftDescription: SearchDescriptionSource | undefined;
         const draftPromptGuidelines: SearchDescriptionSource[] = [];
         const api: SearchPluginApi = {
+          addScopeProvider(provider) {
+            draftScopes.push(provider);
+          },
           addEnvironmentProvider(provider) {
             draftEnvironments.push(provider);
           },
@@ -156,6 +162,7 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         }
         if (draftSelectionProvider !== undefined) selectionProvider = draftSelectionProvider;
         environments.push(...draftEnvironments);
+        scopeProviders.push(...draftScopes);
 
         for (const action of draftActions) {
           actions.set(actionKey(action.resolverId, action.capability), action);
@@ -193,9 +200,21 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
           "Reference navigation is supported only for symbols: queries.",
         );
       try {
+        if (typeof input.path === "string") {
+          for (const provider of scopeProviders) {
+            const scope = await provider(input.path, context);
+            if (scope === undefined) continue;
+            if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
+            if (targets !== undefined) await targets.verify(scope, context.signal);
+            context = { ...context, scope };
+            request = { ...request, path: undefined };
+            break;
+          }
+        }
         const scoped =
           input.path !== undefined &&
-          (typeof input.path !== "string" || input.path.startsWith("RESULT#"));
+          (typeof input.path !== "string" ||
+            (request.path === input.path && input.path.startsWith("RESULT#")));
         if (scoped) {
           if (targets === undefined) throw new Error("Result scopes are unavailable.");
           if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
