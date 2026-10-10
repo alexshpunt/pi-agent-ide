@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Text } from "@earendil-works/pi-tui";
+import type { ToolRenderers } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
   createCodemodeExtension,
@@ -206,6 +208,26 @@ export async function runSettingsSkillSmoke(args: readonly string[]): Promise<vo
       tools: session.getActiveToolNames(),
       startedAt: new Date(started).toISOString(),
     });
+    // Probe the real loaded renderer without inference or claiming a human viewport check.
+    const marker = "SETTINGS_STARTUP_RENDER_PROBE";
+    let nativeCode: unknown;
+    const base: ToolRenderers = {
+      renderCall: (args) => {
+        nativeCode = (args as { code?: unknown }).code;
+        return new Text("probe", 0, 0);
+      },
+    };
+    const renderers = session.extensionRunner.resolveToolRenderers("codemode", () => base);
+    if (renderers?.renderCall === undefined) throw new Error("Missing Codemode renderer");
+    renderers.renderCall(
+      { code: marker },
+      {} as Parameters<NonNullable<ToolRenderers["renderCall"]>>[1],
+      { expanded: false, isError: false } as Parameters<
+        NonNullable<ToolRenderers["renderCall"]>
+      >[2],
+    );
+    if (nativeCode !== "" && nativeCode !== marker) throw new Error("Unexpected renderer input");
+    await save("startup.json", { codemode: nativeCode === marker ? "full" : "compact" });
     await writeFile(path.join(results, "system-prompt.txt"), session.systemPrompt);
     if (args.includes("--run")) {
       status = "running";
@@ -238,8 +260,13 @@ export async function runSettingsSkillSmoke(args: readonly string[]): Promise<vo
     });
     session.dispose();
   }
-  console.log(JSON.stringify({ status, error, results }));
+  await new Promise<void>((resolve) => {
+    process.stdout.write(`${JSON.stringify({ status, error, results })}\n`, () => resolve());
+  });
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href)
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await runSettingsSkillSmoke(process.argv.slice(2));
+  // SDK services can keep handles open after dispose; evidence and stdout are flushed above.
+  process.exit(process.exitCode ?? 0);
+}
