@@ -12,7 +12,7 @@ export const searchSchema = Type.Object(
     path: Type.Optional({
       ...resultInputSchema,
       description:
-        "File, directory, URL, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Results select only their registered ranges unless symbols: navigation follows external references.",
+        "File, directory, URL, docs: for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Use literal text or regex: for docs: sources. Results select only their registered ranges unless symbols: navigation follows external references.",
     }),
     navigation: Type.Optional(
       Type.Literal("references", {

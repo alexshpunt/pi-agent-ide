@@ -6,6 +6,11 @@ const groups: [string[], string[]][] = [
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
   [["read.ssh-guide"], ["ssh-guide"]],
+  [
+    ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
+    ["docs-search"],
+  ],
+  [["search.docs-limit", "search.docs-empty", "search.docs-unknown"], ["docs-search-status"]],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
   [["compose.search-issued-scope"], ["search-issued-scope"]],

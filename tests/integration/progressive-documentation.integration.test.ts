@@ -311,6 +311,101 @@ test.each(["resume", "tree", "nested"] as const)(
   },
 );
 
+test.each(["direct", "codemode"] as const)(
+  "searches packaged guides through %s without consuming their full-read state",
+  async (mode) => {
+    const workspace = await createWorkspace();
+    const calls = [
+      { id: "docs-all", name: "search", arguments: { path: "docs:", query: "unique-doc-needle" } },
+      {
+        id: "docs-one",
+        name: "search",
+        arguments: { path: "docs:search-fixture-one", query: "unique-doc-needle", limit: 1 },
+      },
+      {
+        id: "docs-empty",
+        name: "search",
+        arguments: { path: "docs:search-fixture-one", query: "absent-needle" },
+      },
+      {
+        id: "docs-missing",
+        name: "search",
+        arguments: { path: "docs:search-fixture-missing", query: "unique-doc-needle" },
+      },
+    ];
+    const result = await new PiIntegrationTest({
+      testName: `docs-search-${mode}`,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd: workspace,
+      rawMode: false,
+      extensions: [
+        extension,
+        path.resolve("tests/integration/fixtures/search-documentation.ts"),
+        ...(mode === "codemode" ? ["builtin:codemode"] : []),
+      ],
+      tools: ["read", "search", ...(mode === "codemode" ? ["codemode"] : [])],
+      environment: {
+        PI_AGENT_IDE_TEST_SKIP_GUIDE_PRELOAD: "1",
+        PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE: "0",
+      },
+      conversation: [
+        ...calls.map((call) =>
+          assistantMessage(
+            [
+              toolCall(
+                mode === "direct"
+                  ? call
+                  : {
+                      id: call.id,
+                      name: "codemode",
+                      arguments: {
+                        code: `try { text(await tools.search(${JSON.stringify(call.arguments)})); } catch (error) { text(String(error)); }`,
+                      },
+                    },
+              ),
+            ],
+            { stopReason: "toolUse" },
+          ),
+        ),
+        assistantMessage(
+          [toolCall({ id: "after-docs-search", name: "read", arguments: { path: "example.ts" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Search packaged guide bodies without treating excerpts as a full read");
+    const resultText = (id: string) =>
+      getToolResultMessage(result, id)
+        .content.filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n");
+    expect(resultText("docs-all")).toContain("docs:search-fixture-one:2:");
+    expect(resultText("docs-all")).toContain("docs:search-fixture-two:2:");
+    expect(resultText("docs-one")).not.toContain("docs:search-fixture-two");
+    expect(resultText("docs-one")).toContain("incomplete");
+    expect(resultText("docs-empty")).toContain("No matches");
+    expect(resultText("docs-missing")).toContain("Unknown documentation ID");
+    expect(resultText("docs-all")).not.toContain("SEARCH#");
+    const attached = documentationDetails(result, "after-docs-search") as {
+      kind: string;
+      ids: string[];
+    };
+    expect(attached.kind).toBe("attachment");
+    expect(attached.ids).toContain("search-fixture-one");
+    if (mode === "direct") {
+      const details = getToolResultMessage(result, "docs-all").details as {
+        payload: { complete: boolean; matches: { source: string; lineNumber: number }[] };
+      };
+      expect(details.payload.complete).toBe(true);
+      expect(details.payload.matches.map((match) => [match.source, match.lineNumber])).toEqual([
+        ["docs:search-fixture-one", 2],
+        ["docs:search-fixture-one", 3],
+        ["docs:search-fixture-two", 2],
+      ]);
+      expect(getToolExecution(result, "docs-missing").isError).toBe(true);
+    }
+  },
+);
 async function createWorkspace(): Promise<string> {
   const workspace = await mkdtemp(path.join(tmpdir(), "progressive-docs-"));
   workspaces.push(workspace);
