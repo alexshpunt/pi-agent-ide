@@ -9,6 +9,7 @@ Put required project documentation in a separate docs-only PR. Both implementati
 Write and run the relevant tests against the implementation before merging it. After the implementation merges, deliver the test-only changes separately to `develop` without user approval. Use a direct merge when protection allows it, or a test-only PR when protection requires one. Do not bypass protection. Keep production changes out of test-only delivery; return any required production fix to the reviewed implementation path.
 
 Keep detailed reports, logs, screenshots, traces, and other task evidence in Task-linked artifacts, not PR files or project documentation. Complete all required deliveries and acceptance checks before removing the task worktrees and branches.
+Never commit task evidence or run artifacts to Git, including summaries, reports, logs, screenshots, and traces. When retention is required, attach them to the corresponding Task; disposable local copies belong in ignored temporary directories. Reusable test fixtures and executable benchmarks are not run artifacts.
 
 CI may run automatically on `develop`, but it is not a merge requirement. Do not trigger extra CI or wait for optional checks before merging an approved feature PR. If repository protection unexpectedly blocks the merge, report the blocker instead of bypassing it. Required promotion and release CI checks still apply.
 
