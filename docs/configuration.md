@@ -2,7 +2,7 @@
 
 ## Agent IDE settings
 
-Open `/agent-ide-settings` inside Pi and choose Project or Global. The Modules tab lists human-readable module names and descriptions. The Features tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
+Open `/agent-ide-settings` inside Pi and choose Project or Global. The Features tab lists human-readable module names and descriptions. The Behavior tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
 
 Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload; declining leaves changes pending until reload or startup. The command stays available even when every optional module is disabled.
 
@@ -16,7 +16,7 @@ Codemode has its own **Compact** or **Detailed** choice in the UI tab. Compact i
 
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
-New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Features or UI tab; no separate menu entry is needed.
+New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Behavior or UI tab; no separate menu entry is needed.
 
 Obsolete IDs in `disabled` are ignored. They do not stop IDE startup. Malformed configuration and unknown IDs in `enabled` still report configuration errors.
 

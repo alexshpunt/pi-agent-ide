@@ -7,6 +7,7 @@ import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.js";
 import { disabledByPreset } from "#src/composite/presets.js";
 import { selectBuiltinExtensions } from "#src/composite/selection.js";
 import { registerModuleSettings } from "#src/composite/module-settings.js";
+import { registerSettingsHelp } from "#src/composite/settings-help.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
 import { connectAgentDocumentation } from "#src/api/documentation.js";
 import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.js";
@@ -143,6 +144,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     default: false,
   });
   registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
+  registerSettingsHelp(pi);
   connectAgentDocumentation(pi, [createIdeSettingsDocumentation(flags.definitions)]);
   const presetDisabled = disabledByPreset(BUILTIN_EXTENSIONS, config.preset ?? "full");
   const { enabled } = selectBuiltinExtensions(

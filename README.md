@@ -28,6 +28,8 @@
 
 </div>
 
+New to Settings? Read the [short settings guide](./docs/settings-help.md), or run `/agent-ide-help` inside Pi. Open `/agent-ide-settings` to change your choices.
+
 ## Summary
 
 Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of development tools for understanding, changing, running, debugging, and observing software. The same tools work with local resources and configured Linux SSH targets.
@@ -264,6 +266,7 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 | [Result composition](./docs/structured-results.md)     | Passing results between tools, reference lifetime, and commit boundaries |
 | [Selection](./docs/agent-guides/select-code.md)        | Text ranges, AST parts, and combining selections                         |
 | [Directory operations](./docs/directory-operations.md) | Copy, Move, Delete, symlinks, guards, and partial failures               |
+| [Settings guide](./docs/settings-help.md)              | Choosing settings, scope, saving and output presentation                 |
 | [Configuration](./docs/configuration.md)               | Project tools, SSH targets, Doctor, and presentation settings            |
 | [SSH guide](./docs/agent-guides/ssh.md)                | Agent setup and supported remote operations                              |
 | [File hooks](./docs/user-hooks.md)                     | Inspect, change, or deny reads and edits                                 |
