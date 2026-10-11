@@ -34,6 +34,6 @@ Ask: “Explain how to use and configure Pi Agent IDE,” or “Configure Pi Age
 
 For a specific change, try: “Show tool results from Codemode for this project only; leave other settings unchanged.” You can also use `/skill:configure-agent-ide` with your request. Reload after saving changes.
 
-Run `/agent-ide-tip` to show the startup setup hint again. This does not reset its one-time state or send its text to the model.
+For development only, enable **Developer mode** in Behavior and reload to make `/agent-ide-tip` available. It shows the startup setup hint again without resetting its one-time state or sending its text to the model. Developer mode defaults to Off; normal startup hints do not depend on it.
 
 See [Configuration](./configuration.md) for storage paths, command-line overrides and deeper setup details.

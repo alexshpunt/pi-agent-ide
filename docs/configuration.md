@@ -30,7 +30,7 @@ The catalog lists supported settings and defaults, not current effective values.
 
 When the setup skill is available, an interactive TUI session shows a short setup hint once across the installation. Reloads, new projects and package updates do not repeat the same hint. Disabling `ide.tips`, running without the skill or using a non-TUI mode does not consume it. A deliberately revised hint can appear again; the record lives in the existing `pi-agent-ide/tips.json` state file.
 
-Run `/agent-ide-tip` to show that setup hint manually, even after it was already shown. This adds only a human-facing callout; it does not reset the saved one-time state or start a model turn.
+For development, enable **Developer mode** in the Behavior tab and reload. This setting (`pi-agent-ide-developer-mode`) defaults to Off and follows Project/Global flag inheritance. Only then is `/agent-ide-tip` available to show the setup hint manually. The command does not reset its one-time state or start a model turn. Automatic startup hints do not require Developer mode.
 
 ## Native tool availability
 
