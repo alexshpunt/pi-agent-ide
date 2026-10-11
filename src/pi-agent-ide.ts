@@ -13,7 +13,6 @@ import { connectAgentDocumentation } from "#src/api/documentation.js";
 import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.js";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
-import { registerCodemodeRendering } from "#src/composite/codemode-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
 
@@ -28,9 +27,8 @@ Registers the configured built-ins as one Pi Agent IDE extension.
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
   const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
-  const compactCodemode = config.preferences?.["ui.codemode"] !== "full";
-  registerCodemodeRendering(pi, compactCodemode);
-  const nestedRendering = createNestedIdeRendering(pi, compactCodemode);
+  const hideCodemodeToolResults = config.preferences?.["ui.codemode"] !== "on";
+  const nestedRendering = createNestedIdeRendering(pi, hideCodemodeToolResults);
   const textResults = createIdeTextResults(nestedRendering.api);
   const availability = createIdeToolAvailability(textResults.api);
   pi.on("before_provider_request", (event, context) => {
@@ -92,6 +90,12 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     "pi-agent-ide-no-animations": config.noAnimations ?? false,
     "pi-agent-ide-no-post-processing": config.noPostProcessing ?? false,
     ...config.flags,
+  });
+  flags.register({
+    id: "pi-agent-ide-developer-mode",
+    name: "Developer mode",
+    description: "Enable development commands, including manual setup-hint previews.",
+    default: false,
   });
   flags.register({
     id: "pi-agent-ide-no-animations",
