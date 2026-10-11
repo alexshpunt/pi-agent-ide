@@ -6,7 +6,13 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 import { TipStateStore } from "#src/tips/persistence.js";
 import { createSetupHintProvider } from "#src/tips/setup-hint.js";
 
-test("manual preview shows a consumed setup hint without changing its claim or model context", async () => {
+// Developer command registration must follow normal Project/Global flag inheritance.
+test.each([
+  { name: "default", global: undefined, project: undefined, enabled: false },
+  { name: "project-on", global: undefined, project: true, enabled: true },
+  { name: "global-on", global: true, project: undefined, enabled: true },
+  { name: "project-off", global: true, project: false, enabled: false },
+])("setup hint preview with developer mode $name", async ({ name, global, project, enabled }) => {
   await withTempWorkspace(async (cwd) => {
     const agent = path.join(cwd, "agent");
     const stateFile = path.join(agent, "pi-agent-ide/tips.json");
@@ -14,16 +20,26 @@ test("manual preview shows a consumed setup hint without changing its claim or m
     const identity = JSON.stringify(["agent-setup", "agent-setup-v1"]);
     await state.claimIfUnseen(undefined, identity, "agent-setup-v1");
     const before = await readFile(stateFile, "utf8");
+    const flag = "pi-agent-ide-developer-mode";
+    if (global !== undefined) {
+      await writeFile(
+        path.join(agent, "pi-agent-ide/extensions.json"),
+        JSON.stringify({
+          flags: { [flag]: global },
+        }),
+      );
+    }
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
         disabled: ["ide.doctor"],
+        flags: project === undefined ? {} : { [flag]: project },
       }),
     );
     const output = path.join(cwd, "preview.json");
     const run = await new PiIntegrationTest({
-      testName: "setup-hint-manual-preview",
+      testName: `setup-hint-developer-mode-${name}`,
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("tests/integration/fixtures/setup-hint-preview-probe.ts")],
@@ -37,9 +53,9 @@ test("manual preview shows a consumed setup hint without changing its claim or m
       conversation: [assistantMessage([text("Done")])],
     }).run("/inspect-setup-hint");
     expect(JSON.parse(await readFile(output, "utf8"))).toEqual({
-      registered: true,
+      registered: enabled,
       stateUnchanged: true,
-      added: 1,
+      added: enabled ? 1 : 0,
       requests: 0,
     });
     expect(await readFile(stateFile, "utf8")).toBe(before);
@@ -50,7 +66,7 @@ test("manual preview shows a consumed setup hint without changing its claim or m
       reason: "startup",
     });
     if (!tip) throw new Error("Missing setup hint");
-    expect(run.tuiRenderedOutput).toContain(tip.title);
+    expect(run.tuiRenderedOutput.includes(tip.title)).toBe(enabled);
     expect(JSON.stringify(run.providerRequests)).not.toContain(tip.body);
   });
 });
