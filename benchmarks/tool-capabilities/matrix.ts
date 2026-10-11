@@ -70,13 +70,22 @@ const groups: [string[], string[]][] = [
     ],
     ["directory-transfers"],
   ],
-  [["edit.transfer-refusal", "edit.move-policy-refusal"], ["directory-transfer-gates"]],
+  [
+    ["edit.transfer-refusal", "edit.move-policy-refusal", "edit.approval-headless-move"],
+    ["directory-transfer-gates"],
+  ],
+  [["compose.approval-refusal-read"], ["delete-policy-gates", "directory-transfer-gates"]],
   [
     ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
     ["delete-objects"],
   ],
   [
-    ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
+    [
+      "edit.delete-policy-refusal",
+      "edit.delete-protected-path",
+      "edit.delete-protected-root",
+      "edit.approval-headless-delete",
+    ],
     ["delete-policy-gates"],
   ],
   [

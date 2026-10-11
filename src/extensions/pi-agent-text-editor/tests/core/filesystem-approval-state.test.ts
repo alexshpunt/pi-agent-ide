@@ -5,6 +5,20 @@ import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 import { executeWholeFileTool } from "#src/core/file-operation-tools.js";
+import {
+  createOperationApproval,
+  OPERATION_APPROVAL_EVENT,
+} from "pi-agent-tool-ui/operation-approval";
+
+function approvalEvents(emit: (name: string, data: unknown) => void) {
+  const service = createOperationApproval({ emit });
+  return {
+    emit(name: string, data: unknown): void {
+      if (name === OPERATION_APPROVAL_EVENT) service.handle(data);
+      else emit(name, data);
+    },
+  };
+}
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -44,7 +58,7 @@ test.each(["delete", "move"] as const)(
       undefined,
       { cwd, mode: "tui", hasUI: true, ui: { confirm } },
       undefined,
-      { emit },
+      approvalEvents(emit),
     );
     try {
       await Promise.race([
@@ -91,7 +105,7 @@ test.each(["refuse", "dismiss", "throw", "abort"] as const)(
       controller.signal,
       { cwd, mode: "tui", hasUI: true, ui: { confirm } },
       undefined,
-      { emit },
+      approvalEvents(emit),
     );
     expect((await run).details.metadata?.semanticAction).toMatchObject({
       ok: false,
@@ -118,7 +132,7 @@ test("Herdr listener failures do not change a user approval", async () => {
     undefined,
     { cwd, mode: "tui", hasUI: true, ui: { confirm } },
     undefined,
-    { emit },
+    approvalEvents(emit),
   );
   expect(result.details.metadata?.semanticAction).toMatchObject({ ok: true, effect: "applied" });
   expect(confirm).toHaveBeenCalledOnce();
@@ -143,7 +157,7 @@ test("does not mark absent, protected, auto-allowed, Copy, or non-TUI dialogs bl
       undefined,
       { cwd, mode: "tui", hasUI: true, ui: { confirm } },
       undefined,
-      { emit },
+      approvalEvents(emit),
     );
   }
   expect(confirm).not.toHaveBeenCalled();
@@ -155,7 +169,7 @@ test("does not mark absent, protected, auto-allowed, Copy, or non-TUI dialogs bl
       undefined,
       { cwd, mode, hasUI: mode === "rpc", ui: { confirm } },
       undefined,
-      { emit },
+      approvalEvents(emit),
     );
   }
   expect(confirm).toHaveBeenCalledOnce();

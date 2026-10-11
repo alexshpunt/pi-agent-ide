@@ -170,8 +170,14 @@ add(
 );
 add(
   "delete-policy-gates",
-  ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
-  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Keep all fixture bytes unchanged and report the refusal reasons.",
+  [
+    "edit.delete-policy-refusal",
+    "edit.delete-protected-path",
+    "edit.delete-protected-root",
+    "edit.approval-headless-delete",
+    "compose.approval-refusal-read",
+  ],
+  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Tracked deletion requires a host approval dialog; there is no user UI here, so it must fail closed rather than treating the prompt as permission. Then Read tracked/data and check its unchanged KEEP content. Keep all fixture bytes unchanged and report the refusal reasons. In Codemode catch each refusal so the following calls run.",
   [
     {
       tool: "delete",
@@ -187,6 +193,7 @@ add(
     },
     { tool: "delete", args: { path: "." }, error: true, contains: "DELETE_PROTECTED_TARGET" },
     { tool: "delete", args: { path: "/" }, error: true, contains: "DELETE_PROTECTED_TARGET" },
+    { tool: "read", args: { path: "tracked/data" }, contains: "KEEP" },
   ],
   { files: deleteFixture, git: true },
 );
@@ -260,8 +267,13 @@ add(
 );
 add(
   "directory-transfer-gates",
-  ["edit.transfer-refusal", "edit.move-policy-refusal"],
-  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require host approval, unavailable in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Report the refusals and leave all fixture bytes unchanged. In Codemode catch each failure so all checks run.",
+  [
+    "edit.transfer-refusal",
+    "edit.move-policy-refusal",
+    "edit.approval-headless-move",
+    "compose.approval-refusal-read",
+  ],
+  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data to check unchanged KEEP content; new-target must not exist. Report the refusals and leave all fixture bytes unchanged. In Codemode catch each failure so all checks run.",
   [
     {
       tool: "copy",
@@ -287,8 +299,14 @@ add(
       error: true,
       contains: "DELETE_PROTECTED_TARGET",
     },
+    { tool: "read", args: { path: "tracked/data" }, contains: "KEEP" },
   ],
-  { files: deleteFixture, git: true, setup: "directory-transfers" },
+  {
+    files: deleteFixture,
+    git: true,
+    setup: "directory-transfers",
+    expected: { "new-target": null },
+  },
 );
 add(
   "delete-temporary-defaults",

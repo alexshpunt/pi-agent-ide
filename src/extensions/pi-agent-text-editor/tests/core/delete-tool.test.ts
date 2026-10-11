@@ -6,6 +6,10 @@ import { afterEach, expect, test, vi } from "vitest";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 import { executeWholeFileTool } from "#src/core/file-operation-tools.js";
 import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
+import {
+  createOperationApproval,
+  OPERATION_APPROVAL_EVENT,
+} from "pi-agent-tool-ui/operation-approval";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -25,6 +29,12 @@ test("the host dialog names the target and refuses, dismisses, or approves remov
   for (const answer of [false, undefined, true]) {
     const cwd = await fixture();
     const confirm = vi.fn(async () => answer as boolean);
+    const events = {
+      emit(channel: string, data: unknown): void {
+        if (channel === OPERATION_APPROVAL_EVENT) service.handle(data);
+      },
+    };
+    const service = createOperationApproval(events);
     const result = await executeWholeFileTool(
       createTextEditorCore(),
       "delete",
@@ -35,12 +45,15 @@ test("the host dialog names the target and refuses, dismisses, or approves remov
         hasUI: true,
         ui: { confirm },
       },
+      undefined,
+      events,
     );
+    service.dispose();
     expect(confirm).toHaveBeenCalledOnce();
     expect(confirm.mock.calls[0]).toEqual([
       "Delete permanently?",
       expect.stringContaining(path.join(cwd, "folder")),
-      { signal: undefined },
+      { signal: expect.any(AbortSignal) as unknown },
     ]);
     expect(result.details.metadata?.semanticAction).toMatchObject({
       ok: answer === true,
