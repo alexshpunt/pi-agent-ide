@@ -13,6 +13,7 @@ When its target core is enabled, an external extension can load before or after 
 | A writable source, anchor, mutation, guard, or renderer  | `pi-agent-ide/api/text-editor`, `pi-agent-ide/api/text`                                              |
 | A formatter, compiler, or linter                         | `pi-agent-ide/api/connect-plugin`, `pi-agent-ide/api/toolchain`                                      |
 | Doctor language knowledge, setup recipe, or health check | `pi-agent-ide/api/connect-doctor-plugin`, `pi-agent-ide/api/doctor`, `pi-agent-ide/api/tool-catalog` |
+| A user decision before a policy-gated operation          | `pi-agent-ide/api/approval`                                                                          |
 | Startup tip provider                                     | `pi-agent-ide/api/tips`                                                                              |
 
 The internal packages are bundled into Pi Agent IDE and are not published separately. External extensions import their public contracts through the umbrella package.
@@ -35,6 +36,27 @@ A typical Pi package manifest starts like this:
 ```
 
 Use a `pi-agent-ide` range compatible with the release you target.
+
+## Operation approval
+
+Use `confirmOperation` from `pi-agent-ide/api/approval` when your extension's policy requires a user decision. Pi Agent IDE owns the dialog and serializes approval requests on the session's event bus. The standalone text editor installs the same service.
+
+```ts
+import { confirmOperation } from "pi-agent-ide/api/approval";
+
+const approved = await confirmOperation(pi.events, ctx, {
+  title: "Confirm remote deletion",
+  message: `Delete: ${source}\nThis removes the selected remote object.`,
+  signal: ctx.signal,
+});
+if (!approved) return; // Do not dispatch the operation.
+```
+
+Call this inside a tool or lifecycle callback that supplies `ctx`; keep the exact target and action in the message. Your extension still owns risk classification, authorization and any one-operation permit. A positive answer is not a reusable permission or proof that an operation completed.
+
+The service marks Herdr as waiting before opening a terminal dialog and clears that state when the shared queue drains. RPC dialogs do not claim terminal waiting. Refusal, dismissal, cancellation, dialog failure, missing service and unavailable UI return `false`. Session shutdown cancels active and queued requests. Pass the operation's actual abort signal; a `tool_call` hook receives the turn signal, not a nested `executeTool` child's signal.
+
+Do not emit Herdr waiting events or implement another approval popup in your provider. Only call this API for operations that already require approval; it does not add gates to auto-allowed calls.
 
 ## Search plugin
 
