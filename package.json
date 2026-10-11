@@ -191,7 +191,6 @@
     "check:capabilities": "node benchmarks/tool-capabilities/cli.ts --check",
     "check:package": "oxnode scripts/build-public-package.ts",
     "check:paths": "oxnode scripts/check-no-machine-paths.ts",
-    "dev:modular": "oxnode dev/modular/run.ts",
     "dev:export-agent-interface": "oxnode scripts/dev/export-agent-interface.ts",
     "docs:catalog": "oxnode scripts/generate-tool-catalog.ts",
     "lint": "oxlint --deny-warnings .",
@@ -210,7 +209,7 @@
     "test:integration:live": "oxnode scripts/live-integration-test.ts",
     "test:integration:live:test": "oxnode scripts/live-integration-test.ts --named-test",
     "test:integration:report": "vitest run --config vitest.integration.config.mjs --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/integration.xml",
-    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts dev benchmarks",
+    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts benchmarks",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check ."
   },

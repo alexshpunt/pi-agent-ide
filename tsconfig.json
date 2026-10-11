@@ -15,7 +15,6 @@
   },
   "include": [
     "benchmarks/**/*.ts",
-    "dev/**/*.ts",
     "packages/**/*.ts",
     "scripts/**/*.ts",
     "src/**/*.ts",
