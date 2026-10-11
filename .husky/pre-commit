@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+node --experimental-strip-types scripts/check-no-task-evidence.ts --staged

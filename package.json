@@ -185,12 +185,13 @@
     }
   },
   "scripts": {
+    "prepare": "husky install",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:catalog && pnpm check:capabilities && pnpm check:package",
     "check:boundaries": "oxnode scripts/check-package-boundaries.ts",
     "check:catalog": "oxnode scripts/generate-tool-catalog.ts --check",
     "check:capabilities": "node benchmarks/tool-capabilities/cli.ts --check",
     "check:package": "oxnode scripts/build-public-package.ts",
-    "check:paths": "oxnode scripts/check-no-machine-paths.ts",
+    "check:paths": "oxnode scripts/check-no-machine-paths.ts && node --experimental-strip-types scripts/check-no-task-evidence.ts",
     "dev:export-agent-interface": "oxnode scripts/dev/export-agent-interface.ts",
     "docs:catalog": "oxnode scripts/generate-tool-catalog.ts",
     "lint": "oxlint --deny-warnings .",
