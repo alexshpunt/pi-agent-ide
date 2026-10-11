@@ -92,6 +92,12 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     ...config.flags,
   });
   flags.register({
+    id: "pi-agent-ide-developer-mode",
+    name: "Developer mode",
+    description: "Enable development commands, including manual setup-hint previews.",
+    default: false,
+  });
+  flags.register({
     id: "pi-agent-ide-no-animations",
     name: "Static edit previews",
     group: "ui",

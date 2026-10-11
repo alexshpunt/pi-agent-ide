@@ -27,21 +27,24 @@ export default async function registerTips(pi: ExtensionAPI): Promise<void> {
       ),
   );
   await core.registerProvider(setupHint);
-  pi.registerCommand("agent-ide-tip", {
-    description: "Show the Agent IDE setup hint again without resetting its one-time state",
-    async handler(_args, context) {
-      if (context.mode !== "tui" || !context.hasUI) return;
-      const tip = await setupHint.getTip({
-        cwd: context.cwd,
-        mode: context.mode,
-        hasUI: context.hasUI,
-        signal: context.signal,
-        reason: "startup",
-      });
-      if (tip) pi.appendEntry(TIP_ENTRY_TYPE, tip);
-      else context.ui.notify("The Agent IDE setup skill is not available in this session.", "info");
-    },
-  });
+  if (pi.getFlag("pi-agent-ide-developer-mode") === true) {
+    pi.registerCommand("agent-ide-tip", {
+      description: "Show the Agent IDE setup hint again without resetting its one-time state",
+      async handler(_args, context) {
+        if (context.mode !== "tui" || !context.hasUI) return;
+        const tip = await setupHint.getTip({
+          cwd: context.cwd,
+          mode: context.mode,
+          hasUI: context.hasUI,
+          signal: context.signal,
+          reason: "startup",
+        });
+        if (tip) pi.appendEntry(TIP_ENTRY_TYPE, tip);
+        else
+          context.ui.notify("The Agent IDE setup skill is not available in this session.", "info");
+      },
+    });
+  }
   const state = new TipStateStore();
   pi.registerEntryRenderer(TIP_ENTRY_TYPE, (entry, _options, theme) => {
     const tip = entry.data as { readonly title?: string; readonly body?: string };
