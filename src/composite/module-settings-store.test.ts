@@ -17,7 +17,7 @@ test("Codemode project preference overrides global and Default restores inherita
     new Map(),
     new Map(),
     new Map([
-      ["ui.codemode", "full"],
+      ["ui.codemode", "on"],
       ["future", "global keep"],
     ]),
   );
@@ -26,12 +26,12 @@ test("Codemode project preference overrides global and Default restores inherita
     new Map(),
     new Map(),
     new Map([
-      ["ui.codemode", "compact"],
+      ["ui.codemode", "off"],
       ["ui.read", "disabled"],
     ]),
   );
   expect((await readPiAgentIdeExtensionsConfig(paths)).preferences).toEqual({
-    "ui.codemode": "compact",
+    "ui.codemode": "off",
     future: "global keep",
     "ui.read": "disabled",
   });
@@ -42,7 +42,7 @@ test("Codemode project preference overrides global and Default restores inherita
     new Map([["ui.codemode", undefined]]),
   );
   expect((await readPiAgentIdeExtensionsConfig(paths)).preferences).toEqual({
-    "ui.codemode": "full",
+    "ui.codemode": "on",
     future: "global keep",
     "ui.read": "disabled",
   });
@@ -50,7 +50,7 @@ test("Codemode project preference overrides global and Default restores inherita
     preferences: { "ui.read": "disabled" },
   });
   expect(JSON.parse(await readFile(paths.globalPath, "utf8"))).toMatchObject({
-    preferences: { "ui.codemode": "full", future: "global keep" },
+    preferences: { "ui.codemode": "on", future: "global keep" },
   });
 });
 

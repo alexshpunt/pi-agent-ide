@@ -83,7 +83,7 @@ test.each([
         ? {
             ...original,
             enabled: [],
-            preferences: { ...original.preferences, "ui.codemode": "full" },
+            preferences: { ...original.preferences, "ui.codemode": "on" },
           }
         : original,
     );

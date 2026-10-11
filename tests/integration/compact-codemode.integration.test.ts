@@ -15,61 +15,55 @@ import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
 const code =
-  "// SCRIPT_DETAIL_MARKER\n".repeat(40) +
-  'const result = await tools.read({path:"note.txt"}); text(result); text("SCRIPT_OUTPUT_MARKER");';
+  '// NATIVE_SCRIPT_MARKER\nawait tools.read({path:"note.txt"}); text("NATIVE_OUTPUT_MARKER");';
 
-// Exercise real Codemode, native summaries and the separate retained IDE panels together.
-test("compact Codemode hides bodies without losing native summaries or agent data", async () => {
+// IDE panels are optional; native Codemode rendering and model data are not.
+test.each([
+  { name: "default", preference: undefined, read: "full", visible: false },
+  { name: "on", preference: "on", read: "full", visible: true },
+  { name: "on-disabled-read", preference: "on", read: "disabled", visible: false },
+])("Codemode $name controls only extra IDE panels", async ({ name, preference, read, visible }) => {
   await withTempWorkspace(async (cwd) => {
-    await writeFile(path.join(cwd, "note.txt"), "NESTED_BODY_MARKER\n".repeat(40));
+    await writeFile(path.join(cwd, "note.txt"), "IDE_BODY_MARKER\n".repeat(4));
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    const file = path.join(cwd, ".pi/pi-agent-ide/extensions.json");
+    const settings = { preferences: { "ui.codemode": preference, "ui.read": read } };
+    await writeFile(file, JSON.stringify(settings));
     const run = await new PiIntegrationTest({
-      testName: "compact-codemode",
+      testName: `codemode-tool-results-${name}`,
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       isolateUserResources: true,
       tuiSize: { cols: 60, rows: 40 },
       extensions: [
-        path.resolve(process.env.IDE_CODEMODE_EXTENSION ?? "src/pi-agent-ide.ts"),
+        path.resolve("src/pi-agent-ide.ts"),
         "builtin:codemode",
         path.resolve("tests/integration/fixtures/codemode-presentation-probe.ts"),
       ],
       tools: ["codemode", "read"],
       conversation: [
-        assistantMessage(
-          [
-            toolCall({
-              id: "parent",
-              name: "codemode",
-              arguments: { code },
-              chunks: { kind: "fixed", size: 48 },
-              delayMs: 3,
-            }),
-          ],
-          {
-            stopReason: "toolUse",
-          },
-        ),
+        assistantMessage([toolCall({ id: "parent", name: "codemode", arguments: { code } })], {
+          stopReason: "toolUse",
+        }),
         assistantMessage([text("Done")]),
       ],
-    }).run("Read and print a file through Codemode");
+    }).run("Read a file silently and print an unrelated Codemode message");
     expect(getToolExecution(run, "parent").isError).toBe(false);
-    expect(getToolResultText(run, "parent")).toContain("SCRIPT_OUTPUT_MARKER");
-    expect(getToolResultText(run, "parent")).toContain("NESTED_BODY_MARKER");
+    expect(getToolResultText(run, "parent")).toContain("NATIVE_OUTPUT_MARKER");
     expect(getToolResultMessage(run, "parent").nestedCalls?.calls).toHaveLength(1);
     expect(run.tuiRenderedOutput).toContain("✓ read");
-    expect(run.tuiRenderedOutput).toContain("note.txt");
-    expect(run.tuiRenderedOutput).not.toContain("SCRIPT_DETAIL_MARKER");
-    expect(run.tuiRenderedOutput).not.toContain("SCRIPT_OUTPUT_MARKER");
-    expect(run.tuiRenderedOutput).not.toContain("NESTED_BODY_MARKER");
-    expect(run.terminalOutput).not.toContain("SCRIPT_DETAIL_MARKER");
+    expect(run.tuiRenderedOutput).toContain("NATIVE_SCRIPT_MARKER");
+    expect(run.tuiRenderedOutput).toContain("NATIVE_OUTPUT_MARKER");
+    expect(run.tuiRenderedOutput.includes("IDE_BODY_MARKER")).toBe(visible);
     expect(run.terminalOutput).not.toContain("\x1b[3J");
     const saved = await PiRun.open(run.artifacts.run);
-    expect(saved.session).toContain("SCRIPT_DETAIL_MARKER");
-    expect(saved.session).toContain("NESTED_BODY_MARKER");
+    expect(saved.session).toContain("IDE_BODY_MARKER");
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(JSON.parse(JSON.stringify(settings)));
+    if (name !== "default") return;
     const session = path.join(cwd, "saved.jsonl");
     await writeFile(session, saved.session ?? "");
     const expanded = await new PiIntegrationTest({
-      testName: "compact-codemode-expanded-history",
+      testName: "codemode-tool-results-expanded-history",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       isolateUserResources: true,
@@ -86,19 +80,17 @@ test("compact Codemode hides bodies without losing native summaries or agent dat
       },
       conversation: [assistantMessage([text("Restored")])],
     }).run("/restore-tool-history");
-    expect(expanded.tuiRenderedOutput).toContain("SCRIPT_DETAIL_MARKER");
-    expect(expanded.tuiRenderedOutput).toContain("SCRIPT_OUTPUT_MARKER");
-    expect(expanded.tuiRenderedOutput).toContain("NESTED_BODY_MARKER");
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
-      "NESTED_BODY_MARKER\n".repeat(40),
-    );
+    expect(expanded.tuiRenderedOutput).toContain("IDE_BODY_MARKER");
   });
 });
 
-test("compact Codemode keeps failed calls and actionable script errors", async () => {
+test.each([false, true])("hidden IDE panels keep errors with caught=%s", async (caught) => {
   await withTempWorkspace(async (cwd) => {
+    const script = caught
+      ? 'try { await tools.read({path:"missing.txt"}); } catch {}'
+      : 'await tools.read({path:"missing.txt"});';
     const run = await new PiIntegrationTest({
-      testName: "compact-codemode-error",
+      testName: `codemode-tool-results-error-${caught}`,
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       isolateUserResources: true,
@@ -110,98 +102,16 @@ test("compact Codemode keeps failed calls and actionable script errors", async (
       tools: ["codemode", "read"],
       conversation: [
         assistantMessage(
-          [
-            toolCall({
-              id: "failed",
-              name: "codemode",
-              arguments: {
-                code: '// HIDDEN_FAILED_SCRIPT\nawait tools.read({path:"missing.txt"});',
-              },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-        assistantMessage([text("Stopped")]),
-      ],
-    }).run("Try to read an absent file through Codemode");
-    expect(getToolExecution(run, "failed").isError).toBe(true);
-    expect(getToolResultText(run, "failed")).toContain("missing.txt");
-    expect(run.tuiRenderedOutput).toContain("✗ read");
-    expect(run.tuiRenderedOutput).toContain("Source not found");
-    expect(run.tuiRenderedOutput).not.toContain("HIDDEN_FAILED_SCRIPT");
-  });
-});
-
-test("compact Codemode keeps a caught child failure actionable", async () => {
-  await withTempWorkspace(async (cwd) => {
-    const run = await new PiIntegrationTest({
-      testName: "compact-codemode-caught-error",
-      artifactsDir: testArtifactsDir(import.meta.filename),
-      cwd,
-      isolateUserResources: true,
-      extensions: [
-        path.resolve("src/pi-agent-ide.ts"),
-        "builtin:codemode",
-        path.resolve("tests/integration/fixtures/codemode-presentation-probe.ts"),
-      ],
-      tools: ["codemode", "read"],
-      conversation: [
-        assistantMessage(
-          [
-            toolCall({
-              id: "caught",
-              name: "codemode",
-              arguments: { code: 'try { await tools.read({path:"missing.txt"}); } catch {}' },
-            }),
-          ],
-          { stopReason: "toolUse" },
+          [toolCall({ id: "parent", name: "codemode", arguments: { code: script } })],
+          {
+            stopReason: "toolUse",
+          },
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Catch a failed nested Read without printing its result");
-    expect(getToolExecution(run, "caught").isError).toBe(false);
+    }).run("Try a missing nested Read with IDE tool results hidden");
+    expect(getToolExecution(run, "parent").isError).toBe(!caught);
     expect(run.tuiRenderedOutput).toContain("✗ read");
     expect(run.tuiRenderedOutput).toContain("Source not found");
-  });
-});
-
-test.each(["detailed", "deadline"] as const)("Codemode %s survives real startup", async (mode) => {
-  await withTempWorkspace(async (cwd) => {
-    const preference = mode === "detailed" ? "full" : "compact";
-    const settings = { preferences: { "ui.codemode": preference, unrelated: "keep" } };
-    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
-    const file = path.join(cwd, ".pi/pi-agent-ide/extensions.json");
-    await writeFile(file, JSON.stringify(settings));
-    const script =
-      mode === "detailed"
-        ? '// DETAILED_SCRIPT_MARKER\ntext("DETAILED_OUTPUT_MARKER");'
-        : '// @options: {"timeout_ms":1000}\n// DEADLINE_SCRIPT_MARKER\nwhile (true) {}';
-    const run = await new PiIntegrationTest({
-      testName: `codemode-${mode}`,
-      artifactsDir: testArtifactsDir(import.meta.filename),
-      cwd,
-      isolateUserResources: true,
-      extensions: [
-        path.resolve("src/pi-agent-ide.ts"),
-        "builtin:codemode",
-        path.resolve("tests/integration/fixtures/codemode-presentation-probe.ts"),
-      ],
-      tools: ["codemode"],
-      conversation: [
-        assistantMessage([toolCall({ id: mode, name: "codemode", arguments: { code: script } })], {
-          stopReason: "toolUse",
-        }),
-        assistantMessage([text("Done")]),
-      ],
-    }).run("Run Codemode with saved preferences");
-    expect(getToolExecution(run, mode).isError).toBe(mode === "deadline");
-    if (mode === "detailed") {
-      expect(run.tuiRenderedOutput).toContain("DETAILED_SCRIPT_MARKER");
-      expect(run.tuiRenderedOutput).toContain("DETAILED_OUTPUT_MARKER");
-    } else {
-      expect(run.tuiRenderedOutput).toMatch(/timeout|timed out|deadline/i);
-      expect(run.tuiRenderedOutput).not.toContain("DEADLINE_SCRIPT_MARKER");
-    }
-    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(settings);
   });
 });

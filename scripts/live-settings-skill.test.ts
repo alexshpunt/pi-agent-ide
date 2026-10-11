@@ -1,5 +1,27 @@
 import { expect, test } from "vitest";
-import { settingsSmokeGuard } from "./live-settings-skill.js";
+import { probeNativeCodemodeRenderer, settingsSmokeGuard } from "./live-settings-skill.js";
+
+test("startup probe records untouched native Codemode input", () => {
+  expect(probeNativeCodemodeRenderer((_name, fallback) => fallback())).toEqual({
+    nativeCodemodeUnchanged: true,
+  });
+});
+
+test("startup probe rejects IDE alteration of native Codemode input", () => {
+  expect(() =>
+    probeNativeCodemodeRenderer((_name, fallback) => {
+      const original = fallback();
+      const renderCall = original.renderCall;
+      if (renderCall === undefined) throw new Error("Missing test renderer");
+      return {
+        ...original,
+        renderCall(_args, theme, context) {
+          return renderCall({ code: "" }, theme, context);
+        },
+      };
+    }),
+  ).toThrow("IDE altered native Codemode script input");
+});
 
 const roots = ["/fixture/project", "/fixture/agent", "/source/ide"] as const;
 const check = (tool: string, input: unknown) => settingsSmokeGuard(tool, input, ...roots);

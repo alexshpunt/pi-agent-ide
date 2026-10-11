@@ -4,14 +4,11 @@ import { effectiveToolPresentation, toolPresentation } from "./presentation.js";
 
 const presentationIds = ["ui.diffs", "ui.read", "ui.search", "ui.terminal"];
 
-test("Codemode offers compact and detailed UI choices with a compact default", () => {
+test("Codemode tool results are opt-in with off and on UI choices", () => {
   const preference = AGENT_IDE_PREFERENCES.find((item) => item.id === "ui.codemode");
-  expect(preference).toMatchObject({ kind: "choice", group: "ui", default: "compact" });
+  expect(preference).toMatchObject({ kind: "choice", group: "ui", default: "off" });
   if (preference?.kind !== "choice") throw new Error("Missing Codemode choice");
-  expect(preference.values).toEqual([
-    { value: "compact", label: "Compact" },
-    { value: "full", label: "Detailed" },
-  ]);
+  expect(preference.values.map(({ value }) => value)).toEqual(["off", "on"]);
 });
 
 test("tool presentation choices are available in UI settings with compact defaults", () => {

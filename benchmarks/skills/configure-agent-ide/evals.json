@@ -3,37 +3,44 @@
   "evals": [
     {
       "id": 1,
-      "name": "project-detailed",
-      "prompt": "Make Codemode output detailed in this project's settings. Leave all other settings unchanged. Do not reload Pi now; just tell me what was saved and what is still needed to apply it.",
-      "expected_output": "Load the shipped skill, inspect supported settings and both scopes, save only Project ui.codemode=full, preserve unrelated fields and Global bytes, and explain pending reload.",
+      "name": "project-tool-results",
+      "prompt": "Show the extra Agent IDE tool-result panels from Codemode in this project's settings. Leave all other settings unchanged. Do not reload Pi now; just tell me what was saved and what is still needed to apply it.",
+      "expected_output": "Load the shipped skill, inspect supported settings and both scopes, save only Project ui.codemode=on, preserve unrelated fields and Global bytes, and explain pending reload. Do not change native Codemode script/output or per-tool presentation settings.",
       "files": []
     },
     {
       "id": 2,
       "name": "restore-default",
-      "prompt": "Restore this project's Codemode output setting to Default so it inherits from Global again. Leave all other settings unchanged. Do not reload Pi now.",
+      "prompt": "Restore this project's extra Agent IDE tool-result panels from Codemode setting to Default so it inherits from Global again. Leave all other settings unchanged. Do not reload Pi now.",
       "expected_output": "Remove only the Project ui.codemode override. Preserve Global bytes and unrelated fields; a fresh runtime resolves the inherited Global value.",
       "files": []
     },
     {
       "id": 3,
-      "name": "already-detailed",
-      "prompt": "Make Codemode output detailed in this project's settings. Leave all other settings unchanged. Do not reload Pi now; just tell me what was saved and what is still needed to apply it.",
-      "expected_output": "Recognize the already-matching Project override without any mutation call or configuration-byte/mtime change.",
+      "name": "already-showing-results",
+      "prompt": "Show the extra Agent IDE tool-result panels from Codemode in this project's settings. Leave all other settings unchanged. Do not reload Pi now; just tell me what was saved and what is still needed to apply it.",
+      "expected_output": "Recognize the already-matching Project ui.codemode=on override without any mutation call or configuration-byte/mtime change.",
       "files": []
     },
     {
       "id": 4,
       "name": "ambiguous-scope",
-      "prompt": "Make Codemode output detailed.",
+      "prompt": "Show the extra Agent IDE tool-result panels from Codemode.",
       "expected_output": "Ask whether to change Project or Global, leaving both files unchanged.",
       "files": []
     },
     {
       "id": 5,
       "name": "documentation-disabled",
-      "prompt": "Make Codemode output detailed in this project's settings. Leave all other settings unchanged. Do not reload Pi now; just tell me what was saved and what is still needed to apply it.",
+      "prompt": "Show the extra Agent IDE tool-result panels from Codemode in this project's settings. Leave all other settings unchanged. Do not reload Pi now; just tell me what was saved and what is still needed to apply it.",
       "expected_output": "Use installed-package information or report the unavailable guide honestly. Do not enable the documentation module or other modules; preserve scope and unrelated settings.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "explanation-only",
+      "prompt": "Explain how I can configure Pi Agent IDE for my workflow, including extra tool-result panels from Codemode, per-tool presentation, and Project versus Global scope. Do not change any settings or reload Pi.",
+      "expected_output": "Explain the supported settings and their interactions from the registered catalog. Leave both configuration files and their modification times unchanged, with no mutation calls or reload. Review the explanation manually; do not assert its exact wording.",
       "files": []
     }
   ]

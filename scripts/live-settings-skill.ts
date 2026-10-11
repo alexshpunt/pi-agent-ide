@@ -80,6 +80,30 @@ async function snapshot(file: string) {
   }
 }
 
+/** Verify that IDE registration leaves native Codemode script input unchanged. */
+export function probeNativeCodemodeRenderer(
+  resolve: (name: string, fallback: () => ToolRenderers) => ToolRenderers | undefined,
+): { nativeCodemodeUnchanged: true } {
+  const marker = "SETTINGS_STARTUP_RENDER_PROBE";
+  let nativeCode: unknown;
+  const base: ToolRenderers = {
+    renderCall: (args) => {
+      nativeCode = (args as { code?: unknown }).code;
+      return new Text("probe", 0, 0);
+    },
+    renderResult: () => new Text("probe result", 0, 0),
+  };
+  const renderers = resolve("codemode", () => base);
+  if (renderers?.renderCall === undefined) throw new Error("Missing Codemode renderer");
+  renderers.renderCall(
+    { code: marker },
+    {} as Parameters<NonNullable<ToolRenderers["renderCall"]>>[1],
+    { expanded: false, isError: false } as Parameters<NonNullable<ToolRenderers["renderCall"]>>[2],
+  );
+  if (nativeCode !== marker) throw new Error("IDE altered native Codemode script input");
+  return { nativeCodemodeUnchanged: true };
+}
+
 /** Run a focused Luna 6 High skill smoke; without --run, load and record the session only. */
 export async function runSettingsSkillSmoke(args: readonly string[]): Promise<void> {
   const value = (name: string) => {
@@ -208,27 +232,13 @@ export async function runSettingsSkillSmoke(args: readonly string[]): Promise<vo
       tools: session.getActiveToolNames(),
       startedAt: new Date(started).toISOString(),
     });
-    // Probe the real loaded renderer without inference or claiming a human viewport check.
-    const marker = "SETTINGS_STARTUP_RENDER_PROBE";
-    let nativeCode: unknown;
-    const base: ToolRenderers = {
-      renderCall: (args) => {
-        nativeCode = (args as { code?: unknown }).code;
-        return new Text("probe", 0, 0);
-      },
-      renderResult: () => new Text("probe result", 0, 0),
-    };
-    const renderers = session.extensionRunner.resolveToolRenderers("codemode", () => base);
-    if (renderers?.renderCall === undefined) throw new Error("Missing Codemode renderer");
-    renderers.renderCall(
-      { code: marker },
-      {} as Parameters<NonNullable<ToolRenderers["renderCall"]>>[1],
-      { expanded: false, isError: false } as Parameters<
-        NonNullable<ToolRenderers["renderCall"]>
-      >[2],
+    // Check native input preservation, not IDE panel presentation or a human viewport.
+    await save(
+      "startup.json",
+      probeNativeCodemodeRenderer((name, fallback) =>
+        session.extensionRunner.resolveToolRenderers(name, fallback),
+      ),
     );
-    if (nativeCode !== "" && nativeCode !== marker) throw new Error("Unexpected renderer input");
-    await save("startup.json", { codemode: nativeCode === marker ? "full" : "compact" });
     await writeFile(path.join(results, "system-prompt.txt"), session.systemPrompt);
     if (args.includes("--run")) {
       status = "running";
