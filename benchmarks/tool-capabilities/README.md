@@ -61,31 +61,7 @@ Each invocation creates a new directory under `.tmp/capability-results/`, or a n
 
 Reports are written after each attempt and preserved on cancellation. Case workspaces and credentials are removed even when a case fails. Review evidence before sharing it: it includes prompts and tool results. Preserve the accepted report and source digest with the task before removing the development worktree. Results from different source digests must not be presented as one run of the same code.
 
-The initial suite verification and retained findings are in [LPT-655 evidence](evidence/LPT-655.md). That report separates historical source digests and leaves incomplete routes unverified.
-
-The focused native Codemode semantic rename fix and its direct/Codemode rerun are in [LPT-660 evidence](evidence/LPT-660.md). These results do not replace the earlier failed attempts.
-
-The 0.8.1 editing checks are in [LPT-698/699/704/705 evidence](evidence/LPT-698-699-704-705.md). They include deterministic real-Pi replay and free coverage checks, not paid model results. `parallelWith` requires overlapping child execution in the same native Codemode script; sequential calls cannot pass the parallel route.
-
-The current tooling checks are in [LPT-708/710/711 evidence](evidence/LPT-708-710-711.md). They separate deterministic regressions, current-session live/TUI checks, the retained initial live failure and unrun paid routes. Final transcript feedback can differ from an earlier execution-end validation event; both stay in the evidence.
-
-The intercepted-feedback and release-hygiene follow-up is in [LPT-715 evidence](evidence/LPT-715.md). Its real-Pi checks cover both the finalized message and the provider boundary. The paid stale-feedback case has a finalized UTF-8 byte limit; this does not claim paid coverage of the oversized provider-boundary reproduction.
-
-The direct selection-batch and issued Search-scope fixes are in [LPT-719/721 evidence](evidence/LPT-719-721.md). The batch route requires matching call ids in one completed assistant message, not sequential retries. All new paid routes remain unrun.
-
-The packaged guide Search checks are in [LPT-723 evidence](evidence/LPT-723.md). They retain the baseline and regex-routing failures, focused direct/Codemode regressions, and live agent/TUI checks. Paid routes remain unrun.
-
-The compact Codemode and saved UI preference checks are in [LPT-674 evidence](evidence/LPT-674.md). They include retained failed attempts, deterministic native rendering/settings checks and live viewport captures. No new paid-route claim is made.
-
 The current `ui.codemode` setting is an Off/On switch for extra IDE result panels only. Native Codemode rendering is unchanged. The focused `compact-codemode.integration.test.ts` cases check default suppression, per-tool presentation, expanded history and retained errors. Existing `codemode.silent-write`, `codemode.parallel-edit-effects`, `codemode.store-load`, `compose.cross-call`, and `ide-settings-catalog` cases still cover unchanged execution and model data; this TUI change adds no paid route.
-
-The uncertain-write failure checks are in [LPT-746 evidence](evidence/LPT-746.md). They cover safe causes and recovery in direct/native Codemode panels, keep the failed startup and timeout attempts visible, and leave paid recovery routes unverified.
-
-The registered settings catalog and setup skill checks are in [LPT-676 evidence](evidence/LPT-676.md). They separate deterministic Read/Search and live package-loading evidence from pending independent skill behavior and unrun paid routes.
-
-The global setup hint checks are in [LPT-677 evidence](evidence/LPT-677.md). They cover scoped persistence, deterministic real-Pi eligibility and suppression, and live first/reload captures. No paid-route claim is made.
-
-The local settings help checks are in [LPT-675 evidence](evidence/LPT-675.md). They cover transient command behavior, narrow light/dark rendering and live scrolling/close captures, and retain an inherited path-check failure. No paid-route claim is made.
 
 ## Required maintenance
 

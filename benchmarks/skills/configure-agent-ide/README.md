@@ -1,6 +1,6 @@
 # Settings skill smoke
 
-These are focused real-agent checks for the shipped `configure-agent-ide` skill. They are not the paid tool capability matrix. [LPT-676 evidence](../../tool-capabilities/evidence/LPT-676.md) retains historical results and a raw archive for the earlier compact/full setting. Those results do not verify the current off/on setting or the explanation-only scenario.
+These are focused real-agent checks for the shipped `configure-agent-ide` skill. They are not the paid tool capability matrix. Historical runs against the earlier compact/full setting do not verify the current off/on setting or the explanation-only scenario. When results need to be retained, attach them to the corresponding Task; do not commit run reports or raw evidence.
 
 ## Prepare an isolated case
 
