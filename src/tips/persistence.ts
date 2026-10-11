@@ -13,6 +13,7 @@ let writeQueue = Promise.resolve();
 interface TipState {
   readonly version: 1;
   readonly projects: Record<string, readonly string[]>;
+  readonly global?: readonly string[];
 }
 
 /** Returns the global, configurable startup-tip state path. */
@@ -27,15 +28,15 @@ Stores shown tips globally while treating malformed or unwritable state as empty
 export class TipStateStore {
   public constructor(private readonly statePath = resolveTipStatePath()) {}
 
-  /** Returns IDs already shown for one project. */
-  public async shownFor(project: string): Promise<ReadonlySet<string>> {
+  /** Returns IDs shown for a project, or across the installation when omitted. */
+  public async shownFor(project?: string): Promise<ReadonlySet<string>> {
     const state = await readState(this.statePath);
-    return new Set(state.projects[project] ?? []);
+    return new Set(shownIds(state, project));
   }
 
-  /** Claims a provider-scoped tip if it has not been shown for one project. */
+  /** Claims a tip for a project, or across the installation when project is undefined. */
   public async claimIfUnseen(
-    project: string,
+    project: string | undefined,
     tipIdentity: string,
     legacyTipId?: string,
   ): Promise<boolean> {
@@ -43,7 +44,7 @@ export class TipStateStore {
       try {
         return await withStateLock(this.statePath, async () => {
           const state = await readState(this.statePath);
-          const existing = new Set(state.projects[project] ?? []);
+          const existing = new Set(shownIds(state, project));
           if (
             existing.has(tipIdentity) ||
             (legacyTipId !== undefined && existing.has(legacyTipId))
@@ -52,11 +53,7 @@ export class TipStateStore {
           }
 
           existing.add(tipIdentity);
-          const next: TipState = {
-            version: STATE_VERSION,
-            projects: { ...state.projects, [project]: [...existing] },
-          };
-          await writeState(this.statePath, next);
+          await writeState(this.statePath, withShown(state, project, [...existing]));
           return true;
         });
       } catch {
@@ -71,8 +68,8 @@ export class TipStateStore {
     return claim;
   }
 
-  /** Atomically records IDs shown for one project; persistence failures are ignored. */
-  public async markShown(project: string, tipIds: readonly string[]): Promise<void> {
+  /** Records shown IDs in the chosen scope; persistence failures are ignored. */
+  public async markShown(project: string | undefined, tipIds: readonly string[]): Promise<void> {
     if (tipIds.length === 0) {
       return;
     }
@@ -80,16 +77,12 @@ export class TipStateStore {
     const update = writeQueue.then(async () => {
       await withStateLock(this.statePath, async () => {
         const state = await readState(this.statePath);
-        const existing = new Set(state.projects[project] ?? []);
+        const existing = new Set(shownIds(state, project));
         for (const tipId of tipIds) {
           existing.add(tipId);
         }
 
-        const next: TipState = {
-          version: STATE_VERSION,
-          projects: { ...state.projects, [project]: [...existing] },
-        };
-        await writeState(this.statePath, next);
+        await writeState(this.statePath, withShown(state, project, [...existing]));
       });
     });
     writeQueue = update.catch(() => {});
@@ -97,21 +90,17 @@ export class TipStateStore {
   }
 
   /** Removes a failed claim without blocking startup when persistence is unavailable. */
-  public async unmarkShown(project: string, tipIdentity: string): Promise<void> {
+  public async unmarkShown(project: string | undefined, tipIdentity: string): Promise<void> {
     const update = writeQueue.then(async () => {
       try {
         await withStateLock(this.statePath, async () => {
           const state = await readState(this.statePath);
-          const existing = new Set(state.projects[project] ?? []);
+          const existing = new Set(shownIds(state, project));
           if (!existing.delete(tipIdentity)) {
             return;
           }
 
-          const next: TipState = {
-            version: STATE_VERSION,
-            projects: { ...state.projects, [project]: [...existing] },
-          };
-          await writeState(this.statePath, next);
+          await writeState(this.statePath, withShown(state, project, [...existing]));
         });
       } catch {
         // State is an optimization. Never block startup on a failed cleanup.
@@ -120,6 +109,16 @@ export class TipStateStore {
     writeQueue = update.catch(() => {});
     await writeQueue;
   }
+}
+
+function shownIds(state: TipState, project: string | undefined): readonly string[] {
+  return project === undefined ? (state.global ?? []) : (state.projects[project] ?? []);
+}
+
+function withShown(state: TipState, project: string | undefined, ids: readonly string[]): TipState {
+  return project === undefined
+    ? { ...state, global: ids }
+    : { ...state, projects: { ...state.projects, [project]: ids } };
 }
 
 /** Normalizes a project path for use as a state key. */
@@ -214,7 +213,10 @@ function isState(value: unknown): value is TipState {
   if (
     record.version !== STATE_VERSION ||
     typeof record.projects !== "object" ||
-    record.projects === null
+    record.projects === null ||
+    Array.isArray(record.projects) ||
+    (record.global !== undefined &&
+      (!Array.isArray(record.global) || !record.global.every((tip) => typeof tip === "string")))
   ) {
     return false;
   }
