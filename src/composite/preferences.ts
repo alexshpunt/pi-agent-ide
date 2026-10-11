@@ -35,13 +35,14 @@ export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
   {
     kind: "choice",
     id: "ui.codemode",
-    name: "Codemode",
-    description: "Keep native call summaries compact, or show script and output previews.",
-    default: "compact",
+    name: "Show tool results from Codemode",
+    description:
+      "Show extra Agent IDE result panels using each tool's presentation setting. Off hides successful panels; errors stay visible. Codemode's own output and other tools are unchanged.",
+    default: "off",
     group: "ui",
     values: [
-      { value: "compact", label: "Compact" },
-      { value: "full", label: "Detailed" },
+      { value: "off", label: "Off" },
+      { value: "on", label: "On" },
     ],
   },
   presentationPreference(

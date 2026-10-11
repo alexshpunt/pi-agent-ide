@@ -81,7 +81,7 @@ function retentionWarning(group: SavedPanelGroup): string | undefined {
 }
 
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
-export function createNestedIdeRendering(pi: ExtensionAPI, compactCodemode = false) {
+export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResults = false) {
   const definitions = new Map<string, ToolDefinition>();
   const parents = new Map<string, string>();
   const groups = new Map<string, PanelGroup>();
@@ -243,7 +243,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI, compactCodemode = fal
     function renderEntry(entry, options, theme) {
       if (!Array.isArray(entry.data?.calls)) return undefined;
       const compact =
-        compactCodemode && entry.data.parentToolName === "codemode" && !options.expanded;
+        hideCodemodeToolResults && entry.data.parentToolName === "codemode" && !options.expanded;
       const calls = compact
         ? entry.data.calls.filter((call) => call.result?.isError)
         : entry.data.calls;
