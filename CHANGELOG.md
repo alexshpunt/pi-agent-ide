@@ -16,11 +16,9 @@
 - Preserve issued selections when Codemode batches same-file edits. Return verified follow-up targets for Replace and Insert after formatting, keep unrelated edits concurrent and count grouped replacements per file correctly.
 - Preserve blocked-edit recovery feedback and bound errors even when a later guard replaces them. Explain failed writes and require rereading resources before retrying uncertain effects.
 
-### Filesystem guards and maintenance
+### Filesystem guards
 
 - Apply temporary-directory cleanup rules consistently to Delete and removed Move endpoints. Recognize exact `tmp`, `.tmp`, `temp` and `.temp` path components while preserving protected-path, tracked-content and hook checks. Show Herdr's waiting state during filesystem approval dialogs.
-- Remove obsolete research and development files and committed task reports. Keep required reports on Tasks; block artifact directories through pre-commit and CI checks.
-- Allow publication without the optional paid post-publication benchmark. Candidate archive verification, npm approval and synchronization are unchanged.
 
 ## 0.8.0 — 2026-10-09
 
@@ -42,12 +40,9 @@
 - Resolve temporary-deletion settings from the remote account and project. Local settings do not grant remote deletion permission; protected paths, tracked contents and hooks remain guarded.
 - Clean up only processes owned by each SSH command channel, including descendants that start new sessions. Report interrupted operations and uncertain cleanup honestly rather than claiming rollback or successful termination.
 
-### Verification and known limits
+### Known limits
 
-- Add SSH integration coverage for tool composition, transfers, Git, language tools, debugger sessions, process cleanup, web reads and capture. Run namespace-sensitive cases in a separate unprivileged SSH job.
-- Split core Linux integration checks into four CI jobs with separate logs and reports, and combine their results for the required validation gate.
-- Split independent SSH hook checks into separate real-Pi sessions so Read guards, Move guards and saved-edit feedback keep their full coverage within the existing run limits.
-- Document a known Java/Kotlin adapter issue: `fwcd/kotlin-debug-adapter` 0.4.4 can run past verified breakpoints. The issue was reproduced locally and over SSH; those recipes remain available, but a verified breakpoint does not guarantee a stop.
+- `fwcd/kotlin-debug-adapter` 0.4.4 can run past verified breakpoints; a verified breakpoint does not guarantee a stop.
 
 ## 0.7.3 — 2026-10-09
 
@@ -67,16 +62,10 @@
 - Delete declarations through direct `symbol:` paths. Route `symbol:<file>#<selector>#name` replacement through semantic rename in native Codemode rather than declaration-text replacement.
 - Keep original source selections behind compact AST Read overviews. Follow-up tools use the requested source range, not the displayed outline.
 
-### Display and verification
+### Display
 
 - Explain shortened arguments, omitted result displays, omitted call panels and unavailable results separately in saved nested IDE displays.
 - Hide internal result references from Stage's user-facing output and retain breakpoint-removal labels after deletion.
-- Add an opt-in real-model capability matrix for direct and native Codemode routes. Free coverage checks do not call models or prove model execution; paid runs retain their evidence.
-- Reuse recent full CI evidence only for identical trees and verification conditions. Promotion and versioned candidates still run their required full checks.
-- Permit Bubblewrap user namespaces through a per-binary AppArmor profile on restricted Ubuntu CI runners. Keep the runner-wide restriction enabled and require a real sandbox launch before unit checks.
-- Keep links to excluded tests and benchmarks usable in the public npm package by linking to the public repository.
-- Update integration checks for compact Write receipts while retaining saved-byte, formatting, hook, output-recovery and native-panel contracts. Run sandbox semantic rename with the pinned Pi host and CI language-server toolchain.
-- Reduce shared-runner integration concurrency to three processes to keep Pi startup within existing run limits and the complete suite within the unchanged job budget. Retain native Codemode failure traces.
 
 ## 0.7.2 — 2026-10-08
 
@@ -108,12 +97,6 @@
 
 - Refresh debugger state when delayed stop or exit events arrive. Track adapter-relocated breakpoints and later binding changes, and refresh displayed local variables after evaluation.
 - Preserve omitted optional IDE tool arguments on Copilot's Responses route instead of letting implicit strictness turn them into required fields. Explicit strictness and other tools remain unchanged.
-
-### Verification and maintenance
-
-- Add real-Pi stress coverage for every callable IDE tool, direct and nested output, provider text and images, limit/view/offset/scope combinations and complete saved-output recovery. Include the reported Search case of 10,114 matches across 1,725 files with `limit=80`.
-- Keep real debugger checks running in separate, non-blocking jobs with their own reports, outside shared CI totals. Pure debugger unit tests and editor checks, including Delete, still block the release.
-- Automatically import newly opened GitHub issues into Linear, with stable issue IDs to avoid duplicate imports.
 
 ## 0.7.1 — 2026-10-05
 
@@ -148,18 +131,6 @@
 
 - Keep whole replacements visible when old and new blocks share no trimmed line. Avoid unnecessary character refinement while preserving the existing time, pairing and size limits, precise small-edit highlights and truthful unavailable state for unfinished comparisons.
 
-### Packaging
-
-- Fix a documentation link to excluded tests so public package validation succeeds.
-
-### Verification
-
-- Run the full integration suite in four standalone CI shards with separate reports and retained logs, without raising timeouts or skipping tests. Close each scenario's Pi process instead of accumulating shared fixture hosts.
-- Check that each final file is formatted once without requiring independent files to finish in a fixed order.
-- Make the shell-result scenario independent of background completion timing while keeping separate completion-delivery coverage.
-- Run Windows source and installed-package checks without a retained shared harness workspace, avoiding locks on the shared cleanup directory.
-- Retry transient Windows test-workspace removal locks a bounded number of times after the Pi process tree exits; persistent locks still fail. Retain Windows host traces on failure without changing test timeouts or assertions.
-
 ## 0.6.4 — 2026-10-03
 
 ### Native Pi integration
@@ -171,11 +142,10 @@
 - Run disjoint Read, Search, and editing operations concurrently while preserving ordering and rollback protection for shared resources.
 - Attach first-use guides without blocking or replaying tool calls, and preserve guidance across nested calls and session navigation.
 - Keep IDE panels visible for nested calls, show final batch diffs without duplicate bookkeeping panels, and preserve bounded history and native usage accounting.
-- Verify IDE tool coexistence with native MCP tools and resources.
 
-### Packaging
+### Installation
 
-- Fix Windows release entrypoint resolution, npm packing, and archive extraction.
+- Fix Windows package entrypoint resolution and installation from npm archives.
 
 ### Editing and reading
 
@@ -184,7 +154,7 @@
 - Bound large committed Apply results before serialization and keep full results addressable.
 - Preserve structured source data when AST output exceeds the preview budget.
 - Run independent post-read handlers concurrently while applying their transforms in order.
-- Document and verify jq views for JSONL inspection.
+- Document jq views for JSONL inspection.
 
 ### Search and presentation
 
@@ -213,11 +183,6 @@
 - Route deletion of terminated debugger sessions and breakpoints through the debugger resource handler.
 - Bound replayable DAP events so noisy debug targets do not grow the queue without limit.
 - Check each debugger's own executable or configured adapter path instead of applying Python or JavaScript probes to unrelated adapters.
-
-### Verification
-
-- Temporarily skip the flaky Windows Java public-Pi startup test. Keep Linux public-Pi and native Windows Java lifecycle checks enabled.
-- Retain unit test reports immediately and stop before integration tests when the unit suite fails. Keep content checks independent of wall-clock load and allow independent formatters to finish in either order.
 
 ## 0.6.3 — 2026-09-27
 
@@ -451,7 +416,6 @@
 - Fix CSharpier detection and diagnostic commands or parsers for .NET, Go, PHP, HTML, CSS, and Java. Keep project-wide lint findings attached to the correct file.
 - Treat a failed linter with no parsed findings as a failure, not a clean check.
 - Use the language server's advertised diagnostic mode, fixing Java and Go servers that publish diagnostics without supporting pull requests.
-- Verify native mini-projects with real formatting, lint, language diagnostics, and separate compiler or behavior checks before and after formatting.
 
 ## 0.2.0 — 2026-09-05
 
