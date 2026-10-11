@@ -28,6 +28,8 @@ Ask the agent to configure Agent IDE, or run `/skill:configure-agent-ide` with y
 
 The catalog lists supported settings and defaults, not current effective values. When documentation is disabled, the skill can inspect the installed configuration guide and registrations without enabling unrelated modules.
 
+When the setup skill is available, an interactive TUI session shows a short setup hint once across the installation. Reloads, new projects and package updates do not repeat the same hint. Disabling `ide.tips`, running without the skill or using a non-TUI mode does not consume it. A deliberately revised hint can appear again; the record lives in the existing `pi-agent-ide/tips.json` state file.
+
 ## Native tool availability
 
 Tools use fixed native exposure; there are no IDE exposure overrides or named profiles.

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { TIP_API_VERSION, TIP_PROTOCOL, type TipProvider } from "#src/api/tips.js";
+import { TIP_API_VERSION, TIP_PROTOCOL, type Tip, type TipProvider } from "#src/api/tips.js";
 import { TipCore } from "./core.js";
 
 const context = {
@@ -15,6 +15,22 @@ function provider(id: string, getTip: TipProvider["getTip"]): TipProvider {
 }
 
 describe("TipCore", () => {
+  test("rejects unknown persistence scopes without hiding other tips", async () => {
+    const core = new TipCore();
+    const invalid: unknown = {
+      id: "invalid-tip",
+      title: "Title",
+      body: "Body",
+      scope: "unexpected",
+    };
+    await core.registerProvider(provider("invalid", () => invalid as Tip));
+    await core.registerProvider(
+      provider("working", () => ({ id: "working-tip", title: "Title", body: "Body" })),
+    );
+    await expect(core.collectTips(context)).resolves.toEqual([
+      { providerId: "working", tip: { id: "working-tip", title: "Title", body: "Body" } },
+    ]);
+  });
   test("collects valid tips while isolating a provider failure", async () => {
     const core = new TipCore();
     await core.registerProvider(provider("broken", () => Promise.reject(new Error("broken"))));
