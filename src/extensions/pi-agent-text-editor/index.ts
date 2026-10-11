@@ -1,4 +1,5 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 
 import { hideBuiltinEdit } from "./src/core/builtin-edit.js";
@@ -8,6 +9,7 @@ import { registerNativeTextEditBatching } from "./src/core/native-text-edit-batc
 import { registerTextEditorTools } from "./src/tools/extension.js";
 
 export default async function registerTextEditor(pi: ExtensionAPI): Promise<void> {
+  registerOperationApproval(pi);
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "editing",

@@ -15,6 +15,7 @@ import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
+import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
@@ -26,6 +27,7 @@ Registers the configured built-ins as one Pi Agent IDE extension.
 */
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
+  registerOperationApproval(pi);
   const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
   const hideCodemodeToolResults = config.preferences?.["ui.codemode"] !== "on";
   const nestedRendering = createNestedIdeRendering(pi, hideCodemodeToolResults);

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { confirmOperation } from "pi-agent-tool-ui/operation-approval";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
 import { forgetDeferredPostEdit } from "./post-edit-scope.js";
@@ -10,20 +11,6 @@ import type {
 import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.js";
 import { isDiffStatusContribution } from "#src/api/post-edit.js";
 import type { MutationDiffStatus } from "#src/api/mutation-result.js";
-
-function emitBlocked(
-  events: Pick<ExtensionAPI["events"], "emit"> | undefined,
-  active: boolean,
-): void {
-  try {
-    events?.emit(
-      "herdr:blocked",
-      active ? { active: true, label: "Waiting for user response" } : { active: false },
-    );
-  } catch {
-    // Header status must not change the user's decision or fail filesystem work.
-  }
-}
 
 /** Return whether a hybrid text tool invocation addresses a complete file. */
 export function isWholeFileInvocation(
@@ -89,13 +76,13 @@ export async function executeWholeFileTool(
             });
         },
         ...(ui !== undefined && {
-          confirm: async (event, reason) => {
-            const waitingEvents = context.mode === "tui" ? events : undefined;
-            emitBlocked(waitingEvents, true);
-            try {
-              return await ui.confirm(
-                operation === "move" ? "Move filesystem object?" : "Delete permanently?",
-                [
+          confirm: (event, reason) =>
+            confirmOperation(
+              events,
+              { hasUI: true, mode: context.mode ?? "print", ui },
+              {
+                title: operation === "move" ? "Move filesystem object?" : "Delete permanently?",
+                message: [
                   event.path,
                   event.resolvedPath === event.path
                     ? undefined
@@ -110,12 +97,9 @@ export async function executeWholeFileTool(
                 ]
                   .filter((line) => line !== undefined)
                   .join("\n"),
-                { signal },
-              );
-            } finally {
-              emitBlocked(waitingEvents, false);
-            }
-          },
+                signal,
+              },
+            ),
         }),
       });
     },
