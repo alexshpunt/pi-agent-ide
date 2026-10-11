@@ -79,6 +79,10 @@ The compact Codemode and saved UI preference checks are in [LPT-674 evidence](ev
 
 The uncertain-write failure checks are in [LPT-746 evidence](evidence/LPT-746.md). They cover safe causes and recovery in direct/native Codemode panels, keep the failed startup and timeout attempts visible, and leave paid recovery routes unverified.
 
+The registered settings catalog and setup skill checks are in [LPT-676 evidence](evidence/LPT-676.md). They separate deterministic Read/Search and live package-loading evidence from pending independent skill behavior and unrun paid routes.
+
+The global setup hint checks are in [LPT-677 evidence](evidence/LPT-677.md). They cover scoped persistence, deterministic real-Pi eligibility and suppression, and live first/reload captures. No paid-route claim is made.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:

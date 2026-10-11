@@ -22,6 +22,14 @@ Obsolete IDs in `disabled` are ignored. They do not stop IDE startup. Malformed 
 
 Pi Agent IDE enables every built-in extension by default. Project and global config files can disable built-ins by their stable IDs and turn on built-ins that are off by default.
 
+## Agent-assisted settings
+
+Ask the agent to configure Agent IDE, or run `/skill:configure-agent-ide` with your request. Specify Project or Global scope. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the requested settings. Default restores inheritance; saved changes still need reload or restart.
+
+The catalog lists supported settings and defaults, not current effective values. When documentation is disabled, the skill can inspect the installed configuration guide and registrations without enabling unrelated modules.
+
+When the setup skill is available, an interactive TUI session shows a short setup hint once across the installation. Reloads, new projects and package updates do not repeat the same hint. Disabling `ide.tips`, running without the skill or using a non-TUI mode does not consume it. A deliberately revised hint can appear again; the record lives in the existing `pi-agent-ide/tips.json` state file.
+
 ## Native tool availability
 
 Tools use fixed native exposure; there are no IDE exposure overrides or named profiles.

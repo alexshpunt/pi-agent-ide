@@ -6,6 +6,7 @@ const groups: [string[], string[]][] = [
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
   [["read.ssh-guide"], ["ssh-guide"]],
+  [["read.ide-settings", "search.ide-settings"], ["ide-settings-catalog"]],
   [
     ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
     ["docs-search"],

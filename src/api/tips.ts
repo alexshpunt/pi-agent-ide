@@ -26,6 +26,9 @@ export interface Tip {
   readonly id: string;
   readonly title: string;
   readonly body: string;
+
+  /** Remembers the tip for this project by default, or across the installation. */
+  readonly scope?: "project" | "global";
 }
 
 /** Independent provider of an optional startup tip. */

@@ -11,6 +11,41 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "ide-settings-catalog",
+  ["read.ide-settings", "search.ide-settings"],
+  "Read docs:ide-settings with limit 1000 to inspect the registered IDE settings. Find the registered ui.codemode preference. Search that exact ID in docs:ide-settings with caseSensitive true and limit 1000, then repeat the search in docs:all. Both searches must return locations under docs:ide-settings without editable Search references. Do not change configuration or fixture files.",
+  [
+    {
+      tool: "read",
+      args: { path: "docs:ide-settings", limit: 1000 },
+      contains: "ui.codemode",
+    },
+    {
+      tool: "search",
+      args: {
+        path: "docs:ide-settings",
+        query: "ui.codemode",
+        caseSensitive: true,
+        limit: 1000,
+      },
+      contains: "docs:ide-settings:",
+      excludes: "SEARCH#",
+    },
+    {
+      tool: "search",
+      args: {
+        path: "docs:all",
+        query: "ui.codemode",
+        caseSensitive: true,
+        limit: 1000,
+      },
+      contains: "docs:ide-settings:",
+      excludes: "SEARCH#",
+    },
+  ],
+  { expected: textFile },
+);
+add(
   "docs-search",
   ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
   "Read docs:editing. Choose one unquoted word from that guide's body and search docs:editing for that exact word with caseSensitive true, wholeWord true, and limit 10. The result must contain guide-body locations under docs:editing, not editable Search references. Then search all guide bodies with path docs:all, query regex:^#, and limit 1000. Confirm it finds docs:editing body headings rather than just the guide listing. Do not change files.",

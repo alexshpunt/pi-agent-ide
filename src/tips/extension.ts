@@ -12,12 +12,22 @@ import type { TipContext } from "#src/api/tips.js";
 import { TipCallout } from "./tip-callout.js";
 import { TipCore } from "./core.js";
 import { normalizeProjectPath, TipStateStore } from "./persistence.js";
+import { createSetupHintProvider } from "./setup-hint.js";
 
 const TIP_ENTRY_TYPE = "pi-agent-ide-startup-tip";
 
 /** Registers the built-in startup-tip core and passive TUI renderer. */
-export default function registerTips(pi: ExtensionAPI): void {
+export default async function registerTips(pi: ExtensionAPI): Promise<void> {
   const core = new TipCore();
+  await core.registerProvider(
+    createSetupHintProvider(() =>
+      pi
+        .getCommands()
+        .some(
+          (command) => command.source === "skill" && command.name === "skill:configure-agent-ide",
+        ),
+    ),
+  );
   const state = new TipStateStore();
   pi.registerEntryRenderer(TIP_ENTRY_TYPE, (entry, _options, theme) => {
     const tip = entry.data as { readonly title?: string; readonly body?: string };
@@ -86,8 +96,9 @@ async function displayTip(
     return;
   }
 
-  const project = normalizeProjectPath(context.cwd);
   for (const contribution of contributions) {
+    const project =
+      contribution.tip.scope === "global" ? undefined : normalizeProjectPath(context.cwd);
     const identity = tipIdentity(contribution.providerId, contribution.tip.id);
     if (!(await state.claimIfUnseen(project, identity, contribution.tip.id))) {
       continue;

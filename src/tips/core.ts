@@ -74,13 +74,16 @@ async function collectTip(provider: TipProvider, context: TipContext): Promise<T
   }
 }
 
-function isTip(value: Tip): boolean {
+function isTip(input: unknown): input is Tip {
+  if (typeof input !== "object" || input === null) return false;
+  const value = input as Record<string, unknown>;
   return (
     typeof value.id === "string" &&
     /^[a-z0-9][a-z0-9.-]*$/u.test(value.id) &&
     typeof value.title === "string" &&
     value.title.trim().length > 0 &&
     typeof value.body === "string" &&
-    value.body.trim().length > 0
+    value.body.trim().length > 0 &&
+    (value.scope === undefined || value.scope === "project" || value.scope === "global")
   );
 }
