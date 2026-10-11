@@ -49,7 +49,7 @@ Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of develop
 
 ### Combine tools through direct calls or native Codemode
 
-All IDE tools support direct calls and Pi's built-in Codemode. The agent can combine reading, search, selection and editing into one workflow, with the same source checks and visible results in both modes.
+All IDE tools support direct calls and Pi's built-in Codemode. The agent can combine reading, search, selection and editing into one workflow, with the same source checks in both modes.
 
 For example, this script finds a checklist item, selects its complete line, and marks it done:
 
@@ -81,7 +81,7 @@ Views change how the same resource is presented. The agent can request source st
 
 ### Find anything through `search`
 
-`search` provides one interface for paths, exact text, regular expressions, AST patterns, symbols, references, code relationships, process discovery, and retained terminal output. Results are reusable guarded references, so the agent can find an intended target once and pass that selection directly to `read` or an editing tool.
+`search` provides one interface for paths, exact text, regular expressions, AST patterns, symbols, references, code relationships, process discovery, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
 
 <div align="center">
 
@@ -176,7 +176,7 @@ Filesystem and HTTP reads, resource views, content converters, search backends, 
 
 A person can see the agent's edits, diffs, diagnostics, running processes, debugger state, and failures. Bounded presentation keeps live output readable without discarding the underlying result. Guarded snapshots and first-class undo make mistakes visible and recovery inexpensive.
 
-Direct calls and native Codemode both show tool panels and diffs. A batch of edits shows the final diff for each file rather than a stack of intermediate cards. These panels remain available when you restore a session or navigate its history.
+Direct calls show tool panels and diffs using each tool's presentation setting. Extra successful IDE panels from Codemode are off by default; turn on **Show tool results from Codemode** in `/agent-ide-settings` to show them. Codemode's own script and output are unchanged. Errors and expanded history remain available, and a batch of edits shows the final diff for each file rather than intermediate cards.
 
 <div align="center">
 
@@ -188,13 +188,13 @@ Direct calls and native Codemode both show tool panels and diffs. A batch of edi
 
 Built-in debugger recipes cover C, C++, C#, Dart, Elixir, Go, Java, JavaScript, Julia, Kotlin, Lua, PHP, PowerShell, Python, R, Ruby, Rust, shell scripts, Swift, TypeScript, and Zig. Formatting, linting, AST, language-server, and debugger support follows the tools and configuration available in each project.
 
-Known issue: the Java/Kotlin adapter (`fwcd/kotlin-debug-adapter` 0.4.4) can run past verified breakpoints. This was reproduced with JDK 17 and 21 both locally and over SSH. Those recipes remain available, but a verified breakpoint is not proof that execution will stop there.
+Known issue: the Kotlin adapter (`fwcd/kotlin-debug-adapter` 0.4.4) can run past verified breakpoints. This was reproduced with JDK 17 and 21 both locally and over SSH. Its recipe remains available, but a verified breakpoint is not proof that execution will stop there. Java uses `java-debug / JDT LS`, not this adapter.
 
 Windows and WSL are first-class supported environments alongside Linux. Run `/pi-agent-ide-doctor` to see the exact capabilities available on the current machine.
 
 ### Built through data-driven development
 
-Pi Agent IDE is developed through daily use on real software and measured with the [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark). Every release is exercised against real editing tasks, and the measured result becomes part of the release evidence. The badge above links to the [latest accepted observation](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest), with its score and run details; the underlying observations are available in the [published dataset](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
+Pi Agent IDE is developed through daily use on real software and measured with the [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark). Published benchmark observations record performance on real editing tasks; not every release has a benchmark run. The badge above links to the [latest accepted observation](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest), with its score and run details; the underlying observations are available in the [published dataset](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
 
 The project is also used to develop itself. Weak interactions, missing affordances, and agent failure modes appear in real work instead of remaining theoretical. Problems are fixed as they are found, and the tools evolve through regular releases.
 
@@ -274,7 +274,7 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 | [File hooks](./docs/user-hooks.md)                     | Inspect, change, or deny reads and edits                                 |
 | [Writing extensions](./docs/extensions.md)             | Resolvers, views, anchors, search backends, and IDE plugins              |
 | [Architecture](./docs/architecture.md)                 | Module boundaries, protocols, and the umbrella extension                 |
-| [Development](./docs/development.md)                   | Checkout setup, tests, and modular mode                                  |
+| [Development](./docs/development.md)                   | Checkout setup, tests, and package builds                                |
 | [Releases](./docs/releases.md)                         | Nightly builds, release candidates, verification, and publication        |
 
 ## License
