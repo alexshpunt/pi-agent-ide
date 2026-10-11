@@ -11,6 +11,42 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "semantic-write-receipts",
+  ["edit.semantic-write-receipt"],
+  "Use Write once each on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode catch the expected failed calls so the remaining distinct actions can run. Report unknown for the uncertain action; do not call it a failed file save.",
+  [
+    {
+      tool: "write",
+      args: { path: "fixture:semantic/applied", content: "probe" },
+      contains: "Semantic action applied",
+      excludes: "Saved file.",
+    },
+    {
+      tool: "write",
+      args: { path: "fixture:semantic/not-applied", content: "probe" },
+      error: true,
+      contains: "Semantic action not-applied",
+      excludes: "no file was written",
+    },
+    {
+      tool: "write",
+      args: { path: "fixture:semantic/unknown", content: "probe" },
+      error: true,
+      contains: "Semantic action unknown",
+      excludes: "Write outcome unknown.",
+    },
+  ],
+  {
+    setup: "semantic-write",
+    expected: {
+      ...textFile,
+      "attempts.jsonl":
+        '{"effect":"applied","content":"probe"}\n{"effect":"not-applied","content":"probe"}\n{"effect":"unknown","content":"probe"}\n',
+    },
+    answer: "unknown",
+  },
+);
+add(
   "ide-settings-catalog",
   ["read.ide-settings", "search.ide-settings"],
   "Read docs:ide-settings with limit 1000 to inspect the registered IDE settings. Find the registered ui.codemode preference. Search that exact ID in docs:ide-settings with caseSensitive true and limit 1000, then repeat the search in docs:all. Both searches must return locations under docs:ide-settings without editable Search references. Do not change configuration or fixture files.",

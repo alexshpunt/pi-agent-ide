@@ -261,6 +261,8 @@ async function attempt(
       "--pi-agent-ide-no-post-processing",
       "true",
     ];
+    if (task.setup === "semantic-write")
+      piArgs.push("-e", "/source/benchmarks/tool-capabilities/semantic-write-fixture.ts");
     if (task.setup === "write-effects")
       piArgs.push("-e", "/source/tests/integration/support/write-saved-mismatch-resource.ts");
     if (task.setup === "write-hook")
