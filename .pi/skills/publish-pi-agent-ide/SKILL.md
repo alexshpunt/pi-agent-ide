@@ -44,7 +44,7 @@ This is an explicit scope refresh after a failure, not permission to follow a mo
 ## Start the versioned release
 
 1. Check that the version is unused in npm and that no active `release/X.Y.Z` branch exists. Only exact stable version branches mark an active release; older `release/v*` and `release/official-*` branches are not freeze markers.
-2. Finish notes for the pinned scope, including preparation fixes. Do not include later develop features. Do not add the version or its CHANGELOG section manually: Start release owns both.
+2. Read `../write-product-changelog/SKILL.md` and finish product-only notes for the pinned scope. Include preparation fixes only when they change the product for its users. Exclude repository cleanup, tests, CI, benchmarks, evidence policies and release infrastructure; keep those in the Task. Do not include later develop features. Do not add the version or its CHANGELOG section manually: Start release owns both. Inspect the generated section against the skill before requesting approval.
 3. Run **Start release** (`release-start.yml`) on main with `version` and `notes`.
 4. Record the created `release/X.Y.Z` branch, PR, head SHA, main base, and candidate CI run.
 
