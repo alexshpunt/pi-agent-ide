@@ -16,6 +16,10 @@ on:
         description: Publish after verifying the candidate (requires npm approval)
         default: false
         type: boolean
+      benchmark:
+        description: Run the paid benchmark after publication
+        default: true
+        type: boolean
 
 concurrency:
   group: npm-release
@@ -155,7 +159,7 @@ jobs:
   benchmark:
     name: Benchmark published package
     needs: [validate, publish]
-    if: inputs.publish && needs.publish.result == 'success'
+    if: inputs.publish && inputs.benchmark && needs.publish.result == 'success'
     permissions:
       actions: read
       artifact-metadata: write

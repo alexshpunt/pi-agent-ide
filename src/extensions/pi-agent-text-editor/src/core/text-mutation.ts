@@ -14,6 +14,7 @@ import type {
 import {
   type AgentToolResult,
   defineTool,
+  type ExtensionAPI,
   type ExtensionContext,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -94,12 +95,14 @@ import { writeAgentResult } from "./write-agent-result.js";
 import { mutationResultSchema, structuredMutation } from "./structured-result.js";
 import type { ResultTargetStore } from "pi-agent-resource";
 
+/** Build a mutation tool; host events report terminal filesystem approvals to Herdr. */
 export function createTextTool<TParameters extends TSchema>(
   core: TextEditorCore,
   definition: TextMutationToolRegistration<TParameters>,
   annotations: ToolCallInterceptionRenderStore,
   getLastResolvedSource: () => string | undefined,
   resultTargets?: ResultTargetStore,
+  events?: Pick<ExtensionAPI["events"], "emit">,
 ): ToolDefinition<TParameters, FileMutationBatchResult> {
   const renderer = core.getToolRenderer(definition.name);
   const initialRenderCall = renderer?.renderCall;
@@ -332,6 +335,7 @@ export function createTextTool<TParameters extends TSchema>(
                     signal,
                     context,
                     verifyFileSource,
+                    events,
                   );
                 }
                 const directExecute = () =>
@@ -347,15 +351,9 @@ export function createTextTool<TParameters extends TSchema>(
                       }),
                     getLastResolvedSource(),
                   );
-                return executeTextToolWithBatch(
-                  toolCallId,
-                  directExecute,
-                  signal,
-                  onUpdate,
-                  context,
-                );
+                return directExecute();
               };
-              return execute();
+              return executeTextToolWithBatch(toolCallId, execute, signal, onUpdate, context);
             }),
           definition.name === "write",
         );

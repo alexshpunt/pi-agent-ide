@@ -39,6 +39,7 @@ interface BatchReport {
 }
 interface PanelGroup {
   parentToolCallId: string;
+  parentToolName?: string;
   cwd: string;
   calls: ChildPanel[];
   retention: RetentionReasons;
@@ -80,7 +81,7 @@ function retentionWarning(group: SavedPanelGroup): string | undefined {
 }
 
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
-export function createNestedIdeRendering(pi: ExtensionAPI) {
+export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResults = false) {
   const definitions = new Map<string, ToolDefinition>();
   const parents = new Map<string, string>();
   const groups = new Map<string, PanelGroup>();
@@ -215,6 +216,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
     const calls = group.calls.filter((call) => !call.batched);
     const saved: PanelGroup = {
       ...group,
+      parentToolName: event.message.toolName,
       calls: [],
       retention: {
         ...group.retention,
@@ -240,6 +242,15 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
     ENTRY_TYPE,
     function renderEntry(entry, options, theme) {
       if (!Array.isArray(entry.data?.calls)) return undefined;
+      const compact =
+        hideCodemodeToolResults && entry.data.parentToolName === "codemode" && !options.expanded;
+      const calls = compact
+        ? entry.data.calls.filter((call) => call.result?.isError)
+        : entry.data.calls;
+      if (compact && calls.length === 0) {
+        const warning = retentionWarning(entry.data);
+        return warning ? new Text(theme.fg("warning", warning), 0, 0) : new Container();
+      }
       // Pi rebuilds resumed history before session_start binds the public UI.
       // Keep the entry mounted and resolve its tool components on the next render.
       if (!tui)
@@ -251,10 +262,10 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
           },
         };
       const warningText = retentionWarning(entry.data);
-      let panel = components.get(entry.data);
+      let panel = compact ? undefined : components.get(entry.data);
       if (!panel) {
         panel = new Container();
-        for (const call of entry.data.calls) {
+        for (const call of calls) {
           const component = new ToolExecutionComponent(
             call.name,
             call.id,
@@ -276,7 +287,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
           panel.addChild(component);
         }
         if (warningText) panel.addChild(new Text(theme.fg("warning", warningText), 0, 0));
-        components.set(entry.data, panel);
+        if (!compact) components.set(entry.data, panel);
       }
       const warning = panel.children.at(-1);
       if (warningText && warning instanceof Text) warning.setText(theme.fg("warning", warningText));
@@ -319,7 +330,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI) {
           });
           continue;
         }
-        const copyResult = batch.copyResults?.get(id);
+        const copyResult = batch.mutationResults?.get(id);
         const rollback = copyResult?.details.metadata?.copyRollback;
         if (
           call.name === "copy" &&

@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import type {
+  MessageEndEvent,
+  MessageEndEventResult,
   ExtensionAPI,
   ExtensionHandler,
   ToolCallEvent,
@@ -30,8 +33,27 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   const names = new Set<string>();
   const outputs = new TempResourceStore();
   const saveFullOutput = (text: string) => outputs.saveFile(text);
-  const boundedErrors = new Set<string>();
-  const contextErrors = new Map<string, Promise<AgentToolResult<unknown>["content"]>>();
+  const contextErrors = new Map<
+    string,
+    { source: string; content: Promise<AgentToolResult<unknown>["content"]> }
+  >();
+  const signature = (content: AgentToolResult<unknown>["content"]) =>
+    createHash("sha256").update(JSON.stringify(content)).digest("hex");
+  const limitError = async (id: string, content: AgentToolResult<unknown>["content"]) => {
+    const source = signature(content);
+    const cached = contextErrors.get(id);
+    if (cached && (cached.source === source || signature(await cached.content) === source))
+      return cached.content;
+    const limited = limitIdeOutput(content, "", saveFullOutput).then((output) => [
+      {
+        type: "text" as const,
+        text: output.text + (output.notices.length ? `\n\n${output.notices.join("\n")}` : ""),
+      },
+      ...output.images,
+    ]);
+    contextErrors.set(id, { source, content: limited });
+    return limited;
+  };
   // Read core owns deferred registration and reports setup failures.
   void connectReadPlugin(pi, {
     protocol: READ_PROTOCOL,
@@ -44,6 +66,26 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   pi.on("session_shutdown", () => outputs.dispose());
   const on: ExtensionAPI["on"] = (event, handler) => {
     // The SDK overloads describe event/handler pairs; forwarding keeps the original pair.
+    if (event === "message_end") {
+      const messageHandler = handler as ExtensionHandler<MessageEndEvent, MessageEndEventResult>;
+      return pi.on("message_end", async (messageEvent, context) => {
+        const result = await messageHandler(messageEvent, context);
+        const message = result?.message ?? messageEvent.message;
+        if (
+          message.role !== "toolResult" ||
+          !message.isError ||
+          !names.has(message.toolName) ||
+          message.content.some(
+            (block) => block.type === "text" && block.text.startsWith("<system-result"),
+          )
+        )
+          return result;
+        return {
+          ...result,
+          message: { ...message, content: await limitError(message.toolCallId, message.content) },
+        };
+      });
+    }
     const toolCallHandler = handler as ExtensionHandler<ToolCallEvent, ToolCallEventResult>;
     if (event !== "tool_call") return pi.on(event as "tool_call", toolCallHandler);
     return pi.on("tool_call", async (call, context) => {
@@ -54,7 +96,6 @@ export function createIdeTextResults(pi: ExtensionAPI) {
         "",
         saveFullOutput,
       );
-      boundedErrors.add(call.toolCallId);
       return {
         ...result,
         reason: limited.text + (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
@@ -69,7 +110,6 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   const clear = () => {
     parents.clear();
     images.clear();
-    boundedErrors.clear();
     contextErrors.clear();
   };
   pi.on("session_start", clear);
@@ -152,7 +192,6 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           "",
           saveFullOutput,
         );
-        boundedErrors.add(args[0]);
         if (limited.notices.length === 0) throw error;
         throw new Error(limited.text + `\n\n${limited.notices.join("\n")}`, { cause: error });
       });
@@ -218,8 +257,8 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     pi.registerTool(publicDefinition);
   };
   const finalize = () => {
-    // Host argument validation can fail before tool_call, execute and tool_result run.
-    // Bound those unpublished errors at the provider boundary; keep saved records unchanged.
+    // Validation can skip tool hooks, and later guards can replace an already bounded reason.
+    // Limit the actual unpublished error at the provider boundary; keep saved records unchanged.
     pi.on("context", async (event) => ({
       messages: await Promise.all(
         event.messages.map(async (message) => {
@@ -227,26 +266,15 @@ export function createIdeTextResults(pi: ExtensionAPI) {
             message.role !== "toolResult" ||
             !message.isError ||
             !names.has(message.toolName) ||
-            boundedErrors.has(message.toolCallId) ||
             message.content.some(
               (block) => block.type === "text" && block.text.startsWith("<system-result"),
             )
           )
             return message;
-          let content = contextErrors.get(message.toolCallId);
-          if (content === undefined) {
-            content = limitIdeOutput(message.content, "", saveFullOutput).then((limited) => [
-              {
-                type: "text" as const,
-                text:
-                  limited.text +
-                  (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
-              },
-              ...limited.images,
-            ]);
-            contextErrors.set(message.toolCallId, content);
-          }
-          return { ...message, content: await content };
+          return {
+            ...message,
+            content: await limitError(message.toolCallId, message.content),
+          };
         }),
       ),
     }));

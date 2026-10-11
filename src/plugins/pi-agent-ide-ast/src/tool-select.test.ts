@@ -82,6 +82,8 @@ test("registered Select restores the tool background after selected code and wra
     const context: Parameters<NonNullable<ToolDefinition["renderResult"]>>[3] = {
       args: {},
       toolCallId: "select-background",
+      durationMs: undefined,
+      outputPad: 0,
       invalidate() {},
       lastComponent: undefined,
       state: {},

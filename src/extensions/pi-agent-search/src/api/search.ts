@@ -162,7 +162,14 @@ export type SearchSelectionProvider = (
   selection: SearchSelectionRegistration,
   context: SearchContext,
 ) => Promise<RegisteredSearchSelection>;
+/** An input-scope owner must reject invalid references and retain its snapshot/refresh rules. */
+export type SearchScopeProvider = (
+  value: string,
+  context: SearchContext,
+) => Promise<ResolvedResultTargets | undefined>;
 export interface SearchPluginApi {
+  /** Resolve owned issued references to exact, verified source ranges; undefined means unowned. */
+  addScopeProvider(provider: SearchScopeProvider): void;
   /** Add a lazy scope owner. Failed plugin setup must not retain its provider. */
   addEnvironmentProvider(provider: SearchEnvironmentProvider): void;
   addResolver(registration: SearchResolverRegistration): void;

@@ -11,6 +11,98 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "ide-settings-catalog",
+  ["read.ide-settings", "search.ide-settings"],
+  "Read docs:ide-settings with limit 1000 to inspect the registered IDE settings. Find the registered ui.codemode preference. Search that exact ID in docs:ide-settings with caseSensitive true and limit 1000, then repeat the search in docs:all. Both searches must return locations under docs:ide-settings without editable Search references. Do not change configuration or fixture files.",
+  [
+    {
+      tool: "read",
+      args: { path: "docs:ide-settings", limit: 1000 },
+      contains: "ui.codemode",
+    },
+    {
+      tool: "search",
+      args: {
+        path: "docs:ide-settings",
+        query: "ui.codemode",
+        caseSensitive: true,
+        limit: 1000,
+      },
+      contains: "docs:ide-settings:",
+      excludes: "SEARCH#",
+    },
+    {
+      tool: "search",
+      args: {
+        path: "docs:all",
+        query: "ui.codemode",
+        caseSensitive: true,
+        limit: 1000,
+      },
+      contains: "docs:ide-settings:",
+      excludes: "SEARCH#",
+    },
+  ],
+  { expected: textFile },
+);
+add(
+  "docs-search",
+  ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
+  "Read docs:editing. Choose one unquoted word from that guide's body and search docs:editing for that exact word with caseSensitive true, wholeWord true, and limit 10. The result must contain guide-body locations under docs:editing, not editable Search references. Then search all guide bodies with path docs:all, query regex:^#, and limit 1000. Confirm it finds docs:editing body headings rather than just the guide listing. Do not change files.",
+  [
+    { tool: "read", args: { path: "docs:editing" } },
+    {
+      tool: "search",
+      args: {
+        path: "docs:editing",
+        query: /^[\p{L}\p{N}_-]+$/u,
+        caseSensitive: true,
+        wholeWord: true,
+        limit: 10,
+      },
+      contains: "docs:editing:",
+      excludes: "SEARCH#",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:all", query: "regex:^#", limit: 1000 },
+      contains: "docs:editing:",
+      excludes: "RESULT#",
+    },
+  ],
+  { expected: textFile },
+);
+add(
+  "docs-search-status",
+  ["search.docs-limit", "search.docs-empty", "search.docs-unknown", "search.docs-bare"],
+  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:editing with query regex:(?!) and confirm a successful empty result. Search bare docs: and observe an error directing you to docs:all. Finally search docs:lpt-723-missing and observe an unknown-documentation-ID error, not a filesystem search or zero matches. Catch the expected error in Codemode. Do not change files.",
+  [
+    {
+      tool: "search",
+      args: { path: "docs:all", query: "regex:.", limit: 1 },
+      contains: "incomplete",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:editing", query: "regex:(?!)" },
+      contains: "No matches",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:lpt-723-missing", query: "unused" },
+      error: true,
+      contains: "Unknown documentation ID: lpt-723-missing",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:", query: "unused" },
+      error: true,
+      contains: "Use docs:all",
+    },
+  ],
+  { expected: textFile },
+);
+add(
   "ssh-guide",
   ["read.ssh-guide"],
   "The workspace has no configured SSH targets. Read docs:ssh through Read to learn how to configure a target. Do not open a connection or change any settings.",
@@ -164,38 +256,56 @@ add(
 );
 add(
   "delete-temporary-defaults",
-  ["edit.delete-temporary-defaults"],
-  "Delete tmp/scratch, .tmp/scratch, temp/scratch, and .temp/scratch through ordinary Delete paths. This workspace has no Git; temporary descendants need no approval. Leave sentinel.txt unchanged.",
-  ["tmp", ".tmp", "temp", ".temp"].map((name) => ({
-    tool: "delete",
-    args: { path: `${name}/scratch` },
-    contains: "delete: applied",
-  })),
+  ["edit.delete-temporary-defaults", "edit.delete-temporary-roots", "edit.delete-temporary-names"],
+  "Delete nested/tmp/scratch, nested/.tmp/scratch, nested/temp/scratch, and nested/.temp/scratch through ordinary Delete paths. Then delete each named root itself: nested/tmp, nested/.tmp, nested/temp, and nested/.temp. This workspace has no Git; exact temporary path components need no approval. Leave sentinel.txt unchanged.",
+  [
+    ...["tmp", ".tmp", "temp", ".temp"].map((name) => ({
+      tool: "delete",
+      args: { path: `nested/${name}/scratch` },
+      contains: "delete: applied",
+    })),
+    ...["tmp", ".tmp", "temp", ".temp"].map((name) => ({
+      tool: "delete",
+      args: { path: `nested/${name}` },
+      contains: "delete: applied",
+    })),
+  ],
   {
     setup: "delete-temporary-no-git",
     files: {
       "sentinel.txt": "KEEP\n",
       ...Object.fromEntries(
-        ["tmp", ".tmp", "temp", ".temp"].map((name) => [`${name}/scratch/data`, "REMOVE\n"]),
+        ["tmp", ".tmp", "temp", ".temp"].flatMap((name) => [
+          [`nested/${name}/scratch/data`, "REMOVE\n"],
+          [`nested/${name}/root-data`, "REMOVE\n"],
+        ]),
       ),
     },
     expected: Object.fromEntries(
       ["tmp", ".tmp", "temp", ".temp"].flatMap((name) => [
-        [`${name}/scratch`, null],
-        [`${name}/scratch/data`, null],
+        [`nested/${name}`, null],
+        [`nested/${name}/scratch`, null],
+        [`nested/${name}/scratch/data`, null],
+        [`nested/${name}/root-data`, null],
       ]),
     ),
   },
 );
 add(
   "delete-temporary-config",
-  ["edit.delete-temporary-config"],
-  "Delete custom/scratch. The project deletion setting replaces default temporary roots with custom. Request Delete on tmp/scratch too: it must require approval unavailable in this non-interactive runtime. Leave tmp/scratch/data and sentinel.txt unchanged. In Codemode catch the expected refusal.",
+  ["edit.delete-temporary-config", "edit.move-temporary-config"],
+  "Delete the custom root itself. The project deletion setting replaces default temporary roots with custom. Request Delete and Move on nested/tmp too: both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode catch the expected refusals.",
   [
-    { tool: "delete", args: { path: "custom/scratch" }, contains: "delete: applied" },
+    { tool: "delete", args: { path: "custom" }, contains: "delete: applied" },
     {
       tool: "delete",
-      args: { path: "tmp/scratch" },
+      args: { path: "nested/tmp" },
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+    {
+      tool: "move",
+      args: { path: "nested/tmp", target: "moved" },
       error: true,
       contains: "DELETE_CONFIRMATION_REQUIRED",
     },
@@ -206,11 +316,44 @@ add(
       ".pi/pi-agent-ide/deletion.json": JSON.stringify({
         temporaryDirectories: { mode: "replace", paths: ["custom"] },
       }),
-      "custom/scratch/data": "REMOVE\n",
-      "tmp/scratch/data": "KEEP\n",
+      "custom/data": "REMOVE\n",
+      "nested/tmp/data": "KEEP\n",
       "sentinel.txt": "KEEP\n",
     },
-    expected: { "custom/scratch": null, "custom/scratch/data": null },
+    expected: { custom: null, "custom/data": null, moved: null },
+  },
+);
+add(
+  "move-temporary-directories",
+  ["edit.move-temporary-defaults", "edit.copy-temporary-directory"],
+  "Move nested/tmp over nested/temp, replacing its old contents without an approval dialog. Then Copy nested/temp into nested/.tmp, preserving the destination-only copy-only file. Use ordinary directory paths. This workspace has no Git; temporary roots and descendants are eligible. Leave sentinel.txt unchanged.",
+  [
+    {
+      tool: "move",
+      args: { path: "nested/tmp", target: "nested/temp" },
+      contains: "move: applied",
+    },
+    {
+      tool: "copy",
+      args: { path: "nested/temp", target: "nested/.tmp" },
+      contains: "copy: applied",
+    },
+  ],
+  {
+    setup: "delete-temporary-no-git",
+    files: {
+      "nested/tmp/data": "MOVE\n",
+      "nested/temp/old": "REMOVE\n",
+      "nested/.tmp/copy-only": "KEEP\n",
+      "sentinel.txt": "KEEP\n",
+    },
+    expected: {
+      "nested/tmp": null,
+      "nested/tmp/data": null,
+      "nested/temp/old": null,
+      "nested/temp/data": "MOVE\n",
+      "nested/.tmp/data": "MOVE\n",
+    },
   },
 );
 function add(
@@ -283,6 +426,214 @@ add(
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
+add(
+  "read-scoped-boolean",
+  ["compose.scoped-boolean"],
+  'Read only line 2 of task.txt. Forward that result or its UUID to Search with the unchanged query feature: "legacy​Checkout". Also search that same result for feature: AND outside. Find exactly one feature match and no outside match; do not search the file path or change bytes.',
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    {
+      tool: "search",
+      args: { query: 'feature: "legacy​Checkout"' },
+      reuse: reuse(0),
+      contains: "1 match in 1 file",
+    },
+    {
+      tool: "search",
+      args: { query: "feature: AND outside" },
+      reuse: reuse(0),
+      contains: "No matches found",
+    },
+  ],
+  {
+    files: {
+      "task.txt":
+        'outside feature: "legacy​Checkout"\nfeature: "legacy​Checkout"\noutside feature: "legacy​Checkout"\n',
+    },
+  },
+);
+add(
+  "search-issued-scope",
+  ["compose.search-issued-scope"],
+  "Search task.txt for title. Use its issued SEARCH :all:line as the scope for legacyCheckout: there must be zero matches, because all feature lines are gaps. Search its first :line for first (one match), then its first :match for first (zero). Keep the bytes unchanged and use the exact issued selectors, not a file path or UUID.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "title" } },
+    {
+      tool: "search",
+      args: { path: /^SEARCH#[A-F0-9]+:all:line$/, query: "legacyCheckout" },
+      reuse: reuse(0),
+      contains: "No matches found",
+    },
+    {
+      tool: "search",
+      args: { path: /^SEARCH#[A-F0-9]+:1:line$/, query: "first" },
+      reuse: reuse(0),
+      contains: "1 match in 1 file",
+    },
+    {
+      tool: "search",
+      args: { path: /^SEARCH#[A-F0-9]+:1:match$/, query: "first" },
+      reuse: reuse(0),
+      contains: "No matches found",
+    },
+  ],
+  {
+    files: {
+      "task.txt":
+        "title first\nfeature legacyCheckout\ntitle middle\nfeature legacyCheckout\ntitle final\n",
+    },
+  },
+);
+for (const operation of ["delete", "insert"] as const) {
+  add(
+    `search-line-batch-${operation}`,
+    [
+      `edit.search-line-batch-${operation}`,
+      ...(operation === "insert" ? ["compose.batch-insert-search"] : []),
+    ],
+    `Search task.txt for OLD. In ONE assistant message issue three direct ${operation} calls with the three issued numbered SEARCH :line references as path. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    [
+      { tool: "search", args: { path: "task.txt", query: "OLD" } },
+      ...[1, 2, 3].map((index): RouteStep => ({
+        tool: operation,
+        args: {
+          path: new RegExp(`^SEARCH#[A-F0-9]+:${index}:line$`, "u"),
+          ...(operation === "insert" && { text: "ADDED", before: true }),
+        },
+        reuse: reuse(0),
+        ...(index > 1 && { sameAssistantWith: 1 }),
+      })),
+      ...(operation === "insert"
+        ? [1, 2, 3].flatMap((index): RouteStep[] => [
+            {
+              tool: "search",
+              args: { query: "ADDED" },
+              reuse: reuse(index),
+              contains: "1 match in 1 file",
+            },
+            {
+              tool: "search",
+              args: { query: "OLD OR keep" },
+              reuse: reuse(index),
+              contains: "No matches found",
+            },
+          ])
+        : []),
+    ],
+    {
+      modes: ["direct"],
+      files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nOLD\n" },
+      expected: {
+        "task.txt":
+          operation === "delete"
+            ? "keep1\nkeep2\nkeep3\n"
+            : "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+      },
+    },
+  );
+}
+for (const operation of ["replace", "delete", "insert"] as const) {
+  add(
+    `selection-batch-${operation}`,
+    [
+      `edit.selection-batch-${operation}`,
+      ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
+    ],
+    `Select complete lines 2, 4 and 6 of task.txt separately before editing. In ONE assistant message issue three direct ${operation} calls, forwarding each corresponding selection result/UUID/RESULT# item without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    [
+      ...[2, 4, 6].map((line): RouteStep => ({
+        tool: "select",
+        args: { path: "task.txt", operation: { kind: "lines", first: line, last: line } },
+      })),
+      ...[0, 1, 2].map((index): RouteStep => ({
+        tool: operation,
+        reuse: reuse(index),
+        ...(index > 0 && { sameAssistantWith: 3 }),
+        ...(operation === "replace"
+          ? { args: { text: "NEW\n" } }
+          : operation === "insert"
+            ? { args: { text: "ADDED", before: true } }
+            : {}),
+      })),
+      ...(operation === "replace"
+        ? [3, 4, 5].flatMap((index): RouteStep[] => [
+            {
+              tool: "search",
+              args: { query: "NEW" },
+              reuse: reuse(index),
+              contains: "1 match in 1 file",
+            },
+            {
+              tool: "search",
+              args: { query: "OLD OR keep" },
+              reuse: reuse(index),
+              contains: "No matches found",
+            },
+          ])
+        : []),
+    ],
+    {
+      modes: ["direct"],
+      files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nOLD\n" },
+      expected: {
+        "task.txt":
+          operation === "replace"
+            ? "keep1\nNEW\nkeep2\nNEW\nkeep3\nNEW\n"
+            : operation === "delete"
+              ? "keep1\nkeep2\nkeep3\n"
+              : "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+      },
+    },
+  );
+}
+for (const operation of ["delete", "insert"] as const) {
+  add(
+    `select-result-${operation}`,
+    [`compose.select-${operation}`],
+    `Select the second complete line of task.txt. Forward that selection result, its UUID or its full RESULT# item to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE before that line; keep every original byte."}`,
+    [
+      {
+        tool: "select",
+        args: { path: "task.txt", operation: { kind: "lines", first: 2, last: 2 } },
+      },
+      {
+        tool: operation,
+        ...(operation === "insert" && { args: { text: "BEFORE", before: true } }),
+        reuse: reuse(0),
+      },
+    ],
+    {
+      expected: {
+        "task.txt": operation === "delete" ? "keep\nlast\n" : "keep\nBEFORE\nOLD\nlast\n",
+      },
+    },
+  );
+}
+add(
+  "grouped-replace-file-count",
+  ["edit.grouped-file-count"],
+  "In one native Codemode script, sequentially select columns 0..3 of lines 1, 2, then 3 in task.txt and replace each issued selection with NEW. Await each replacement before selecting the next line so each gets a fresh snapshot. Keep the final newline. Inspect the final editor summary: it must report three replacements in one file, not three files.",
+  [1, 2, 3].flatMap((line, index): RouteStep[] => [
+    {
+      tool: "select",
+      args: {
+        path: "task.txt",
+        operation: { kind: "range", startLine: line, startColumn: 0, endLine: line, endColumn: 3 },
+      },
+    },
+    {
+      tool: "replace",
+      args: { text: "NEW" },
+      reuse: reuse(index * 2),
+      ...(line === 3 && { parentContains: "Applied 3 replacements in 1 file." }),
+    },
+  ]),
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "OLD\nOLD\nOLD\n" },
+    expected: { "task.txt": "NEW\nNEW\nNEW\n" },
+  },
+);
 const overviewFixtures = [
   { name: "lines", rows: 2100, padding: "  consume(value);" },
   { name: "bytes", rows: 1000, padding: `  consume("${"界".repeat(30)}");` },
@@ -600,6 +951,30 @@ add(
 );
 
 add(
+  "mixed-file-delete-text-edit",
+  ["compose.file-delete-text-edit"],
+  "Submit Insert and three whole-file Deletes in one assistant message. Insert ADDED plus a newline after keep in note.txt. Delete a.txt, b.txt and c.txt by ordinary paths without start/end. Keep note.txt and its other bytes; do not turn the file deletions into text selections.",
+  [
+    { tool: "insert", args: { path: "note.txt", anchor: "keep", text: "ADDED\n" } },
+    ...["a.txt", "b.txt", "c.txt"].map((source): RouteStep => ({
+      tool: "delete",
+      args: { path: source, start: undefined, end: undefined },
+      sameAssistantWith: 0,
+    })),
+  ],
+  {
+    modes: ["direct"],
+    files: {
+      "note.txt": "keep\nnext\n",
+      "a.txt": "remove\n",
+      "b.txt": "remove\n",
+      "c.txt": "remove\n",
+    },
+    expected: { "note.txt": "keep\nADDED\nnext\n", "a.txt": null, "b.txt": null, "c.txt": null },
+  },
+);
+
+add(
   "file-copy-move-delete",
   ["edit.copy-file", "edit.move-file", "edit.delete-file"],
   "First use move with task.txt as both path and target; it must report not-applied. Then use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, not result selections. The original must stay unchanged.",
@@ -616,6 +991,31 @@ add(
   ],
 );
 
+add(
+  "write-unknown-effects",
+  ["edit.write-failure-recovery", "compose.uncertain-write-read"],
+  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, catch the failed Write so the Read still runs. This headless case checks recovery, not the TUI failure panel.",
+  [
+    {
+      tool: "write",
+      args: { path: "fixture://saved-mismatch/content", content: "changed\n" },
+      error: true,
+      contains: "PROVIDER_SAVE_VERIFICATION_FAILED",
+      excludes: "No file was changed.",
+    },
+    {
+      tool: "read",
+      args: { path: "fixture://saved-mismatch/content" },
+      contains: "changed",
+    },
+  ],
+  {
+    setup: "write-effects",
+    files: { "saved.md": "before\n" },
+    expected: { "saved.md": "changed\n", "attempts.jsonl": '{"content":"changed\\n"}\n' },
+    answer: "unknown",
+  },
+);
 add(
   "move-unknown-effects",
   ["edit.move-effects"],
@@ -771,6 +1171,77 @@ add(
   { files: { "a.txt": "OLD\n", "b.txt": "NEW\n" }, answer: "NEW" },
 );
 
+for (const [name, eol] of [
+  ["lf", "\n"],
+  ["crlf", "\r\n"],
+] as const) {
+  add(
+    `replace-line-boundary-${name}`,
+    ["edit.replace-line-endings"],
+    "Replace the exact heading ## OLD with ## NEW in heading.txt, without an end anchor or a newline in the replacement. Preserve the existing line endings and blank line before Body.",
+    [{ tool: "replace", args: { path: "heading.txt", start: "## OLD", text: "## NEW" } }],
+    {
+      files: { "heading.txt": `## OLD${eol}${eol}Body${eol}` },
+      expected: { "heading.txt": `## NEW${eol}${eol}Body${eol}` },
+    },
+  );
+}
+for (const [name, eol, ending] of [
+  ["lf", "\n", "\n"],
+  ["crlf", "\r\n", "\r\n"],
+  ["unterminated", "\n", ""],
+] as const) {
+  add(
+    `exact-eof-${name}`,
+    ["edit.exact-eof"],
+    "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Do not use an end anchor. Preserve unrelated bytes and each file's existing newline style.",
+    [
+      { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
+      { tool: "delete", args: { path: "block.txt", start: "Last\nBlock" } },
+    ],
+    {
+      files: {
+        "last.txt": `First${eol}Last${ending}`,
+        "block.txt": `First${eol}Last${eol}Block${ending}`,
+      },
+      expected: { "last.txt": `First${eol}Final${ending}`, "block.txt": `First${ending}` },
+    },
+  );
+}
+for (const method of ["all", "allSettled"] as const) {
+  add(
+    `parallel-edit-effects-${method}`,
+    ["codemode.parallel-edit-effects"],
+    `In one native Codemode script, use Promise.${method} to start six edits together, without awaiting an individual call first. Insert FIRST plus a newline after first, MIDDLE plus a newline after middle, and LAST plus a newline after last in insert.txt. Use ./insert.txt for the middle request. Concurrently delete the unique whole lines first, middle, and last from delete.txt, using ./delete.txt for the middle request. Check every result and print each receipt. Preserve all other bytes, including the existing blank lines and EOF.`,
+    [
+      { tool: "insert", args: { path: "insert.txt", anchor: "first", text: "FIRST\n" } },
+      {
+        tool: "insert",
+        args: { path: "./insert.txt", anchor: "middle", text: "MIDDLE\n" },
+        parallelWith: 0,
+      },
+      {
+        tool: "insert",
+        args: { path: "insert.txt", anchor: "last", text: "LAST\n" },
+        parallelWith: 1,
+      },
+      { tool: "delete", args: { path: "delete.txt", start: "first" } },
+      { tool: "delete", args: { path: "./delete.txt", start: "middle" }, parallelWith: 3 },
+      { tool: "delete", args: { path: "delete.txt", start: "last" }, parallelWith: 4 },
+    ],
+    {
+      modes: ["codemode"],
+      files: {
+        "insert.txt": "first\nmiddle\nlast\n",
+        "delete.txt": "keep\nfirst\n\nmiddle\n\nlast\n",
+      },
+      expected: {
+        "insert.txt": "first\nFIRST\nmiddle\nMIDDLE\nlast\nLAST\n",
+        "delete.txt": "keep\n\n\n",
+      },
+    },
+  );
+}
 add(
   "undo-last",
   ["edit.undo-last", "compose.mutation-undo"],
@@ -780,7 +1251,11 @@ add(
     { tool: "undo", args: { file: "task.txt", change: "last" } },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD" },
   ],
-  { answer: "OLD" },
+  {
+    files: { "task.txt": "keep\r\nOLD\r\n" },
+    expected: { "task.txt": "keep\r\nOLD\r\n" },
+    answer: "OLD",
+  },
 );
 
 add(
@@ -1003,6 +1478,32 @@ add(
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
+  "stale-insert-recovery",
+  ["edit.stale-insert-feedback", "edit.bounded-stale-feedback"],
+  "Read task.txt with anchors. Replace OLD with OLD plus a newline and ADDED. Attempt Insert with the OLD Read's line-3 hash anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-4 hash. Keep the other bytes.",
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "OLD\nADDED" } },
+    {
+      tool: "insert",
+      args: { path: "task.txt", anchor: /^3#[A-F\d]+$/u },
+      reuse: reuse(0, "anchor", "anchor"),
+      error: true,
+      finalContains: "is stale",
+      // Allow retention notices above the 50 KiB useful-text budget.
+      finalMaxBytes: 64 * 1024,
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "insert",
+      args: { path: "task.txt", text: "RECOVERED\n" },
+      reuse: reuse(3, "anchor", "anchor"),
+    },
+  ],
+  { modes: ["direct"], expected: { "task.txt": "keep\nOLD\nADDED\nlast\nRECOVERED\n" } },
 );
 
 add(

@@ -32,6 +32,19 @@ function presentationPreference(id: string, name: string, description: string): 
 
 /** Registered presentation preferences. */
 export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
+  {
+    kind: "choice",
+    id: "ui.codemode",
+    name: "Show tool results from Codemode",
+    description:
+      "Show extra Agent IDE result panels using each tool's presentation setting. Off hides successful panels; errors stay visible. Codemode's own output and other tools are unchanged.",
+    default: "off",
+    group: "ui",
+    values: [
+      { value: "off", label: "Off" },
+      { value: "on", label: "On" },
+    ],
+  },
   presentationPreference(
     "ui.diffs",
     "Diffs",

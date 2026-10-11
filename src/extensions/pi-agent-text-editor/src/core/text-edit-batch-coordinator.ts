@@ -28,9 +28,11 @@ export interface BatchCallCandidate<TState = unknown> {
 export interface ToolBatchDefinition<TState = unknown> {
   readonly sourceTools: readonly string[];
   readonly syntheticTool: string;
+  /** Use the current worktree/session to keep registered selections out of plain-path plans. */
   readonly resolveCall: (
     call: OriginalToolCall,
     inheritedState: TState | undefined,
+    context: ExtensionContext,
   ) => BatchCallCandidate<TState> | undefined;
   readonly buildArguments: (
     calls: readonly BatchCallCandidate<TState>[],
@@ -133,7 +135,12 @@ function publishRenderArguments(
   }
 }
 
-function rewriteMessage(state: CoordinatorState, message: unknown, createPlans: boolean): unknown {
+function rewriteMessage(
+  state: CoordinatorState,
+  message: unknown,
+  createPlans: boolean,
+  context: ExtensionContext,
+): unknown {
   if (
     !isObjectNotArray(message) ||
     message.role !== "assistant" ||
@@ -154,6 +161,7 @@ function rewriteMessage(state: CoordinatorState, message: unknown, createPlans: 
         ? definition.resolveCall(
             first,
             inheritedDefinition === definition ? inheritedState : undefined,
+            context,
           )
         : undefined;
 
@@ -176,7 +184,7 @@ function rewriteMessage(state: CoordinatorState, message: unknown, createPlans: 
         break;
       }
 
-      const candidate = definition.resolveCall(next, requiredValue(run.at(-1)).state);
+      const candidate = definition.resolveCall(next, requiredValue(run.at(-1)).state, context);
 
       if (!candidate) {
         break;
@@ -522,12 +530,12 @@ function coordinatorFor(pi: ExtensionAPI): CoordinatorState {
 
   if (!state.registered) {
     state.registered = true;
-    pi.on("message_update", (event) => {
-      rewriteMessage(state, event.message, false);
+    pi.on("message_update", (event, context) => {
+      rewriteMessage(state, event.message, false, context);
       return;
     });
-    pi.on("message_end", (event) => {
-      rewriteMessage(state, event.message, true);
+    pi.on("message_end", (event, context) => {
+      rewriteMessage(state, event.message, true, context);
       return;
     });
     pi.on("before_provider_request", (event) => filterProviderTools(state, event));
@@ -550,8 +558,8 @@ export function registerToolBatch<TState>(
   const definitionForCoordinator: ToolBatchDefinition = {
     sourceTools: definition.sourceTools,
     syntheticTool: definition.syntheticTool,
-    resolveCall: (call, inheritedState) =>
-      definition.resolveCall(call, inheritedState as TState | undefined),
+    resolveCall: (call, inheritedState, context) =>
+      definition.resolveCall(call, inheritedState as TState | undefined, context),
     buildArguments: (calls) =>
       definition.buildArguments(calls as readonly BatchCallCandidate<TState>[]),
     execute: definition.execute,

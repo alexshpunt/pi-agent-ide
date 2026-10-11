@@ -10,58 +10,71 @@ import type {
   SearchResolverRegistration,
 } from "#src/api/search.js";
 
-test("trusted Search API resolves scopes and guards them before any resolver runs", async () => {
-  const targets = new ResultTargetStore();
-  let blocked = false;
-  const cwd = process.cwd();
-  const reference = targets.register(
-    [
-      {
-        source: "ssh://left/work/note.ts",
-        expectedContent: "café\n",
-        ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 4 } }],
-        readCurrent: async () => {
-          if (blocked) throw new Error("Owned content is blocked");
-          return "café\n";
+test.each([false, true])(
+  "trusted Search API resolves scopes (array: %s) and guards them before any resolver runs",
+  async (array) => {
+    const targets = new ResultTargetStore();
+    let blocked = false;
+    const cwd = process.cwd();
+    const reference = targets.register(
+      [
+        {
+          source: "ssh://left/work/note.ts",
+          expectedContent: "café\n",
+          ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 4 } }],
+          readCurrent: async () => {
+            if (blocked) throw new Error("Owned content is blocked");
+            return "café\n";
+          },
         },
+      ],
+      cwd,
+      false,
+    );
+    const core = createSearchCore(targets);
+    const resolve = vi.fn((_request: SearchRequest, context: SearchContext) => {
+      expect(context.scope?.complete).toBe(false);
+      expect(context.scope?.targets[0]?.source).toBe("ssh://left/work/note.ts");
+      return { kind: "resolved" as const, payload: [] };
+    });
+    await core.registerPlugin({
+      protocol: SEARCH_PROTOCOL,
+      apiVersion: SEARCH_API_VERSION,
+      id: "scoped-reader",
+      setup(api) {
+        api.addResolver({
+          resolver: {
+            id: "text",
+            supportsResultScope: true,
+            tryResolve: resolve,
+            format: () => ({ content: [{ type: "text", text: "No matches found." }], details: {} }),
+            toScriptData: () => ({ kind: "matches", complete: false, matches: [] }),
+          },
+        });
       },
-    ],
-    cwd,
-    false,
-  );
-  const core = createSearchCore(targets);
-  const resolve = vi.fn((_request: SearchRequest, context: SearchContext) => {
-    expect(context.scope?.complete).toBe(false);
-    expect(context.scope?.targets[0]?.source).toBe("ssh://left/work/note.ts");
-    return { kind: "resolved" as const, payload: [] };
-  });
-  await core.registerPlugin({
-    protocol: SEARCH_PROTOCOL,
-    apiVersion: SEARCH_API_VERSION,
-    id: "scoped-reader",
-    setup(api) {
-      api.addResolver({
-        resolver: {
-          id: "text",
-          supportsResultScope: true,
-          tryResolve: resolve,
-          format: () => ({ content: [{ type: "text", text: "No matches found." }], details: {} }),
-          toScriptData: () => ({ kind: "matches", complete: false, matches: [] }),
-        },
-      });
-    },
-  });
-  expect(
-    (await core.execute({ query: "café", path: reference }, { cwd }, "script")).isError,
-  ).not.toBe(true);
-  expect(resolve).toHaveBeenCalledOnce();
-  blocked = true;
-  const denied = await core.execute({ query: "café", path: reference }, { cwd }, "script");
-  expect(denied.isError).toBe(true);
-  expect(resolve).toHaveBeenCalledOnce();
-  expect(JSON.stringify(denied.content)).toContain("Owned content is blocked");
-});
-async function setup(attempt: SearchResolutionAttempt | Error) {
+    });
+    expect(
+      (
+        await core.execute(
+          { query: "café", path: array ? [reference] : reference },
+          { cwd },
+          "script",
+        )
+      ).isError,
+    ).not.toBe(true);
+    expect(resolve).toHaveBeenCalledOnce();
+    blocked = true;
+    const denied = await core.execute(
+      { query: "café", path: array ? [reference] : reference },
+      { cwd },
+      "script",
+    );
+    expect(denied.isError).toBe(true);
+    expect(resolve).toHaveBeenCalledOnce();
+    expect(JSON.stringify(denied.content)).toContain("Owned content is blocked");
+  },
+);
+async function setup(attempt: SearchResolutionAttempt | Error, supportsResultScope = false) {
   const core = createSearchCore();
   const specialized = vi.fn(() => {
     if (attempt instanceof Error) throw attempt;
@@ -75,6 +88,7 @@ async function setup(attempt: SearchResolutionAttempt | Error) {
     {
       resolver: {
         id: "text",
+        supportsResultScope,
         tryResolve: fallback,
         format: () => ({ content: [{ type: "text", text: "local hits" }], details: {} }),
       },
@@ -84,6 +98,7 @@ async function setup(attempt: SearchResolutionAttempt | Error) {
     {
       resolver: {
         id: "special",
+        supportsResultScope,
         tryResolve: specialized,
         format: () => ({ content: [{ type: "text", text: "No symbols found." }], details: {} }),
       },
@@ -259,6 +274,44 @@ test("scope owner refusal prevents every resolver and failed setup retains no ow
   expect(specialized).not.toHaveBeenCalled();
   expect(fallback).not.toHaveBeenCalled();
 });
+test("issued-scope providers register atomically and refuse before resolver execution", async () => {
+  const { core, specialized, fallback } = await setup({ kind: "resolved", payload: [] });
+  const rejected = vi.fn(async () => {
+    throw new Error("UNKNOWN_SCOPE");
+  });
+  await expect(
+    core.registerPlugin({
+      protocol: SEARCH_PROTOCOL,
+      apiVersion: SEARCH_API_VERSION,
+      id: "failed-issued-scope",
+      setup(api) {
+        api.addScopeProvider(rejected);
+        throw new Error("setup rejected");
+      },
+    }),
+  ).rejects.toThrow("setup rejected");
+  await core.execute({ query: "needle", path: "note.txt" }, { cwd: process.cwd() });
+  expect(rejected).not.toHaveBeenCalled();
+  specialized.mockClear();
+  fallback.mockClear();
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "issued-scope",
+    setup(api) {
+      api.addScopeProvider(rejected);
+    },
+  });
+  const result = await core.execute(
+    { query: "needle", path: "SEARCH#FFFF:all:line" },
+    { cwd: process.cwd() },
+  );
+  expect(result.isError).toBe(true);
+  expect(result.details.failure?.code).toBe("RESOLVE_FAILED");
+  expect(result.details.failure?.message).toContain("UNKNOWN_SCOPE");
+  expect(specialized).not.toHaveBeenCalled();
+  expect(fallback).not.toHaveBeenCalled();
+});
 test.each(["ast:call($ARG)", "symbols:entry", "ast:", "symbols:"])(
   "does not turn unsupported scoped %s into text search",
   async (query) => {
@@ -356,6 +409,17 @@ test("keeps complete zero-match results free of incomplete warnings", async () =
 });
 
 describe("search fallback dispatch", () => {
+  test("a literal colon prefix reaches the text fallback inside the unchanged result scope", async () => {
+    const { core, fallback } = await setup({ kind: "not-handled" }, true);
+    const scope = { targets: [], complete: true };
+    const request = { query: 'feature: "legacy​Checkout"' };
+    const result = await core.execute(request, { cwd: process.cwd(), scope });
+    expect(result.details.resolverId).toBe("text");
+    expect(fallback).toHaveBeenCalledOnce();
+    expect(fallback).toHaveBeenCalledWith(request, expect.objectContaining({ scope }));
+    expect(fallback.mock.calls[0]?.[0]).toEqual(request);
+    expect(JSON.stringify(result.content)).toContain("local hits");
+  });
   test.each(["symbols:", "ast:", "regex:", "files:", "custom:   "])(
     "routes empty %s straight to local text",
     async (query) => {

@@ -122,7 +122,9 @@ export default async function registerTextSearch(pi: ExtensionAPI): Promise<void
       protocol: SEARCH_PROTOCOL,
       apiVersion: SEARCH_API_VERSION,
       id: "local",
+      // The same store owns Read/edit selectors and Search input scopes.
       setup(api): void {
+        api.addScopeProvider((value, context) => sessions.resolveSearchScope(value, context));
         api.addSelectionProvider((selection, context) =>
           sessions.register(
             selection.request.query,

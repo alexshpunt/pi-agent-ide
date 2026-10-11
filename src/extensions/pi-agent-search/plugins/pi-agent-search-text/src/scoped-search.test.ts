@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { ResultTargetStore, type ResolvedResultTargets } from "pi-agent-resource";
 import { runScopedSearch } from "#src/scoped-search.js";
+import { createSearchRecipe } from "#src/search-recipe.js";
 import { SearchSessionStore } from "#src/search-session.js";
 
 const source = "ssh://left/work/note.ts";
@@ -43,15 +44,61 @@ test("scoped text search keeps gaps, remote identities and UTF-16 columns separa
   await expect(
     runScopedSearch({ query: "hello", include: "*.ts" }, selected, process.cwd()),
   ).rejects.toThrow("unsupported");
-  await expect(
-    runScopedSearch(
-      { query: "hello", condition: { kind: "term", value: "hello" } },
-      selected,
-      process.cwd(),
-    ),
-  ).rejects.toThrow("Boolean scoped search is not available yet.");
+  const quoted = await runScopedSearch(
+    createSearchRecipe({ query: '"hello"' }),
+    selected,
+    process.cwd(),
+  );
+  expect(quoted.matches).toMatchObject([{ source, lineNumber: 1, matchedText: "hello" }]);
 });
 
+test("Boolean scoped search cannot use excluded terms or join sparse gaps", async () => {
+  const selected = scope();
+  const target = selected.targets[0];
+  if (!target) throw new Error("Missing fixture target");
+  const run = (query: string) =>
+    runScopedSearch(createSearchRecipe({ query }), selected, process.cwd());
+  expect((await run("hello AND world")).matches).toEqual([]);
+  expect((await run("hello AND café")).matches).toEqual([]);
+  expect((await run("hello NOT world")).matches).toMatchObject([
+    { lineNumber: 1, matchedText: "hello" },
+  ]);
+  const either = await run("hello OR café");
+  expect(either.complete).toBe(false);
+  expect(either.matches).toMatchObject([
+    { lineNumber: 1, startColumn: 7, matchedText: "hello" },
+    { lineNumber: 2, startColumn: 3, matchedText: "café" },
+  ]);
+  const sparse = {
+    ...selected,
+    targets: [
+      {
+        ...target,
+        ranges: [
+          { start: { lineNumber: 1, column: 7 }, end: { lineNumber: 1, column: 12 } },
+          { start: { lineNumber: 1, column: 16 }, end: { lineNumber: 1, column: 21 } },
+        ],
+      },
+    ],
+  };
+  expect(
+    (await runScopedSearch(createSearchRecipe({ query: "hello AND world" }), sparse, process.cwd()))
+      .matches,
+  ).toEqual([]);
+  const whole = {
+    ...selected,
+    targets: [
+      {
+        ...target,
+        ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 24 } }],
+      },
+    ],
+  };
+  expect(
+    (await runScopedSearch(createSearchRecipe({ query: "hello AND world" }), whole, process.cwd()))
+      .matches,
+  ).toMatchObject([{ lineNumber: 1, matchedText: "hello" }]);
+});
 test("search handles preserve a remote owner's guard and the original snapshot", async () => {
   let current = content;
   let blocked = false;

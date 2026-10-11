@@ -957,9 +957,9 @@ class NativeTextEditBatchCoordinator {
           .snapshot()
           .filter((call) => call.state === "completed" && unchangedCopies.get(call.callId)?.all)
           .map((call) => call.callId),
-        ...(value.details.copyResults === undefined
+        ...(value.details.mutationResults === undefined
           ? {}
-          : { copyResults: value.details.copyResults }),
+          : { mutationResults: value.details.mutationResults }),
         result: value,
       } satisfies NativeEditBatchEvent;
       script.presentations.push(presentation);

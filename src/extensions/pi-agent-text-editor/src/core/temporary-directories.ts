@@ -2,16 +2,19 @@ import path from "node:path";
 import type { DeleteFileAccess } from "#src/api/delete-guard.js";
 import { localFileTransferAccess as localFiles } from "#src/api/native-files.js";
 
+const temporaryNames = new Set(["tmp", ".tmp", "temp", ".temp"]);
+
 interface TemporaryDirectorySettings {
   readonly mode: "replace" | "extend";
   readonly paths: readonly string[];
 }
 
-/** Load Delete roots on their owner: defaults, then native global and project settings.
- * A provider without native account defaults keeps the strict deletion policy.
+/** Load temporary removal roots for a resolved path, then apply its owner's settings.
+ * A provider without native account defaults keeps the strict removal policy.
  */
 export async function loadTemporaryDirectories(
   projectRoot: string,
+  resolvedPath: string,
   files: DeleteFileAccess = localFiles,
   signal?: AbortSignal,
 ): Promise<readonly string[]> {
@@ -20,14 +23,15 @@ export async function loadTemporaryDirectories(
   const environment = await files.temporaryEnvironment(signal);
   const paths = files.pathStyle === "native" ? path : path.posix;
   const home = await files.realpath(environment.home);
-  const names = ["tmp", ".tmp", "temp", ".temp"];
   const system = await existingRoot(environment.temporary, files, signal);
-  // Named defaults do not grant permission to a symlink's destination outside the root.
-  let roots = [
-    ...names.map((name) => paths.join(projectRoot, name)),
-    ...names.map((name) => paths.join(home, name)),
-    ...(system === undefined ? [] : [system]),
-  ];
+  let roots = system === undefined ? [] : [system];
+  // The caller has resolved parent links; only real path components grant the default exception.
+  for (let directory = resolvedPath; ;) {
+    if (temporaryNames.has(paths.basename(directory))) roots.push(directory);
+    const parent = paths.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
   const layers = [
     {
       file: paths.join(

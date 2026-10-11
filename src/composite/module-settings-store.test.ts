@@ -3,6 +3,56 @@ import os from "node:os";
 import path from "node:path";
 import { test, expect, onTestFinished } from "vitest";
 import { saveModuleChoices } from "./module-settings-store.js";
+import { readPiAgentIdeExtensionsConfig } from "./extensions-config.js";
+
+test("Codemode project preference overrides global and Default restores inheritance", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-codemode-scopes-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const paths = {
+    globalPath: path.join(cwd, "global/extensions.json"),
+    projectPath: path.join(cwd, "project/extensions.json"),
+  };
+  await saveModuleChoices(
+    paths.globalPath,
+    new Map(),
+    new Map(),
+    new Map([
+      ["ui.codemode", "on"],
+      ["future", "global keep"],
+    ]),
+  );
+  await saveModuleChoices(
+    paths.projectPath,
+    new Map(),
+    new Map(),
+    new Map([
+      ["ui.codemode", "off"],
+      ["ui.read", "disabled"],
+    ]),
+  );
+  expect((await readPiAgentIdeExtensionsConfig(paths)).preferences).toEqual({
+    "ui.codemode": "off",
+    future: "global keep",
+    "ui.read": "disabled",
+  });
+  await saveModuleChoices(
+    paths.projectPath,
+    new Map(),
+    new Map(),
+    new Map([["ui.codemode", undefined]]),
+  );
+  expect((await readPiAgentIdeExtensionsConfig(paths)).preferences).toEqual({
+    "ui.codemode": "on",
+    future: "global keep",
+    "ui.read": "disabled",
+  });
+  expect(JSON.parse(await readFile(paths.projectPath, "utf8"))).toMatchObject({
+    preferences: { "ui.read": "disabled" },
+  });
+  expect(JSON.parse(await readFile(paths.globalPath, "utf8"))).toMatchObject({
+    preferences: { "ui.codemode": "on", future: "global keep" },
+  });
+});
 
 test("saves overrides without losing unrelated settings or obsolete IDs", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-settings-"));

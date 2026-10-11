@@ -7,7 +7,10 @@ import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.js";
 import { disabledByPreset } from "#src/composite/presets.js";
 import { selectBuiltinExtensions } from "#src/composite/selection.js";
 import { registerModuleSettings } from "#src/composite/module-settings.js";
+import { registerSettingsHelp } from "#src/composite/settings-help.js";
 import { createFeatureFlags } from "#src/composite/feature-flags.js";
+import { connectAgentDocumentation } from "#src/api/documentation.js";
+import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.js";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
@@ -23,7 +26,9 @@ Registers the configured built-ins as one Pi Agent IDE extension.
 */
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
-  const nestedRendering = createNestedIdeRendering(pi);
+  const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
+  const hideCodemodeToolResults = config.preferences?.["ui.codemode"] !== "on";
+  const nestedRendering = createNestedIdeRendering(pi, hideCodemodeToolResults);
   const textResults = createIdeTextResults(nestedRendering.api);
   const availability = createIdeToolAvailability(textResults.api);
   pi.on("before_provider_request", (event, context) => {
@@ -81,11 +86,16 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         : `${systemPrompt}\n\n<ide_discovery>\n${guidance.join("\n")}\n</ide_discovery>`;
     return prompt === event.systemPrompt ? undefined : { systemPrompt: prompt };
   });
-  const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
   const flags = createFeatureFlags(pi, {
     "pi-agent-ide-no-animations": config.noAnimations ?? false,
     "pi-agent-ide-no-post-processing": config.noPostProcessing ?? false,
     ...config.flags,
+  });
+  flags.register({
+    id: "pi-agent-ide-developer-mode",
+    name: "Developer mode",
+    description: "Enable development commands, including manual setup-hint previews.",
+    default: false,
   });
   flags.register({
     id: "pi-agent-ide-no-animations",
@@ -138,6 +148,8 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     default: false,
   });
   registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
+  registerSettingsHelp(pi);
+  connectAgentDocumentation(pi, [createIdeSettingsDocumentation(flags.definitions)]);
   const presetDisabled = disabledByPreset(BUILTIN_EXTENSIONS, config.preset ?? "full");
   const { enabled } = selectBuiltinExtensions(
     BUILTIN_EXTENSIONS,

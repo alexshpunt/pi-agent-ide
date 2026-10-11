@@ -266,11 +266,11 @@ function sanitizeInternalManifest(source: PackageManifest): PackageManifest {
     } else if (internalNames.has(name)) {
       dependencies[name] = releaseVersion;
     } else {
+      // External runtime dependencies are owned by the release root.
       assert(
         !specifier.startsWith("workspace:"),
         `${manifest.name} has an external workspace dependency on ${name}`,
       );
-      dependencies[name] = specifier;
     }
   }
   for (const [name, specifier] of Object.entries(manifest.peerDependencies ?? {})) {
@@ -468,6 +468,11 @@ function validatePackage(
     const manifest = readJson(join(packageRoot, manifestPath));
     assert(manifest.private !== true, `${manifestPath} is private`);
     assert(manifest.devDependencies === undefined, `${manifestPath} contains devDependencies`);
+    if (internalNames.has(manifest.name))
+      assert(
+        Object.keys(manifest.dependencies ?? {}).every((name) => internalNames.has(name)),
+        `${manifestPath} duplicates root runtime dependencies`,
+      );
     assert(
       !/(?:workspace:|file:|\/root\/)/.test(manifestText),
       `${manifestPath} contains a development path or range`,

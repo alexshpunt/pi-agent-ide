@@ -1,12 +1,96 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { expect, onTestFinished, test, vi } from "vitest";
 import { registerModuleSettings } from "./module-settings.js";
+import { AGENT_IDE_PREFERENCES } from "./preferences.js";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 
 initTheme("dark", false);
+
+test.each([
+  ["Project", false],
+  ["Project", true],
+  ["Global", false],
+  ["Global", true],
+] as const)(
+  "Codemode menu preserves unrelated %s preferences when save is %s",
+  async (scope, save) => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-codemode-menu-"));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const agentDirectory = path.join(cwd, "agent");
+    vi.stubEnv("PI_CODING_AGENT_DIR", agentDirectory);
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    const file =
+      scope === "Project"
+        ? path.join(cwd, ".pi/pi-agent-ide/extensions.json")
+        : path.join(agentDirectory, "pi-agent-ide/extensions.json");
+    const original = {
+      disabled: ["ide.vision"],
+      preferences: { future: "keep", "ui.read": "disabled" },
+    };
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(original));
+    let handler: ((args: string, ctx: ExtensionCommandContext) => Promise<void>) | undefined;
+    registerModuleSettings(
+      {
+        registerCommand: (_name, command) => {
+          handler = command.handler;
+        },
+      },
+      [],
+      AGENT_IDE_PREFERENCES,
+    );
+    const custom: ExtensionCommandContext["ui"]["custom"] = async (factory) => {
+      return new Promise((resolve, reject) => {
+        const invoke = async () => {
+          const panel = await factory(
+            { requestRender() {} } as Parameters<typeof factory>[0],
+            {} as Parameters<typeof factory>[1],
+            {} as Parameters<typeof factory>[2],
+            resolve,
+          );
+          panel.handleInput?.("\t");
+          panel.handleInput?.("\t");
+          panel.handleInput?.("Codemode");
+          panel.handleInput?.("\r");
+          panel.handleInput?.("\r");
+          panel.handleInput?.(save ? "\x13" : "\x1b");
+        };
+        void invoke().catch(reject);
+      });
+    };
+    const confirm = vi.fn().mockResolvedValue(false);
+    const reload = vi.fn();
+    const ui: Partial<ExtensionCommandContext["ui"]> = {
+      select: vi.fn().mockResolvedValue(scope),
+      confirm,
+      notify: vi.fn(),
+      custom,
+    };
+    const context: Partial<ExtensionCommandContext> = {
+      cwd,
+      hasUI: true,
+      ui: ui as ExtensionCommandContext["ui"],
+      reload,
+    };
+    await handler?.("", context as ExtensionCommandContext);
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(
+      save
+        ? {
+            ...original,
+            enabled: [],
+            preferences: { ...original.preferences, "ui.codemode": "on" },
+          }
+        : original,
+    );
+    expect(confirm).toHaveBeenCalledTimes(save ? 1 : 0);
+    expect(reload).not.toHaveBeenCalled();
+  },
+);
 
 function customDialog(save: boolean): ExtensionCommandContext["ui"]["custom"] {
   return async (factory) => {

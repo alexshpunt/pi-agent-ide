@@ -953,6 +953,12 @@ function wholeFileOperationSummary(details: unknown):
 
 function wholeFileFailureCause(code: string): string {
   switch (code) {
+    case "WRITE_FAILED": {
+      return "resource write failed";
+    }
+    case "POST_WRITE_FAILED": {
+      return "post-write processing failed";
+    }
     case "APPLY_UNDO_OWNER_CHANGED": {
       return "resource owner changed";
     }
@@ -1000,6 +1006,22 @@ function wholeFileFailureCause(code: string): string {
 }
 
 function userFacingFailure(
+  agentOutput: string,
+  details: FileMutationBatchResult | undefined,
+): string {
+  const causes = new Set(
+    details?.results?.flatMap((result) =>
+      // Provider reasons can contain private data; decode only public editor failure codes.
+      (result.data.errors ?? []).map((error) => wholeFileFailureCause(error.code ?? "")),
+    ),
+  );
+  return [
+    mutationFailureSummary(agentOutput, details),
+    ...[...causes].map((cause) => `Reason: ${cause}`),
+    ...(details?.effect === "unknown" ? ["Read the affected resource before retrying."] : []),
+  ].join("\n");
+}
+function mutationFailureSummary(
   agentOutput: string,
   details: FileMutationBatchResult | undefined,
 ): string {

@@ -163,6 +163,10 @@
       "types": "./src/api/read.ts",
       "default": "./src/api/read.ts"
     },
+    "./api/content": {
+      "types": "./src/api/content.ts",
+      "default": "./src/api/content.ts"
+    },
     "./api/resource": {
       "types": "./src/api/resource.ts",
       "default": "./src/api/resource.ts"
@@ -181,13 +185,13 @@
     }
   },
   "scripts": {
+    "prepare": "husky install",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:catalog && pnpm check:capabilities && pnpm check:package",
     "check:boundaries": "oxnode scripts/check-package-boundaries.ts",
     "check:catalog": "oxnode scripts/generate-tool-catalog.ts --check",
     "check:capabilities": "node benchmarks/tool-capabilities/cli.ts --check",
     "check:package": "oxnode scripts/build-public-package.ts",
-    "check:paths": "oxnode scripts/check-no-machine-paths.ts",
-    "dev:modular": "oxnode dev/modular/run.ts",
+    "check:paths": "oxnode scripts/check-no-machine-paths.ts && node --experimental-strip-types scripts/check-no-task-evidence.ts",
     "dev:export-agent-interface": "oxnode scripts/dev/export-agent-interface.ts",
     "docs:catalog": "oxnode scripts/generate-tool-catalog.ts",
     "lint": "oxlint --deny-warnings .",
@@ -206,7 +210,7 @@
     "test:integration:live": "oxnode scripts/live-integration-test.ts",
     "test:integration:live:test": "oxnode scripts/live-integration-test.ts --named-test",
     "test:integration:report": "vitest run --config vitest.integration.config.mjs --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/integration.xml",
-    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts dev benchmarks",
+    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts benchmarks",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check ."
   },
@@ -220,6 +224,7 @@
     "node-screenshots": "0.2.8",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-documentation": "workspace:^",
+    "pi-agent-image": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-pdf": "workspace:^",
     "pi-agent-read": "workspace:^",
@@ -233,9 +238,9 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0",
-    "@earendil-works/pi-tui": "1.0.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "@oxlint/plugins": "^1.87.0",
     "@types/cross-spawn": "^6.0.6",
     "@typescript/native": "npm:typescript@^7.0.2",

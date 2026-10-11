@@ -1,6 +1,10 @@
 import { requiredValue } from "pi-agent-invariant";
-import type { ResultTargetStore } from "pi-agent-resource";
-import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
+import type { ResultTargetStore, ResolvedResultTargets } from "pi-agent-resource";
+import type {
+  SearchSelectionMatch,
+  SearchSelectionRegistration,
+  SearchContext,
+} from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -209,6 +213,7 @@ export class SearchSessionStore {
       read,
       ...registerResultReferences(
         this.resultTargets,
+        id,
         matches,
         contentBySource,
         cwd,
@@ -334,6 +339,42 @@ export class SearchSessionStore {
     };
   }
 
+  /** Resolve Search input with the same numbered-snapshot and all-query refresh authority as edits. */
+  public async resolveSearchScope(
+    value: string,
+    context: SearchContext,
+  ): Promise<ResolvedResultTargets | undefined> {
+    if (!value.startsWith("SEARCH#")) return undefined;
+    const result = await this.#resolveResources(value, context.cwd, context.signal, true);
+    if (result.kind !== "resolved")
+      throw new Error(
+        result.kind === "rejected" ? result.rejection.reason : "Invalid Search reference.",
+      );
+    const parsed = requiredValue(parseSearchAnchor(value));
+    const session = requiredValue(this.#sessions.get(parsed.id));
+    return {
+      complete: true,
+      targets: result.targets.map((target) => {
+        if (target.expectedContent === undefined)
+          throw new Error("Search snapshot is unavailable.");
+        return {
+          source: target.source,
+          expectedContent: target.expectedContent,
+          ranges: target.ranges ?? [],
+          readCurrent: async (signal?: AbortSignal) => {
+            const current = await readCurrent(
+              target.source,
+              signal,
+              session.environment,
+              session.read,
+            );
+            if (current === undefined) throw new Error("Search source is unavailable.");
+            return current;
+          },
+        };
+      }),
+    };
+  }
   public resourceResolver(): TextAnchorResourceResolver {
     return {
       id: "search-targets",
@@ -396,27 +437,32 @@ export class SearchSessionStore {
     };
   }
 
-  async #resolveResources(value: string, _cwd: string): Promise<TextTargetResolutionAttempt> {
+  async #resolveResources(
+    value: string,
+    cwd: string,
+    signal?: AbortSignal,
+    allowEmpty = false,
+  ): Promise<TextTargetResolutionAttempt> {
     const parsed = parseSearchAnchor(value);
     if (parsed === undefined) return { kind: "not-handled" };
     const session = this.#sessions.get(parsed.id);
-    if (session === undefined) return staleAnchor();
+    if (session === undefined || session.cwd !== canonicalSource(cwd)) return staleAnchor();
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     let snapshot: SearchSnapshot = session;
     if (parsed.selector === "all") {
       if (session.refreshedComplete?.complete === true) {
         snapshot = session.refreshedComplete;
       } else if (session.refreshedComplete !== undefined) {
-        snapshot = await this.#refresh(session);
+        snapshot = await this.#refresh(session, signal);
         if (!snapshot.complete) return missingCompleteAnchor();
       }
       const sources = new Set(
         selectMatches(snapshot, parsed.selector, parsed.mode).map((match) => match.source),
       );
       for (const source of sources) {
-        const current = await readCurrent(source, undefined, session.environment, session.read);
+        const current = await readCurrent(source, signal, session.environment, session.read);
         if (current !== snapshot.contentBySource.get(source)) {
-          snapshot = await this.#refresh(session);
+          snapshot = await this.#refresh(session, signal);
           if (!snapshot.complete) return missingCompleteAnchor();
           break;
         }
@@ -427,7 +473,7 @@ export class SearchSessionStore {
       const source = selected[0]?.source;
       if (
         source !== undefined &&
-        (await readCurrent(source, undefined, session.environment, session.read)) !==
+        (await readCurrent(source, signal, session.environment, session.read)) !==
           snapshot.contentBySource.get(source)
       ) {
         return staleAnchor(selected[0]?.lineNumber);
@@ -453,7 +499,7 @@ export class SearchSessionStore {
       ranges,
       expectedContent: snapshot.contentBySource.get(source),
     }));
-    return targets.length === 0
+    return targets.length === 0 && !(allowEmpty && parsed.selector === "all")
       ? { kind: "rejected", rejection: { code: "missing", reason: "search anchor has no matches" } }
       : { kind: "resolved", targets };
   }
@@ -484,6 +530,7 @@ export class SearchSessionStore {
 
 function registerResultReferences(
   store: ResultTargetStore | undefined,
+  sessionId: string,
   matches: readonly TextSearchMatch[],
   contents: ReadonlyMap<string, string>,
   cwd: string,
@@ -500,6 +547,18 @@ function registerResultReferences(
     ranges: [selectionRange(requiredValue(documents.get(match.source)), match, "match")],
     readCurrent: (signal?: AbortSignal) => read(match.source, signal),
   }));
+  for (const [index, match] of matches.slice(0, 100).entries()) {
+    const lineTarget = store.register(
+      [
+        {
+          ...requiredValue(targets[index]),
+          ranges: [selectionRange(requiredValue(documents.get(match.source)), match, "line")],
+        },
+      ],
+      cwd,
+    );
+    store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:line`, lineTarget, cwd);
+  }
   return {
     target: store.register(targets, cwd, complete),
     matchTargets: targets.slice(0, 100).map((target) => store.register([target], cwd, complete)),

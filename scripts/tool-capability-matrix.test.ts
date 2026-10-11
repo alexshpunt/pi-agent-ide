@@ -46,6 +46,22 @@ const events = [
 const task = { steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }] };
 
 describe("capability route evidence", () => {
+  test("direct batch evidence requires both call ids in one completed assistant message", () => {
+    const route = { steps: [{ tool: "read" }, { tool: "search", sameAssistantWith: 0 }] };
+    const message = (ids: string[]) => ({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: ids.map((id) => ({ type: "toolCall", id })),
+      },
+    });
+    expect(validateRoute(route, [message(["r", "s"]), ...events], "direct").passed).toBe(true);
+    expect(validateRoute(route, [message(["r"]), message(["s"]), ...events], "direct").passed).toBe(
+      false,
+    );
+    expect(validateRoute(route, [message(["r", "other"]), ...events], "direct").passed).toBe(false);
+    expect(validateRoute(route, events, "direct").passed).toBe(false);
+  });
   test("silent Write requires a completed parent without the child file body", () => {
     const route = { steps: [{ tool: "write", parentExcludes: "FILE_BODY" }] };
     const child = [
@@ -80,6 +96,114 @@ describe("capability route evidence", () => {
       validateRoute(route, [...child, { ...parent("Script failed"), isError: true }], "codemode")
         .passed,
     ).toBe(false);
+  });
+  test("a required parent summary cannot be replaced by successful child receipts", () => {
+    const route = { steps: [{ tool: "replace", parentContains: "3 replacements in 1 file" }] };
+    const child = [
+      { type: "tool_execution_start", toolCallId: "parent", toolName: "codemode" },
+      {
+        type: "tool_execution_start",
+        toolCallId: "child",
+        parentToolCallId: "parent",
+        toolName: "replace",
+      },
+      {
+        type: "tool_execution_end",
+        toolCallId: "child",
+        isError: false,
+        result: { content: [{ type: "text", text: "Accepted" }] },
+      },
+    ];
+    const parent = (output: string, isError = false) => ({
+      type: "tool_execution_end",
+      toolCallId: "parent",
+      isError,
+      result: { content: [{ type: "text", text: output }] },
+    });
+    expect(
+      validateRoute(route, [...child, parent("3 replacements in 1 file")], "codemode").passed,
+    ).toBe(true);
+    expect(
+      validateRoute(route, [...child, parent("3 replacements in 3 files")], "codemode").passed,
+    ).toBe(false);
+    expect(validateRoute(route, child, "codemode").passed).toBe(false);
+    expect(
+      validateRoute(route, [...child, parent("3 replacements in 1 file", true)], "codemode").passed,
+    ).toBe(false);
+  });
+  test("final feedback checks do not confuse validation events with transcript results", () => {
+    const route = { steps: [{ tool: "insert", error: true, finalContains: "is stale" }] };
+    const validation = [
+      { type: "tool_execution_start", toolCallId: "call", toolName: "insert" },
+      {
+        type: "tool_execution_end",
+        toolCallId: "call",
+        isError: true,
+        result: { content: [{ type: "text", text: "Validation failed" }] },
+      },
+    ];
+    const final = {
+      type: "message_end",
+      message: {
+        role: "toolResult",
+        toolCallId: "call",
+        isError: true,
+        content: [{ type: "text", text: "Anchor is stale" }],
+      },
+    };
+    expect(validateRoute(route, [...validation, final], "direct").passed).toBe(true);
+    expect(validateRoute(route, validation, "direct").passed).toBe(false);
+    expect(
+      validateRoute(
+        route,
+        [...validation, { ...final, message: { ...final.message, toolCallId: "another" } }],
+        "direct",
+      ).passed,
+    ).toBe(false);
+    expect(
+      validateRoute(
+        route,
+        [...validation, { ...final, message: { ...final.message, isError: false } }],
+        "direct",
+      ).passed,
+    ).toBe(false);
+  });
+  test("final feedback byte limits count all UTF-8 text blocks, not an earlier result", () => {
+    const events = [
+      { type: "tool_execution_start", toolCallId: "call", toolName: "insert" },
+      {
+        type: "tool_execution_end",
+        toolCallId: "call",
+        isError: true,
+        result: { content: [{ type: "text", text: "oversized".repeat(100) }] },
+      },
+      {
+        type: "message_end",
+        message: {
+          role: "toolResult",
+          toolCallId: "call",
+          isError: true,
+          content: [
+            { type: "text", text: "stale" },
+            { type: "text", text: "😀" },
+          ],
+        },
+      },
+    ];
+    const route = (finalMaxBytes: number) => ({
+      steps: [{ tool: "insert", error: true, finalMaxBytes }],
+    });
+    expect(validateRoute(route(10), events, "direct").passed).toBe(true);
+    expect(validateRoute(route(9), events, "direct").passed).toBe(false);
+    expect(validateRoute(route(0), events, "direct").passed).toBe(false);
+    expect(validateRoute(route(10), events.slice(0, 2), "direct").passed).toBe(false);
+    const missingContent = {
+      type: "message_end",
+      message: { role: "toolResult", toolCallId: "call", isError: true },
+    };
+    expect(validateRoute(route(10), [...events.slice(0, 2), missingContent], "direct").passed).toBe(
+      false,
+    );
   });
   test("requires actual result reuse, not just the same tool names", () => {
     expect(validateRoute(task, events, "direct")).toEqual({ passed: true, reasons: [] });
@@ -380,8 +504,11 @@ test("deletion capability fixtures preserve symlink identities and detect leftov
   }
 });
 
-test("temporary deletion capability fixtures enforce defaults and replacement without inference", async () => {
-  const parent = await mkdtemp(path.join(os.tmpdir(), "capability-temp-delete-"));
+test("temporary directory capability fixtures enforce defaults, roots, moves, and replacement without inference", async () => {
+  // Keep default-name coverage outside any actual system temporary ancestor.
+  const fixtures = path.join(os.homedir(), ".cache", "pi-agent-ide-capability-fixtures");
+  await mkdir(fixtures, { recursive: true });
+  const parent = await mkdtemp(path.join(fixtures, "case-"));
   const source = path.join(parent, "source");
   await mkdir(source);
   execFileSync("git", ["init", "-q", source]);
@@ -398,7 +525,11 @@ test("temporary deletion capability fixtures enforce defaults and replacement wi
     "fixture",
   ]);
   try {
-    for (const id of ["delete-temporary-defaults", "delete-temporary-config"]) {
+    for (const id of [
+      "delete-temporary-defaults",
+      "delete-temporary-config",
+      "move-temporary-directories",
+    ]) {
       const task = capabilityCases.find((entry) => entry.id === id);
       if (task === undefined) throw new Error("Missing temporary deletion case");
       const trial = await prepareTrial(parent, source, task);
@@ -407,7 +538,9 @@ test("temporary deletion capability fixtures enforce defaults and replacement wi
       });
       await expect(access(path.join(source, ".git"))).resolves.toBeUndefined();
       for (const step of task.steps) {
-        const result = await executeFileOperation("delete", step.args, trial.cwd);
+        if (step.tool !== "delete" && step.tool !== "move" && step.tool !== "copy")
+          throw new Error("Unexpected temporary-directory operation");
+        const result = await executeFileOperation(step.tool, step.args, trial.cwd);
         expect(result.ok).toBe(!step.error);
         if (step.error) expect(result.error?.code).toBe("DELETE_CONFIRMATION_REQUIRED");
       }

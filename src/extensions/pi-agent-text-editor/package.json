@@ -75,9 +75,9 @@
   },
   "dependencies": {
     "@codemirror/state": "^6.5.0",
-    "@earendil-works/pi-ai": "1.0.0",
-    "@earendil-works/pi-coding-agent": "1.0.0",
-    "@earendil-works/pi-tui": "1.0.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@earendil-works/pi-tui": "1.1.0",
     "@lezer/common": "^1.5.2",
     "@lezer/javascript": "^1.5.4",
     "diff": "^9.0.0",

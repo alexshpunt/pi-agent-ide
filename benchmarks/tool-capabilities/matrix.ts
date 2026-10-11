@@ -6,7 +6,32 @@ const groups: [string[], string[]][] = [
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.jq"], ["read-jq"]],
   [["read.ssh-guide"], ["ssh-guide"]],
+  [["read.ide-settings", "search.ide-settings"], ["ide-settings-catalog"]],
+  [
+    ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
+    ["docs-search"],
+  ],
+  [
+    ["search.docs-limit", "search.docs-empty", "search.docs-unknown", "search.docs-bare"],
+    ["docs-search-status"],
+  ],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  [["compose.scoped-boolean"], ["read-scoped-boolean"]],
+  [["compose.search-issued-scope"], ["search-issued-scope"]],
+  [["compose.batch-insert-search"], ["search-line-batch-insert"]],
+  [["compose.batch-replace-search"], ["selection-batch-replace"]],
+  ...["delete", "insert"].map((operation): [string[], string[]] => [
+    [`edit.search-line-batch-${operation}`],
+    [`search-line-batch-${operation}`],
+  ]),
+  ...["replace", "delete", "insert"].map((operation): [string[], string[]] => [
+    [`edit.selection-batch-${operation}`],
+    [`selection-batch-${operation}`],
+  ]),
+  [["compose.select-delete"], ["select-result-delete"]],
+  [["compose.select-insert"], ["select-result-insert"]],
+  [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
+  [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],
@@ -16,6 +41,7 @@ const groups: [string[], string[]][] = [
   [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [["codemode.silent-write"], ["write-silent"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
@@ -29,6 +55,7 @@ const groups: [string[], string[]][] = [
   [["compose.symbol-read-delete"], ["read-symbol-delete"]],
   [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
   [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
+  [["compose.file-delete-text-edit"], ["mixed-file-delete-text-edit"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
   [
     [
@@ -51,8 +78,19 @@ const groups: [string[], string[]][] = [
     ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
     ["delete-policy-gates"],
   ],
-  [["edit.delete-temporary-defaults"], ["delete-temporary-defaults"]],
-  [["edit.delete-temporary-config"], ["delete-temporary-config"]],
+  [
+    [
+      "edit.delete-temporary-defaults",
+      "edit.delete-temporary-roots",
+      "edit.delete-temporary-names",
+    ],
+    ["delete-temporary-defaults"],
+  ],
+  [["edit.delete-temporary-config", "edit.move-temporary-config"], ["delete-temporary-config"]],
+  [
+    ["edit.move-temporary-defaults", "edit.copy-temporary-directory"],
+    ["move-temporary-directories"],
+  ],
   [
     ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
     ["selection-copy-move"],
@@ -69,6 +107,12 @@ const groups: [string[], string[]][] = [
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
+  [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
+  [["edit.exact-eof"], ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"]],
+  [
+    ["codemode.parallel-edit-effects"],
+    ["parallel-edit-effects-all", "parallel-edit-effects-allSettled"],
+  ],
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
   [
     [

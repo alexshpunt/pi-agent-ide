@@ -30,6 +30,7 @@ async function runSelection(
     JSON.stringify({
       disabled: ["ide.lsp", "ide.lint"],
       noPostProcessing: !postProcessing,
+      preferences: name === "select-full-preview-targets" ? { "ui.codemode": "on" } : undefined,
     }),
   );
   const run = await new PiIntegrationTest({

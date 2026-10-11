@@ -41,7 +41,7 @@ A replace/insert result searches only that call's resulting text, including an e
 
 Use a displayed item or capture reference for a subset. The whole result retains its complete stored scope; editing copied preview text never narrows that scope.
 
-Incomplete registered result scopes cannot authorize edits, even through non-empty subsets. A numbered local text Search reference remains editable while its file snapshot is current, even if collection was incomplete. Use it only for its containing line or exact match, not as a complete match set. Empty arrays select no sources; they do not default to the workspace. Result-scoped text Boolean queries and text include/exclude globs remain unsupported. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
+Incomplete registered result scopes cannot authorize edits, even through non-empty subsets. A numbered local text Search reference remains editable while its file snapshot is current, even if collection was incomplete. Use it only for its containing line or exact match, not as a complete match set. Empty arrays select no sources; they do not default to the workspace. Result-scoped Boolean text queries check each line inside each selected range separately; conditions cannot borrow terms from gaps or neighboring text. Text include/exclude globs remain unsupported for result scopes. AST and LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
 
 ## AST search
 
@@ -68,6 +68,8 @@ Use `navigation: "references"` only when following symbols represented inside th
 Append `#name` to an exact symbol resource only for a native language-server rename across references. If semantic support is unavailable, use a precise text or AST operation instead of pretending it was a semantic rename. Pending or empty language-server output does not prove that no declaration or reference exists.
 
 ## Other search protocols
+
+Use `path: "docs:all"` to search every available packaged guide body, or `path: "docs:<id>"` for one guide. Use a literal or `regex:` query with `caseSensitive`, `wholeWord`, and `limit` as needed. File globs and structural queries do not apply. Matches show the guide source, line, and excerpt without editable references. Read that `docs:<id>` source for context or the full guide; search excerpts do not count as reading it. Read `docs:` to list the available IDs. Search requires `docs:all` or `docs:<id>`; bare `docs:` is not a search scope.
 
 Use an HTTP(S) URL as `path` for local web execution, or `web:ssh://target/https://example.com/page` for explicit target execution. Search converted page text with a literal or `regex:` query; no prior Read is needed. Web results keep the requested source and do not expose editable `SEARCH#` references. Use Read on that source for more context.
 

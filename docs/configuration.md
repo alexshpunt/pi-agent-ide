@@ -2,7 +2,7 @@
 
 ## Agent IDE settings
 
-Open `/agent-ide-settings` inside Pi and choose Project or Global. The Modules tab lists human-readable module names and descriptions. The Features tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
+Open `/agent-ide-settings` inside Pi and choose Project or Global. The Features tab lists human-readable module names and descriptions. The Behavior tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
 
 Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload; declining leaves changes pending until reload or startup. The command stays available even when every optional module is disabled.
 
@@ -12,13 +12,25 @@ Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Captu
 
 The UI tab contains separate presentation settings for diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
 
+**Show tool results from Codemode** in the UI tab controls extra Agent IDE result panels, not Codemode itself. **Off** is the default: successful IDE panels stay hidden and errors remain visible. **On** shows IDE panels using each tool's own Read, Search, terminal or diff presentation setting. Expanding shows the full retained IDE panels in either mode. Codemode's JavaScript, output and other tools are unchanged. The saved value is `preferences["ui.codemode"]`: `off` or `on`. Project overrides Global; Default removes only the selected scope's override. Reload or restart applies the saved choice.
+
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
-New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Features or UI tab; no separate menu entry is needed.
+New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Behavior or UI tab; no separate menu entry is needed.
 
 Obsolete IDs in `disabled` are ignored. They do not stop IDE startup. Malformed configuration and unknown IDs in `enabled` still report configuration errors.
 
 Pi Agent IDE enables every built-in extension by default. Project and global config files can disable built-ins by their stable IDs and turn on built-ins that are off by default.
+
+## Agent-assisted settings
+
+Ask the agent to explain Pi Agent IDE or configure it for your tasks. For example: “Help me configure Pi Agent IDE for my workflow.” You can also run `/skill:configure-agent-ide` with your request. For an explanation, the agent describes the relevant settings without changing them. Before making changes, it asks whether to use Project or Global scope unless you already specified it. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the agreed settings. Default restores inheritance; saved changes still need reload or restart.
+
+The catalog lists supported settings and defaults, not current effective values. When documentation is disabled, the skill can inspect the installed configuration guide and registrations without enabling unrelated modules.
+
+When the setup skill is available, an interactive TUI session shows a short setup hint once across the installation. Reloads, new projects and package updates do not repeat the same hint. Disabling `ide.tips`, running without the skill or using a non-TUI mode does not consume it. A deliberately revised hint can appear again; the record lives in the existing `pi-agent-ide/tips.json` state file.
+
+For development, enable **Developer mode** in the Behavior tab and reload. This setting (`pi-agent-ide-developer-mode`) defaults to Off and follows Project/Global flag inheritance. Only then is `/agent-ide-tip` available to show the setup hint manually. The command does not reset its one-time state or start a model turn. Automatic startup hints do not require Developer mode.
 
 ## Native tool availability
 
@@ -263,9 +275,9 @@ Each actionable state has its own stable fingerprint. The same state is shown on
 
 ### Temporary-directory deletion
 
-For SSH Delete, all paths and settings belong to the selected target: its account home, system temp, `PI_CODING_AGENT_DIR`, and project config. Local settings do not grant permission to remote paths.
+For SSH Delete and Move removal checks, all paths and settings belong to the selected target: its account home, system temp, `PI_CODING_AGENT_DIR`, and project config. Local settings do not grant permission to remote paths.
 
-Delete skips the external/non-Git confirmation for descendants of temporary roots. Defaults are `tmp`, `.tmp`, `temp`, and `.temp` under the current Git worktree root (or cwd without Git) and your home directory, plus the system temporary directory. The system root follows the OS environment, such as `TMPDIR` on Linux or `TEMP`/`TMP` on Windows.
+Delete and Move removal checks skip the external/non-Git confirmation for temporary roots and their descendants. By default, any exact `tmp`, `.tmp`, `temp`, or `.temp` component in the resolved path makes it temporary. Similar names such as `my-tmp` do not qualify. The system temporary directory also qualifies and follows the OS environment, such as `TMPDIR` on Linux or `TEMP`/`TMP` on Windows.
 
 Configure this in `<agent-dir>/pi-agent-ide/deletion.json` globally, or `<project>/.pi/pi-agent-ide/deletion.json` for one project. `<agent-dir>` defaults to `~/.pi/agent` and follows `PI_CODING_AGENT_DIR`.
 
@@ -280,9 +292,9 @@ Configure this in `<agent-dir>/pi-agent-ide/deletion.json` globally, or `<projec
 
 `extend` adds to the lower layer; `replace` replaces it. Layers apply in this order: defaults, global, project. A project replacement overrides both defaults and global settings. Use `{"temporaryDirectories":{"mode":"replace","paths":[]}}` to disable the exception.
 
-Relative global paths start at your home directory; relative project paths start at the worktree root, or cwd without Git. Absolute paths and a leading `~/` are supported. Globs and other shell expansion are not supported. Custom roots resolve symlinks; named defaults do not grant access to a redirected root's destination. Missing roots are skipped. Settings are read for each deletion and checked again before removal. Invalid settings block directory/symlink deletion rather than falling back.
+Relative global paths start at your home directory; relative project paths start at the worktree root, or cwd without Git. Absolute paths and a leading `~/` are supported. Globs and other shell expansion are not supported. Custom roots resolve symlinks; default name matching uses resolved parent paths, not a symlink spelling. Missing configured roots are skipped. Settings are read for each removal and checked again before effects. Invalid settings block directory/symlink removal rather than falling back.
 
-The exception does not apply to the temporary roots themselves, tracked/staged contents, failed Git checks inside the current project, or protected project/Git/filesystem paths. Parent links must resolve inside an allowed root. Unlinking the final symlink leaves its destination alone. Hooks still apply. Copy and Move keep their existing safeguards, and regular-file deletion is unchanged.
+Tracked/staged contents, failed Git checks inside the current project, and protected project/Git/filesystem paths keep their safeguards. Parent links must resolve inside an allowed root or to a path with an eligible name. Unlinking the final symlink leaves its destination alone. Hooks still apply. Move checks its source and any replaced directory separately; a temporary source does not exempt an ordinary destination. Copy still merges directories and keeps destination-only files. Regular-file deletion is unchanged.
 
 ### Exact text recovery
 

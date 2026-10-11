@@ -14,7 +14,7 @@ export function groupReplacements(
   if (results.length === 0) return;
   const groups: { removedText: string; insertedText: string; count: number }[] = [];
   const indexes = new Map<string, number>();
-  const files: { path: string; groups: number[]; formatting: string }[] = [];
+  const files = new Map<string, { path: string; groups: number[]; formatting: Set<string> }>();
   let changes = 0;
   for (const result of results) {
     const operations = result.data.operations;
@@ -33,7 +33,12 @@ export function groupReplacements(
       operations.reduce((sum, operation) => sum + operation.changes, 0) !== raw.length
     )
       return;
-    const counts: number[] = [];
+    const file = files.get(result.path) ?? {
+      path: result.path,
+      groups: [],
+      formatting: new Set<string>(),
+    };
+    const counts = file.groups;
     for (const change of raw) {
       const key = JSON.stringify([change.removedText, change.insertedText]);
       let index = indexes.get(key);
@@ -52,21 +57,25 @@ export function groupReplacements(
       counts[index] = (counts[index] ?? 0) + 1;
       changes++;
     }
-    files.push({
-      path: result.path,
-      groups: counts,
-      formatting: result.data.formatting?.status ?? "not-reported",
-    });
+    file.formatting.add(result.data.formatting?.status ?? "not-reported");
+    files.set(result.path, file);
   }
   // Keep ordinary final-state output when there is nothing repeated to compress.
   if (groups.length === changes) return;
-  return { groups, files, changes };
+  return {
+    groups,
+    files: Array.from(files.values(), (file) => ({
+      ...file,
+      formatting: Array.from(file.formatting).join(", "),
+    })),
+    changes,
+  };
 }
 
 /** Renders all unique pairs and every affected file without repeating surrounding source text. */
 export function renderGroupedReplacements(receipt: GroupedReplacements): string {
   return [
-    `Applied ${receipt.changes} replacements in ${receipt.files.length} files.`,
+    `Applied ${receipt.changes} replacements in ${receipt.files.length} file${receipt.files.length === 1 ? "" : "s"}.`,
     "Exact applied replacements (before any additional formatting; not a full final-file view):",
     ...receipt.groups.map(
       (group, index) =>

@@ -11,9 +11,11 @@ export interface RunEvent {
   result?: { content?: { type: string; text?: string }[] };
   message?: {
     role?: string;
+    toolCallId?: string;
+    isError?: boolean;
     stopReason?: string;
     errorMessage?: string;
-    content?: { type: string; text?: string }[];
+    content?: { type: string; text?: string; id?: string }[];
     model?: string;
     provider?: string;
   };
@@ -41,6 +43,10 @@ function fieldValue(value: unknown, field: string): unknown {
 /** One actual execution required to establish a capability. */
 export interface RouteStep {
   tool: string;
+  /** Require overlap with an earlier step's execution in the same native Codemode script. */
+  parallelWith?: number;
+  /** Require two direct tool calls in the same completed assistant message, not a retry. */
+  sameAssistantWith?: number;
   /** At least one reviewed argument variant must match, in addition to args. */
   argsAny?: Record<string, unknown>[];
   args?: Record<string, unknown>;
@@ -49,6 +55,12 @@ export interface RouteStep {
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
   parentExcludes?: string;
+  /** Require actual summary text in the completed Codemode parent. */
+  parentContains?: string;
+  /** Check finalized transcript feedback when validation skipped the tool-result hook. */
+  finalContains?: string;
+  /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
+  finalMaxBytes?: number;
   image?: boolean;
   /** Native text calls can be accepted before their parent reports a write failure. */
   error?: boolean | "direct";
@@ -207,18 +219,74 @@ export function validateRoute(
         continue;
       if (mode === "codemode" && !codemodeParents.has(event.parentToolCallId)) continue;
       if (mode === "direct" && event.parentToolCallId) continue;
+      if (step.parallelWith !== undefined) {
+        const prior = selected[step.parallelWith];
+        if (
+          mode !== "codemode" ||
+          prior === undefined ||
+          start.index >= prior.end ||
+          prior.parent !== event.parentToolCallId
+        )
+          continue;
+      }
+      if (step.sameAssistantWith !== undefined) {
+        const prior = selected[step.sameAssistantWith];
+        if (
+          mode !== "direct" ||
+          prior === undefined ||
+          !events.some(
+            (entry) =>
+              entry.type === "message_end" &&
+              entry.message?.role === "assistant" &&
+              entry.message.content?.some(
+                (block) => block.type === "toolCall" && block.id === event.toolCallId,
+              ) &&
+              entry.message.content.some(
+                (block) => block.type === "toolCall" && block.id === prior.event.toolCallId,
+              ),
+          )
+        )
+          continue;
+      }
       if (step.args && !matches(step.args, event.args)) continue;
       if (step.argsAny && !step.argsAny.some((args) => matches(args, event.args))) continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
+      if (step.finalContains !== undefined || step.finalMaxBytes !== undefined) {
+        const finalized = events.findLast(
+          (entry) =>
+            entry.type === "message_end" &&
+            entry.message?.role === "toolResult" &&
+            entry.message.toolCallId === event.toolCallId,
+        )?.message;
+        if (
+          !finalized ||
+          !Array.isArray(finalized.content) ||
+          finalized.isError !== end.event.isError ||
+          (step.finalContains !== undefined &&
+            !finalized.content.some(
+              (block) => block.type === "text" && block.text?.includes(step.finalContains ?? ""),
+            )) ||
+          (step.finalMaxBytes !== undefined &&
+            Buffer.byteLength(
+              finalized.content
+                .flatMap((block) => (block.type === "text" ? [block.text ?? ""] : []))
+                .join("\n"),
+            ) > step.finalMaxBytes)
+        )
+          continue;
+      }
       if (step.excludes && output.includes(step.excludes)) continue;
-      if (step.parentExcludes) {
+      if (step.parentExcludes || step.parentContains) {
         const parent = ends.get(event.parentToolCallId ?? "");
         if (
           !parent ||
           parent.index <= end.index ||
           parent.event.isError !== false ||
-          resultText(parent.event).includes(step.parentExcludes)
+          (step.parentExcludes !== undefined &&
+            resultText(parent.event).includes(step.parentExcludes)) ||
+          (step.parentContains !== undefined &&
+            !resultText(parent.event).includes(step.parentContains))
         )
           continue;
       }
