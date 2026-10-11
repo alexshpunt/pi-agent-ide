@@ -17,4 +17,6 @@ Before writing the test, inspect a neighboring `tests/integration/` test and the
 
 For external services or hardware unavailable in ordinary CI, name the dependency and document a narrow exception. Put a real live check in a separate runnable path; never call a mocked Pi test a full integration test. Keep the deterministic local real-Pi contract in CI where possible.
 
-Run the focused file with `pnpm test:integration -- <path>` (or the suite's current equivalent), then run the integration gate used by the release candidate. Read failures and saved artifacts before changing assertions. Preserve the regression test with the feature; do not leave verification as a one-off manual run.
+Run the focused file with `pnpm test:integration -- <path>` (or the suite's current equivalent) against the implementation before its PR merges. Keep broad integration and release-candidate gates in CI/CD, as required by `AGENTS.md`. Read failures and saved artifacts before changing assertions. Keep verification evidence in Task-linked artifacts.
+
+Preserve the regression tests as separate test-only changes, not a one-off manual run. Deliver them after the implementation merges using the test-delivery rules in `AGENTS.md`. Do not include production fixes in that delivery.
