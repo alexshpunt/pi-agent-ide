@@ -73,22 +73,21 @@ subprocess.run(['git','-C',str(w/'project'),'add','tmp/tracked'],check=True)
         agentDirectory: agent,
       });
       if (scenario === "defaults") {
-        for (const target of [path.join(home, "tmp/scratch"), path.join(system, "scratch")]) {
+        // The owned fixture itself has a real /tmp ancestor, so its untracked paths are temporary.
+        for (const target of [
+          path.join(home, "tmp/scratch"),
+          path.join(system, "scratch"),
+          path.join(fixture.workspace, "outside-temp"),
+        ]) {
           expect(await remove(target)).toMatchObject({ ok: true, effect: "applied" });
           await expect(owner.backend.lstat(target)).rejects.toMatchObject({ code: "ENOENT" });
         }
         expect(confirm).not.toHaveBeenCalled();
-        for (const target of [
-          system,
-          path.join(project, "tmp/tracked"),
-          path.join(fixture.workspace, "outside-temp"),
-        ]) {
-          await expect(remove(target)).rejects.toMatchObject({
-            code: "DELETE_NOT_APPROVED",
-            effect: "not-applied",
-          });
-        }
-        expect(confirm).toHaveBeenCalledTimes(3);
+        await expect(remove(path.join(project, "tmp/tracked"))).rejects.toMatchObject({
+          code: "DELETE_NOT_APPROVED",
+          effect: "not-applied",
+        });
+        expect(confirm).toHaveBeenCalledOnce();
         await expect(remove(project)).rejects.toMatchObject({ code: "DELETE_PROTECTED_TARGET" });
         expect(await readFile(path.join(project, "tmp/tracked/data"), "utf8")).toBe("keep");
       } else if (scenario === "settings") {
