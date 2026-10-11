@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.1 — 2026-10-11
+
+### Settings and help
+
+- Ask the agent to explain Pi Agent IDE or configure it for your workflow. The new setup skill uses the registered settings catalog, asks for Project or Global scope and preserves unrelated settings.
+- Open `/agent-ide-help` for a short, scrollable settings guide. A one-time setup hint appears across the installation without entering the model's context.
+- Choose **Show tool results from Codemode**, an Off/On setting that defaults to Off. It controls extra successful IDE panels, not Codemode's script or output. On follows each tool's presentation setting; errors and expanded history remain available.
+- Add **Developer mode**, off by default. It enables `/agent-ide-tip` for manually previewing the setup hint; automatic startup hints remain independent.
+
+### Search and editing
+
+- Search packaged guides through `docs:all` or one `docs:<id>`, with literal or regex queries, case and whole-word options, and bounded results. Guide matches are read-only.
+- Keep result-scoped Search inside selected source ranges, including Boolean queries and text containing colons. Reject changed numbered Search references while preserving query refresh for complete all-match references.
+- Preserve issued selections when Codemode batches same-file edits. Return verified follow-up targets for Replace and Insert after formatting, keep unrelated edits concurrent and count grouped replacements per file correctly.
+- Preserve blocked-edit recovery feedback and bound errors even when a later guard replaces them. Explain failed writes and require rereading resources before retrying uncertain effects.
+
+### Filesystem guards and maintenance
+
+- Apply temporary-directory cleanup rules consistently to Delete and removed Move endpoints. Recognize exact `tmp`, `.tmp`, `temp` and `.temp` path components while preserving protected-path, tracked-content and hook checks. Show Herdr's waiting state during filesystem approval dialogs.
+- Remove obsolete research and development files and committed task reports. Keep required reports on Tasks; block artifact directories through pre-commit and CI checks.
+- Allow publication without the optional paid post-publication benchmark. Candidate archive verification, npm approval and synchronization are unchanged.
+
 ## 0.8.0 — 2026-10-09
 
 ### SSH workspaces
