@@ -1,6 +1,14 @@
 # Feature PRs and checks
 
-Finish features through a PR to `develop`, not a direct merge or push. Commit and push the changes, create the PR, and open its URL in the user's browser. Use the PR for user review instead of GIF demonstrations. Wait for explicit user approval of the current PR head before merging. If the head changes, ask for approval again. After merging, remove the feature worktree and branch.
+Deliver each feature through one minimal implementation PR to `develop`. Include implementation code and useful in-code API comments, but keep test changes and separate project documentation out of its diff.
+
+Explain the problem and the chosen solution in the PR description. Link the Task and optionally include a brief check summary. Before requesting review, post useful inline GitHub comments on the current diff that identify important locations and what the user should check. Open the PR in the user's browser instead of showing GIF demonstrations.
+
+Put required project documentation in a separate docs-only PR. Both implementation and documentation require explicit user approval of their own current head. If either head changes, request approval again. For documentation-only work, do not invent an implementation PR or artificial tests.
+
+Write and run the relevant tests against the implementation before merging it. After the implementation merges, deliver the test-only changes separately to `develop` without user approval. Use a direct merge when protection allows it, or a test-only PR when protection requires one. Do not bypass protection. Keep production changes out of test-only delivery; return any required production fix to the reviewed implementation path.
+
+Keep detailed reports, logs, screenshots, traces, and other task evidence in Task-linked artifacts, not PR files or project documentation. Complete all required deliveries and acceptance checks before removing the task worktrees and branches.
 
 CI may run automatically on `develop`, but it is not a merge requirement. Do not trigger extra CI or wait for optional checks before merging an approved feature PR. If repository protection unexpectedly blocks the merge, report the blocker instead of bypassing it. Required promotion and release CI checks still apply.
 
