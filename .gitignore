@@ -8,6 +8,9 @@ node_modules/
 
 .agents/
 .tmp/
+# Task run artifacts belong in Task attachments, never Git.
+**/evidence/
+**/evidences/
 # Local session-runtime artifacts from agent tooling (never publishable).
 .linear-project
 .mesh/
