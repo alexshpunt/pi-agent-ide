@@ -36,8 +36,10 @@ export function writeAgentResult(
   completions: readonly TextEditCompletion[],
   requestedPath: unknown,
 ): AgentToolResult<FileMutationBatchResult> {
-  // Terminal input and other live resources keep their own action receipts.
+  // Semantic providers own their action receipts and need not emit file completions.
+  // Terminal input and other live resources also keep their own action receipts.
   if (
+    result.details.metadata?.semanticAction !== undefined ||
     (typeof requestedPath === "string" && requestedPath.startsWith("shell:")) ||
     completions.some((completion) => completion.resolvedBy !== "filesystem")
   )
