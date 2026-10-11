@@ -83,6 +83,8 @@ The registered settings catalog and setup skill checks are in [LPT-676 evidence]
 
 The global setup hint checks are in [LPT-677 evidence](evidence/LPT-677.md). They cover scoped persistence, deterministic real-Pi eligibility and suppression, and live first/reload captures. No paid-route claim is made.
 
+The local settings help checks are in [LPT-675 evidence](evidence/LPT-675.md). They cover transient command behavior, narrow light/dark rendering and live scrolling/close captures, and retain an inherited path-check failure. No paid-route claim is made.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
