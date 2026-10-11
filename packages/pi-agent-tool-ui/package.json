@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./operation-approval": {
+      "types": "./src/operation-approval.ts",
+      "default": "./src/operation-approval.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"

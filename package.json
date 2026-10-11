@@ -107,6 +107,10 @@
     "#scripts/*": "./scripts/*"
   },
   "exports": {
+    "./api/approval": {
+      "types": "./src/api/approval.ts",
+      "default": "./src/api/approval.ts"
+    },
     "./api/code-view": {
       "types": "./src/api/code-view.ts",
       "default": "./src/api/code-view.ts"
