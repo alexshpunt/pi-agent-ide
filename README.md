@@ -28,7 +28,9 @@
 
 </div>
 
-New to Settings? Read the [short settings guide](./docs/settings-help.md), or run `/agent-ide-help` inside Pi. Open `/agent-ide-settings` to change your choices.
+Ask your agent to explain Pi Agent IDE or configure it for your workflow. For example: “Help me configure Pi Agent IDE for my tasks.” The agent checks the available settings and asks whether to save changes for this project or globally.
+
+To configure it yourself, read the [short settings guide](./docs/settings-help.md), run `/agent-ide-help`, or open `/agent-ide-settings` inside Pi.
 
 ## Summary
 

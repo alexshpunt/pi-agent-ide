@@ -12,7 +12,7 @@ Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Captu
 
 The UI tab contains separate presentation settings for diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
 
-Codemode has its own **Compact** or **Detailed** choice in the UI tab. Compact is the default: keep Pi's native call summaries and errors, but hide collapsed JavaScript and detailed output. Detailed restores native script and output previews; expansion shows full details in either mode. The saved value is `preferences["ui.codemode"]`: `compact` or `full`. Project overrides Global; Default removes only the selected scope's override. Reload or restart applies the saved choice.
+**Show tool results from Codemode** in the UI tab controls extra Agent IDE result panels, not Codemode itself. **Off** is the default: successful IDE panels stay hidden and errors remain visible. **On** shows IDE panels using each tool's own Read, Search, terminal or diff presentation setting. Expanding shows the full retained IDE panels in either mode. Codemode's JavaScript, output and other tools are unchanged. The saved value is `preferences["ui.codemode"]`: `off` or `on`. Project overrides Global; Default removes only the selected scope's override. Reload or restart applies the saved choice.
 
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
@@ -24,11 +24,13 @@ Pi Agent IDE enables every built-in extension by default. Project and global con
 
 ## Agent-assisted settings
 
-Ask the agent to configure Agent IDE, or run `/skill:configure-agent-ide` with your request. Specify Project or Global scope. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the requested settings. Default restores inheritance; saved changes still need reload or restart.
+Ask the agent to explain Pi Agent IDE or configure it for your tasks. For example: “Help me configure Pi Agent IDE for my workflow.” You can also run `/skill:configure-agent-ide` with your request. For an explanation, the agent describes the relevant settings without changing them. Before making changes, it asks whether to use Project or Global scope unless you already specified it. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the agreed settings. Default restores inheritance; saved changes still need reload or restart.
 
 The catalog lists supported settings and defaults, not current effective values. When documentation is disabled, the skill can inspect the installed configuration guide and registrations without enabling unrelated modules.
 
 When the setup skill is available, an interactive TUI session shows a short setup hint once across the installation. Reloads, new projects and package updates do not repeat the same hint. Disabling `ide.tips`, running without the skill or using a non-TUI mode does not consume it. A deliberately revised hint can appear again; the record lives in the existing `pi-agent-ide/tips.json` state file.
+
+For development, enable **Developer mode** in the Behavior tab and reload. This setting (`pi-agent-ide-developer-mode`) defaults to Off and follows Project/Global flag inheritance. Only then is `/agent-ide-tip` available to show the setup hint manually. The command does not reset its one-time state or start a model turn. Automatic startup hints do not require Developer mode.
 
 ## Native tool availability
 

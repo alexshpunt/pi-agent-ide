@@ -20,9 +20,9 @@ Press **Ctrl+S** to save or **Esc** to cancel. Saving offers a reload. If you de
 
 ## Reduce noise or inspect details
 
-Codemode defaults to **Compact**: native call summaries and errors remain visible, while collapsed scripts and successful output bodies stay hidden. Choose **Detailed** for script and output previews. Use Pi's tool-output expansion shortcut (**Ctrl+O** by default) to inspect full details temporarily without changing the saved preference.
+**Show tool results from Codemode** defaults to **Off**. It hides extra successful Agent IDE panels, while errors stay visible. Turn it **On** to show those panels using each tool's own Read, Search, terminal or diff presentation setting. It does not change Codemode's JavaScript, output or other tools.
 
-Read, Search, terminal and diff presentation have separate choices. Start with Compact; change only the output that gets in your way.
+Use Pi's tool-output expansion shortcut (**Ctrl+O** by default) to inspect full retained IDE panels temporarily, even when this setting is Off. Read, Search, terminal and diff presentation have separate choices. Start with Compact; change only the output that gets in your way.
 
 ## Change sensitive options deliberately
 
@@ -30,6 +30,10 @@ Keep **Capture arbitrary windows** and **Capture full displays** off unless the 
 
 ## Ask the agent to configure it
 
-For example: “Set Codemode to Detailed for this project only; leave other settings unchanged.” You can also use `/skill:configure-agent-ide` with that request. Say Project or Global, and reload after the change.
+Ask: “Explain how to use and configure Pi Agent IDE,” or “Configure Pi Agent IDE for my workflow.” The agent can explain the relevant settings without changing them. Before configuring it, the agent asks whether to save changes for this project or globally unless you already specified the scope.
+
+For a specific change, try: “Show tool results from Codemode for this project only; leave other settings unchanged.” You can also use `/skill:configure-agent-ide` with your request. Reload after saving changes.
+
+For development only, enable **Developer mode** in Behavior and reload to make `/agent-ide-tip` available. It shows the startup setup hint again without resetting its one-time state or sending its text to the model. Developer mode defaults to Off; normal startup hints do not depend on it.
 
 See [Configuration](./configuration.md) for storage paths, command-line overrides and deeper setup details.
