@@ -994,13 +994,13 @@ add(
 add(
   "write-unknown-effects",
   ["edit.write-failure-recovery", "compose.uncertain-write-read"],
-  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns LINEAR_SAVED_CONTENT_MISMATCH with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, catch the failed Write so the Read still runs. This headless case checks recovery, not the TUI failure panel.",
+  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, catch the failed Write so the Read still runs. This headless case checks recovery, not the TUI failure panel.",
   [
     {
       tool: "write",
       args: { path: "fixture://saved-mismatch/content", content: "changed\n" },
       error: true,
-      contains: "LINEAR_SAVED_CONTENT_MISMATCH",
+      contains: "PROVIDER_SAVE_VERIFICATION_FAILED",
       excludes: "No file was changed.",
     },
     {

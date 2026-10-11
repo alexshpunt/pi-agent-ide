@@ -637,7 +637,7 @@ describe("mutation renderer lifecycle", () => {
       });
       registerMutationRenderers(api);
       if (renderer?.renderResult === undefined) throw new Error("Missing write renderer");
-      const source = "linear://fixture/document/saved/content";
+      const source = "fixture://saved-mismatch/content";
       const raw = "private transport diagnostic and stack trace; bearer PRIVATE_TOKEN";
       const component = renderer.renderResult(
         {
@@ -680,8 +680,8 @@ describe("mutation renderer lifecycle", () => {
       );
       const output = component.render(60).join("\n");
       expect(output).toContain("Effects unknown · edit failed");
-      expect(output).toContain("saved content differs from requested text");
-      expect(output).toContain("LINEAR_SAVED_CONTENT_MISMATCH");
+      expect(output).toContain("resource write failed");
+      expect(output).not.toContain("LINEAR_SAVED_CONTENT_MISMATCH");
       expect(output).toContain("Read the affected resource before retrying.");
       expect(output).not.toContain("private transport diagnostic");
       expect(output).not.toContain("stack trace");

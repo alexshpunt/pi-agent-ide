@@ -953,15 +953,6 @@ function wholeFileOperationSummary(details: unknown):
 
 function wholeFileFailureCause(code: string): string {
   switch (code) {
-    case "LINEAR_SAVED_CONTENT_MISMATCH": {
-      return "saved content differs from requested text (LINEAR_SAVED_CONTENT_MISMATCH)";
-    }
-    case "LINEAR_SAVED_FIELD_MISMATCH": {
-      return "saved field differs from requested value (LINEAR_SAVED_FIELD_MISMATCH)";
-    }
-    case "LINEAR_STALE_CONTENT": {
-      return "resource changed since it was read (LINEAR_STALE_CONTENT)";
-    }
     case "WRITE_FAILED": {
       return "resource write failed";
     }
@@ -1020,16 +1011,8 @@ function userFacingFailure(
 ): string {
   const causes = new Set(
     details?.results?.flatMap((result) =>
-      (result.data.errors ?? []).map((error) => {
-        // Only recognized public codes are decoded; provider messages can contain private data.
-        const providerCode =
-          error.code === "WRITE_FAILED"
-            ? /\bLINEAR_(?:SAVED_CONTENT_MISMATCH|SAVED_FIELD_MISMATCH|STALE_CONTENT)\b/u.exec(
-                error.reason ?? "",
-              )?.[0]
-            : undefined;
-        return wholeFileFailureCause(providerCode ?? error.code ?? "");
-      }),
+      // Provider reasons can contain private data; decode only public editor failure codes.
+      (result.data.errors ?? []).map((error) => wholeFileFailureCause(error.code ?? "")),
     ),
   );
   return [
