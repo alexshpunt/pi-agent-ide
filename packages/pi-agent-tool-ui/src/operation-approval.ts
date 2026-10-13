@@ -1,21 +1,77 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-/** Versioned, synchronous request channel; decisions are returned through accept(), not the bus. */
+/** Versioned synchronous channel; decisions return through accept(), not the bus. */
 export const OPERATION_APPROVAL_EVENT = "pi-agent-ide/operation-approval/v1";
-
+/** Non-context branch entry recording a user-selected session permission. */
+export const OPERATION_PERMISSION_ENTRY = "pi-agent-ide/operation-permission/v1";
 const APPROVAL_SERVICE_EVENT = "pi-agent-ide/operation-approval/service/v1";
 
-/** Install once per event bus, including standalone editor loading; shutdown refuses all waits. */
-export function registerOperationApproval(pi: ExtensionAPI): void {
-  const state = { installed: false };
-  pi.events.emit(APPROVAL_SERVICE_EVENT, () => {
-    state.installed = true;
+export interface OperationApprovalContext {
+  readonly cwd: string;
+  readonly hasUI: boolean;
+  readonly mode: ExtensionContext["mode"];
+  readonly ui: Pick<ExtensionContext["ui"], "select">;
+  readonly sessionManager?: Pick<ExtensionContext["sessionManager"], "getBranch">;
+}
+
+/** The caller owns risk classification, category identity, target text and its one-operation permit. */
+export interface OperationApprovalRequest {
+  /** Stable extension identity; permissions never cross owners. */
+  readonly owner: string;
+  /** Stable dialog category, independent of the target path or URL. */
+  readonly category: string;
+  /** Registered boolean setting used by the host's persistent YOLO policy. */
+  readonly yoloSetting?: string;
+  readonly title: string;
+  readonly message: string;
+  readonly signal?: AbortSignal;
+}
+
+/** Host policy is separate from the provider's technical guards and from session grants. */
+export interface OperationApprovalOptions {
+  readonly isAllowed?: (
+    request: OperationApprovalRequest,
+    context: OperationApprovalContext,
+  ) => Promise<boolean>;
+  readonly remember?: (request: OperationApprovalRequest) => void;
+}
+
+interface ApprovalCall {
+  readonly context: OperationApprovalContext;
+  readonly request: OperationApprovalRequest;
+  accept(decision: Promise<boolean>): void;
+}
+type Events = Pick<ExtensionAPI["events"], "emit">;
+interface ApprovalService {
+  handle(data: unknown): void;
+  setPolicy(policy: OperationApprovalOptions["isAllowed"]): void;
+  dispose(): void;
+}
+
+/** Install once per event bus; a later IDE host can attach policy to a standalone editor's service. */
+export function registerOperationApproval(
+  pi: ExtensionAPI,
+  options: Pick<OperationApprovalOptions, "isAllowed"> = {},
+): void {
+  let installed: ApprovalService | undefined;
+  pi.events.emit(APPROVAL_SERVICE_EVENT, (service: ApprovalService) => {
+    installed = service;
   });
-  if (state.installed) return;
-  const service = createOperationApproval(pi.events);
+  if (installed !== undefined) {
+    if (options.isAllowed !== undefined) installed.setPolicy(options.isAllowed);
+    return;
+  }
+  const service = createOperationApproval(pi.events, {
+    ...options,
+    remember: (request) =>
+      pi.appendEntry(OPERATION_PERMISSION_ENTRY, {
+        owner: request.owner,
+        category: request.category,
+      }),
+  });
   const unsubscribeRequest = pi.events.on(OPERATION_APPROVAL_EVENT, service.handle);
   const unsubscribeService = pi.events.on(APPROVAL_SERVICE_EVENT, (probe) => {
-    (probe as () => void)();
+    (probe as (value: ApprovalService) => void)(service);
   });
   pi.on("session_shutdown", () => {
     unsubscribeRequest();
@@ -24,37 +80,15 @@ export function registerOperationApproval(pi: ExtensionAPI): void {
   });
 }
 
-export interface OperationApprovalContext {
-  readonly hasUI: boolean;
-  readonly mode: ExtensionContext["mode"];
-  readonly ui: Pick<ExtensionContext["ui"], "confirm">;
-}
-
-/** The caller owns risk classification, exact target text and the resulting one-operation permit. */
-export interface OperationApprovalRequest {
-  readonly title: string;
-  readonly message: string;
-  readonly signal?: AbortSignal;
-}
-
-interface ApprovalCall {
-  readonly context: OperationApprovalContext;
-  readonly request: OperationApprovalRequest;
-  accept(decision: Promise<boolean>): void;
-}
-
-type Events = Pick<ExtensionAPI["events"], "emit">;
-
-/**
- * Ask the IDE's shared service for one decision. No UI, cancellation or a missing service refuses.
- * Call only after your policy requires approval; this API does not grant or persist permissions.
- */
+/** Request permission through the shared service. Missing service and cancellation refuse. */
 export async function confirmOperation(
   events: Events | undefined,
   context: OperationApprovalContext,
   request: OperationApprovalRequest,
 ): Promise<boolean> {
-  if (!context.hasUI || request.signal?.aborted || events === undefined) return false;
+  if (request.signal?.aborted || events === undefined) return false;
+  if (!request.owner.trim() || !request.category.trim())
+    throw new Error("Approval owner and category are required");
   let decision: Promise<boolean> | undefined;
   events.emit(OPERATION_APPROVAL_EVENT, {
     context,
@@ -74,16 +108,17 @@ interface Pending {
   readonly cleanup: () => void;
 }
 
-/** One session-owned queue shared by all providers, including separately loaded packages. */
-export function createOperationApproval(events: Events): {
-  handle(data: unknown): void;
-  dispose(): void;
-} {
+/** One session-owned queue. Each request reads only the current branch's remembered grants. */
+export function createOperationApproval(
+  events: Events,
+  options: OperationApprovalOptions = {},
+): ApprovalService {
   const queue: Pending[] = [];
   let current: Pending | undefined;
   let draining = false;
   let closed = false;
   let blocked = false;
+  let isAllowed = options.isAllowed;
 
   function setBlocked(active: boolean): void {
     if (blocked === active) return;
@@ -94,10 +129,24 @@ export function createOperationApproval(events: Events): {
         active ? { active: true, label: "Waiting for operation approval" } : { active: false },
       );
     } catch {
-      // An advisory header listener must never change a user's decision.
+      // Advisory header listeners must never change permission.
     }
   }
 
+  function remembered(call: ApprovalCall): boolean {
+    return (
+      call.context.sessionManager?.getBranch().some((entry) => {
+        if (entry.type !== "custom" || entry.customType !== OPERATION_PERMISSION_ENTRY)
+          return false;
+        const data = entry.data as { owner?: unknown; category?: unknown } | null;
+        return data?.owner === call.request.owner && data.category === call.request.category;
+      }) ?? false
+    );
+  }
+
+  function active(pending: Pending): boolean {
+    return !closed && !pending.controller.signal.aborted;
+  }
   async function drain(): Promise<void> {
     draining = true;
     while (queue.length > 0) {
@@ -105,25 +154,50 @@ export function createOperationApproval(events: Events): {
       if (pending === undefined) break;
       current = pending;
       let approved = false;
-      if (!closed && !pending.controller.signal.aborted) {
-        setBlocked(pending.call.context.mode === "tui");
-        approved = await show(pending.call, pending.controller.signal);
+      try {
+        if (active(pending)) {
+          const call = pending.call;
+          approved = remembered(call);
+          if (!approved && isAllowed !== undefined) {
+            const policy = isAllowed;
+            approved =
+              (await untilCancelled(pending.controller.signal, () =>
+                policy(call.request, call.context),
+              )) === true;
+          }
+          if (!approved && call.context.hasUI && active(pending)) {
+            setBlocked(call.context.mode === "tui");
+            const canRemember =
+              options.remember !== undefined && call.context.sessionManager !== undefined;
+            const answer = await show(call, pending.controller.signal, canRemember);
+            approved = answer === "Allow once" || answer === "Allow for session";
+            if (answer === "Allow for session" && active(pending)) {
+              options.remember?.(call.request);
+            }
+          }
+        }
+      } catch {
+        // A failed policy, session write or dialog cannot grant permission or strand the queue.
+        approved = false;
       }
       current = undefined;
       pending.cleanup();
-      if (queue.length === 0 || queue[0]?.call.context.mode !== "tui") setBlocked(false);
-      pending.resolve(approved && !closed && !pending.controller.signal.aborted);
+      setBlocked(false);
+      pending.resolve(approved && active(pending));
     }
     setBlocked(false);
     draining = false;
   }
 
   return {
+    setPolicy(policy) {
+      isAllowed = policy;
+    },
     handle(data) {
       const call = data as ApprovalCall;
       call.accept(
         new Promise<boolean>((resolve) => {
-          if (closed || !call.context.hasUI || call.request.signal?.aborted) {
+          if (closed || call.request.signal?.aborted) {
             resolve(false);
             return;
           }
@@ -162,26 +236,36 @@ export function createOperationApproval(events: Events): {
   };
 }
 
-function show(call: ApprovalCall, signal: AbortSignal): Promise<boolean> {
-  return new Promise((resolve) => {
-    const finish = (answer: boolean): void => {
+function show(
+  call: ApprovalCall,
+  signal: AbortSignal,
+  canRemember: boolean,
+): Promise<string | undefined> {
+  const title = `${call.request.title}\n${call.request.message}\nScope: ${call.request.owner} / ${call.request.category}\nDisable confirmations in /agent-ide-settings (YOLO).`;
+  const choices = ["Deny", "Allow once", ...(canRemember ? ["Allow for session"] : [])];
+  return untilCancelled(signal, () => call.context.ui.select(title, choices, { signal }));
+}
+
+function untilCancelled<T>(signal: AbortSignal, action: () => Promise<T>): Promise<T | undefined> {
+  return new Promise((resolve, reject) => {
+    const finish = (answer?: T): void => {
       signal.removeEventListener("abort", abort);
-      resolve(answer && !signal.aborted);
+      resolve(signal.aborted ? undefined : answer);
     };
-    const abort = (): void => finish(false);
+    const abort = (): void => finish();
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) {
-      finish(false);
+      finish();
       return;
     }
+    const fail = (error: unknown): void => {
+      signal.removeEventListener("abort", abort);
+      reject(error);
+    };
     try {
-      void call.context.ui.confirm(call.request.title, call.request.message, { signal }).then(
-        // oxlint-disable-next-line typescript/no-unnecessary-boolean-literal-compare -- only an explicit yes grants permission; dismissal stays false
-        (answer) => finish(answer === true),
-        () => finish(false),
-      );
-    } catch {
-      finish(false);
+      void action().then(finish, fail);
+    } catch (error) {
+      fail(error);
     }
   });
 }
