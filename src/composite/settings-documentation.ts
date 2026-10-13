@@ -37,7 +37,7 @@ export function createIdeSettingsDocumentation(
         .join(",\n");
       return `# IDE settings
 
-This catalog describes supported settings, not current saved values or live runtime state. It is generated from the registrations used by /agent-ide-settings. Read both configuration scopes to inspect overrides. Reload or restart applies saved changes; CLI flags may override them for an invocation.
+This catalog describes supported settings, not current saved values or live runtime state. It is generated from the registrations used by /agent-ide-settings. Read both configuration scopes to inspect overrides. Reload or restart applies module and startup-only changes; built-in CLI flags may override their saved defaults for an invocation.
 
 ## Configuration scopes
 
@@ -51,7 +51,7 @@ This catalog describes supported settings, not current saved values or live runt
 - Existing noAnimations and noPostProcessing booleans still work. Their registered flags are pi-agent-ide-no-animations and pi-agent-ide-no-post-processing. Within each scope a flags entry wins over its corresponding legacy boolean. When changing or resetting that flag, remove its legacy boolean in the same scope, as the menu does.
 - Text preference values are strings, not JSON numbers. An empty default means no override; saved strings must be non-empty. Read each description for valid ranges. Do not treat storage validation as validation of every preference value.
 - External settings use these same scopes and storage maps. Their boolean registrations add menu controls, not CLI switches.
-- YOLO skips existing operation confirmation dialogs only; safety checks and remote permissions remain in force. The common setting is pi-agent-ide-yolo. An explicit extension YOLO value wins; Default inherits the common setting. Remembered session permissions are separate from persistent YOLO settings.
+- YOLO skips existing operation confirmation dialogs only; safety checks and remote permissions remain in force. The common setting is pi-agent-ide-yolo. An explicit extension YOLO value wins; Default inherits the common setting. Remembered session permissions are separate from persistent YOLO settings. Saved YOLO values are read for each request and affect following operations without reloading; they do not remove session grants.
 
 ## Registered settings
 
