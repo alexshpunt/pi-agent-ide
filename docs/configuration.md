@@ -4,9 +4,9 @@
 
 Open `/agent-ide-settings` inside Pi and choose Project or Global. The Features tab lists human-readable module names and descriptions. The Behavior tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
 
-Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload; declining leaves changes pending until reload or startup. The command stays available even when every optional module is disabled.
+Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload for startup-only settings. YOLO policy reads saved values for each request, so its changes affect following operations without reload. The command stays available even when every optional module is disabled.
 
-Feature overrides are stored under `flags` in `extensions.json`, keyed by their CLI name. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
+Boolean overrides are stored under `flags` in `extensions.json`, keyed by their registered setting ID. Choice and text values are stored under `preferences`. External settings use the same menu and scopes but do not add CLI switches. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
 
 Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Capture full displays**. Both default to off. Its text settings control the default sequence duration, frame interval, image scale, and a comma-separated list of exact executable file names that may be captured without arbitrary-window access. Press Enter to edit a text value, Enter again to commit it, then Ctrl+S to save.
 
@@ -16,15 +16,31 @@ The UI tab contains separate presentation settings for diffs, Read, Search, and 
 
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
-New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Behavior or UI tab; no separate menu entry is needed.
+Built-in boolean options that need a Pi CLI flag use `createFeatureFlags().register` with an ID, human name, description and default. External extensions use the [public settings API](extensions.md#settings) for boolean, choice and text settings; no separate menu entry or storage implementation is needed.
 
 Obsolete IDs in `disabled` are ignored. They do not stop IDE startup. Malformed configuration and unknown IDs in `enabled` still report configuration errors.
 
 Pi Agent IDE enables every built-in extension by default. Project and global config files can disable built-ins by their stable IDs and turn on built-ins that are off by default.
 
+## Operation confirmations and YOLO
+
+Open `/agent-ide-settings`, choose Project or Global, and find the YOLO controls in the Behavior tab:
+
+- **YOLO: allow all operations** (`pi-agent-ide-yolo`) skips existing operation dialogs from participating extensions.
+- **YOLO: filesystem operations** (`pi-agent-ide-filesystem-yolo`) controls filesystem dialogs separately.
+- Loaded extensions can register their own controls, including GitHub and Linear YOLO.
+
+These YOLO settings default to Off. Project overrides Global for each key. An explicit extension On or Off wins over the common setting. Default removes only the selected scope's override: it inherits an extension value from the lower scope, if present, then the common YOLO setting. Set the filesystem override to Off to disable its persistent permission even when common YOLO is On; a remembered session grant still applies. Save with Ctrl+S; the menu offers a reload.
+
+A required operation dialog offers **Deny**, **Allow once**, and **Allow for session**, and points to `/agent-ide-settings`. Deny or dismissal leaves the operation unapplied. Allow once covers only the current request. Allow for session covers later requests with the same extension owner and dialog category, including other targets. It is available when the host can store session entries.
+
+Session grants survive `/reload` and reopening the saved Pi session. They follow its current branch; a new independent session or a branch without the grant asks again. Turning YOLO Off does not remove a remembered session grant.
+
+YOLO and session grants skip confirmation only. Protected paths, hooks, target revalidation and remote authorization still apply. Without UI, an operation that needs confirmation is refused unless YOLO or a session grant permits it. YOLO does not add approval gates to previously ungated routes.
+
 ## Agent-assisted settings
 
-Ask the agent to explain Pi Agent IDE or configure it for your tasks. For example: “Help me configure Pi Agent IDE for my workflow.” You can also run `/skill:configure-agent-ide` with your request. For an explanation, the agent describes the relevant settings without changing them. Before making changes, it asks whether to use Project or Global scope unless you already specified it. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the agreed settings. Default restores inheritance; saved changes still need reload or restart.
+Ask the agent to explain Pi Agent IDE or configure it for your tasks. For example: “Help me configure Pi Agent IDE for my workflow.” You can also run `/skill:configure-agent-ide` with your request. For an explanation, the agent describes the relevant settings without changing them. Before making changes, it asks whether to use Project or Global scope unless you already specified it. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the agreed settings. Default restores inheritance. Saved YOLO changes affect following operations; startup-only changes need reload or restart.
 
 The catalog lists supported settings and defaults, not current effective values. When documentation is disabled, the skill can inspect the installed configuration guide and registrations without enabling unrelated modules.
 
