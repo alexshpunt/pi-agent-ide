@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { confirmOperation } from "#src/api/approval.js";
+import { registerAgentIdeSettings } from "#src/api/settings.js";
 
 interface BlockedState {
   readonly active: boolean;
@@ -22,6 +23,31 @@ interface ApprovalState {
 
 /** Scripted answers at Pi's host UI boundary; no approval flag is supplied to a production tool. */
 export default function operationApprovalFixture(pi: ExtensionAPI): void {
+  registerAgentIdeSettings(pi, "fixture", [
+    {
+      id: "fixture-yolo",
+      kind: "boolean",
+      name: "Fixture YOLO",
+      description: "Test-only operation approval setting.",
+      default: false,
+    },
+  ]);
+  pi.registerCommand("approval_yolo_probe", {
+    description: "Test-only effective YOLO policy probe.",
+    async handler(_args, context) {
+      const approved = await confirmOperation(pi.events, context, {
+        owner: "fixture",
+        category: "yolo",
+        yoloSetting: "fixture-yolo",
+        title: "Confirm YOLO fixture",
+        message: "harmless policy probe",
+      });
+      await writeFile(
+        path.join(context.cwd, "yolo-result.json"),
+        JSON.stringify({ approved, hasUI: context.hasUI }),
+      );
+    },
+  });
   const state: ApprovalState = { blocked: [], opened: [], effects: [] };
   pi.events.on("herdr:blocked", (event) => {
     state.blocked.push(event as BlockedState);
@@ -66,7 +92,8 @@ export default function operationApprovalFixture(pi: ExtensionAPI): void {
       });
       let firstFinished = false;
       let secondOpenedAfterFirst = false;
-      const confirm: ExtensionContext["ui"]["confirm"] = async (_title, message) => {
+      const select: ExtensionContext["ui"]["select"] = async (title) => {
+        const message = title.split("\n")[1] ?? "";
         state.opened.push({
           message,
           blockedAtOpen: state.blocked.at(-1),
@@ -76,22 +103,24 @@ export default function operationApprovalFixture(pi: ExtensionAPI): void {
         if (target === "throw") throw Error("Controlled dialog failure");
         if (target === "abort") {
           controller.abort();
-          return true;
+          return "Allow once";
         }
         if (target === "parallel") {
           if (message.endsWith("first"))
-            return new Promise<boolean>((resolve) => {
-              resolveFirst = resolve;
+            return new Promise<string | undefined>((resolve) => {
+              resolveFirst = (value) => resolve(value ? "Allow once" : "Deny");
               markFirstReady();
             });
           secondOpenedAfterFirst = firstFinished;
-          return false;
+          return "Deny";
         }
-        return message.endsWith("-yes");
+        return message.endsWith("-yes") ? "Allow once" : "Deny";
       };
-      const approvalContext = { hasUI: context.hasUI, mode: context.mode, ui: { confirm } };
+      const approvalContext = { ...context, ui: { select } };
       const ask = (message: string): Promise<boolean> =>
         confirmOperation(pi.events, approvalContext, {
+          owner: "fixture",
+          category: "controlled",
           title: "Confirm fixture operation",
           message,
           signal: ownedSignal,
@@ -139,10 +168,14 @@ export default function operationApprovalFixture(pi: ExtensionAPI): void {
     async handler(_args, context) {
       const cwd = context.cwd;
       const current = confirmOperation(pi.events, context, {
+        owner: "fixture",
+        category: "controlled",
         title: "Confirm current fixture",
         message: "cleanup-current",
       });
       const queued = confirmOperation(pi.events, context, {
+        owner: "fixture",
+        category: "controlled",
         title: "Confirm queued fixture",
         message: "cleanup-queued",
       });
@@ -153,6 +186,21 @@ export default function operationApprovalFixture(pi: ExtensionAPI): void {
       }
       await persist(cwd);
       await writeFile(path.join(cwd, "approval-cleanup-result.json"), JSON.stringify(decisions));
+    },
+  });
+  pi.registerCommand("approval_session_probe", {
+    description: "Test-only session grant lifecycle probe.",
+    async handler(category, context) {
+      const approved = await confirmOperation(pi.events, context, {
+        owner: "fixture",
+        category: category || "delete",
+        title: "Confirm session fixture",
+        message: "harmless session probe",
+      });
+      await writeFile(
+        path.join(context.cwd, "session-permission-result.json"),
+        JSON.stringify({ approved }),
+      );
     },
   });
   let response = 0;

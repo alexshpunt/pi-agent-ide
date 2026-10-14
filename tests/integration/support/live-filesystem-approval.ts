@@ -5,6 +5,20 @@ import { Type } from "typebox";
 /** Load explicitly for live checks; forwards inspect_tui pixels while a real approval waits. */
 export default function (pi: ExtensionAPI): void {
   pi.registerTool({
+    name: "settings_viewport_probe",
+    label: "Settings viewport probe",
+    description:
+      "Open the real Agent IDE settings menu for an explicitly approved live check, then capture the human Herdr viewport. Choose Global and the Behavior tab within ten seconds; no model request is sent.",
+    parameters: Type.Object({}),
+    async execute(_id, _input, signal, _update, ctx) {
+      if (!ctx.hasUI || !pi.getCommands().some((command) => command.name === "agent-ide-settings"))
+        throw new Error("Agent IDE settings command with UI is required");
+      pi.sendUserMessage("/agent-ide-settings", { expandPromptTemplates: true });
+      await pause(10000, undefined, { signal });
+      return (await ctx.executeTool("inspect_tui", {}, { signal })).result;
+    },
+  });
+  pi.registerTool({
     name: "filesystem_approval_probe",
     label: "Filesystem approval probe",
     description:

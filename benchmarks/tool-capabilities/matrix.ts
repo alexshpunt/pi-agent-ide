@@ -76,6 +76,10 @@ const groups: [string[], string[]][] = [
   ],
   [["compose.approval-refusal-read"], ["delete-policy-gates", "directory-transfer-gates"]],
   [
+    ["edit.approval-yolo-delete", "edit.approval-yolo-move", "compose.yolo-protected-target"],
+    ["filesystem-yolo"],
+  ],
+  [
     ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
     ["delete-objects"],
   ],

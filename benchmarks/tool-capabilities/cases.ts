@@ -169,6 +169,39 @@ add(
   },
 );
 add(
+  "filesystem-yolo",
+  ["edit.approval-yolo-delete", "edit.approval-yolo-move", "compose.yolo-protected-target"],
+  "This fixture explicitly enables filesystem YOLO. Delete the tracked directory delete-tree and Move the tracked directory move-tree to moved-tree without a user UI. YOLO skips approval only: deleting .git/config must still be refused. Read moved-tree/data to confirm MOVE. In Codemode catch the protected-target refusal so the read still runs.",
+  [
+    { tool: "delete", args: { path: "delete-tree" }, contains: "delete: applied" },
+    { tool: "move", args: { path: "move-tree", target: "moved-tree" }, contains: "move: applied" },
+    {
+      tool: "delete",
+      args: { path: ".git/config" },
+      error: true,
+      contains: "DELETE_PROTECTED_TARGET",
+    },
+    { tool: "read", args: { path: "moved-tree/data" }, contains: "MOVE" },
+  ],
+  {
+    files: {
+      "delete-tree/data": "DELETE\n",
+      "move-tree/data": "MOVE\n",
+      ".pi/pi-agent-ide/extensions.json": JSON.stringify({
+        flags: { "pi-agent-ide-filesystem-yolo": true },
+      }),
+    },
+    git: true,
+    expected: {
+      "delete-tree": null,
+      "delete-tree/data": null,
+      "move-tree": null,
+      "move-tree/data": null,
+      "moved-tree/data": "MOVE\n",
+    },
+  },
+);
+add(
   "delete-policy-gates",
   [
     "edit.delete-policy-refusal",

@@ -17,7 +17,7 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   enableNativeCodemode,
   withTempWorkspace,
@@ -165,12 +165,12 @@ test.each(["before", "after"] as const)(
         expect(dialog.mutationAtOpen).toBe(false);
       }
       expect(state.blocked.map(({ active }) => active)).toEqual(
-        Array.from({ length: 7 }, () => [true, false]).flat(),
+        Array.from({ length: 8 }, () => [true, false]).flat(),
       );
       const parallel = getToolExecutionDetails(getToolExecution(run, "parallel")) as ProbeDetails;
       expect(parallel).toMatchObject({ decisions: [true, false], secondOpenedAfterFirst: true });
       expect(parallel.opened).toHaveLength(2);
-      expect(parallel.blocked.map(({ active }) => active)).toEqual([true, false]);
+      expect(parallel.blocked.map(({ active }) => active)).toEqual([true, false, true, false]);
       expect(run.tuiRenderedOutput).toContain("parallel: applied");
       expect(run.tuiRenderedOutput).toContain("Shared operation approval fixture finished.");
       expect(run.tuiRenderedOutput).not.toContain("Failed to load extension");
@@ -199,7 +199,7 @@ test("runtime shutdown refuses the active and queued approval and closes its wai
       additionalExtensionPaths: [ide, fixture],
     });
     let dispose: (() => void) | undefined;
-    let lateAnswer: ((answer: boolean) => void) | undefined;
+    let lateAnswer: ((answer: string) => void) | undefined;
     let dialogSignal: AbortSignal | undefined;
     let markOpened: () => void = () => {};
     const opened = new Promise<void>((resolve) => {
@@ -223,11 +223,11 @@ test("runtime shutdown refuses the active and queued approval and closes its wai
         mode: "tui",
         uiContext: {
           ...baseUI,
-          confirm(_title, message, options) {
-            messages.push(message);
+          select(title, _choices, options) {
+            messages.push(title.split("\n")[1] ?? "");
             dialogSignal = options?.signal;
             markOpened();
-            return new Promise<boolean>((resolve) => {
+            return new Promise<string>((resolve) => {
               lateAnswer = resolve;
             });
           },
@@ -264,12 +264,167 @@ test("runtime shutdown refuses the active and queued approval and closes its wai
         JSON.stringify(state, null, 2),
       );
     } finally {
-      lateAnswer?.(true);
+      lateAnswer?.("Allow once");
       dispose?.();
     }
   });
 }, 90_000);
+test("real Pi restores session permission after runtime reload and saved-session reopening", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const settingsManager = SettingsManager.inMemory({
+      compaction: { enabled: false },
+      retry: { enabled: false },
+    });
+    const sessionDirectory = path.join(cwd, "sessions");
+    const manager = SessionManager.create(cwd, sessionDirectory);
+    manager.appendMessage({
+      role: "user",
+      content: "Permission persistence fixture.",
+      timestamp: Date.now(),
+    });
+    async function launch(sessionManager: SessionManager, answer: string) {
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir: path.join(cwd, "agent"),
+        settingsManager,
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+        additionalExtensionPaths: [ide, fixture],
+      });
+      await loader.reload();
+      expect(loader.getExtensions().errors).toEqual([]);
+      const { session } = await createAgentSession({
+        cwd,
+        settingsManager,
+        resourceLoader: loader,
+        sessionManager,
+        tools: [],
+      });
+      const select = vi.fn(async () => answer);
+      await session.bindExtensions({
+        mode: "tui",
+        uiContext: { ...session.extensionRunner.createContext().ui, select },
+      });
+      return { session, select };
+    }
+    const first = await launch(manager, "Allow for session");
+    try {
+      await first.session.prompt("/approval_session_probe delete");
+      expect(first.select).toHaveBeenCalledOnce();
+      const grants = manager
+        .getBranch()
+        .filter(
+          (entry) =>
+            entry.type === "custom" && entry.customType === "pi-agent-ide/operation-permission/v1",
+        );
+      expect(grants).toHaveLength(1);
+      await first.session.extensionRunner.emit({ type: "session_shutdown", reason: "reload" });
+    } finally {
+      first.session.dispose();
+    }
+    const restored = await launch(manager, "Deny");
+    try {
+      await restored.session.prompt("/approval_session_probe delete");
+      expect(restored.select).not.toHaveBeenCalled();
+      expect(
+        JSON.parse(await readFile(path.join(cwd, "session-permission-result.json"), "utf8")),
+      ).toEqual({ approved: true });
+      await restored.session.prompt("/approval_session_probe merge");
+      expect(restored.select).toHaveBeenCalledOnce();
+      expect(
+        JSON.parse(await readFile(path.join(cwd, "session-permission-result.json"), "utf8")),
+      ).toEqual({ approved: false });
+    } finally {
+      restored.session.dispose();
+    }
+    const savedFile = manager.getSessionFile();
+    if (!savedFile) throw new Error("Persistent session did not expose its file");
+    const reopened = await launch(SessionManager.open(savedFile, sessionDirectory), "Deny");
+    try {
+      await reopened.session.prompt("/approval_session_probe delete");
+      expect(reopened.select).not.toHaveBeenCalled();
+      expect(
+        JSON.parse(await readFile(path.join(cwd, "session-permission-result.json"), "utf8")),
+      ).toEqual({ approved: true });
+    } finally {
+      reopened.session.dispose();
+    }
+    const fresh = await launch(SessionManager.inMemory(cwd), "Deny");
+    try {
+      await fresh.session.prompt("/approval_session_probe delete");
+      expect(fresh.select).toHaveBeenCalledOnce();
+      expect(
+        JSON.parse(await readFile(path.join(cwd, "session-permission-result.json"), "utf8")),
+      ).toEqual({ approved: false });
+    } finally {
+      fresh.session.dispose();
+    }
+  });
+}, 90_000);
 // RPC is dialog-capable. A print-bound SDK agent provides a genuinely unattended Pi context.
+test.each(["before", "after"] as const)(
+  "real Pi honors explicit YOLO overrides with client loaded %s IDE",
+  async (order) => {
+    await withTempWorkspace(async (cwd) => {
+      const settingsManager = SettingsManager.inMemory({
+        compaction: { enabled: false },
+        retry: { enabled: false },
+      });
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir: path.join(cwd, "agent"),
+        settingsManager,
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        noContextFiles: true,
+        additionalExtensionPaths: order === "before" ? [fixture, ide] : [ide, fixture],
+      });
+      await loader.reload();
+      expect(loader.getExtensions().errors).toEqual([]);
+      const { session } = await createAgentSession({
+        cwd,
+        settingsManager,
+        resourceLoader: loader,
+        sessionManager: SessionManager.inMemory(cwd),
+        tools: [],
+      });
+      try {
+        await session.bindExtensions({ mode: "print" });
+        const directory = path.join(cwd, ".pi/pi-agent-ide");
+        await mkdir(directory, { recursive: true });
+        for (const [common, override, approved] of [
+          [false, undefined, false],
+          [true, undefined, true],
+          [true, false, false],
+          [false, true, true],
+        ] as const) {
+          await writeFile(
+            path.join(directory, "extensions.json"),
+            JSON.stringify({
+              flags: {
+                "pi-agent-ide-yolo": common,
+                ...(override === undefined ? {} : { "fixture-yolo": override }),
+              },
+            }),
+          );
+          await session.prompt("/approval_yolo_probe");
+          expect(JSON.parse(await readFile(path.join(cwd, "yolo-result.json"), "utf8"))).toEqual({
+            approved,
+            hasUI: false,
+          });
+        }
+      } finally {
+        session.dispose();
+      }
+    });
+  },
+  90_000,
+);
 test("a real headless Pi agent refuses shared approval without UI, waiting events or effects", async () => {
   const source = await proof();
   await withTempWorkspace(async (cwd) => {

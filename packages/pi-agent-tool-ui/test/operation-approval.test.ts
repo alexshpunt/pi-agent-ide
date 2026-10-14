@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { expect, test, vi } from "vitest";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   createOperationApproval,
   confirmOperation,
@@ -26,12 +27,31 @@ function deferred() {
   return { promise, resolve };
 }
 function context(
-  confirm: OperationApprovalContext["ui"]["confirm"],
+  confirm: ExtensionContext["ui"]["confirm"],
   mode: OperationApprovalContext["mode"] = "tui",
 ): OperationApprovalContext {
-  return { mode, hasUI: mode === "tui" || mode === "rpc", ui: { confirm } };
+  return {
+    cwd: "/fixture",
+    mode,
+    hasUI: mode === "tui" || mode === "rpc",
+    ui: {
+      select: async (title, _choices, options) => {
+        const answer = await confirm(
+          title.split("\n")[0] ?? "",
+          title.split("\n")[1] ?? "",
+          options,
+        );
+        return answer ? "Allow once" : "Deny";
+      },
+    },
+  };
 }
-const request = { title: "Confirm operation", message: "Delete exact fixture target" };
+const request = {
+  owner: "fixture",
+  category: "delete",
+  title: "Confirm operation",
+  message: "Delete exact fixture target",
+};
 
 test.each([true, false])(
   "reports waiting before opening and clears after answer %s",
@@ -70,6 +90,8 @@ test("serializes different callers without clearing the next terminal approval",
   expect(await pendingA).toBe(true);
   expect(b).toHaveBeenCalledOnce();
   expect(events.emit.mock.calls.filter(([name]) => name === "herdr:blocked")).toEqual([
+    ["herdr:blocked", { active: true, label: "Waiting for operation approval" }],
+    ["herdr:blocked", { active: false }],
     ["herdr:blocked", { active: true, label: "Waiting for operation approval" }],
   ]);
   second.resolve(false);
@@ -181,7 +203,7 @@ test("headless, pre-aborted and missing-service calls do not open or mark a dial
   ).toBe(false);
   expect(await confirmOperation({ emit() {} }, context(confirm), request)).toBe(false);
   expect(confirm).not.toHaveBeenCalled();
-  expect(events.emit).not.toHaveBeenCalled();
+  expect(events.emit.mock.calls.filter(([name]) => name === "herdr:blocked")).toHaveLength(0);
   service.dispose();
 });
 

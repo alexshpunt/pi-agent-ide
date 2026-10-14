@@ -1,4 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { createAgentIdeSettingsRegistry } from "./settings-registry.js";
+import { registerAgentIdeSettings, readAgentIdeSetting } from "#src/api/settings.js";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
@@ -188,3 +191,81 @@ test.each([false, true])(
     expect(reload).toHaveBeenCalledTimes(confirmed ? 1 : 0);
   },
 );
+
+test("external settings registered after command creation save through the existing menu", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "external-settings-menu-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  vi.stubEnv("PI_CODING_AGENT_DIR", path.join(cwd, "agent"));
+  onTestFinished(() => {
+    vi.unstubAllEnvs();
+  });
+  let handler: ((args: string, ctx: ExtensionCommandContext) => Promise<void>) | undefined;
+  const emitter = new EventEmitter();
+  const pi: Pick<ExtensionAPI, "events" | "on" | "registerCommand"> = {
+    events: {
+      emit(name: string, data: unknown) {
+        emitter.emit(name, data);
+      },
+      on(name: string, listener: (data: unknown) => void) {
+        emitter.on(name, listener);
+        return () => {
+          emitter.off(name, listener);
+        };
+      },
+    },
+    on: vi.fn(),
+    registerCommand(_name, command) {
+      handler = command.handler;
+    },
+  };
+  const registry = createAgentIdeSettingsRegistry(pi, [], []);
+  registerModuleSettings(pi, registry.flags, registry.preferences);
+  registerAgentIdeSettings(pi, "fixture", [
+    {
+      kind: "boolean",
+      id: "external.toggle",
+      name: "Fixture toggle",
+      description: "Toggle fixture behavior",
+      default: false,
+    },
+  ]);
+  const custom: ExtensionCommandContext["ui"]["custom"] = async (factory) =>
+    new Promise((resolve, reject) => {
+      void Promise.resolve(
+        factory(
+          { requestRender() {} } as Parameters<typeof factory>[0],
+          {} as Parameters<typeof factory>[1],
+          {} as Parameters<typeof factory>[2],
+          resolve,
+        ),
+      )
+        .then((panel) => {
+          panel.handleInput?.("\t");
+          panel.handleInput?.("Fixture toggle");
+          panel.handleInput?.("\r");
+          panel.handleInput?.("\r");
+          panel.handleInput?.("\x13");
+        })
+        .catch(reject);
+    });
+  const ui: Partial<ExtensionCommandContext["ui"]> = {
+    select: vi.fn().mockResolvedValue("Project"),
+    custom,
+    confirm: async () => false,
+    notify() {},
+  };
+  const context: Partial<ExtensionCommandContext> = {
+    cwd,
+    hasUI: true,
+    ui: ui as ExtensionCommandContext["ui"],
+  };
+  await handler?.("", context as ExtensionCommandContext);
+  const saved = JSON.parse(
+    await readFile(path.join(cwd, ".pi", "pi-agent-ide", "extensions.json"), "utf8"),
+  ) as { flags: Record<string, boolean> };
+  expect(saved.flags).toEqual({ "external.toggle": true });
+  expect(await readAgentIdeSetting(pi.events, "external.toggle", cwd)).toEqual({
+    value: true,
+    overridden: true,
+  });
+});
