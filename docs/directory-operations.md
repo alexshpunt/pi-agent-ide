@@ -18,7 +18,7 @@ Only regular files, directories, and symlink objects are supported within source
 
 ## Move safety policy
 
-For directory and symlink Move sources, and existing directory destinations, the same before-delete hook runs before any removal or dialog. Denial or a thrown hook error blocks the transfer. Tracked or newly staged entries, external targets, missing Git worktrees, and failed Git checks require host approval. No available dialog means no transfer. Untracked internal targets need no dialog. There is no agent approval argument.
+For directory and symlink Move sources, and existing directory destinations, the same before-delete hook runs before any removal or dialog. Denial or a thrown hook error blocks the transfer. Tracked or newly staged entries, external targets, missing Git worktrees, and failed Git checks require host permission. The shared dialog supplies that permission unless user-configured YOLO or a matching session grant skips it. Without either permission or an available dialog, the transfer is refused. Untracked internal targets need no dialog. There is no agent approval argument. See [Operation confirmations and YOLO](configuration.md#operation-confirmations-and-yolo) for settings and session scope.
 
 Protected project roots, ancestors, filesystem roots, and current Git control paths cannot be moved or recursively overwritten. Parent symlinks are resolved for identity, containment, and project-boundary checks; the final link object is not dereferenced. The project boundary is the Git worktree containing Pi's cwd. Without Git, cwd and its ancestors remain protected.
 
