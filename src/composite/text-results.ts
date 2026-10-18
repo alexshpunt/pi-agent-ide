@@ -8,6 +8,7 @@ import type {
   ToolCallEventResult,
   AgentToolResult,
 } from "@earendil-works/pi-coding-agent";
+import type { JsonValue } from "@earendil-works/pi-ai";
 import { connectResultTargets, TempResourceStore } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
@@ -26,6 +27,31 @@ const sourceFields: Record<string, readonly string[]> = {
   undo: ["file"],
   diff: ["before", "after"],
 };
+
+/** Mutation tools whose resource providers may return a plain value to Codemode scripts. */
+const providerValueTools = new Set(["write", "replace", "insert", "delete", "copy", "move"]);
+/** Codemode resolves to the composition text, or to a provider's value when a semantic handler returns one. */
+const providerValueSchema = {
+  anyOf: [
+    { type: "string" },
+    {
+      type: "object",
+      description: "Value returned by a resource provider, such as a computer action outcome.",
+      additionalProperties: true,
+    },
+  ],
+};
+/** The value a semantic handler asked to return to scripts instead of text. */
+function providerValue(details: unknown): JsonValue | undefined {
+  const metadata = record(details) ? details.metadata : undefined;
+  const action = record(metadata) ? metadata.semanticAction : undefined;
+  const value = record(action) ? action.script : undefined;
+  // Semantic handler results are plain JSON receipts; keep the declared object shape.
+  return record(value) && !Array.isArray(value) ? (value as JsonValue) : undefined;
+}
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
 
 /** Keep tool records private while strings carry registered composition references. */
 export function createIdeTextResults(pi: ExtensionAPI) {
@@ -184,7 +210,15 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     names.add(definition.name);
     const publicDefinition = {} as typeof definition;
     const descriptors = Object.getOwnPropertyDescriptors(definition);
+    // Composed results stay strings; only provider values are structured.
     delete descriptors.outputSchema;
+    if (providerValueTools.has(definition.name))
+      descriptors.outputSchema = {
+        value: providerValueSchema,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      };
     const execute: typeof definition.execute = async (...args) => {
       const result = await definition.execute(...args).catch(async (error: unknown) => {
         const limited = await limitIdeOutput(
@@ -329,6 +363,7 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
       const shown = store.publish(outcome, readable, context.cwd, resources);
+      const value = providerValue(event.details);
       const parent = parents.get(event.toolCallId);
       parents.delete(event.toolCallId);
       if (parent !== undefined) {
@@ -340,6 +375,8 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           { type: "text" as const, text: shown },
           ...event.content.filter((block) => block.type !== "text"),
         ],
+        // Replacing content drops any other structured content, so scripts receive text unless a provider returned a value.
+        ...(value !== undefined && { structuredContent: value }),
       };
     });
   };

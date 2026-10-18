@@ -304,7 +304,13 @@ export function createTextTool<TParameters extends TSchema>(
                       content: [{ type: "text", text: action.summary }],
                       details: {
                         results: [],
-                        metadata: { semanticAction: { ...action.data, source: action.source } },
+                        metadata: {
+                          semanticAction: {
+                            ...action.data,
+                            source: action.source,
+                            ...(action.script !== undefined && { script: action.script }),
+                          },
+                        },
                       },
                     };
                   } catch (error) {
@@ -1509,6 +1515,9 @@ async function buildToolResult(
           semanticAction: {
             ...mutation.semanticAction.data,
             source: mutation.semanticAction.source,
+            ...(mutation.semanticAction.script !== undefined && {
+              script: mutation.semanticAction.script,
+            }),
           },
         },
       },
