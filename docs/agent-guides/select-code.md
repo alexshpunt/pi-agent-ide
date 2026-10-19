@@ -55,11 +55,14 @@ An absent optional part produces no selection. An unsupported part reports avail
 
 ```js
 const found = await tools.search({ path: "client.ts", query: "ast:send($$$ARGS)" });
-const call = await tools.select({ path: found, operation: { kind: "object", object: "call" } });
+const call = await tools.select({
+  path: found.result,
+  operation: { kind: "object", object: "call" },
+});
 const args = await tools.select({ path: call, operation: { kind: "part", part: "arguments" } });
 text(await tools.read({ path: args }));
 const number = await tools.search({ path: args, query: "10" });
-await tools.replace({ path: number, text: "20" });
+await tools.replace({ path: number.result, text: "20" });
 ```
 
 ### List element extents
@@ -100,13 +103,13 @@ Repeat the operation after interruption. Do not treat cancellation as an empty r
 
 ```js
 const candidates = await tools.search({ path: "notes.txt", query: "regex:<[^>]+>" });
-const protectedText = await tools.search({ path: candidates, query: "KEEP" });
+const protectedText = await tools.search({ path: candidates.result, query: "KEEP" });
 const editable = await tools.select({
-  path: candidates,
-  operation: { kind: "difference", scopes: protectedText },
+  path: candidates.result,
+  operation: { kind: "difference", scopes: protectedText.result },
 });
 const found = await tools.search({ path: editable, query: "old" });
-await tools.replace({ path: found, text: "new" });
+await tools.replace({ path: found.result, text: "new" });
 ```
 
 ## Composition limits
