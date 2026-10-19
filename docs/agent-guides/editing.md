@@ -22,7 +22,7 @@ Re-read after a mutation before reusing line, scope, or individual Search anchor
 
 ## Compose results
 
-Direct results are readable text with a leading system-result envelope. In Codemode, Search returns facts and a `result` string; pass that string to another source parameter. Other text results remain strings. The envelope is an internal reference, not file content. Do not edit it or write it into a file. Pass the unchanged result string to another source parameter; outside Codemode you can also pass its UUID. Store/load keeps results in the current session. Read `docs:search-code` for the Search facts.
+Direct results are readable text with a leading system-result envelope. In Codemode, Search returns facts and a `result` string. Other text results remain strings. The envelope is an internal reference, not file content. Do not edit it or write it into a file. Pass the unchanged result string to another source parameter; outside Codemode you can also pass its UUID. Store/load keeps results in the current session. Read `docs:search-code` for the Search facts.
 
 Read results select their requested source windows. Search results select exact matches. Select derives new boundaries. A displayed item reference selects that item; the whole result retains all selections, including those omitted from its preview.
 

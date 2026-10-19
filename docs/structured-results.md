@@ -4,7 +4,7 @@ IDE tools expose readable text in direct calls. In native Codemode, Search retur
 
 ## Composition
 
-Each result starts with a labelled system-result envelope containing a random UUID. It is not part of a file and must not be edited or inserted into file contents.
+Each readable result string starts with a labelled system-result envelope containing a random UUID. It is not part of a file and must not be edited or inserted into file contents.
 
 ```js
 const source = await tools.read({ path: "notes.txt" });
@@ -38,7 +38,7 @@ Each tool owns its validated record. Read, Search, Select, Diff, terminals, Git 
 
 The text registry stores only ownership, a digest of the issued text, source references, resource identities and whether the result can be consumed. It does not copy line arrays, removed file contents, image bytes or debugger records into a second ledger. Source ranges and snapshots remain in the source-target store.
 
-The unified registration adapter declares Search's small public Codemode schema and hides its private domain record. Public tool_result hooks register the source metadata, preserve readable content for direct calls, and attach only the approved script value as structuredContent. Other text tools keep their existing return behavior, including resource-provider values. This does not modify Pi, rewrite scripts, add VM methods, or recognize JSON in Codemode output.
+The unified registration adapter declares Search's small public Codemode schema and hides its private domain record. Public tool_result hooks register the source metadata, preserve readable content for direct calls, and attach only the public script value as structuredContent. Other text tools keep their existing return behavior, including resource-provider values. This does not modify Pi, rewrite scripts, add VM methods, or recognize JSON in Codemode output.
 
 Nested image blocks are delivered on the parent Codemode result; their bytes are not printed as text. Images remain ordinary native image content.
 Read's private native record contains image type and MIME metadata, not another copy of the image bytes. Large images therefore do not overflow the JSON-record budget while their native content stays unchanged.
