@@ -122,6 +122,7 @@ const groups: [string[], string[]][] = [
     ],
   ],
   [["compose.paired-sources-targets"], ["paired-copy"]],
+  [["edit.copy-destination-recovery"], ["copy-destination-recovery"]],
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
