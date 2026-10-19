@@ -1079,6 +1079,36 @@ add(
 );
 
 add(
+  "write-confirmed-readback",
+  ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
+  "Write changed plus a newline once to fixture://saved-canonicalized/content. This provider stores uppercase text, so the successful result and a fresh Read must expose CHANGED rather than the submitted text. Then Write updated plus a newline once to fixture://saved-readback/content. This provider acknowledges persistence but cannot read the saved body on that resource instance. Preserve its applied effect, catch the post-write readback error in Codemode, and Read the explicit resource freshly to inspect updated. Never replay either write; report saved for the second one, not unknown delivery.",
+  [
+    {
+      tool: "write",
+      args: { path: "fixture://saved-canonicalized/content", content: "changed\n" },
+      contains: "CHANGED",
+    },
+    { tool: "read", args: { path: "fixture://saved-canonicalized/content" }, contains: "CHANGED" },
+    {
+      tool: "write",
+      args: { path: "fixture://saved-readback/content", content: "updated\n" },
+      error: true,
+      contains: "READBACK",
+      excludes: "Write outcome unknown.",
+    },
+    { tool: "read", args: { path: "fixture://saved-readback/content" }, contains: "updated" },
+  ],
+  {
+    setup: "write-effects",
+    files: { "saved.md": "before\n" },
+    expected: {
+      "saved.md": "updated\n",
+      "attempts.jsonl": '{"content":"changed\\n"}\n{"content":"updated\\n"}\n',
+    },
+    answer: "saved",
+  },
+);
+add(
   "write-unknown-effects",
   ["edit.write-failure-recovery", "compose.uncertain-write-read"],
   "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, catch the failed Write so the Read still runs. This headless case checks recovery, not the TUI failure panel.",
