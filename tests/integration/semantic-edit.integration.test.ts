@@ -244,7 +244,7 @@ test("native symbol search honors its file scope before the result limit", async
               arguments: {
                 code:
                   textResultChecks +
-                  'const hit=await tools.search({query:"symbols:ScopedExample",path:"second.ts",limit:1}); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
+                  'const hit=await tools.search({query:"symbols:ScopedExample",path:"second.ts",limit:1}).then(value => value.result); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}).then(value => value.result); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
               },
             }),
           ],
@@ -281,7 +281,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
               arguments: {
                 code:
                   textResultChecks +
-                  'const found=await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}); check(matches(found).length===2,"Duplicate AST nodes lost"); const edited=await tools.replace({path:matches(found)[1],text:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
+                  'const found=await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}).then(value => value.result); check(matches(found).length===2,"Duplicate AST nodes lost"); const edited=await tools.replace({path:matches(found)[1],text:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
               },
             }),
           ],
@@ -318,10 +318,10 @@ test("native AST edits use fresh selections after automatic commits", async () =
               arguments: {
                 code: `
 const check=result=>{if(typeof result!=="string")throw Error("Expected readable result");return result;};
-const firstSearch=check(await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}));
+const firstSearch=check(await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}).then(value => value.result));
 check(await tools.replace({path:firstSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:'logger.info("same")'}));
 check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
-const secondSearch=check(await tools.search({query:"ast:logger.info($ARG)",path:"nodes.ts"}));
+const secondSearch=check(await tools.search({query:"ast:logger.info($ARG)",path:"nodes.ts"}).then(value => value.result));
 check(await tools.replace({path:secondSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:"done()"}));
 `,
               },

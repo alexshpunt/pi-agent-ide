@@ -98,13 +98,13 @@ const destinationRead = await tools.read({ path: ${JSON.stringify(`${root}/desti
 const destination = await tools.select({ path: destinationRead, operation: { kind: "sliceText", from: 0, to: 6 } });
 const copied = await tools.copy({ path: source, target: destination });
 text(copied);
-const copyScope = await tools.search({path:copied,query:"destination"});
+const copyScope = await tools.search({path:copied,query:"destination"}).then(value => value.result);
 if (!copyScope.includes("No matches found")) throw Error("Copy target widened: " + copyScope);
 const destinationFresh = await tools.read({ path: ${JSON.stringify(`${root}/destination.txt`)} });
 const point = await tools.select({ path: destinationFresh, operation: { kind: "sliceText", from: 5, to: 5 } });
 const moved = await tools.move({ path: source, target: point });
 text(moved);
-const moveScope = await tools.search({path:moved,query:"LOCAL"});
+const moveScope = await tools.search({path:moved,query:"LOCAL"}).then(value => value.result);
 const movedSpan = await tools.select({path:moveScope,operation:{kind:"sliceText",from:0}}); if (!movedSpan.includes("LOCAL")) throw Error(movedSpan);
 const empty = await tools.delete({path:[]});
 if (!/no changes/i.test(empty)) throw Error("Empty deletion is a no-op: " + empty);

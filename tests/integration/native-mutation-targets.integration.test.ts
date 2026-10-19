@@ -50,9 +50,9 @@ const first = await tools.replace({path:"note.txt",start:"alpha",text:"first\\na
 const second = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 
 if(typeof first!=="string" || typeof second!=="string") throw Error("Accepted edits need public result handles");
-const found=await tools.search({path:second,query:"BETA"});
+const found=await tools.search({path:second,query:"BETA"}).then(value => value.result);
 if(!found.includes("BETA") || !found.includes(":2:12-16")) throw Error("Batch-peer shifts lost: "+found);
-const outside=await tools.search({path:first,query:"café"});
+const outside=await tools.search({path:first,query:"café"}).then(value => value.result);
 if(!outside.includes("No matches found")) throw Error("Peer target widened");
 const next=await tools.replace({path:found,text:"READY"});
 text({first,second,found,outside,next});

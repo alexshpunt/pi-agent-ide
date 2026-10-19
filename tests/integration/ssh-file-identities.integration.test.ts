@@ -153,7 +153,7 @@ for(let i=0;i<sources.length;i++) {
  const result=await tools.read({path:sources[i],views:["anchors"]});
  const expected=["LEFT VERIFIED","right café"][i];
  if(!result.includes(expected)) throw Error("Target text crossed a namespace: "+result);
- const found=await tools.search({path:result,query:expected});
+ const found=await tools.search({path:result,query:expected}).then(value => value.result);
  if(!found.includes(sources[i])) throw Error("Read receipt lost its namespace owner: "+found);
  text(found);
 }

@@ -90,7 +90,7 @@ test("ordinary process search and read keep target PIDs separate from the contro
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `text(await tools.search({query:"process:${child.pid}",path:${JSON.stringify(scope)}}));`,
+              code: `text(await tools.search({query:"process:${child.pid}",path:${JSON.stringify(scope)}}).then(value => value.result));`,
             },
           }),
         ]),
@@ -106,7 +106,7 @@ const pid=/OWNED_PID=([0-9]+)/.exec(child)?.[1];
 if(!pid) throw Error("No native PID in owned output: "+child);
 const resource="process:ssh://fixture/"+pid;
 try {
- const found=await tools.search({query:"process:"+pid,path:${JSON.stringify(scope)}});
+ const found=await tools.search({query:"process:"+pid,path:${JSON.stringify(scope)}}).then(value => value.result);
  if(!resource || !found.includes("Owned by Agent IDE: yes")) throw Error("Missing owned process identity: "+found);
  text(found);
 } finally { text(await tools.delete({path:shell})); }

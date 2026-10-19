@@ -13,6 +13,7 @@ import { connectResultTargets, TempResourceStore } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
 import { limitIdeOutput } from "./output-limits.js";
+import { searchFacts, searchFactsSchema } from "./search-facts.js";
 
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
@@ -142,7 +143,7 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   pi.on("session_shutdown", clear);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections.ide_results =
-      "IDE tools return readable text. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves these strings within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
+      "Direct IDE calls return readable text. In Codemode, Search returns { result, hasMatches, complete }; pass its result string to other tools for composition. Other text results remain strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -211,8 +212,15 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     names.add(definition.name);
     const publicDefinition = {} as typeof definition;
     const descriptors = Object.getOwnPropertyDescriptors(definition);
-    // Composed results stay strings; only provider values are structured.
+    // Keep readable composition strings except for explicitly declared public script values.
     delete descriptors.outputSchema;
+    if (definition.name === "search")
+      descriptors.outputSchema = {
+        value: searchFactsSchema,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      };
     if (providerValueTools.has(definition.name))
       descriptors.outputSchema = {
         value: providerValueSchema,
@@ -364,7 +372,10 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
       const shown = store.publish(outcome, readable, context.cwd, resources);
-      const value = providerValue(event.details);
+      const value =
+        event.toolName === "search" && !event.isError && outcome.status !== "error"
+          ? searchFacts(outcome, shown)
+          : providerValue(event.details);
       const parent = parents.get(event.toolCallId);
       parents.delete(event.toolCallId);
       if (parent !== undefined) {
@@ -376,7 +387,7 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           { type: "text" as const, text: shown },
           ...event.content.filter((block) => block.type !== "text"),
         ],
-        // Replacing content drops any other structured content, so scripts receive text unless a provider returned a value.
+        // Keep private records hidden; only the declared public script value survives.
         ...(value !== undefined && { structuredContent: value }),
       };
     });

@@ -132,7 +132,7 @@ test("shows pinned Vimium possible names in native Search for files and URLs wit
 test("composed Search shows separate alternatives whose Read reference refreshes only the exact alternative", async () => {
   const fixture = await setup();
   const code = String.raw`
-const results = await Promise.all([tools.search({query:"generateHintStrings",path:"link_hints.js"}), tools.search({query:"generateHintStrings",path:${JSON.stringify(fixture.url)}})]);
+const results = await Promise.all([tools.search({query:"generateHintStrings",path:"link_hints.js"}).then(value => value.result), tools.search({query:"generateHintStrings",path:${JSON.stringify(fixture.url)}}).then(value => value.result)]);
 for (const found of results) {
   if (typeof found !== "string" || !found.includes("No matches")) throw Error("Original zero was lost");
   if (found.includes("const hintStrings =")) throw Error("User preview leaked");
@@ -146,7 +146,7 @@ const reference=/Read: (SEARCH#[A-F\d]+:all:line)/.exec(local)?.[1];
 if(!reference) throw Error("Candidate Read reference missing");
 const before = await tools.read({path:reference});
 if (!before.includes("hintStrings")) throw Error("Candidate Read failed");
-const first=await tools.search({path:before,query:"hintStrings"});
+const first=await tools.search({path:before,query:"hintStrings"}).then(value => value.result);
 const individual=/SEARCH#[A-F\d]+:\d+:match/.exec(first)?.[0];
 if(!individual) throw Error("Candidate individual reference missing");
 text(results[0]); text(results[1]);

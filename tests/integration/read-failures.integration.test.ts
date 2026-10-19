@@ -43,7 +43,7 @@ const action = absent.match(/("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*views=\["anchors"\]
 if(!action || absent.includes("FRAGMENT_FAILED")) throw Error(absent);
 const fresh = await tools.read({path:JSON.parse(action[1]),views:["anchors"]});
 if(typeof fresh !== "string" || !fresh.includes("|beta")) throw Error(fresh);
-const beta = await tools.search({path:fresh,query:"beta"});
+const beta = await tools.search({path:fresh,query:"beta"}).then(value => value.result);
 const selected = await tools.read({path:beta});
 if(!selected.includes("beta") || selected.includes("alpha")) throw Error(selected);
 store("failedRead",absent);

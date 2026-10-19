@@ -454,6 +454,43 @@ function add(
 }
 
 add(
+  "search-script-facts",
+  ["search.script-facts", "compose.search-script-result"],
+  "Use native Codemode to Search task.txt for regex:^ABSENT$, Search scope.ts for ast:probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
+  [
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "regex:^ABSENT$" },
+      scriptResult: { hasMatches: false, complete: true },
+    },
+    {
+      tool: "search",
+      args: { path: "scope.ts", query: "ast:probe($ARG)", limit: 1 },
+      scriptResult: { hasMatches: true, complete: false },
+    },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "regex:(" },
+      error: true,
+    },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "OLD", limit: 1000 },
+      scriptResult: { hasMatches: true, complete: true },
+    },
+    { tool: "replace", args: { text: "NEW" }, reuse: reuse(3) },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "keep\nOLD\nOLD\nlast\n", "scope.ts": "probe(first);\nprobe(second);\n" },
+    expected: {
+      "task.txt": "keep\nNEW\nNEW\nlast\n",
+      "scope.ts": "probe(first);\nprobe(second);\n",
+    },
+  },
+);
+
+add(
   "binary-copy-move",
   ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
   "Copy source.bin to copy.bin without decoding it. Report the Copy receipt. Search the unchanged Copy result for BAD and observe that it has no text selection; catch that expected rejection in Codemode. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",

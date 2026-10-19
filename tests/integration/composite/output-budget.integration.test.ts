@@ -327,7 +327,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
                 id: "scoped-search",
                 name: "codemode",
                 arguments: {
-                  code: 'const result = await tools.search({ query: "needle", path: "regression", limit: 1 }); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"regression/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }));',
+                  code: 'const result = await tools.search({ query: "needle", path: "regression", limit: 1 }).then(value => value.result); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"regression/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }).then(value => value.result));',
                 },
               }),
             ],
@@ -835,7 +835,7 @@ test("stresses limits on HTTP text, process lists and terminal search", async ()
           const source = /shell:[a-f\\d]+/.exec(started)?.[0];
           if (!source) throw new Error(started);
           for (const limit of [1,80,1000]) {
-            const result = await tools.search({query:"needle",path:source,limit});
+            const result = await tools.search({query:"needle",path:source,limit}).then(value => value.result);
             const count = /(\\d+)\\+? match(?:es)? in/.exec(result)?.[1];
             if (count === undefined || Number(count) > limit) throw new Error(result);
             text(result);

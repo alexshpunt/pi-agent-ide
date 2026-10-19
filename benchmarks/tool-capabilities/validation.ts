@@ -8,7 +8,7 @@ export interface RunEvent {
   toolName?: string;
   args?: Record<string, unknown>;
   isError?: boolean;
-  result?: { content?: { type: string; text?: string }[] };
+  result?: { content?: { type: string; text?: string }[]; structuredContent?: unknown };
   message?: {
     role?: string;
     toolCallId?: string;
@@ -51,6 +51,8 @@ export interface RouteStep {
   argsAny?: Record<string, unknown>[];
   args?: Record<string, unknown>;
   contains?: string;
+  /** Match the public value delivered to a Codemode script, not human-facing text. */
+  scriptResult?: Record<string, unknown>;
   /** Reject copied file text in this tool's own agent-facing result. */
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
@@ -218,6 +220,11 @@ export function validateRoute(
       )
         continue;
       if (mode === "codemode" && !codemodeParents.has(event.parentToolCallId)) continue;
+      if (
+        step.scriptResult !== undefined &&
+        !matches(step.scriptResult, end.event.result?.structuredContent)
+      )
+        continue;
       if (mode === "direct" && event.parentToolCallId) continue;
       if (step.parallelWith !== undefined) {
         const prior = selected[step.parallelWith];

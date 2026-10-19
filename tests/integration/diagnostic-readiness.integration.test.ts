@@ -33,7 +33,7 @@ test("unavailable diagnostics remain visible without entering source selections"
                 code: String.raw`
 const result = await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]});
 if(typeof result !== "string" || !result.includes("unavailable") || !result.includes("lint:") || !result.includes("lsp:")) throw Error(result);
-const outside = await tools.search({path:result,query:"regex:unavailable|lint:|lsp:|ghost"});
+const outside = await tools.search({path:result,query:"regex:unavailable|lint:|lsp:|ghost"}).then(value => value.result);
 if(!outside.includes("No matches found")) throw Error(outside);
 store("diagnosticReadiness",result);
 `,
@@ -49,7 +49,7 @@ store("diagnosticReadiness",result);
               name: "codemode",
               arguments: {
                 code: String.raw`
-const beta = await tools.search({path:load("diagnosticReadiness"),query:"beta"});
+const beta = await tools.search({path:load("diagnosticReadiness"),query:"beta"}).then(value => value.result);
 const selected = await tools.select({path:beta,operation:{kind:"trim",side:"both"}});
 const value = await tools.read({path:selected});
 if(!value.includes("beta") || value.includes("alpha") || value.includes("gamma")) throw Error(value);

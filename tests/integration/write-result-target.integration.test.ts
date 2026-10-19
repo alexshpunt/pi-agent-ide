@@ -29,11 +29,11 @@ for (const mode of ["on", "only"] as const) {
         `
 const created=await tools.write({path:${JSON.stringify(source)},content:"first\\nsecond\\n"});
 check(body(await tools.read({path:created}))==="FIRST\\nSECOND\\n","Creation lost the formatted whole-file target");
-check(matches(await tools.search({path:created,query:"SECOND"})).length===1,"Search cannot consume creation");
+check(matches(await tools.search({path:created,query:"SECOND"}).then(value => value.result)).length===1,"Search cannot consume creation");
 check(items(await tools.select({path:created,operation:{kind:"lines",first:1,last:2}})).length===1,"Select lost the whole-file boundary");
 const overwritten=await tools.write({path:created,content:"😀 unique\\r\\nunique tail"});
 check(body(await tools.read({path:overwritten}))==="😀 UNIQUE\\r\\nUNIQUE TAIL","Overwrite lost final UTF16/CRLF text");
-const found=await tools.search({path:overwritten,query:"UNIQUE"});
+const found=await tools.search({path:overwritten,query:"UNIQUE"}).then(value => value.result);
 check(matches(found).length===2,"Search lost part of the final whole file");
 const noop=await tools.write({path:overwritten,content:"😀 UNIQUE\\r\\nUNIQUE TAIL"});
 check(body(await tools.read({path:noop}))==="😀 UNIQUE\\r\\nUNIQUE TAIL","No-op lost the final snapshot");

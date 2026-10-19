@@ -79,7 +79,7 @@ test("ordinary process resources and searches separate identical PIDs in two rea
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `for (const scope of ${JSON.stringify(targets.map((target) => `ssh://${target.id}${target.workspace}`))}) { const result=await tools.search({query:"process:1",path:scope}); if(!result.includes("process:"+scope.split("/").slice(0,3).join("/")+"/1") || !result.includes("Owned by Agent IDE: no")) throw new Error("No target process snapshot: "+result); text(result); }`,
+              code: `for (const scope of ${JSON.stringify(targets.map((target) => `ssh://${target.id}${target.workspace}`))}) { const result=await tools.search({query:"process:1",path:scope}).then(value => value.result); if(!result.includes("process:"+scope.split("/").slice(0,3).join("/")+"/1") || !result.includes("Owned by Agent IDE: no")) throw new Error("No target process snapshot: "+result); text(result); }`,
             },
           }),
         ]),
