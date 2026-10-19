@@ -518,7 +518,11 @@ class NativeTextEditBatchCoordinator {
           ...presentation,
           result: {
             ...presentation.result,
-            content: [new FileMutationAgentResult(results).toTextContent()],
+            // Refresh file text after post-edit work; results without files (provider actions) keep their own text.
+            content:
+              results.length === 0
+                ? presentation.result.content
+                : [new FileMutationAgentResult(results).toTextContent()],
           },
         } satisfies NativeEditBatchEvent);
       }
