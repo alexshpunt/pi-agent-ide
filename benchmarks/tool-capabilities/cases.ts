@@ -582,6 +582,25 @@ add(
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
+add(
+  "codemode-child-presentation",
+  ["compose.codemode-child-result"],
+  "In one native Codemode call, read task.txt and pass the unchanged Read result to text(). Keep the file unchanged. After the call, answer only CODEMODE-CHILD-MARKER. Do not use shell commands or substitute a standalone Read.",
+  [
+    {
+      tool: "read",
+      args: { path: "task.txt" },
+      contains: "CODEMODE-CHILD-MARKER",
+      parentContains: "CODEMODE-CHILD-MARKER",
+    },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "CODEMODE-CHILD-MARKER\n" },
+    expected: { "task.txt": "CODEMODE-CHILD-MARKER\n" },
+    answer: "CODEMODE-CHILD-MARKER",
+  },
+);
 const streamedReplacement = Array.from(
   { length: 96 },
   (_, index) => `STREAM-PAYLOAD-${String(index + 1).padStart(4, "0")}`,
