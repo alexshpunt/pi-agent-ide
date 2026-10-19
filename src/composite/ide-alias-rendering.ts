@@ -1,11 +1,18 @@
 import { isDeepStrictEqual } from "node:util";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+  createCodemodeExtension,
+  type ExtensionAPI,
+  type ToolDefinition,
+  type ToolRenderers,
+} from "@earendil-works/pi-coding-agent";
 
 /**
  * Preserve native IDE contracts and presentation for matching local MCP forwarding aliases.
  * Unnamespaced aliases opt into this contract by copying one IDE tool's description and schema.
  * Local wrappers with conflicting behavior must not advertise that same contract.
  * Load IDE before the alias owner: Pi keeps the first extension's executable definition.
+ * Builtin Codemode aliases reuse Pi's shipped renderer only; execution and custom renderer overrides
+ * are not captured or replaced.
  */
 export function registerIdeAliasCompatibility(
   pi: ExtensionAPI,
@@ -19,17 +26,32 @@ export function registerIdeAliasCompatibility(
     if (!alias || alias.namespace || alias.exposure === "hidden") return undefined;
     const matches = tools.filter(
       (tool) =>
-        definitions.has(tool.name) &&
-        tool.namespace?.name.startsWith("ide_") === true &&
+        ((definitions.has(tool.name) && tool.namespace?.name.startsWith("ide_") === true) ||
+          (tool.name === "codemode" &&
+            tool.sourceInfo.source === "builtin" &&
+            tool.sourceInfo.path === "builtin:codemode")) &&
         tool.exposure !== "hidden" &&
         tool.description === alias.description &&
         isDeepStrictEqual(tool.parameters, alias.parameters),
     );
     return matches.length === 1 ? matches[0]?.name : undefined;
   };
+  let codemodeRenderers: ToolRenderers | undefined;
   pi.registerToolRenderer((name, next) => {
     const native = source(name);
-    return native === undefined ? next() : definitions.get(native);
+    if (native !== "codemode") return native === undefined ? next() : definitions.get(native);
+    if (!codemodeRenderers) {
+      // Capture Pi's shipped presentation through its public factory, never its execution/ownership.
+      // The factory only registers a definition; none of its executor/settings closures run here.
+      void createCodemodeExtension()({
+        ...pi,
+        registerTool: (definition) => {
+          const { renderShell, renderCall, renderResult } = definition as ToolDefinition;
+          codemodeRenderers = { renderShell, renderCall, renderResult };
+        },
+      });
+    }
+    return codemodeRenderers ?? next();
   });
   pi.on("before_agent_start", () => {
     for (const alias of pi.getAllTools()) {
