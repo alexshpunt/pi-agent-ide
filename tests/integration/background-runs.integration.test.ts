@@ -157,8 +157,9 @@ for (const mode of ["terminal", "review", "queue", "abort"] as const) {
         expect(result.providerRequests).toHaveLength(conversation.length);
         expect(result.state?.hasPendingMessages).toBe(false);
         if (mode === "queue" || mode === "abort") {
+          // Explicit startup cancellation also cancels the native steering queue.
           expect(observation.customTypes.filter((type) => type === "startup-queued")).toHaveLength(
-            1,
+            mode === "abort" ? 0 : 1,
           );
         }
         if (mode === "abort") {
