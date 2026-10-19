@@ -1708,9 +1708,14 @@ async function anchorFailureToolResult(
       results: [result],
       effect: "not-applied",
       anchorRecovery: true,
-      ...(resolution.resolverId === "exact-text" && {
-        metadata: { exactTextFailures: [contextual.source] },
-      }),
+      // A Copy destination failure must not block otherwise valid source selectors.
+      ...(resolution.resolverId === "exact-text" &&
+        !(
+          contextual.toolName === "copy" &&
+          (contextual.field === "targetStart" || contextual.field === "targetEnd")
+        ) && {
+          metadata: { exactTextFailures: [contextual.source] },
+        }),
       ...(recovery?.kind === "candidates" && {
         anchorRecoveries: [
           {
