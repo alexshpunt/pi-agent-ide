@@ -69,7 +69,7 @@ test.each([
 const full = await tools.read({path:"large.ts"});
 if (!full.includes("Some source text is omitted.") || full.includes('consume("NEEDLE")')) throw Error("Body was not omitted: " + full);
 for (const input of [full, /<uuid>([^<]+)<\/uuid>/u.exec(full)[1]]) {
-  const found = await tools.search({path:input,query:"NEEDLE"});
+  const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
   if (!found.includes("3 matches in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
 }
 const window = await tools.read({path:"large.ts",offset:2,limit:${rows + 3}});
@@ -82,19 +82,19 @@ text("Overview sources saved");
             code: String.raw`
 const window = load("overviewWindow");
 for (const input of [window, /<uuid>([^<]+)<\/uuid>/u.exec(window)[1]]) {
-  const found = await tools.search({path:input,query:"NEEDLE"});
+  const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
   if (!found.includes("1 match in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
   for (const query of ["outsideBefore","outsideAfter","regex:Code overview|scope-begin|Some source text|requested text|…"]) {
-    const empty = await tools.search({path:input,query});
+    const empty = await tools.search({path:input,query}).then(value => value.result);
     if (!empty.includes("No matches found")) throw Error(empty);
     await tools.replace({path:empty,text:"BAD"});
   }
 }
 const bounded = await tools.read({path:window,offset:102,limit:1});
-if (!(await tools.search({path:bounded,query:"NEEDLE"})).includes("large.ts:103:12-18")) throw Error("Bounded Read lost its exact source position");
+if (!(await tools.search({path:bounded,query:"NEEDLE"}).then(value => value.result)).includes("large.ts:103:12-18")) throw Error("Bounded Read lost its exact source position");
 const small = await tools.read({path:"large.ts",offset:103,limit:1});
-if (!(await tools.search({path:small,query:"NEEDLE"})).includes("large.ts:103:12-18")) throw Error("Small Read composition regressed");
-const selected = await tools.search({path:window,query:"NEEDLE"});
+if (!(await tools.search({path:small,query:"NEEDLE"}).then(value => value.result)).includes("large.ts:103:12-18")) throw Error("Small Read composition regressed");
+const selected = await tools.search({path:window,query:"NEEDLE"}).then(value => value.result);
 await tools.replace({path:selected,text:"FOUND"});
 text("Only the original window was searched and edited");
 `,

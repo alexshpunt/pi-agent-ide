@@ -63,8 +63,8 @@ test("distinguishes containment from clipping and edits difference fragments wit
     await writeFile(path.join(cwd, "other.txt"), "< aaKEEPbb >");
     const run = await runGeometry(cwd, "geometry-composition", [
       `const read=await tools.read({path:"notes.txt",offset:2,limit:1});
-const candidates=await tools.search({path:read,query:"regex:<[^>]+>"});
-const masks=await tools.search({path:read,query:"KEEP"});
+const candidates=await tools.search({path:read,query:"regex:<[^>]+>"}).then(value => value.result);
+const masks=await tools.search({path:read,query:"KEEP"}).then(value => value.result);
 const other=await tools.read({path:"other.txt"});
 const kept=await tools.select({path:masks,operation:{kind:"within",scopes:candidates}});
 const dropped=await tools.select({path:candidates,operation:{kind:"within",scopes:masks}});
@@ -74,9 +74,9 @@ const remaining=await tools.select({path:[candidates,other],operation:{kind:"dif
 if(items(remaining).length!==5 || items(remaining)[0].source.includes("other.txt")) throw Error("File sets or fragments lost");
 store("geometryOld",remaining);
 const preview=await tools.read({path:items(remaining)[0].ref});
-const escaped=await tools.search({path:preview,query:"KEEP"});
+const escaped=await tools.search({path:preview,query:"KEEP"}).then(value => value.result);
 if(matches(escaped).length!==0) throw Error("Read widened geometry");
-const words=await tools.search({path:remaining,query:"regex:abc|xyz|mn|op"});
+const words=await tools.search({path:remaining,query:"regex:abc|xyz|mn|op"}).then(value => value.result);
 if(matches(words).length!==4) throw Error("Fragments lost");
 text(await tools.replace({path:words,text:"*"}));`,
       `await rejects(()=>tools.select({path:load("geometryOld"),operation:{kind:"merge"}}),/expired|stale/);
@@ -133,9 +133,9 @@ test("retains all geometry beyond previews and refuses unsafe right inputs even 
       `const source=await tools.read({path:"many.txt"});
 const split=await tools.select({path:source,operation:{kind:"split",delimiter:"|"}});
 const kept=await tools.select({path:split,operation:{kind:"difference",scopes:[]}});
-const tail=await tools.search({path:kept,query:"v104"});
+const tail=await tools.search({path:kept,query:"v104"}).then(value => value.result);
 if(!kept.includes("105 selection(s)") || items(kept).length!==100 || !kept.includes("more selections") || kept.includes("incomplete") || matches(tail).length!==1) throw Error("Geometry preview clipped authority");
-const partial=await tools.search({path:"limited.js",query:"ast:$NAME()",limit:1});
+const partial=await tools.search({path:"limited.js",query:"ast:$NAME()",limit:1}).then(value => value.result);
 const incomplete=await tools.select({path:source,operation:{kind:"difference",scopes:partial}});
 check(incomplete.includes("incomplete input"),"Right completeness laundered");
 await rejects(()=>tools.replace({path:incomplete,text:"BAD"}),/[Ii]ncomplete/);

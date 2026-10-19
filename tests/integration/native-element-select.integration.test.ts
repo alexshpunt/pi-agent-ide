@@ -65,12 +65,12 @@ test("deletes an argument and typed parameter with exact CRLF neighbors and keep
       "function source(first: T, middle = { /* inside */ value: 2 }, ...last: T[]) {}\r\nconst protectedValue = 9;",
     );
     const run = await runElements(cwd, "element-delete-crlf", [
-      `const calls=await tools.search({path:"calls.ts",query:"ast:source($FIRST, $MIDDLE, $LAST)"});
+      `const calls=await tools.search({path:"calls.ts",query:"ast:source($FIRST, $MIDDLE, $LAST)"}).then(value => value.result);
 const argument=await tools.select({path:capture(calls,"MIDDLE"),operation:{kind:"elementExtent",extent:"around"}});
 if(!argument.endsWith("middle(2), "))throw Error("Argument comma lost");
 store("elementOld",argument);
 text(await tools.delete({path:argument}));
-const params=await tools.search({path:"parameters.ts",query:"middle = { /* inside */ value: 2 }"});
+const params=await tools.search({path:"parameters.ts",query:"middle = { /* inside */ value: 2 }"}).then(value => value.result);
 const parameter=await tools.select({path:params,operation:{kind:"elementExtent",extent:"around"}});
 if(!parameter.endsWith("middle = { /* inside */ value: 2 }, "))throw Error("Parameter comma lost");
 text(await tools.delete({path:parameter}));`,
@@ -101,13 +101,13 @@ for (const operation of ["copy", "move"] as const)
         "destination(anchor(4));\r\nprotectedCall(8);",
       );
       const run = await runElements(cwd, `element-${operation}-point`, [
-        `const calls=await tools.search({path:"source.js",query:"ast:source($FIRST, $MIDDLE, $LAST)"});
+        `const calls=await tools.search({path:"source.js",query:"ast:source($FIRST, $MIDDLE, $LAST)"}).then(value => value.result);
 const extent=await tools.select({path:capture(calls,"MIDDLE"),operation:{kind:"elementExtent",extent:"around"}});
-const destination=await tools.search({path:"destination.js",query:"ast:destination($ARG)"});
+const destination=await tools.search({path:"destination.js",query:"ast:destination($ARG)"}).then(value => value.result);
 const point=await tools.select({path:capture(destination,"ARG"),operation:{kind:"position",edge:"before"}});
 const transferred=await tools.${operation}({path:extent,target:point});
 check(typeof transferred==="string","Transfer failed");
-const found=await tools.search({path:transferred,query:"ast:middle($VALUE)"});
+const found=await tools.search({path:transferred,query:"ast:middle($VALUE)"}).then(value => value.result);
 if(matches(found).length!==1)throw Error("Transfer target lost");
 text(await tools.replace({path:found,text:"middle(99)"}));
 for(const file of ["source.js","destination.js"]){
@@ -130,20 +130,20 @@ test("retains pending element extents beyond previews and refuses unsafe ownersh
     await writeFile(path.join(cwd, "unsafe.js"), "f(a, /* note */ b); array = [first, second];");
     await runElements(cwd, "element-refusals-preview", [
       `const pending=await tools.write({path:"many.js",content:"f("+Array.from({length:105},(_,i)=>"value"+i).join(", ")+");"});
-const args=await tools.search({path:pending,query:"ast:f($$$ARGS)"});
-const elements=await tools.search({path:args,query:"regex:value[0-9]+",limit:200});
+const args=await tools.search({path:pending,query:"ast:f($$$ARGS)"}).then(value => value.result);
+const elements=await tools.search({path:args,query:"regex:value[0-9]+",limit:200}).then(value => value.result);
 const all=await tools.select({path:elements,operation:{kind:"elementExtent",extent:"around"}});
 if(!all.includes("105 selection(s)")||items(all).length!==100||!all.includes("more selections")||all.includes("incomplete"))throw Error("Preview lost extents");
-const tail=await tools.search({path:all,query:"value104"});
+const tail=await tools.search({path:all,query:"value104"}).then(value => value.result);
 if(matches(tail).length!==1)throw Error("Last item lost");
 await rejects(()=>tools.replace({path:all,text:"BAD"}),/[Oo]verlap/);
 const limitedSource=await tools.write({path:"limited.js",content:"f(value0); f(value1);"});
-const limited=await tools.search({path:limitedSource,query:"ast:f($ARG)",limit:1});
+const limited=await tools.search({path:limitedSource,query:"ast:f($ARG)",limit:1}).then(value => value.result);
 const partial=await tools.select({path:capture(limited,"ARG"),operation:{kind:"elementExtent",extent:"around"}});
 check(partial.includes("incomplete input"),"Completeness laundered");
 await rejects(()=>tools.delete({path:partial}),/[Ii]ncomplete/);
 for(const [query,code]of [["a","AMBIGUOUS_LIST_TRIVIA"],["first","EXACT_LIST_ELEMENT_REQUIRED"]]){
- const seed=await tools.search({path:"unsafe.js",query});
+ const seed=await tools.search({path:"unsafe.js",query}).then(value => value.result);
  await rejects(()=>tools.select({path:matches(seed)[0],operation:{kind:"elementExtent",extent:"around"}}),new RegExp(code==="AMBIGUOUS_LIST_TRIVIA" ? "[Cc]omment|[Tt]rivia" : "exact direct call argument"));
 }
 const empty=await tools.select({path:[],operation:{kind:"elementExtent",extent:"around"}});

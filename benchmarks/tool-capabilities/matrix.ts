@@ -16,6 +16,7 @@ const groups: [string[], string[]][] = [
     ["docs-search-status"],
   ],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
   [["compose.search-issued-scope"], ["search-issued-scope"]],
   [["compose.batch-insert-search"], ["search-line-batch-insert"]],

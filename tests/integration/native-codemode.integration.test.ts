@@ -253,7 +253,7 @@ test("read and search finish a batch before dependent work starts", async () => 
 const shown = await tools.read({path:"note.txt",views:["anchors"]});
 if (!shown.includes(${JSON.stringify(anchor(3, "beta"))})) throw new Error("read saw an uncommitted file");
 text(await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(3, "beta"))},text:"BETA"}));
-text(await tools.search({path:"note.txt",query:"BETA"}));`,
+text(await tools.search({path:"note.txt",query:"BETA"}).then(value => value.result));`,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
       false,
@@ -483,7 +483,7 @@ test("resource-owning search anchors keep their normal stale-snapshot protection
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-search-anchor-boundary", [
-      'const found = await tools.search({path:"note.txt",query:"beta"});\n' +
+      'const found = await tools.search({path:"note.txt",query:"beta"}).then(value => value.result);\n' +
         "const selection = found.match(/SEARCH#[A-F0-9]+:1:match/)?.[0];\n" +
         'if (!selection) throw new Error("missing search selection");\n' +
         'text(await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"}));\n' +

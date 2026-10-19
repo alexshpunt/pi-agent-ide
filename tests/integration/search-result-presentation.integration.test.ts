@@ -25,8 +25,8 @@ test("uses Search frames for file lists and readonly process records without cha
     );
     await writeFile(path.join(cwd, "a.ts"), "function task() { probe(); }\r\n");
     const scripts = [
-      `const r=await tools.search({query:"files:*.ts"}); if(typeof r!=="string" || !r.includes("a.ts")) throw Error(r); text({fileCount:1});`,
-      `const r=await tools.search({query:${JSON.stringify(`process:${process.pid}`)}}); if(typeof r!=="string" || !r.includes(String(${process.pid}))) throw Error(r); text({readonlyProcess:true});`,
+      `const r=await tools.search({query:"files:*.ts"}).then(value => value.result); if(typeof r!=="string" || !r.includes("a.ts")) throw Error(r); text({fileCount:1});`,
+      `const r=await tools.search({query:${JSON.stringify(`process:${process.pid}`)}}).then(value => value.result); if(typeof r!=="string" || !r.includes(String(${process.pid}))) throw Error(r); text({readonlyProcess:true});`,
     ];
     const run = await new PiIntegrationTest({
       testName: "search-list-style",

@@ -153,9 +153,9 @@ test.each(["cold graph", "rename"] as const)(
               name: "codemode",
               arguments: {
                 code: `
-const definition = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: ${JSON.stringify(`${root}/note.ts`)} });
+const definition = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: ${JSON.stringify(`${root}/note.ts`)} }).then(value => value.result);
 if(!definition.includes("definition ") || definition.includes("reference ")) throw Error(definition);
-const references = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: definition, navigation: "references" });
+const references = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: definition, navigation: "references" }).then(value => value.result);
 const declarations=[...references.matchAll(/declared at (.+)/g)].map(m=>m[1]); if(declarations.length!==3 || new Set(declarations).size!==1) throw Error(references);
 const inspected = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} });
 text({ definition, references, inspected });

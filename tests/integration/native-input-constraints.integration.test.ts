@@ -46,7 +46,7 @@ test("native direct and Codemode calls share host integer coercion and range val
     const args = { path: "example.txt", query: "constraint-marker", limit: 1.5 };
     const code = [
       `const args = ${JSON.stringify(args)};`,
-      "text(await tools.search(args));",
+      "text(await tools.search(args).then(value => value.result));",
       "text(await tools.input_constraint_control(args));",
       "let rejected = false;",
       "try { await tools.search({ ...args, limit: 0 }); } catch { rejected = true; }",

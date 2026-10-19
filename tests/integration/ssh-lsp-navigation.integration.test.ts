@@ -126,7 +126,7 @@ test("ordinary scoped SSH symbols and graphs preserve target identities and repo
             id: "native",
             name: "codemode",
             arguments: {
-              code: `const result = await tools.search({ query: "symbols:label", path: ${JSON.stringify(root)}, include: "*.ts" }); text(result);`,
+              code: `const result = await tools.search({ query: "symbols:label", path: ${JSON.stringify(root)}, include: "*.ts" }).then(value => value.result); text(result);`,
             },
           }),
         ]),

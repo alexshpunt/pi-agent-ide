@@ -73,12 +73,12 @@ test("keeps sparse files, strict completeness, valid absence and structural refu
     await writeFile(path.join(cwd, "b.js"), "function b() { third(); }");
     await writeFile(path.join(cwd, "other.py"), "probe()");
     await runSelection(cwd, "select-sparse-refusals", [
-      `const a=await tools.search({path:"a.ts",query:"regex:first[(][)]|second[(][)]"});
-const b=await tools.search({path:"b.js",query:"third()"});
+      `const a=await tools.search({path:"a.ts",query:"regex:first[(][)]|second[(][)]"}).then(value => value.result);
+const b=await tools.search({path:"b.js",query:"third()"}).then(value => value.result);
 const owners=await tools.select({path:[a,b],operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(items(owners).length===2,"Sparse associations lost");
-check(matches(await tools.search({path:owners,query:"outside()"})).length===0,"Sparse gap widened");
-const partial=await tools.search({path:"a.ts",query:"ast:$NAME()",limit:1});
+check(matches(await tools.search({path:owners,query:"outside()"}).then(value => value.result)).length===0,"Sparse gap widened");
+const partial=await tools.search({path:"a.ts",query:"ast:$NAME()",limit:1}).then(value => value.result);
 const incomplete=await tools.select({path:partial,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(incomplete.includes("incomplete input"),"Completeness discarded");
 const partialRead=await tools.read({path:incomplete});
@@ -87,7 +87,7 @@ check(stillPartial.includes("incomplete input"),"Read laundered completeness");
 await rejects(()=>tools.replace({path:incomplete,text:"BAD"}),/[Ii]ncomplete/);
 const empty=await tools.select({path:[],operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(items(empty).length===0 && !empty.includes("incomplete"),"Empty target set rejected");
-const missing=await tools.search({path:"a.ts",query:"notFound"});
+const missing=await tools.search({path:"a.ts",query:"notFound"}).then(value => value.result);
 check(items(await tools.select({path:missing,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}})).length===0,"Empty Search not supported");
 for(const [path,operation] of [
  ["a.ts",{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}],
@@ -119,16 +119,16 @@ test("preview limits do not clip the full selection target", async () => {
       cwd,
       "select-full-preview-targets",
       [
-        `const seed=await tools.search({path:"many.ts",query:"probe()",limit:200});
+        `const seed=await tools.search({path:"many.ts",query:"probe()",limit:200}).then(value => value.result);
 const owners=await tools.select({path:seed,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(owners.includes("105 selection(s)") && items(owners).length===100 && !owners.includes("incomplete"),"Preview completeness confused");
-const every=await tools.search({path:owners,query:"probe()",limit:200});
+const every=await tools.search({path:owners,query:"probe()",limit:200}).then(value => value.result);
 check(matches(every).length===105,"Search lost selected matches beyond the Select preview");
-const beyond=await tools.search({path:owners,query:"ast:function f104() { $$$BODY }"});
+const beyond=await tools.search({path:owners,query:"ast:function f104() { $$$BODY }"}).then(value => value.result);
 check(matches(beyond).length===1,"Whole result clipped to preview");
 const direct=await tools.select({path:"big.ts",operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(direct.includes("preview shortened"),"Unbounded preview");
-check(matches(await tools.search({path:direct,query:"tail()"})).length===1,"Text preview clipped authority");
+check(matches(await tools.search({path:direct,query:"tail()"}).then(value => value.result)).length===1,"Text preview clipped authority");
 const compact=await tools.select({path:"medium.ts",operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(!compact.includes("preview shortened") && compact.includes("consume();"),"Medium preview fixture invalid");
 text({total:105,preview:100,tail:1});`,
@@ -156,10 +156,10 @@ test("keeps selections unformatted within one script and rejects them after fina
       cwd,
       "select-final-formatting",
       [
-        `const seed=await tools.search({path:"select-format.ts",query:"format_me()"});
+        `const seed=await tools.search({path:"select-format.ts",query:"format_me()"}).then(value => value.result);
 const owner=await tools.select({path:seed,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 const selectedBody=await tools.select({path:owner,operation:{kind:"part",part:"body"}});
-const found=await tools.search({path:selectedBody,query:"format_me()"});
+const found=await tools.search({path:selectedBody,query:"format_me()"}).then(value => value.result);
 const changed=await tools.replace({path:found,text:"final_format_me()"});
 const current=await tools.select({path:changed,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(current.includes("final_format_me()"),"Selection ran formatting early");
@@ -167,7 +167,7 @@ store("pre-format-selection",current);
 text({unformattedInsideScript:true});`,
         `await rejects(()=>tools.select({path:load("pre-format-selection"),operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}}),/expired|stale/);
 await rejects(()=>tools.replace({path:load("pre-format-selection"),text:"BAD"}),/expired|stale/);
-check(matches(await tools.search({path:"select-format.ts",query:"final_FORMATTED()"})).length===1,"Final processing missing");
+check(matches(await tools.search({path:"select-format.ts",query:"final_FORMATTED()"}).then(value => value.result)).length===1,"Final processing missing");
 text({staleRejected:true});`,
       ],
       [path.resolve("tests/integration/support/native-post-edit-probe.ts")],
@@ -197,7 +197,7 @@ text({pendingConsumed:true});`,
 check(items(await tools.select({path:target,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}})).length===1,"Cross-call target expired early");
 await rejects(()=>tools.write({path:target,content:"BAD"}));
 await rejects(()=>tools.undo({file:target,change:"last"}));
-const found=await tools.search({path:target,query:"probe()"});
+const found=await tools.search({path:target,query:"probe()"}).then(value => value.result);
 await tools.replace({path:found,text:"done()"});
 await rejects(()=>tools.select({path:target,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}}),/expired|stale/);
 await rejects(()=>tools.replace({path:target,text:"BAD"}),/expired|stale/);
@@ -227,9 +227,9 @@ check(items(await tools.select({path:"direct.js",operation:{kind:"object",object
 const selectedBody=await tools.select({path:item.ref,operation:{kind:"part",part:"body"}});
 check(selectedBody.endsWith(["{"," probe();","}"].join(String.fromCharCode(13,10))),"Body lost CRLF");
 const preview=await tools.read({path:selectedBody});
-for(const query of ["😀","other()"]) check(matches(await tools.search({path:preview,query})).length===0,"Read context widened authority");
-check(matches(await tools.search({path:preview,query:"}"})).length===1,"Read omitted closing line");
-const found=await tools.search({path:selectedBody,query:"probe()"});
+for(const query of ["😀","other()"]) check(matches(await tools.search({path:preview,query}).then(value => value.result)).length===0,"Read context widened authority");
+check(matches(await tools.search({path:preview,query:"}"}).then(value => value.result)).length===1,"Read omitted closing line");
+const found=await tools.search({path:selectedBody,query:"probe()"}).then(value => value.result);
 check(matches(found).length===1,"Body Search unavailable");
 text(await tools.replace({path:found,text:"done()"}));
 text({expanded:true});`,
@@ -251,25 +251,25 @@ test("selects enclosing functions and bodies without losing callback calls or ed
     ].join("\r\n");
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runSelection(cwd, "select-function-body-timeouts", [
-      `const calls=await tools.search({path:"calls.ts",query:"ast:legacyRequest($OPTIONS)"});
+      `const calls=await tools.search({path:"calls.ts",query:"ast:legacyRequest($OPTIONS)"}).then(value => value.result);
 check(matches(calls).length===5,"Missing calls");
 const owners=await tools.select({path:calls,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 check(items(owners).length===4,"Owner dedup lost association");
 const accepted=[];
 for(const owner of items(owners)){
  const selectedBody=await tools.select({path:owner.ref,operation:{kind:"part",part:"body"}});
- const retry=await tools.search({path:selectedBody,query:"ast:retry($$$ARGS)"});
+ const retry=await tools.search({path:selectedBody,query:"ast:retry($$$ARGS)"}).then(value => value.result);
  const retryOwners=await tools.select({path:retry,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
  if(items(retryOwners).some(item=>item.location===owner.location)) accepted.push(owner.ref);
 }
 check(accepted.length===2,"Nested retry counted or callback retry dropped");
 const values=[];
 for(const owner of accepted){
- const eligible=await tools.search({path:owner,query:"ast:legacyRequest($OPTIONS)"});
+ const eligible=await tools.search({path:owner,query:"ast:legacyRequest($OPTIONS)"}).then(value => value.result);
  for(const ref of matches(eligible)){
   const patterns=["legacyRequest({ timeout: $VALUE })","legacyRequest({ $$$BEFORE, timeout: $VALUE })","legacyRequest({ timeout: $VALUE, $$$AFTER })","legacyRequest({ $$$BEFORE, timeout: $VALUE, $$$AFTER })"];
   const call=await tools.read({path:ref});
-  for(const pattern of patterns) values.push(...capture(await tools.search({path:call,query:"ast:"+pattern}),"VALUE"));
+  for(const pattern of patterns) values.push(...capture(await tools.search({path:call,query:"ast:"+pattern}).then(value => value.result),"VALUE"));
  }
 }
 const unique=await tools.select({path:values,operation:{kind:"merge"}});

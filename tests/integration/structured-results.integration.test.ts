@@ -50,13 +50,13 @@ test("native scripts compose Search and Read and keep empty scopes empty", async
       cwd,
       "text-search-read-edit",
       `
-const found=await tools.search({query:"beta",path:"note.txt"});
+const found=await tools.search({query:"beta",path:"note.txt"}).then(value => value.result);
 const shown=await tools.read({path:found});
 if(typeof shown!=="string"||!shown.includes("beta")) throw Error("Selected text missing");
 await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 const after=await tools.read({path:"note.txt"});
 if(!after.includes("BETA")) throw Error("Continued before commit");
-const empty=await tools.search({query:"__nothing__",path:"note.txt"});
+const empty=await tools.search({query:"__nothing__",path:"note.txt"}).then(value => value.result);
 text(await tools.replace({path:empty,text:"BAD"}));
 `,
     );
