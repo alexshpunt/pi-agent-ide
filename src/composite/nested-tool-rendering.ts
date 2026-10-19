@@ -11,6 +11,7 @@ import {
 } from "#src/extensions/pi-agent-text-editor/src/api/native-edit-batch-event.js";
 import { compactMutationDetails } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/persisted-result.js";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
+import { registerIdeAliasCompatibility } from "./ide-alias-rendering.js";
 
 const ENTRY_TYPE = "ide-nested-results";
 const MAX_CALLS = 256;
@@ -83,6 +84,8 @@ function retentionWarning(group: SavedPanelGroup): string | undefined {
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
 export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResults = false) {
   const definitions = new Map<string, ToolDefinition>();
+  const aliasSource = registerIdeAliasCompatibility(pi, definitions);
+  const aliasRoots = new Map<string, string>();
   const parents = new Map<string, string>();
   const groups = new Map<string, PanelGroup>();
   let tui: TUI | undefined;
@@ -129,6 +132,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
     call.resultOmitted = true;
   };
   const clear = () => {
+    aliasRoots.clear();
     parents.clear();
     groups.clear();
   };
@@ -147,9 +151,15 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
   pi.on("session_tree", clear);
   pi.on("session_shutdown", clear);
   pi.on("tool_execution_start", (event, context) => {
-    if (event.parentToolCallId === undefined) return;
+    if (event.parentToolCallId === undefined) {
+      const source = aliasSource(event.toolName);
+      if (source !== undefined) aliasRoots.set(event.toolCallId, source);
+      return;
+    }
     const root = parents.get(event.parentToolCallId) ?? event.parentToolCallId;
     parents.set(event.toolCallId, root);
+    // A direct alias already draws the native panel; its forwarding child must not duplicate it.
+    if (aliasRoots.get(root) === event.toolName) return;
     if (!definitions.has(event.toolName)) return;
     let group = groups.get(root);
     if (!group) {
@@ -189,6 +199,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
     });
   });
   pi.on("tool_execution_end", (event) => {
+    aliasRoots.delete(event.toolCallId);
     const root = parents.get(event.toolCallId);
     if (root === undefined) return;
     parents.delete(event.toolCallId);

@@ -57,12 +57,18 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   });
   pi.on("before_agent_start", (event) => {
     availability.reconcile();
-    const systemPrompt = event.systemPrompt
-      .replace(
-        "- bash: Execute bash commands (ls, grep, find, etc.)",
-        "- bash: Execute Bash commands",
-      )
-      .replace("- Use bash for file operations like ls, rg, find\n", "");
+    const options = event.systemPromptOptions;
+    if (options.toolSnippets.bash)
+      options.toolSnippets.bash = options.toolSnippets.bash.replace(
+        "Execute bash commands (ls, grep, find, etc.)",
+        "Execute Bash commands",
+      );
+    // Keep the legacy host-rule correction structured so portable providers can project it.
+    const rules = /^<rules>\n([\s\S]*?)\n<\/rules>$/mu.exec(event.systemPrompt)?.[1];
+    if (rules?.includes("- Use bash for file operations like ls, rg, find"))
+      options.sections.rules = rules
+        .replace(/(?:^|\n)- Use bash for file operations like ls, rg, find(?=\n|$)/u, "")
+        .trim();
     const tools = pi.getAllTools().filter((tool) => tool.exposure !== "hidden");
     const active = pi.getActiveTools();
     const discovery = active.includes("tool_search")
@@ -83,11 +89,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         ? [`${discovery} debug in ide_debug when creating a debugger session.`]
         : []),
     ];
-    const prompt =
-      guidance.length === 0
-        ? systemPrompt
-        : `${systemPrompt}\n\n<ide_discovery>\n${guidance.join("\n")}\n</ide_discovery>`;
-    return prompt === event.systemPrompt ? undefined : { systemPrompt: prompt };
+    options.sections.ide_discovery = guidance.join("\n");
   });
   const flags = createFeatureFlags(pi, {
     "pi-agent-ide-no-animations": config.noAnimations ?? false,

@@ -47,9 +47,7 @@ export default async function registerCodeReview(pi: ExtensionAPI): Promise<void
   });
   pi.on("before_agent_start", (event) => {
     if (pi.getFlag("pi-agent-ide-code-review-capture") !== true) return;
-    return {
-      systemPrompt: `${event.systemPrompt}\n\nJev rule capture: enabled. Use the capture-code-review-rule skill when the user gives a reusable code-review requirement. Propose the rule and wait for confirmation before saving it to ${REVIEW_RULES_PATH}.`,
-    };
+    event.systemPromptOptions.sections.ide_rule_capture = `Jev rule capture: enabled. Use the capture-code-review-rule skill when the user gives a reusable code-review requirement. Propose the rule and wait for confirmation before saving it to ${REVIEW_RULES_PATH}.`;
   });
   pi.registerMessageRenderer("ide-code-review", (message, options, theme) => {
     const content =
