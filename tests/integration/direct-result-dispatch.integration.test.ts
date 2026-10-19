@@ -72,6 +72,11 @@ for (const [form, token] of tokens) {
           name: "replace",
           arguments: { path: token, start: "beta", end: "beta", text: "BAD" },
         },
+        {
+          id: "unknown",
+          name: "replace",
+          arguments: { path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" },
+        },
         { id: "valid", name: "replace", arguments: { path: token, text: "BETA\n" } },
         { id: "stale", name: "replace", arguments: { path: token, text: "STALE\n" } },
         {
@@ -93,6 +98,7 @@ for (const [form, token] of tokens) {
       expect(getToolResultText(run, "invalid")).not.toContain("ENOENT");
       expect(getToolExecution(run, "valid").isError, getToolResultText(run, "valid")).toBe(false);
       expect(getToolExecution(run, "stale").isError).toBe(true);
+      expect(getToolExecution(run, "unknown").isError).toBe(true);
       expect(getToolExecution(run, "bad-anchor").isError).toBe(true);
       expect(getToolExecution(run, "path").isError, getToolResultText(run, "path")).toBe(false);
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\nGAMMA\n");
@@ -122,7 +128,17 @@ for (const [index, form] of ["uuid", "text", "prefix"].entries()) {
   catch (error) { rejected = String(error).includes("RESULT_INPUT_REJECTED"); }
   if (!rejected) throw Error("Unsupported reference-plus-selector call was not rejected");
   await tools.replace({ path: source, text: "BETA" + index + "\n" });
+  await tools.read({ path: "note.txt" });
+  let stale = false;
+  try { await tools.replace({ path: source, text: "STALE" }); }
+  catch { stale = true; }
+  if (!stale) throw Error("A changed snapshot still authorized an edit");
 }
+let unknown = false;
+try { await tools.replace({ path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" }); }
+catch { unknown = true; }
+if (!unknown) throw Error("An unknown reference authorized an edit");
+await tools.replace({ path: "note.txt", start: "gamma", text: "GAMMA" });
 text("Reference boundaries verified");
 `,
           },
@@ -131,6 +147,6 @@ text("Reference boundaries verified");
       true,
     );
     expect(getToolExecution(run, "code").isError, getToolResultText(run, "code")).toBe(false);
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA2\ngamma\n");
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA2\nGAMMA\n");
   });
 });
