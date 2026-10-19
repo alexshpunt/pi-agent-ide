@@ -24,7 +24,7 @@
 
 <div align="center">
 
-[![Explicit Edit Benchmark score](https://img.shields.io/endpoint?url=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Falexshpunt%2Fexplicit-edit-benchmark%2Fresolve%2Fmain%2Fbadges%2Fpi-agent-ide.json)](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest)
+[![Explicit Edit Benchmark score](https://img.shields.io/endpoint?url=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Falexshpunt%2Fexplicit-edit-benchmark%2Fresolve%2Fmain%2Fbadges%2Fpi-agent-ide-codemode.json)](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide-codemode%40latest)
 
 </div>
 
@@ -194,7 +194,7 @@ Windows and WSL are first-class supported environments alongside Linux. Run `/pi
 
 ### Built through data-driven development
 
-Pi Agent IDE is developed through daily use on real software and measured with the [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark). Published benchmark observations record performance on real editing tasks; not every release has a benchmark run. The badge above links to the [latest accepted observation](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest), with its score and run details; the underlying observations are available in the [published dataset](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
+Pi Agent IDE is developed through daily use on real software and measured with the [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark). The badge tracks the [Codemode-enabled profile](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide-codemode%40latest), with native Codemode alongside standalone IDE tools. [Earlier standalone-only observations](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest) remain separate. A profile's badge appears after its first accepted observation; not every release has a run. All observations are available in the [published dataset](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
 
 The project is also used to develop itself. Weak interactions, missing affordances, and agent failure modes appear in real work instead of remaining theoretical. Problems are fixed as they are found, and the tools evolve through regular releases.
 
