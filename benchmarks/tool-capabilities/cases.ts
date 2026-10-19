@@ -1624,6 +1624,25 @@ add(
 );
 
 add(
+  "result-selector-rejection",
+  ["compose.result-selector-rejection"],
+  "Read only line 2 of task.txt. Pass that issued result unchanged to Replace together with start OLD and text BAD; the unsupported result-plus-selector combination must fail without a filename lookup. Then reuse the same issued result in a valid result-only Replace with text NEW followed by a newline. Preserve all bytes outside the original Read selection.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    {
+      tool: "replace",
+      args: { start: "OLD", text: "BAD" },
+      reuse: reuse(0),
+      error: true,
+      contains: "RESULT_INPUT_REJECTED",
+      excludes: "ENOENT",
+    },
+    { tool: "replace", args: { text: "NEW\n" }, reuse: reuse(0) },
+  ],
+  { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
   "stale-recovery",
   ["compose.stale-recovery", "read.reference-recovery"],
   "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Then read the current file and report NEW. Do not try to revive the old result.",

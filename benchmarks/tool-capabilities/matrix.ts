@@ -161,6 +161,7 @@ const groups: [string[], string[]][] = [
   [["select.elementExtent"], ["select-elementExtent"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
+  [["compose.result-selector-rejection"], ["result-selector-rejection"]],
   [
     [
       "shell.execute",
