@@ -8,7 +8,7 @@ import {
 import { createIdeCore } from "#src/core/ide-core.js";
 import { createDiagnosticDelivery } from "#src/core/diagnostic-delivery.js";
 import {
-  diagnosticEntryData,
+  diagnosticEntryGroups,
   DIAGNOSTIC_ENTRY_TYPE,
   registerDiagnosticEntryRenderer,
 } from "#src/core/diagnostic-entry.js";
@@ -72,6 +72,9 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
           afterPostEditScope(() =>
             core.diagnostics.schedule(completion.resourceSource, completion.after.content, {
               cwd: completion.cwd,
+              ...(completion.parentToolCallId === undefined
+                ? {}
+                : { parentToolCallId: completion.parentToolCallId }),
             }),
           );
         }
@@ -91,7 +94,9 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
         },
         { triggerTurn: true, deliverAs: "steer" },
       );
-      pi.appendEntry(DIAGNOSTIC_ENTRY_TYPE, { files: notifications.map(diagnosticEntryData) });
+      for (const group of diagnosticEntryGroups(notifications)) {
+        pi.appendEntry(DIAGNOSTIC_ENTRY_TYPE, group);
+      }
     },
     pi.getFlag("pi-agent-ide-no-diagnostic-buffer") === true ? 0 : 5000,
   );

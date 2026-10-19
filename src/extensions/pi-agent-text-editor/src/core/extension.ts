@@ -1,6 +1,7 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectResultTargets } from "pi-agent-resource";
 import { setMutationSnapshotReader } from "./mutation-result-targets.js";
+import { registerTextEditOrigins } from "./text-edit-origin.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -64,6 +65,7 @@ export default async function registerTextEditorCore(
       ),
     );
   });
+  registerTextEditOrigins(pi, core);
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
   core.onDidEdit((completion) => {
     resultTargets.refresh(completion.resourceSource, completion.cwd);

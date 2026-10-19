@@ -16,6 +16,28 @@ export interface DiagnosticEntryData {
   }[];
 }
 
+/** One persisted UI summary owned by one visible execution, or explicitly left unowned. */
+export interface DiagnosticEntryBatch {
+  readonly files: readonly DiagnosticEntryData[];
+  readonly parentToolCallId?: string;
+}
+
+/** Split a buffered delivery by real execution ownership without copying private findings. */
+export function diagnosticEntryGroups(
+  notifications: readonly DiagnosticNotification[],
+): DiagnosticEntryBatch[] {
+  const groups = new Map<string | undefined, DiagnosticEntryData[]>();
+  for (const notification of notifications) {
+    const owner = notification.parentToolCallId;
+    const files = groups.get(owner) ?? [];
+    files.push(diagnosticEntryData(notification));
+    groups.set(owner, files);
+  }
+  return [...groups].map(([parentToolCallId, files]) => ({
+    files,
+    ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+  }));
+}
 /** Derive visible data from the exact report delivered to the model. */
 export function diagnosticEntryData(notification: DiagnosticNotification): DiagnosticEntryData {
   return {
@@ -68,14 +90,15 @@ export function renderDiagnosticEntry(
 
 /** Register durable UI-only entries; appending one never adds model context or starts a turn. */
 export function registerDiagnosticEntryRenderer(pi: ExtensionAPI): void {
-  pi.registerEntryRenderer<
-    DiagnosticEntryData | { readonly files: readonly DiagnosticEntryData[] }
-  >(DIAGNOSTIC_ENTRY_TYPE, (entry, options, theme) => {
-    const data = requiredValue(entry.data);
-    return "files" in data
-      ? renderDiagnosticBatch(data.files, theme, options.expanded)
-      : renderDiagnosticEntry(data, theme, options.expanded);
-  });
+  pi.registerEntryRenderer<DiagnosticEntryData | DiagnosticEntryBatch>(
+    DIAGNOSTIC_ENTRY_TYPE,
+    (entry, options, theme) => {
+      const data = requiredValue(entry.data);
+      return "files" in data
+        ? renderDiagnosticBatch(data.files, theme, options.expanded)
+        : renderDiagnosticEntry(data, theme, options.expanded);
+    },
+  );
 }
 
 /** One stable summary per delivery; expansion retains each file and provider. */

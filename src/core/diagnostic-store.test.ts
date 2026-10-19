@@ -87,6 +87,36 @@ function controlled(id: string) {
   return { source, calls };
 }
 
+test("late findings retain the edit owner and cannot move to a later file revision", async () => {
+  const checker = controlled("checker");
+  const { store, cwd, file } = await fixture([checker.source]);
+  store.schedule(file, "A", { cwd, parentToolCallId: "edit-a" });
+  await vi.waitFor(() => expect(checker.calls).toHaveLength(1));
+  // A read or a same-text edit cannot relabel work already started for another call.
+  await store.read(file, { cwd, mode: "snapshot" });
+  store.schedule(file, "A", { cwd, parentToolCallId: "same-text-edit" });
+  requiredValue(checker.calls[0]).finish(broken);
+  await vi.waitFor(async () => {
+    const notifications = await store.takeNotifications(cwd);
+    expect(notifications).toMatchObject([{ parentToolCallId: "edit-a" }]);
+  });
+  await writeFile(file, "B");
+  store.schedule(file, "B", { cwd, parentToolCallId: "edit-b" });
+  await vi.waitFor(() => expect(checker.calls).toHaveLength(2));
+  requiredValue(checker.calls[0]).context.publish({
+    ...broken,
+    diagnostics: [{ ...requiredValue(broken.diagnostics[0]), message: "stale" }],
+  });
+  requiredValue(checker.calls[1]).finish({
+    ...broken,
+    diagnostics: [{ ...requiredValue(broken.diagnostics[0]), message: "current" }],
+  });
+  await vi.waitFor(async () => {
+    expect(await store.takeNotifications(cwd)).toMatchObject([
+      { parentToolCallId: "edit-b", results: [{ diagnostics: [{ message: "current" }] }] },
+    ]);
+  });
+});
 test("edits supersede old jobs; independent sources report partial readiness without changing text", async () => {
   const lsp = controlled("lsp");
   const lint = controlled("lint");

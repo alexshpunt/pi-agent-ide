@@ -3,6 +3,8 @@ import type { TextDocument } from "pi-agent-text";
 export type TextEditIntent = "edit" | "restore" | "mixed";
 
 export interface TextEditCompletion {
+  /** Visible tool call that owns this saved version, including the root of nested executions. */
+  readonly parentToolCallId?: string;
   /** Saved bytes remain observable even when post-edit work is deferred or interrupted. */
   readonly postProcessing?: "deferred" | "final" | "complete" | "interrupted";
   readonly source: string;

@@ -17,12 +17,15 @@ export interface DiagnosticNotification {
   readonly filePath: string;
   readonly results: readonly IdeDiagnosticResult[];
   readonly text: string;
+  /** Visible execution that produced this exact checked snapshot, when known. */
+  readonly parentToolCallId?: string;
 }
 
 interface FileState {
   readonly cwd: string;
   readonly filePath: string;
   readonly content: string;
+  readonly parentToolCallId?: string;
   readonly controller: AbortController;
   readonly results: Map<string, IdeDiagnosticResult>;
   readonly jobs: Promise<void>[];
@@ -56,8 +59,12 @@ export class DiagnosticStore {
   ) {}
 
   /** Schedule final edit text without waiting for a diagnostic provider. */
-  schedule(filePath: string, content: string, { cwd }: ToolContext): void {
-    if (!this.disposed) this.ensure(filePath, content, cwd);
+  schedule(
+    filePath: string,
+    content: string,
+    { cwd, parentToolCallId }: ToolContext & { readonly parentToolCallId?: string },
+  ): void {
+    if (!this.disposed) this.ensure(filePath, content, cwd, parentToolCallId);
   }
 
   /** Read one current text snapshot; never label unfinished checks as clean. */
@@ -154,6 +161,9 @@ export class DiagnosticStore {
         : path.relative(cwd, state.filePath);
       notifications.push({
         filePath: source,
+        ...(state.parentToolCallId === undefined
+          ? {}
+          : { parentToolCallId: state.parentToolCallId }),
         results,
         text: `${JSON.stringify(source)}: ${summary}.`,
       });
@@ -191,7 +201,12 @@ export class DiagnosticStore {
     ]);
   }
 
-  private ensure(filePath: string, content: string, cwd: string): FileState {
+  private ensure(
+    filePath: string,
+    content: string,
+    cwd: string,
+    parentToolCallId?: string,
+  ): FileState {
     const key = this.key(filePath, cwd);
     const previous = this.files.get(key);
     if (previous?.content === content) return previous;
@@ -201,6 +216,7 @@ export class DiagnosticStore {
       cwd: cwd.includes("://") ? cwd : path.resolve(cwd),
       filePath: resolveCodeViewPath(filePath, cwd),
       content,
+      ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
       controller: new AbortController(),
       results: new Map(),
       jobs: [],
