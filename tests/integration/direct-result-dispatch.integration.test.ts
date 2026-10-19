@@ -123,10 +123,12 @@ for (const [index, form] of ["uuid", "text", "prefix"].entries()) {
   const id = /<uuid>([^<]+)<\/uuid>/u.exec(shown)?.[1];
   if (!id) throw Error("Read did not issue a reference");
   const source = form === "text" ? shown : form === "uuid" ? id : "RESULT#" + id;
-  let rejected = false;
-  try { await tools.replace({ path: source, start: "beta", text: "BAD" }); }
-  catch (error) { rejected = String(error).includes("RESULT_INPUT_REJECTED"); }
-  if (!rejected) throw Error("Unsupported reference-plus-selector call was not rejected");
+  for (const selector of [{ start: "beta" }, { start: "beta", end: "beta" }]) {
+    let rejected = false;
+    try { await tools.replace({ path: source, ...selector, text: "BAD" }); }
+    catch (error) { rejected = String(error).includes("RESULT_INPUT_REJECTED"); }
+    if (!rejected) throw Error("Unsupported reference-plus-selector call was not rejected");
+  }
   await tools.replace({ path: source, text: "BETA" + index + "\n" });
   await tools.read({ path: "note.txt" });
   let stale = false;
