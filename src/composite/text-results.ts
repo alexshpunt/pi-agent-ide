@@ -140,9 +140,10 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   };
   pi.on("session_start", clear);
   pi.on("session_shutdown", clear);
-  pi.on("before_agent_start", (event) => ({
-    systemPrompt: `${event.systemPrompt}\n\n<ide_results>\nIDE tools return readable text. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves these strings within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.\n</ide_results>`,
-  }));
+  pi.on("before_agent_start", (event) => {
+    event.systemPromptOptions.sections.ide_results =
+      "IDE tools return readable text. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves these strings within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
+  });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
       parents.set(event.toolCallId, parents.get(event.parentToolCallId) ?? event.parentToolCallId);
