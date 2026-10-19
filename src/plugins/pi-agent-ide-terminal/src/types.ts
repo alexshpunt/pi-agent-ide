@@ -22,7 +22,15 @@ export interface ShellProfile {
   readonly commandArgs: (command: string) => readonly string[];
 }
 
+/** Real launch and visible execution identities; never reassigned by later shell interaction. */
+export interface TerminalExecutionOrigin {
+  readonly toolCallId: string;
+  readonly parentToolCallId: string;
+  readonly sessionId: string;
+}
 export interface TerminalSession {
+  /** Assigned once by the launching tool; retained with the process across reload. */
+  origin?: TerminalExecutionOrigin;
   readonly id: string;
   readonly source: string;
   readonly command: string;
@@ -56,6 +64,7 @@ export interface TerminalSession {
 }
 
 export interface TerminalSessionSnapshot {
+  readonly origin?: TerminalExecutionOrigin;
   readonly id: string;
   readonly source: string;
   readonly command: string;

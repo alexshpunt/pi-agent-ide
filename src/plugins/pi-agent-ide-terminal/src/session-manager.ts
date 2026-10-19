@@ -68,6 +68,7 @@ export class TerminalSessionManager {
     return {
       id: session.id,
       source: session.source,
+      ...(session.origin === undefined ? {} : { origin: session.origin }),
       command: session.command,
       cwd: session.cwd,
       shell: session.shell.displayName,
