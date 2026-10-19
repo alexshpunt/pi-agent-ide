@@ -1169,6 +1169,31 @@ add(
 );
 
 add(
+  "copy-destination-recovery",
+  ["edit.copy-destination-recovery"],
+  "Exercise Copy destination recovery in task.txt. First request the alpha-through-beta source block with targetStart set to the ambiguous text }); and observe its rejection. Then Read the current file with anchors and copy the same exact source block after INSERT_HERE, using the issued destination anchor. Keep start alpha and end beta unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
+  [
+    {
+      tool: "copy",
+      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: "});" },
+      error: true,
+      contains: "ambiguous",
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "copy",
+      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: /^\d+#[A-F\d]+$/u },
+      reuse: reuse(1, "targetStart", "anchor"),
+    },
+  ],
+  {
+    files: { "task.txt": "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n" },
+    expected: {
+      "task.txt": "alpha\nbeta\ngap\n});\nINSERT_HERE\nalpha\nbeta\n});\ntail\n",
+    },
+  },
+);
+add(
   "selection-copy-move",
   ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
   "Read task.txt and select its second complete line. Copy that selection after the first line of dest.txt. Read task.txt again, select the original second line, and move it after the last line of dest.txt. Use Read results for select and selection results as copy/move sources. Use dest.txt as target with targetStart identifying DEST for copy and TAIL for move; do not replace a destination selection.",
