@@ -181,6 +181,7 @@ test("real Pi receives immediate findings during edits while empty and stale rep
       .filter((entry) => entry.type === "custom" && entry.customType === "ide-diagnostic-summary");
     expect(summaries.map((entry) => entry.data)).toEqual([
       {
+        parentToolCallId: "edit-b",
         files: [
           {
             filePath: "example.ts",

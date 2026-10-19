@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { connectResultTargets } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -73,6 +74,7 @@ function createHandler(
   readonly handler: ToolCallInterceptorHandler;
   readonly add: (registration: TextMutationToolRegistration) => void;
 } {
+  const resultTargets = connectResultTargets(pi);
   const schemas = new Map<string, TextMutationToolRegistration>();
   const toolNames: string[] = [];
   const knownPaths = new Map<number, string>();
@@ -91,6 +93,21 @@ function createHandler(
       }
 
       const arguments_ = context.partialArgs ?? context.args;
+      // Issued selections belong to the result-input pipeline, not filename anchor inspection.
+      // This also leaves unsupported selector combinations and expired IDs to their owner.
+      try {
+        for (const field of [
+          schema.source.field,
+          ...(schema.source.targets ?? []).map((target) => target.field),
+        ]) {
+          const original = arguments_[field];
+          const source = resultTargets.source(original, context.cwd);
+          if (source !== original || (typeof source === "string" && source.startsWith("RESULT#")))
+            return;
+        }
+      } catch {
+        return;
+      }
       const source = resolveSource(
         arguments_,
         context,

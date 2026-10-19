@@ -43,6 +43,10 @@ const groups: [string[], string[]][] = [
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
   [["edit.semantic-write-receipt"], ["semantic-write-receipts"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
+  [
+    ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
+    ["write-confirmed-readback"],
+  ],
   [["codemode.silent-write"], ["write-silent"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
@@ -118,6 +122,7 @@ const groups: [string[], string[]][] = [
     ],
   ],
   [["compose.paired-sources-targets"], ["paired-copy"]],
+  [["edit.copy-destination-recovery"], ["copy-destination-recovery"]],
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
@@ -157,6 +162,7 @@ const groups: [string[], string[]][] = [
   [["select.elementExtent"], ["select-elementExtent"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
+  [["compose.result-selector-rejection"], ["result-selector-rejection"]],
   [
     [
       "shell.execute",

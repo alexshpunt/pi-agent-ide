@@ -953,6 +953,9 @@ function wholeFileOperationSummary(details: unknown):
 
 function wholeFileFailureCause(code: string): string {
   switch (code) {
+    case "RESULT_INPUT_REJECTED": {
+      return "result input was rejected";
+    }
     case "WRITE_FAILED": {
       return "resource write failed";
     }

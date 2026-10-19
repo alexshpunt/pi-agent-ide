@@ -9,6 +9,20 @@ export default async function registerReviewFixture(pi: ExtensionAPI): Promise<v
   const { mode } = JSON.parse(await readFile(path.resolve("review-case.json"), "utf8")) as {
     mode: string;
   };
+  let releaseIdle: (() => void) | undefined;
+  const idle = new Promise<void>((resolve) => {
+    releaseIdle = resolve;
+  });
+  pi.on("agent_settled", async (_event, context) => {
+    if (mode !== "idle" || releaseIdle === undefined) return;
+    await appendFile(
+      path.resolve("review-idle.jsonl"),
+      JSON.stringify({ idle: context.isIdle() }) + "\n",
+    );
+    releaseIdle();
+    releaseIdle = undefined;
+  });
+  pi.on("session_shutdown", () => releaseIdle?.());
   pi.registerProvider("typesafe", {
     ...(mode === "disconnected" ? {} : { apiKey: "test-key" }),
     models:
@@ -28,6 +42,7 @@ export default async function registerReviewFixture(pi: ExtensionAPI): Promise<v
     classifiers: {
       "review-test": {
         async classify(model, context) {
+          if (mode === "idle") await idle;
           await appendFile(path.resolve("review-calls.jsonl"), JSON.stringify(context) + "\n");
           return {
             api: "review-test",

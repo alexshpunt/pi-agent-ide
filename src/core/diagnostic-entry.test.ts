@@ -3,6 +3,41 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { diagnosticEntryData, renderDiagnosticEntry } from "./diagnostic-entry.js";
 
+test("one buffered delivery keeps separate tool owners and leaves unowned findings unclaimed", async () => {
+  const { diagnosticEntryGroups } = await import("./diagnostic-entry.js");
+  const notification = (filePath: string, parentToolCallId?: string) => ({
+    filePath,
+    parentToolCallId,
+    text: filePath,
+    results: [
+      {
+        source: "checker",
+        status: "ready" as const,
+        diagnostics: [
+          { line: 1, column: 1, severity: "error" as const, code: "fixture", message: "detail" },
+        ],
+      },
+    ],
+  });
+  const groups = diagnosticEntryGroups([
+    notification("a.ts", "first"),
+    notification("b.ts", "second"),
+    notification("c.ts", "first"),
+    notification("unowned.ts"),
+  ]);
+  expect(
+    groups.map((group) => ({
+      owner: group.parentToolCallId,
+      files: group.files.map((file) => file.filePath),
+    })),
+  ).toEqual([
+    { owner: "first", files: ["a.ts", "c.ts"] },
+    { owner: "second", files: ["b.ts"] },
+    { owner: undefined, files: ["unowned.ts"] },
+  ]);
+  expect(groups[2]).not.toHaveProperty("parentToolCallId");
+});
+
 test.each([false, true])(
   "entry counts preserve severity and completion status without carrying raw details (expanded=%s)",
   (expanded) => {

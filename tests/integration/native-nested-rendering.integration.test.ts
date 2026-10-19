@@ -150,6 +150,48 @@ test("nested IDE results keep their custom panels below Codemode without script 
   });
 });
 
+// Final file-text refresh must not erase a provider receipt from an Insert that changed no file.
+test("a nested provider Insert keeps its receipt text beside a file edit", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha\ngamma\n");
+    const run = await new PiIntegrationTest({
+      testName: "nested-semantic-insert-receipt",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      isolateUserResources: true,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        "builtin:codemode",
+        path.resolve("tests/integration/fixtures/semantic-insert-receipt.ts"),
+      ],
+      tools: ["codemode", "insert"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "parent",
+              name: "codemode",
+              arguments: {
+                code: 'await tools.insert({path:"receipt:probe",text:"press"}); await tools.insert({path:"note.txt",anchor:"alpha",text:"beta"});',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Run a provider Insert and a file Insert in one script");
+    expect(getToolExecution(run, "parent").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\ngamma\n");
+    expect(run.tuiRenderedOutput).toContain("Probe receipt: press delivered");
+    const saved = await PiRun.open(run.artifacts.run);
+    const panelEntry = saved.session
+      ?.split("\n")
+      .find((line) => line.includes('"customType":"ide-nested-results"'));
+    expect(panelEntry).toContain("Probe receipt: press delivered");
+  });
+});
+
 test("ordinary parent failure keeps one final diff per file and every native call", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
