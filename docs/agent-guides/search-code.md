@@ -18,7 +18,7 @@ If the extra branch reports a budget skip, narrow `path` rather than treating th
 
 ## Search resources
 
-Search returns readable matches and references in direct calls and Codemode. An empty successful search is not an error. Incomplete results say so; do not treat their zero matches as proof of absence.
+Search returns readable matches and references in direct calls. In Codemode it returns `{ result, hasMatches, complete }`. Pass `result` to other tools to reuse the issued selection, or print it for the readable output. `hasMatches` reports original matches, not spelling alternatives. `complete` reports query coverage, not display truncation. Either fact is `null` when the provider does not report it. Treat `hasMatches: false` as proof of absence only when `complete: true`. An empty successful search is not an error.
 
 If Search fails, fix the reported input, scope or provider problem before retrying. Keep the intended search scope; do not treat the failure as zero matches.
 
@@ -52,7 +52,7 @@ Use the displayed `capture NAME: RESULT#...` reference to Search or edit a captu
 ```js
 const window = await tools.read({ path: "client.ts", offset: 10, limit: 4 });
 const calls = await tools.search({ path: window, query: "ast:request($OPTIONS)" });
-text(calls);
+text(calls.result);
 ```
 
 Use its displayed OPTIONS reference in the next call. Store/load keeps these result strings across Codemode scripts within the same session.
