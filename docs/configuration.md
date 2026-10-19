@@ -135,6 +135,8 @@ Standalone editing tools validate source snapshots before writing. Native Codemo
 
 Automatic diagnostic findings are grouped for five seconds from the first finding. The UI tab’s **Immediate diagnostic notices** option (`pi-agent-ide-no-diagnostic-buffer`) disables this delay. Combined notices keep each file and reporting tool identifiable. Empty completed diagnostic reads tell the agent that checks finished without findings, but do not draw an empty diagnostic panel. Pending, unavailable and incomplete checks are not reported as clean.
 
+Late diagnostic summaries retain the tool call that produced the checked file version, when known. Split-history extensions can place them beside that call without making edits wait or rewriting completed tool results. A buffered agent notification can cover several calls; the visible summaries keep those owners separate.
+
 Start Pi with either or both flags:
 
 ```sh
