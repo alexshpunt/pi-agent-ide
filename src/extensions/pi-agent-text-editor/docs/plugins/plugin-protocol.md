@@ -65,6 +65,8 @@ A mutation registration may set `intent` to `restore`; otherwise it is an ordina
 
 `api.onDidEdit()` observes a changed Resource after its write, post-edit handlers, and final reread have finished. One completion contains the requested source, resolved Resource source, resolver ID, cwd, prior existence, raw before and final after documents, and invocation intent.
 
+When known, `completion.parentToolCallId` identifies the visible tool call that owns this saved version, including the root of nested executions. Deferred final processing keeps the original identity. Programmatic edits may omit it; listeners must not guess an owner from the file path or whichever call is currently active.
+
 A direct mutation produces one completion per changed file. A successful coalesced batch also produces one completion per changed file, with the state before and after the complete batch. A write-phase failure produces no completions, including when rollback is incomplete. Presenters run after notification and do not alter the raw final document seen by listeners.
 
 The editor does not retain completions or provide history. Listener failures do not turn a successful write into a failed tool result.
