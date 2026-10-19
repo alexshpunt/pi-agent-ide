@@ -17,6 +17,18 @@ const groups: [string[], string[]][] = [
   ],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
   [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],
+  // Reuse the same byte/provenance contracts across native and explicitly selected connector runs.
+  [["compose.provider-reference-roundtrip"], ["read-search-replace"]],
+  [["compose.provider-cross-call-reference"], ["codemode-store"]],
+  [["edit.large-replace-payload"], ["streamed-replace"]],
+  [
+    [
+      "edit.issued-result-streaming",
+      "edit.reject-result-anchor-combination",
+      "compose.native-provider-auth",
+    ],
+    ["issued-result-edit"],
+  ],
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
   [["compose.search-issued-scope"], ["search-issued-scope"]],
   [["compose.batch-insert-search"], ["search-line-batch-insert"]],
@@ -43,6 +55,8 @@ const groups: [string[], string[]][] = [
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
   [["edit.semantic-write-receipt"], ["semantic-write-receipts"]],
+  [["compose.provider-structured-receipt"], ["semantic-script-receipts"]],
+  [["compose.local-alias-structured-receipt"], ["semantic-local-alias-receipts"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [
     ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],

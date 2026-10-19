@@ -30,14 +30,27 @@ export interface ProcessResult {
 export function runProcess(
   command: string,
   args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number; signal?: AbortSignal } = {},
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    /** Inherit the real terminal rather than capturing or forwarding terminal escape sequences. */
+    terminal?: boolean;
+  } = {},
 ): Promise<ProcessResult> {
   return new Promise((resolve, reject) => {
+    const initialRawMode = process.stdin.isRaw;
+    // A child changes the shared TTY's termios flags without updating this ReadStream's cache.
+    const terminalState =
+      options.terminal && process.stdin.isTTY
+        ? execFileSync("stty", ["-g"], { stdio: [0, "pipe", "pipe"], encoding: "utf8" }).trim()
+        : undefined;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
       detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: options.terminal ? "inherit" : ["ignore", "pipe", "pipe"],
     });
     let stdout = "",
       stderr = "",
@@ -63,23 +76,59 @@ export function runProcess(
       stop();
     }, options.timeoutMs ?? 180000);
     options.signal?.addEventListener("abort", stop, { once: true });
-    child.stdout.setEncoding("utf8").on("data", (value: string) => {
+    const resize = () => {
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGWINCH");
+      } catch {
+        /* The group already exited. */
+      }
+    };
+    if (options.terminal) process.on("SIGWINCH", resize);
+    const restoreTerminal = (interrupted = false) => {
+      if (!options.terminal) return;
+      process.removeListener("SIGWINCH", resize);
+      if (interrupted && process.stdout.isTTY) {
+        // SIGTERM/SIGKILL can bypass Pi's shutdown. Do not leave its input/display modes in the shell.
+        process.stdout.write(
+          "\x1b[?2026l\x1b[?2004l\x1b[<u\x1b[>4;0m" +
+            "\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1006l" +
+            "\x1b[?2031l\x1b[?1049l\x1b[?7h\x1b[?25h\x1b[0m",
+        );
+      }
+      if (process.stdin.isTTY) process.stdin.setRawMode(initialRawMode);
+      if (terminalState) execFileSync("stty", [terminalState], { stdio: [0, "ignore", "ignore"] });
+    };
+    child.stdout?.setEncoding("utf8").on("data", (value: string) => {
       stdout += value;
     });
-    child.stderr.setEncoding("utf8").on("data", (value: string) => {
+    child.stderr?.setEncoding("utf8").on("data", (value: string) => {
       stderr += value;
     });
     child.on("error", (error) => {
       clearTimeout(timer);
       if (hardKill) clearTimeout(hardKill);
       options.signal?.removeEventListener("abort", stop);
-      reject(error);
+      try {
+        restoreTerminal();
+        reject(error);
+      } catch (cleanupError) {
+        reject(
+          new AggregateError([error, cleanupError], "Process startup and terminal cleanup failed"),
+        );
+      }
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       if (hardKill) clearTimeout(hardKill);
       options.signal?.removeEventListener("abort", stop);
-      resolve({ code, signal, timedOut, stdout, stderr });
+      try {
+        restoreTerminal(
+          signal !== null || ((timedOut || options.signal?.aborted === true) && code !== 0),
+        );
+        resolve({ code, signal, timedOut, stdout, stderr });
+      } catch (error) {
+        reject(error);
+      }
     });
     if (options.signal?.aborted) stop();
   });
@@ -114,7 +163,13 @@ export async function snapshotSource(
   if (cloned.code !== 0) throw Error(cloned.stderr || "Source clone failed");
   const files = git(repository, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
     .split("\0")
-    .filter((file) => file && !file.startsWith(".pi/extensions/") && file !== ".pi/settings.json");
+    .filter(
+      (file) =>
+        file &&
+        !file.startsWith(".pi/extensions/") &&
+        !file.startsWith(".pi/npm/") &&
+        file !== ".pi/settings.json",
+    );
   const hash = createHash("sha256");
   for (const file of [...new Set(files)].sort()) {
     const original = path.join(repository, file);
@@ -308,7 +363,11 @@ export async function validateFiles(
 }
 
 /** Build an OS sandbox with read-only tools and source, and only case-owned writable mounts. */
-export async function sandboxArgs(source: string, root: string): Promise<string[]> {
+export async function sandboxArgs(
+  source: string,
+  root: string,
+  connector?: { root: string; executable?: string; definition?: { claudeFileAuth?: boolean } },
+): Promise<string[]> {
   const args = [
     "--die-with-parent",
     "--unshare-user",
@@ -322,6 +381,8 @@ export async function sandboxArgs(source: string, root: string): Promise<string[
     "--tmpfs",
     "/tmp",
   ];
+  // Claude Code rejects bypass-permissions under root; remap only explicit CLI runs.
+  if (connector?.executable) args.push("--uid", "1000", "--gid", "1000");
   for (const mount of [
     "/usr",
     "/etc",
@@ -332,6 +393,22 @@ export async function sandboxArgs(source: string, root: string): Promise<string[
     if (await exists(mount)) args.push("--ro-bind", mount, mount);
   for (const directory of ["bin", "sbin", "lib", "lib64"])
     args.push("--symlink", `usr/${directory}`, `/${directory}`);
+  if (connector) {
+    args.push("--ro-bind", connector.root, "/connector");
+    if (connector.executable)
+      args.push("--dir", "/tools", "--ro-bind", connector.executable, "/tools/claude");
+    if (connector.definition?.claudeFileAuth) {
+      if (connector.executable)
+        throw new Error("Claude-file authentication cannot expose a Claude executable");
+      const blocker = path.join(root, "claude-fallback-blocker");
+      await writeFile(
+        blocker,
+        "#!/bin/sh\nprintf 'blocked\\n' >> /state/claude-fallback-attempted\nexit 126\n",
+        { mode: 0o700 },
+      );
+      args.push("--dir", "/tools", "--ro-bind", blocker, "/tools/claude");
+    }
+  }
   const resolver = await import("node:fs/promises").then((fs) => fs.realpath("/etc/resolv.conf"));
   if (resolver !== "/etc/resolv.conf") args.push("--ro-bind", resolver, resolver);
   args.push(

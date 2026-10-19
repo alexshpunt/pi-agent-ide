@@ -46,6 +46,38 @@ add(
     answer: "unknown",
   },
 );
+for (const viaLocalAlias of [false, true])
+  add(
+    viaLocalAlias ? "semantic-local-alias-receipts" : "semantic-script-receipts",
+    [
+      viaLocalAlias
+        ? "compose.local-alias-structured-receipt"
+        : "compose.provider-structured-receipt",
+    ],
+    (viaLocalAlias
+      ? "In native Codemode, discover and use the registered local MCP forwarding alias for Insert. Do not substitute canonical Insert; report a missing prerequisite if no alias is registered. "
+      : "In native Codemode, use Insert, preferring a matching local MCP forwarding alias when one is registered. ") +
+      'Call it once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report unknown for the uncertain action.',
+    ["applied", "not-applied", "unknown"].map((effect) => ({
+      tool: "insert",
+      args: { path: `fixture:semantic-script/${effect}`, text: "probe" },
+      error: effect !== "applied",
+      contains: `Semantic action ${effect}`,
+      parentStructuredValue: true,
+      ...(viaLocalAlias && { viaLocalAlias: true }),
+    })),
+    {
+      modes: ["codemode"],
+      setup: "semantic-write",
+      ...(viaLocalAlias && { prerequisite: 'test "${CAPABILITY_CONNECTOR_ALIASES:-0}" = 1' }),
+      expected: {
+        ...textFile,
+        "attempts.jsonl":
+          '{"effect":"applied","text":"probe"}\n{"effect":"not-applied","text":"probe"}\n{"effect":"unknown","text":"probe"}\n',
+      },
+      answer: "unknown",
+    },
+  );
 add(
   "ide-settings-catalog",
   ["read.ide-settings", "search.ide-settings"],
@@ -540,14 +572,61 @@ add(
 
 add(
   "read-search-replace",
-  ["compose.read-search", "compose.search-replace"],
-  "Read task.txt. Pass the unchanged Read result or its UUID into search for OLD, then pass the Search result into replace to change just OLD to NEW. Do not retype a file path for the dependent calls.",
+  ["compose.read-search", "compose.search-replace", "compose.provider-reference-roundtrip"],
+  "Read task.txt. Pass the unchanged Read result or its UUID into search for OLD, then pass the Search result into replace to change just OLD to NEW. Do not retype a file path for the dependent calls. In Codemode, when the runtime offers local MCP forwarding aliases for Search or Replace, use those aliases rather than their flat source names; still pass the actual returned references.",
   [
     { tool: "read", args: { path: "task.txt" } },
     { tool: "search", args: { query: "OLD" }, reuse: reuse(0) },
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+const streamedReplacement = Array.from(
+  { length: 96 },
+  (_, index) => `STREAM-PAYLOAD-${String(index + 1).padStart(4, "0")}`,
+).join("\n");
+add(
+  "streamed-replace",
+  ["edit.large-replace-payload"],
+  `Use direct replace on task.txt with start OLD and text equal to this complete JSON string: ${JSON.stringify(streamedReplacement)}. Supply the literal text in the tool arguments, not a script, reference, abbreviation or repetition expression. Then read the first two lines of the saved file and report STREAM-PAYLOAD-0001. Keep the surrounding keep and last lines unchanged.`,
+  [
+    { tool: "replace", args: { path: "task.txt", start: "OLD", text: streamedReplacement } },
+    {
+      tool: "read",
+      args: { path: "task.txt", offset: 1, limit: 2 },
+      contains: "STREAM-PAYLOAD-0001",
+    },
+  ],
+  {
+    modes: ["direct"],
+    expected: { "task.txt": `keep\n${streamedReplacement}\nlast\n` },
+    answer: "STREAM-PAYLOAD-0001",
+  },
+);
+
+add(
+  "issued-result-edit",
+  [
+    "edit.issued-result-streaming",
+    "edit.reject-result-anchor-combination",
+    "compose.native-provider-auth",
+  ],
+  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Search the file again for NEW. Attempt Replace with that fresh Search UUID as path and start NEW; this combination must be refused with RESULT_INPUT_REJECTED, not treated as a filename. The streaming guard may stop this invalid call before its text BLOCKED arrives. Read the current file and report NEW. Keep every other byte unchanged.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "OLD" } },
+    { tool: "replace", args: { text: "NEW" }, reuse: reuse(0) },
+    { tool: "search", args: { path: "task.txt", query: "NEW" } },
+    {
+      tool: "replace",
+      args: { start: "NEW" },
+      reuse: reuse(2),
+      error: true,
+      finalContains: "RESULT_INPUT_REJECTED",
+    },
+    { tool: "read", args: { path: "task.txt" }, contains: "NEW" },
+  ],
+  { modes: ["direct"], expected: { "task.txt": "keep\nNEW\nlast\n" }, answer: "NEW" },
 );
 
 add(
@@ -1649,7 +1728,7 @@ add(
 
 add(
   "codemode-store",
-  ["codemode.store-load", "compose.cross-call"],
+  ["codemode.store-load", "compose.cross-call", "compose.provider-cross-call-reference"],
   "In one Codemode call, read task.txt and store the unchanged result. In a second Codemode call, load it and search within that result for OLD. Pass the resulting Search selection into replace to change OLD to NEW. Do not reread or retype the file path for the dependent operations.",
   [
     { tool: "read", args: { path: "task.txt" } },
@@ -1733,7 +1812,7 @@ add(
     "process.discovery",
     "process.read",
   ],
-  "Start a Bash command that waits for one input line and then prints that line. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same live shell. Also read the completed shell using its original resource and search its retained output for hello. Attempt to replace hello through the returned terminal Read result and confirm refusal: terminal output grants no file-edit authority. Also discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
+  "Start a background Bash command that waits for one input line, prints that line and exits. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello. Then discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -1743,9 +1822,11 @@ add(
     { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello" },
     {
       tool: "replace",
-      args: { start: "hello", text: "BAD" },
+      // The streaming authority guard may stop generation before text arrives.
+      args: { start: "hello" },
       reuse: reuse(5),
       error: true,
+      contains: "no reusable text selection",
     },
     {
       tool: "search",
