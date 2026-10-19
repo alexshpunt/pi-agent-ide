@@ -509,6 +509,12 @@ describe("mutation renderer lifecycle", () => {
     },
     { effect: "applied", code: "CONNECTION_LOST", expected: "✓ Applied · connection lost" },
     {
+      kind: "text-mutation",
+      effect: "not-applied",
+      code: "RESULT_INPUT_REJECTED",
+      expected: "Reason: result input was rejected",
+    },
+    {
       kind: "uncertain-peer",
       effect: "unknown",
       code: "WRITE_FAILED",
@@ -565,7 +571,12 @@ describe("mutation renderer lifecycle", () => {
           details:
             kind === "text-mutation" || kind === "uncertain-peer"
               ? {
-                  effect: effect === "unknown" ? "unknown" : "applied",
+                  effect:
+                    effect === "unknown"
+                      ? "unknown"
+                      : effect === "not-applied"
+                        ? "not-applied"
+                        : "applied",
                   results: [
                     new FileMutationResult({
                       ...(kind === "uncertain-peer"
