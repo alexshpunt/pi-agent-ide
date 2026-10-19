@@ -8,6 +8,7 @@ import {
 } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 import { createPostEditScope } from "#src/core/post-edit-scope.js";
+import { withTextEditOrigin } from "#src/core/text-edit-origin.js";
 
 test("waits for post-edit work after writing and rereads the final text", async () => {
   const core = createTextEditorCore();
@@ -360,6 +361,44 @@ test("final processing of independent resources overlaps and returns outcomes in
     await finishing;
   }
 });
+test.each([undefined, "original-edit"])(
+  "deferred completion keeps its original owner %s outside that tool's execution scope",
+  async (owner) => {
+    const core = createTextEditorCore();
+    let text = "before";
+    await core.registerPlugin(
+      resourcePlugin(
+        mutableResolver(
+          () => text,
+          (next) => {
+            text = next;
+          },
+        ),
+      ),
+    );
+    const completions: { parentToolCallId?: string; postProcessing?: string }[] = [];
+    core.onDidEdit((completion) => {
+      completions.push(completion);
+    });
+    const scope = createPostEditScope();
+    const edit = () =>
+      scope.run(() =>
+        core.editText("notes.md", { cwd: "/workspace" }, () => ({ text: "saved", result: null })),
+      );
+    await (owner === undefined ? edit() : withTextEditOrigin(core, owner, edit));
+    await withTextEditOrigin(core, "unrelated-call", () => scope.finish());
+    expect(
+      completions.map(({ parentToolCallId, postProcessing }) => ({
+        parentToolCallId,
+        postProcessing,
+      })),
+    ).toEqual([
+      { parentToolCallId: owner, postProcessing: "deferred" },
+      { parentToolCallId: owner, postProcessing: "final" },
+    ]);
+  },
+);
+
 test("a post-edit scope writes immediately and processes each final file once", async () => {
   const core = createTextEditorCore();
   let text = "before";
