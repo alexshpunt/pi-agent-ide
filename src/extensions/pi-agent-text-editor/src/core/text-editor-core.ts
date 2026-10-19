@@ -95,6 +95,7 @@ import type {
   TextAnchorInspectionOutcome,
   TextAnchorInspectionRequest,
 } from "#src/api/anchor-inspection.js";
+import { currentTextEditOrigin } from "./text-edit-origin.js";
 import type {
   TextEditCompletion,
   TextEditCompletionListener,
@@ -1791,6 +1792,7 @@ async function prepareTextResource(
 }
 
 interface FinalizeTextResourceRequest<Result> {
+  readonly parentToolCallId?: string;
   readonly postProcessingFinal?: boolean;
   readonly savedText?: string;
   readonly requestedSource: string;
@@ -1844,11 +1846,19 @@ async function finalizeTextResource<Result>(
       new Error(`Resource changed before final post-processing: ${request.resource.source}`),
       { code: "POST_EDIT_STALE", effect: "applied" as const },
     );
+  const parentToolCallId = request.postProcessingFinal
+    ? request.parentToolCallId
+    : currentTextEditOrigin();
   const deferred =
     !skipPostEdit &&
     !request.postProcessingFinal &&
     deferPostEdit(request.resource.source, () =>
-      finalizeTextResource({ ...request, savedText, postProcessingFinal: true }),
+      finalizeTextResource({
+        ...request,
+        savedText,
+        ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+        postProcessingFinal: true,
+      }),
     );
   const requestedAfter = createTextDocument(request.resource.source, savedText);
   const transaction: TextPostEditTransaction = {
@@ -1897,6 +1907,7 @@ async function finalizeTextResource<Result>(
 
   const finalAfter = createTextDocument(request.resource.source, finalText);
   const completion: TextEditCompletion = {
+    ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
     source: request.requestedSource,
     resourceSource: request.resource.source,
     resolvedBy: request.resolvedBy,
