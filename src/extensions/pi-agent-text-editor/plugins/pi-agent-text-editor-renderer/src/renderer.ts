@@ -931,7 +931,7 @@ function wholeFileOperationSummary(details: unknown):
       typeof error.code === "string"
         ? error.code
         : undefined;
-    cause = code === undefined ? "file operation failed" : wholeFileFailureCause(code);
+    cause = code === undefined ? GENERIC_FAILURE_CAUSE : wholeFileFailureCause(code);
   }
   const label =
     effect === "unknown"
@@ -950,6 +950,8 @@ function wholeFileOperationSummary(details: unknown):
           : "success",
   };
 }
+
+const GENERIC_FAILURE_CAUSE = "file operation failed";
 
 function wholeFileFailureCause(code: string): string {
   switch (code) {
@@ -1003,7 +1005,7 @@ function wholeFileFailureCause(code: string): string {
       return "operation was canceled";
     }
     default: {
-      return "file operation failed";
+      return GENERIC_FAILURE_CAUSE;
     }
   }
 }
@@ -1015,7 +1017,13 @@ function userFacingFailure(
   const causes = new Set(
     details?.results?.flatMap((result) =>
       // Provider reasons can contain private data; decode only public editor failure codes.
-      (result.data.errors ?? []).map((error) => wholeFileFailureCause(error.code ?? "")),
+      (result.data.errors ?? []).map((error) => {
+        const cause = wholeFileFailureCause(error.code ?? "");
+        // A provider's own code still names the editor step that failed.
+        return cause === GENERIC_FAILURE_CAUSE && error.stage !== undefined
+          ? wholeFileFailureCause(error.stage)
+          : cause;
+      }),
     ),
   );
   return [
