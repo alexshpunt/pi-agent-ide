@@ -17,6 +17,7 @@ export default function vscodeDebuggerFixture(pi: ExtensionAPI): void {
         Type.Literal("configuration"),
         Type.Literal("test"),
         Type.Literal("user-session"),
+        Type.Literal("args"),
       ]),
     }),
     async execute(_id, { scenario }, signal, _onUpdate, ctx) {
@@ -66,6 +67,7 @@ export default function vscodeDebuggerFixture(pi: ExtensionAPI): void {
         const created = await call("debug", {
           program,
           ...(scenario === "native" ? { backend: "native", adapter: "debugpy" } : {}),
+          ...(scenario === "args" ? { adapter: "debugpy", args: ["alpha"] } : {}),
           ...(scenario === "configuration" ? { configuration: "Task with args" } : {}),
           ...(scenario === "test" ? { test: "test_total" } : {}),
         });

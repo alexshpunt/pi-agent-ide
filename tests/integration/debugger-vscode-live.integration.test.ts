@@ -60,7 +60,7 @@ test.skipIf(liveWorkspace === "")(
 
 test
   .skipIf(liveWorkspace === "")
-  .each(["auto", "native", "configuration", "test", "user-session"] as const)(
+  .each(["auto", "native", "args", "configuration", "test", "user-session"] as const)(
   "live VS Code debugger scenario %s",
   async (scenario) => {
     const run = await new PiIntegrationTest({
@@ -113,6 +113,7 @@ test
     const expected = {
       auto: { adapter: "vscode", evaluation: "subtotal = 6" },
       native: { adapter: "debugpy", evaluation: "subtotal = 6" },
+      args: { adapter: "debugpy", evaluation: "subtotal = 6" },
       configuration: { adapter: "vscode", evaluation: `"['alpha', 'beta']"` },
       test: { adapter: "vscode", evaluation: "result = 18" },
     }[scenario];
