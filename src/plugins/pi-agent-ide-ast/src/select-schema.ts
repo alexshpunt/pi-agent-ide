@@ -197,11 +197,12 @@ const astPartSchema = Type.Union([
   Type.Literal("finalizer"),
   Type.Literal("parameter"),
 ]);
-const objectFilter = Type.Optional({
-  ...astObjectSchema,
-  description:
-    "Filter results by construct category after navigation. The filter does not change parent/child/sibling relationships.",
-});
+const objectFilter = Type.Optional(
+  Type.Union(astObjectSchema.anyOf, {
+    description:
+      "Filter results by construct category after navigation. The filter does not change parent/child/sibling relationships.",
+  }),
+);
 const structuralOperationSchema = Type.Union([
   Type.Object(
     {

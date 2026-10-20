@@ -3,7 +3,7 @@ import { resultInputSchema } from "pi-agent-resource";
 
 /** Build a structured source selector without changing legacy path semantics. */
 export function resultSourceProperty(description: string) {
-  return Type.Optional({ ...resultInputSchema, description });
+  return Type.Optional(Type.Union(resultInputSchema.anyOf, { description }));
 }
 
 /** Build the source selector shared by text mutation schemas. */

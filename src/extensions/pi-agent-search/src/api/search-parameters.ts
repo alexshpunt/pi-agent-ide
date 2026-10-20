@@ -9,11 +9,12 @@ export const searchSchema = Type.Object(
       description:
         "Text to find or a Boolean expression. Quote text to keep it literal. Use regex:<pattern> for regular expressions, files:<pattern> for file paths, ast:<pattern> for syntax patterns, symbols:<query> for language symbols, or process:<query> for running processes.",
     }),
-    path: Type.Optional({
-      ...resultInputSchema,
-      description:
-        "File, directory, URL, docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Use literal text or regex: for docs: sources. Results select only their registered ranges unless symbols: navigation follows external references.",
-    }),
+    path: Type.Optional(
+      Type.Union(resultInputSchema.anyOf, {
+        description:
+          "File, directory, URL, docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Use literal text or regex: for docs: sources. Results select only their registered ranges unless symbols: navigation follows external references.",
+      }),
+    ),
     navigation: Type.Optional(
       Type.Literal("references", {
         description:
