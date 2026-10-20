@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.8.2 — 2026-10-20
+
+### Debug through VS Code
+
+- When the project is open in a VS Code window with the [DebugMCP](https://github.com/microsoft/DebugMCP) extension, `debug` runs the session in that window by default. You see its breakpoints and session in VS Code, and the same `debug:` resources, Insert actions and Delete work as before. Install the extension with `code --install-extension ozzafar.debugmcpextension`.
+- Choose the backend with `backend`: `auto` (default) uses VS Code only for a local project open in a DebugMCP window with no active debug session and no `args` or `mainClass`; `vscode` fails with the unmet condition instead of falling back; `native` always uses the installed adapter. `adapter` is now required only for native sessions.
+- Launch a `.vscode/launch.json` entry with `configuration`, for example to pass arguments or debug a compiled executable, or debug one test with `test`.
+- Pi never takes over a debug session you started and removes only the breakpoints it added. Set `PI_DEBUGMCP_PORT` if you changed `debugmcp.serverPort`. Doctor reports whether the VS Code backend is available and shows the install command when DebugMCP is missing.
+- On Windows, find the VS Code window regardless of drive-letter case. A start that VS Code never begins fails after 60 seconds with a hint and can be retried. In Remote-WSL windows, stopped frames keep their function and line, and the file is taken from Pi's breakpoint when VS Code does not report it.
+- A failed debugger action, such as a start that cannot launch, shows the debugger's own reason instead of "file operation failed".
+
+### Terminal
+
+- On Windows, finished terminal sessions no longer leave a `conhost.exe` process running until Pi exits, and short PowerShell commands start about three times faster.
+- Keep only the 50 most recently finished terminal sessions in memory. Older sessions are released; their full output log stays on disk, and background sessions whose completion you have not yet received are kept.
+- Show delayed terminal completion notices under the call that launched the command.
+
+### Codemode
+
+- Search in Codemode returns `{ result, hasMatches, complete }`, so scripts can check for matches without parsing text. Pass `result` to other tools as before; direct Search output is unchanged.
+- Read of an image returns a native image value that scripts can pass to `image()` or `models.classify()`. Multi-frame reads return every frame.
+- Nested IDE panels show each call's recorded execution time.
+- Extensions that provide resources can return a value to Codemode scripts, and their receipts stay visible in nested panels.
+- Local MCP aliases of IDE tools, such as those from Claude connectors, keep the native IDE results and Codemode rendering.
+
+### Approvals and YOLO
+
+- Operation approvals use one shared dialog with **Deny**, **Allow once** and **Allow for session**, shown one at a time and marked as waiting in Herdr. Other extensions can use the same dialog. Without a UI, the operation is refused.
+- Add **YOLO: allow all operations** and **YOLO: filesystem operations** in `/agent-ide-settings`. They are off by default; extensions can register their own YOLO setting, and an explicit extension setting wins over the common one.
+
+### Editing
+
+- A write that was saved stays reported as applied even when reading it back fails.
+- A rejected Copy destination no longer blocks a valid source selection.
+- Issued result references are checked before filename anchors, and rejected references show a safe reason in the panel.
+
+### Feedback placement
+
+- Late diagnostics summaries and advisory code-review notices appear under the tool call that caused them.
+
+### Pi 1.3
+
+- On Pi 1.3.0 and newer, resumed sessions keep Pi's restored tool loadout, so a tool removed with `--tools -name` stays off. Tools excluded in settings remain unavailable. Pi 0.99.1 or newer is still supported.
+
 ## 0.8.1 — 2026-10-11
 
 ### Settings and help
