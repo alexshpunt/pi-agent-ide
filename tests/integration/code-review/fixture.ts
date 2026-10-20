@@ -42,7 +42,7 @@ export default async function registerReviewFixture(pi: ExtensionAPI): Promise<v
     classifiers: {
       "review-test": {
         async classify(model, context) {
-          if (mode === "idle") await idle;
+          if (mode === "idle" || mode === "linked") await idle;
           await appendFile(path.resolve("review-calls.jsonl"), JSON.stringify(context) + "\n");
           return {
             api: "review-test",
@@ -73,6 +73,7 @@ export default async function registerReviewFixture(pi: ExtensionAPI): Promise<v
     description: "Wait briefly for background review in a deterministic test.",
     parameters: Type.Object({}),
     async execute() {
+      if (mode === "linked") releaseIdle?.();
       await new Promise((resolve) => setTimeout(resolve, 900));
       return { content: [{ type: "text", text: "Background wait finished." }], details: undefined };
     },
