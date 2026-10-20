@@ -104,13 +104,13 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
   const groups = new Map<string, PanelGroup>();
   let tui: TUI | undefined;
   const components = new WeakMap<object, Container>();
-  const timedDefinitions = new Map<string, ToolDefinition>();
+  const timedDefinitions = new WeakMap<ToolDefinition, ToolDefinition>();
   /** Wrap a tool's result renderer so a final nested panel ends with its recorded time. */
   const timedDefinition = (name: string): ToolDefinition | undefined => {
     const definition = definitions.get(name);
     const renderResult = definition?.renderResult;
     if (!definition || !renderResult) return definition;
-    let timed = timedDefinitions.get(name);
+    let timed = timedDefinitions.get(definition);
     if (!timed) {
       const inner = new WeakMap<object, Component>();
       timed = {
@@ -133,7 +133,7 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
           return container;
         },
       };
-      timedDefinitions.set(name, timed);
+      timedDefinitions.set(definition, timed);
     }
     return timed;
   };
