@@ -68,7 +68,7 @@ const outside = await tools.search({path:warning,query:"ghost"}).then(value => v
 if(!outside.includes("No matches found")) throw new Error(outside);
 store("readViewWarning",warning);
 const image = await tools.read({path:"pixel.png",views:["anchors"]});
-if(!image.includes("anchors")) throw new Error(image);
+if(image.type !== "image" || !image.note.includes("anchors")) throw new Error(JSON.stringify(image).slice(0, 300));
 text("View warnings verified");
 `,
       String.raw`
@@ -76,12 +76,12 @@ const saved = load("readViewWarning");
 const beta = await tools.search({path:saved,query:"beta"}).then(value => value.result);
 await tools.replace({path:beta,text:"BETA"});
 const unknown = await tools.read({path:"pixel.png",views:["ghost"]});
-if(!unknown.includes("ghost")) throw new Error(unknown);
+if(unknown.type !== "image" || !unknown.note.includes("ghost")) throw new Error(JSON.stringify(unknown).slice(0, 300));
 text("Unknown image view preserved");
 `,
       String.raw`
 const valid = await tools.read({path:"pixel.png",views:["image"]});
-if(valid.includes("View not applied") || valid.includes("Unknown view")) throw new Error(valid);
+if(valid.type !== "image" || valid.note.includes("View not applied") || valid.note.includes("Unknown view")) throw new Error(JSON.stringify(valid).slice(0, 300));
 text("Native image view remains valid");
 `,
       `await tools.read({path:"note.txt",views:["ghost"]});

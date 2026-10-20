@@ -112,8 +112,8 @@ test("a real image larger than the private JSON budget still reaches the native 
       "text-native-large-image",
       String.raw`
 const shown=await tools.read({path:"banner.png"});
-if(typeof shown!=="string" || shown.includes('"base64"')) throw Error("Image buffer leaked into text");
-text(shown);
+if(shown.type!=="image" || shown.note.includes('"base64"')) throw Error("Image buffer leaked into text");
+text(shown.note);
 `,
     );
     expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
@@ -133,11 +133,13 @@ test("transformed Read views remain readable but cannot authorize text edits", a
       "text-read-view-authority",
       String.raw`
 for(const args of [{path:"raw:data.json"},{path:"data.json",views:["jq:.value"]},{path:"."},{path:"fixture-image:"}]) {
-  const shown=await tools.read(args);
+  const value=await tools.read(args);
+  const shown=typeof value==="string" ? value : value.note;
   if(typeof shown!=="string") throw Error("View result leaked internals");
   let rejected=false; try { await tools.replace({path:shown,text:"BAD"}); } catch(error) { rejected=String(error).includes("selection"); }
   if(!rejected) throw Error("Transformed output gained edit authority: "+shown);
-  text(await tools.read({path:shown}));
+  const again=await tools.read({path:shown});
+  text(typeof again==="string" ? again : again.note);
 }
 const anchored=await tools.read({path:"data.json",views:["anchors"]});
 const selected=await tools.select({path:anchored,operation:{kind:"trim",side:"both"}});

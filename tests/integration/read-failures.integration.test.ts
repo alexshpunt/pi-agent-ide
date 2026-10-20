@@ -125,7 +125,7 @@ try { await tools.read({path:"pixel.png",offset:1,limit:1}); } catch(error) { me
 if(!message || !message.includes("offset") || !message.includes("limit")) throw Error(message ?? "Expected failure");
 text(message);
 const image = await tools.read({path:"pixel.png"});
-if(typeof image !== "string") throw Error("Read must return a string");
+if(image.type !== "image" || typeof image.note !== "string") throw Error("Read must return an image block");
 `,
               },
             }),
