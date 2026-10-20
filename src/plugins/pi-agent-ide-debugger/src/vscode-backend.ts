@@ -19,6 +19,14 @@ const START_TIMEOUT_MS = 60_000;
 /** Binaries that DebugMCP cannot map to a debugger from their extension. */
 const EXECUTABLE_EXTENSIONS = new Set([".exe", ".out", ".bin", ".elf", ".so", ".dll", ".dylib"]);
 
+/**
+ * Spell a Windows path as VS Code reports it. DebugMCP removes a breakpoint only when the path
+ * equals VS Code's `fsPath`, which always has a lower-case drive letter.
+ */
+export function vscodePath(file: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? file.replace(/^[A-Z](?=:)/u, (drive) => drive.toLowerCase()) : file;
+}
+
 function isExecutable(program: string): boolean {
   return EXECUTABLE_EXTENSIONS.has(path.extname(program).toLowerCase());
 }
@@ -170,7 +178,7 @@ export class VscodeDebugSession {
     // DebugMCP removes every breakpoint at a location, so reuse a user's breakpoint instead.
     const listed = await this.#call("list_breakpoints", {}, signal);
     if (listedBreakpoints(listed).has(`${path.basename(file)}:${line}`)) return;
-    await this.#call("add_breakpoint", { fileFullPath: file, line }, signal);
+    await this.#call("add_breakpoint", { fileFullPath: vscodePath(file), line }, signal);
     this.#ownedBreakpoints.set(key, 1);
   }
 
@@ -184,7 +192,7 @@ export class VscodeDebugSession {
       return;
     }
     this.#ownedBreakpoints.delete(key);
-    await this.#call("remove_breakpoint", { fileFullPath: file, line }, signal);
+    await this.#call("remove_breakpoint", { fileFullPath: vscodePath(file), line }, signal);
   }
 
   /** Launch the program in VS Code and return the state it reached. */
@@ -306,7 +314,10 @@ export class VscodeDebugSession {
         const separator = key.lastIndexOf(":");
         await this.#call(
           "remove_breakpoint",
-          { fileFullPath: key.slice(0, separator), line: Number(key.slice(separator + 1)) },
+          {
+            fileFullPath: vscodePath(key.slice(0, separator)),
+            line: Number(key.slice(separator + 1)),
+          },
           signal,
         );
       }
