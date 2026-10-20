@@ -21,6 +21,8 @@ export interface ReviewRuntime {
 
 /** Saved snapshots from the edit-completion boundary, after formatting. */
 export interface ReviewEdit {
+  /** Real visible execution owning this saved version; absent for external edits. */
+  readonly parentToolCallId?: string;
   readonly file: string;
   readonly cwd: string;
   readonly before: string;
@@ -29,6 +31,8 @@ export interface ReviewEdit {
 
 /** Advisory output: failures and missing context are never a successful clean check. */
 export interface ReviewNotice {
+  /** Same visible owner as the checked saved version, never the delivery-time call. */
+  readonly parentToolCallId?: string;
   readonly kind: "findings" | "incomplete" | "unavailable";
   readonly text: string;
 }
@@ -149,12 +153,16 @@ export function createCodeReview(
       const snapshot = createHash("sha256").update(edit.after).digest("hex").slice(0, 12);
       dependencies.report({
         kind: hasFindings ? "findings" : "incomplete",
+        ...(edit.parentToolCallId === undefined ? {} : { parentToolCallId: edit.parentToolCallId }),
         text: `Jev code review: ${edit.file}\nSnapshot: ${snapshot}; model: ${model.provider}/${model.id}\nTreat classifications as review hints, not proven defects.${tokens ? `\nClassifier usage: ${tokens} tokens; $${cost.toFixed(6)}.` : ""}\n${sections.join("\n\n")}${incomplete ? "\nSome rules could not be decided from this fragment. This is not a clean review." : ""}`,
       });
     } catch (error) {
       if (await fresh(job))
         dependencies.report({
           kind: "unavailable",
+          ...(edit.parentToolCallId === undefined
+            ? {}
+            : { parentToolCallId: edit.parentToolCallId }),
           text: `Jev code review unavailable: ${edit.file}\n${error instanceof Error ? error.message : String(error)}\nThe edit remains saved. This is not a clean review.`,
         });
     } finally {

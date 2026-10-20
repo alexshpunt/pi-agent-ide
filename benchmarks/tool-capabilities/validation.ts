@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 /** A retained JSON-mode event; unknown records remain in the evidence. */
 export interface RunEvent {
@@ -17,10 +18,77 @@ export interface RunEvent {
     errorMessage?: string;
     content?: { type: string; text?: string; id?: string }[];
     model?: string;
+    responseModel?: string;
     provider?: string;
   };
 }
 
+/** Identify only selected-connector aliases of real IDE or native Codemode tools. */
+export function registeredAliasRoutes(
+  tools: {
+    name: string;
+    parameters: unknown;
+    namespace?: { name: string };
+    sourceInfo?: { path: string };
+  }[],
+  connectorRoot: string,
+): Record<string, string> {
+  if (!connectorRoot.startsWith("/connector/")) return {};
+  const sources = tools.filter(
+    (tool) =>
+      tool.namespace?.name.startsWith("ide_") ||
+      (tool.name === "codemode" && tool.sourceInfo?.path === "builtin:codemode"),
+  );
+  const routes: Record<string, string> = {};
+  for (const alias of tools) {
+    const owner = alias.sourceInfo?.path;
+    if (
+      !alias.name.startsWith("mcp__") ||
+      alias.namespace !== undefined ||
+      !(owner?.startsWith(connectorRoot + "/") || owner === "/source/src/pi-agent-ide.ts")
+    )
+      continue;
+    const matches = sources.filter(
+      (source) =>
+        alias.name.endsWith("__" + source.name) &&
+        JSON.stringify(schemaShape(alias.parameters)) ===
+          JSON.stringify(schemaShape(source.parameters)),
+    );
+    const [source] = matches;
+    if (matches.length === 1 && source) routes[alias.name] = source.name;
+  }
+  return routes;
+}
+/** Record the assistant's reported identity separately from the requested runtime model. */
+export function servedIdentity(
+  events: RunEvent[],
+  requested: string,
+  expectedResponseModel = requested.slice(requested.indexOf("/") + 1),
+): { identities: string[]; reasons: string[]; responseModels?: string[] } {
+  const messages = events
+    .filter((event) => event.type === "message_end" && event.message?.role === "assistant")
+    .map((event) => event.message);
+  const identities = [
+    ...new Set(
+      messages.flatMap((message) =>
+        message?.provider && message.model ? [`${message.provider}/${message.model}`] : [],
+      ),
+    ),
+  ];
+  const reasons: string[] = [];
+  if (!identities.length || messages.some((message) => !message?.provider || !message.model))
+    reasons.push("No served provider/model identity was observed");
+  if (identities.some((identity) => identity !== requested))
+    reasons.push("Served provider/model differs from the requested profile");
+  const responseModels = [
+    ...new Set(
+      messages.flatMap((message) => (message?.responseModel ? [message.responseModel] : [])),
+    ),
+  ];
+  if (responseModels.some((model) => model !== expectedResponseModel))
+    reasons.push("Reported response model differs from the expected served model");
+  return { identities, reasons, ...(responseModels.length ? { responseModels } : {}) };
+}
 /** A source argument must carry a reference returned by an earlier real execution. */
 export interface ResultReuse {
   from: number;
@@ -59,6 +127,10 @@ export interface RouteStep {
   parentExcludes?: string;
   /** Require actual summary text in the completed Codemode parent. */
   parentContains?: string;
+  /** Require the source object, unchanged by text(receipt), in a completed native Codemode parent. */
+  parentStructuredValue?: boolean;
+  /** Require a registered transparent local alias to forward the source execution. */
+  viaLocalAlias?: boolean;
   /** Check finalized transcript feedback when validation skipped the tool-result hook. */
   finalContains?: string;
   /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
@@ -182,6 +254,7 @@ export function validateRoute(
   task: Pick<CapabilityCase, "steps">,
   events: RunEvent[],
   mode: string,
+  aliases: Readonly<Record<string, string>> = {},
 ): { passed: boolean; reasons: string[] } {
   const starts = events
     .map((event, index) => ({ event, index }))
@@ -199,11 +272,50 @@ export function validateRoute(
       .filter(({ event }) => event.toolName === "codemode")
       .map(({ event }) => event.toolCallId),
   );
+  const startsById = new Map(starts.map((start) => [start.event.toolCallId, start]));
+  // A wrapper is transparent only when its registered alias, arguments, result and
+  // single actual child execution all agree. Raw events are never renamed.
+  function executionParent(
+    start: (typeof starts)[number],
+  ): { parent?: string; call?: string } | undefined {
+    let current = start;
+    const visited = new Set<string>();
+    while (current.event.parentToolCallId) {
+      const parentId = current.event.parentToolCallId;
+      if (visited.has(parentId)) return undefined;
+      visited.add(parentId);
+      const parent = startsById.get(parentId);
+      if (!parent) return undefined;
+      if (aliases[parent.event.toolName ?? ""] !== current.event.toolName)
+        return { parent: parentId, call: current.event.toolCallId };
+      const end = ends.get(current.event.toolCallId ?? "");
+      const parentEnd = ends.get(parentId);
+      if (
+        parent.index >= current.index ||
+        !end ||
+        !parentEnd ||
+        parentEnd.index <= end.index ||
+        parentEnd.event.isError !== end.event.isError ||
+        !matches(parent.event.args, current.event.args) ||
+        !matches(current.event.args, parent.event.args) ||
+        JSON.stringify(parentEnd.event.result?.content) !==
+          JSON.stringify(end.event.result?.content) ||
+        !isDeepStrictEqual(
+          parentEnd.event.result?.structuredContent,
+          end.event.result?.structuredContent,
+        ) ||
+        starts.filter(({ event }) => event.parentToolCallId === parentId).length !== 1
+      )
+        return undefined;
+      current = parent;
+    }
+    return { call: current.event.toolCallId };
+  }
   let furthest = 0;
   function walk(
     stepIndex: number,
     previousStart: number,
-    selected: { event: RunEvent; end: number; parent?: string }[],
+    selected: { event: RunEvent; end: number; parent?: string; call?: string }[],
   ): boolean {
     furthest = Math.max(furthest, stepIndex);
     const step = task.steps[stepIndex];
@@ -219,20 +331,23 @@ export function validateRoute(
         end.event.isError !== (step.error === "direct" ? mode === "direct" : Boolean(step.error))
       )
         continue;
-      if (mode === "codemode" && !codemodeParents.has(event.parentToolCallId)) continue;
+      const execution = executionParent(start);
+      if (!execution) continue;
+      if (step.viaLocalAlias && (!execution.call || execution.call === event.toolCallId)) continue;
+      if (mode === "codemode" && !codemodeParents.has(execution.parent)) continue;
       if (
         step.scriptResult !== undefined &&
         !matches(step.scriptResult, end.event.result?.structuredContent)
       )
         continue;
-      if (mode === "direct" && event.parentToolCallId) continue;
+      if (mode === "direct" && execution.parent) continue;
       if (step.parallelWith !== undefined) {
         const prior = selected[step.parallelWith];
         if (
           mode !== "codemode" ||
           prior === undefined ||
           start.index >= prior.end ||
-          prior.parent !== event.parentToolCallId
+          prior.parent !== execution.parent
         )
           continue;
       }
@@ -246,10 +361,10 @@ export function validateRoute(
               entry.type === "message_end" &&
               entry.message?.role === "assistant" &&
               entry.message.content?.some(
-                (block) => block.type === "toolCall" && block.id === event.toolCallId,
+                (block) => block.type === "toolCall" && block.id === execution.call,
               ) &&
               entry.message.content.some(
-                (block) => block.type === "toolCall" && block.id === prior.event.toolCallId,
+                (block) => block.type === "toolCall" && block.id === prior.call,
               ),
           )
         )
@@ -264,7 +379,7 @@ export function validateRoute(
           (entry) =>
             entry.type === "message_end" &&
             entry.message?.role === "toolResult" &&
-            entry.message.toolCallId === event.toolCallId,
+            entry.message.toolCallId === execution.call,
         )?.message;
         if (
           !finalized ||
@@ -284,12 +399,22 @@ export function validateRoute(
           continue;
       }
       if (step.excludes && output.includes(step.excludes)) continue;
-      if (step.parentExcludes || step.parentContains) {
-        const parent = ends.get(event.parentToolCallId ?? "");
+      if (step.parentExcludes || step.parentContains || step.parentStructuredValue) {
+        const parent = ends.get(execution.parent ?? "");
+        const parentStart = startsById.get(execution.parent);
+        const value = end.event.result?.structuredContent;
         if (
           !parent ||
           parent.index <= end.index ||
           parent.event.isError !== false ||
+          (step.parentStructuredValue &&
+            (mode !== "codemode" ||
+              !parentStart ||
+              parentStart.index >= start.index ||
+              value === null ||
+              typeof value !== "object" ||
+              Array.isArray(value) ||
+              !resultText(parent.event).includes(JSON.stringify(value)))) ||
           (step.parentExcludes !== undefined &&
             resultText(parent.event).includes(step.parentExcludes)) ||
           (step.parentContains !== undefined &&
@@ -309,7 +434,7 @@ export function validateRoute(
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some((field) =>
               reuses(fieldValue(event.args, field), resultText(prior.event), reference.kind),
             ) ||
-            (reference.newParent && prior.parent === event.parentToolCallId)
+            (reference.newParent && prior.parent === execution.parent)
           );
         })
       )
@@ -317,7 +442,7 @@ export function validateRoute(
       if (
         walk(stepIndex + 1, start.index, [
           ...selected,
-          { event: end.event, end: end.index, parent: event.parentToolCallId },
+          { event: end.event, end: end.index, parent: execution.parent, call: execution.call },
         ])
       )
         return true;

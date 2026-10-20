@@ -8,13 +8,37 @@ import { findRepositoryRoot } from "#scripts/repository-root.ts";
 import { capabilityCases } from "./cases.ts";
 import { capabilityMatrix } from "./matrix.ts";
 import {
+  connectorCatalog,
+  connectorEnvironment,
+  ConnectorUnavailable,
+  prepareConnector,
+  stageConnectorState,
+  type PreparedConnector,
+} from "./connectors.ts";
+import {
   checkCoverage,
   parseEvents,
   validateRoute,
+  servedIdentity,
   type CapabilityCase,
   type RunEvent,
 } from "./validation.ts";
 import { piRuntime, toolInventory, type Inventory } from "./inventory.ts";
+import {
+  assertTuiInvocation,
+  assertTuiHistoryInvocation,
+  TUI_HISTORY_SESSION,
+  reopenTuiHistory,
+} from "./tui.ts";
+import { accountStopReason } from "./run-policy.ts";
+import { assertPreflightInvocation, runConnectorPreflight } from "./preflight.ts";
+import {
+  AuthenticationUnavailable,
+  assertDedicatedAuthInvocation,
+  stagePiAuthentication,
+  stageDedicatedPiAuthentication,
+  type StagedAuthentication,
+} from "./auth.ts";
 import {
   cleanupTrial,
   prepareTrial,
@@ -29,19 +53,53 @@ interface Profile {
   id: string;
   model: string;
   thinking: string;
+  /** Exact backend response ID when the profile deliberately selects a provider alias. */
+  servedModel?: string;
+}
+interface ConnectorRun {
+  id: string;
+  prepared?: PreparedConnector;
+  unavailable?: string;
+  piAuthDir?: string;
+  claudeState?: string;
 }
 interface Attempt {
+  surface: "json" | "tui";
   case: string;
   mode: string;
   model: string;
   status: string;
   reasons: string[];
   evidence: string;
+  connector?: string;
+  requestedModel?: string;
+  servedModels?: string[];
+}
+function connectorEvidence(run: ConnectorRun | undefined): unknown {
+  return run
+    ? {
+        definition: connectorCatalog.find((entry) => entry.id === run.id),
+        artifact: run.prepared?.metadata,
+        unavailable: run.unavailable,
+        piAutomaticRetries: 0,
+      }
+    : undefined;
 }
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const repository = findRepositoryRoot(import.meta.url);
 const args = process.argv.slice(2).filter((arg) => arg !== "--");
-const flags = new Set(["--help", "--list", "--check", "--record-contracts", "--run"]);
+const flags = new Set([
+  "--help",
+  "--list",
+  "--list-connectors",
+  "--check",
+  "--record-contracts",
+  "--preflight",
+  "--run",
+  "--tui",
+  "--tui-history",
+  "--dedicated-auth",
+]);
 const options = new Set([
   "--model",
   "--case",
@@ -51,6 +109,10 @@ const options = new Set([
   "--results",
   "--pi",
   "--auth-dir",
+  "--connector",
+  "--connector-root",
+  "--claude-state",
+  "--claude-executable",
 ]);
 for (let index = 0; index < args.length; index++) {
   const arg = args[index] ?? "";
@@ -162,26 +224,71 @@ async function attempt(
   authDir: string,
   timeoutMs: number,
   signal: AbortSignal,
+  connectorRun?: ConnectorRun,
+  terminal = false,
+  dedicatedAuth = false,
+  inspectHistory = false,
 ): Promise<Attempt> {
-  const evidence = `${profile.id}--${task.id}--${mode}--${number}`;
+  const evidence = `${connectorRun ? connectorRun.id + "--" : ""}${profile.id}--${task.id}--${mode}--${number}`;
   const artifacts = path.join(root, evidence);
   await mkdir(artifacts);
   const result: Attempt = {
+    surface: terminal ? "tui" : "json",
     case: task.id,
     mode,
     model: profile.id,
+    connector: connectorRun?.id,
+    requestedModel: profile.model,
     status: "infra_error",
     reasons: [],
     evidence,
   };
   let prepared: Awaited<ReturnType<typeof prepareTrial>> | undefined;
+  let authentication: StagedAuthentication | undefined;
   try {
+    if (connectorRun?.unavailable) {
+      result.status = "unavailable";
+      result.reasons.push(connectorRun.unavailable);
+      return result;
+    }
+    const connector = connectorRun?.prepared;
     prepared = await prepareTrial(parent, source, task);
-    const bwrap = await sandboxArgs(source, prepared.root);
+    const bwrap = await sandboxArgs(source, prepared.root, connector);
+    const modelProvider = profile.model.slice(0, profile.model.indexOf("/"));
+    const authProvider = connector?.definition.authProvider ?? modelProvider;
+    authentication = dedicatedAuth
+      ? await stageDedicatedPiAuthentication(prepared.state, authProvider, authDir)
+      : connector
+        ? await stageConnectorState(
+            connector,
+            prepared.state,
+            {
+              piAuthDir: connectorRun.piAuthDir,
+              claudeState: connectorRun.claudeState,
+            },
+            timeoutMs,
+          )
+        : await stagePiAuthentication(
+            prepared.state,
+            profile.model.slice(0, profile.model.indexOf("/")),
+            authDir,
+            timeoutMs,
+          );
+    if (authProvider !== modelProvider) {
+      authentication.policy.modelProvider = modelProvider;
+      await json(path.join(prepared.state, "auth-policy.json"), authentication.policy);
+    }
+    if (authentication.mount)
+      bwrap.splice(-1, 0, "--bind", authentication.mount.source, authentication.mount.target);
+    await json(path.join(artifacts, "authentication.json"), authentication.policy);
     const env = {
-      PATH: ["/usr/local/bin", "/usr/bin", "/bin", path.join(os.homedir(), ".local/bin")].join(
-        path.delimiter,
-      ),
+      PATH: [
+        "/tools",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        path.join(os.homedir(), ".local/bin"),
+      ].join(path.delimiter),
       PYTHONUSERBASE: path.join(os.homedir(), ".local"),
       HOME: "/state/home",
       PI_CODING_AGENT_DIR: "/state/agent",
@@ -189,6 +296,10 @@ async function attempt(
       PI_SKIP_VERSION_CHECK: "1",
       TERM: "xterm-256color",
       LANG: "C.UTF-8",
+      ...(connector ? connectorEnvironment(connector) : {}),
+      ...authentication.environment,
+      CAPABILITY_AUTH_POLICY: "/state/auth-policy.json",
+      CAPABILITY_TUI: terminal ? "1" : "0",
     };
     if (task.prerequisite) {
       const prerequisite = await runProcess(
@@ -202,13 +313,11 @@ async function attempt(
         return result;
       }
     }
-    for (const file of ["auth.json", "models.json"]) {
-      try {
-        await cp(path.join(authDir, file), path.join(prepared.state, "agent", file));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-    }
+    if (connector?.definition.cli)
+      await json(path.join(prepared.state, "agent/claude-bridge.json"), {
+        askClaude: { enabled: false },
+        provider: { strictMcpConfig: true, pathToClaudeCodeExecutable: "/tools/claude" },
+      });
     await json(path.join(prepared.state, "agent/settings.json"), {
       codemode: { mode: "on" },
       defaultTools: [
@@ -227,7 +336,7 @@ async function attempt(
         "codemode",
         "tool_search",
       ],
-      retry: { enabled: true, maxRetries: 3 },
+      retry: { enabled: false, maxRetries: 0 },
     });
     const taskPrompt = prompt(task, mode);
     await writeFile(path.join(artifacts, "prompt.txt"), taskPrompt);
@@ -235,9 +344,8 @@ async function attempt(
     const piArgs = [
       "--approve",
       "--offline",
-      "--no-session",
-      "--mode",
-      "json",
+      ...(inspectHistory ? ["--session", TUI_HISTORY_SESSION] : ["--no-session"]),
+      ...(terminal ? [] : ["--mode", "json"]),
       "--no-extensions",
       "--no-skills",
       "--no-context-files",
@@ -246,8 +354,6 @@ async function attempt(
       "--no-mcp",
       "-e",
       "/source/src/pi-agent-ide.ts",
-      "-e",
-      "/source/benchmarks/tool-capabilities/observer.ts",
       "-e",
       "builtin:codemode",
       "-e",
@@ -261,6 +367,8 @@ async function attempt(
       "--pi-agent-ide-no-post-processing",
       "true",
     ];
+    for (const extension of connector?.extensions ?? []) piArgs.push("-e", extension);
+    if (connector) piArgs.push("--provider", connector.definition.provider);
     if (task.setup === "semantic-write")
       piArgs.push("-e", "/source/benchmarks/tool-capabilities/semantic-write-fixture.ts");
     if (task.setup === "write-effects")
@@ -281,6 +389,8 @@ async function attempt(
         "--pi-agent-ide-vision-arbitrary-windows",
         "true",
       );
+    piArgs.push("-e", "/source/benchmarks/tool-capabilities/observer.ts");
+    piArgs.push("-e", "/source/benchmarks/tool-capabilities/auth-guard.ts");
     let launch = "";
     if (task.setup === "web")
       launch +=
@@ -296,22 +406,101 @@ async function attempt(
     const execution = await runProcess("bwrap", [...bwrap, "/bin/bash", "-c", launch], {
       env,
       timeoutMs,
+      terminal,
       signal,
     });
-    await writeFile(path.join(artifacts, "events.jsonl"), execution.stdout);
-    await writeFile(path.join(artifacts, "stderr.log"), execution.stderr);
+    await json(path.join(artifacts, "execution.json"), {
+      code: execution.code,
+      signal: execution.signal,
+      timedOut: execution.timedOut,
+      terminalInherited: terminal,
+    });
+    let history: Awaited<ReturnType<typeof reopenTuiHistory>> | undefined;
+    let historyFailure: string | undefined;
+    if (inspectHistory && execution.code === 0 && !execution.timedOut && !signal.aborted) {
+      console.log(
+        "LPT769_HISTORY_REOPENING — no prompt; network disabled; /quit after screenshots",
+      );
+      try {
+        history = await reopenTuiHistory({
+          sandbox: bwrap,
+          cli: cli.cli,
+          piArgs,
+          state: prepared.state,
+          env,
+          timeoutMs,
+          signal,
+        });
+      } catch (error) {
+        historyFailure = String(error);
+      }
+    }
+    // Include every initial and rotated token in redaction before retaining any child output.
+    await authentication.refreshSecrets?.();
+    if (history) {
+      await json(path.join(artifacts, "history-execution.json"), {
+        code: history.execution.code,
+        signal: history.execution.signal,
+        timedOut: history.execution.timedOut,
+        networkDisabled: true,
+        reasons: history.reasons,
+      });
+      await writeFile(
+        path.join(artifacts, "history-events.jsonl"),
+        authentication.redact(history.events),
+      );
+      await writeFile(
+        path.join(artifacts, "history-session.jsonl"),
+        authentication.redact(history.session),
+      );
+    }
+    let eventStream = execution.stdout;
+    if (terminal) {
+      try {
+        eventStream = await readFile(path.join(prepared.state, "events.jsonl"), "utf8");
+      } catch {
+        result.reasons.push("No public TUI event mirror was retained");
+      }
+    }
+    let suppressedSecret =
+      authentication.containsSecret(eventStream) ||
+      authentication.containsSecret(execution.stderr) ||
+      Boolean(
+        history &&
+        (authentication.containsSecret(history.events) ||
+          authentication.containsSecret(history.session)),
+      );
+    const stdout = authentication.redact(eventStream);
+    const stderr = authentication.redact(execution.stderr);
+    await writeFile(path.join(artifacts, "events.jsonl"), stdout);
+    await writeFile(path.join(artifacts, "stderr.log"), stderr);
     const encode = (files: Record<string, Buffer>) =>
       Object.fromEntries(
-        Object.entries(files).map(([file, bytes]) => [file, bytes.toString("base64")]),
+        Object.entries(files).map(([file, bytes]) => {
+          const text = bytes.toString("utf8");
+          const safeFile = authentication?.redact(file) ?? file;
+          if (authentication?.containsSecret(file)) suppressedSecret = true;
+          if (authentication?.containsSecret(text)) {
+            suppressedSecret = true;
+            return [safeFile, Buffer.from(authentication.redact(text)).toString("base64")];
+          }
+          return [safeFile, bytes.toString("base64")];
+        }),
       );
     await json(path.join(artifacts, "files.json"), {
       initial: encode(prepared.initial),
       final: encode(await fixtureFiles(prepared.cwd)),
     });
     try {
-      await cp(path.join(prepared.state, "runtime.json"), path.join(artifacts, "runtime.json"));
+      const runtimeText = await readFile(path.join(prepared.state, "runtime.json"), "utf8");
+      if (authentication.containsSecret(runtimeText)) suppressedSecret = true;
+      await writeFile(path.join(artifacts, "runtime.json"), authentication.redact(runtimeText));
     } catch {
       /* A startup failure has no runtime capture. */
+    }
+    if (suppressedSecret) {
+      result.reasons.push("Credential material was suppressed from execution evidence");
+      return result;
     }
     if (signal.aborted) {
       result.status = "cancelled";
@@ -322,10 +511,43 @@ async function attempt(
       return result;
     }
     if (execution.code !== 0) {
-      result.reasons.push(execution.stderr || `Pi exited ${execution.code}`);
+      result.reasons.push(
+        stderr ||
+          (execution.signal
+            ? `Pi terminated by ${execution.signal}`
+            : `Pi exited ${execution.code}`),
+      );
       return result;
     }
-    const events = parseEvents(execution.stdout);
+    if (historyFailure) {
+      result.reasons.push(authentication.redact(historyFailure));
+      await json(path.join(artifacts, "history-execution.json"), {
+        error: authentication.redact(historyFailure),
+        networkDisabled: true,
+      });
+      return result;
+    }
+    if (history?.reasons.length) {
+      result.status = history.execution.timedOut ? "timed_out" : "infra_error";
+      result.reasons.push(...history.reasons);
+      return result;
+    }
+    const events = parseEvents(stdout);
+    if (terminal && events.filter((event) => event.type === "agent_start").length !== 1) {
+      result.reasons.push("TUI session must contain exactly one capability prompt");
+      return result;
+    }
+    const identity = servedIdentity(events, profile.model, profile.servedModel);
+    result.servedModels = identity.identities;
+    await json(path.join(artifacts, "identity.json"), {
+      requested: { model: profile.model, thinking: profile.thinking },
+      servedModels: identity.identities,
+      responseModels: identity.responseModels,
+      responseModelObserved: Boolean(identity.responseModels?.length),
+      expectedResponseModel:
+        profile.servedModel ?? profile.model.slice(profile.model.indexOf("/") + 1),
+      reasons: identity.reasons,
+    });
     const failed = events.find(
       (event) =>
         event.type === "message_end" &&
@@ -345,12 +567,21 @@ async function attempt(
     }
     const runtime = JSON.parse(
       await readFile(path.join(prepared.state, "runtime.json"), "utf8"),
-    ) as { model: string; thinking: string };
+    ) as { model: string; thinking: string; aliases?: Record<string, string> };
     if (runtime.model !== profile.model || runtime.thinking !== profile.thinking) {
-      result.reasons.push("Actual model/thinking differs from the requested profile");
+      result.reasons.push("Selected runtime model/thinking differs from the requested profile");
       return result;
     }
-    const route = validateRoute(task, events, mode);
+    if (identity.reasons.length) {
+      result.reasons.push(...identity.reasons);
+      return result;
+    }
+    const route = validateRoute(
+      task,
+      events,
+      mode,
+      connector?.definition.aliases ? runtime.aliases : undefined,
+    );
     const outcomes = await validateFiles(prepared.cwd, prepared.initial, task.expected);
     for (const file of Object.keys(await fixtureFiles(path.dirname(prepared.cwd))))
       if (!file.startsWith("fixture" + path.sep))
@@ -370,10 +601,23 @@ async function attempt(
     );
     return result;
   } catch (error) {
+    if (error instanceof ConnectorUnavailable || error instanceof AuthenticationUnavailable)
+      result.status = "unavailable";
     result.reasons.push(String(error));
     return result;
   } finally {
-    if (prepared) await cleanupTrial(parent, prepared.root);
+    try {
+      await authentication?.refreshSecrets?.();
+    } catch {
+      result.status = "infra_error";
+      result.reasons = ["Private credential audit failed"];
+    }
+    try {
+      if (prepared) await cleanupTrial(parent, prepared.root);
+    } finally {
+      await authentication?.release?.();
+    }
+    result.reasons = result.reasons.map((reason) => authentication?.redact(reason) ?? reason);
     await json(path.join(artifacts, "result.json"), result);
   }
 }
@@ -381,11 +625,66 @@ async function attempt(
 async function main(): Promise<void> {
   if (args.includes("--help") || !args.length) {
     console.log(
-      "Tool capability matrix (Linux/WSL, Bubblewrap)\n\nFree: --list | --check | --record-contracts (after reviewing changed tools)\nPaid: --run --model PROFILE_ID[,PROFILE_ID] [--case ID[,ID]] [--mode direct|codemode] [--attempts N] [--timeout SECONDS] [--results NEW_DIR] [--pi COMMAND] [--auth-dir DIR]\nNo model calls occur without --run and an explicit model selection.",
+      "Tool capability matrix (Linux/WSL, Bubblewrap)\n\nFree: --list | --list-connectors | --check | --record-contracts (after reviewing changed tools) | --preflight --connector ID --connector-root PRESTAGED_PREFIX [--claude-executable FILE]\nPaid: --run --model PROFILE_ID[,PROFILE_ID] [--case ID[,ID]] [--mode direct|codemode] [--attempts N] [--timeout SECONDS] [--tui [--tui-history]] [--results NEW_DIR] [--pi COMMAND] [--auth-dir DIR] [--dedicated-auth] [--connector ID --connector-root PRESTAGED_PREFIX --claude-executable FILE --claude-state DEDICATED_DIR]\nNo model calls occur without --run and an explicit model selection.",
     );
     return;
   }
+  assertDedicatedAuthInvocation(args);
+  assertTuiHistoryInvocation(args);
+  const dedicatedAuth = args.includes("--dedicated-auth");
   const command = value("--pi", "pi") ?? "pi";
+  if (args.includes("--preflight")) {
+    assertPreflightInvocation(args);
+    const abort = new AbortController();
+    const stop = () => abort.abort();
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+    try {
+      const result = await runConnectorPreflight(repository, {
+        connector: value("--connector") ?? "",
+        connectorRoot: value("--connector-root") ?? "",
+        executable: value("--claude-executable"),
+        pi: command,
+        timeoutMs: Number(value("--timeout", "120")) * 1000,
+        results: value("--results"),
+        signal: abort.signal,
+      });
+      console.log(
+        `${result.report.status}: ${value("--connector")} — free load preflight, not a compatibility pass`,
+      );
+      console.log(`Evidence: ${result.directory}/preflight.json`);
+      if (result.report.status !== "loaded") process.exitCode = 1;
+    } finally {
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+    }
+    return;
+  }
+  const terminal = args.includes("--tui");
+  if (terminal)
+    assertTuiInvocation({
+      run: args.includes("--run"),
+      models: value("--model")?.split(","),
+      cases: value("--case")?.split(","),
+      mode: value("--mode"),
+      attempts: Number(value("--attempts", "1")),
+      stdinIsTTY: process.stdin.isTTY,
+      stdoutIsTTY: process.stdout.isTTY,
+    });
+  if (args.includes("--list-connectors")) {
+    for (const connector of connectorCatalog)
+      console.log(
+        `${connector.id} ${connector.package}@${connector.version} ${connector.provider} auth=${connector.auth}${connector.unavailable ? " unavailable: " + connector.unavailable : ""}`,
+      );
+    return;
+  }
+  if (
+    !value("--connector") &&
+    ["--connector-root", "--claude-state", "--claude-executable"].some((flag) => value(flag))
+  )
+    throw Error("Connector-specific options require --connector");
+  if (args.filter((arg) => arg === "--connector").length > 1)
+    throw Error("Select exactly one connector per invocation");
   if (args.includes("--list")) {
     for (const task of capabilityCases)
       console.log(`${task.id} [${task.modes.join(",")}] ${task.capabilities.join(", ")}`);
@@ -426,6 +725,37 @@ async function main(): Promise<void> {
     if (!profile) throw Error(`Unknown profile: ${id}`);
     return profile;
   });
+  const firstProfile = profiles[0];
+  if (!firstProfile) throw Error("Select at least one model profile");
+  let connectorRun: ConnectorRun | undefined;
+  const connectorId = value("--connector");
+  if (connectorId) {
+    if (profiles.length !== 1) throw Error("Connector runs require exactly one model profile");
+    const definition = connectorCatalog.find((entry) => entry.id === connectorId);
+    if (!definition) throw Error(`Unknown connector: ${connectorId}`);
+    assertDedicatedAuthInvocation(args, definition.auth);
+    connectorRun = {
+      id: connectorId,
+      piAuthDir: value("--auth-dir"),
+      claudeState: value("--claude-state"),
+    };
+    try {
+      if (definition.unavailable) throw new ConnectorUnavailable(definition.unavailable);
+      const stagedRoot = value("--connector-root");
+      if (!stagedRoot)
+        throw new ConnectorUnavailable("An explicit pre-staged --connector-root is required");
+      connectorRun.prepared = await prepareConnector(
+        connectorId,
+        stagedRoot,
+        firstProfile.model,
+        value("--claude-executable"),
+      );
+      if (definition.auth === "claude" ? !connectorRun.claudeState : !connectorRun.piAuthDir)
+        throw new ConnectorUnavailable("An explicit dedicated authentication snapshot is required");
+    } catch (error) {
+      connectorRun.unavailable = String(error);
+    }
+  }
   const names = value("--case")?.split(",");
   const tasks = capabilityCases.filter((task) => !names || names.includes(task.id));
   if (!tasks.length || names?.some((id) => !tasks.some((task) => task.id === id)))
@@ -433,6 +763,8 @@ async function main(): Promise<void> {
   const mode = value("--mode");
   if (mode && !["direct", "codemode"].includes(mode))
     throw Error("Mode must be direct or codemode");
+  if (terminal && !tasks.every((task) => task.modes.includes(mode ?? "")))
+    throw Error("The selected TUI case does not support this --mode");
   const attemptsCount = Number(value("--attempts", "1"));
   const timeoutMs = Number(value("--timeout", "180")) * 1000;
   if (
@@ -463,20 +795,69 @@ async function main(): Promise<void> {
   let manifest: unknown = {
     inventory,
     profiles,
+    piVersion: runtime.version,
+    surface: terminal ? "tui" : "json",
+    historyInspection: args.includes("--tui-history")
+      ? { networkDisabled: true, prompt: false, timeoutMs }
+      : undefined,
+    terminalOutput: terminal
+      ? "Native stdout/stderr inherited without capture or live redaction; screenshots are separate evidence"
+      : undefined,
+    authentication: {
+      refresh: connectorRun?.prepared?.definition.claudeFileAuth
+        ? "dedicated-private-claude-file-only"
+        : dedicatedAuth
+          ? "dedicated-private-login-only"
+          : "snapshot-access-only",
+      personalWrites: "forbidden",
+      dedicatedLogin: dedicatedAuth || connectorRun?.prepared?.definition.claudeFileAuth === true,
+    },
+    connector: connectorEvidence(connectorRun),
     started: new Date().toISOString(),
     cases: tasks.map((task) => task.id),
     attempts: attemptsCount,
     timeoutMs,
   };
   try {
+    if (connectorRun?.prepared && !connectorRun.unavailable) {
+      try {
+        const connector = connectorRun.prepared;
+        const frozenRoot = path.join(parent, "connector");
+        await cp(connector.root, frozenRoot, {
+          recursive: true,
+          verbatimSymlinks: true,
+          filter: (file) => path.basename(file) !== ".git",
+        });
+        let frozenExecutable: string | undefined;
+        if (connector.executable) {
+          frozenExecutable = path.join(parent, "claude");
+          await cp(connector.executable, frozenExecutable);
+        }
+        const frozen = await prepareConnector(
+          connectorRun.id,
+          frozenRoot,
+          firstProfile.model,
+          frozenExecutable,
+        );
+        if (
+          frozen.metadata.digest !== connector.metadata.digest ||
+          frozen.metadata.executableDigest !== connector.metadata.executableDigest
+        )
+          throw new ConnectorUnavailable("Connector artifact changed while it was being frozen");
+        connectorRun.prepared = frozen;
+      } catch (error) {
+        connectorRun.unavailable = String(error);
+      }
+    }
     const snapshot = await snapshotSource(repository, parent);
     manifest = {
       ...(manifest as object),
+      connector: connectorEvidence(connectorRun),
       revision: snapshot.revision,
       sourceDigest: snapshot.digest,
     };
     await report(root, profiles, attempts, manifest);
-    for (const profile of profiles)
+    runAttempts: for (const profile of profiles)
       for (const task of tasks)
         for (const route of task.modes.filter((candidate) => !mode || candidate === mode))
           for (let n = 1; n <= attemptsCount && !abort.signal.aborted; n++) {
@@ -490,18 +871,25 @@ async function main(): Promise<void> {
               route,
               n,
               command,
-              value(
-                "--auth-dir",
-                process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".pi/agent"),
-              ) ?? "",
+              value("--auth-dir") ?? "",
               timeoutMs,
               abort.signal,
+              connectorRun,
+              terminal,
+              dedicatedAuth,
+              args.includes("--tui-history"),
             );
             attempts.push(result);
             console.log(
               `${result.status}: ${task.id} / ${route}${result.reasons.length ? " — " + result.reasons.join("; ") : ""}`,
             );
             await report(root, profiles, attempts, manifest);
+            const stoppedFor = accountStopReason(result);
+            if (stoppedFor) {
+              manifest = { ...(manifest as object), stoppedFor, stoppedAfter: result.evidence };
+              await report(root, profiles, attempts, manifest);
+              break runAttempts;
+            }
           }
   } finally {
     await report(root, profiles, attempts, manifest);

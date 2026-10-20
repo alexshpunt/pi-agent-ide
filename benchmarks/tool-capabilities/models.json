@@ -2,6 +2,48 @@
   "registrySource": "Explicit Edit Benchmark benchmark-models-v1; explicit Luna 6 addition for LPT-655",
   "models": [
     {
+      "id": "haiku-4.5-compat-low",
+      "model": "claude-compat/claude-haiku-4-5",
+      "servedModel": "claude-haiku-4-5-20251001",
+      "thinking": "low"
+    },
+    {
+      "id": "haiku-4.5-sub-low",
+      "model": "pi-sub-anthropic/claude-haiku-4-5",
+      "servedModel": "claude-haiku-4-5-20251001",
+      "thinking": "low"
+    },
+    {
+      "id": "haiku-4.5-plan-low",
+      "model": "claude-plan/claude-haiku-4-5",
+      "servedModel": "claude-haiku-4-5-20251001",
+      "thinking": "low"
+    },
+    {
+      "id": "haiku-4.5-low",
+      "model": "anthropic/claude-haiku-4-5",
+      "servedModel": "claude-haiku-4-5-20251001",
+      "thinking": "low"
+    },
+    {
+      "id": "haiku-4.5-cli-low",
+      "model": "pi-claude-cli/claude-haiku-4-5",
+      "servedModel": "claude-haiku-4-5-20251001",
+      "thinking": "low"
+    },
+    {
+      "id": "haiku-4.5-sdk-low",
+      "model": "claude-sdk/claude-haiku-4-5",
+      "servedModel": "claude-haiku-4-5-20251001",
+      "thinking": "low"
+    },
+    {
+      "id": "haiku-4.5-bridge-low",
+      "model": "claude-bridge/claude-haiku-4-5",
+      "servedModel": "claude-haiku-4-5-20251001",
+      "thinking": "low"
+    },
+    {
       "id": "luna-6-low",
       "model": "openai-codex/gpt-6-luna",
       "thinking": "low"
