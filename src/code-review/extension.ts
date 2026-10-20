@@ -33,7 +33,12 @@ export default async function registerCodeReview(pi: ExtensionAPI): Promise<void
             customType: "ide-code-review",
             content: notice.text,
             display: true,
-            details: { kind: notice.kind },
+            details: {
+              kind: notice.kind,
+              ...(notice.parentToolCallId === undefined
+                ? {}
+                : { parentToolCallId: notice.parentToolCallId }),
+            },
           },
           { triggerTurn: notice.kind === "findings", deliverAs: "steer" },
         ),
@@ -97,6 +102,9 @@ export default async function registerCodeReview(pi: ExtensionAPI): Promise<void
             cwd: completion.cwd,
             before,
             after: completion.after.content,
+            ...(completion.parentToolCallId === undefined
+              ? {}
+              : { parentToolCallId: completion.parentToolCallId }),
           }),
         );
       });
