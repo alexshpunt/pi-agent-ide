@@ -44,53 +44,11 @@ IDE filesystem, GitHub and Linear approvals use the shared operation dialog. Ter
 
 The `ssh-guide` case checks that Read exposes SSH setup guidance before any target is configured. It does not verify connection setup, reload, or remote operations. Its direct and Codemode routes remain unverified until a paid run.
 
-## Connector runs
-
-Use one connector per invocation. `connectors.ts` pins the package identity, version, entrypoints, provider and prerequisites. When a connector delegates authentication, `authProvider` names the actual credential owner separately from its model provider. The runner guards that owner without copying credentials into another provider key. Stage the connector outside the source tree with lifecycle scripts disabled before the run. The runner never installs a connector during an attempt. `--connector-root` points to the staging prefix containing `node_modules`; its lockfile and dependency-tree digest become evidence.
-
-Start with a free load check:
-
-```bash
-node benchmarks/tool-capabilities/cli.ts --preflight --pi /usr/bin/pi \
-  --connector subscription-connector --connector-root /path/to/staged-prefix
-```
-
-Preflight rejects model selections and real authentication inputs. It uses synthetic credentials, a private home and a separate network namespace. It records declared providers, tools and load failures without sending a prompt. `loaded` means startup completed, not that inference or tool compatibility passed. Historical packages excluded by the catalog report `unavailable` without launching a child.
-
-For a paid attempt, select an approved profile with the connector's provider:
-
-```bash
-node benchmarks/tool-capabilities/cli.ts --run --pi /usr/bin/pi \
-  --model haiku-4.5-low --connector subscription-connector \
-  --connector-root /path/to/staged-prefix --auth-dir /path/to/private-pi-snapshot \
-  --case read-search-replace --mode codemode --attempts 1 --timeout 120
-```
-
-SDK/CLI connectors also need `--claude-executable /absolute/path/to/claude`. When they use Claude Code authentication, supply `--claude-state /path/to/private-claude-config`. The selected executable is hashed and mounted read-only. These children run as a non-root user inside their namespace; the host user is unchanged.
-
-Use only approved private authentication state. Snapshot mode stages access material without refresh tokens and rejects tokens that expire before the attempt plus its safety window. For a separately authorized private Pi OAuth login, add `--dedicated-auth` with `--auth-dir`: only its `auth.json` is mounted writable, refresh rotations persist across attempts, and an exclusive lock prevents concurrent runner use. This mode rejects personal paths, unsafe or linked files and credentials for unrelated providers. Initial and rotated secret values are suppressed before evidence export.
-
-The pinned `claude-auth` connector uses a different file-auth mode: supply `--claude-state` with its dedicated private Claude credential directory, but omit `--claude-executable` and `--dedicated-auth`. The runner locks and mounts only the selected credential file writable, preserves rotations, and audits both that file and the connector-seeded case-private Pi auth. Its hidden Claude CLI inference fallback is blocked; attempting it makes the route unavailable, not an untracked paid helper request. This mode does not support connectors that replace the credential file with an atomic rename.
-
-The runner does not log in, move credentials between provider keys or enable extra usage. Separate-provider OAuth logins must be completed through that connector's own login flow before selecting its auth directory. SDK/CLI environment authentication remains access-only. Filesystem isolation does not isolate the subscription account from quota use or restrictions, and a subscription indicator does not prove how the backend bills a request.
-
-Pi automatic retries are disabled. SDK/CLI internal retries are not independently bounded by this setting. Account, quota, billing or authentication errors stop the remaining batch. Requested and runtime identity, assistant metadata and any reported response model are retained separately. If a provider does not report its response model, backend identity remains unobserved. Use `servedModel` in a profile for a documented model alias, not to hide fallback.
-
-Alias validation keeps raw names and events. A local wrapper passes only when its provenance, arguments, real IDE child, result and required reference reuse match. Foreign MCP names are not stripped into native tool names. `semantic-script-receipts` checks object values through a script call; `semantic-local-alias-receipts` additionally requires an actual local alias and skips connectors without one.
-
-## Live terminal comparison
-
-Add `--tui` inside a real terminal to inspect native Pi rather than JSON output. Select exactly one model, case, route and attempt. Use the same case and terminal dimensions for the native baseline and connector. The timeout includes time spent inspecting the completed screen. Exit with `/quit` after capturing it.
-
-Add `--tui-history` to save the actual native session and reopen it after the first `/quit`. The second stage has no prompt, uses a separate network namespace, and rejects agent/provider work. Its footer shows `LPT769_HISTORY_RESTORED`; capture the restored cards, then `/quit` again. Each stage has its own bounded inspection timeout. First-stage route validation stays separate from history validation, and retained session evidence crosses the same secret-redaction boundary as other artifacts.
-
-The runner mirrors public lifecycle, finalized-message and execution events for route validation. It does not capture screenshots or streaming deltas in TUI mode. Capture the actual terminal separately and retain it with the Task. Check running and completed states, expanded history, errors and media where relevant; a headless pass or a completed panel alone does not establish visual parity. Inherited terminal output is not live-redacted: do not enable connector debugging that prints secrets.
-
 ## Isolation
 
 A run freezes the checkout's current source and dependencies in a disposable clone and records its revision and source digest. Each case gets a fresh clone, fixture directory, private Pi home, and process namespace. Only that case's workspace/state and sandbox temporary directories are writable. Source and system tools are read-only; host checkouts, personal context, extensions, skills, and MCP configuration are not loaded.
 
-Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Snapshot credentials are copied into private case state and removed with it. Explicit dedicated-auth files are mounted separately and survive cleanup with their refresh rotations. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
+Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Credentials are copied into private case state and removed with it. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
 
 Media, browser, display, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Window/display checks use a sandbox-owned Xvfb display, not host windows. Display and web setup use fixed local endpoints; do not run those cases concurrently.
 
@@ -110,6 +68,8 @@ Reports are written after each attempt and preserved on cancellation. Case works
 The current `ui.codemode` setting is an Off/On switch for extra IDE result panels only. Native Codemode rendering is unchanged. The focused `compact-codemode.integration.test.ts` cases check default suppression, per-tool presentation, expanded history and retained errors. Existing `codemode.silent-write`, `codemode.parallel-edit-effects`, `codemode.store-load`, `compose.cross-call`, and `ide-settings-catalog` cases still cover unchanged execution and model data; this TUI change adds no paid route.
 
 Late diagnostic ownership is UI metadata, not a new model operation. The existing diagnostic-read, write/read and parallel-edit cases still cover the unchanged tools and model results. Revision-bound ownership, deferred completion and native presentation are checked by the focused linked-diagnostics integration case, not by a new paid route.
+
+Advisory-review ownership is also display metadata. The matrix and write/read and parallel-edit cases retain their existing model-operation contracts; no new paid operation is introduced. Focused reviewer and real-Pi linked-review cases cover saved-version ownership, direct and nested calls, and unchanged full review delivery. Stereo Rows/Columns checks require `PI_AGENT_IDE_TEST_STEREO_EXTENSION` to point to an unchanged consumer extension; without it those cases are skipped, not verified.
 
 ## Required maintenance
 
