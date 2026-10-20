@@ -13,7 +13,15 @@ type Document = Component & {
 /** Observe the unchanged consumer and native history without adding visible test output. */
 export default function captureReview(pi: ExtensionAPI): void {
   let tui: TUI & { layoutRoot: Component; getScreenLines(): string[] };
-  pi.on("session_start", async (_event, ctx) => {
+  let reloaded = false;
+  pi.registerCommand("linked-review-reload", {
+    description: "Reload the real producer and consumer before checking delayed review.",
+    handler: async (_args, ctx) => {
+      await ctx.reload();
+    },
+  });
+  pi.on("session_start", async (event, ctx) => {
+    reloaded = event.reason === "reload";
     let finish = () => {};
     await ctx.ui.custom<void>(
       (host, _theme, _keys, done) => {
@@ -27,6 +35,9 @@ export default function captureReview(pi: ExtensionAPI): void {
         onHandle: () => finish(),
       },
     );
+  });
+  pi.on("session_start", (event) => {
+    if (event.reason === "reload") pi.sendUserMessage("Run the linked review check after reload.");
   });
   pi.on("agent_before_settle", async (_event, ctx) => {
     await new Promise<void>((resolve, reject) => {
@@ -76,8 +87,11 @@ export default function captureReview(pi: ExtensionAPI): void {
         panes,
         search,
         native: history?.render(200),
+        reloaded,
         screen: tui.getScreenLines(),
       }),
     );
+    if (process.env.PI_AGENT_IDE_TEST_REVIEW_HOLD === "1")
+      await new Promise((resolve) => setTimeout(resolve, 20_000));
   });
 }

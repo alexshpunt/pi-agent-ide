@@ -61,7 +61,7 @@ test.skipIf(!stereo).each(["rows", "columns"])(
       const call = (id: string, name: string, args: Record<string, unknown>) =>
         assistantMessage([toolCall({ id, name, arguments: args })], { stopReason: "toolUse" });
       const run = await new PiIntegrationTest({
-        testName: `linked-review-${layout}`,
+        testName: `linked-review-${layout}-reload`,
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         extensions: [
@@ -74,6 +74,7 @@ test.skipIf(!stereo).each(["rows", "columns"])(
         tools: ["codemode", "write", "replace", "read", "wait_review"],
         rawMode: false,
         tuiSize: { cols: 180, rows: 60 },
+        timeoutMs: 45_000,
         isolateUserResources: true,
         environment: {
           PI_CODING_AGENT_DIR: path.join(cwd, ".pi"),
@@ -89,9 +90,7 @@ test.skipIf(!stereo).each(["rows", "columns"])(
           call("release", "wait_review", {}),
           assistantMessage([text("Review delivery finished.")]),
         ],
-      }).run(
-        "Edit directly and through Codemode, then release delayed reviews after unrelated work.",
-      );
+      }).run("/linked-review-reload");
       expect(run.exitCode).toBe(0);
       for (const id of ["direct-edit", "nested-root", "release"])
         expect(getToolExecution(run, id).isError).toBe(false);
@@ -122,8 +121,10 @@ test.skipIf(!stereo).each(["rows", "columns"])(
         panes: { activity: string[]; chat: string[] };
         search: { activity: string[]; chat: string[] };
         native: string[];
+        reloaded: boolean;
       };
       const activity = clean(capture.panes.activity);
+      expect(capture.reloaded).toBe(true);
       const chat = clean(capture.panes.chat);
       expect(activity.match(/Jev code review:/g)).toHaveLength(2);
       expect(chat).not.toContain("Jev code review:");
