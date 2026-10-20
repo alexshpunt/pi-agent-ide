@@ -233,6 +233,20 @@ Regex diagnostic parsers run with multiline matching. Set `columnBase: 0` when a
 
 A runtime being installed does not prove its modules or language-server features are installed. For example, Taplo's npm build can format TOML but does not include its LSP. Use an LSP-enabled Taplo build for language-server diagnostics. Doctor reports the actual startup failure rather than treating that file as clean.
 
+## VS Code debugger
+
+When the project is open in VS Code, `debug` can run the session there through Microsoft's [DebugMCP](https://github.com/microsoft/DebugMCP) extension. You see the session and its breakpoints in VS Code, and VS Code chooses the debugger from `launch.json` or the file type. Install the extension yourself:
+
+```bash
+code --install-extension ozzafar.debugmcpextension
+```
+
+The default `backend: "auto"` uses VS Code only when a VS Code window with DebugMCP has the local project open, that window has no active debug session, and the call passes no `args` or `mainClass`. Otherwise it uses the native adapter. `backend: "vscode"` fails with the reason instead of falling back, and `backend: "native"` never uses VS Code. Pass program arguments or environment through a `launch.json` configuration named in `configuration`, or debug one test with `test`.
+
+Pi stops only the VS Code session it started and removes only the breakpoints it added; a breakpoint you already set at the same line is reused and kept. DebugMCP listens on port 3001. If you changed `debugmcp.serverPort`, set `PI_DEBUGMCP_PORT` to the same port before starting Pi. Doctor reports whether the VS Code backend is available.
+
+In remote VS Code windows such as Remote-WSL, DebugMCP does not report the stopped frame's file. Pi then takes it from its breakpoint on that line or from the previous stop in the same function, and otherwise shows only the function and line.
+
 ## Java debugger
 
 Java uses Microsoft java-debug through a private JDT LS process on Linux and native Windows. Kotlin still uses fwcd's adapter.

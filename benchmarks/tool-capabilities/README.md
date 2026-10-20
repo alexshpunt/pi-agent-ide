@@ -44,6 +44,8 @@ IDE filesystem, GitHub and Linear approvals use the shared operation dialog. Ter
 
 The `ssh-guide` case checks that Read exposes SSH setup guidance before any target is configured. It does not verify connection setup, reload, or remote operations. Its direct and Codemode routes remain unverified until a paid run.
 
+The `debug-backend-fallback` case checks the explicit VS Code refusal and recovery through the native backend; the sandbox has no VS Code. Debugging through VS Code and DebugMCP needs the user's running VS Code window, so it is checked live, not by a paid route.
+
 ## Connector runs
 
 Use one connector per invocation. `connectors.ts` pins the package identity, version, entrypoints, provider and prerequisites. When a connector delegates authentication, `authProvider` names the actual credential owner separately from its model provider. The runner guards that owner without copying credentials into another provider key. Stage the connector outside the source tree with lifecycle scripts disabled before the run. The runner never installs a connector during an attempt. `--connector-root` points to the staging prefix containing `node_modules`; its lockfile and dependency-tree digest become evidence.
