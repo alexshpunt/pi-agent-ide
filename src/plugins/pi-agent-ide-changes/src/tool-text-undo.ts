@@ -13,11 +13,12 @@ import type { TextMutationToolRegistration } from "pi-agent-text-editor/api/muta
 
 export const undoSchema = Type.Object(
   {
-    file: Type.Optional({
-      ...resultInputSchema,
-      description:
-        "File path or one whole-file source result. Partial and multi-file selections are rejected. Omit file to use the supplied CHANGE anchor's file or the last resolved source.",
-    }),
+    file: Type.Optional(
+      Type.Union(resultInputSchema.anyOf, {
+        description:
+          "File path or one whole-file source result. Partial and multi-file selections are rejected. Omit file to use the supplied CHANGE anchor's file or the last resolved source.",
+      }),
+    ),
     change: Type.String({
       description:
         'Use a complete current CHANGE#HASH anchor from read with views: ["changes"] to restore that change to HEAD in both worktree and index. Use last to restore the file\'s latest saved text-editor transaction.',
