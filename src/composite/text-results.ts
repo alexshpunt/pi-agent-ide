@@ -42,6 +42,54 @@ const providerValueSchema = {
     },
   ],
 };
+const imageBlockSchema = {
+  type: "object",
+  properties: {
+    type: { const: "image" },
+    data: { type: "string" },
+    mimeType: { type: "string" },
+    note: { type: "string" },
+  },
+  required: ["type", "data", "mimeType", "note"],
+};
+/**
+ * Codemode Read resolves to the composition text, or to native image blocks that image() and
+ * models.classify() accept. The note carries the same readable, composable result text.
+ */
+const readValueSchema = {
+  anyOf: [
+    { type: "string" },
+    imageBlockSchema,
+    {
+      type: "object",
+      description: "Several images, such as sequence frames, in source order.",
+      properties: {
+        type: { const: "images" },
+        note: { type: "string" },
+        images: {
+          type: "array",
+          items: { type: "object", properties: imageBlockSchema.properties },
+        },
+      },
+      required: ["type", "note", "images"],
+    },
+  ],
+};
+type ImageBlock = Extract<AgentToolResult<unknown>["content"][number], { type: "image" }>;
+/** Native image script values for a successful Read; text reads keep their composition string. */
+function readValue(
+  content: AgentToolResult<unknown>["content"],
+  note: string,
+): JsonValue | undefined {
+  const images = content
+    .filter((block): block is ImageBlock => block.type === "image")
+    .map(({ data, mimeType }) => ({ type: "image", data, mimeType }));
+  if (images.length === 0) return undefined;
+  const [first] = images;
+  return images.length === 1 && first !== undefined
+    ? { ...first, note }
+    : { type: "images", note, images };
+}
 /** The value a semantic handler asked to return to scripts instead of text. */
 function providerValue(details: unknown): JsonValue | undefined {
   const metadata = record(details) ? details.metadata : undefined;
@@ -130,10 +178,7 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     });
   };
   const parents = new Map<string, string>();
-  const images = new Map<
-    string,
-    Extract<AgentToolResult<unknown>["content"][number], { type: "image" }>[]
-  >();
+  const images = new Map<string, ImageBlock[]>();
   const clear = () => {
     parents.clear();
     images.clear();
@@ -143,7 +188,7 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   pi.on("session_shutdown", clear);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections.ide_results =
-      "Direct IDE calls return readable text. In Codemode, Search returns { result, hasMatches, complete }; pass its result string to other tools for composition. Other text results remain strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
+      "Direct IDE calls return readable text. In Codemode, Search returns { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Other text results remain strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -217,6 +262,13 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     if (definition.name === "search")
       descriptors.outputSchema = {
         value: searchFactsSchema,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      };
+    if (definition.name === "read")
+      descriptors.outputSchema = {
+        value: readValueSchema,
         enumerable: true,
         configurable: true,
         writable: true,
@@ -324,7 +376,13 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     pi.on("tool_result", async (event, context) => {
       if (event.toolName === "codemode") {
         store.refreshAll();
-        const generated = images.get(event.toolCallId) ?? [];
+        // A script that showed a nested image with image() must not receive it a second time.
+        const shown = new Set(
+          event.content.flatMap((block) => (block.type === "image" ? [block.data] : [])),
+        );
+        const generated = (images.get(event.toolCallId) ?? []).filter(
+          (block) => !shown.has(block.data),
+        );
         images.delete(event.toolCallId);
         for (const [child, parent] of parents)
           if (parent === event.toolCallId) parents.delete(child);
@@ -372,10 +430,15 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
       const shown = store.publish(outcome, readable, context.cwd, resources);
+      const succeeded = !event.isError && outcome.status !== "error";
       const value =
-        event.toolName === "search" && !event.isError && outcome.status !== "error"
+        event.toolName === "search" && succeeded
           ? searchFacts(outcome, shown)
-          : providerValue(event.details);
+          : event.toolName === "read"
+            ? succeeded
+              ? readValue(event.content, shown)
+              : undefined
+            : providerValue(event.details);
       const parent = parents.get(event.toolCallId);
       parents.delete(event.toolCallId);
       if (parent !== undefined) {

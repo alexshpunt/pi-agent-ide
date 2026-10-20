@@ -2080,6 +2080,20 @@ add(
 );
 
 add(
+  "codemode-image-value",
+  ["compose.codemode-image-value"],
+  "In one Codemode call, read sample.png and show the returned image block with image(). Report its mimeType. Do not change files.",
+  [
+    {
+      tool: "read",
+      args: { path: "sample.png" },
+      scriptResult: { type: "image", mimeType: "image/png" },
+    },
+  ],
+  { modes: ["codemode"], files: {}, answer: "image/png", setup: "media" },
+);
+
+add(
   "web-read-search",
   ["web.read", "web.search", "web.image", "web.sequence"],
   "The local fixture server is at http://127.0.0.1:8765. Read its page, search that URL for WEB-MARKER, then read the page as an image and as a short sequence. Report the page marker. Do not change files.",

@@ -239,6 +239,7 @@ const groups: [string[], string[]][] = [
     ["lsp-rename"],
   ],
   [["read.image", "read.pdf"], ["read-media"]],
+  [["compose.codemode-image-value"], ["codemode-image-value"]],
   [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
   [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],
 ];
