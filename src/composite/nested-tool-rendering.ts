@@ -4,7 +4,7 @@ import {
   type ToolDefinition,
   type AgentToolResult,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
+import { Container, Spacer, Text, type Component, type TUI } from "@earendil-works/pi-tui";
 import {
   NATIVE_EDIT_BATCH_EVENT,
   type NativeEditBatchEvent,
@@ -33,6 +33,10 @@ interface ChildPanel {
   postWriteFailure?: boolean;
   unchangedCopy?: boolean;
   copyRollback?: "restored" | "failed";
+  /** The call's host-recorded execution time; absent in older history or when it did not run. */
+  durationMs?: number;
+  /** This call's panel shows the combined diff of several calls, so no single time applies. */
+  groupedResult?: boolean;
   result?: { content: AgentToolResult<unknown>["content"]; details: unknown; isError: boolean };
 }
 interface BatchReport {
@@ -81,6 +85,16 @@ function retentionWarning(group: SavedPanelGroup): string | undefined {
   return undefined;
 }
 
+/** Format a duration like native tool rows: `4.2s` below a minute, then `1m 30s` and `2h 3m 4s`. */
+export function formatToolDuration(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) return `${minutes}m ${totalSeconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${totalSeconds % 60}s`;
+}
+
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
 export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResults = false) {
   const definitions = new Map<string, ToolDefinition>();
@@ -90,6 +104,39 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
   const groups = new Map<string, PanelGroup>();
   let tui: TUI | undefined;
   const components = new WeakMap<object, Container>();
+  const timedDefinitions = new Map<string, ToolDefinition>();
+  /** Wrap a tool's result renderer so a final nested panel ends with its recorded time. */
+  const timedDefinition = (name: string): ToolDefinition | undefined => {
+    const definition = definitions.get(name);
+    const renderResult = definition?.renderResult;
+    if (!definition || !renderResult) return definition;
+    let timed = timedDefinitions.get(name);
+    if (!timed) {
+      const inner = new WeakMap<object, Component>();
+      timed = {
+        ...definition,
+        renderResult(result, options, theme, context) {
+          // Give the tool its own previous component, not the timing wrapper around it.
+          const previous = context.lastComponent && inner.get(context.lastComponent);
+          const rendered = renderResult.call(definition, result, options, theme, {
+            ...context,
+            lastComponent: previous ?? context.lastComponent,
+          });
+          if (options.isPartial || context.durationMs === undefined) return rendered;
+          const container = new Container();
+          container.addChild(rendered);
+          container.addChild(new Spacer(1));
+          container.addChild(
+            new Text(theme.fg("muted", `Took ${formatToolDuration(context.durationMs)}`), 0, 0),
+          );
+          inner.set(container, rendered);
+          return container;
+        },
+      };
+      timedDefinitions.set(name, timed);
+    }
+    return timed;
+  };
   const retainResult = (
     group: PanelGroup,
     call: ChildPanel,
@@ -206,6 +253,8 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
     const group = groups.get(root);
     const call = group?.calls.find((call) => call.id === event.toolCallId);
     if (group && call) {
+      if (typeof event.durationMs === "number" && Number.isFinite(event.durationMs))
+        call.durationMs = event.durationMs;
       // Hooks have already prepared compact renderer details. Never copy structuredContent or usage.
       const result = event.result as AgentToolResult<unknown>;
       retainResult(group, call, {
@@ -284,11 +333,17 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
             { showImages: true },
             call.resultOmitted || call.omitted || !call.result
               ? undefined
-              : definitions.get(call.name),
+              : timedDefinition(call.name),
             tui,
             entry.data.cwd,
           );
-          if (call.result) component.updateResult(call.result);
+          if (call.result)
+            component.updateResult({
+              ...call.result,
+              ...(call.durationMs === undefined || call.groupedResult === true
+                ? {}
+                : { durationMs: call.durationMs }),
+            });
           else
             component.updateResult({
               content: [{ type: "text", text: "Result unavailable in this saved display." }],
@@ -361,6 +416,10 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
         call.unchangedCopy =
           call.name === "copy" && batch.unchangedCopyCalls?.includes(id) === true;
         call.batched = !call.unchangedCopy && id !== lastChangedCall;
+        call.groupedResult =
+          !call.batched &&
+          !call.unchangedCopy &&
+          batch.calls.filter((other) => !batch.unchangedCopyCalls?.includes(other)).length > 1;
         if (call.unchangedCopy) {
           retainResult(group, call, {
             content: [{ type: "text", text: "No changes: destination already has this text." }],
