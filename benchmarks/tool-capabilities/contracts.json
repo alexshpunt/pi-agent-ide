@@ -59,8 +59,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "start": {
             "type": "string"
@@ -76,8 +75,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "targetEnd": {
             "type": "string"
@@ -175,8 +173,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "start": {
             "type": "string"
@@ -311,8 +308,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "start": {
             "type": "string"
@@ -328,8 +324,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "targetEnd": {
             "type": "string"
@@ -387,8 +382,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "start": {
             "type": "string"
@@ -437,8 +431,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "query": {
             "minLength": 1,
@@ -737,8 +730,7 @@
                             "const": "throw",
                             "type": "string"
                           }
-                        ],
-                        "~optional": true
+                        ]
                       },
                       "relation": {
                         "anyOf": [
@@ -849,8 +841,7 @@
                             "const": "throw",
                             "type": "string"
                           }
-                        ],
-                        "~optional": true
+                        ]
                       },
                       "relation": {
                         "const": "siblings",
@@ -1212,8 +1203,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           }
         },
         "required": ["change"],
