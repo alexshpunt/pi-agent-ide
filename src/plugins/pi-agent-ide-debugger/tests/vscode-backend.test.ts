@@ -8,6 +8,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 import {
   isInside,
+  vscodePath,
   VscodeDebugSession,
 } from "#src/plugins/pi-agent-ide-debugger/src/vscode-backend.js";
 
@@ -235,6 +236,12 @@ test("matches Windows workspace folders regardless of letter case", () => {
   expect(isInside("C:\\DEV\\CC-DEV", "c:\\dev\\cc-dev", "win32")).toBe(true);
   expect(isInside("C:\\dev\\cc-dev-other", "c:\\dev\\cc-dev", "win32")).toBe(false);
   expect(isInside("/home/User/project", "/home/user/project", "linux")).toBe(false);
+});
+
+test("spells Windows breakpoint paths with VS Code's lower-case drive letter", () => {
+  expect(vscodePath("C:\\dev\\cc-dev\\main.cpp", "win32")).toBe("c:\\dev\\cc-dev\\main.cpp");
+  expect(vscodePath("c:\\Dev\\Main.cpp", "win32")).toBe("c:\\Dev\\Main.cpp");
+  expect(vscodePath("/home/User/main.cpp", "linux")).toBe("/home/User/main.cpp");
 });
 
 test("asks for a launch configuration before starting an executable", async () => {
