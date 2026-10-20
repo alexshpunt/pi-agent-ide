@@ -2,7 +2,11 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  defineTool,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 
@@ -25,6 +29,7 @@ import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/
 import type { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
 import type {
   ShellProfile,
+  TerminalExecutionOrigin,
   TerminalSessionSnapshot,
 } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
 
@@ -72,6 +77,7 @@ export function registerTerminalTools(
   ui: Pick<TerminalUi, "bind" | "notifyWaitTransition">,
   presentation: "full" | "compact" | "disabled" = "compact",
   targets: SshBackendRegistry = new SshBackendRegistry([]),
+  executionOrigin?: (toolCallId: string, context: ExtensionContext) => TerminalExecutionOrigin,
 ): () => void {
   // Keep wait cancellation in this registration, not in a PTY manager retained from older code.
   const foregroundWaits = new Set<AbortController>();
@@ -99,8 +105,9 @@ export function registerTerminalTools(
       description: `Use ${toolName} to execute a command in the user's configured shell. Each call creates a new terminal session and returns its shell: source for inspection and interaction.`,
       parameters: runParameters,
       outputSchema: shellOutputSchema,
-      async execute(_toolCallId, input, signal, onUpdate, context) {
+      async execute(toolCallId, input, signal, onUpdate, context) {
         ui.bind(context);
+        const origin = executionOrigin?.(toolCallId, context);
         const remote = targets.resolve(input.cwd ?? context.cwd, context.cwd);
         const options = {
           command: input.command,
@@ -119,6 +126,8 @@ export function registerTerminalTools(
               cwd: input.cwd === undefined ? context.cwd : path.resolve(context.cwd, input.cwd),
               shell: profile,
             });
+        // Set once at launch, including when the manager was retained from older code.
+        session.origin ??= origin;
         if (input.background === true && session.status !== "failed") {
           await captureInitialBackgroundPreview(manager, session, onUpdate);
           if (session.status !== "running") session.completionDelivered = true;
