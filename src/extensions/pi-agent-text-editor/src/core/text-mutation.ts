@@ -370,6 +370,7 @@ export function createTextTool<TParameters extends TSchema>(
             errorMessage(captured.error),
             "unknown",
             undefined,
+            undefined,
             definition.name === "copy",
           );
           return structuredMutation(
@@ -1502,7 +1503,14 @@ async function buildToolResult(
     const message = `${reason.replace(/[.!?]+$/u, "")}.${completed}`;
     return safe === undefined
       ? buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect)
-      : failureToolResult(source, safe.code, message, effect, outcome.failure.rollback);
+      : failureToolResult(
+          source,
+          safe.code,
+          message,
+          effect,
+          outcome.failure.rollback,
+          outcome.failure.code,
+        );
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
@@ -1853,6 +1861,7 @@ function failureToolResult(
   reason: string,
   effect: "not-applied" | "applied" | "unknown",
   rollback?: TextResourceEditFailure["rollback"],
+  stage?: string,
   copyExecutionFailure = false,
 ): { content: [{ type: "text"; text: string }]; details: FileMutationBatchResult } {
   const uncertain =
@@ -1880,7 +1889,7 @@ function failureToolResult(
   const result = new FileMutationResult({
     ok: false,
     path: source,
-    errors: [{ path: source, code, reason }],
+    errors: [{ path: source, code, reason, ...(stage === undefined ? {} : { stage }) }],
     ...(fileChangedStatement === undefined
       ? {}
       : {
