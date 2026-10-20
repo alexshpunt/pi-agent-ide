@@ -14,6 +14,7 @@ import type {
   OwnedDebugAdapter,
 } from "./workspace-owner.js";
 import { JavaDebugRuntime } from "./java-runtime.js";
+import type { VscodeDebugSession, VscodeDebugState } from "./vscode-backend.js";
 import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import {
   DapClient,
@@ -43,12 +44,17 @@ export type DebugAdapter =
   | "shell";
 
 export interface DebugSessionOptions {
-  readonly adapter: DebugAdapter;
+  /** Native adapter, or `vscode` when VS Code chooses the debugger through DebugMCP. */
+  readonly adapter: DebugAdapter | "vscode";
   readonly program: string;
   readonly sourceFile: string;
   readonly args: readonly string[];
   readonly cwd: string;
   readonly mainClass?: string;
+  /** VS Code `launch.json` configuration name; VS Code sessions only. */
+  readonly configuration?: string;
+  /** Test name launched through the VS Code Testing API; VS Code sessions only. */
+  readonly test?: string;
 }
 
 export interface DebugBreakpoint {
@@ -108,6 +114,8 @@ export interface DebugSession {
   readonly ownerKey?: string;
   remote?: { readonly target: string; readonly pid: number; readonly identity?: string };
   status: DebugSessionStatus;
+  /** DebugMCP controller; native DAP fields stay unused for these sessions. */
+  vscode?: VscodeDebugSession;
   client?: DapClient;
   controlClient?: DapClient;
   clients?: DapClient[];
@@ -189,6 +197,7 @@ export class DebugSessionManager {
   /** Create a configured session without launching the debuggee. */
   create(
     options: Omit<DebugSessionOptions, "sourceFile"> & { readonly sourceFile?: string },
+    vscode?: VscodeDebugSession,
   ): DebugSession {
     const owner = this.#ownerResolver?.(options.cwd);
     if (
@@ -207,6 +216,7 @@ export class DebugSessionManager {
       source: `debug:${id}`,
       options: { ...options, sourceFile: options.sourceFile ?? options.program },
       ...(owner === undefined ? {} : { ownerKey: owner.key }),
+      ...(vscode === undefined ? {} : { vscode }),
       breakpoints: new Map(),
       status: "configured",
       stopGeneration: 0,
@@ -299,6 +309,7 @@ export class DebugSessionManager {
       line,
       verified: false,
     };
+    if (session.vscode !== undefined) await session.vscode.addBreakpoint(file, line, signal);
     session.breakpoints.set(id, breakpoint);
     if (session.client !== undefined)
       await this.#configureBreakpointFile(session, session.client, file, signal);
@@ -316,9 +327,86 @@ export class DebugSessionManager {
 
   /** Launch the debuggee, configure breakpoints, and wait for a stop or termination. */
   async start(session: DebugSession, signal?: AbortSignal): Promise<DebugSession> {
+    if (session.vscode !== undefined) return this.#startVscode(session, session.vscode, signal);
     if (session.options.adapter === "java" && this.#owner(session) === undefined)
       return this.#startJava(session, signal);
     return this.#start(session, signal, 2);
+  }
+
+  async #startVscode(
+    session: DebugSession,
+    vscode: VscodeDebugSession,
+    signal?: AbortSignal,
+  ): Promise<DebugSession> {
+    if (session.status !== "configured") throw new Error(`Session is already ${session.status}`);
+    session.status = "running";
+    this.#notify(session);
+    try {
+      const { program, cwd, configuration, test } = session.options;
+      const state = await vscode.start(
+        {
+          program,
+          cwd,
+          ...(configuration === undefined ? {} : { configuration }),
+          ...(test === undefined ? {} : { test }),
+        },
+        signal,
+      );
+      await this.#applyVscodeState(session, vscode, state);
+    } catch (error) {
+      session.status = "configured";
+      this.#notify(session);
+      throw error;
+    }
+    return session;
+  }
+
+  /** Mirror one DebugMCP state into the session's stop snapshot. */
+  async #applyVscodeState(
+    session: DebugSession,
+    vscode: VscodeDebugSession,
+    state: VscodeDebugState,
+    previous?: DebugFrame,
+  ): Promise<void> {
+    if (state.status !== "paused") {
+      session.status = state.status === "running" ? "running" : "terminated";
+      session.stop = undefined;
+      this.#notify(session);
+      return;
+    }
+    const frame: DebugFrame | undefined =
+      state.frame === undefined
+        ? undefined
+        : {
+            id: state.frame.id,
+            name: state.frame.name,
+            line: state.frame.line,
+            ...withSourcePath(
+              state.frame.file ?? inferVscodeFrameFile(session, state.frame, previous),
+            ),
+          };
+    let hitBreakpoint = false;
+    for (const breakpoint of session.breakpoints.values()) {
+      if (
+        frame?.source?.path !== undefined &&
+        sameFilePath(breakpoint.file, frame.source.path) &&
+        breakpoint.line === frame.line
+      ) {
+        breakpoint.verified = true;
+        hitBreakpoint = true;
+      }
+    }
+    session.stopGeneration++;
+    session.stop = {
+      generation: session.stopGeneration,
+      reason: hitBreakpoint ? "breakpoint" : "step",
+      threadId: state.frame?.threadId ?? 0,
+      ...(frame === undefined ? {} : { frame }),
+      variables: frame === undefined ? [] : await vscodeVariables(vscode),
+      sourceLines: frame === undefined ? [] : await sourceWindow(frame),
+    };
+    session.status = "stopped";
+    this.#notify(session);
   }
 
   async #startJava(session: DebugSession, signal?: AbortSignal): Promise<DebugSession> {
@@ -461,6 +549,11 @@ export class DebugSessionManager {
 
   /** Refresh execution state from events that arrived after a control wait ended. */
   async refresh(session: DebugSession): Promise<void> {
+    if (session.vscode !== undefined) {
+      if (session.status === "running")
+        await this.#applyVscodeState(session, session.vscode, await session.vscode.status(0));
+      return;
+    }
     if (session.client === undefined) return;
     for (
       let event = session.client.takeEvent(["breakpoint"]);
@@ -498,6 +591,20 @@ export class DebugSessionManager {
     if (session.status !== "stopped" || session.stop === undefined) {
       throw new Error(`Cannot ${command} while session is ${session.status}`);
     }
+    if (session.vscode !== undefined) {
+      const vscode = session.vscode;
+      const previous = session.stop.frame;
+      session.stop = undefined;
+      session.status = "running";
+      this.#notify(session);
+      await this.#applyVscodeState(
+        session,
+        vscode,
+        await vscode.command(command, signal),
+        previous,
+      );
+      return session;
+    }
     const client = requiredClient(session);
     const threadId = session.stop.threadId;
     await client.request(command, { threadId }, { signal });
@@ -524,6 +631,12 @@ export class DebugSessionManager {
     const stop = session.stop;
     const frameId = session.stop.frame.id;
     if (trimmed.length === 0) throw new Error("Debug evaluation requires an expression");
+    if (session.vscode !== undefined) {
+      const evaluation = await session.vscode.evaluate(trimmed, signal);
+      session.stop = { ...stop, variables: await vscodeVariables(session.vscode, signal) };
+      this.#notify(session);
+      return { expression: trimmed, ...evaluation, variablesReference: 0 };
+    }
     const response = await requiredClient(session).request<EvaluateBody>(
       "evaluate",
       {
@@ -555,6 +668,7 @@ export class DebugSessionManager {
       const breakpoint = session.breakpoints.get(breakpointMatch[1] as string);
       if (breakpoint === undefined) throw new Error(`Unknown debug breakpoint ${source}`);
       session.breakpoints.delete(breakpoint.id);
+      await session.vscode?.removeBreakpoint(breakpoint.file, breakpoint.requestedLine, signal);
       if (session.client !== undefined && session.status !== "terminated") {
         await this.#configureBreakpointFile(session, session.client, breakpoint.file, signal);
       }
@@ -562,6 +676,8 @@ export class DebugSessionManager {
       return;
     }
     if (source !== session.source) throw new Error(`Cannot delete debug resource ${source}`);
+    // A closed VS Code window must not keep the Pi session alive.
+    await session.vscode?.close(signal).catch(() => {});
     if (session.client !== undefined) {
       await (session.controlClient ?? session.client)
         .request("disconnect", { terminateDebuggee: true }, { signal, timeoutMs: 500 })
@@ -1083,6 +1199,35 @@ export class DebugSessionManager {
     const snapshot = this.snapshot(session);
     for (const listener of this.#changeListeners) listener(snapshot);
   }
+}
+
+/**
+ * Infer a frame file that DebugMCP dropped, as it does in remote VS Code windows: use the only
+ * Pi breakpoint file on that line, or the previous stop's file while the function is unchanged.
+ */
+function inferVscodeFrameFile(
+  session: DebugSession,
+  frame: { readonly name: string; readonly line: number },
+  previous?: DebugFrame,
+): string | undefined {
+  const files = new Set(
+    [...session.breakpoints.values()]
+      .filter((breakpoint) => breakpoint.line === frame.line)
+      .map((breakpoint) => breakpoint.file),
+  );
+  if (files.size === 1) return [...files][0];
+  return previous?.name === frame.name ? previous.source?.path : undefined;
+}
+
+function withSourcePath(file: string | undefined): { readonly source?: { readonly path: string } } {
+  return file === undefined ? {} : { source: { path: file } };
+}
+
+async function vscodeVariables(
+  vscode: VscodeDebugSession,
+  signal?: AbortSignal,
+): Promise<DebugVariable[]> {
+  return (await vscode.locals(signal)).map((variable) => ({ ...variable, variablesReference: 0 }));
 }
 
 async function sourceWindow(

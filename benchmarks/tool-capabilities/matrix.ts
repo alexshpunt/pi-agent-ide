@@ -224,6 +224,7 @@ const groups: [string[], string[]][] = [
     ],
     ["debug-controls"],
   ],
+  [["debug.backend-vscode-refusal", "debug.backend-native"], ["debug-backend-fallback"]],
   [
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],

@@ -1,5 +1,5 @@
 {
-  "pi": "1.1.0",
+  "pi": "1.3.0",
   "tools": [
     {
       "name": "bash",
@@ -123,6 +123,14 @@
             },
             "type": "array"
           },
+          "backend": {
+            "enum": ["auto", "vscode", "native"],
+            "type": "string"
+          },
+          "configuration": {
+            "minLength": 1,
+            "type": "string"
+          },
           "cwd": {
             "type": "string"
           },
@@ -136,9 +144,13 @@
           },
           "source": {
             "type": "string"
+          },
+          "test": {
+            "minLength": 1,
+            "type": "string"
           }
         },
-        "required": ["adapter", "program"],
+        "required": ["program"],
         "type": "object"
       }
     },
