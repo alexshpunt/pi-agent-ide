@@ -29,7 +29,6 @@ test("the structured capability case proves real alias receipts without exposing
       testName: "capability-structured-alias-receipts",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      piCommand: process.env.PI_COMMAND ?? "/usr/bin/pi",
       timeoutMs: 120_000,
       isolateUserResources: true,
       extensions: [

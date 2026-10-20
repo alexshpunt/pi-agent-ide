@@ -89,7 +89,6 @@ test("the native TUI public event mirror is usable by the unchanged capability v
     const run = await new PiIntegrationTest({
       testName: "capability-native-tui-mirror",
       artifactsDir: testArtifactsDir(import.meta.filename),
-      piCommand: process.env.PI_COMMAND ?? "/usr/bin/pi",
       timeoutMs: 120_000,
       cwd,
       rawMode: false,

@@ -15,7 +15,6 @@ test("real Pi audits dedicated Claude-file and seeded Pi rotations without infer
     await new PiIntegrationTest({
       testName: "capability-claude-file-refresh-registry",
       artifactsDir: testArtifactsDir(import.meta.filename),
-      piCommand: process.env.PI_COMMAND ?? "/usr/bin/pi",
       timeoutMs: 120_000,
       cwd,
       isolateUserResources: true,

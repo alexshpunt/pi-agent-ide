@@ -3,6 +3,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { testArtifactsDir } from "pi-coding-agent-test";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { piRuntime } from "#capabilities/inventory.ts";
 import { runProcess } from "#capabilities/sandbox.ts";
 
 // Startup and native provider registration are the contract, so use the installed CLI directly.
@@ -35,9 +36,11 @@ test("native OAuth survives streaming guard installation, provider rebinding and
         retry: { enabled: false, maxRetries: 0 },
       }),
     );
+    const runtime = await piRuntime();
     const result = await runProcess(
-      "/usr/bin/pi",
+      process.execPath,
       [
+        runtime.cli,
         "--approve",
         "--offline",
         "--mode",

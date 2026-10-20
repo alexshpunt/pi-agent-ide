@@ -44,7 +44,6 @@ test("free preflight binds actual Pi lifecycle with synthetic auth and network/h
       const result = await runConnectorPreflight(path.resolve("."), {
         connector: "benvargas",
         connectorRoot: stage,
-        pi: process.env.PI_COMMAND ?? "/usr/bin/pi",
         timeoutMs: 120_000,
         results: path.join(testArtifactsDir(import.meta.filename), "load-" + randomUUID()),
       });

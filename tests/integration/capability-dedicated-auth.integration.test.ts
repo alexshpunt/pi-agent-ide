@@ -17,7 +17,6 @@ test.each([false, true])(
       await new PiIntegrationTest({
         testName: `capability-dedicated-refresh-registry-${delegated ? "delegated" : "native"}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
-        piCommand: process.env.PI_COMMAND ?? "/usr/bin/pi",
         timeoutMs: 120_000,
         cwd,
         isolateUserResources: true,

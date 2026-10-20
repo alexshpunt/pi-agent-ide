@@ -30,7 +30,6 @@ test.each(["off", "on"])(
       const run = await new PiIntegrationTest({
         testName: `builtin-codemode-alias-${panels}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
-        piCommand: process.env.PI_COMMAND ?? "/usr/bin/pi",
         rawMode: false,
         cwd,
         isolateUserResources: true,

@@ -376,7 +376,7 @@ export async function runConnectorPreflight(
     const args = preflightSandboxArgs(await sandboxArgs(snapshot.source, trial.root, frozen));
     const execution = await runProcess(
       "bwrap",
-      [...args, "/usr/bin/node", "/source/benchmarks/tool-capabilities/preflight.ts", "--child"],
+      [...args, process.execPath, "/source/benchmarks/tool-capabilities/preflight.ts", "--child"],
       {
         env: {
           PATH: "/tools:/usr/local/bin:/usr/bin:/bin",

@@ -30,7 +30,6 @@ test("a bounded repeated edit payload completes through real Pi argument streami
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       isolateUserResources: true,
-      piCommand: "/usr/bin/pi",
       timeoutMs: 90_000,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
       tools: ["replace"],

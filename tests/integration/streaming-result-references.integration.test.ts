@@ -72,7 +72,6 @@ test.each(cases)(
         cwd,
         isolateUserResources: true,
         timeoutMs: 120_000,
-        piCommand: "/usr/bin/pi",
         extensions: [
           path.resolve("tests/integration/fixtures/issued-reference-provider.ts"),
           path.resolve("src/pi-agent-ide.ts"),
