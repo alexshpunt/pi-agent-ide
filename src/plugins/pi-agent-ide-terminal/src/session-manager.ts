@@ -133,6 +133,10 @@ export class TerminalSessionManager {
         rows,
         cwd: options.cwd,
         env: cleanEnvironment(processEnvironment()),
+        // The inbox ConPTY never closes the pseudoconsole when the shell exits on its own,
+        // leaving one headless conhost.exe per command (microsoft/node-pty#965). The bundled
+        // ConPTY releases its console host once the last client exits.
+        ...(globalThis.process.platform === "win32" ? { useConptyDll: true } : {}),
       };
       process = pty.spawn(
         options.shell.executable,
@@ -156,6 +160,15 @@ export class TerminalSessionManager {
     const session: TerminalSession = { ...base, process };
     this.#sessions.set(id, session);
     process.onData((data) => this.#appendOutput(session, data));
+    // Answer terminal queries such as PowerShell's startup device-attributes probe, which
+    // otherwise waits about two seconds for a reply under the bundled ConPTY.
+    if (globalThis.process.platform === "win32")
+      session.screen.onData((reply) => {
+        if (isTerminalStatus(session.status)) return;
+        try {
+          process.write(reply);
+        } catch {}
+      });
     process.onExit(({ exitCode, signal }) => {
       if (isTerminalStatus(session.status)) return;
       session.endedAt = Date.now();
