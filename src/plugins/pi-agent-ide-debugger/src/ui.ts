@@ -40,6 +40,18 @@ export function debuggerEvaluationFromResult(details: unknown): DebugEvaluation 
   };
 }
 
+/** Extract the reason of a failed debugger action, such as a refused start. */
+export function debuggerFailureFromResult(details: unknown): string | undefined {
+  const semantic = semanticActionFromResult(details);
+  const error = semantic?.ok === false ? semantic.error : undefined;
+  return typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+    ? error.message
+    : undefined;
+}
+
 function semanticActionFromResult(details: unknown): Readonly<Record<string, unknown>> | undefined {
   if (typeof details !== "object" || details === null) return undefined;
   const metadata = (details as { readonly metadata?: unknown }).metadata;

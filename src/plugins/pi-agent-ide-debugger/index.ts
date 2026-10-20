@@ -60,6 +60,7 @@ import {
 } from "#src/plugins/pi-agent-ide-debugger/src/renderer.js";
 import {
   debuggerEvaluationFromResult,
+  debuggerFailureFromResult,
   debuggerSnapshotFromResult,
 } from "#src/plugins/pi-agent-ide-debugger/src/ui.js";
 import { debuggerProcessProvider } from "#src/plugins/pi-agent-ide-debugger/src/process-provider.js";
@@ -306,12 +307,29 @@ export async function registerDebuggerWithOwner(
           if (parameters.path !== session.source || parameters.anchor !== undefined) {
             throw new Error("Debug commands target the session resource without an anchor");
           }
-          const evaluation = await executeSessionCommand(
-            manager,
-            session,
-            parameters.text,
-            context.signal,
-          );
+          let evaluation: DebugEvaluation | undefined;
+          try {
+            evaluation = await executeSessionCommand(
+              manager,
+              session,
+              parameters.text,
+              context.signal,
+            );
+          } catch (error) {
+            // Return the debugger's own reason with the session state instead of a generic edit failure.
+            if (context.signal?.aborted === true) throw error;
+            const message = error instanceof Error ? error.message : String(error);
+            return {
+              source: session.source,
+              summary: `${parameters.text.trim()} failed: ${message}\n\n${renderDebugSession(session)}`,
+              data: {
+                ...debugActionData(manager, session, parameters.text),
+                ok: false,
+                effect: "not-applied",
+                error: { code: "DEBUG_ACTION_FAILED", message },
+              },
+            };
+          }
           return {
             source: session.source,
             summary:
@@ -400,7 +418,13 @@ export async function registerDebuggerWithOwner(
             const snapshot = debuggerSnapshotFromResult(result.details);
             if (snapshot === undefined) throw new Error("Debugger result is missing its session");
             const evaluation = debuggerEvaluationFromResult(result.details);
-            return renderDebugResult(snapshot, options.expanded, theme, evaluation);
+            return renderDebugResult(
+              snapshot,
+              options.expanded,
+              theme,
+              evaluation,
+              debuggerFailureFromResult(result.details),
+            );
           },
         });
       }

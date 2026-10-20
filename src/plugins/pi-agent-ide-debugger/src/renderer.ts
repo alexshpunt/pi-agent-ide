@@ -45,8 +45,10 @@ export function renderDebugResult(
   expanded: boolean,
   theme: DebugTheme,
   evaluation?: DebugEvaluation,
+  failure?: string,
 ): Component {
   const lines = debugResultLines(snapshot, expanded, theme);
+  if (failure !== undefined) lines.unshift(theme.fg("error", `✗ ${failure}`));
   if (evaluation !== undefined) {
     lines.unshift(
       `${theme.fg("accent", evaluation.expression)} ${theme.fg("muted", "=")} ${theme.fg("toolOutput", evaluation.result)}${evaluation.type === undefined ? "" : theme.fg("dim", `  ${evaluation.type}`)}`,
