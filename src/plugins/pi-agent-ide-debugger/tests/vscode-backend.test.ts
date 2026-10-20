@@ -6,7 +6,10 @@ import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
-import { VscodeDebugSession } from "#src/plugins/pi-agent-ide-debugger/src/vscode-backend.js";
+import {
+  isInside,
+  VscodeDebugSession,
+} from "#src/plugins/pi-agent-ide-debugger/src/vscode-backend.js";
 
 const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
@@ -225,6 +228,26 @@ test("refuses a VS Code window whose debug session Pi did not start", async () =
     VscodeDebugSession.open({ cwd: workspace, program, sourceFile: program }),
   ).rejects.toThrow("already has an active debug session");
   expect(state.session).toBe(userSession);
+});
+
+test("matches Windows workspace folders regardless of letter case", () => {
+  expect(isInside("C:\\dev\\cc-dev\\build\\app.exe", "c:\\dev\\cc-dev", "win32")).toBe(true);
+  expect(isInside("C:\\DEV\\CC-DEV", "c:\\dev\\cc-dev", "win32")).toBe(true);
+  expect(isInside("C:\\dev\\cc-dev-other", "c:\\dev\\cc-dev", "win32")).toBe(false);
+  expect(isInside("/home/User/project", "/home/user/project", "linux")).toBe(false);
+});
+
+test("asks for a launch configuration before starting an executable", async () => {
+  const { workspace } = await vscodeWorkspace();
+  const { program, state } = await fakeDebugMcp(workspace);
+  const vscode = await VscodeDebugSession.open({ cwd: workspace, program, sourceFile: program });
+  const executable = path.join(workspace, "app.exe");
+
+  await expect(vscode.start({ program: executable, cwd: workspace })).rejects.toThrow(
+    "Add a .vscode/launch.json configuration",
+  );
+  expect(state.session).toBeUndefined();
+  await vscode.close();
 });
 
 test("reports when no VS Code window has the workspace open", async () => {
