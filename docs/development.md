@@ -51,6 +51,14 @@ CI uses the same four shards without changing test or job timeouts. Set `REPORT_
 
 `--no-extensions` also disables Pi's native built-ins. Native fixtures explicitly load `builtin:codemode`, `builtin:tool-search`, and `builtin:mcp`; ordinary fixtures do not. `native-host.integration.test.ts` checks the version inside the launched process, deferred discovery, nested execution, and isolation from personal MCP servers.
 
+### Delayed terminal output
+
+Terminal sessions keep the launching tool call, its visible outer call, and the Pi session ID. Read, Write and Insert inspect or control that same process; they do not take ownership of its later output. Reload keeps this metadata with the live process. A process without a known owner, or one carried into another Pi session, stays unlinked rather than borrowing another call's identity.
+
+Completion and stale notices send the existing agent payload through hidden custom messages. Separate display-only entries carry `parentToolCallId`; mixed completion batches split into one entry per visible owner. This lets fullscreen consumers place each card beside its launch without changing chronological session history or copying the full card into Conversation. Historical visible terminal messages still render.
+
+The focused `linked-terminal.integration.test.ts` case checks direct and nested launches, later inspection/input, reverse completion order, and persisted ownership. Set `PI_TERMINAL_STEREO` to an unchanged Stereo extension entrypoint to run the same case in Rows and Columns, including panel and search checks. This optional consumer check does not modify Stereo.
+
 ### Paid model capability checks
 
 Tool changes also require reviewing the matrix and supported tool chains in `benchmarks/tool-capabilities/README.md` in the checkout. Run `pnpm check:capabilities` for its free schema/coverage gate; it is included in `pnpm check`. The real-model suite uses `pnpm validate:tools:models --run --model PROFILE_ID` only with explicit paid permission. It runs isolated cases and checks both outcomes and actual routes. It is not part of ordinary tests or CI.

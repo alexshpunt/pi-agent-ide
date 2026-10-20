@@ -113,6 +113,8 @@ Late diagnostic ownership is UI metadata, not a new model operation. The existin
 
 Advisory-review ownership is also display metadata. The matrix and write/read and parallel-edit cases retain their existing model-operation contracts; no new paid operation is introduced. Focused reviewer and real-Pi linked-review cases cover saved-version ownership, direct and nested calls, and unchanged full review delivery. Stereo Rows/Columns checks require `PI_AGENT_IDE_TEST_STEREO_EXTENSION` to point to an unchanged consumer extension; without it those cases are skipped, not verified.
 
+Delayed terminal ownership also changes presentation metadata, not a model operation. The existing `shell-roundtrip` direct and Codemode routes cover the unchanged Bash, input and inspection contract. Mixed-owner delivery, nested visible roots, reload gaps and stale notices belong to the focused terminal tests; `linked-terminal.integration.test.ts` checks real-Pi persistence and optionally unchanged Stereo panels/search. No new paid route is needed for card grouping. Unrun paid routes remain unverified.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
