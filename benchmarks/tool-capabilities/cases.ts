@@ -1718,6 +1718,8 @@ add(
 );
 
 add(
+  // This case keeps the model-facing roundtrip contract. Owner grouping and late delivery
+  // are exercised without inference in linked-terminal.integration.test.ts.
   "shell-roundtrip",
   [
     "shell.execute",

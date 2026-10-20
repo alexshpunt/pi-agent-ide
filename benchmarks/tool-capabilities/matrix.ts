@@ -166,6 +166,8 @@ const groups: [string[], string[]][] = [
   [["compose.result-selector-rejection"], ["result-selector-rejection"]],
   [
     [
+      // Delayed-card ownership is presentation metadata, covered by linked-terminal integration.
+      // The model's shell/input/read route and result contracts remain unchanged.
       "shell.execute",
       "shell.read",
       "shell.search",

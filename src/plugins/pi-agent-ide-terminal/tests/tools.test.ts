@@ -10,6 +10,64 @@ import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shel
 import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
 import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
 
+test.runIf(process.platform !== "win32").each(["timeout", "abort"] as const)(
+  "keeps launch ownership when the foreground wait ends by %s",
+  async (reason) => {
+    const manager = new TerminalSessionManager();
+    let tool: ToolDefinition | undefined;
+    const notifyWaitTransition = vi.fn();
+    const origin = { toolCallId: "launch", parentToolCallId: "outer", sessionId: "session-a" };
+    registerTerminalTools(
+      {
+        registerTool: (definition) => {
+          tool = definition as ToolDefinition;
+        },
+      },
+      manager,
+      resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+      { bind: vi.fn(), notifyWaitTransition },
+      undefined,
+      undefined,
+      () => origin,
+    );
+    const abort = new AbortController();
+    const timer = reason === "abort" ? setTimeout(() => abort.abort(), 30) : undefined;
+    try {
+      if (!tool) throw new Error("Terminal tool was not registered");
+      const result = await tool.execute(
+        "launch",
+        {
+          command: "IFS= read -r answer; printf 'finished:%s' \"$answer\"",
+          timeoutSeconds: reason === "timeout" ? 0.1 : 30,
+        },
+        abort.signal,
+        undefined,
+        { cwd: process.cwd() } as ExtensionToolContext,
+      );
+      const snapshot = result.details as {
+        source: string;
+        origin: typeof origin;
+        status: string;
+        background: boolean;
+        waitReason?: string;
+      };
+      expect(snapshot).toMatchObject({
+        origin,
+        status: "running",
+        background: true,
+        ...(reason === "timeout" ? { waitReason: "timeout" } : {}),
+      });
+      expect(notifyWaitTransition).toHaveBeenCalledTimes(reason === "abort" ? 1 : 0);
+      await manager.write(snapshot.source, "ok\n");
+      const completed = await manager.wait(snapshot.source);
+      expect(manager.snapshot(completed).origin).toEqual(origin);
+      expect(completed.output).toContain("finished:ok");
+    } finally {
+      clearTimeout(timer);
+      await manager.dispose();
+    }
+  },
+);
 test.runIf(process.platform !== "win32")(
   "releases a wait using only the manager API available before reload",
   async () => {
@@ -39,6 +97,13 @@ test.runIf(process.platform !== "win32")(
         bind: vi.fn(),
         notifyWaitTransition,
       },
+      undefined,
+      undefined,
+      () => ({
+        toolCallId: "retained-manager",
+        parentToolCallId: "root-launch",
+        sessionId: "session-a",
+      }),
     );
     try {
       if (execute === undefined) throw new Error("Terminal tool was not registered");
@@ -70,6 +135,11 @@ test.runIf(process.platform !== "win32")(
       await manager.sendKeys(source, "Enter");
       const completed = await manager.wait(source);
       expect(completed.output).toContain("received:hello");
+      expect(manager.snapshot(completed).origin).toEqual({
+        toolCallId: "retained-manager",
+        parentToolCallId: "root-launch",
+        sessionId: "session-a",
+      });
       expect(formatAgentTerminalSnapshot(manager.snapshot(completed))).not.toContain("next:");
       release();
     } finally {
