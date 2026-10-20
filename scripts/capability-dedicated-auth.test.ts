@@ -184,7 +184,7 @@ test("a timed-out child preserves a completed rotation without exposing the cont
     if (!staged.mount) throw new Error("Missing dedicated credential mount");
     args.splice(-1, 0, "--bind", staged.mount.source, staged.mount.target);
     const script = `const fs=require("node:fs");fs.writeFileSync("/state/agent/auth.json",JSON.stringify({fixture:${JSON.stringify(rotated)}}));console.log(fs.existsSync("${f.dedicated}/settings-sentinel"));setInterval(()=>{},1000);`;
-    const run = await runProcess("bwrap", [...args, "/usr/bin/node", "-e", script], {
+    const run = await runProcess("bwrap", [...args, process.execPath, "-e", script], {
       timeoutMs: 1000,
       env: { PATH: "/usr/bin:/bin" },
     });

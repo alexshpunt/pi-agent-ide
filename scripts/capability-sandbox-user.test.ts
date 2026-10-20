@@ -53,7 +53,7 @@ test("non-root CLI children retain private state access and read-only source iso
       privateValue:fs.readFileSync("/state/private.txt","utf8"), sourceError,
       hostVisible:fs.existsSync(${JSON.stringify(path.join(root, "host-only.txt"))}) }));
   `;
-  const run = await runProcess("bwrap", [...args, "/usr/bin/node", "-e", script], {
+  const run = await runProcess("bwrap", [...args, process.execPath, "-e", script], {
     env: { PATH: "/usr/bin:/bin" },
     timeoutMs: 10_000,
   });

@@ -214,7 +214,7 @@ test("sandbox blocks CLI fallback without inference and reports the attempt", as
     if (!auth.mount) throw new Error("Missing credential mount");
     args.splice(-1, 0, "--bind", auth.mount.source, auth.mount.target);
     const script = `const fs=require('node:fs'), cp=require('node:child_process');let code;try{cp.execSync('claude -p . --model haiku',{stdio:'ignore'})}catch(e){code=e.status}console.log(JSON.stringify({code,marker:fs.readFileSync('/state/claude-fallback-attempted','utf8'),unrelated:fs.existsSync('/state/home/.claude/unrelated-settings')}));`;
-    const run = await runProcess("bwrap", [...args, "/usr/bin/node", "-e", script], {
+    const run = await runProcess("bwrap", [...args, process.execPath, "-e", script], {
       env: { PATH: "/tools:/usr/bin:/bin", HOME: "/state/home" },
       timeoutMs: 3000,
     });
@@ -237,7 +237,7 @@ test("a timed-out child preserves completed file rotations in only the dedicated
     if (!auth.mount) throw new Error("Missing credential mount");
     args.splice(-1, 0, "--bind", auth.mount.source, auth.mount.target);
     const script = `require('node:fs').writeFileSync('/state/home/.claude/.credentials.json',${JSON.stringify(JSON.stringify({ claudeAiOauth: next }))});setInterval(()=>{},1000);`;
-    const run = await runProcess("bwrap", [...args, "/usr/bin/node", "-e", script], {
+    const run = await runProcess("bwrap", [...args, process.execPath, "-e", script], {
       timeoutMs: 1000,
       env: { PATH: "/usr/bin:/bin" },
     });
