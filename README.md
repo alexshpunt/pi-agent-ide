@@ -144,6 +144,8 @@ The terminal is a first-class cross-platform interface. The agent can run comman
 
 Debugger sessions use the same resource model. The agent can set breakpoints, inspect stack frames and variables, evaluate expressions, step through execution, and return to a running session later.
 
+When the project is open in VS Code with the [DebugMCP](https://github.com/microsoft/DebugMCP) extension, the agent debugs it there by default, so you can follow the session in your editor. See [VS Code debugger](./docs/configuration.md#vs-code-debugger).
+
 <div align="center">
 
 [![Setting breakpoints, inspecting locals, and stepping through a debugger session](assets/summary/thumbs/debugging.png)](assets/summary/debugging.png)
