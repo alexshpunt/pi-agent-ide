@@ -366,6 +366,7 @@ export class DebugSessionManager {
     session: DebugSession,
     vscode: VscodeDebugSession,
     state: VscodeDebugState,
+    previous?: DebugFrame,
   ): Promise<void> {
     if (state.status !== "paused") {
       session.status = state.status === "running" ? "running" : "terminated";
@@ -380,7 +381,9 @@ export class DebugSessionManager {
             id: state.frame.id,
             name: state.frame.name,
             line: state.frame.line,
-            source: { path: state.frame.file },
+            ...withSourcePath(
+              state.frame.file ?? inferVscodeFrameFile(session, state.frame, previous),
+            ),
           };
     let hitBreakpoint = false;
     for (const breakpoint of session.breakpoints.values()) {
@@ -590,10 +593,16 @@ export class DebugSessionManager {
     }
     if (session.vscode !== undefined) {
       const vscode = session.vscode;
+      const previous = session.stop.frame;
       session.stop = undefined;
       session.status = "running";
       this.#notify(session);
-      await this.#applyVscodeState(session, vscode, await vscode.command(command, signal));
+      await this.#applyVscodeState(
+        session,
+        vscode,
+        await vscode.command(command, signal),
+        previous,
+      );
       return session;
     }
     const client = requiredClient(session);
@@ -1190,6 +1199,28 @@ export class DebugSessionManager {
     const snapshot = this.snapshot(session);
     for (const listener of this.#changeListeners) listener(snapshot);
   }
+}
+
+/**
+ * Infer a frame file that DebugMCP dropped, as it does in remote VS Code windows: use the only
+ * Pi breakpoint file on that line, or the previous stop's file while the function is unchanged.
+ */
+function inferVscodeFrameFile(
+  session: DebugSession,
+  frame: { readonly name: string; readonly line: number },
+  previous?: DebugFrame,
+): string | undefined {
+  const files = new Set(
+    [...session.breakpoints.values()]
+      .filter((breakpoint) => breakpoint.line === frame.line)
+      .map((breakpoint) => breakpoint.file),
+  );
+  if (files.size === 1) return [...files][0];
+  return previous?.name === frame.name ? previous.source?.path : undefined;
+}
+
+function withSourcePath(file: string | undefined): { readonly source?: { readonly path: string } } {
+  return file === undefined ? {} : { source: { path: file } };
 }
 
 async function vscodeVariables(

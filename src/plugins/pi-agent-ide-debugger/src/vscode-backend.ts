@@ -30,7 +30,8 @@ export interface VscodeDebugState {
     readonly id: number;
     readonly threadId: number;
     readonly name: string;
-    readonly file: string;
+    /** Absent when DebugMCP cannot resolve the frame's source, as in remote VS Code windows. */
+    readonly file?: string;
     readonly line: number;
   };
 }
@@ -107,13 +108,15 @@ export async function debugMcpResponds(signal?: AbortSignal): Promise<boolean> {
 export class VscodeDebugSession {
   readonly window: VscodeWindow;
   readonly #client: DebugMcpClient;
+  readonly #program: string;
   /** Pi breakpoint count per VS Code location created by this session. */
   readonly #ownedBreakpoints = new Map<string, number>();
   #configurationName: string | undefined;
 
-  private constructor(window: VscodeWindow, client: DebugMcpClient) {
+  private constructor(window: VscodeWindow, client: DebugMcpClient, program: string) {
     this.window = window;
     this.#client = client;
+    this.#program = program;
   }
 
   /** Connect when VS Code can debug these paths, or throw the unmet condition. */
@@ -135,10 +138,9 @@ export class VscodeDebugSession {
         cause: error,
       });
     }
-    const session = new VscodeDebugSession(window, client);
+    const session = new VscodeDebugSession(window, client, paths.program);
     try {
-      // This path-bearing no-op routes the MCP session to the window that owns the program.
-      await client.call("remove_breakpoint", { fileFullPath: paths.program, line: 0 }, signal);
+      await session.#route(signal);
       if ((await session.status(0, signal)).status !== "no-session") {
         throw new Error(`VS Code window "${window.name}" already has an active debug session`);
       }
@@ -158,9 +160,9 @@ export class VscodeDebugSession {
       return;
     }
     // DebugMCP removes every breakpoint at a location, so reuse a user's breakpoint instead.
-    const listed = await this.#client.call("list_breakpoints", {}, signal);
+    const listed = await this.#call("list_breakpoints", {}, signal);
     if (listedBreakpoints(listed).has(`${path.basename(file)}:${line}`)) return;
-    await this.#client.call("add_breakpoint", { fileFullPath: file, line }, signal);
+    await this.#call("add_breakpoint", { fileFullPath: file, line }, signal);
     this.#ownedBreakpoints.set(key, 1);
   }
 
@@ -174,12 +176,12 @@ export class VscodeDebugSession {
       return;
     }
     this.#ownedBreakpoints.delete(key);
-    await this.#client.call("remove_breakpoint", { fileFullPath: file, line }, signal);
+    await this.#call("remove_breakpoint", { fileFullPath: file, line }, signal);
   }
 
   /** Launch the program in VS Code and return the state it reached. */
   async start(launch: VscodeLaunch, signal?: AbortSignal): Promise<VscodeDebugState> {
-    await this.#client.call(
+    await this.#call(
       "start_debugging",
       {
         fileFullPath: launch.program,
@@ -196,27 +198,42 @@ export class VscodeDebugSession {
 
   /** Continue or step, then wait for the next stop or termination. */
   async command(command: VscodeCommand, signal?: AbortSignal): Promise<VscodeDebugState> {
-    await this.#client.call(COMMAND_TOOLS[command], {}, signal);
+    await this.#call(COMMAND_TOOLS[command], {}, signal);
     return this.status(STOP_WAIT_SECONDS, signal);
   }
 
   /** Read the routed window's debug state, optionally waiting for a pause. */
   async status(waitSeconds: number, signal?: AbortSignal): Promise<VscodeDebugState> {
-    const text = await this.#client.call(
-      "get_debug_status",
-      waitSeconds === 0 ? {} : { waitForPauseSeconds: waitSeconds },
-      signal,
-    );
-    return debugState(JSON.parse(text) as Readonly<Record<string, unknown>>);
+    const read = async (wait: number) =>
+      debugState(
+        JSON.parse(
+          await this.#call(
+            "get_debug_status",
+            wait === 0 ? {} : { waitForPauseSeconds: wait },
+            signal,
+          ),
+        ) as Readonly<Record<string, unknown>>,
+      );
+    let state = await read(waitSeconds);
+    // DebugMCP can report a pause before VS Code selects the stopped frame.
+    for (
+      let attempt = 0;
+      state.status === "paused" && state.frame === undefined && attempt < 20;
+      attempt++
+    ) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      state = await read(0);
+    }
+    return state;
   }
 
   /** Read local variables of the paused frame. */
   async locals(signal?: AbortSignal): Promise<readonly VscodeVariable[]> {
     const names = variableNames(
-      await this.#client.call("list_variable_names", { scope: "local" }, signal),
+      await this.#call("list_variable_names", { scope: "local" }, signal),
     ).slice(0, 50);
     if (names.length === 0) return [];
-    const values = await this.#client.call(
+    const values = await this.#call(
       "get_variables_values",
       { variableNames: names.map(({ name }) => name), scope: "local" },
       signal,
@@ -229,7 +246,26 @@ export class VscodeDebugSession {
     expression: string,
     signal?: AbortSignal,
   ): Promise<{ readonly result: string; readonly type?: string }> {
-    return evaluation(await this.#client.call("evaluate_expression", { expression }, signal));
+    return evaluation(await this.#call("evaluate_expression", { expression }, signal));
+  }
+
+  /** Route this MCP session to the window that owns the program with a path-bearing no-op. */
+  async #route(signal?: AbortSignal): Promise<void> {
+    await this.#client.call("remove_breakpoint", { fileFullPath: this.#program, line: 0 }, signal);
+  }
+
+  /** Call DebugMCP and restore routing, which DebugMCP drops after any failed call. */
+  async #call(
+    tool: string,
+    arguments_: Readonly<Record<string, unknown>>,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    try {
+      return await this.#client.call(tool, arguments_, signal);
+    } catch (error) {
+      await this.#route().catch(() => {});
+      throw error;
+    }
   }
 
   /** Remove Pi breakpoints, stop the session Pi started, and end the MCP session. */
@@ -237,7 +273,7 @@ export class VscodeDebugSession {
     try {
       for (const key of this.#ownedBreakpoints.keys()) {
         const separator = key.lastIndexOf(":");
-        await this.#client.call(
+        await this.#call(
           "remove_breakpoint",
           { fileFullPath: key.slice(0, separator), line: Number(key.slice(separator + 1)) },
           signal,
@@ -247,7 +283,7 @@ export class VscodeDebugSession {
       const state = await this.status(0, signal);
       // Never stop a session that the user started after Pi's session ended.
       if (state.status !== "no-session" && state.configurationName === this.#configurationName) {
-        await this.#client.call("stop_debugging", {}, signal);
+        await this.#call("stop_debugging", {}, signal);
       }
     } finally {
       await this.#client.close();
@@ -313,16 +349,27 @@ function debugState(raw: Readonly<Record<string, unknown>>): VscodeDebugState {
     typeof raw.state === "object" && raw.state !== null
       ? (raw.state as Readonly<Record<string, unknown>>)
       : {};
+  // Remote VS Code windows lose frame paths in DebugMCP; its `name:line` stack entry still holds.
+  const top =
+    Array.isArray(state.stackTrace) && typeof state.stackTrace[0] === "string"
+      ? /^(.*):(\d+)$/u.exec(state.stackTrace[0])
+      : null;
+  const line =
+    typeof state.currentLine === "number"
+      ? state.currentLine
+      : top === null
+        ? undefined
+        : Number(top[2]);
   const frame =
-    typeof state.fileFullPath === "string" && typeof state.currentLine === "number"
-      ? {
+    line === undefined
+      ? undefined
+      : {
           id: typeof state.frameId === "number" ? state.frameId : 0,
           threadId: typeof state.threadId === "number" ? state.threadId : 0,
-          name: typeof state.frameName === "string" ? state.frameName : "",
-          file: state.fileFullPath,
-          line: state.currentLine,
-        }
-      : undefined;
+          name: typeof state.frameName === "string" ? state.frameName : (top?.[1] ?? ""),
+          ...(typeof state.fileFullPath === "string" ? { file: state.fileFullPath } : {}),
+          line,
+        };
   return {
     status,
     ...(configurationName === undefined ? {} : { configurationName }),
@@ -380,13 +427,13 @@ function variableValues(
   });
 }
 
-/** Parse `Result: value (type)` and expanded child lines of `evaluate_expression`. */
+/** Parse `Result: value (type)` and the first level of an aggregate's child names and types. */
 function evaluation(text: string): { readonly result: string; readonly type?: string } {
   const lines = text.split(/\r?\n/u);
   const index = lines.findIndex((line) => line.startsWith("Result: "));
   const match = /^Result: (.*?)(?: \(([^()]*)\))?$/u.exec(lines[index] ?? "");
   if (match === null) throw new Error(`DebugMCP returned no evaluation result: ${text}`);
-  const children = lines.slice(index + 1).filter((line) => line.startsWith("  "));
+  const children = lines.slice(index + 1).filter((line) => /^ {2}\S/u.test(line));
   return {
     result: [match[1] as string, ...children].join("\n"),
     ...(match[2] === undefined ? {} : { type: match[2] }),
