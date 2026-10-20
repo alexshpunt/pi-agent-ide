@@ -122,6 +122,27 @@ test.each([
     expect(messages).toContain("ide-code-review");
     expect(messages).toContain("hidden-errors (95%)");
     expect(messages).toContain("Inspected diff");
+    const saved = await import("pi-coding-agent-test/base").then(({ PiRun }) =>
+      PiRun.open(result.artifacts.run),
+    );
+    const notices = (saved.session ?? "")
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type: string;
+            message?: { customType?: string; details?: unknown };
+            customType?: string;
+            details?: unknown;
+          },
+      )
+      .filter((entry) => (entry.message ?? entry).customType === "ide-code-review");
+    expect(notices).toHaveLength(1);
+    expect((notices[0]?.message ?? notices[0])?.details).toMatchObject({
+      kind: "findings",
+      parentToolCallId: "edit",
+    });
     const screen = await readFile(result.artifacts.directory + "/tui-rendered.log", "utf8");
     expect(screen).toContain("Jev code review:");
   } else if (mode === "failure") {

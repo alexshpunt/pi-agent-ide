@@ -68,6 +68,11 @@ export interface TextSemanticMutationResult {
   readonly summary: string;
   /** Structured receipt for standalone tools and native Codemode. */
   readonly data: Readonly<Record<string, unknown>>;
+  /**
+   * Plain JSON value that a Codemode script receives instead of the summary text.
+   * The call then resolves with this value even when `data.ok` is false, so scripts branch on it without try/catch.
+   */
+  readonly script?: Readonly<Record<string, unknown>>;
 }
 
 /** Handles one tool invocation after its current source and anchors are available. */

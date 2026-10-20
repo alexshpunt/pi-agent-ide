@@ -107,6 +107,14 @@
     "#scripts/*": "./scripts/*"
   },
   "exports": {
+    "./api/settings": {
+      "types": "./src/api/settings.ts",
+      "default": "./src/api/settings.ts"
+    },
+    "./api/approval": {
+      "types": "./src/api/approval.ts",
+      "default": "./src/api/approval.ts"
+    },
     "./api/code-view": {
       "types": "./src/api/code-view.ts",
       "default": "./src/api/code-view.ts"
@@ -238,9 +246,9 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.1.0",
-    "@earendil-works/pi-coding-agent": "1.1.0",
-    "@earendil-works/pi-tui": "1.1.0",
+    "@earendil-works/pi-ai": "1.3.0",
+    "@earendil-works/pi-coding-agent": "1.3.0",
+    "@earendil-works/pi-tui": "1.3.0",
     "@oxlint/plugins": "^1.87.0",
     "@types/cross-spawn": "^6.0.6",
     "@typescript/native": "npm:typescript@^7.0.2",
@@ -255,7 +263,7 @@
     "pi-agent-search-text": "workspace:^",
     "pi-agent-text-anchor-exact": "workspace:^",
     "pi-agent-text-anchor-line-hash": "workspace:^",
-    "pi-coding-agent-test": "0.1.3",
+    "pi-coding-agent-test": "0.1.4",
     "typebox": "^1.1.38",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"

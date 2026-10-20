@@ -63,7 +63,7 @@ test("composes sparse text transforms and zero-width transfers with exact CRLF n
     await writeFile(path.join(cwd, "other.txt"), "< four > protected");
     await runTextSelection(cwd, "text-select-composition", [
       `const read=await tools.read({path:"notes.txt",offset:2,limit:2});
-const other=await tools.search({path:"other.txt",query:"< four >"});
+const other=await tools.search({path:"other.txt",query:"< four >"}).then(value => value.result);
 const selected=await tools.select({path:[read,other],operation:{kind:"between",start:"<",end:">",extent:"inside"}});
 check(items(selected).length===3,"Sparse pairs lost");
 const trimmed=await tools.select({path:selected,operation:{kind:"trim",side:"both"}});
@@ -73,10 +73,10 @@ check(items(pieces).length===4,"Split segments lost");
 const one=await tools.select({path:items(pieces)[0].ref,operation:{kind:"sliceText",from:0,to:3}});
 store("oldTextTarget",one);
 const preview=await tools.read({path:one});
-check(matches(await tools.search({path:preview,query:"outside"})).length===0,"Read widened text scope");
+check(matches(await tools.search({path:preview,query:"outside"}).then(value => value.result)).length===0,"Read widened text scope");
 const points=await tools.select({path:items(pieces)[3].ref,operation:{kind:"position",edge:"before"}});
 await tools.copy({path:one,target:points});
-const fresh=await tools.search({path:"notes.txt",query:"one"});
+const fresh=await tools.search({path:"notes.txt",query:"one"}).then(value => value.result);
 text(await tools.replace({path:matches(fresh)[0],text:"ONE"}));`,
       `await rejects(()=>tools.replace({path:load("oldTextTarget"),text:"BAD"}),/expired|stale/);
 const source=await tools.read({path:"notes.txt"});
@@ -103,8 +103,8 @@ test("protects gaps, bounds, emoji, CRLF, completeness and whole-file guards", a
     await writeFile(path.join(cwd, "limited.js"), "first(); second();");
     await runTextSelection(cwd, "text-select-refusals", [
       `const full=await tools.read({path:"safe.txt"});
-const piece=await tools.search({path:"safe.txt",query:"A"});
-const partial=await tools.search({path:"limited.js",query:"ast:$NAME()",limit:1});
+const piece=await tools.search({path:"safe.txt",query:"A"}).then(value => value.result);
+const partial=await tools.search({path:"limited.js",query:"ast:$NAME()",limit:1}).then(value => value.result);
 const incomplete=await tools.select({path:partial,operation:{kind:"trim",side:"both"}});
 check(incomplete.includes("incomplete input"),"Completeness laundered");
 await rejects(()=>tools.replace({path:incomplete,text:"BAD"}),/[Ii]ncomplete/);
@@ -149,7 +149,7 @@ test("consumes pending writes, preserves all split items beyond preview and disp
       `const written=await tools.write({path:"new.txt",content:Array.from({length:105},(_,i)=>"item"+i).join(",")});
 const split=await tools.select({path:written,operation:{kind:"split",delimiter:","}});
 check(items(split).length===100 && split.includes("105 selection(s)") && split.includes("more selections"),"Split target clipped");
-const tail=await tools.search({path:split,query:"item104"});
+const tail=await tools.search({path:split,query:"item104"}).then(value => value.result);
 check(matches(tail).length===1,"Full target lost beyond preview");
 const point=await tools.select({path:tail,operation:{kind:"position",edge:"after"}});
 const blank=await tools.select({path:point,operation:{kind:"split",delimiter:","}});

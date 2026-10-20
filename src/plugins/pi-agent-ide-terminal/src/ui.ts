@@ -1,5 +1,5 @@
 import { Box, Container } from "@earendil-works/pi-tui";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 
 import { renderTerminalResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
 import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
@@ -26,25 +26,19 @@ export class TerminalUi {
     private readonly manager: TerminalSessionManager,
     private readonly staleIntervalMs = DEFAULT_STALE_INTERVAL_MS,
   ) {
-    pi.registerMessageRenderer("terminal-stale", (message, { expanded }, theme) => {
-      const snapshot = isTerminalSessionSnapshot(message.details) ? message.details : undefined;
-      const content = new Container();
-      if (snapshot !== undefined)
-        content.addChild(
-          renderTerminalResult(snapshot, expanded, theme, "stale · inspect session"),
-        );
-      const card = new Box(1, 1, (line) => theme.bg("toolPendingBg", line));
-      card.addChild(content);
-      return card;
-    });
-    pi.registerMessageRenderer("terminal-completion", (message, { expanded }, theme) => {
-      const content = new Container();
-      for (const session of completionSnapshots(message.details))
-        content.addChild(renderTerminalResult(session, expanded, theme));
-      const card = new Box(1, 1, (line) => theme.bg("toolSuccessBg", line));
-      card.addChild(content);
-      return card;
-    });
+    // Keep historical visible messages readable; new delivery uses UI-only linked entries.
+    pi.registerMessageRenderer("terminal-stale", (message, { expanded }, theme) =>
+      renderStale(message.details, expanded, theme),
+    );
+    pi.registerMessageRenderer("terminal-completion", (message, { expanded }, theme) =>
+      renderCompletion(message.details, expanded, theme),
+    );
+    pi.registerEntryRenderer("terminal-stale-display", (entry, { expanded }, theme) =>
+      renderStale(entry.data, expanded, theme),
+    );
+    pi.registerEntryRenderer("terminal-completion-display", (entry, { expanded }, theme) =>
+      renderCompletion(entry.data, expanded, theme),
+    );
     this.#removeManagerListeners = [
       manager.onDidChange((session) => this.#refreshStaleTimer(session)),
       manager.onDidComplete((session) => {
@@ -56,6 +50,13 @@ export class TerminalUi {
 
   bind(context: ExtensionContext): void {
     this.#context = context;
+    // A retained manager can finish work while the previous UI is being replaced.
+    for (const snapshot of this.manager.list()) {
+      const session = this.manager.get(snapshot.id);
+      if (session === undefined || !session.background) continue;
+      if (session.status === "running") this.#refreshStaleTimer(session);
+      else if (session.status !== "stopping") this.#queueCompletion(session);
+    }
   }
 
   /** Deliver deferred stale notices after Pi has fully settled. */
@@ -70,7 +71,7 @@ export class TerminalUi {
 
   /** Notify the agent when an aborted tool result may no longer be deliverable. */
   notifyWaitTransition(session: TerminalSession): void {
-    const snapshot = this.manager.snapshot(session);
+    const snapshot = this.#snapshot(session);
     this.pi.sendMessage(
       {
         customType: "terminal-wait-transition",
@@ -103,7 +104,7 @@ export class TerminalUi {
       session.status !== "running"
     )
       return;
-    const snapshot = this.manager.snapshot(session);
+    const snapshot = this.#snapshot(session);
     const remaining = Math.max(0, this.staleIntervalMs - snapshot.idleMs);
     if (checkNow && remaining === 0) {
       this.#handleStale(session);
@@ -129,18 +130,33 @@ export class TerminalUi {
       return;
     }
     session.staleReminderDelivered = true;
-    const snapshot = this.manager.snapshot(session);
+    const snapshot = this.#snapshot(session);
     this.pi.sendMessage(
       {
         customType: "terminal-stale",
-        display: true,
+        display: false,
         content: formatStaleMessage(snapshot),
         details: snapshot,
       },
       { triggerTurn: true, deliverAs: "followUp" },
     );
+    this.pi.appendEntry("terminal-stale-display", { ...snapshot, ...this.#visibleOwner(snapshot) });
   }
 
+  #snapshot(session: TerminalSession): TerminalSessionSnapshot {
+    // The process manager can be an instance retained from before origin metadata existed.
+    return {
+      ...this.manager.snapshot(session),
+      ...(session.origin === undefined ? {} : { origin: session.origin }),
+    };
+  }
+  #visibleOwner(snapshot: TerminalSessionSnapshot): { readonly parentToolCallId?: string } {
+    const origin = snapshot.origin;
+    // Retained processes may outlive their session. Never attach them to a reused call ID.
+    return origin !== undefined && origin.sessionId === this.#context?.sessionManager.getSessionId()
+      ? { parentToolCallId: origin.parentToolCallId }
+      : {};
+  }
   #clearStaleTimer(id: string): void {
     const timer = this.#staleTimers.get(id);
     if (timer !== undefined) clearTimeout(timer);
@@ -160,20 +176,50 @@ export class TerminalUi {
       this.#pending.clear();
       if (this.#closed || sessions.length === 0) return;
       for (const completed of sessions) completed.completionDelivered = true;
-      const snapshots = sessions.map((completed) => this.manager.snapshot(completed));
+      const snapshots = sessions.map((completed) => this.#snapshot(completed));
       this.pi.sendMessage(
         {
           customType: "terminal-completion",
-          display: true,
+          display: false,
           content: formatCompletionMessage(snapshots),
           details: { sessions: snapshots },
         },
         { triggerTurn: true, deliverAs: "steer" },
       );
+      const groups = new Map<string | undefined, TerminalSessionSnapshot[]>();
+      for (const snapshot of snapshots) {
+        const owner = this.#visibleOwner(snapshot).parentToolCallId;
+        const group = groups.get(owner) ?? [];
+        group.push(snapshot);
+        groups.set(owner, group);
+      }
+      for (const [parentToolCallId, sessions] of groups) {
+        this.pi.appendEntry("terminal-completion-display", {
+          sessions,
+          ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+        });
+      }
     }, COMPLETION_DELAY_MS);
   }
 }
 
+function renderStale(details: unknown, expanded: boolean, theme: Theme): Box {
+  const content = new Container();
+  if (isTerminalSessionSnapshot(details))
+    content.addChild(renderTerminalResult(details, expanded, theme, "stale · inspect session"));
+  const card = new Box(1, 1, (line) => theme.bg("toolPendingBg", line));
+  card.addChild(content);
+  return card;
+}
+
+function renderCompletion(details: unknown, expanded: boolean, theme: Theme): Box {
+  const content = new Container();
+  for (const session of completionSnapshots(details))
+    content.addChild(renderTerminalResult(session, expanded, theme));
+  const card = new Box(1, 1, (line) => theme.bg("toolSuccessBg", line));
+  card.addChild(content);
+  return card;
+}
 function completionSnapshots(details: unknown): readonly TerminalSessionSnapshot[] {
   if (!isRecord(details) || !Array.isArray(details.sessions)) return [];
   return details.sessions.filter(isTerminalSessionSnapshot);

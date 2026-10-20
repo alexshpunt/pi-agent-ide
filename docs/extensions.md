@@ -2,7 +2,19 @@
 
 Pi Agent IDE is designed to accept behavior from independent Pi extensions. You do not need to fork the umbrella package or add your extension to its built-in registry.
 
-When its target core is enabled, an external extension can load before or after Pi Agent IDE. The connection helpers handle both orders through Pi's shared event bus.
+When its target core is enabled, an external extension using the connection helpers can load before or after Pi Agent IDE. The helpers handle both orders through Pi's shared event bus. Provider connectors that register local MCP aliases have a separate load-order requirement below.
+
+## Provider connectors and local MCP aliases
+
+The connection helpers support either load order. A provider connector that registers local MCP aliases for IDE tools is different: load Pi Agent IDE before that connector. Pi keeps the first extension's executable definition for each name. Loading the connector first can lose structured values returned to Codemode, even when the terminal panel looks correct.
+
+Agent IDE recognizes an unnamespaced `mcp__*` tool as a local forwarding alias when its description and schema match exactly one visible IDE tool. Do not use that same metadata for a wrapper with different behavior: conflicting local extensions are the user's responsibility. Agent IDE does not keep a package allowlist and does not take over tools owned by a foreign MCP namespace.
+
+For a matching alias, Agent IDE uses the native renderer and forwards execution to the original tool. Returned references, structured provider receipts and error outcomes keep their native contracts. A direct alias does not add a duplicate child panel.
+
+Streaming edit guards preserve a connector's native provider registration, including OAuth and model discovery. When the guard is removed, it restores its transport hook without deleting that provider or replacing another extension's later transport.
+
+A connector still owns authentication and model transport. Keeping Pi tools working does not add Claude Code's own tools or guarantee subscription billing. Test connectors one at a time; do not stack request patchers. See the [capability runner](https://github.com/alexshpunt/pi-agent-ide/blob/main/benchmarks/tool-capabilities/README.md) for isolated verification.
 
 ## Choose a protocol
 
@@ -13,6 +25,8 @@ When its target core is enabled, an external extension can load before or after 
 | A writable source, anchor, mutation, guard, or renderer  | `pi-agent-ide/api/text-editor`, `pi-agent-ide/api/text`                                              |
 | A formatter, compiler, or linter                         | `pi-agent-ide/api/connect-plugin`, `pi-agent-ide/api/toolchain`                                      |
 | Doctor language knowledge, setup recipe, or health check | `pi-agent-ide/api/connect-doctor-plugin`, `pi-agent-ide/api/doctor`, `pi-agent-ide/api/tool-catalog` |
+| Boolean, choice or text settings in the shared menu      | `pi-agent-ide/api/settings`                                                                          |
+| A user decision before a policy-gated operation          | `pi-agent-ide/api/approval`                                                                          |
 | Startup tip provider                                     | `pi-agent-ide/api/tips`                                                                              |
 
 The internal packages are bundled into Pi Agent IDE and are not published separately. External extensions import their public contracts through the umbrella package.
@@ -35,6 +49,89 @@ A typical Pi package manifest starts like this:
 ```
 
 Use a `pi-agent-ide` range compatible with the release you target.
+
+## Settings
+
+Use `registerAgentIdeSettings` from `pi-agent-ide/api/settings` once per extension runtime. The shared event bus accepts registration before or after Agent IDE loads. The settings appear in `/agent-ide-settings` and the live `docs:ide-settings` catalog.
+
+```ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerAgentIdeSettings } from "pi-agent-ide/api/settings";
+
+export default function register(pi: ExtensionAPI): void {
+  registerAgentIdeSettings(pi, "my-extension", [
+    {
+      id: "my-extension-yolo",
+      kind: "boolean",
+      name: "YOLO: my extension",
+      description: "Skip existing operation dialogs; technical guards still apply.",
+      default: false,
+    },
+    {
+      id: "my-extension.detail",
+      kind: "choice",
+      name: "Result detail",
+      description: "Choose how much detail the extension displays.",
+      group: "ui",
+      default: "compact",
+      values: [
+        { value: "compact", label: "Compact" },
+        { value: "full", label: "Full" },
+      ],
+    },
+    {
+      id: "my-extension.label",
+      kind: "text",
+      name: "Result label",
+      description: "Set the label shown above extension results.",
+      default: "",
+      placeholder: "Optional label",
+    },
+  ]);
+}
+```
+
+Each definition needs an ID, human name, description and default. `group: "ui"` places it in the UI tab; the default group is Behavior. Boolean settings accept optional On/Off labels; choice settings need unique values and labels and a default from that list. Text settings accept an optional placeholder. Prefix IDs with your extension's name: IDs are unique across all owners, including built-ins. Invalid metadata and duplicate registrations are errors, not replacements.
+
+Boolean values use `flags`; choice and text values use `preferences`. All types support Project, Global and Default through the existing menu. Default removes only the selected scope's key. External registrations do not add Pi CLI flags. See [Configuration](configuration.md#agent-ide-settings) for storage paths and inheritance.
+
+Read saved effective configuration through the host rather than duplicating storage policy:
+
+```ts
+import { readAgentIdeSetting } from "pi-agent-ide/api/settings";
+
+const { value, overridden } = await readAgentIdeSetting(pi.events, "my-extension.detail", ctx.cwd);
+```
+
+`value` is a boolean or string. `overridden` means either scope saved an explicit value, including `false`; otherwise `value` is the registered default. The read does not include invocation-only CLI flags or claim live runtime state. A missing settings service, unknown ID or invalid saved configuration throws. Do not turn these errors into permission to mutate.
+
+## Operation approval
+
+Use `confirmOperation` from `pi-agent-ide/api/approval` when your extension's policy requires host permission. Pi Agent IDE owns the dialog, session grants and YOLO policy and serializes requests on the session's event bus. The standalone text editor installs the same dialog service.
+
+```ts
+import { confirmOperation } from "pi-agent-ide/api/approval";
+
+const approved = await confirmOperation(pi.events, ctx, {
+  owner: "my-extension",
+  category: "remote-delete",
+  yoloSetting: "my-extension-yolo",
+  title: "Confirm remote deletion",
+  message: `Delete: ${source}\nThis removes the selected remote object.`,
+  signal,
+});
+if (!approved) return; // Do not dispatch the operation.
+```
+
+Call this inside a tool or lifecycle callback that supplies the actual context and abort signal. The context includes `cwd`, `hasUI`, `mode` and `ui.select`; pass its session manager to support remembered grants. Keep the exact target and action in the message. Use a stable extension `owner` and dialog `category`, not a target path or URL: **Allow for session** covers future requests with that pair, including different targets.
+
+The dialog offers **Deny**, **Allow once** and, when session storage is available, **Allow for session**. Session grants are non-context entries on the current branch. They survive runtime reload and saved-session reopening, but do not transfer to a new independent session or a branch without that entry. Persistent YOLO is separate: `yoloSetting` is optional, names a registered boolean, and opts into the host's common/provider policy. Without it, persistent YOLO does not bypass this request. Do not implement that policy again in your extension. See [Operation confirmations and YOLO](configuration.md#operation-confirmations-and-yolo) for precedence and user settings.
+
+Your extension still owns risk classification, authorization, technical guards and any one-operation permit. A positive answer authorizes the current request; it is not proof that the operation completed. Revalidate and consume the target-specific permit before dispatch even when YOLO or a session grant supplied permission.
+
+The service marks Herdr as waiting only while a terminal dialog is open and clears that state when it closes. RPC dialogs do not claim terminal waiting. Refusal, dismissal, cancellation, dialog/policy failure and missing approval service return `false`. Without UI, only a matching session grant or configured YOLO can grant permission. Session shutdown cancels active and queued requests. Pass the operation's actual abort signal; a `tool_call` hook receives the turn signal, not a nested `executeTool` child's signal.
+
+Do not emit Herdr waiting events or implement another approval popup in your provider. Only call this API for operations that already require permission; it does not add gates to auto-allowed calls.
 
 ## Search plugin
 

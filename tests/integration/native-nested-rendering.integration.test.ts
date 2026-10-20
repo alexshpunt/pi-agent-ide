@@ -87,6 +87,9 @@ test("nested IDE results keep their custom panels below Codemode without script 
     const panels = run.tuiRenderedOutput;
     expect(panels).toContain("BETA");
     expect(panels.match(/\+0 ~2 -0/g)).toHaveLength(1);
+    // The grouped diff stands for two edits, so no single call's time is shown for it.
+    expect(panelText(panels, "replace note.txt", "Done")).not.toContain("Took");
+    expect(panelText(panels, "read note.txt", "search")).toMatch(/Took \d/);
     expect(panels).not.toContain("Applied in the same editor batch");
     expect(getToolResultMessage(run, "parent").nestedCalls?.calls).toHaveLength(4);
     expect(getToolResultMessage(run, "parent").nestedCalls?.calls.at(-1)?.name).toBe("replace");
@@ -147,6 +150,144 @@ test("nested IDE results keep their custom panels below Codemode without script 
     expect(exportedData).toContain("BETA");
     expect(html).toContain("setHiddenMessagesVisible");
     await writeFile(path.join(run.artifacts.directory, "export.html"), html);
+  });
+});
+
+/** Format like native tool rows, so expectations follow the recorded value rather than a guess. */
+function took(ms: number): string {
+  return `Took ${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Text of one nested panel: from its header up to the next marker, or to the end. */
+function panelText(output: string, header: string, next?: string): string {
+  const start = output.lastIndexOf(header);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = next === undefined ? -1 : output.indexOf(next, start + header.length);
+  return output.slice(start, end === -1 ? undefined : end);
+}
+
+test("parallel nested calls show their own recorded durations through restore", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha\n");
+    const run = await new PiIntegrationTest({
+      testName: "nested-recorded-durations",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      isolateUserResources: true,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["codemode", "read", "bash"],
+      environment: { SHELL: "/bin/bash" },
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "parent",
+              name: "codemode",
+              arguments: {
+                code: 'await tools.read({path:"note.txt"}); await Promise.all([tools.bash({command:"sleep 1.5; printf slow-child"}), tools.bash({command:"sleep 0.1; printf fast-child"})]);',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Run nested calls with different durations");
+    expect(getToolExecution(run, "parent").isError).toBe(false);
+    const saved = await PiRun.open(run.artifacts.run);
+    const lines = saved.session?.split("\n") ?? [];
+    const panelIndex = lines.findIndex((line) =>
+      line.includes('"customType":"ide-nested-results"'),
+    );
+    const entry = JSON.parse(lines[panelIndex] ?? "{}") as {
+      data: { calls: { name: string; args: { command?: string }; durationMs?: number }[] };
+    };
+    const [read, slow, fast] = entry.data.calls;
+    expect(read?.name).toBe("read");
+    expect(slow?.args.command).toContain("slow-child");
+    expect(fast?.args.command).toContain("fast-child");
+    const parentDuration = getToolResultMessage(run, "parent").durationMs;
+    // Each child keeps its own host time; overlapping calls are not summed into the parent's.
+    expect(slow?.durationMs).toBeGreaterThanOrEqual(1_400);
+    expect(fast?.durationMs).toBeLessThan((slow?.durationMs ?? 0) - 1_000);
+    expect(read?.durationMs).toEqual(expect.any(Number));
+    if (parentDuration !== undefined) {
+      expect(parentDuration).toBeLessThan((slow?.durationMs ?? 0) + (fast?.durationMs ?? 0) + 900);
+      expect(slow?.durationMs).toBeLessThanOrEqual(parentDuration);
+    }
+    const panels = run.tuiRenderedOutput;
+    expect(panels).toContain(took(slow?.durationMs ?? 0));
+    expect(panels).toContain(took(fast?.durationMs ?? 0));
+
+    // Older history recorded no duration: it must render without a fabricated value.
+    delete entry.data.calls[0]?.durationMs;
+    lines[panelIndex] = JSON.stringify(entry);
+    const session = path.join(cwd, "saved.jsonl");
+    await writeFile(session, lines.join("\n"));
+    const restored = await new PiIntegrationTest({
+      testName: "nested-recorded-durations-restored",
+      tuiSize: { cols: 60, rows: 60 },
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      isolateUserResources: true,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        path.resolve("tests/integration/fixtures/restore-tool-history.ts"),
+      ],
+      tools: ["read"],
+      environment: { IDE_RESTORE_SESSION: session, IDE_HISTORY_EXPANDED: "1" },
+      conversation: [assistantMessage([text("Restored")])],
+    }).run("/restore-tool-history");
+    const restoredPanels = restored.tuiRenderedOutput;
+    expect(restoredPanels).toContain(took(slow?.durationMs ?? 0));
+    expect(restoredPanels).toContain(took(fast?.durationMs ?? 0));
+    const readPanel = panelText(restoredPanels, "read note.txt", "slow-child");
+    expect(readPanel).toContain("alpha");
+    expect(readPanel).not.toContain("Took");
+  });
+});
+
+// Final file-text refresh must not erase a provider receipt from an Insert that changed no file.
+test("a nested provider Insert keeps its receipt text beside a file edit", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha\ngamma\n");
+    const run = await new PiIntegrationTest({
+      testName: "nested-semantic-insert-receipt",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      isolateUserResources: true,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        "builtin:codemode",
+        path.resolve("tests/integration/fixtures/semantic-insert-receipt.ts"),
+      ],
+      tools: ["codemode", "insert"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "parent",
+              name: "codemode",
+              arguments: {
+                code: 'await tools.insert({path:"receipt:probe",text:"press"}); await tools.insert({path:"note.txt",anchor:"alpha",text:"beta"});',
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Run a provider Insert and a file Insert in one script");
+    expect(getToolExecution(run, "parent").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\ngamma\n");
+    expect(run.tuiRenderedOutput).toContain("Probe receipt: press delivered");
+    const saved = await PiRun.open(run.artifacts.run);
+    const panelEntry = saved.session
+      ?.split("\n")
+      .find((line) => line.includes('"customType":"ide-nested-results"'));
+    expect(panelEntry).toContain("Probe receipt: press delivered");
   });
 });
 
@@ -336,6 +477,8 @@ test("nested terminal and debugger calls retain their custom panels and a child 
     await writeFile(path.join(cwd, "example.py"), "value = 42\nprint(value)\n");
     const run = await new PiIntegrationTest({
       testName: "nested-terminal-debugger-error",
+      // Five panels with their recorded times exceed the default viewport height.
+      tuiSize: { cols: 160, rows: 90 },
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       isolateUserResources: true,

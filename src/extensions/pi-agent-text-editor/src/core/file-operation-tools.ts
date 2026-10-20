@@ -1,4 +1,5 @@
 import path from "node:path";
+import { confirmOperation } from "pi-agent-tool-ui/operation-approval";
 import type { TextEditorCore } from "#src/core/text-editor-core.js";
 import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
 import { forgetDeferredPostEdit } from "./post-edit-scope.js";
@@ -10,20 +11,6 @@ import type {
 import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.js";
 import { isDiffStatusContribution } from "#src/api/post-edit.js";
 import type { MutationDiffStatus } from "#src/api/mutation-result.js";
-
-function emitBlocked(
-  events: Pick<ExtensionAPI["events"], "emit"> | undefined,
-  active: boolean,
-): void {
-  try {
-    events?.emit(
-      "herdr:blocked",
-      active ? { active: true, label: "Waiting for user response" } : { active: false },
-    );
-  } catch {
-    // Header status must not change the user's decision or fail filesystem work.
-  }
-}
 
 /** Return whether a hybrid text tool invocation addresses a complete file. */
 export function isWholeFileInvocation(
@@ -53,7 +40,8 @@ export async function executeWholeFileTool(
   context: Pick<ExtensionContext, "cwd"> & {
     readonly hasUI?: boolean;
     readonly mode?: ExtensionContext["mode"];
-    readonly ui?: Pick<ExtensionContext["ui"], "confirm">;
+    readonly ui?: Pick<ExtensionContext["ui"], "select">;
+    readonly sessionManager?: Pick<ExtensionContext["sessionManager"], "getBranch">;
   },
   verifySource?: () => Promise<void>,
   events?: Pick<ExtensionAPI["events"], "emit">,
@@ -88,35 +76,48 @@ export async function executeWholeFileTool(
               signal,
             });
         },
-        ...(ui !== undefined && {
-          confirm: async (event, reason) => {
-            const waitingEvents = context.mode === "tui" ? events : undefined;
-            emitBlocked(waitingEvents, true);
-            try {
-              return await ui.confirm(
-                operation === "move" ? "Move filesystem object?" : "Delete permanently?",
-                [
-                  event.path,
-                  event.resolvedPath === event.path
-                    ? undefined
-                    : `Resolved path: ${event.resolvedPath}`,
-                  operation === "move" &&
-                  event.path === path.resolve(context.cwd, String(input.path))
-                    ? `Move source to ${String(input.target)}; preserve link objects without following their targets.`
-                    : event.recursive
-                      ? "Remove directory and all contents recursively."
-                      : "Unlink symlink only; leave its target untouched.",
-                  reason,
-                ]
-                  .filter((line) => line !== undefined)
-                  .join("\n"),
-                { signal },
-              );
-            } finally {
-              emitBlocked(waitingEvents, false);
-            }
-          },
-        }),
+        confirm: async (event, reason) => {
+          const approved = await confirmOperation(
+            events,
+            {
+              cwd: context.cwd,
+              hasUI: ui !== undefined,
+              mode: context.mode ?? "print",
+              ui: ui ?? { select: async () => undefined },
+              sessionManager: context.sessionManager,
+            },
+            {
+              owner: "pi-agent-ide",
+              category: operation,
+              yoloSetting: "pi-agent-ide-filesystem-yolo",
+              title: operation === "move" ? "Move filesystem object?" : "Delete permanently?",
+              message: [
+                event.path,
+                event.resolvedPath === event.path
+                  ? undefined
+                  : `Resolved path: ${event.resolvedPath}`,
+                operation === "move" && event.path === path.resolve(context.cwd, String(input.path))
+                  ? `Move source to ${String(input.target)}; preserve link objects without following their targets.`
+                  : event.recursive
+                    ? "Remove directory and all contents recursively."
+                    : "Unlink symlink only; leave its target untouched.",
+                reason,
+              ]
+                .filter((line) => line !== undefined)
+                .join("\n"),
+              signal,
+            },
+          );
+          if (!approved && ui === undefined)
+            throw Object.assign(
+              new Error(`Deletion blocked: no user dialog is available. ${reason}`),
+              {
+                code: "DELETE_CONFIRMATION_REQUIRED",
+                effect: "not-applied",
+              },
+            );
+          return approved;
+        },
       });
     },
     signal,

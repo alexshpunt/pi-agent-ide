@@ -52,3 +52,28 @@ test("registers the catalog for explicit docs reads without attaching it to ordi
   expect(registry.matching("read", { path: "note.txt" })).toEqual([]);
   expect(registry.matching("write", { path: "extensions.json" })).toEqual([]);
 });
+
+test("publishes externally supplied preference descriptors without changing built-ins", () => {
+  const external = {
+    kind: "text" as const,
+    id: "fixture.path",
+    name: "Fixture path",
+    description: "External configuration value.",
+    default: "",
+    group: "features" as const,
+  };
+  const values = catalog(
+    createIdeSettingsDocumentation(flags, [...AGENT_IDE_PREFERENCES, external]).markdown,
+  );
+  expect(values.preferences).toEqual([...AGENT_IDE_PREFERENCES, external]);
+});
+
+test("a registered settings catalog reflects late external registrations", () => {
+  const registry = new AgentDocumentationRegistry();
+  const mutableFlags = [...flags];
+  registry.register([createIdeSettingsDocumentation(mutableFlags)]);
+  mutableFlags.push({ id: "late", name: "Late", description: "Registered later.", default: false });
+  const guide = registry.get("ide-settings");
+  if (!guide) throw new Error("Settings guide missing");
+  expect(catalog(guide.markdown).flags).toEqual(mutableFlags);
+});

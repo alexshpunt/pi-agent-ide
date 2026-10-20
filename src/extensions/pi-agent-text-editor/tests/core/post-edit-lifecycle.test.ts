@@ -1,4 +1,4 @@
-import type { AgentContent, ResourceResolver } from "pi-agent-resource";
+import { ResourceError, type AgentContent, type ResourceResolver } from "pi-agent-resource";
 import { expect, test } from "vitest";
 
 import {
@@ -8,6 +8,7 @@ import {
 } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 import { createPostEditScope } from "#src/core/post-edit-scope.js";
+import { withTextEditOrigin } from "#src/core/text-edit-origin.js";
 
 test("waits for post-edit work after writing and rereads the final text", async () => {
   const core = createTextEditorCore();
@@ -67,6 +68,167 @@ test("waits for post-edit work after writing and rereads the final text", async 
   });
 });
 
+test("deferred processing accepts the observed saved text after provider canonicalization", async () => {
+  const core = createTextEditorCore();
+  let text = "before";
+  await core.registerPlugin(
+    resourcePlugin(
+      mutableResolver(
+        () => text,
+        (next) => {
+          text = next.toUpperCase();
+        },
+      ),
+    ),
+  );
+  const processed: string[] = [];
+  core.registerPostEditHandler({
+    id: "canonical-snapshot",
+    handler(transaction) {
+      processed.push(transaction.requestedAfter.content);
+    },
+  });
+  const scope = createPostEditScope();
+  const outcome = await scope.run(() =>
+    core.editText("notes.md", { cwd: "/workspace" }, () => ({ text: "requested", result: null })),
+  );
+  expect(outcome).toMatchObject({ kind: "completed", after: { content: "REQUESTED" } });
+  const final = await scope.finish();
+  expect(final[0]?.after.content).toBe("REQUESTED");
+  expect(processed).toEqual(["REQUESTED"]);
+});
+
+test.each(["provider", "transport"])(
+  "an acknowledged write with unavailable %s readback has no invented completion or rollback",
+  async (mode) => {
+    const core = createTextEditorCore();
+    const savedSource = "remote:notes";
+    let writes = 0;
+    const completions: unknown[] = [];
+    const postEdits: unknown[] = [];
+    const readFailure =
+      mode === "provider"
+        ? new ResourceError("REMOTE_READBACK_UNAVAILABLE", savedSource, "applied")
+        : new Error("private transport detail");
+    await core.registerPlugin(
+      resourcePlugin({
+        id: "canonical-remote",
+        async tryResolve() {
+          return {
+            kind: "resolved",
+            resource: {
+              source: savedSource,
+              async read() {
+                if (writes) throw readFailure;
+                return [{ type: "text", text: "before" }];
+              },
+              async write() {
+                writes++;
+              },
+            },
+          };
+        },
+      }),
+    );
+    core.onDidEdit((completion) => {
+      completions.push(completion);
+    });
+    core.registerPostEditHandler({
+      id: "must-have-saved-text",
+      handler(transaction) {
+        postEdits.push(transaction);
+      },
+    });
+    const outcome = await core.editTexts(
+      [{ source: savedSource, read: true }],
+      { cwd: "/workspace" },
+      () => ({
+        changes: new Map([[savedSource, [{ from: 0, to: 6, insert: "requested" }]]]),
+        result: undefined,
+      }),
+    );
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      failure: {
+        code: "POST_WRITE_FAILED",
+        cause: {
+          effect: "applied",
+          code: mode === "provider" ? "REMOTE_READBACK_UNAVAILABLE" : "RESOURCE_READBACK_FAILED",
+        },
+      },
+      completed: [savedSource],
+    });
+    expect(writes).toBe(1);
+    expect(completions).toEqual([]);
+    expect(postEdits).toEqual([]);
+    if (outcome.kind === "failed") {
+      expect(outcome.failure.message).not.toContain("private transport detail");
+      if (mode === "provider") expect(outcome.failure.cause).toBe(readFailure);
+    }
+  },
+);
+test.each(["provider", "invalid-content", "after-post-edit"])(
+  "single-resource edits retain an applied failure when %s readback is unavailable",
+  async (mode) => {
+    const core = createTextEditorCore();
+    const source = "remote:notes";
+    let writes = 0;
+    let processed = false;
+    const completions: unknown[] = [];
+    await core.registerPlugin(
+      resourcePlugin({
+        id: "remote",
+        async tryResolve() {
+          return {
+            kind: "resolved",
+            resource: {
+              source,
+              async read() {
+                if (!writes) return [{ type: "text", text: "before" }];
+                if (mode === "invalid-content")
+                  return [{ type: "image", data: "not-text", mimeType: "image/png" }];
+                if (mode === "provider" || processed)
+                  throw new ResourceError("REMOTE_READBACK_UNAVAILABLE", source, "applied");
+                return [{ type: "text", text: "saved" }];
+              },
+              async write() {
+                writes++;
+              },
+            },
+          };
+        },
+      }),
+    );
+    core.onDidEdit((completion) => {
+      completions.push(completion);
+    });
+    core.registerPostEditHandler({
+      id: "post-edit",
+      handler() {
+        processed = true;
+      },
+    });
+    await expect(
+      core.editText(source, { cwd: "/workspace" }, () => ({ text: "requested", result: null })),
+    ).resolves.toMatchObject({
+      kind: "failed",
+      failure: {
+        code: "POST_WRITE_FAILED",
+        source,
+        cause: {
+          effect: "applied",
+          code:
+            mode === "invalid-content"
+              ? "INVALID_RESOURCE_READBACK"
+              : "REMOTE_READBACK_UNAVAILABLE",
+        },
+      },
+    });
+    expect(writes).toBe(1);
+    expect(completions).toEqual([]);
+    expect(processed).toBe(mode === "after-post-edit");
+  },
+);
 test("keeps a saved resource separate from interrupted post-edit work", async () => {
   const core = createTextEditorCore();
   const cancellation = new AbortController();
@@ -360,6 +522,44 @@ test("final processing of independent resources overlaps and returns outcomes in
     await finishing;
   }
 });
+test.each([undefined, "original-edit"])(
+  "deferred completion keeps its original owner %s outside that tool's execution scope",
+  async (owner) => {
+    const core = createTextEditorCore();
+    let text = "before";
+    await core.registerPlugin(
+      resourcePlugin(
+        mutableResolver(
+          () => text,
+          (next) => {
+            text = next;
+          },
+        ),
+      ),
+    );
+    const completions: { parentToolCallId?: string; postProcessing?: string }[] = [];
+    core.onDidEdit((completion) => {
+      completions.push(completion);
+    });
+    const scope = createPostEditScope();
+    const edit = () =>
+      scope.run(() =>
+        core.editText("notes.md", { cwd: "/workspace" }, () => ({ text: "saved", result: null })),
+      );
+    await (owner === undefined ? edit() : withTextEditOrigin(core, owner, edit));
+    await withTextEditOrigin(core, "unrelated-call", () => scope.finish());
+    expect(
+      completions.map(({ parentToolCallId, postProcessing }) => ({
+        parentToolCallId,
+        postProcessing,
+      })),
+    ).toEqual([
+      { parentToolCallId: owner, postProcessing: "deferred" },
+      { parentToolCallId: owner, postProcessing: "final" },
+    ]);
+  },
+);
+
 test("a post-edit scope writes immediately and processes each final file once", async () => {
   const core = createTextEditorCore();
   let text = "before";

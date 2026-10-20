@@ -65,7 +65,7 @@ function validateDocument(document: AgentDocumentation, existingIds: ReadonlySet
 }
 
 function freezeDocument(document: AgentDocumentation): AgentDocumentation {
-  return Object.freeze({
+  const snapshot = {
     ...document,
     triggers: Object.freeze(
       document.triggers.map((trigger) =>
@@ -80,7 +80,15 @@ function freezeDocument(document: AgentDocumentation): AgentDocumentation {
         }),
       ),
     ),
-  });
+  };
+  // A deliberate getter keeps metadata catalogs current without re-registering their guide ID.
+  const markdown = Object.getOwnPropertyDescriptor(document, "markdown");
+  if (markdown?.get !== undefined)
+    Object.defineProperty(snapshot, "markdown", {
+      get: markdown.get.bind(document),
+      enumerable: true,
+    });
+  return Object.freeze(snapshot);
 }
 
 function readViews(input: unknown): readonly string[] {

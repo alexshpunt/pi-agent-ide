@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { withTextEditOrigin } from "./text-edit-origin.js";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
@@ -518,7 +519,11 @@ class NativeTextEditBatchCoordinator {
           ...presentation,
           result: {
             ...presentation.result,
-            content: [new FileMutationAgentResult(results).toTextContent()],
+            // Refresh file text after post-edit work; results without files (provider actions) keep their own text.
+            content:
+              results.length === 0
+                ? presentation.result.content
+                : [new FileMutationAgentResult(results).toTextContent()],
           },
         } satisfies NativeEditBatchEvent);
       }
@@ -914,22 +919,24 @@ class NativeTextEditBatchCoordinator {
     };
     try {
       signal.throwIfAborted();
-      const captured = await script.postEdits.run(() =>
-        captureScriptMutation(this.core, () =>
-          executeRegisteredTextBatch(
-            this.core,
-            registrations,
-            {
-              edits: batch.entries,
-              expectedContent: batch.snapshots,
-              expectedExistence: batch.existence,
-            },
-            signal,
-            undefined,
-            script.context,
-            journal.reporter(),
-            () => {},
-            batch.plan,
+      const captured = await withTextEditOrigin(this.core, script.id, () =>
+        script.postEdits.run(() =>
+          captureScriptMutation(this.core, () =>
+            executeRegisteredTextBatch(
+              this.core,
+              registrations,
+              {
+                edits: batch.entries,
+                expectedContent: batch.snapshots,
+                expectedExistence: batch.existence,
+              },
+              signal,
+              undefined,
+              script.context,
+              journal.reporter(),
+              () => {},
+              batch.plan,
+            ),
           ),
         ),
       );
@@ -986,7 +993,9 @@ export function runNativePostEditScope<T>(
   immediate = false,
 ): T {
   const coordinator = coordinators.get(core);
-  return coordinator ? coordinator.runPostEdits(id, work, immediate) : work();
+  return withTextEditOrigin(core, id, () =>
+    coordinator ? coordinator.runPostEdits(id, work, immediate) : work(),
+  );
 }
 
 /** Retain immediate child results for final user panels and deferred processing failures. */

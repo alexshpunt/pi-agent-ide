@@ -43,7 +43,7 @@ const action = absent.match(/("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*views=\["anchors"\]
 if(!action || absent.includes("FRAGMENT_FAILED")) throw Error(absent);
 const fresh = await tools.read({path:JSON.parse(action[1]),views:["anchors"]});
 if(typeof fresh !== "string" || !fresh.includes("|beta")) throw Error(fresh);
-const beta = await tools.search({path:fresh,query:"beta"});
+const beta = await tools.search({path:fresh,query:"beta"}).then(value => value.result);
 const selected = await tools.read({path:beta});
 if(!selected.includes("beta") || selected.includes("alpha")) throw Error(selected);
 store("failedRead",absent);
@@ -125,7 +125,7 @@ try { await tools.read({path:"pixel.png",offset:1,limit:1}); } catch(error) { me
 if(!message || !message.includes("offset") || !message.includes("limit")) throw Error(message ?? "Expected failure");
 text(message);
 const image = await tools.read({path:"pixel.png"});
-if(typeof image !== "string") throw Error("Read must return a string");
+if(image.type !== "image" || typeof image.note !== "string") throw Error("Read must return an image block");
 `,
               },
             }),

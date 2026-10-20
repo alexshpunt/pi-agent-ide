@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { expect, test } from "vitest";
-import { createNestedIdeRendering } from "./nested-tool-rendering.js";
+import { createNestedIdeRendering, formatToolDuration } from "./nested-tool-rendering.js";
 
 interface Retention {
   argumentsTruncated: boolean;
@@ -16,6 +16,7 @@ interface SavedGroup {
     argumentsTruncated?: boolean;
     resultOmitted?: boolean;
     result?: { isError: boolean };
+    durationMs?: number;
   }[];
 }
 const retained: Retention = {
@@ -37,6 +38,8 @@ function display() {
       };
     },
     registerTool: () => {},
+    registerToolRenderer: () => {},
+    getAllTools: () => [],
     registerEntryRenderer: () => {},
     appendEntry: (_name, data) => {
       saved = data as SavedGroup;
@@ -58,11 +61,18 @@ function display() {
       toolName: "write",
       args,
     });
-  const end = (id: string, text = "saved", isError = false, details?: unknown) =>
+  const end = (
+    id: string,
+    text = "saved",
+    isError = false,
+    details?: unknown,
+    durationMs?: number,
+  ) =>
     emit("tool_execution_end", {
       toolCallId: id,
       result: { content: [{ type: "text", text }], details },
       isError,
+      ...(durationMs === undefined ? {} : { durationMs }),
     });
   const finish = () => {
     emit("message_end", { message: { role: "toolResult", toolCallId: "parent" } });
@@ -71,6 +81,28 @@ function display() {
   };
   return { start, end, finish };
 }
+
+test("each child keeps its own recorded duration and a missing one stays absent", () => {
+  const run = display();
+  run.start("slow");
+  run.start("fast");
+  run.start("unknown");
+  run.end("fast", "saved", false, undefined, 120);
+  run.end("slow", "saved", false, undefined, 1_480);
+  run.end("unknown");
+  const saved = run.finish();
+  expect(saved.calls.map((call) => call.durationMs)).toEqual([1_480, 120, undefined]);
+  expect(saved.calls[2]).not.toHaveProperty("durationMs");
+});
+
+test.each([
+  [0, "0.0s"],
+  [4_249, "4.2s"],
+  [90_000, "1m 30s"],
+  [7_384_000, "2h 3m 4s"],
+])("formats %i ms like native tool rows", (ms, label) => {
+  expect(formatToolDuration(ms)).toBe(label);
+});
 
 test("large arguments do not mark retained results as omitted", () => {
   const run = display();

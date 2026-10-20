@@ -60,7 +60,7 @@ test("navigates normalized ownership and branches before editing one argument wi
       '"😀"; function outer() {\r\n if (ready) { send(() => finish(10)); } else fallback(20);\r\n other(30);\r\n}';
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runNavigation(cwd, "ast-navigation-chain", [
-      `const found=await tools.search({path:"calls.ts",query:"ast:finish($VALUE)"});
+      `const found=await tools.search({path:"calls.ts",query:"ast:finish($VALUE)"}).then(value => value.result);
 const call=await tools.select({path:found,operation:{kind:"object",object:"call"}});
 const callback=await tools.select({path:call,operation:{kind:"navigate",relation:"parent"}});
 const owner=await tools.select({path:call,operation:{kind:"object",object:"function",relation:"enclosing",level:2,extent:"around"}});
@@ -74,12 +74,12 @@ await rejects(()=>tools.replace({path:ancestors,text:"BAD"}),/[Oo]verlap/);
 const args=await tools.select({path:call,operation:{kind:"part",part:"arguments"}});
 store("navigationOld",args);
 const preview=await tools.read({path:args});
-const escaped=await tools.search({path:preview,query:"20"});
+const escaped=await tools.search({path:preview,query:"20"}).then(value => value.result);
 if(matches(escaped).length)throw Error("Part Read widened authority");
-const number=await tools.search({path:args,query:"10"});
+const number=await tools.search({path:args,query:"10"}).then(value => value.result);
 text(await tools.replace({path:number,text:"99"}));`,
       `await rejects(()=>tools.select({path:load("navigationOld"),operation:{kind:"navigate",relation:"parent"}}),/expired|stale/);
-const ifs=await tools.search({path:"calls.ts",query:"ast:if ($COND) { $$$BODY } else $ELSE"});
+const ifs=await tools.search({path:"calls.ts",query:"ast:if ($COND) { $$$BODY } else $ELSE"}).then(value => value.result);
 const condition=await tools.select({path:ifs,operation:{kind:"part",part:"condition"}});
 if(!condition.endsWith("(ready)"))throw Error("Condition lost delimiters");
 const branch=await tools.select({path:ifs,operation:{kind:"part",part:"else"}});
@@ -99,18 +99,18 @@ test("navigates pending writes, sibling directions and cross-call part targets w
   await withTempWorkspace(async (cwd) => {
     const run = await runNavigation(cwd, "ast-navigation-pending-siblings", [
       `const written=await tools.write({path:"pending.js",content:"first(1); second(2); third(3);"});
-const second=await tools.search({path:written,query:"ast:second($V)"});
+const second=await tools.search({path:written,query:"ast:second($V)"}).then(value => value.result);
 const previous=await tools.select({path:second,operation:{kind:"navigate",relation:"siblings",direction:"previous"}});
 const next=await tools.select({path:second,operation:{kind:"navigate",relation:"siblings",direction:"next"}});
 const all=await tools.select({path:second,operation:{kind:"navigate",relation:"siblings"}});
 if(!previous.endsWith("first(1)")||!next.endsWith("third(3)")||items(all).length!==2)throw Error("Siblings lost");
-const partial=await tools.search({path:written,query:"econd"});
+const partial=await tools.search({path:written,query:"econd"}).then(value => value.result);
 await rejects(()=>tools.select({path:partial,operation:{kind:"navigate",relation:"parent"}}),/exact syntax node/);
 const args=await tools.select({path:next,operation:{kind:"part",part:"arguments"}});
 store("navigationPart",args);
 text({siblings:items(all).length,partialRejected:true});`,
       `const part=await tools.read({path:load("navigationPart")});
-const value=await tools.search({path:part,query:"3"});
+const value=await tools.search({path:part,query:"3"}).then(value => value.result);
 if(matches(value).length!==1)throw Error("Cross-call part expired");
 text(await tools.replace({path:value,text:"9"}));`,
     ]);
@@ -132,9 +132,9 @@ test("retains full navigation beyond previews and rejects incomplete or unsuppor
 const owner=await tools.select({path:source,operation:{kind:"object",object:"function",relation:"enclosing",level:1,extent:"around"}});
 const all=await tools.select({path:owner,operation:{kind:"navigate",relation:"descendants",object:"call"}});
 if(!all.includes("105 selection(s)")||items(all).length!==100||!all.includes("more selections")||all.includes("incomplete"))throw Error("Navigation preview clipped target");
-const tail=await tools.search({path:all,query:"call104"});
+const tail=await tools.search({path:all,query:"call104"}).then(value => value.result);
 if(matches(tail).length!==1)throw Error("Last descendant lost");
-const limited=await tools.search({path:"many.js",query:"ast:$CALL()",limit:1});
+const limited=await tools.search({path:"many.js",query:"ast:$CALL()",limit:1}).then(value => value.result);
 const partial=await tools.select({path:limited,operation:{kind:"navigate",relation:"parent"}});
 check(partial.includes("incomplete input"),"Navigation laundered completeness");
 await rejects(()=>tools.replace({path:partial,text:"BAD"}),/[Ii]ncomplete/);

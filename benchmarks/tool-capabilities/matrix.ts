@@ -16,6 +16,21 @@ const groups: [string[], string[]][] = [
     ["docs-search-status"],
   ],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  // Pair actual native/alias TUI frames; execution alone cannot establish renderer parity.
+  [["compose.codemode-child-result"], ["codemode-child-presentation"]],
+  [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],
+  // Reuse the same byte/provenance contracts across native and explicitly selected connector runs.
+  [["compose.provider-reference-roundtrip"], ["read-search-replace"]],
+  [["compose.provider-cross-call-reference"], ["codemode-store"]],
+  [["edit.large-replace-payload"], ["streamed-replace"]],
+  [
+    [
+      "edit.issued-result-streaming",
+      "edit.reject-result-anchor-combination",
+      "compose.native-provider-auth",
+    ],
+    ["issued-result-edit"],
+  ],
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
   [["compose.search-issued-scope"], ["search-issued-scope"]],
   [["compose.batch-insert-search"], ["search-line-batch-insert"]],
@@ -41,7 +56,14 @@ const groups: [string[], string[]][] = [
   [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["edit.semantic-write-receipt"], ["semantic-write-receipts"]],
+  [["compose.provider-structured-receipt"], ["semantic-script-receipts"]],
+  [["compose.local-alias-structured-receipt"], ["semantic-local-alias-receipts"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
+  [
+    ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
+    ["write-confirmed-readback"],
+  ],
   [["codemode.silent-write"], ["write-silent"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
@@ -69,13 +91,26 @@ const groups: [string[], string[]][] = [
     ],
     ["directory-transfers"],
   ],
-  [["edit.transfer-refusal", "edit.move-policy-refusal"], ["directory-transfer-gates"]],
+  [
+    ["edit.transfer-refusal", "edit.move-policy-refusal", "edit.approval-headless-move"],
+    ["directory-transfer-gates"],
+  ],
+  [["compose.approval-refusal-read"], ["delete-policy-gates", "directory-transfer-gates"]],
+  [
+    ["edit.approval-yolo-delete", "edit.approval-yolo-move", "compose.yolo-protected-target"],
+    ["filesystem-yolo"],
+  ],
   [
     ["edit.delete-directory", "edit.delete-symlink", "edit.delete-broken-symlink"],
     ["delete-objects"],
   ],
   [
-    ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
+    [
+      "edit.delete-policy-refusal",
+      "edit.delete-protected-path",
+      "edit.delete-protected-root",
+      "edit.approval-headless-delete",
+    ],
     ["delete-policy-gates"],
   ],
   [
@@ -104,6 +139,7 @@ const groups: [string[], string[]][] = [
     ],
   ],
   [["compose.paired-sources-targets"], ["paired-copy"]],
+  [["edit.copy-destination-recovery"], ["copy-destination-recovery"]],
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
@@ -143,8 +179,11 @@ const groups: [string[], string[]][] = [
   [["select.elementExtent"], ["select-elementExtent"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
+  [["compose.result-selector-rejection"], ["result-selector-rejection"]],
   [
     [
+      // Delayed-card ownership is presentation metadata, covered by linked-terminal integration.
+      // The model's shell/input/read route and result contracts remain unchanged.
       "shell.execute",
       "shell.read",
       "shell.search",
@@ -185,6 +224,7 @@ const groups: [string[], string[]][] = [
     ],
     ["debug-controls"],
   ],
+  [["debug.backend-vscode-refusal", "debug.backend-native"], ["debug-backend-fallback"]],
   [
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],
@@ -199,6 +239,7 @@ const groups: [string[], string[]][] = [
     ["lsp-rename"],
   ],
   [["read.image", "read.pdf"], ["read-media"]],
+  [["compose.codemode-image-value"], ["codemode-image-value"]],
   [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
   [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],
 ];

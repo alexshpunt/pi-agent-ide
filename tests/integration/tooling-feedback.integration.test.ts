@@ -334,7 +334,7 @@ test("issued Search line and match scopes stay sparse through direct calls and C
         code: scopes
           .map(
             (scope) =>
-              `text(await tools.search(${JSON.stringify({ path: `$issued-${scope.kind}:titles`, query: scope.query })}));`,
+              `text(await tools.search(${JSON.stringify({ path: `$issued-${scope.kind}:titles`, query: scope.query })}).then(value => value.result));`,
           )
           .join("\n"),
       }),

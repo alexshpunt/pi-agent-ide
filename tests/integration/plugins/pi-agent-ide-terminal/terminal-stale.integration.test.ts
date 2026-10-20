@@ -10,6 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { PiRun } from "pi-coding-agent-test/base";
 
 const root = path.resolve();
 
@@ -55,6 +56,31 @@ test.runIf(process.platform !== "win32")(
       }
       expect(result.tuiRenderedOutput).toContain("stale · inspect session");
       expect(result.tuiRenderedOutput).toContain("quiet-process-completed");
+      const saved = await PiRun.open(result.artifacts.run);
+      const entries = (saved.session ?? "")
+        .trim()
+        .split("\n")
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              type: string;
+              customType?: string;
+              data?: { parentToolCallId?: string };
+              display?: boolean;
+            },
+        );
+      for (const type of ["terminal-stale-display", "terminal-completion-display"]) {
+        const cards = entries.filter(
+          (entry) => entry.type === "custom" && entry.customType === type,
+        );
+        expect(cards).toHaveLength(1);
+        expect(cards[0]?.data?.parentToolCallId).toBe("quiet-process");
+      }
+      expect(
+        entries
+          .filter((entry) => entry.type === "custom_message")
+          .every((entry) => entry.display === false),
+      ).toBe(true);
     } finally {
       await rm(workspace, { recursive: true, force: true });
     }

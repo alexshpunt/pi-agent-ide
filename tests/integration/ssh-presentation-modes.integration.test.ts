@@ -185,7 +185,7 @@ for (const outcome of outcomes) {
 }
 for (const outcome of outcomes) {
   if (outcome.status !== "fulfilled") throw Error("Missing mutation result");
-  const found = await tools.search({path:outcome.value,query:"READY"});
+  const found = await tools.search({path:outcome.value,query:"READY"}).then(value => value.result);
   if (!found.includes("READY")) throw Error(found);
   text(found);
 }

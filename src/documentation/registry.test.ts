@@ -57,3 +57,20 @@ describe("AgentDocumentationRegistry", () => {
     expect(registry.matching("read", { path: "docs:vision" })).toEqual([]);
   });
 });
+
+test("keeps static guide snapshots while preserving deliberate lazy catalog bodies", () => {
+  const registry = new AgentDocumentationRegistry();
+  let content = "# First";
+  const staticGuide = document("static");
+  const lazyGuide: AgentDocumentation = {
+    ...document("lazy"),
+    get markdown() {
+      return content;
+    },
+  };
+  registry.register([staticGuide, lazyGuide]);
+  Object.assign(staticGuide, { markdown: "# Changed" });
+  content = "# Second";
+  expect(registry.get("static")?.markdown).toBe("# static");
+  expect(registry.get("lazy")?.markdown).toBe("# Second");
+});

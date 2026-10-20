@@ -4,9 +4,9 @@
 
 Open `/agent-ide-settings` inside Pi and choose Project or Global. The Features tab lists human-readable module names and descriptions. The Behavior tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
 
-Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload; declining leaves changes pending until reload or startup. The command stays available even when every optional module is disabled.
+Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload for startup-only settings. YOLO policy reads saved values for each request, so its changes affect following operations without reload. The command stays available even when every optional module is disabled.
 
-Feature overrides are stored under `flags` in `extensions.json`, keyed by their CLI name. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
+Boolean overrides are stored under `flags` in `extensions.json`, keyed by their registered setting ID. Choice and text values are stored under `preferences`. External settings use the same menu and scopes but do not add CLI switches. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
 
 Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Capture full displays**. Both default to off. Its text settings control the default sequence duration, frame interval, image scale, and a comma-separated list of exact executable file names that may be captured without arbitrary-window access. Press Enter to edit a text value, Enter again to commit it, then Ctrl+S to save.
 
@@ -16,15 +16,31 @@ The UI tab contains separate presentation settings for diffs, Read, Search, and 
 
 All user-configurable presentation and behavior preferences belong in Agent IDE settings. New options must carry a human name, explanation and default in their registration. Presentation options belong in the UI tab.
 
-New Agent IDE boolean options must use `createFeatureFlags().register` with an ID, human name, description and default. The same registration supplies the Pi flag and its Behavior or UI tab; no separate menu entry is needed.
+Built-in boolean options that need a Pi CLI flag use `createFeatureFlags().register` with an ID, human name, description and default. External extensions use the [public settings API](extensions.md#settings) for boolean, choice and text settings; no separate menu entry or storage implementation is needed.
 
 Obsolete IDs in `disabled` are ignored. They do not stop IDE startup. Malformed configuration and unknown IDs in `enabled` still report configuration errors.
 
 Pi Agent IDE enables every built-in extension by default. Project and global config files can disable built-ins by their stable IDs and turn on built-ins that are off by default.
 
+## Operation confirmations and YOLO
+
+Open `/agent-ide-settings`, choose Project or Global, and find the YOLO controls in the Behavior tab:
+
+- **YOLO: allow all operations** (`pi-agent-ide-yolo`) skips existing operation dialogs from participating extensions.
+- **YOLO: filesystem operations** (`pi-agent-ide-filesystem-yolo`) controls filesystem dialogs separately.
+- Loaded extensions can register their own controls, including GitHub and Linear YOLO.
+
+These YOLO settings default to Off. Project overrides Global for each key. An explicit extension On or Off wins over the common setting. Default removes only the selected scope's override: it inherits an extension value from the lower scope, if present, then the common YOLO setting. Set the filesystem override to Off to disable its persistent permission even when common YOLO is On; a remembered session grant still applies. Save with Ctrl+S; the menu offers a reload.
+
+A required operation dialog offers **Deny**, **Allow once**, and **Allow for session**, and points to `/agent-ide-settings`. Deny or dismissal leaves the operation unapplied. Allow once covers only the current request. Allow for session covers later requests with the same extension owner and dialog category, including other targets. It is available when the host can store session entries.
+
+Session grants survive `/reload` and reopening the saved Pi session. They follow its current branch; a new independent session or a branch without the grant asks again. Turning YOLO Off does not remove a remembered session grant.
+
+YOLO and session grants skip confirmation only. Protected paths, hooks, target revalidation and remote authorization still apply. Without UI, an operation that needs confirmation is refused unless YOLO or a session grant permits it. YOLO does not add approval gates to previously ungated routes.
+
 ## Agent-assisted settings
 
-Ask the agent to explain Pi Agent IDE or configure it for your tasks. For example: “Help me configure Pi Agent IDE for my workflow.” You can also run `/skill:configure-agent-ide` with your request. For an explanation, the agent describes the relevant settings without changing them. Before making changes, it asks whether to use Project or Global scope unless you already specified it. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the agreed settings. Default restores inheritance; saved changes still need reload or restart.
+Ask the agent to explain Pi Agent IDE or configure it for your tasks. For example: “Help me configure Pi Agent IDE for my workflow.” You can also run `/skill:configure-agent-ide` with your request. For an explanation, the agent describes the relevant settings without changing them. Before making changes, it asks whether to use Project or Global scope unless you already specified it. The shipped skill reads the registered `docs:ide-settings` catalog and both saved scopes before changing only the agreed settings. Default restores inheritance. Saved YOLO changes affect following operations; startup-only changes need reload or restart.
 
 The catalog lists supported settings and defaults, not current effective values. When documentation is disabled, the skill can inspect the installed configuration guide and registrations without enabling unrelated modules.
 
@@ -118,6 +134,8 @@ Text snapshots are limited to 32 MiB. Directory transfers and interrupted remote
 Standalone editing tools validate source snapshots before writing. Native Codemode commits eligible pending local edits before a dependent tool or when the script ends. Accepted child calls are not proof of persistence. Ordinary script errors keep accepted edits; aborts discard only pending work. Batched edits finish formatting and diagnostics at script end. Write commits earlier pending edits and finishes its own post-edit processing before returning. Text copy/move destinations receive post-processing; binary contents stay unchanged.
 
 Automatic diagnostic findings are grouped for five seconds from the first finding. The UI tab’s **Immediate diagnostic notices** option (`pi-agent-ide-no-diagnostic-buffer`) disables this delay. Combined notices keep each file and reporting tool identifiable. Empty completed diagnostic reads tell the agent that checks finished without findings, but do not draw an empty diagnostic panel. Pending, unavailable and incomplete checks are not reported as clean.
+
+Late diagnostic summaries retain the tool call that produced the checked file version, when known. Split-history extensions can place them beside that call without making edits wait or rewriting completed tool results. A buffered agent notification can cover several calls; the visible summaries keep those owners separate.
 
 Start Pi with either or both flags:
 
@@ -214,6 +232,20 @@ The Vue mapping is separate from ordinary TypeScript, so other projects do not l
 Regex diagnostic parsers run with multiline matching. Set `columnBase: 0` when a reporter counts columns from zero; the default is one. Returned diagnostic positions remain one-based. This setting applies only to `format: "regex"` parsers.
 
 A runtime being installed does not prove its modules or language-server features are installed. For example, Taplo's npm build can format TOML but does not include its LSP. Use an LSP-enabled Taplo build for language-server diagnostics. Doctor reports the actual startup failure rather than treating that file as clean.
+
+## VS Code debugger
+
+When the project is open in VS Code, `debug` can run the session there through Microsoft's [DebugMCP](https://github.com/microsoft/DebugMCP) extension. You see the session and its breakpoints in VS Code, and VS Code chooses the debugger from `launch.json` or the file type. Install the extension yourself:
+
+```bash
+code --install-extension ozzafar.debugmcpextension
+```
+
+The default `backend: "auto"` uses VS Code only when a VS Code window with DebugMCP has the local project open, that window has no active debug session, and the call passes no `args` or `mainClass`. Otherwise it uses the native adapter. `backend: "vscode"` fails with the reason instead of falling back, and `backend: "native"` never uses VS Code. Pass program arguments or environment through a `launch.json` configuration named in `configuration`, or debug one test with `test`. VS Code picks a debugger from a source file's type, so a compiled executable such as an `.exe` always needs a `configuration`, for example a `cppvsdbg` or `cppdbg` entry. The debugger extension that configuration uses must be installed in the VS Code profile of that window; if VS Code does not start the session within 60 seconds, `start` fails with that hint and the session can be started again.
+
+Pi stops only the VS Code session it started and removes only the breakpoints it added; a breakpoint you already set at the same line is reused and kept. DebugMCP listens on port 3001. If you changed `debugmcp.serverPort`, set `PI_DEBUGMCP_PORT` to the same port before starting Pi. Doctor reports whether the VS Code backend is available.
+
+In remote VS Code windows such as Remote-WSL, DebugMCP does not report the stopped frame's file. Pi then takes it from its breakpoint on that line or from the previous stop in the same function, and otherwise shows only the function and line.
 
 ## Java debugger
 

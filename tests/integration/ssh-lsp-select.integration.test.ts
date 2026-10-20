@@ -105,7 +105,7 @@ test.each(["scope", "mutation"] as const)(
 const read = await tools.read({ path: ${JSON.stringify(`${root}/note.ts`)} });
 const seed = await tools.select({ path: read, operation: { kind: "range", startLine: 1, startColumn: 6, endLine: 1, endColumn: 11 } });
 
-const strict=await tools.search({query:"symbols:label",path:seed});
+const strict=await tools.search({query:"symbols:label",path:seed}).then(value => value.result);
 if(!strict.includes("definition label") || strict.includes("reference label")) throw Error(strict);
 const name=await tools.select({path:strict,operation:{kind:"sliceText",from:0}});
 if(!name.includes("label")) throw Error(name);
@@ -113,12 +113,12 @@ if(${JSON.stringify(mode)} === "scope") {
  const local=await tools.read({path:${JSON.stringify(local)}});
  const overlap=await tools.select({path:strict,operation:{kind:"intersection",scopes:local}});
  if(!overlap.includes("0 selection(s)")) throw Error(overlap);
- const navigation=await tools.search({query:"symbols:label",path:seed,navigation:"references"});
+ const navigation=await tools.search({query:"symbols:label",path:seed,navigation:"references"}).then(value => value.result);
  if(!navigation.includes(${JSON.stringify(`${root}/reference.ts`)}) || !navigation.includes("reference label")) throw Error(navigation);
  const declarations=[...navigation.matchAll(/declared at (.+)/g)].map(m=>m[1]);
  if(declarations.length!==2 || new Set(declarations).size!==1) throw Error("Lost declaration identity: "+navigation);
  const cut=await tools.select({path:seed,operation:{kind:"sliceText",from:1}});
- const absent=await tools.search({query:"symbols:label",path:cut});
+ const absent=await tools.search({query:"symbols:label",path:cut}).then(value => value.result);
  if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);
  text({strict,name,navigation,absent});
 } else {

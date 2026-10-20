@@ -6,6 +6,10 @@ import { afterEach, expect, test, vi } from "vitest";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
 import { executeWholeFileTool } from "#src/core/file-operation-tools.js";
 import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
+import {
+  createOperationApproval,
+  OPERATION_APPROVAL_EVENT,
+} from "pi-agent-tool-ui/operation-approval";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -24,7 +28,15 @@ async function fixture() {
 test("the host dialog names the target and refuses, dismisses, or approves removal", async () => {
   for (const answer of [false, undefined, true]) {
     const cwd = await fixture();
-    const confirm = vi.fn(async () => answer as boolean);
+    const select = vi.fn(async () =>
+      answer === true ? "Allow once" : answer === false ? "Deny" : undefined,
+    );
+    const events = {
+      emit(channel: string, data: unknown): void {
+        if (channel === OPERATION_APPROVAL_EVENT) service.handle(data);
+      },
+    };
+    const service = createOperationApproval(events);
     const result = await executeWholeFileTool(
       createTextEditorCore(),
       "delete",
@@ -33,14 +45,17 @@ test("the host dialog names the target and refuses, dismisses, or approves remov
       {
         cwd,
         hasUI: true,
-        ui: { confirm },
+        ui: { select },
       },
+      undefined,
+      events,
     );
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(confirm.mock.calls[0]).toEqual([
-      "Delete permanently?",
+    service.dispose();
+    expect(select).toHaveBeenCalledOnce();
+    expect(select.mock.calls[0]).toEqual([
       expect.stringContaining(path.join(cwd, "folder")),
-      { signal: undefined },
+      ["Deny", "Allow once"],
+      { signal: expect.any(AbortSignal) as unknown },
     ]);
     expect(result.details.metadata?.semanticAction).toMatchObject({
       ok: answer === true,
@@ -89,7 +104,7 @@ test("denying or throwing hooks run before any host dialog", async () => {
   for (const throws of [false, true]) {
     const cwd = await fixture();
     const core = createTextEditorCore();
-    const confirm = vi.fn(async () => true);
+    const select = vi.fn(async () => "Allow once");
     const seen: string[] = [];
     await core.registerPlugin({
       id: "policies",
@@ -121,7 +136,7 @@ test("denying or throwing hooks run before any host dialog", async () => {
     const result = await executeWholeFileTool(core, "delete", { path: "folder" }, undefined, {
       cwd,
       hasUI: true,
-      ui: { confirm },
+      ui: { select },
     });
     expect(result.details.metadata?.semanticAction).toMatchObject({
       ok: false,
@@ -129,7 +144,7 @@ test("denying or throwing hooks run before any host dialog", async () => {
       error: { code: "DELETE_HOOK_REJECTED" },
     });
     expect(seen).toEqual(["directory"]);
-    expect(confirm).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
     expect(await readFile(path.join(cwd, "folder", "data"), "utf8")).toBe("keep");
   }
 });

@@ -96,7 +96,7 @@ jobs:
       thinking: low
       task: ""
       concurrency: "10"
-      adapter: pi-agent-ide
+      adapter: pi-agent-ide-codemode
       agent_version: ${{ needs.resolve.outputs.agent_version }}
       harness_version: ${{ needs.resolve.outputs.harness_version }}
       runtime_version: ""

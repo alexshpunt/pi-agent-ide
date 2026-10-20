@@ -43,6 +43,7 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
           const shown = result.content
             .flatMap((block) => (block.type === "text" ? [block.text] : []))
             .join("\n");
+          if (kind === "result") return JSON.stringify(shown).slice(1, -1);
           const expression =
             kind === "uuid"
               ? /<uuid>([^<]+)<\/uuid>/u
@@ -61,15 +62,15 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
           if (!value) throw new Error(`Missing ${kind} reference in ${id}`);
           return value;
         };
+        const pattern = /\$issued-(uuid|result|item|search(?:match|allline|allmatch)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu;
         void (async () => {
           try {
             for await (const event of delegate(currentModel, transcript, options)) {
               const forwarded = JSON.parse(
-                JSON.stringify(event).replace(
-                  /\$issued-(uuid|item|search(?:match|allline|allmatch)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu,
-                  reference,
-                ),
+                JSON.stringify(event).replace(pattern, reference),
               ) as AssistantMessageEvent;
+              if (event.type === "toolcall_delta" && forwarded.type === "toolcall_delta")
+                forwarded.delta = event.delta.replace(pattern, reference);
               partial =
                 forwarded.type === "done"
                   ? forwarded.message

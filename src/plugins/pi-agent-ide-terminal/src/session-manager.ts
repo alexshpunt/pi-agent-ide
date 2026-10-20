@@ -24,6 +24,9 @@ const MAX_OUTPUT_CHARS = 1_000_000;
 const DEFAULT_COLS = 100;
 const DEFAULT_ROWS = 30;
 const STOP_GRACE_MS = 2_000;
+// Finished sessions keep their output and virtual screen in memory. Bound how many stay so a
+// long-lived Pi process does not grow with every command it has ever run.
+const MAX_FINISHED_SESSIONS = 50;
 
 type SessionListener = (session: TerminalSession) => void;
 
@@ -68,6 +71,7 @@ export class TerminalSessionManager {
     return {
       id: session.id,
       source: session.source,
+      ...(session.origin === undefined ? {} : { origin: session.origin }),
       command: session.command,
       cwd: session.cwd,
       shell: session.shell.displayName,
@@ -133,6 +137,10 @@ export class TerminalSessionManager {
         rows,
         cwd: options.cwd,
         env: cleanEnvironment(processEnvironment()),
+        // The inbox ConPTY never closes the pseudoconsole when the shell exits on its own,
+        // leaving one headless conhost.exe per command (microsoft/node-pty#965). The bundled
+        // ConPTY releases its console host once the last client exits.
+        ...(globalThis.process.platform === "win32" ? { useConptyDll: true } : {}),
       };
       process = pty.spawn(
         options.shell.executable,
@@ -156,6 +164,15 @@ export class TerminalSessionManager {
     const session: TerminalSession = { ...base, process };
     this.#sessions.set(id, session);
     process.onData((data) => this.#appendOutput(session, data));
+    // Answer terminal queries such as PowerShell's startup device-attributes probe, which
+    // otherwise waits about two seconds for a reply under the bundled ConPTY.
+    if (globalThis.process.platform === "win32")
+      session.screen.onData((reply) => {
+        if (isTerminalStatus(session.status)) return;
+        try {
+          process.write(reply);
+        } catch {}
+      });
     process.onExit(({ exitCode, signal }) => {
       if (isTerminalStatus(session.status)) return;
       session.endedAt = Date.now();
@@ -594,6 +611,23 @@ export class TerminalSessionManager {
 
   #emitCompleted(session: TerminalSession): void {
     for (const listener of this.#completionListeners) listener(session);
+    this.#evictFinishedSessions();
+  }
+
+  /**
+   * Forget the oldest finished sessions beyond the retention bound. Their full-output logs stay
+   * on disk; background sessions whose completion was not delivered yet are kept.
+   */
+  #evictFinishedSessions(): void {
+    const finished = [...this.#sessions.values()]
+      .filter((session) => isTerminalStatus(session.status))
+      .sort((left, right) => (right.endedAt ?? 0) - (left.endedAt ?? 0));
+    for (const session of finished.slice(MAX_FINISHED_SESSIONS)) {
+      if (session.background && !session.completionDelivered) continue;
+      session.screen.dispose();
+      this.#closeOutputLog(session.id);
+      this.#sessions.delete(session.id);
+    }
   }
 }
 

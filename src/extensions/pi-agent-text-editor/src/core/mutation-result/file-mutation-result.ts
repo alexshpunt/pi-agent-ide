@@ -72,6 +72,8 @@ export interface FileError {
   path: string;
   code?: string | undefined;
   reason?: string | undefined;
+  /** Editor failure code of the step that failed when `code` is a provider's own code. */
+  stage?: string | undefined;
 }
 
 export interface Warning {

@@ -10,13 +10,15 @@ export default function (pi: ExtensionAPI) {
     await writeFile(path.join(ctx.cwd, "herdr-events.json"), JSON.stringify(blocked));
   });
   pi.on("tool_call", (_event, ctx) => {
-    ctx.ui.confirm = async (_title, message) => {
+    ctx.ui.select = async (title) => {
+      // Shared approval puts the request message between its title and the scope line.
+      const message = title.slice(title.indexOf("\n") + 1, title.lastIndexOf("\nScope: "));
       const approved = message.includes("tracked-yes");
       await appendFile(
         path.join(ctx.cwd, "dialog-decisions.jsonl"),
         JSON.stringify({ message, approved, blockedAtOpen: blocked.at(-1) }) + "\n",
       );
-      return approved;
+      return approved ? "Allow once" : "Deny";
     };
   });
 }

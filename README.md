@@ -24,7 +24,7 @@
 
 <div align="center">
 
-[![Explicit Edit Benchmark score](https://img.shields.io/endpoint?url=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Falexshpunt%2Fexplicit-edit-benchmark%2Fresolve%2Fmain%2Fbadges%2Fpi-agent-ide.json)](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest)
+[![Explicit Edit Benchmark score](https://img.shields.io/endpoint?url=https%3A%2F%2Fhuggingface.co%2Fdatasets%2Falexshpunt%2Fexplicit-edit-benchmark%2Fresolve%2Fmain%2Fbadges%2Fpi-agent-ide-codemode.json)](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide-codemode%40latest)
 
 </div>
 
@@ -144,6 +144,8 @@ The terminal is a first-class cross-platform interface. The agent can run comman
 
 Debugger sessions use the same resource model. The agent can set breakpoints, inspect stack frames and variables, evaluate expressions, step through execution, and return to a running session later.
 
+When the project is open in VS Code with the [DebugMCP](https://github.com/microsoft/DebugMCP) extension, the agent debugs it there by default, so you can follow the session in your editor. See [VS Code debugger](./docs/configuration.md#vs-code-debugger).
+
 <div align="center">
 
 [![Setting breakpoints, inspecting locals, and stepping through a debugger session](assets/summary/thumbs/debugging.png)](assets/summary/debugging.png)
@@ -194,7 +196,7 @@ Windows and WSL are first-class supported environments alongside Linux. Run `/pi
 
 ### Built through data-driven development
 
-Pi Agent IDE is developed through daily use on real software and measured with the [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark). Published benchmark observations record performance on real editing tasks; not every release has a benchmark run. The badge above links to the [latest accepted observation](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest), with its score and run details; the underlying observations are available in the [published dataset](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
+Pi Agent IDE is developed through daily use on real software and measured with the [Explicit Edit Benchmark](https://github.com/alexshpunt/explicit-edit-benchmark). The badge tracks the [Codemode-enabled profile](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide-codemode%40latest), with native Codemode alongside standalone IDE tools. [Earlier standalone-only observations](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-agent-ide%40latest) remain separate. A profile's badge appears after its first accepted observation; not every release has a run. All observations are available in the [published dataset](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark).
 
 The project is also used to develop itself. Weak interactions, missing affordances, and agent failure modes appear in real work instead of remaining theoretical. Problems are fixed as they are found, and the tools evolve through regular releases.
 
@@ -202,7 +204,7 @@ Pi Agent IDE is experimental and under active development. Interfaces and behavi
 
 ## Installation
 
-Install [Pi](https://pi.dev/) **0.99.1 or newer** first, then install Pi Agent IDE from npm. Development and integration tests use Pi 1.1.0. Older hosts are rejected with an upgrade message.
+Install [Pi](https://pi.dev/) **0.99.1 or newer** first, then install Pi Agent IDE from npm. Development and integration tests use Pi 1.3.0. Older hosts are rejected with an upgrade message.
 
 ```bash
 pi install npm:pi-agent-ide

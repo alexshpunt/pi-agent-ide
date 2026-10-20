@@ -25,6 +25,7 @@ import {
   type Resource,
   type ResourceResolver,
   type ResourceResolverContext,
+  type ResultTargetStore,
 } from "pi-agent-resource";
 import {
   createTextDocument,
@@ -95,6 +96,7 @@ import type {
   TextAnchorInspectionOutcome,
   TextAnchorInspectionRequest,
 } from "#src/api/anchor-inspection.js";
+import { currentTextEditOrigin } from "./text-edit-origin.js";
 import type {
   TextEditCompletion,
   TextEditCompletionListener,
@@ -442,11 +444,13 @@ export interface TextEditorCore {
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
 }
 
+/** Share issued-result authority with streamed anchor inspection, before tool-call normalization. */
 export function createTextEditorCore(
   registerMutationTool?: (
     registration: AnyTextMutationToolRegistration,
     core: TextEditorCore,
   ) => void,
+  resultTargets?: ResultTargetStore,
 ): TextEditorCore {
   const projectConfig = loadTextEditorConfig(process.cwd());
   const resolvers: RegisteredResolver[] = [];
@@ -784,7 +788,7 @@ export function createTextEditorCore(
       return toolRenderers.get(tool);
     },
     inspectTextAnchors(request): Promise<TextAnchorInspectionOutcome> {
-      return inspectTextResource(request, [...resolvers], anchorRegistry.snapshot());
+      return inspectTextResource(request, [...resolvers], anchorRegistry.snapshot(), resultTargets);
     },
     resolveTextAnchorResources(value, kinds, context): Promise<readonly TextTarget[] | undefined> {
       return anchorRegistry.snapshot().resolveResources(value, context, new Set(kinds));
@@ -993,7 +997,7 @@ export function createTextEditorCore(
       const contributions = createPluginContributionController(
         plugin.id,
         registerContributions,
-        (request) => inspectTextResource(request, [...resolvers], anchorRegistry.snapshot()),
+        (request) => core.inspectTextAnchors(request),
         (listener) => core.onMutationTool(listener),
         (listener) => core.onDidEdit(listener),
         (request) => previewTextMutation(core, request),
@@ -1110,7 +1114,35 @@ async function inspectTextResource(
   request: TextAnchorInspectionRequest,
   resolvers: readonly RegisteredResolver[],
   anchors: TextAnchorRegistrySnapshot,
+  resultTargets?: ResultTargetStore,
 ): Promise<TextAnchorInspectionOutcome> {
+  if (resultTargets !== undefined) {
+    try {
+      const source = resultTargets.source(request.source, request.cwd);
+      if (Array.isArray(source) || (typeof source === "string" && source.startsWith("RESULT#"))) {
+        const selected = resultTargets.resolve(source, request.cwd);
+        if (!selected.complete)
+          return { kind: "failed", reason: "Incomplete result selections cannot authorize edits." };
+        await resultTargets.verify(selected, request.signal);
+        for (const target of selected.targets) {
+          const inspected = await inspectTextResource(
+            { ...request, source: target.source },
+            resolvers,
+            anchors,
+          );
+          if (inspected.kind !== "valid") return inspected;
+        }
+        return { kind: "valid" };
+      }
+    } catch (error) {
+      request.signal?.throwIfAborted();
+      return {
+        kind: "failed",
+        reason: error instanceof Error ? error.message : String(error),
+        cause: error,
+      };
+    }
+  }
   const context: ResourceResolverContext = {
     cwd: request.cwd,
     ...(request.signal !== undefined && { signal: request.signal }),
@@ -1791,7 +1823,9 @@ async function prepareTextResource(
 }
 
 interface FinalizeTextResourceRequest<Result> {
+  readonly parentToolCallId?: string;
   readonly postProcessingFinal?: boolean;
+  readonly savedText?: string;
   readonly requestedSource: string;
   readonly outcomeSource: string;
   readonly resource: Resource;
@@ -1806,37 +1840,58 @@ interface FinalizeTextResourceRequest<Result> {
   readonly result: Result;
 }
 
+async function readSavedText(
+  resource: Resource,
+  context: ResourceResolverContext,
+): Promise<string> {
+  try {
+    const content = await requiredValue(resource.read)(
+      context.signal === undefined ? {} : { signal: context.signal },
+    );
+    if (isAgentContent(content) && content.length === 1 && content[0].type === "text")
+      return content[0].text;
+    throw new ResourceError("INVALID_RESOURCE_READBACK", resource.source, "applied");
+  } catch (error) {
+    if (error instanceof ResourceError) {
+      if (error.effect === "applied") throw error;
+      throw new ResourceError(error.code, resource.source, "applied", { cause: error });
+    }
+    throw new ResourceError("RESOURCE_READBACK_FAILED", resource.source, "applied");
+  }
+}
 async function finalizeTextResource<Result>(
   request: FinalizeTextResourceRequest<Result>,
 ): Promise<Exclude<TextResourceEditOutcome<Result>, { readonly kind: "failed" }>> {
   const skipPostEdit = request.resource.skipPostEdit === true;
+  const savedText =
+    !skipPostEdit && request.resource.read
+      ? await readSavedText(request.resource, request.context)
+      : request.requestedText;
   if (
     !skipPostEdit &&
     request.postProcessingFinal &&
     !request.context.signal?.aborted &&
-    request.resource.read
-  ) {
-    const current = await request.resource.read(
-      request.context.signal ? { signal: request.context.signal } : {},
+    savedText !== (request.savedText ?? request.requestedText)
+  )
+    throw Object.assign(
+      new Error(`Resource changed before final post-processing: ${request.resource.source}`),
+      { code: "POST_EDIT_STALE", effect: "applied" as const },
     );
-    if (
-      !isAgentContent(current) ||
-      current.length !== 1 ||
-      current[0].type !== "text" ||
-      current[0].text !== request.requestedText
-    )
-      throw Object.assign(
-        new Error(`Resource changed before final post-processing: ${request.resource.source}`),
-        { code: "POST_EDIT_STALE" },
-      );
-  }
+  const parentToolCallId = request.postProcessingFinal
+    ? request.parentToolCallId
+    : currentTextEditOrigin();
   const deferred =
     !skipPostEdit &&
     !request.postProcessingFinal &&
     deferPostEdit(request.resource.source, () =>
-      finalizeTextResource({ ...request, postProcessingFinal: true }),
+      finalizeTextResource({
+        ...request,
+        savedText,
+        ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+        postProcessingFinal: true,
+      }),
     );
-  const requestedAfter = createTextDocument(request.resource.source, request.requestedText);
+  const requestedAfter = createTextDocument(request.resource.source, savedText);
   const transaction: TextPostEditTransaction = {
     source: request.requestedSource,
     resourceSource: request.resource.source,
@@ -1876,24 +1931,14 @@ async function finalizeTextResource<Result>(
         ],
       },
     });
-  let finalText = request.requestedText;
-
-  if (!skipPostEdit && request.resource.read !== undefined) {
-    try {
-      const reread = await request.resource.read(
-        request.context.signal === undefined ? {} : { signal: request.context.signal },
-      );
-
-      if (isAgentContent(reread) && reread.length === 1 && reread[0].type === "text") {
-        finalText = reread[0].text;
-      }
-    } catch {
-      // The requested mutation remains the successful fallback when a final reread fails.
-    }
-  }
+  const finalText =
+    !skipPostEdit && !deferred && request.resource.read
+      ? await readSavedText(request.resource, request.context)
+      : savedText;
 
   const finalAfter = createTextDocument(request.resource.source, finalText);
   const completion: TextEditCompletion = {
+    ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
     source: request.requestedSource,
     resourceSource: request.resource.source,
     resolvedBy: request.resolvedBy,
@@ -2145,20 +2190,33 @@ async function editTextResource<Result>(
       };
     }
 
-    return finalizeTextResource({
-      requestedSource: source,
-      outcomeSource: resource.source,
-      resource,
-      resolvedBy: resolver.id,
-      existed: true,
-      before,
-      requestedText: mutation.text,
-      context,
-      presenters,
-      postEditHandlers,
-      editCompletionListeners,
-      result: mutation.result,
-    });
+    try {
+      return await finalizeTextResource({
+        requestedSource: source,
+        outcomeSource: resource.source,
+        resource,
+        resolvedBy: resolver.id,
+        existed: true,
+        before,
+        requestedText: mutation.text,
+        context,
+        presenters,
+        postEditHandlers,
+        editCompletionListeners,
+        result: mutation.result,
+      });
+    } catch (error) {
+      return {
+        kind: "failed",
+        failure: {
+          code: "POST_WRITE_FAILED",
+          source: resource.source,
+          resolverId: resolver.id,
+          message: error instanceof Error ? error.message : String(error),
+          cause: error,
+        },
+      };
+    }
   }
 
   return {

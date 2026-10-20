@@ -16,13 +16,13 @@ Use a returned anchor when it identifies the intended text. Otherwise use the sm
 
 With `end`, the operation covers complete lines from the first line containing `start` through the last line containing `end`, inclusive. Without `end`, an exact string selects just that fragment.
 
-After an exact-text selector fails, exact-text edits are blocked for that file. Find the intended location among the returned current anchors, or use Read/Search for another section. Edit with its anchor. After that edit succeeds, exact text is available again. Do not retry a guessed string.
+After an exact-text selector fails, exact-text edits are blocked for that file, except for Copy destination selectors (`targetStart` and `targetEnd`). Find the intended location among the returned current anchors, or use Read/Search for another section. Edit with its anchor. After that edit succeeds, exact text is available again. Do not retry a guessed string.
 
 Re-read after a mutation before reusing line, scope, or individual Search anchors. Complete `SEARCH#...:all` selections retain their existing query-refresh behavior.
 
 ## Compose results
 
-Results are readable text with a leading system-result envelope. The envelope is an internal reference, not file content. Do not edit it or write it into a file. Pass the unchanged result to another source parameter; outside Codemode you can also pass its UUID. Store/load keeps the same string in the current session. No internal fields need to be inspected.
+Direct results are readable text with a leading system-result envelope. In Codemode, Search returns facts and a `result` string. An image Read returns an image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames; show it with `image()` and pass its `note` string to other tools. Other text results remain strings. The envelope is an internal reference, not file content. Do not edit it or write it into a file. Pass the unchanged result string to another source parameter; outside Codemode you can also pass its UUID. Store/load keeps results in the current session. Read `docs:search-code` for the Search facts.
 
 Read results select their requested source windows. Search results select exact matches. Select derives new boundaries. A displayed item reference selects that item; the whole result retains all selections, including those omitted from its preview.
 
@@ -55,7 +55,7 @@ Independent calls share the original snapshots. Combine overlapping edits into o
 
 An omitted path can inherit the file identified by an anchor, the last read, or the preceding edit in the batch. Supply the path when that would be ambiguous.
 
-An ordinary `delete.path` without selectors deletes a whole file, directory, or symlink. Directory and link deletion applies Git protection and may require a user dialog; no agent flag replaces approval. Links are unlinked without following their targets. A result input removes only selected text. Ordinary copy/move paths without selectors transfer whole regular files and replace an existing regular destination file.
+An ordinary `delete.path` without selectors deletes a whole file, directory, or symlink. Directory and link deletion applies Git protection and the shared host permission policy. User-configured YOLO or a remembered session grant can skip its dialog; no tool argument supplies approval. Protected paths, hooks and target revalidation still apply. Without UI, gated operations fail closed unless YOLO or a session grant permits them. Read `docs:ide-settings` when the user asks to change confirmation settings. Links are unlinked without following their targets. A result input removes only selected text. Ordinary copy/move paths without selectors transfer whole regular files and replace an existing regular destination file.
 
 Inside Codemode, await independent edits on disjoint resources concurrently and overlapping resources in order. Pass a pending edit result directly to another source tool for dependent work; that boundary commits the batch before consuming the result.
 

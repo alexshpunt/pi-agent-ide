@@ -20,6 +20,13 @@ import {
   DEBUGGER_RECIPES,
   debuggerRecipeForLanguage,
 } from "./catalog.js";
+import {
+  DEBUGMCP_EXTENSION_ID,
+  debugMcpInstalled,
+  debugMcpPort,
+  debugMcpResponds,
+  findVscodeWindow,
+} from "./vscode-backend.js";
 
 const DEFAULT_JS_DEBUG_PATH = "/opt/pi-debug-adapters/js-debug/src/dapDebugServer.js";
 const DEFAULT_ELIXIR_LS_DEBUG_PATH = "/opt/pi-debug-adapters/elixir-ls/debug_adapter.sh";
@@ -37,6 +44,7 @@ export const debuggerDoctorPlugin: DoctorPlugin = {
       title: "Debug adapters",
       run: checkDebuggerAdapters,
     });
+    api.addCheck({ id: "vscode", title: "VS Code debugger backend", run: checkVscodeBackend });
   },
 };
 
@@ -148,6 +156,45 @@ async function checkDebuggerAdapters(context: DoctorContext): Promise<readonly D
       };
     }),
   );
+}
+
+/** Report whether `debug` can use VS Code through DebugMCP for this local workspace. */
+async function checkVscodeBackend(context: DoctorContext): Promise<readonly DoctorFinding[]> {
+  if (context.workspace !== undefined) {
+    return [{ status: "skip", message: "The VS Code backend debugs only local workspaces" }];
+  }
+  const window = await findVscodeWindow([context.cwd]);
+  if (window !== undefined) {
+    return (await debugMcpResponds(context.signal))
+      ? [{ status: "pass", message: `VS Code backend: available in "${window.name}"` }]
+      : [
+          {
+            status: "fail",
+            message: "VS Code backend: DebugMCP does not respond",
+            detail: `"${window.name}" has this workspace open, but DebugMCP does not accept connections on port ${debugMcpPort(context.env)}. Set PI_DEBUGMCP_PORT when debugmcp.serverPort differs.`,
+          },
+        ];
+  }
+  if (await debugMcpInstalled()) {
+    return [
+      {
+        status: "skip",
+        message: "VS Code backend: no VS Code window with DebugMCP has this workspace open",
+        detail:
+          "Open the workspace in VS Code to debug through it; debug uses native adapters meanwhile.",
+      },
+    ];
+  }
+  if (await projectExecutableAvailable(context, "code")) {
+    return [
+      {
+        status: "warn",
+        message: "VS Code backend: DebugMCP is not installed",
+        detail: `Install it with: code --install-extension ${DEBUGMCP_EXTENSION_ID}`,
+      },
+    ];
+  }
+  return [{ status: "skip", message: "VS Code backend: VS Code is not installed" }];
 }
 
 async function probeJavaFiles(

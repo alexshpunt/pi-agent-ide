@@ -15,10 +15,13 @@ import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
+import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
+import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.js";
+import { readAgentIdeSetting } from "#src/api/settings.js";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
-import { assertSupportedHost } from "#src/composite/host-version.js";
+import { assertSupportedHost, hostOwnsToolLoadout } from "#src/composite/host-version.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
@@ -42,6 +45,11 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     return preserveResponsesToolOmission(event.payload, names);
   });
   pi.on("session_start", (event, context) => {
+    // Pi 1.3 restores transcript tools and applies defaultTools and CLI +/- selections itself.
+    if (hostOwnsToolLoadout(VERSION)) {
+      availability.reconcile(true, [], true);
+      return;
+    }
     const restored =
       event.reason === "reload"
         ? []
@@ -54,12 +62,18 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   });
   pi.on("before_agent_start", (event) => {
     availability.reconcile();
-    const systemPrompt = event.systemPrompt
-      .replace(
-        "- bash: Execute bash commands (ls, grep, find, etc.)",
-        "- bash: Execute Bash commands",
-      )
-      .replace("- Use bash for file operations like ls, rg, find\n", "");
+    const options = event.systemPromptOptions;
+    if (options.toolSnippets.bash)
+      options.toolSnippets.bash = options.toolSnippets.bash.replace(
+        "Execute bash commands (ls, grep, find, etc.)",
+        "Execute Bash commands",
+      );
+    // Keep the legacy host-rule correction structured so portable providers can project it.
+    const rules = /^<rules>\n([\s\S]*?)\n<\/rules>$/mu.exec(event.systemPrompt)?.[1];
+    if (rules?.includes("- Use bash for file operations like ls, rg, find"))
+      options.sections.rules = rules
+        .replace(/(?:^|\n)- Use bash for file operations like ls, rg, find(?=\n|$)/u, "")
+        .trim();
     const tools = pi.getAllTools().filter((tool) => tool.exposure !== "hidden");
     const active = pi.getActiveTools();
     const discovery = active.includes("tool_search")
@@ -80,11 +94,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         ? [`${discovery} debug in ide_debug when creating a debugger session.`]
         : []),
     ];
-    const prompt =
-      guidance.length === 0
-        ? systemPrompt
-        : `${systemPrompt}\n\n<ide_discovery>\n${guidance.join("\n")}\n</ide_discovery>`;
-    return prompt === event.systemPrompt ? undefined : { systemPrompt: prompt };
+    options.sections.ide_discovery = guidance.join("\n");
   });
   const flags = createFeatureFlags(pi, {
     "pi-agent-ide-no-animations": config.noAnimations ?? false,
@@ -147,9 +157,46 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
       "Use the packaged skill to propose reusable rules from user review feedback. Save only after confirmation.",
     default: false,
   });
-  registerModuleSettings(pi, flags.definitions, AGENT_IDE_PREFERENCES);
+  const settings = createAgentIdeSettingsRegistry(
+    pi,
+    [
+      ...flags.definitions,
+      {
+        id: "pi-agent-ide-yolo",
+        name: "YOLO: allow all operations",
+        description:
+          "Skip existing operation confirmation dialogs unless an extension explicitly disables its YOLO setting. Safety checks and remote permissions still apply.",
+        default: false,
+        labels: { on: "on", off: "off" },
+      },
+      {
+        id: "pi-agent-ide-filesystem-yolo",
+        name: "YOLO: filesystem operations",
+        description:
+          "Skip filesystem operation confirmations. Default inherits common YOLO; Off disables persistent permission, not remembered session grants. Protected paths stay protected.",
+        default: false,
+        labels: { on: "on", off: "off" },
+      },
+    ],
+    AGENT_IDE_PREFERENCES,
+  );
+  registerOperationApproval(pi, {
+    async isAllowed(request, context) {
+      if (request.yoloSetting === undefined) return false;
+      const extension = await readAgentIdeSetting(pi.events, request.yoloSetting, context.cwd);
+      if (typeof extension.value !== "boolean")
+        throw new Error(`Operation approval needs a boolean YOLO setting: ${request.yoloSetting}`);
+      if (extension.overridden) return extension.value;
+      return (
+        (await readAgentIdeSetting(pi.events, "pi-agent-ide-yolo", context.cwd)).value === true
+      );
+    },
+  });
+  registerModuleSettings(pi, settings.flags, settings.preferences);
   registerSettingsHelp(pi);
-  connectAgentDocumentation(pi, [createIdeSettingsDocumentation(flags.definitions)]);
+  connectAgentDocumentation(pi, [
+    createIdeSettingsDocumentation(settings.flags, settings.preferences),
+  ]);
   const presetDisabled = disabledByPreset(BUILTIN_EXTENSIONS, config.preset ?? "full");
   const { enabled } = selectBuiltinExtensions(
     BUILTIN_EXTENSIONS,

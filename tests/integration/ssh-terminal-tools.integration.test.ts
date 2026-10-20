@@ -12,6 +12,7 @@ import {
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
+import { PiRun } from "pi-coding-agent-test/base";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);
@@ -110,6 +111,37 @@ test("real Pi bash selects remote cwd without mapping SSH references to local di
     expect(trace).not.toContain("Agent is already processing a prompt");
     expect(run.tuiRenderedOutput).toContain("SSH-BACKGROUND-DONE");
     expect(run.tuiRenderedOutput).not.toContain("Agent is already processing a prompt");
+    const saved = await PiRun.open(run.artifacts.run);
+    const entries = (saved.session ?? "")
+      .trim()
+      .split("\n")
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type: string;
+            customType?: string;
+            data?: {
+              parentToolCallId?: string;
+              sessions: { origin?: { toolCallId: string }; remote?: { target: string } }[];
+            };
+            display?: boolean;
+          },
+      );
+    const cards = entries.filter(
+      (entry) => entry.type === "custom" && entry.customType === "terminal-completion-display",
+    );
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.data).toMatchObject({
+      parentToolCallId: "remote-background",
+      sessions: [{ origin: { toolCallId: "remote-background" }, remote: { target: "fixture" } }],
+    });
+    expect(
+      entries
+        .filter(
+          (entry) => entry.type === "custom_message" && entry.customType === "terminal-completion",
+        )
+        .every((entry) => entry.display === false),
+    ).toBe(true);
   } finally {
     await rm(cwd, { recursive: true, force: true });
     await fixture.stop();

@@ -169,3 +169,70 @@ test("shutdown cancels pending work and prevents late delivery", async () => {
   await new Promise((resolve) => setTimeout(resolve, 30));
   expect(h.report).not.toHaveBeenCalled();
 });
+
+test.each(["findings", "incomplete", "unavailable"])(
+  "keeps the checked version's execution owner on %s notices",
+  async (kind) => {
+    const h = setup();
+    if (kind === "incomplete")
+      h.classify.mockResolvedValue({
+        ...result,
+        answers: {
+          "hidden-errors": {
+            type: "choice",
+            choice: "unknown",
+            confidence: 0.9,
+            probabilities: { unknown: 0.9, clear: 0.1, violation: 0 },
+          },
+        },
+      });
+    if (kind === "unavailable") h.classify.mockRejectedValue(new Error("Provider unavailable"));
+    const owned = { ...edit, parentToolCallId: "original-edit" };
+    h.review.schedule(owned);
+    await vi.waitFor(() => expect(h.report).toHaveBeenCalledOnce());
+    expect(h.report.mock.calls[0]?.[0]).toMatchObject({
+      kind,
+      parentToolCallId: "original-edit",
+    });
+  },
+);
+
+test("debouncing keeps the first diff baseline but the latest saved version's owner", async () => {
+  const h = setup();
+  h.review.schedule({ ...edit, parentToolCallId: "superseded-edit" });
+  h.review.schedule({ ...edit, before: edit.after, parentToolCallId: "latest-edit" });
+  await vi.waitFor(() => expect(h.report).toHaveBeenCalledOnce());
+  expect(h.classify.mock.calls[0]?.[1].state.diff).toContain("-throw error;");
+  expect(h.report.mock.calls[0]?.[0]).toMatchObject({ parentToolCallId: "latest-edit" });
+});
+
+test("an in-flight review cannot borrow the next edit's owner, even for identical saved bytes", async () => {
+  const h = setup();
+  let finish!: (value: ClassifierResult) => void;
+  h.classify.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  h.review.schedule({ ...edit, parentToolCallId: "older-edit" });
+  await vi.waitFor(() => expect(h.classify).toHaveBeenCalledOnce());
+  h.review.schedule({ ...edit, parentToolCallId: "newer-edit" });
+  finish(result);
+  await vi.waitFor(() => expect(h.report).toHaveBeenCalledOnce());
+  expect(h.report.mock.calls[0]?.[0]).toMatchObject({ parentToolCallId: "newer-edit" });
+});
+
+test("serialized multi-file notices keep distinct owners and do not invent an external owner", async () => {
+  const h = setup();
+  h.review.schedule({ ...edit, parentToolCallId: "direct-edit" });
+  h.review.schedule({ ...edit, file: "/project/nested.ts", parentToolCallId: "codemode-root" });
+  h.review.schedule({ ...edit, file: "/project/external.ts" });
+  await vi.waitFor(() => expect(h.report).toHaveBeenCalledTimes(3));
+  expect(h.report.mock.calls.map(([notice]) => notice)).toEqual([
+    expect.objectContaining({ parentToolCallId: "direct-edit" }),
+    expect.objectContaining({ parentToolCallId: "codemode-root" }),
+    expect.objectContaining({ kind: "findings" }),
+  ]);
+  expect(h.report.mock.calls[2]?.[0]).not.toHaveProperty("parentToolCallId");
+});

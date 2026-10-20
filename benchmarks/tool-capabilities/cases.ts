@@ -11,6 +11,74 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "semantic-write-receipts",
+  ["edit.semantic-write-receipt"],
+  "Use Write once each on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode catch the expected failed calls so the remaining distinct actions can run. Report unknown for the uncertain action; do not call it a failed file save.",
+  [
+    {
+      tool: "write",
+      args: { path: "fixture:semantic/applied", content: "probe" },
+      contains: "Semantic action applied",
+      excludes: "Saved file.",
+    },
+    {
+      tool: "write",
+      args: { path: "fixture:semantic/not-applied", content: "probe" },
+      error: true,
+      contains: "Semantic action not-applied",
+      excludes: "no file was written",
+    },
+    {
+      tool: "write",
+      args: { path: "fixture:semantic/unknown", content: "probe" },
+      error: true,
+      contains: "Semantic action unknown",
+      excludes: "Write outcome unknown.",
+    },
+  ],
+  {
+    setup: "semantic-write",
+    expected: {
+      ...textFile,
+      "attempts.jsonl":
+        '{"effect":"applied","content":"probe"}\n{"effect":"not-applied","content":"probe"}\n{"effect":"unknown","content":"probe"}\n',
+    },
+    answer: "unknown",
+  },
+);
+for (const viaLocalAlias of [false, true])
+  add(
+    viaLocalAlias ? "semantic-local-alias-receipts" : "semantic-script-receipts",
+    [
+      viaLocalAlias
+        ? "compose.local-alias-structured-receipt"
+        : "compose.provider-structured-receipt",
+    ],
+    (viaLocalAlias
+      ? "In native Codemode, discover and use the registered local MCP forwarding alias for Insert. Do not substitute canonical Insert; report a missing prerequisite if no alias is registered. "
+      : "In native Codemode, use Insert, preferring a matching local MCP forwarding alias when one is registered. ") +
+      'Call it once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report unknown for the uncertain action.',
+    ["applied", "not-applied", "unknown"].map((effect) => ({
+      tool: "insert",
+      args: { path: `fixture:semantic-script/${effect}`, text: "probe" },
+      error: effect !== "applied",
+      contains: `Semantic action ${effect}`,
+      parentStructuredValue: true,
+      ...(viaLocalAlias && { viaLocalAlias: true }),
+    })),
+    {
+      modes: ["codemode"],
+      setup: "semantic-write",
+      ...(viaLocalAlias && { prerequisite: 'test "${CAPABILITY_CONNECTOR_ALIASES:-0}" = 1' }),
+      expected: {
+        ...textFile,
+        "attempts.jsonl":
+          '{"effect":"applied","text":"probe"}\n{"effect":"not-applied","text":"probe"}\n{"effect":"unknown","text":"probe"}\n',
+      },
+      answer: "unknown",
+    },
+  );
+add(
   "ide-settings-catalog",
   ["read.ide-settings", "search.ide-settings"],
   "Read docs:ide-settings with limit 1000 to inspect the registered IDE settings. Find the registered ui.codemode preference. Search that exact ID in docs:ide-settings with caseSensitive true and limit 1000, then repeat the search in docs:all. Both searches must return locations under docs:ide-settings without editable Search references. Do not change configuration or fixture files.",
@@ -133,9 +201,48 @@ add(
   },
 );
 add(
+  "filesystem-yolo",
+  ["edit.approval-yolo-delete", "edit.approval-yolo-move", "compose.yolo-protected-target"],
+  "This fixture explicitly enables filesystem YOLO. Delete the tracked directory delete-tree and Move the tracked directory move-tree to moved-tree without a user UI. YOLO skips approval only: deleting .git/config must still be refused. Read moved-tree/data to confirm MOVE. In Codemode catch the protected-target refusal so the read still runs.",
+  [
+    { tool: "delete", args: { path: "delete-tree" }, contains: "delete: applied" },
+    { tool: "move", args: { path: "move-tree", target: "moved-tree" }, contains: "move: applied" },
+    {
+      tool: "delete",
+      args: { path: ".git/config" },
+      error: true,
+      contains: "DELETE_PROTECTED_TARGET",
+    },
+    { tool: "read", args: { path: "moved-tree/data" }, contains: "MOVE" },
+  ],
+  {
+    files: {
+      "delete-tree/data": "DELETE\n",
+      "move-tree/data": "MOVE\n",
+      ".pi/pi-agent-ide/extensions.json": JSON.stringify({
+        flags: { "pi-agent-ide-filesystem-yolo": true },
+      }),
+    },
+    git: true,
+    expected: {
+      "delete-tree": null,
+      "delete-tree/data": null,
+      "move-tree": null,
+      "move-tree/data": null,
+      "moved-tree/data": "MOVE\n",
+    },
+  },
+);
+add(
   "delete-policy-gates",
-  ["edit.delete-policy-refusal", "edit.delete-protected-path", "edit.delete-protected-root"],
-  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Keep all fixture bytes unchanged and report the refusal reasons.",
+  [
+    "edit.delete-policy-refusal",
+    "edit.delete-protected-path",
+    "edit.delete-protected-root",
+    "edit.approval-headless-delete",
+    "compose.approval-refusal-read",
+  ],
+  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Tracked deletion requires a host approval dialog; there is no user UI here, so it must fail closed rather than treating the prompt as permission. Then Read tracked/data and check its unchanged KEEP content. Keep all fixture bytes unchanged and report the refusal reasons. In Codemode catch each refusal so the following calls run.",
   [
     {
       tool: "delete",
@@ -151,6 +258,7 @@ add(
     },
     { tool: "delete", args: { path: "." }, error: true, contains: "DELETE_PROTECTED_TARGET" },
     { tool: "delete", args: { path: "/" }, error: true, contains: "DELETE_PROTECTED_TARGET" },
+    { tool: "read", args: { path: "tracked/data" }, contains: "KEEP" },
   ],
   { files: deleteFixture, git: true },
 );
@@ -224,8 +332,13 @@ add(
 );
 add(
   "directory-transfer-gates",
-  ["edit.transfer-refusal", "edit.move-policy-refusal"],
-  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require host approval, unavailable in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Report the refusals and leave all fixture bytes unchanged. In Codemode catch each failure so all checks run.",
+  [
+    "edit.transfer-refusal",
+    "edit.move-policy-refusal",
+    "edit.approval-headless-move",
+    "compose.approval-refusal-read",
+  ],
+  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data to check unchanged KEEP content; new-target must not exist. Report the refusals and leave all fixture bytes unchanged. In Codemode catch each failure so all checks run.",
   [
     {
       tool: "copy",
@@ -251,8 +364,14 @@ add(
       error: true,
       contains: "DELETE_PROTECTED_TARGET",
     },
+    { tool: "read", args: { path: "tracked/data" }, contains: "KEEP" },
   ],
-  { files: deleteFixture, git: true, setup: "directory-transfers" },
+  {
+    files: deleteFixture,
+    git: true,
+    setup: "directory-transfers",
+    expected: { "new-target": null },
+  },
 );
 add(
   "delete-temporary-defaults",
@@ -367,6 +486,43 @@ function add(
 }
 
 add(
+  "search-script-facts",
+  ["search.script-facts", "compose.search-script-result"],
+  "Use native Codemode to Search task.txt for regex:^ABSENT$, Search scope.ts for ast:probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
+  [
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "regex:^ABSENT$" },
+      scriptResult: { hasMatches: false, complete: true },
+    },
+    {
+      tool: "search",
+      args: { path: "scope.ts", query: "ast:probe($ARG)", limit: 1 },
+      scriptResult: { hasMatches: true, complete: false },
+    },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "regex:(" },
+      error: true,
+    },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "OLD", limit: 1000 },
+      scriptResult: { hasMatches: true, complete: true },
+    },
+    { tool: "replace", args: { text: "NEW" }, reuse: reuse(3) },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "keep\nOLD\nOLD\nlast\n", "scope.ts": "probe(first);\nprobe(second);\n" },
+    expected: {
+      "task.txt": "keep\nNEW\nNEW\nlast\n",
+      "scope.ts": "probe(first);\nprobe(second);\n",
+    },
+  },
+);
+
+add(
   "binary-copy-move",
   ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
   "Copy source.bin to copy.bin without decoding it. Report the Copy receipt. Search the unchanged Copy result for BAD and observe that it has no text selection; catch that expected rejection in Codemode. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",
@@ -416,14 +572,80 @@ add(
 
 add(
   "read-search-replace",
-  ["compose.read-search", "compose.search-replace"],
-  "Read task.txt. Pass the unchanged Read result or its UUID into search for OLD, then pass the Search result into replace to change just OLD to NEW. Do not retype a file path for the dependent calls.",
+  ["compose.read-search", "compose.search-replace", "compose.provider-reference-roundtrip"],
+  "Read task.txt. Pass the unchanged Read result or its UUID into search for OLD, then pass the Search result into replace to change just OLD to NEW. Do not retype a file path for the dependent calls. In Codemode, when the runtime offers local MCP forwarding aliases for Search or Replace, use those aliases rather than their flat source names; still pass the actual returned references.",
   [
     { tool: "read", args: { path: "task.txt" } },
     { tool: "search", args: { query: "OLD" }, reuse: reuse(0) },
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
+  "codemode-child-presentation",
+  ["compose.codemode-child-result"],
+  "In one native Codemode call, read task.txt and pass the unchanged Read result to text(). Keep the file unchanged. After the call, answer only CODEMODE-CHILD-MARKER. Do not use shell commands or substitute a standalone Read.",
+  [
+    {
+      tool: "read",
+      args: { path: "task.txt" },
+      contains: "CODEMODE-CHILD-MARKER",
+      parentContains: "CODEMODE-CHILD-MARKER",
+    },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "CODEMODE-CHILD-MARKER\n" },
+    expected: { "task.txt": "CODEMODE-CHILD-MARKER\n" },
+    answer: "CODEMODE-CHILD-MARKER",
+  },
+);
+const streamedReplacement = Array.from(
+  { length: 96 },
+  (_, index) => `STREAM-PAYLOAD-${String(index + 1).padStart(4, "0")}`,
+).join("\n");
+add(
+  "streamed-replace",
+  ["edit.large-replace-payload"],
+  `Use direct replace on task.txt with start OLD and text equal to this complete JSON string: ${JSON.stringify(streamedReplacement)}. Supply the literal text in the tool arguments, not a script, reference, abbreviation or repetition expression. Then read the first two lines of the saved file and report STREAM-PAYLOAD-0001. Keep the surrounding keep and last lines unchanged.`,
+  [
+    { tool: "replace", args: { path: "task.txt", start: "OLD", text: streamedReplacement } },
+    {
+      tool: "read",
+      args: { path: "task.txt", offset: 1, limit: 2 },
+      contains: "STREAM-PAYLOAD-0001",
+    },
+  ],
+  {
+    modes: ["direct"],
+    expected: { "task.txt": `keep\n${streamedReplacement}\nlast\n` },
+    answer: "STREAM-PAYLOAD-0001",
+  },
+);
+
+add(
+  "issued-result-edit",
+  [
+    "edit.issued-result-streaming",
+    "edit.reject-result-anchor-combination",
+    "compose.native-provider-auth",
+  ],
+  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Search the file again for NEW. Attempt Replace with that fresh Search UUID as path and start NEW; this combination must be refused with RESULT_INPUT_REJECTED, not treated as a filename. The streaming guard may stop this invalid call before its text BLOCKED arrives. Read the current file and report NEW. Keep every other byte unchanged.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "OLD" } },
+    { tool: "replace", args: { text: "NEW" }, reuse: reuse(0) },
+    { tool: "search", args: { path: "task.txt", query: "NEW" } },
+    {
+      tool: "replace",
+      args: { start: "NEW" },
+      reuse: reuse(2),
+      error: true,
+      finalContains: "RESULT_INPUT_REJECTED",
+    },
+    { tool: "read", args: { path: "task.txt" }, contains: "NEW" },
+  ],
+  { modes: ["direct"], expected: { "task.txt": "keep\nNEW\nlast\n" }, answer: "NEW" },
 );
 
 add(
@@ -992,6 +1214,36 @@ add(
 );
 
 add(
+  "write-confirmed-readback",
+  ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
+  "Write changed plus a newline once to fixture://saved-canonicalized/content. This provider stores uppercase text, so the successful result and a fresh Read must expose CHANGED rather than the submitted text. Then Write updated plus a newline once to fixture://saved-readback/content. This provider acknowledges persistence but cannot read the saved body on that resource instance. Preserve its applied effect, catch the post-write readback error in Codemode, and Read the explicit resource freshly to inspect updated. Never replay either write; report saved for the second one, not unknown delivery.",
+  [
+    {
+      tool: "write",
+      args: { path: "fixture://saved-canonicalized/content", content: "changed\n" },
+      contains: "CHANGED",
+    },
+    { tool: "read", args: { path: "fixture://saved-canonicalized/content" }, contains: "CHANGED" },
+    {
+      tool: "write",
+      args: { path: "fixture://saved-readback/content", content: "updated\n" },
+      error: true,
+      contains: "READBACK",
+      excludes: "Write outcome unknown.",
+    },
+    { tool: "read", args: { path: "fixture://saved-readback/content" }, contains: "updated" },
+  ],
+  {
+    setup: "write-effects",
+    files: { "saved.md": "before\n" },
+    expected: {
+      "saved.md": "updated\n",
+      "attempts.jsonl": '{"content":"changed\\n"}\n{"content":"updated\\n"}\n',
+    },
+    answer: "saved",
+  },
+);
+add(
   "write-unknown-effects",
   ["edit.write-failure-recovery", "compose.uncertain-write-read"],
   "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, catch the failed Write so the Read still runs. This headless case checks recovery, not the TUI failure panel.",
@@ -1051,6 +1303,31 @@ add(
   },
 );
 
+add(
+  "copy-destination-recovery",
+  ["edit.copy-destination-recovery"],
+  "Exercise Copy destination recovery in task.txt. First request the alpha-through-beta source block with targetStart set to the ambiguous text }); and observe its rejection. Then Read the current file with anchors and copy the same exact source block after INSERT_HERE, using the issued destination anchor. Keep start alpha and end beta unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
+  [
+    {
+      tool: "copy",
+      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: "});" },
+      error: true,
+      contains: "ambiguous",
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "copy",
+      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: /^\d+#[A-F\d]+$/u },
+      reuse: reuse(1, "targetStart", "anchor"),
+    },
+  ],
+  {
+    files: { "task.txt": "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n" },
+    expected: {
+      "task.txt": "alpha\nbeta\ngap\n});\nINSERT_HERE\nalpha\nbeta\n});\ntail\n",
+    },
+  },
+);
 add(
   "selection-copy-move",
   ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
@@ -1470,7 +1747,7 @@ add(
 
 add(
   "codemode-store",
-  ["codemode.store-load", "compose.cross-call"],
+  ["codemode.store-load", "compose.cross-call", "compose.provider-cross-call-reference"],
   "In one Codemode call, read task.txt and store the unchanged result. In a second Codemode call, load it and search within that result for OLD. Pass the resulting Search selection into replace to change OLD to NEW. Do not reread or retype the file path for the dependent operations.",
   [
     { tool: "read", args: { path: "task.txt" } },
@@ -1507,6 +1784,25 @@ add(
 );
 
 add(
+  "result-selector-rejection",
+  ["compose.result-selector-rejection"],
+  "Read only line 2 of task.txt. Pass that issued result unchanged to Replace together with start OLD and text BAD; the unsupported result-plus-selector combination must fail without a filename lookup. Then reuse the same issued result in a valid result-only Replace with text NEW followed by a newline. Preserve all bytes outside the original Read selection.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    {
+      tool: "replace",
+      args: { start: "OLD", text: "BAD" },
+      reuse: reuse(0),
+      error: true,
+      contains: "RESULT_INPUT_REJECTED",
+      excludes: "ENOENT",
+    },
+    { tool: "replace", args: { text: "NEW\n" }, reuse: reuse(0) },
+  ],
+  { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
   "stale-recovery",
   ["compose.stale-recovery", "read.reference-recovery"],
   "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Then read the current file and report NEW. Do not try to revive the old result.",
@@ -1520,6 +1816,8 @@ add(
 );
 
 add(
+  // This case keeps the model-facing roundtrip contract. Owner grouping and late delivery
+  // are exercised without inference in linked-terminal.integration.test.ts.
   "shell-roundtrip",
   [
     "shell.execute",
@@ -1535,7 +1833,7 @@ add(
     "process.discovery",
     "process.read",
   ],
-  "Start a Bash command that waits for one input line and then prints that line. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same live shell. Also read the completed shell using its original resource and search its retained output for hello. Attempt to replace hello through the returned terminal Read result and confirm refusal: terminal output grants no file-edit authority. Also discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
+  "Start a background Bash command that waits for one input line, prints that line and exits. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello. Then discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -1545,9 +1843,11 @@ add(
     { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello" },
     {
       tool: "replace",
-      args: { start: "hello", text: "BAD" },
+      // The streaming authority guard may stop generation before text arrives.
+      args: { start: "hello" },
       reuse: reuse(5),
       error: true,
+      contains: "no reusable text selection",
     },
     {
       tool: "search",
@@ -1663,6 +1963,40 @@ add(
 );
 
 add(
+  "debug-backend-fallback",
+  ["debug.backend-vscode-refusal", "debug.backend-native"],
+  "Discover debug and create a session for task.py with backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value. Do not change source files.",
+  [
+    {
+      tool: "debug",
+      args: { backend: "vscode", program: "task.py" },
+      error: true,
+      contains: "VS Code",
+    },
+    { tool: "debug", args: { backend: "native", adapter: "debugpy", program: "task.py" } },
+    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
+    {
+      tool: "insert",
+      args: { path: /debug:.*\/source/, text: "breakpoint" },
+      reuse: reuse(2, "anchor", "anchor"),
+    },
+    { tool: "insert", args: { text: "start" }, reuse: reuse(1, "path", "debug") },
+    {
+      tool: "insert",
+      args: { text: "evaluate value" },
+      reuse: reuse(1, "path", "debug"),
+      contains: "42",
+    },
+    { tool: "delete", reuse: reuse(1, "path", "debug") },
+  ],
+  {
+    files: { "task.py": "value = 42\nprint(value)\n" },
+    answer: "42",
+    prerequisite: "python3 -c 'import debugpy'",
+  },
+);
+
+add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
   "Use symbol search on task.ts to find count, then search that returned result with navigation references to find its usage. Read the symbol declaration and call graph. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
@@ -1743,6 +2077,20 @@ add(
     { tool: "read", args: { path: "sample.pdf" }, contains: "PDF-MARKER" },
   ],
   { files: {}, answer: "PDF-MARKER", setup: "media" },
+);
+
+add(
+  "codemode-image-value",
+  ["compose.codemode-image-value"],
+  "In one Codemode call, read sample.png and show the returned image block with image(). Report its mimeType. Do not change files.",
+  [
+    {
+      tool: "read",
+      args: { path: "sample.png" },
+      scriptResult: { type: "image", mimeType: "image/png" },
+    },
+  ],
+  { modes: ["codemode"], files: {}, answer: "image/png", setup: "media" },
 );
 
 add(

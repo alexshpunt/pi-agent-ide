@@ -304,7 +304,13 @@ export function createTextTool<TParameters extends TSchema>(
                       content: [{ type: "text", text: action.summary }],
                       details: {
                         results: [],
-                        metadata: { semanticAction: { ...action.data, source: action.source } },
+                        metadata: {
+                          semanticAction: {
+                            ...action.data,
+                            source: action.source,
+                            ...(action.script !== undefined && { script: action.script }),
+                          },
+                        },
                       },
                     };
                   } catch (error) {
@@ -363,6 +369,7 @@ export function createTextTool<TParameters extends TSchema>(
             "EXECUTION_FAILED",
             errorMessage(captured.error),
             "unknown",
+            undefined,
             undefined,
             definition.name === "copy",
           );
@@ -1496,7 +1503,14 @@ async function buildToolResult(
     const message = `${reason.replace(/[.!?]+$/u, "")}.${completed}`;
     return safe === undefined
       ? buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect)
-      : failureToolResult(source, safe.code, message, effect, outcome.failure.rollback);
+      : failureToolResult(
+          source,
+          safe.code,
+          message,
+          effect,
+          outcome.failure.rollback,
+          outcome.failure.code,
+        );
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
@@ -1509,6 +1523,9 @@ async function buildToolResult(
           semanticAction: {
             ...mutation.semanticAction.data,
             source: mutation.semanticAction.source,
+            ...(mutation.semanticAction.script !== undefined && {
+              script: mutation.semanticAction.script,
+            }),
           },
         },
       },
@@ -1699,9 +1716,14 @@ async function anchorFailureToolResult(
       results: [result],
       effect: "not-applied",
       anchorRecovery: true,
-      ...(resolution.resolverId === "exact-text" && {
-        metadata: { exactTextFailures: [contextual.source] },
-      }),
+      // A Copy destination failure must not block otherwise valid source selectors.
+      ...(resolution.resolverId === "exact-text" &&
+        !(
+          contextual.toolName === "copy" &&
+          (contextual.field === "targetStart" || contextual.field === "targetEnd")
+        ) && {
+          metadata: { exactTextFailures: [contextual.source] },
+        }),
       ...(recovery?.kind === "candidates" && {
         anchorRecoveries: [
           {
@@ -1839,6 +1861,7 @@ function failureToolResult(
   reason: string,
   effect: "not-applied" | "applied" | "unknown",
   rollback?: TextResourceEditFailure["rollback"],
+  stage?: string,
   copyExecutionFailure = false,
 ): { content: [{ type: "text"; text: string }]; details: FileMutationBatchResult } {
   const uncertain =
@@ -1866,7 +1889,7 @@ function failureToolResult(
   const result = new FileMutationResult({
     ok: false,
     path: source,
-    errors: [{ path: source, code, reason }],
+    errors: [{ path: source, code, reason, ...(stage === undefined ? {} : { stage }) }],
     ...(fileChangedStatement === undefined
       ? {}
       : {

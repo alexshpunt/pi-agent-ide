@@ -29,6 +29,10 @@ export function createSshDebuggerAccess(registry: SshBackendRegistry): DebuggerW
           throw new SshBackendError("UNSUPPORTED_SOURCE", input.program, "not-applied");
         return undefined;
       }
+      const adapter = input.adapter;
+      if (adapter === undefined) {
+        throw new Error("Select an adapter: SSH workspaces use the native debugger backend");
+      }
       const program = registry.resolve(input.program, cwd.location.source);
       const source = registry.resolve(input.source ?? input.program, cwd.location.source);
       if (
@@ -42,7 +46,7 @@ export function createSshDebuggerAccess(registry: SshBackendRegistry): DebuggerW
       if (source.location.source !== program.location.source)
         await source.backend.stat(source.location.path, { signal });
       return {
-        adapter: input.adapter,
+        adapter,
         program: program.location.source,
         sourceFile: source.location.source,
         cwd: cwd.location.source,

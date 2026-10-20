@@ -8,6 +8,7 @@ import {
   createAssistantMessageEventStream,
   type Model,
   type SimpleStreamOptions,
+  type Provider,
 } from "@earendil-works/pi-ai";
 
 import type { GuardInterception } from "./coordinator.js";
@@ -39,7 +40,7 @@ interface StreamingSubscriber {
 
 interface SharedProviderState {
   api: string;
-  readonly delegate: StreamSimple;
+  readonly originalStreamSimple: StreamSimple;
   readonly wrapper: WrappedStreamSimple;
   readonly subscribers: Set<StreamingSubscriber>;
 }
@@ -50,7 +51,7 @@ type WrappedStreamSimple = StreamSimple & { [streamingInterceptorState]?: Shared
 Install one shared stream wrapper for all interceptors using each active provider.
 */
 export function registerStreamingInterceptorProvider(
-  pi: ExtensionAPI,
+  pi: Pick<ExtensionAPI, "on" | "registerProvider" | "unregisterProvider">,
   processStreamEvent: ProcessStreamEvent,
   markStreamEventProcessed: MarkStreamEventProcessed,
   finalizeStreamInterception: FinalizeStreamInterception,
@@ -64,52 +65,36 @@ export function registerStreamingInterceptorProvider(
   };
 
   const install = (model: Model<Api> | undefined, context: ExtensionContext): void => {
-    if (!model) {
-      return;
-    }
-
+    if (!model) return;
     const provider = context.modelRegistry.getProvider(model.provider);
+    if (!provider) return;
 
-    if (!provider) {
-      return;
-    }
-
+    const register = (wrapper: WrappedStreamSimple): void => {
+      const native = context.modelRegistry.getRegisteredNativeProvider(model.provider);
+      if (native) {
+        // Registering by name removes native authentication and discovery in Pi.
+        pi.registerProvider(withStreamSimple(native, wrapper));
+      } else {
+        const config = context.modelRegistry.getRegisteredProviderConfig(model.provider);
+        pi.registerProvider(model.provider, { ...config, api: model.api, streamSimple: wrapper });
+      }
+    };
     const active = installed.get(model.provider);
-
     if (active) {
       active.subscribers.add(subscriber);
-
-      if (active.api === model.api && provider.streamSimple === active.wrapper) {
-        return;
-      }
-
+      if (active.api === model.api && provider.streamSimple === active.wrapper) return;
       active.api = model.api;
-      const config = context.modelRegistry.getRegisteredProviderConfig(model.provider);
-      pi.registerProvider(model.provider, {
-        ...config,
-        api: model.api,
-        streamSimple: active.wrapper,
-      });
+      register(active.wrapper);
       return;
     }
 
     const shared = (provider.streamSimple as WrappedStreamSimple)[streamingInterceptorState];
-
     if (shared) {
       shared.subscribers.add(subscriber);
       installed.set(model.provider, shared);
-
-      if (shared.api === model.api) {
-        return;
-      }
-
+      if (shared.api === model.api) return;
       shared.api = model.api;
-      const config = context.modelRegistry.getRegisteredProviderConfig(model.provider);
-      pi.registerProvider(model.provider, {
-        ...config,
-        api: model.api,
-        streamSimple: shared.wrapper,
-      });
+      register(shared.wrapper);
       return;
     }
 
@@ -119,18 +104,12 @@ export function registerStreamingInterceptorProvider(
       wrapStream(delegate, currentModel, context, options, subscribers);
     const state: SharedProviderState = {
       api: model.api,
-      delegate,
+      originalStreamSimple: provider.streamSimple,
       wrapper,
       subscribers,
     };
     wrapper[streamingInterceptorState] = state;
-    const config = context.modelRegistry.getRegisteredProviderConfig(model.provider);
-
-    pi.registerProvider(model.provider, {
-      ...config,
-      api: model.api,
-      streamSimple: wrapper,
-    });
+    register(wrapper);
     installed.set(model.provider, state);
   };
 
@@ -162,7 +141,15 @@ export function registerStreamingInterceptorProvider(
     for (const [provider, state] of installed) {
       state.subscribers.delete(subscriber);
 
-      if (state.subscribers.size === 0) {
+      if (state.subscribers.size !== 0) continue;
+      const registry = subscriber.context?.modelRegistry;
+      const current = registry?.getProvider(provider);
+      if (current?.streamSimple !== state.wrapper) continue;
+      const native = registry?.getRegisteredNativeProvider(provider);
+      if (native) {
+        // Restore only our stream hook, retaining later auth/catalog updates.
+        pi.registerProvider(withStreamSimple(native, state.originalStreamSimple));
+      } else {
         pi.unregisterProvider(provider);
       }
     }
@@ -170,6 +157,14 @@ export function registerStreamingInterceptorProvider(
     installed.clear();
     subscriber.context = undefined;
   });
+}
+
+/** Preserve prototype methods and non-enumerable native provider fields. */
+function withStreamSimple(provider: Provider, streamSimple: StreamSimple): Provider {
+  return Object.create(Object.getPrototypeOf(provider) as object | null, {
+    ...Object.getOwnPropertyDescriptors(provider),
+    streamSimple: { value: streamSimple, writable: true, enumerable: true, configurable: true },
+  }) as Provider;
 }
 
 function wrapStream(

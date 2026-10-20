@@ -14,6 +14,7 @@ import { observeQueuedSteering } from "#src/plugins/pi-agent-ide-terminal/src/st
 import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
 import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
 import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
+import { registerTerminalOrigins } from "#src/plugins/pi-agent-ide-terminal/src/origin.js";
 import { toolPresentation } from "#src/composite/presentation.js";
 import type { BuiltinExtensionContext } from "#src/composite/selection.js";
 import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
@@ -57,6 +58,7 @@ export default async function registerTerminal(
     ui,
     toolPresentation(context?.preferences["ui.terminal"]),
     targets,
+    registerTerminalOrigins(pi),
   );
 
   let removeSteeringObserver = (): void => {};

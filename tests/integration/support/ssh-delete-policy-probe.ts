@@ -26,7 +26,9 @@ export default function (pi: ExtensionAPI) {
     },
   });
   pi.on("tool_call", (_event, ctx) => {
-    ctx.ui.confirm = async (_title, message) => {
+    ctx.ui.select = async (title) => {
+      // Shared approval puts the request message between its title and the scope line.
+      const message = title.slice(title.indexOf("\n") + 1, title.lastIndexOf("\nScope: "));
       const approved = message.includes("tracked-yes") || message.includes("tracked-race");
       await appendFile(
         path.join(ctx.cwd, "dialog-decisions.jsonl"),
@@ -51,7 +53,7 @@ export default function (pi: ExtensionAPI) {
         );
         if (result.exitCode !== 0) throw Error("Unable to replace fixture deletion target");
       }
-      return approved;
+      return approved ? "Allow once" : "Deny";
     };
   });
 }

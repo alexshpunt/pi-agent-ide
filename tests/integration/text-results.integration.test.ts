@@ -64,24 +64,24 @@ test("view warnings stay outside source selections and remain visible in native 
       String.raw`
 const warning = await tools.read({path:"note.txt",views:["anchors","ghost"]});
 if(typeof warning !== "string" || !warning.includes("ghost") || !warning.includes("|beta")) throw new Error(warning);
-const outside = await tools.search({path:warning,query:"ghost"});
+const outside = await tools.search({path:warning,query:"ghost"}).then(value => value.result);
 if(!outside.includes("No matches found")) throw new Error(outside);
 store("readViewWarning",warning);
 const image = await tools.read({path:"pixel.png",views:["anchors"]});
-if(!image.includes("anchors")) throw new Error(image);
+if(image.type !== "image" || !image.note.includes("anchors")) throw new Error(JSON.stringify(image).slice(0, 300));
 text("View warnings verified");
 `,
       String.raw`
 const saved = load("readViewWarning");
-const beta = await tools.search({path:saved,query:"beta"});
+const beta = await tools.search({path:saved,query:"beta"}).then(value => value.result);
 await tools.replace({path:beta,text:"BETA"});
 const unknown = await tools.read({path:"pixel.png",views:["ghost"]});
-if(!unknown.includes("ghost")) throw new Error(unknown);
+if(unknown.type !== "image" || !unknown.note.includes("ghost")) throw new Error(JSON.stringify(unknown).slice(0, 300));
 text("Unknown image view preserved");
 `,
       String.raw`
 const valid = await tools.read({path:"pixel.png",views:["image"]});
-if(valid.includes("View not applied") || valid.includes("Unknown view")) throw new Error(valid);
+if(valid.type !== "image" || valid.note.includes("View not applied") || valid.note.includes("Unknown view")) throw new Error(JSON.stringify(valid).slice(0, 300));
 text("Native image view remains valid");
 `,
       `await tools.read({path:"note.txt",views:["ghost"]});
@@ -187,7 +187,7 @@ test("Codemode prints file text and composes Read, Search, Select and pending mu
 const shown = await tools.read({path:"note.txt"});
 if (typeof shown !== "string" || !shown.endsWith("alpha\\nbeta\\ngamma\\n")) throw Error("Read did not return file text");
 text(shown);
-const found = await tools.search({path:shown, query:"beta"});
+const found = await tools.search({path:shown, query:"beta"}).then(value => value.result);
 const selected = await tools.select({path:found, operation:{kind:"trim",side:"both"}});
 const accepted = await tools.replace({path:selected, text:"BETA"});
 const after = await tools.read({path:accepted});
@@ -222,7 +222,7 @@ for (const [result, notice] of [
   if (notice !== undefined ? shown !== notice : !/\b10\b/u.test(shown) || !/\b3\b/u.test(shown))
     throw Error("Missing empty-read data: "+result);
   text(result);
-  const found = await tools.search({path:result,query:"regex:Empty|No lines|Offset|alpha"});
+  const found = await tools.search({path:result,query:"regex:Empty|No lines|Offset|alpha"}).then(value => value.result);
   if (!found.includes("No matches found")) throw Error("Empty selection searched a notice or neighboring text: "+found);
 }
 await tools.replace({path:zero,text:"BAD"});
@@ -230,7 +230,7 @@ store("emptyWindow",pastEnd);
 `,
       String.raw`
 const saved = load("emptyWindow");
-const found = await tools.search({path:saved,query:"alpha"});
+const found = await tools.search({path:saved,query:"alpha"}).then(value => value.result);
 if (!found.includes("No matches found")) throw Error("Stored empty selection widened to the source");
 let emptyReadRejected = false;
 try { await tools.read({path:saved}); } catch (error) { emptyReadRejected = String(error).includes("Empty result target set"); }
@@ -278,7 +278,7 @@ for (const [result, query] of [
   [narrower,"regex:beta|gamma|more line|offset="],
   [await tools.read({path:window,offset:3}),"gamma"],
 ]) {
-  const found = await tools.search({path:result,query});
+  const found = await tools.search({path:result,query}).then(value => value.result);
   if (!found.includes("No matches found")) throw Error("Context or notice widened source authority: "+found);
 }
 const zero = await tools.read({path:window,limit:0});
@@ -286,7 +286,7 @@ if (!zero.endsWith("[No lines selected: limit=0.]")) throw Error("Empty result r
 store("window",narrower);
 `,
       String.raw`
-const found = await tools.search({path:load("window"),query:"beta"});
+const found = await tools.search({path:load("window"),query:"beta"}).then(value => value.result);
 if (!found.includes("No matches found")) throw Error("Stored narrowed result widened");
 text(found);
 `,
@@ -328,7 +328,7 @@ for (const prefix of ["line", "byte"]) {
   for (const side of ["left","right"])
     if (!retry.includes("|"+side+" 10 ")) throw Error("Recovery lost source or anchor view: "+side);
   if (retry.includes("Output truncated:")) throw Error("Smaller retry remained capped");
-  const outside = await tools.search({path:retry,query:"regex:left 11|right 11|Output truncated"});
+  const outside = await tools.search({path:retry,query:"regex:left 11|right 11|Output truncated"}).then(value => value.result);
   if (!outside.includes("No matches found")) throw Error("Recovery widened its ten-line windows");
   store(prefix+"-cap", capped);
 }
@@ -378,9 +378,9 @@ await followText(await tools.read({path:"lines.txt#"+anchor}),2005,"row 2005\n")
 await followText(await tools.read({path:"bytes.txt"}),51,"row 51 ");
 await followText(await tools.read({path:"counts.txt",views:["jq:range(1; .count + 1)"]}),2001,"2001\n",["jq:range(1; .count + 1)"]);
 const context = await tools.read({path:limited,offset:2001});
-const outside = await tools.search({path:context,query:"regex:row 2011|Showing lines|offset="});
+const outside = await tools.search({path:context,query:"regex:row 2011|Showing lines|offset="}).then(value => value.result);
 if (!outside.includes("No matches found")) throw Error("Cap or continuation widened the requested selection");
-const inside = await tools.search({path:context,query:"regex:row 2010$"});
+const inside = await tools.search({path:context,query:"regex:row 2010$"}).then(value => value.result);
 if (!inside.includes("row 2010")) throw Error("Valid continuation selection was lost");
 const raw = await tools.read({path:"raw:bytes.txt"});
 const action = /\[Output limited\. Read ("(?:[^"\\]|\\.)*") with offset=(\d+) to continue\.\]$/.exec(raw);
@@ -392,7 +392,7 @@ text(raw.split("\n").at(-1));
 store("limited",limited);
 `,
       String.raw`
-const found = await tools.search({path:load("limited"),query:"regex:row 2011$"});
+const found = await tools.search({path:load("limited"),query:"regex:row 2011$"}).then(value => value.result);
 if (!found.includes("No matches found")) throw Error("Stored cap widened the requested range");
 text(found);
 `,
@@ -410,7 +410,7 @@ test("pending result strings confirm at dependent boundaries without invalidatin
 const first=await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
 const second=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 const shown=await tools.read({path:first});
-const found=await tools.search({path:second,query:"BETA"});
+const found=await tools.search({path:second,query:"BETA"}).then(value => value.result);
 if(!shown.includes("ALPHA")||!found.includes("BETA")) throw Error("A peer result expired at the common commit");
 text(shown); text(found);
 `,
@@ -426,7 +426,7 @@ test("store/load retains text and UUID composition until the file snapshot chang
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "text-result-store", [
       `store("source", await tools.read({path:"note.txt"}));`,
-      `const source=load("source"); const uuid=/<uuid>([^<]+)<\\/uuid>/.exec(source)[1]; const found=await tools.search({path:uuid,query:"beta"}); text(await tools.replace({path:found,text:"BETA"}));`,
+      `const source=load("source"); const uuid=/<uuid>([^<]+)<\\/uuid>/.exec(source)[1]; const found=await tools.search({path:uuid,query:"beta"}).then(value => value.result); text(await tools.replace({path:found,text:"BETA"}));`,
       `let rejected=false; try { await tools.search({path:load("source"),query:"alpha"}); } catch(error) { rejected=String(error).includes("expired"); } if(!rejected) throw Error("Stored old result survived a write"); text("Old result rejected");`,
     ]);
     for (let i = 0; i < 3; i++)
@@ -521,7 +521,7 @@ test("a registered Search selection restores exact-text editing after a selector
       String.raw`
 let failed=false; try { await tools.replace({path:"note.txt",start:"missing",text:"BAD"}); } catch { failed=true; }
 if(!failed) throw Error("Expected exact-text failure");
-const found=await tools.search({path:"note.txt",query:"beta"});
+const found=await tools.search({path:"note.txt",query:"beta"}).then(value => value.result);
 await tools.replace({path:found,text:"BETA"});
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
 `,
