@@ -79,6 +79,11 @@ The background message names the file, snapshot, provider/model, rule and inspec
 Expand it to read the evidence. Findings can wake an idle agent, like ordinary diagnostics.
 Unavailable and insufficient-context notices do not start a new turn by themselves.
 
+In fullscreen Activity, delayed feedback appears beside the edit that saved the checked
+version, including the outer Codemode call for nested edits. It is not repeated in
+Conversation. A newer edit cannot take ownership of an older review; superseded work
+is discarded. Feedback without a recorded tool owner keeps the ordinary message fallback.
+
 No generated explanation is attributed to Jev. No findings does not mean the code passed
 a complete review. Provider failures never undo edits or suppress regular diagnostics.
 

@@ -111,6 +111,8 @@ The current `ui.codemode` setting is an Off/On switch for extra IDE result panel
 
 Late diagnostic ownership is UI metadata, not a new model operation. The existing diagnostic-read, write/read and parallel-edit cases still cover the unchanged tools and model results. Revision-bound ownership, deferred completion and native presentation are checked by the focused linked-diagnostics integration case, not by a new paid route.
 
+Advisory-review ownership is also display metadata. The matrix and write/read and parallel-edit cases retain their existing model-operation contracts; no new paid operation is introduced. Focused reviewer and real-Pi linked-review cases cover saved-version ownership, direct and nested calls, and unchanged full review delivery. Stereo Rows/Columns checks require `PI_AGENT_IDE_TEST_STEREO_EXTENSION` to point to an unchanged consumer extension; without it those cases are skipped, not verified.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
