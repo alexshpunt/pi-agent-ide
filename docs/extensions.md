@@ -2,7 +2,19 @@
 
 Pi Agent IDE is designed to accept behavior from independent Pi extensions. You do not need to fork the umbrella package or add your extension to its built-in registry.
 
-When its target core is enabled, an external extension can load before or after Pi Agent IDE. The connection helpers handle both orders through Pi's shared event bus.
+When its target core is enabled, an external extension using the connection helpers can load before or after Pi Agent IDE. The helpers handle both orders through Pi's shared event bus. Provider connectors that register local MCP aliases have a separate load-order requirement below.
+
+## Provider connectors and local MCP aliases
+
+The connection helpers support either load order. A provider connector that registers local MCP aliases for IDE tools is different: load Pi Agent IDE before that connector. Pi keeps the first extension's executable definition for each name. Loading the connector first can lose structured values returned to Codemode, even when the terminal panel looks correct.
+
+Agent IDE recognizes an unnamespaced `mcp__*` tool as a local forwarding alias when its description and schema match exactly one visible IDE tool. Do not use that same metadata for a wrapper with different behavior: conflicting local extensions are the user's responsibility. Agent IDE does not keep a package allowlist and does not take over tools owned by a foreign MCP namespace.
+
+For a matching alias, Agent IDE uses the native renderer and forwards execution to the original tool. Returned references, structured provider receipts and error outcomes keep their native contracts. A direct alias does not add a duplicate child panel.
+
+Streaming edit guards preserve a connector's native provider registration, including OAuth and model discovery. When the guard is removed, it restores its transport hook without deleting that provider or replacing another extension's later transport.
+
+A connector still owns authentication and model transport. Keeping Pi tools working does not add Claude Code's own tools or guarantee subscription billing. Test connectors one at a time; do not stack request patchers. See the [capability runner](../benchmarks/tool-capabilities/README.md) for isolated verification.
 
 ## Choose a protocol
 

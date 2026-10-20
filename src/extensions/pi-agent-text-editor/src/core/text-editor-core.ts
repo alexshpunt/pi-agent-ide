@@ -25,6 +25,7 @@ import {
   type Resource,
   type ResourceResolver,
   type ResourceResolverContext,
+  type ResultTargetStore,
 } from "pi-agent-resource";
 import {
   createTextDocument,
@@ -443,11 +444,13 @@ export interface TextEditorCore {
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
 }
 
+/** Share issued-result authority with streamed anchor inspection, before tool-call normalization. */
 export function createTextEditorCore(
   registerMutationTool?: (
     registration: AnyTextMutationToolRegistration,
     core: TextEditorCore,
   ) => void,
+  resultTargets?: ResultTargetStore,
 ): TextEditorCore {
   const projectConfig = loadTextEditorConfig(process.cwd());
   const resolvers: RegisteredResolver[] = [];
@@ -785,7 +788,7 @@ export function createTextEditorCore(
       return toolRenderers.get(tool);
     },
     inspectTextAnchors(request): Promise<TextAnchorInspectionOutcome> {
-      return inspectTextResource(request, [...resolvers], anchorRegistry.snapshot());
+      return inspectTextResource(request, [...resolvers], anchorRegistry.snapshot(), resultTargets);
     },
     resolveTextAnchorResources(value, kinds, context): Promise<readonly TextTarget[] | undefined> {
       return anchorRegistry.snapshot().resolveResources(value, context, new Set(kinds));
@@ -994,7 +997,7 @@ export function createTextEditorCore(
       const contributions = createPluginContributionController(
         plugin.id,
         registerContributions,
-        (request) => inspectTextResource(request, [...resolvers], anchorRegistry.snapshot()),
+        (request) => core.inspectTextAnchors(request),
         (listener) => core.onMutationTool(listener),
         (listener) => core.onDidEdit(listener),
         (request) => previewTextMutation(core, request),
@@ -1111,7 +1114,35 @@ async function inspectTextResource(
   request: TextAnchorInspectionRequest,
   resolvers: readonly RegisteredResolver[],
   anchors: TextAnchorRegistrySnapshot,
+  resultTargets?: ResultTargetStore,
 ): Promise<TextAnchorInspectionOutcome> {
+  if (resultTargets !== undefined) {
+    try {
+      const source = resultTargets.source(request.source, request.cwd);
+      if (Array.isArray(source) || (typeof source === "string" && source.startsWith("RESULT#"))) {
+        const selected = resultTargets.resolve(source, request.cwd);
+        if (!selected.complete)
+          return { kind: "failed", reason: "Incomplete result selections cannot authorize edits." };
+        await resultTargets.verify(selected, request.signal);
+        for (const target of selected.targets) {
+          const inspected = await inspectTextResource(
+            { ...request, source: target.source },
+            resolvers,
+            anchors,
+          );
+          if (inspected.kind !== "valid") return inspected;
+        }
+        return { kind: "valid" };
+      }
+    } catch (error) {
+      request.signal?.throwIfAborted();
+      return {
+        kind: "failed",
+        reason: error instanceof Error ? error.message : String(error),
+        cause: error,
+      };
+    }
+  }
   const context: ResourceResolverContext = {
     cwd: request.cwd,
     ...(request.signal !== undefined && { signal: request.signal }),

@@ -37,6 +37,8 @@ function display() {
       };
     },
     registerTool: () => {},
+    registerToolRenderer: () => {},
+    getAllTools: () => [],
     registerEntryRenderer: () => {},
     appendEntry: (_name, data) => {
       saved = data as SavedGroup;

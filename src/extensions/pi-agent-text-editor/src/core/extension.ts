@@ -64,7 +64,7 @@ export default async function registerTextEditorCore(
         pi.events,
       ),
     );
-  });
+  }, resultTargets);
   registerTextEditOrigins(pi, core);
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
   core.onDidEdit((completion) => {
