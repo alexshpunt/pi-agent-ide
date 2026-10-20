@@ -24,6 +24,9 @@ const MAX_OUTPUT_CHARS = 1_000_000;
 const DEFAULT_COLS = 100;
 const DEFAULT_ROWS = 30;
 const STOP_GRACE_MS = 2_000;
+// Finished sessions keep their output and virtual screen in memory. Bound how many stay so a
+// long-lived Pi process does not grow with every command it has ever run.
+const MAX_FINISHED_SESSIONS = 50;
 
 type SessionListener = (session: TerminalSession) => void;
 
@@ -608,6 +611,23 @@ export class TerminalSessionManager {
 
   #emitCompleted(session: TerminalSession): void {
     for (const listener of this.#completionListeners) listener(session);
+    this.#evictFinishedSessions();
+  }
+
+  /**
+   * Forget the oldest finished sessions beyond the retention bound. Their full-output logs stay
+   * on disk; background sessions whose completion was not delivered yet are kept.
+   */
+  #evictFinishedSessions(): void {
+    const finished = [...this.#sessions.values()]
+      .filter((session) => isTerminalStatus(session.status))
+      .sort((left, right) => (right.endedAt ?? 0) - (left.endedAt ?? 0));
+    for (const session of finished.slice(MAX_FINISHED_SESSIONS)) {
+      if (session.background && !session.completionDelivered) continue;
+      session.screen.dispose();
+      this.#closeOutputLog(session.id);
+      this.#sessions.delete(session.id);
+    }
   }
 }
 
