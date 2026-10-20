@@ -289,6 +289,82 @@ test("defaultTools + activates a deferred tool but later deactivation is respect
   expect(snapshot(result, "after").callable).toContain("debug");
 });
 
+test("resume keeps discovered tools and applies CLI tool selections and exclusions", async () => {
+  const recorded = await runCase("ide-resume-recording", [
+    call("discover", "tool_search", { query: "ide_debug debug", limit: 1 }),
+    call("snapshot", "ide_exposure_probe"),
+  ]);
+  expect(snapshot(recorded).active).toContain("debug");
+  const transcript = requiredValue((await PiRun.open(recorded.artifacts.directory)).session);
+  const resume = async (tools?: string[], settings: Record<string, unknown> = {}) => {
+    const cwd = await mkdtemp(path.join(root, "resume-"));
+    const agentDir = path.join(cwd, "agent");
+    const previousCwd = process.cwd();
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    let session: AgentSession | undefined;
+    try {
+      await mkdir(agentDir);
+      await writeFile(path.join(agentDir, "settings.json"), JSON.stringify(settings));
+      await writeFile(path.join(cwd, "recorded.jsonl"), transcript);
+      process.chdir(cwd);
+      process.env.PI_CODING_AGENT_DIR = agentDir;
+      const settingsManager = SettingsManager.create(cwd, agentDir);
+      const loader = new DefaultResourceLoader({
+        cwd,
+        agentDir,
+        settingsManager,
+        noExtensions: true,
+        noSkills: true,
+        noContextFiles: true,
+        additionalExtensionPaths: [entry],
+        extensionFactories: [createCodemodeExtension(), createToolSearchExtension()],
+      });
+      await loader.reload();
+      session = (
+        await createAgentSession({
+          cwd,
+          agentDir,
+          settingsManager,
+          resourceLoader: loader,
+          sessionManager: SessionManager.open(path.join(cwd, "recorded.jsonl"), cwd, cwd),
+          ...(tools === undefined ? {} : { tools }),
+        })
+      ).session;
+      await session.bindExtensions({
+        onError: (error) => {
+          throw new Error(error.error);
+        },
+      });
+      return { active: session.getActiveToolNames(), callable: session.getCallableToolNames() };
+    } finally {
+      session?.dispose();
+      process.chdir(previousCwd);
+      if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      await rm(cwd, { recursive: true, force: true });
+    }
+  };
+
+  // A discovered deferred tool stays active without rediscovery.
+  const plain = await resume();
+  expect(plain.active).toEqual(expect.arrayContaining(["debug", "tool_search"]));
+  // A relative removal changes the restored declarations, even when settings request the tool.
+  const removed = await resume(["-debug"], { defaultTools: ["+debug"] });
+  expect(removed.active).not.toContain("debug");
+  expect(removed.callable).toContain("debug");
+  // A relative addition extends the restored set.
+  const added = await resume(["+unstage"]);
+  expect(added.active).toEqual(expect.arrayContaining(["debug", "unstage"]));
+  // An explicit allowlist replaces the restored set.
+  const allowed = await resume(["read", "tool_search"]);
+  expect(allowed.active).not.toContain("debug");
+  expect(allowed.callable).not.toContain("debug");
+  // Settings exclusions are not reactivated by the restored transcript.
+  const excluded = await resume(undefined, { defaultTools: ["-debug"] });
+  expect(excluded.active).not.toContain("debug");
+  expect(excluded.callable).not.toContain("debug");
+}, 180_000);
+
 test("discovered activation follows the resumed branch and exclusions survive reload", async () => {
   const recorded = await runCase("ide-lifecycle-recording", [
     call("before", "ide_exposure_probe"),
