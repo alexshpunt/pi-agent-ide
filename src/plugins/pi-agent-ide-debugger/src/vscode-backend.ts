@@ -14,6 +14,14 @@ export function debugMcpPort(env: NodeJS.ProcessEnv = process.env): number {
 const STALE_REGISTRATION_MS = 60_000;
 /** Wait for the next stop as long as the native backend does. */
 const STOP_WAIT_SECONDS = 30;
+/** Bound a launch that VS Code never starts; DebugMCP itself waits 180 s. */
+const START_TIMEOUT_MS = 60_000;
+/** Binaries that DebugMCP cannot map to a debugger from their extension. */
+const EXECUTABLE_EXTENSIONS = new Set([".exe", ".out", ".bin", ".elf", ".so", ".dll", ".dylib"]);
+
+function isExecutable(program: string): boolean {
+  return EXECUTABLE_EXTENSIONS.has(path.extname(program).toLowerCase());
+}
 
 /** A running VS Code window that advertises DebugMCP for its workspace folders. */
 export interface VscodeWindow {
@@ -181,16 +189,39 @@ export class VscodeDebugSession {
 
   /** Launch the program in VS Code and return the state it reached. */
   async start(launch: VscodeLaunch, signal?: AbortSignal): Promise<VscodeDebugState> {
-    await this.#call(
-      "start_debugging",
-      {
-        fileFullPath: launch.program,
-        workingDirectory: launch.cwd,
-        ...(launch.configuration === undefined ? {} : { configurationName: launch.configuration }),
-        ...(launch.test === undefined ? {} : { testName: launch.test }),
-      },
-      signal,
-    );
+    if (
+      launch.configuration === undefined &&
+      launch.test === undefined &&
+      isExecutable(launch.program)
+    ) {
+      // DebugMCP derives the debugger from a source extension and launches unknown files as Python.
+      throw new Error(
+        `VS Code cannot choose a debugger for the executable ${path.basename(launch.program)}. Add a .vscode/launch.json configuration for it (for example "cppvsdbg" or "cppdbg") and pass its name as configuration.`,
+      );
+    }
+    const startup = AbortSignal.timeout(START_TIMEOUT_MS);
+    try {
+      await this.#call(
+        "start_debugging",
+        {
+          fileFullPath: launch.program,
+          workingDirectory: launch.cwd,
+          ...(launch.configuration === undefined
+            ? {}
+            : { configurationName: launch.configuration }),
+          ...(launch.test === undefined ? {} : { testName: launch.test }),
+        },
+        signal === undefined ? startup : AbortSignal.any([signal, startup]),
+      );
+    } catch (error) {
+      if (!startup.aborted || signal?.aborted === true) throw error;
+      // Stop a session VS Code may still bring up, so a retry finds the window idle.
+      await this.#call("stop_debugging", {}).catch(() => {});
+      throw new Error(
+        `VS Code did not start the debug session within ${START_TIMEOUT_MS / 1_000} s. Check that the VS Code window has the debugger extension for this configuration and that no prompt is waiting in VS Code.`,
+        { cause: error },
+      );
+    }
     const state = await this.status(0, signal);
     this.#configurationName = state.configurationName;
     return state;
@@ -334,10 +365,20 @@ function processAlive(pid: number): boolean {
   }
 }
 
-function isInside(target: string, folder: string): boolean {
-  const base = path.resolve(folder);
-  const resolved = path.resolve(target);
-  return resolved === base || resolved.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+/** Compare paths with the host's case rules: VS Code registers `c:\…` while callers pass `C:\…`. */
+export function isInside(
+  target: string,
+  folder: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const paths = platform === "win32" ? path.win32 : path.posix;
+  const fold = (value: string) =>
+    platform === "win32" ? paths.resolve(value).toLowerCase() : paths.resolve(value);
+  const base = fold(folder);
+  const resolved = fold(target);
+  return (
+    resolved === base || resolved.startsWith(base.endsWith(paths.sep) ? base : base + paths.sep)
+  );
 }
 
 function debugState(raw: Readonly<Record<string, unknown>>): VscodeDebugState {
