@@ -17,10 +17,14 @@ afterEach(async () => {
 interface FakeSession {
   readonly configurationName: string;
   line: number;
+  name: string;
 }
 
-/** DebugMCP stand-in that answers with the extension's text formats over SSE. */
-async function fakeDebugMcp(workspace: string, activeSession?: FakeSession) {
+/**
+ * DebugMCP stand-in that answers with the extension's text formats over SSE. A remote window
+ * reports frames as `name:line` stack entries without a file, as VS Code Remote does.
+ */
+async function fakeDebugMcp(workspace: string, activeSession?: FakeSession, remote = false) {
   const program = path.join(workspace, "task.py");
   const state = {
     breakpoints: [] as { file: string; line: number }[],
@@ -48,11 +52,14 @@ async function fakeDebugMcp(workspace: string, activeSession?: FakeSession) {
             .join("\n")}\n`,
     start_debugging: () => {
       const line = Math.min(...state.breakpoints.map((breakpoint) => breakpoint.line));
-      state.session = { configurationName: "Python: Current File", line };
+      state.session = { configurationName: "Python: Current File", line, name: "total" };
       return `Debug session stopped at breakpoint for: ${program}. Current state: {}`;
     },
     step_over: () => {
-      if (state.session !== undefined) state.session.line++;
+      if (state.session !== undefined) {
+        state.session.line++;
+        if (state.session.line > 2) state.session.name = "<module>";
+      }
       return "{}";
     },
     get_debug_status: () =>
@@ -65,11 +72,12 @@ async function fakeDebugMcp(workspace: string, activeSession?: FakeSession) {
               sessionActive: true,
               configurationName: state.session.configurationName,
               state: {
-                fileFullPath: program,
-                currentLine: state.session.line,
+                fileFullPath: remote ? null : program,
+                currentLine: remote ? null : state.session.line,
+                stackTrace: [`${state.session.name}:${state.session.line}`],
                 frameId: 7,
                 threadId: 3,
-                frameName: "<module>",
+                frameName: state.session.name,
               },
             },
       ),
@@ -185,9 +193,32 @@ test("debugs through VS Code and leaves the user's breakpoint in place", async (
   expect(state.session).toBeUndefined();
 });
 
+test("infers frame files that a remote VS Code window does not report", async () => {
+  const { workspace } = await vscodeWorkspace();
+  const { program } = await fakeDebugMcp(workspace, undefined, true);
+  const vscode = await VscodeDebugSession.open({ cwd: workspace, program, sourceFile: program });
+  const manager = new DebugSessionManager();
+  const session = manager.create(
+    { adapter: "vscode", program, sourceFile: program, args: [], cwd: workspace },
+    vscode,
+  );
+  await manager.addBreakpoint(`${session.source}/source`, 1);
+
+  await manager.start(session);
+  expect(session.stop?.frame).toMatchObject({ name: "total", line: 1, source: { path: program } });
+  expect(session.stop?.reason).toBe("breakpoint");
+  await manager.command(session, "next");
+  expect(session.stop?.frame).toMatchObject({ name: "total", line: 2, source: { path: program } });
+  await manager.command(session, "next");
+  expect(session.stop?.frame).toEqual({ id: 7, name: "<module>", line: 3 });
+  await expect(manager.evaluate(session, "value")).resolves.toMatchObject({ result: "42" });
+
+  await manager.delete(session.source);
+});
+
 test("refuses a VS Code window whose debug session Pi did not start", async () => {
   const { workspace } = await vscodeWorkspace();
-  const userSession = { configurationName: "User launch", line: 1 };
+  const userSession = { configurationName: "User launch", line: 1, name: "<module>" };
   const { program, state } = await fakeDebugMcp(workspace, userSession);
 
   await expect(
