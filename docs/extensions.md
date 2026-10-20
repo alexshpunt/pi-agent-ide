@@ -14,7 +14,7 @@ For a matching alias, Agent IDE uses the native renderer and forwards execution 
 
 Streaming edit guards preserve a connector's native provider registration, including OAuth and model discovery. When the guard is removed, it restores its transport hook without deleting that provider or replacing another extension's later transport.
 
-A connector still owns authentication and model transport. Keeping Pi tools working does not add Claude Code's own tools or guarantee subscription billing. Test connectors one at a time; do not stack request patchers. See the [capability runner](../benchmarks/tool-capabilities/README.md) for isolated verification.
+A connector still owns authentication and model transport. Keeping Pi tools working does not add Claude Code's own tools or guarantee subscription billing. Test connectors one at a time; do not stack request patchers. See the [capability runner](https://github.com/alexshpunt/pi-agent-ide/blob/main/benchmarks/tool-capabilities/README.md) for isolated verification.
 
 ## Choose a protocol
 
@@ -100,11 +100,7 @@ Read saved effective configuration through the host rather than duplicating stor
 ```ts
 import { readAgentIdeSetting } from "pi-agent-ide/api/settings";
 
-const { value, overridden } = await readAgentIdeSetting(
-  pi.events,
-  "my-extension.detail",
-  ctx.cwd,
-);
+const { value, overridden } = await readAgentIdeSetting(pi.events, "my-extension.detail", ctx.cwd);
 ```
 
 `value` is a boolean or string. `overridden` means either scope saved an explicit value, including `false`; otherwise `value` is the registered default. The read does not include invocation-only CLI flags or claim live runtime state. A missing settings service, unknown ID or invalid saved configuration throws. Do not turn these errors into permission to mutate.
