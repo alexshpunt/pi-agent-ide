@@ -1961,6 +1961,40 @@ add(
 );
 
 add(
+  "debug-backend-fallback",
+  ["debug.backend-vscode-refusal", "debug.backend-native"],
+  "Discover debug and create a session for task.py with backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value. Do not change source files.",
+  [
+    {
+      tool: "debug",
+      args: { backend: "vscode", program: "task.py" },
+      error: true,
+      contains: "VS Code",
+    },
+    { tool: "debug", args: { backend: "native", adapter: "debugpy", program: "task.py" } },
+    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
+    {
+      tool: "insert",
+      args: { path: /debug:.*\/source/, text: "breakpoint" },
+      reuse: reuse(2, "anchor", "anchor"),
+    },
+    { tool: "insert", args: { text: "start" }, reuse: reuse(1, "path", "debug") },
+    {
+      tool: "insert",
+      args: { text: "evaluate value" },
+      reuse: reuse(1, "path", "debug"),
+      contains: "42",
+    },
+    { tool: "delete", reuse: reuse(1, "path", "debug") },
+  ],
+  {
+    files: { "task.py": "value = 42\nprint(value)\n" },
+    answer: "42",
+    prerequisite: "python3 -c 'import debugpy'",
+  },
+);
+
+add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
   "Use symbol search on task.ts to find count, then search that returned result with navigation references to find its usage. Read the symbol declaration and call graph. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",

@@ -65,28 +65,14 @@ import {
 import { debuggerProcessProvider } from "#src/plugins/pi-agent-ide-debugger/src/process-provider.js";
 import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
 import type { DebugWorkspaceOwnerResolver } from "./src/workspace-owner.js";
+import { VscodeDebugSession } from "./src/vscode-backend.js";
 
 interface DebugToolDetails {
   readonly source?: string;
   readonly sourceResource?: string;
   readonly breakpointsResource?: string;
-  readonly adapter:
-    | "dart"
-    | "debugpy"
-    | "delve"
-    | "java"
-    | "elixir"
-    | "julia"
-    | "kotlin"
-    | "lldb-dap"
-    | "lua"
-    | "netcoredbg"
-    | "node"
-    | "php"
-    | "powershell"
-    | "r"
-    | "ruby"
-    | "shell";
+  /** Native adapter, `vscode`, or the requested backend when creation failed. */
+  readonly adapter: string;
   readonly program: string;
   readonly sourceFile?: string;
   readonly cwd: string;
@@ -106,29 +92,37 @@ import {
 
 const debugParameters = Type.Object(
   {
-    adapter: StringEnum(
-      [
-        "dart",
-        "debugpy",
-        "delve",
-        "java",
-        "elixir",
-        "julia",
-        "kotlin",
-        "lldb-dap",
-        "lua",
-        "netcoredbg",
-        "node",
-        "php",
-        "powershell",
-        "r",
-        "ruby",
-        "shell",
-      ] as const,
-      {
+    backend: Type.Optional(
+      StringEnum(["auto", "vscode", "native"] as const, {
         description:
-          "Select an installed DAP adapter for Dart, Python, Go, Java, Elixir, Julia, Kotlin, C, C++, Rust, Swift, Zig, Lua, C#, JavaScript, TypeScript, PHP, PowerShell, R, Ruby, or shell scripts.",
-      },
+          "Select the debugger backend. auto (default) debugs through VS Code when the local program is inside a workspace open in VS Code with the DebugMCP extension, that window has no active debug session, and args and mainClass are omitted; otherwise it uses the native adapter. vscode fails with the unmet condition instead of falling back. native always launches the selected adapter.",
+      }),
+    ),
+    adapter: Type.Optional(
+      StringEnum(
+        [
+          "dart",
+          "debugpy",
+          "delve",
+          "java",
+          "elixir",
+          "julia",
+          "kotlin",
+          "lldb-dap",
+          "lua",
+          "netcoredbg",
+          "node",
+          "php",
+          "powershell",
+          "r",
+          "ruby",
+          "shell",
+        ] as const,
+        {
+          description:
+            "Select an installed native DAP adapter for Dart, Python, Go, Java, Elixir, Julia, Kotlin, C, C++, Rust, Swift, Zig, Lua, C#, JavaScript, TypeScript, PHP, PowerShell, R, Ruby, or shell scripts. Required for the native backend; VS Code chooses its debugger from launch.json or the file type.",
+        },
+      ),
     ),
     program: Type.String({
       minLength: 1,
@@ -141,12 +135,29 @@ const debugParameters = Type.Object(
       }),
     ),
     args: Type.Optional(
-      Type.Array(Type.String(), { description: "Arguments passed to the debugged program." }),
+      Type.Array(Type.String(), {
+        description:
+          "Arguments passed to the debugged program by the native backend. For VS Code, put them in a launch.json configuration.",
+      }),
     ),
     mainClass: Type.Optional(
       Type.String({
         minLength: 1,
         description: "Fully qualified JVM main class. Required by Java and Kotlin adapters.",
+      }),
+    ),
+    configuration: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description:
+          "Name of a .vscode/launch.json configuration to launch in VS Code. Use it for program arguments or environment. VS Code backend only.",
+      }),
+    ),
+    test: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description:
+          "Name of one test to debug through the VS Code Testing API; set program to its test file. VS Code backend only.",
       }),
     ),
     cwd: Type.Optional(
@@ -419,14 +430,21 @@ export async function registerDebuggerWithOwner(
       label: "Debug session",
       promptSnippet: "Configure a local debugger session",
       description:
-        "Use debug to create a configured debugger session on a local or supported SSH workspace. This does not launch the program yet. The returned debug: resource survives extension reloads.",
+        "Use debug to create a configured debugger session on a local or supported SSH workspace, through VS Code or a native adapter. This does not launch the program yet. The returned debug: resource survives extension reloads.",
       parameters: debugParameters,
       outputSchema: debugOutputSchema,
       async execute(_toolCallId, input, signal, _onUpdate, context) {
+        const backend = input.backend ?? "auto";
         let cwd = input.cwd ?? context.cwd;
         let program = input.program;
         try {
           signal?.throwIfAborted();
+          if (
+            backend === "vscode" &&
+            [input.cwd, input.program, input.source].some((source) => source?.includes("://"))
+          ) {
+            throw new Error("The VS Code backend debugs only local workspaces");
+          }
           const owned = await ownerAccess?.resolveOptions(input, context.cwd, signal);
           if (
             owned === undefined &&
@@ -438,16 +456,45 @@ export async function registerDebuggerWithOwner(
           program = owned?.program ?? path.resolve(cwd, input.program);
           if (owned === undefined) await access(program);
           signal?.throwIfAborted();
-          const session = manager.create(
-            owned ?? {
+          const sourceFile = path.resolve(cwd, input.source ?? input.program);
+          const selection =
+            owned === undefined && backend !== "native"
+              ? await openVscodeBackend(backend, input, { cwd, program, sourceFile }, signal)
+              : { unavailable: "native backend requested" };
+          let session: DebugSession;
+          if ("vscode" in selection) {
+            session = manager.create(
+              {
+                adapter: "vscode",
+                program,
+                sourceFile,
+                args: [],
+                cwd,
+                ...(input.configuration === undefined
+                  ? {}
+                  : { configuration: input.configuration }),
+                ...(input.test === undefined ? {} : { test: input.test }),
+              },
+              selection.vscode,
+            );
+          } else if (input.configuration !== undefined || input.test !== undefined) {
+            throw new Error("configuration and test need the VS Code backend");
+          } else if (owned !== undefined) {
+            session = manager.create(owned);
+          } else if (input.adapter === undefined) {
+            throw new Error(
+              `Select an adapter for the native debugger backend. VS Code is not used: ${selection.unavailable}`,
+            );
+          } else {
+            session = manager.create({
               adapter: input.adapter,
               program,
-              sourceFile: path.resolve(cwd, input.source ?? input.program),
+              sourceFile,
               args: input.args ?? [],
               cwd,
               ...(input.mainClass === undefined ? {} : { mainClass: input.mainClass }),
-            },
-          );
+            });
+          }
           const details = debugDetails(manager, session);
           const { snapshot: _snapshot, stop: _stop, ...data } = details;
           return withStructuredResult(
@@ -469,7 +516,7 @@ export async function registerDebuggerWithOwner(
               content: [
                 { type: "text", text: error instanceof Error ? error.message : String(error) },
               ],
-              details: { adapter: input.adapter, program, cwd, status: "failed" },
+              details: { adapter: input.adapter ?? backend, program, cwd, status: "failed" },
               isError: true,
             },
             debugDataSchema,
@@ -486,7 +533,11 @@ export async function registerDebuggerWithOwner(
             ? rawProgram
             : path.resolve(cwd, rawProgram);
         return renderDebugCall(
-          typeof input.adapter === "string" ? input.adapter : "debugger",
+          typeof input.adapter === "string"
+            ? input.adapter
+            : input.backend === "vscode"
+              ? "vscode"
+              : "debugger",
           program,
           cwd,
           theme,
@@ -516,6 +567,34 @@ export async function registerDebuggerWithOwner(
     forgetReloadResource("debugger", manager);
     await manager.dispose();
   });
+}
+
+/** Open the VS Code backend, or report why auto mode falls back to the native adapter. */
+async function openVscodeBackend(
+  backend: "auto" | "vscode",
+  input: Static<typeof debugParameters>,
+  paths: { readonly cwd: string; readonly program: string; readonly sourceFile: string },
+  signal?: AbortSignal,
+): Promise<{ readonly vscode: VscodeDebugSession } | { readonly unavailable: string }> {
+  try {
+    const unsupported =
+      (input.args?.length ?? 0) > 0
+        ? "args"
+        : input.mainClass === undefined
+          ? undefined
+          : "mainClass";
+    if (unsupported !== undefined) {
+      throw new Error(`it does not accept ${unsupported}; use a launch.json configuration`);
+    }
+    return { vscode: await VscodeDebugSession.open(paths, signal) };
+  } catch (error) {
+    signal?.throwIfAborted();
+    const reason = error instanceof Error ? error.message : String(error);
+    if (backend === "vscode" || input.configuration !== undefined || input.test !== undefined) {
+      throw new Error(`VS Code backend unavailable: ${reason}`, { cause: error });
+    }
+    return { unavailable: reason };
+  }
 }
 
 function createDebugResourceResolver(manager: DebugSessionManager, id: string): ResourceResolver {
