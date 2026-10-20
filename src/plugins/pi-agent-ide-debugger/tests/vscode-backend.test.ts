@@ -141,7 +141,9 @@ async function fakeDebugMcp(workspace: string, activeSession?: FakeSession, remo
 async function vscodeWorkspace() {
   const home = await mkdtemp(path.join(tmpdir(), "pi-debugmcp-home-"));
   cleanup.push(() => rm(home, { recursive: true, force: true }));
+  // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
   vi.stubEnv("HOME", home);
+  vi.stubEnv("USERPROFILE", home);
   const workspace = path.join(home, "project");
   await mkdir(workspace);
   await writeFile(path.join(workspace, "task.py"), "value = 42\nitems = [value]\nprint(items)\n");
