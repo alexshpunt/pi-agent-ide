@@ -21,7 +21,7 @@ import { readAgentIdeSetting } from "#src/api/settings.js";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
-import { assertSupportedHost } from "#src/composite/host-version.js";
+import { assertSupportedHost, hostOwnsToolLoadout } from "#src/composite/host-version.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
@@ -45,6 +45,11 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     return preserveResponsesToolOmission(event.payload, names);
   });
   pi.on("session_start", (event, context) => {
+    // Pi 1.3 restores transcript tools and applies defaultTools and CLI +/- selections itself.
+    if (hostOwnsToolLoadout(VERSION)) {
+      availability.reconcile(true, [], true);
+      return;
+    }
     const restored =
       event.reason === "reload"
         ? []

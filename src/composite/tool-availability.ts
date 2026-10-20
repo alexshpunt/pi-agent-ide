@@ -37,8 +37,16 @@ export function createIdeToolAvailability<TApi extends AvailabilityApi>(pi: TApi
 
   return {
     api: { ...pi, registerTool },
-    /** Enforce exclusions; activate configured or restored tools only at session startup. */
-    reconcile(activateDefaults = false, restoredTools: readonly string[] = []): void {
+    /**
+     * Enforce exclusions. At session startup, also make deferred IDE tools discoverable through
+     * tool_search, and activate configured or restored tools unless the host already owns that
+     * loadout (`hostLoadout`).
+     */
+    reconcile(
+      activateDefaults = false,
+      restoredTools: readonly string[] = [],
+      hostLoadout = false,
+    ): void {
       const excluded = new Set<string>();
       const requested = new Set<string>();
       for (const entry of pi.getSettings().defaultTools ?? []) {
@@ -68,6 +76,7 @@ export function createIdeToolAvailability<TApi extends AvailabilityApi>(pi: TApi
       for (const tool of available) {
         if (
           activateDefaults &&
+          !hostLoadout &&
           definitions.has(tool.name) &&
           (requested.has(tool.name) ||
             (tool.exposure === "deferred" && restoredTools.includes(tool.name)))
