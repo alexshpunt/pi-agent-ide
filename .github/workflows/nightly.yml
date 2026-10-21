@@ -9,6 +9,8 @@ on:
   workflow_dispatch:
 
 permissions:
+  # Must cover every permission the called CI workflow requests, or GitHub refuses to start the run.
+  actions: read
   contents: read
   checks: write
 
@@ -45,6 +47,7 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.sha != ''
     permissions:
+      actions: read
       contents: read
       checks: write
     uses: ./.github/workflows/ci.yml
