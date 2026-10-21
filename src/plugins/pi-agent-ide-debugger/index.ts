@@ -202,11 +202,7 @@ export async function registerDebuggerWithOwner(
       ],
     }),
   ]);
-  const retainedManager = takeReloadResource("debugger") as DebugSessionManager | undefined;
-  const manager =
-    retainedManager !== undefined && typeof retainedManager.evaluate === "function"
-      ? retainedManager
-      : new DebugSessionManager();
+  const manager = takeReloadResource("debugger", DebugSessionManager) ?? new DebugSessionManager();
   manager.setOwnerResolver(ownerAccess?.workspace);
   const deletedSnapshots = new Map<string, ReturnType<DebugSessionManager["snapshot"]>>();
   const readResolver = createDebugResourceResolver(manager, "debugger-source");

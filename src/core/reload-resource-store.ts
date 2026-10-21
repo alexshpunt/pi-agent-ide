@@ -19,12 +19,32 @@ export function retainReloadResource(key: string, value: unknown): void {
   store().set(key, value);
 }
 
-/** Transfer a retained resource owner to the newly loaded extension instance. */
-export function takeReloadResource(key: string): unknown {
+/**
+ * Transfer a retained owner to the newly loaded extension instance.
+ * Pi reloads extension modules without a cache, so owners cannot be matched by class identity.
+ * The owner is returned only when its class has the same source as `owner`. An owner left by
+ * other code (an updated package, another checkout or a local edit) is disposed instead,
+ * because the new caller cannot rely on its old contract.
+ */
+export function takeReloadResource<T extends object>(
+  key: string,
+  owner: abstract new (...args: never[]) => T,
+): T | undefined {
   const resources = store();
   const value = resources.get(key);
   resources.delete(key);
-  return value;
+  if (value === undefined) return undefined;
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    value.constructor.toString() === owner.toString()
+  )
+    return value as T;
+  void Promise.resolve()
+    .then(() => (value as { dispose?: () => unknown }).dispose?.())
+    // Nothing can recover a foreign owner's failed cleanup; the new owner starts regardless.
+    .catch(() => {});
+  return undefined;
 }
 
 /** Remove a retained owner only when it is the expected instance. */
