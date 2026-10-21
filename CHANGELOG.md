@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3 — 2026-10-21
+
+### Debugger and terminal
+
+- After a package update and `/reload`, debugger and terminal sessions no longer reuse a manager built by the old code, so VS Code debugging keeps working. Sessions started before the update end at that reload.
+
 ## 0.8.2 — 2026-10-20
 
 ### Debug through VS Code
