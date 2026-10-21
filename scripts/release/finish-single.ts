@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { verifyCandidateArchive, type CandidateEvidence } from "#scripts/release-candidate.ts";
 import { synchronizeDevelop } from "./sync-develop.ts";
@@ -13,7 +14,7 @@ if (version !== evidence.version || process.env.GITHUB_REF !== "refs/heads/main"
   throw new Error("Finish requires the verified release version on main");
 }
 const archive = verifyCandidateArchive(directory, evidence);
-const registry = await fetch(`https://registry.npmjs.org/pi-agent-ide/${version}`);
+const registry = await publishedVersion(version);
 if (!registry.ok) throw new Error("Package has not been published; main remains frozen");
 const published = (await registry.json()) as { dist?: { integrity?: string } };
 if (
@@ -22,6 +23,18 @@ if (
   throw new Error("Registry archive differs from the verified release candidate");
 }
 if (!archive) throw new Error("Missing verified archive");
+/**
+ * npm accepts a publish minutes before the registry serves the version, so a 404 right after
+ * publishing is expected. Wait for the version, but keep main frozen if it never appears.
+ */
+async function publishedVersion(version: string): Promise<Response> {
+  const deadline = Date.now() + 15 * 60_000;
+  for (;;) {
+    const response = await fetch(`https://registry.npmjs.org/pi-agent-ide/${version}`);
+    if (response.status !== 404 || Date.now() > deadline) return response;
+    await sleep(20_000);
+  }
+}
 function git(...args: string[]): string {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
