@@ -41,8 +41,7 @@ export default async function registerTerminal(
     }),
   ]);
   const manager =
-    (takeReloadResource("terminal") as TerminalSessionManager | undefined) ??
-    new TerminalSessionManager();
+    takeReloadResource("terminal", TerminalSessionManager) ?? new TerminalSessionManager();
   const profile = resolveShellProfile();
   const targets = new SshBackendRegistry(
     await readSshTargets(resolveSshConfigPaths(resolvePiAgentIdeExtensionsConfigPaths())),
