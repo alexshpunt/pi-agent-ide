@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.4 — 2026-10-22
+
+### Editing
+
+- Saving an edit to a deeply nested file, such as a large C++ source, no longer freezes Pi.
+
 ## 0.8.3 — 2026-10-21
 
 ### Debugger and terminal
