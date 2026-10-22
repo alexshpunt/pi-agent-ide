@@ -32,6 +32,7 @@ import {
   type TextMutationContext,
   type TextMutationEdit,
   type TextMutationToolRegistration,
+  withoutEmptyOptionalAnchors,
 } from "#src/api/mutation-tool.js";
 import {
   isFormattingContribution,
@@ -502,10 +503,12 @@ function prepareGuardedArguments<TParameters extends TSchema>(
 ): ReturnType<
   NonNullable<ToolDefinition<TParameters, FileMutationBatchResult>["prepareArguments"]>
 > {
-  const prepared =
+  const prepared = withoutEmptyOptionalAnchors(
+    anchorFields,
     arguments_ !== null && typeof arguments_ === "object" && !Array.isArray(arguments_)
       ? { ...(arguments_ as Record<string, unknown>) }
-      : {};
+      : {},
+  );
   const required = (schema as { required?: unknown }).required;
   const properties = (schema as { properties?: Record<string, { type?: unknown }> }).properties;
 

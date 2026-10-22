@@ -4,6 +4,7 @@ import {
   type ResultSourceTarget,
 } from "pi-agent-resource";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+import { withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.js";
 import { isResultInput } from "./result-transfer.js";
 import {
   committedMutationTargets,
@@ -119,12 +120,17 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
   const definition: ToolBatchDefinition<TextBatchState> = {
     sourceTools,
     syntheticTool: "__pi_agent_text_editor_batch",
-    resolveCall(call, inherited, context) {
-      const registration = registrations.get(call.name);
+    resolveCall(rawCall, inherited, context) {
+      const registration = registrations.get(rawCall.name);
 
       if (registration === undefined) {
         return;
       }
+      // Batched calls bypass prepareArguments, so apply the same empty-anchor rule here.
+      const call = {
+        ...rawCall,
+        arguments: withoutEmptyOptionalAnchors(registration.anchors, rawCall.arguments),
+      };
 
       // Derived protocol targets need their owning execution pipeline, not snapshot batching.
       const selectorFields = [
