@@ -42,6 +42,12 @@ Named AST fields that represent block-level bodies.
 */
 const BODY_FIELDS = new Set(["body", "consequence", "alternative", "handler", "finalizer"]);
 
+/** Identify a child among its siblings; parsers return a new wrapper object on each access. */
+function siblingKey(node: SyntaxNode): string {
+  const { startPosition: start, endPosition: end } = node;
+  return `${node.type}:${start.row}:${start.column}:${end.row}:${end.column}`;
+}
+
 let initPromise: Promise<void> | undefined;
 const loadedLanguages = new Map<string, Promise<WTS.Language>>();
 
@@ -230,12 +236,17 @@ export class AstScopeManager {
     }
 
     // 1. Collect block bodies from named fields (body, consequence, alternative, etc.)
+    // Field children are also named children; step 3 must not walk them again, or every
+    // nesting level doubles the traversal and large files freeze the session.
+    const visitedFieldChildren = new Set<string>();
     for (const fieldName of BODY_FIELDS) {
       const child = node.childForFieldName(fieldName);
 
       if (!child?.isNamed) {
         continue;
       }
+
+      visitedFieldChildren.add(siblingKey(child));
 
       const startLine = child.startPosition.row + 1;
       const endLine = child.endPosition.row + 1;
@@ -276,8 +287,9 @@ export class AstScopeManager {
       }
     }
 
-    // 3. Recurse into all named children (to find nested constructs)
+    // 3. Recurse into the remaining named children (to find nested constructs)
     for (const child of node.namedChildren) {
+      if (visitedFieldChildren.has(siblingKey(child))) continue;
       this.collectCandidates(child, candidates, depth + 1);
     }
   }
