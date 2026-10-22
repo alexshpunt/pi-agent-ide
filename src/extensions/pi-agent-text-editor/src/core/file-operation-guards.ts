@@ -24,9 +24,27 @@ export async function guardFileOperation(
   context.signal?.throwIfAborted();
   const source = await read(input.path);
   const target = input.target === undefined ? undefined : await read(input.target);
-  const resources: TextMutationPlanResource[] = [];
-  if (operation !== "copy") resources.push(planResource(source, undefined));
-  if (target !== undefined) resources.push(planResource(target, source.bytes));
+  await guardFileChanges(
+    [
+      ...(operation === "copy" ? [] : [{ before: source }]),
+      ...(target === undefined ? [] : [{ before: target, after: source.bytes }]),
+    ],
+    [source, ...(target === undefined ? [] : [target])],
+    context,
+    read,
+    guards,
+  );
+}
+
+/** Run the mutation policies over whole-file replacements; missing bytes after remove the file. */
+export async function guardFileChanges(
+  changes: readonly { readonly before: FileGuardSnapshot; readonly after?: Uint8Array }[],
+  participants: readonly FileGuardSnapshot[],
+  context: TextMutationGuardContext,
+  read: (source: string) => Promise<FileGuardSnapshot>,
+  guards: readonly TextMutationGuardRegistration[],
+): Promise<void> {
+  const resources = changes.map((change) => planResource(change.before, change.after));
   for (const registration of guards) {
     context.signal?.throwIfAborted();
     const result = await registration.guard({ resources }, context);
@@ -37,7 +55,7 @@ export async function guardFileOperation(
       });
   }
   context.signal?.throwIfAborted();
-  for (const snapshot of [source, ...(target === undefined ? [] : [target])]) {
+  for (const snapshot of participants) {
     const current = await read(snapshot.source);
     if (current.source !== snapshot.source || !sameBytes(current.bytes, snapshot.bytes))
       throw Object.assign(new Error(`File changed during its mutation guard: ${snapshot.source}`), {

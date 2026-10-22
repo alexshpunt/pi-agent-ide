@@ -9,7 +9,7 @@ import type {
   AgentToolResult,
 } from "@earendil-works/pi-coding-agent";
 import type { JsonValue } from "@earendil-works/pi-ai";
-import { connectResultTargets, TempResourceStore } from "pi-agent-resource";
+import { connectResultImages, connectResultTargets, TempResourceStore } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
 import { limitIdeOutput } from "./output-limits.js";
@@ -105,6 +105,7 @@ function record(value: unknown): value is Record<string, unknown> {
 /** Keep tool records private while strings carry registered composition references. */
 export function createIdeTextResults(pi: ExtensionAPI) {
   const store = connectResultTargets(pi);
+  const resultImages = connectResultImages(pi);
   const names = new Set<string>();
   const outputs = new TempResourceStore();
   const saveFullOutput = (text: string) => outputs.saveFile(text);
@@ -429,8 +430,15 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           ? original
           : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
-      const shown = store.publish(outcome, readable, context.cwd, resources);
       const succeeded = !event.isError && outcome.status !== "error";
+      const shown = store.publish(outcome, readable, context.cwd, resources);
+      resultImages.keep(
+        shown,
+        context.cwd,
+        event.toolName === "read" && succeeded
+          ? event.content.filter((block): block is ImageBlock => block.type === "image")
+          : [],
+      );
       const value =
         event.toolName === "search" && succeeded
           ? searchFacts(outcome, shown)

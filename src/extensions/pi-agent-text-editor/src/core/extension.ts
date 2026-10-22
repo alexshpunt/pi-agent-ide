@@ -1,5 +1,5 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectResultTargets } from "pi-agent-resource";
+import { connectResultImages, connectResultTargets } from "pi-agent-resource";
 import { setMutationSnapshotReader } from "./mutation-result-targets.js";
 import { registerTextEditOrigins } from "./text-edit-origin.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -51,6 +51,7 @@ export default async function registerTextEditorCore(
     interceptionRendering.clear();
   });
   const resultTargets = connectResultTargets(pi);
+  const resultImages = connectResultImages(pi);
   const mutationTools = new Set<string>();
   const core = createTextEditorCore((registration, editor) => {
     mutationTools.add(registration.name);
@@ -62,6 +63,7 @@ export default async function registerTextEditorCore(
         () => getLastResolvedResource(pi)?.source,
         resultTargets,
         pi.events,
+        resultImages,
       ),
     );
   }, resultTargets);

@@ -1,4 +1,4 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import type {
   FileOperation,
   FileOperationInput,
@@ -10,7 +10,11 @@ import {
   isUriSource,
   type FileOperationContext,
 } from "#src/core/file-operations.js";
-import { guardFileOperation, type FileGuardSnapshot } from "#src/core/file-operation-guards.js";
+import {
+  guardFileChanges,
+  guardFileOperation,
+  type FileGuardSnapshot,
+} from "#src/core/file-operation-guards.js";
 import path from "node:path";
 import { deferPostEdit, collectPostEditNotifications } from "#src/core/post-edit-scope.js";
 import { requiredValue } from "pi-agent-invariant";
@@ -386,6 +390,14 @@ export interface TextEditorCore {
     signal?: AbortSignal,
     deletion?: FileOperationContext,
   ): Promise<FileOperationResult>;
+  /**
+   * Replace whole local files with bytes after the mutation guards accept them; callers
+   * serialize it with enqueueFileOperation. A failure while writing has an unknown effect.
+   */
+  writeFiles(
+    files: readonly { readonly source: string; readonly bytes: Uint8Array }[],
+    context: ResourceResolverContext,
+  ): Promise<void>;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
   resolveTextAnchorResources(
@@ -746,6 +758,36 @@ export function createTextEditorCore(
         [...fileOperationResolvers],
         (kind, args) => guardOwnedFiles(kind, args, { cwd, signal }),
       ),
+    async writeFiles(files, context) {
+      const read = (source: string) =>
+        readFileGuardSnapshot(
+          source,
+          context,
+          [...resolvers].sort(
+            (left, right) => left.priority - right.priority || left.order - right.order,
+          ),
+        );
+      const changes = await Promise.all(
+        files.map(async (file) => ({ before: await read(file.source), after: file.bytes })),
+      );
+      await guardFileChanges(
+        changes,
+        changes.map((change) => change.before),
+        { ...context, intent: "edit" },
+        read,
+        [...mutationGuards],
+      );
+      try {
+        for (const file of files) {
+          await mkdir(path.dirname(file.source), { recursive: true });
+          await writeFile(file.source, file.bytes, { signal: context.signal });
+        }
+      } catch (error) {
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+          effect: "unknown",
+        });
+      }
+    },
     addAnchorResolver(registration): void {
       if (!isTextAnchorResolverRegistration(registration)) {
         throw new TypeError("Invalid text anchor resolver");

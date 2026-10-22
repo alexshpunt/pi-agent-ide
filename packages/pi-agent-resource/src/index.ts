@@ -100,3 +100,4 @@ export {
   type ResultSourceTarget,
   type ResolvedResultTargets,
 } from "./result-targets.js";
+export { connectResultImages, ResultImageStore } from "./result-images.js";
