@@ -60,6 +60,23 @@ export function isMutationAnchorValue(
   );
 }
 
+/**
+ * Returns call arguments without empty optional anchors. An empty selector is no anchor, so
+ * models that send `""` for a selector they mean to omit get the omitted behavior.
+ */
+export function withoutEmptyOptionalAnchors<T extends Record<string, unknown>>(
+  anchors: readonly TextMutationAnchorField[] | undefined,
+  arguments_: T,
+): T {
+  const empty = (anchors ?? []).filter(
+    ({ field, optional }) => optional === true && arguments_[field] === "",
+  );
+  if (empty.length === 0) return arguments_;
+  const prepared: Record<string, unknown> = { ...arguments_ };
+  for (const { field } of empty) delete prepared[field];
+  return prepared as T;
+}
+
 /** A non-file effect performed through an existing text mutation tool. */
 export interface TextSemanticMutationResult {
   /** Addressable resource created or changed by the action. */

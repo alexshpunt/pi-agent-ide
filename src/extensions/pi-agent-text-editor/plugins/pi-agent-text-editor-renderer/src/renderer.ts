@@ -955,6 +955,9 @@ const GENERIC_FAILURE_CAUSE = "file operation failed";
 
 function wholeFileFailureCause(code: string): string {
   switch (code) {
+    case "INVALID_REQUEST": {
+      return "the request was invalid";
+    }
     case "RESULT_INPUT_REJECTED": {
       return "result input was rejected";
     }
