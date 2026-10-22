@@ -44,6 +44,7 @@ import {
   type StaleAnchorMessageDetails,
 } from "#src/api/stale-anchor-message.js";
 import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
+import { imageWriteResult, planImageWrite } from "#src/core/image-write.js";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.js";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
@@ -94,7 +95,7 @@ import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-oper
 import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
 import { writeAgentResult } from "./write-agent-result.js";
 import { mutationResultSchema, structuredMutation } from "./structured-result.js";
-import type { ResultTargetStore } from "pi-agent-resource";
+import type { ResultImageStore, ResultTargetStore } from "pi-agent-resource";
 
 /** Build a mutation tool; host events report terminal filesystem approvals to Herdr. */
 export function createTextTool<TParameters extends TSchema>(
@@ -104,6 +105,7 @@ export function createTextTool<TParameters extends TSchema>(
   getLastResolvedSource: () => string | undefined,
   resultTargets?: ResultTargetStore,
   events?: Pick<ExtensionAPI["events"], "emit">,
+  resultImages?: ResultImageStore,
 ): ToolDefinition<TParameters, FileMutationBatchResult> {
   const renderer = core.getToolRenderer(definition.name);
   const initialRenderCall = renderer?.renderCall;
@@ -161,6 +163,16 @@ export function createTextTool<TParameters extends TSchema>(
             captureScriptMutation(core, async () => {
               const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
                 let input = asMutationParameters<TParameters>(parameters);
+                if (definition.name === "write") {
+                  const written = await writeImageContent(
+                    core,
+                    resultImages,
+                    input,
+                    context.cwd,
+                    signal,
+                  );
+                  if (written !== undefined) return written;
+                }
                 if (
                   ["replace", "write", "delete", "undo", "insert"].includes(definition.name) &&
                   isResultInput(input[definition.source.field])
@@ -1857,6 +1869,36 @@ function declaredMutationEffect(error: unknown): "applied" | "not-applied" | "un
   )
     return error.effect;
   return "unknown";
+}
+/** Write images named by Write content; returns undefined when the content is ordinary text. */
+async function writeImageContent(
+  core: TextEditorCore,
+  store: ResultImageStore | undefined,
+  input: Readonly<Record<string, unknown>>,
+  cwd: string,
+  signal: AbortSignal | undefined,
+): Promise<AgentToolResult<FileMutationBatchResult> | undefined> {
+  const target = typeof input.path === "string" ? input.path : "";
+  try {
+    const files = await planImageWrite(input.path, input.content, store, cwd);
+    if (files === undefined) return undefined;
+    await core.enqueueFileOperation(
+      () => core.writeFiles(files, { cwd, ...(signal !== undefined && { signal }) }),
+      signal,
+      { cwd, sources: files.map((file) => file.source) },
+    );
+    return imageWriteResult(files);
+  } catch (error) {
+    signal?.throwIfAborted();
+    const declared = error !== null && typeof error === "object";
+    return failureToolResult(
+      target,
+      declared && "code" in error ? String(error.code) : "IMAGE_WRITE_FAILED",
+      errorMessage(error),
+      // Only the write step marks its effect; earlier failures changed nothing.
+      declared && "effect" in error ? declaredMutationEffect(error) : "not-applied",
+    );
+  }
 }
 function failureToolResult(
   source: string,

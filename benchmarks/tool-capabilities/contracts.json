@@ -1,5 +1,5 @@
 {
-  "pi": "1.3.0",
+  "pi": "1.4.0",
   "tools": [
     {
       "name": "bash",
@@ -1237,7 +1237,52 @@
         "additionalProperties": false,
         "properties": {
           "content": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "data": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "image",
+                    "type": "string"
+                  }
+                },
+                "required": ["type", "data", "mimeType"],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "images": {
+                    "items": {
+                      "properties": {
+                        "data": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["data", "mimeType"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "type": {
+                    "const": "images",
+                    "type": "string"
+                  }
+                },
+                "required": ["type", "images"],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "anyOf": [

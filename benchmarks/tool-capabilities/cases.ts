@@ -1,3 +1,4 @@
+import { pixelPng } from "./sandbox.ts";
 import type { CapabilityCase, RouteStep } from "./validation.ts";
 
 // Directory/symlink approval is a host UI policy, not an agent calling requirement.
@@ -2091,6 +2092,17 @@ add(
     },
   ],
   { modes: ["codemode"], files: {}, answer: "image/png", setup: "media" },
+);
+
+add(
+  "read-image-write",
+  ["compose.read-image-write"],
+  "Read pixel.png, then save the image that Read returned to copy.png with Write: pass that Read result as Write content (its UUID in a direct call, the returned image value in Codemode). Do not use Copy and do not change other files. Report the written path.",
+  [
+    { tool: "read", args: { path: "pixel.png" }, image: true },
+    { tool: "write", args: { path: "copy.png" }, reuse: reuse(0, ["content", "content.note"]) },
+  ],
+  { files: {}, setup: "pixel", expected: { "copy.png": pixelPng } },
 );
 
 add(
