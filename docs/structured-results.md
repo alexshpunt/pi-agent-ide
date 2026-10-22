@@ -2,7 +2,7 @@
 
 IDE tools expose readable text in direct calls. In native Codemode, Search returns `{ result, hasMatches, complete }`. `result` is the unchanged readable Search string used for composition. The two nullable facts describe original matches and query coverage, independently of display truncation. Unknown facts are `null`; a failed call still rejects.
 
-An image Read in Codemode returns the native image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames, so scripts can pass it to `image()` or `models.classify()`. Its `note` is the readable result string used for composition. Other text results remain strings. Private result records remain hidden.
+An image Read in Codemode returns the native image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames, so scripts can pass it to `image()`, `models.classify()` or Write `content` to save it as a file. Its `note` is the readable result string used for composition. Other text results remain strings. Private result records remain hidden.
 
 ## Composition
 
