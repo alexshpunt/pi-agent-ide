@@ -15,7 +15,6 @@ import { readOwnedSshCommand } from "./owned-read-command.js";
 import { startSshProcess, type SshProcessChannel } from "./ssh-channel.js";
 import { SshBackendError } from "./ssh.js";
 import { probeSshBrowser } from "./web-browser.js";
-import { probeSshCapture } from "./vision-capture.js";
 import type { SshBackendRegistry } from "./registry.js";
 
 const probeSchema = Type.Object({
@@ -232,8 +231,6 @@ export async function createSshDoctorWorkspace(
     source: root.source,
     platform: "linux",
     toolPaths,
-    probeCapture: (requestSignal) =>
-      probeSshCapture({ ...backend.target, workspace: root.path }, root.source, requestSignal),
     async probeBrowser(requestSignal) {
       await probeSshBrowser(
         { ...backend.target, workspace: root.path },

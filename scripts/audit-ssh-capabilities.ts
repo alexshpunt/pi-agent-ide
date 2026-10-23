@@ -37,7 +37,6 @@ const builtinRows: Readonly<Record<string, string>> = {
   "ide.changes": "M12 M13",
   "ide.lsp": "M15 M16 M24",
   "ide.processes": "M19 M20 M21 M25",
-  "ide.vision": "M20 M22 M23",
   "ide.debugger": "M21 M24",
   "ide.terminal": "M19 M20 M25",
   "ide.diagnostics": "M16 M25",
@@ -122,8 +121,6 @@ const surfaces: readonly (readonly [string, string, string])[] = [
   ["docs: / docs:id and lazy guides", "M25", "src/documentation/extension.ts"],
   ["ast:, scopes, symbol:, graph:, symbols:", "M06 M08 M14 M15", "src/backend/lsp-registration.ts"],
   ["diagnostics: and diagnostics view", "M16", "src/plugins/pi-agent-ide-diagnostics/index.ts"],
-  ["process: / process:ssh://target/PID", "M20", "src/backend/vision-registration.ts"],
-  ["window: / display: with target ownership", "M22", "src/backend/vision-registration.ts"],
   [
     "shell: (Read/Search/input/keys/delete/image/sequence)",
     "M19 M20",
@@ -163,9 +160,9 @@ const surfaces: readonly (readonly [string, string, string])[] = [
   ],
   ["anchors, ast, breakpoints views", "M06 M14 M21", "src/composite/builtin-extensions.ts"],
   [
-    "image/sequence: region, scale, duration, interval, grids",
-    "M04 M19 M22 M23",
-    "src/backend/vision-registration.ts",
+    "shell image/sequence: scale, duration and interval",
+    "M19",
+    "src/plugins/pi-agent-ide-terminal/src/resources.ts",
   ],
   ["BeforeRead, BeforeEdit, AfterEdit", "M18", "src/api/hooks.ts"],
   [

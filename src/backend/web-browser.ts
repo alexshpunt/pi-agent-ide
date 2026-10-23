@@ -36,31 +36,6 @@ export async function readSshBrowserPage(
   return page;
 }
 
-/** Capture target web pixels for the existing image transforms; unavailable targets never capture locally. */
-export async function captureSshBrowserImage(
-  target: SshTarget,
-  url: URL,
-  source: string,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  const frame = await runBrowser(target, url, source, { signal, timeoutMs: 30_000 }, "image");
-  if (
-    typeof frame !== "object" ||
-    frame === null ||
-    !("png" in frame) ||
-    typeof frame.png !== "string"
-  )
-    throw new SshBackendError("INVALID_RESPONSE", source, "not-applied");
-  const bytes = Buffer.from(frame.png, "base64");
-  if (
-    bytes.toString("base64") !== frame.png ||
-    bytes.length > 20 * 1024 * 1024 ||
-    !bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
-  )
-    throw new SshBackendError("INVALID_RESPONSE", source, "not-applied");
-  return bytes;
-}
-
 /** Probe the target browser using the same installed runtime and private launch path, without navigation. */
 export async function probeSshBrowser(
   target: SshTarget,
@@ -83,7 +58,7 @@ async function runBrowser(
   url: URL,
   source: string,
   options: BrowserLoadOptions,
-  kind: "html" | "image" | "probe",
+  kind: "html" | "probe",
 ): Promise<unknown> {
   options.signal?.throwIfAborted();
   worker ??= readFile(new URL("./web-browser-worker.mjs", import.meta.url), "utf8");

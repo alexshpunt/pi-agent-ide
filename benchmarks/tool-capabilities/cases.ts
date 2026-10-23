@@ -1863,10 +1863,8 @@ add(
     "compose.shell-reference-after-input",
     "shell.file-authority-refusal",
     "shell.delete",
-    "process.discovery",
-    "process.read",
   ],
-  "Start a background Bash command that waits for one input line, prints that line and exits. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello. Then discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
+  "Start a background Bash command that waits for one input line, prints that line and exits. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -1888,8 +1886,6 @@ add(
       reuse: reuse(0, "path", "shell"),
       contains: "hello",
     },
-    { tool: "search", args: { query: /process:/ } },
-    { tool: "read", args: { path: /process:\d+/ } },
     { tool: "delete", reuse: reuse(0, "path", "shell") },
   ],
   { expected: textFile, answer: "hello" },
@@ -2139,8 +2135,8 @@ add(
 
 add(
   "web-read-search",
-  ["web.read", "web.search", "web.image", "web.sequence"],
-  "The local fixture server is at http://127.0.0.1:8765. Read its page, search that URL for WEB-MARKER, then read the page as an image and as a short sequence. Report the page marker. Do not change files.",
+  ["web.read", "web.search"],
+  "The local fixture server is at http://127.0.0.1:8765. Read its page as text, then search that URL for WEB-MARKER. Report the page marker. Do not change files.",
   [
     { tool: "read", args: { path: "http://127.0.0.1:8765" }, contains: "WEB-MARKER" },
     {
@@ -2148,32 +2144,11 @@ add(
       args: { path: "http://127.0.0.1:8765", query: "WEB-MARKER" },
       contains: "WEB-MARKER",
     },
-    { tool: "read", args: { path: "http://127.0.0.1:8765", views: ["image"] }, image: true },
-    { tool: "read", args: { path: "http://127.0.0.1:8765", views: [/sequence/] }, image: true },
   ],
   {
     files: {},
     answer: "WEB-MARKER",
     setup: "web",
-    prerequisite: "command -v google-chrome || command -v chromium",
-  },
-);
-
-add(
-  "vision-display-window",
-  ["vision.display", "vision.window", "vision.sequence"],
-  "A sandbox-only display and a window titled CAPABILITY-WINDOW are running. Discover the window process with process: search, read its window:PID capture, then capture display: as an image and short sequence. Report the visible window title. Do not inspect host windows or change files.",
-  [
-    { tool: "search", args: { query: /process:/ } },
-    { tool: "read", args: { path: /window:\d+/ }, image: true },
-    { tool: "read", args: { path: "display:", views: ["image"] }, image: true },
-    { tool: "read", args: { path: "display:", views: [/sequence/] }, image: true },
-  ],
-  {
-    files: {},
-    answer: "CAPABILITY-WINDOW",
-    setup: "display",
-    prerequisite: "command -v Xvfb && command -v xmessage",
   },
 );
 
