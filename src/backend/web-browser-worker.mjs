@@ -69,7 +69,7 @@ function targetProxy(url) {
   };
 }
 
-/** @param {{kind: "html" | "image" | "probe", url: string, timeoutMs: number}} request */
+/** @param {{kind: "html" | "probe", url: string, timeoutMs: number}} request */
 async function render(request) {
   const url = new URL(request.url);
   if (
@@ -111,21 +111,6 @@ async function render(request) {
     .waitForLoadState("networkidle", { timeout: Math.min(request.timeoutMs, 1500) })
     .catch(() => {});
   cancellation.signal.throwIfAborted();
-  if (request.kind === "image") {
-    const dimensions = await page.evaluate(() => ({
-      width: Math.max(innerWidth, document.documentElement.scrollWidth, document.body.scrollWidth),
-      height: Math.max(
-        innerHeight,
-        document.documentElement.scrollHeight,
-        document.body.scrollHeight,
-      ),
-    }));
-    if (dimensions.width * dimensions.height > 16_000_000) throw new Refused("BYTE_LIMIT");
-    const png = await page.screenshot({ type: "png", fullPage: true, timeout: request.timeoutMs });
-    if (png.length > 20 * 1024 * 1024) throw new Refused("BYTE_LIMIT");
-    cancellation.signal.throwIfAborted();
-    return { png: png.toString("base64") };
-  }
   await page.locator("body *").evaluateAll((elements) => {
     for (const element of elements.toReversed()) {
       const style = globalThis.getComputedStyle(element);
@@ -153,7 +138,7 @@ try {
     typeof request !== "object" ||
     request === null ||
     !("kind" in request) ||
-    (request.kind !== "html" && request.kind !== "image" && request.kind !== "probe") ||
+    (request.kind !== "html" && request.kind !== "probe") ||
     !("url" in request) ||
     typeof request.url !== "string" ||
     !("timeoutMs" in request) ||

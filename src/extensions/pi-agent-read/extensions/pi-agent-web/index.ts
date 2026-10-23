@@ -47,6 +47,33 @@ export async function registerWebWithOwner(
     apiVersion: READ_API_VERSION,
     id: "web",
     setup(api) {
+      api.addHandler({
+        stage: "pre-read",
+        handler(context) {
+          const source = context.request.path;
+          if (
+            source === undefined ||
+            !/^(?:https?:\/\/|web:ssh:\/\/)/iu.test(source) ||
+            !context.request.views?.some((view) => /^(?:image|sequence)(?::|$)/u.test(view))
+          )
+            return { kind: "continue", context };
+          // Do not silently substitute page text for an explicitly requested screenshot.
+          const message =
+            "Website image and sequence views are not supported. Omit these views to read website content.";
+          return {
+            kind: "return",
+            result: {
+              content: [{ type: "text", text: message }],
+              details: {
+                source,
+                resolvedBy: "web",
+                failure: { code: "UNSUPPORTED_CAPABILITY", source, resolverId: "web", message },
+              },
+              isError: true,
+            },
+          };
+        },
+      });
       api.addResolver({
         resolver: webResolver,
         renderResult: renderWebResult,

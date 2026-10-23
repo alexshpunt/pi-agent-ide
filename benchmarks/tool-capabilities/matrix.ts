@@ -198,8 +198,6 @@ const groups: [string[], string[]][] = [
       "compose.shell-reference-after-input",
       "shell.file-authority-refusal",
       "shell.delete",
-      "process.discovery",
-      "process.read",
     ],
     ["shell-roundtrip"],
   ],
@@ -245,8 +243,7 @@ const groups: [string[], string[]][] = [
   [["read.image", "read.pdf"], ["read-media"]],
   [["compose.codemode-image-value"], ["codemode-image-value"]],
   [["compose.read-image-write"], ["read-image-write"]],
-  [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
-  [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],
+  [["web.read", "web.search"], ["web-read-search"]],
 ];
 for (const kind of [
   "range",

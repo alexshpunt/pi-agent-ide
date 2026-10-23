@@ -67,24 +67,15 @@ def main():
     with open("/proc/sys/kernel/random/boot_id", encoding="utf-8") as stream:
         boot_id = stream.read().strip()
     clock = os.sysconf("SC_CLK_TCK")
-    selected = int(sys.argv[1]) if len(sys.argv) > 1 else None
-    pids = [selected] if selected is not None else sorted(int(name) for name in os.listdir("/proc") if name.isdigit())
-    result = []
-    size = len('{"processes": []}')
-    for pid in pids:
-        try:
-            item = inspect(pid, boot, clock, boot_id)
-            size += len(json.dumps(item, ensure_ascii=True).encode("utf-8")) + 2
-            if size > LIMIT:
-                raise OverflowError()
-            result.append(item)
-        except (FileNotFoundError, ProcessLookupError):
-            if selected is not None:
-                return {"error": "ENOENT"}
-        except PermissionError:
-            if selected is not None:
-                return {"error": "EACCES"}
-    return {"processes": result}
+    pid = int(sys.argv[1])
+    if pid < 1:
+        return {"error": "CAPABILITY_UNAVAILABLE"}
+    try:
+        return {"processes": [inspect(pid, boot, clock, boot_id)]}
+    except (FileNotFoundError, ProcessLookupError):
+        return {"error": "ENOENT"}
+    except PermissionError:
+        return {"error": "EACCES"}
 
 
 try:

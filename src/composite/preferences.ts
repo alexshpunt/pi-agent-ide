@@ -75,40 +75,4 @@ export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
       { value: "off", label: "Off" },
     ],
   },
-  {
-    kind: "text",
-    id: "vision.sequenceDurationSeconds",
-    name: "Vision sequence duration",
-    description:
-      "Default sequence duration in seconds. Requests may override it, up to 10 seconds.",
-    default: "2",
-    group: "features",
-  },
-  {
-    kind: "text",
-    id: "vision.sequenceIntervalSeconds",
-    name: "Vision sequence interval",
-    description:
-      "Default seconds between sequence frames. A sequence may contain at most 20 frames.",
-    default: "0.5",
-    group: "features",
-  },
-  {
-    kind: "text",
-    id: "vision.imageScale",
-    name: "Vision image scale",
-    description: "Default image downscale from greater than 0 through 1.",
-    default: "0.5",
-    group: "features",
-  },
-  {
-    kind: "text",
-    id: "vision.allowedExecutables",
-    name: "Vision allowed executables",
-    description:
-      "Comma-separated executable file names that may be captured without arbitrary-window access.",
-    default: "",
-    group: "features",
-    placeholder: "Unity.exe,UnrealEditor.exe",
-  },
 ];

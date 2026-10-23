@@ -35,7 +35,7 @@ export default async function registerTerminal(
         { tool: "powershell" },
         ...["read", "write", "insert", "delete"].map((tool) => ({
           tool,
-          resourcePrefixes: ["shell:", "process:"],
+          resourcePrefixes: ["shell:"],
         })),
       ],
     }),
