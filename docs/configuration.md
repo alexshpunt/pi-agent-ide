@@ -8,8 +8,6 @@ Default removes the selected scope’s override. Module descriptions show effect
 
 Boolean overrides are stored under `flags` in `extensions.json`, keyed by their registered setting ID. Choice and text values are stored under `preferences`. External settings use the same menu and scopes but do not add CLI switches. Existing `noAnimations` and `noPostProcessing` fields still work; changing the corresponding feature in the menu replaces that field with its flag override.
 
-Agent Vision adds separate opt-ins for **Capture arbitrary windows** and **Capture full displays**. Both default to off. Its text settings control the default sequence duration, frame interval, image scale, and a comma-separated list of exact executable file names that may be captured without arbitrary-window access. Press Enter to edit a text value, Enter again to commit it, then Ctrl+S to save.
-
 The UI tab contains separate presentation settings for diffs, Read, Search, and terminal output. Each setting supports **Full**, **Compact**, and **Disabled**. Compact is the product default. Full shows all available content, while Disabled keeps only a concise, honest status and still shows failures and warnings. Expanding a tool call always shows the full presentation, regardless of its collapsed preference. These settings affect only the TUI; agent-facing results and tool behavior do not change.
 
 **Show tool results from Codemode** in the UI tab controls extra Agent IDE result panels, not Codemode itself. **Off** is the default: successful IDE panels stay hidden and errors remain visible. **On** shows IDE panels using each tool's own Read, Search, terminal or diff presentation setting. Expanding shows the full retained IDE panels in either mode. Codemode's JavaScript, output and other tools are unchanged. The saved value is `preferences["ui.codemode"]`: `off` or `on`. Project overrides Global; Default removes only the selected scope's override. Reload or restart applies the saved choice.
@@ -125,7 +123,7 @@ Use `raw:ssh://sandbox/path/file.bin` for original bytes. Offsets and limits cou
 
 Remote resources also support Search, selections, text undo, Git changes and index operations, local/remote transfers, language servers, diagnostics, formatters, linters, and debugger sessions. These providers use the selected Linux target's tools and configuration. Run `/pi-agent-ide-doctor ssh://sandbox/srv/work --no-apply` to inspect an explicitly selected remote project without suggested writes.
 
-For target-native web access, use `web:ssh://sandbox/https://example.com`; ordinary HTTP(S) URLs execute locally. Browser rendering and captures require Node, `playwright-core`, and Chrome or Chromium on the target. Remote process metadata and window/display capture use target-owned resources; native capture also needs a supported graphical environment and the existing vision permissions. Missing dependencies fail without a local fallback.
+For target-native web text access, use `web:ssh://sandbox/https://example.com`; ordinary HTTP(S) URLs execute locally. Browser rendering requires Node, `playwright-core`, and Chrome or Chromium on the target. Missing dependencies fail without a local fallback.
 
 Text snapshots are limited to 32 MiB. Directory transfers and interrupted remote writes have no distributed rollback; inspect reported effects and both endpoints before retrying an uncertain operation. The settings UI can enable or disable SSH file support; target records are edited in JSON. The agent setup and resource workflow is in the [SSH guide](./agent-guides/ssh.md), available through `read` as `docs:ssh` even before a target is configured.
 
@@ -266,8 +264,6 @@ Create the session with `adapter: "java"` and the fully qualified `mainClass`. U
 Run `/pi-agent-ide-doctor` to check the effective tools for the current project. Doctor uses the same layered entries as runtime. For each applicable entry it shows the stable ID, source layer, command, and real probe result. A missing or failing command is reported instead of falling back to a lower layer.
 
 Use `/pi-agent-ide-doctor ssh://target/path` for an explicitly configured Linux SSH project. Its inventory, project/user-global config and target-sensitive probes belong to that target. Native managed debugger path overrides are read from the target, not the controller. Pure-content adapters, such as jq and fetched-source parsers, stay local. Without a source, the command and passive startup tips keep their local scope. An unused target is not probed.
-
-For an SSH project with vision enabled, Doctor checks the native X11 connection and trusted X-Resource 1.2 support without taking a screenshot or grabbing the desktop. It reports display access and trusted window identity separately. Headless sessions and missing libraries remain warnings. This readiness check does not authorize any particular window or enable capture flags; each real capture still checks opt-in and the selected process.
 
 Doctor can still suggest a project override when project evidence points to a better installed tool. It shows the report before changing anything. `--apply` writes only to `<project>/.pi/pi-agent-ide/`; it never changes the global directory or built-in files. `--agent` delegates remaining setup work, and `--no-apply` skips suggested writes.
 

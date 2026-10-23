@@ -66,10 +66,9 @@ text(await tools.replace({ path: lines, text: "- [x] Update docs\n" }));
 
 - files, directories, source code, and raw bytes;
 - JSON transformed through real `jq` filters;
-- web pages, PDFs, images, and image sequences;
+- web pages, PDFs, and images;
 - diagnostics and Git changes;
-- terminal and debugger sessions;
-- running processes, application windows, and full displays.
+- terminal and debugger sessions.
 
 Views change how the same resource is presented. The agent can request source structure, editable anchors, diagnostics, an image, a sequence, or another supported projection without learning a separate tool for every source.
 
@@ -152,15 +151,11 @@ When the project is open in VS Code with the [DebugMCP](https://github.com/micro
 
 </div>
 
-### See the environment
-
-The agent can render websites as images, observe changing interfaces over time, and inspect windows opened by its own processes. Arbitrary windows and full displays require separate explicit opt-in settings. Images can be downscaled, limited to normalized regions, or divided into grid cells so the model receives the useful area instead of every source pixel.
-
 ### Use the same tools over SSH
 
 Ask the agent to work on a remote Linux environment. It can read, search and edit files, copy between your machine and the server, work with Git, and run interactive commands through the same IDE tools. Language servers, linters, formatters and debugger adapters use the remote machine's tools and project settings.
 
-Remote process inspection, supported window/display capture and remote web reads are available too. Missing remote dependencies are reported rather than silently replaced by local tools.
+Remote web text reads are available too. Missing remote dependencies are reported rather than silently replaced by local tools.
 
 SSH uses your existing OpenSSH authentication and host-key trust. The remote machine needs Python 3; no permanent agent is installed there. Operations have the permissions of the SSH account. The agent sets up project-local access by default unless you ask for global settings. See [SSH configuration](docs/configuration.md#ssh-targets).
 
@@ -246,7 +241,7 @@ Run `/pi-agent-ide-doctor` again after installing or changing project tools. For
 
 Pi Agent IDE follows Pi's permissive, YOLO-style default: the agent can use the tools without asking for approval at every step. You can make it as strict as your work requires.
 
-- [Settings](./docs/configuration.md) control built-in tools, project mappings, search, vision, and presentation.
+- [Settings](./docs/configuration.md) control built-in tools, project mappings, search, and presentation.
 - [File hooks](./docs/user-hooks.md) can inspect, change, or deny reads and edits.
 - [Extensions](./docs/extensions.md) can add or replace protocols, resolvers, views, anchors, search backends, and other behavior.
 

@@ -37,7 +37,7 @@ A source field such as `path` or mutation `target` is therefore a resource field
 
 ## SSH resources
 
-Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, Select, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads and capture use explicit remote sources rather than changing where ordinary URLs execute.
+Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, Select, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads use explicit remote sources rather than changing where ordinary URLs execute.
 
 Authentication stays in OpenSSH. Target programs require their dependencies on that machine; missing support does not fall back to local execution. See [SSH configuration](./configuration.md#ssh-targets) and the [SSH guide](./agent-guides/ssh.md) for setup, prerequisites and supported sources.
 
@@ -76,18 +76,6 @@ LSP reads prefer standard pull reports. Servers that advertise a supported compl
 
 Other push-only servers return a `snapshot`: the latest publication, with no promise that every check has finished. This also applies to versioned pushes. An empty snapshot is not a completed clean report. For example, clangd publications remain usable C++ snapshots without invoking TypeScript commands. Later pushes from pull-capable or adapter-backed servers trigger a fresh completed request rather than replacing it with a partial publication.
 
-### Agent vision
-
-Use `search({query: "process:<query>"})` to find running processes by PID or command, then read `process:<pid>` for metadata. Read `window:<pid>` to capture a process window. Agent IDE-owned terminal PIDs are allowed by default. Other windows fail closed unless **Capture arbitrary windows** is enabled or their exact executable file name appears in **Vision allowed executables** in Agent IDE settings.
-
-Read `display:` to capture display 0 or `display:#N` to capture another zero-based display index. Full-display capture fails closed unless **Capture full displays** is enabled in Agent IDE settings. It uses the same image, sequence, and grid-cell behavior as window and web capture.
-
-Capture views accept named parameters after a colon. For example, `sequence:duration=2,interval=0.5,scale=0.5` captures five frames over two seconds, while `image:scale=0.5,region=0.25,0.25,0.5,0.5` returns the central half at half size. Duration is capped at 10 seconds and each sequence at 20 frames. Region values are normalized `x,y,width,height`; the pipeline applies region, then scale, then the existing `offset`/`limit` grid selection.
-
-For an HTTP(S) URL, use `views: ["image"]` to return a rendered page screenshot or `views: ["sequence"]` for a sequence using the configured duration and interval defaults. The default settings are two seconds, 0.5 seconds between frames, and 0.5 image scale. With an image view, `limit` is the size in pixels of a square grid cell and `offset` selects one zero-based row-major cell. A limit without an offset selects cell 0. An offset without a limit is invalid. Omit both to return the bounded full image. Captures are limited to 20 MB of source pixels.
-
-Window and display capture use `node-screenshots` on Linux and macOS. Desktop or window-manager restrictions are reported as unsupported instead of falling back to whole-screen capture. Under WSL, Windows PowerShell helpers capture Windows host process windows and displays. Web screenshots use an isolated system Chrome or Chromium browser. Missing platform support, browser support, windows, or permissions are reported as read failures.
-
 ## Terminal sessions
 
 Codemode receives the same readable shell status and output as direct calls. The result includes its session source and a reference to the complete log when output is shortened. A wait timeout leaves a running session, not a failed command. Inspect the reported exit status and effects; failed tools can reject.
@@ -104,6 +92,8 @@ Every run returns a stable `shell:<session>` source. Synchronous runs wait for t
 The UI tab in `/agent-ide-settings` controls persistent active-terminal presentation: Detailed cards (default), Compact count, or Off. Detailed cards replace the separate active count instead of showing both. This setting does not hide ordinary run results or completion messages.
 
 Use `read` on the returned source for status and bounded output. Compact cards show the latest 12 output rows and count omitted earlier rows; expanded cards show all retained rows. Add `views: ["image"]` to receive a PNG of the ANSI-aware virtual terminal screen. Use `write` to send exact text without Enter. Use `insert` for named keys and chords such as `Enter`, `Ctrl+C`, `Ctrl+Shift+Left`, or Unix caret controls such as `^U`; separate multiple keys with spaces or commas. A native Codemode script can send several terminal inputs without file formatting or diagnostics. Use `search` with the `shell:<session>` path to search retained output, including rows outside the current screen. `delete` terminates the owned process tree when needed, disposes the virtual screen, and removes the session. `replace` does not apply to terminal sessions.
+
+For a bounded terminal sequence, use `views: ["sequence:duration=2,interval=0.5,scale=1"]`. This returns five PNG frames over two seconds. Duration is capped at 10 seconds and each sequence at 20 frames. Terminal images and sequences support scale from greater than 0 through 1; they do not support region or grid-cell selection.
 
 Deleting an active session first requests graceful termination, then forcefully terminates its process tree after the grace period. Deletion does not undo file or network effects. Sessions survive extension reloads in the current Pi process. Shutdown stops live processes; sessions are not reattached after restart.
 
@@ -167,7 +157,7 @@ They share the same Resource and anchor contracts. A mutation can resolve one or
 
 Use an ordinary path without text selectors for whole-file Write or whole-object Delete, Copy, and Move. Copy and Move require an explicit destination path. They support regular files, directories and symlink objects, including local/SSH transfers. Directory merge/replace behavior, safety checks and uncertain effects are described in [directory operations](./directory-operations.md).
 
-To save an image a Read returned, such as a window capture, page screenshot or image file, pass that Read result as Write `content`: the image value itself in Codemode, or the result's UUID or `RESULT#` reference in a direct call. Write saves the exact image bytes, and the file extension must match the image type (`.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`). Several frames become numbered files: `<name>-01.png`, `<name>-02.png`… beside the path, or `frame-01.png`… inside a folder path. Any other text, including a UUID of a result without images, is not image content: plain text is written as before, and an image-less result reference is refused.
+To save an image a Read returned, such as a terminal screenshot or image file, pass that Read result as Write `content`: the image value itself in Codemode, or the result's UUID or `RESULT#` reference in a direct call. Write saves the exact image bytes, and the file extension must match the image type (`.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`). Several frames become numbered files: `<name>-01.png`, `<name>-02.png`… beside the path, or `frame-01.png`… inside a folder path. Any other text, including a UUID of a result without images, is not image content: plain text is written as before, and an image-less result reference is refused.
 
 For selected-text work, a path identifies the source and anchors identify the span. Pass an unchanged Read, Search, Select or mutation result when it already selects the wanted text. `replace` changes each selected range; `delete` removes those ranges while keeping the file; `insert` adds text around the selected lines. A directory listing or read-only view does not grant text-edit authority.
 
