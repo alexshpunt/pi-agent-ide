@@ -353,7 +353,9 @@ async function attempt(
       "--no-themes",
       "--no-mcp",
       "-e",
-      "/source/src/pi-agent-ide.ts",
+      task.setup === "standalone-resource"
+        ? "/source/tests/integration/fixtures/standalone-resource-provider.ts"
+        : "/source/src/pi-agent-ide.ts",
       "-e",
       "builtin:codemode",
       "-e",
@@ -364,8 +366,9 @@ async function attempt(
       profile.thinking,
       "--exclude-tools",
       `edit,grep,find,ls${mode === "direct" ? ",codemode" : ""}`,
-      "--pi-agent-ide-no-post-processing",
-      "true",
+      ...(task.setup === "standalone-resource"
+        ? []
+        : ["--pi-agent-ide-no-post-processing", "true"]),
     ];
     for (const extension of connector?.extensions ?? []) piArgs.push("-e", extension);
     if (connector) piArgs.push("--provider", connector.definition.provider);

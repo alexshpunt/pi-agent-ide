@@ -12,6 +12,38 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "standalone-resource-host",
+  ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
+  "Only standalone resource hosts are loaded; the full IDE is not enabled. Discover the demo namespace through tool_search. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. Finally reread memory://demo/note. Use demo tools, not the sibling namespace or filesystem tools.",
+  [
+    { tool: "tool_search", args: { query: /demo/ } },
+    {
+      tool: "demo_read",
+      args: { path: "memory://demo/note", offset: 1, limit: 1 },
+      contains: "alpha",
+    },
+    { tool: "demo_search", args: { query: "alpha" }, reuse: reuse(1), contains: "alpha" },
+    { tool: "demo_replace", args: { text: "changed" }, reuse: reuse(2) },
+    { tool: "demo_read", args: { path: "local.txt" }, error: true },
+    { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
+    { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },
+    { tool: "demo_read", args: { path: "memory://demo/note" }, contains: "changed\nomega" },
+  ],
+  {
+    setup: "standalone-resource",
+    files: {
+      "resource.txt": "alpha\nomega\n",
+      "other.txt": "sibling\n",
+      "local.txt": "local sentinel\n",
+    },
+    expected: {
+      "resource.txt": "changed\nomega\n",
+      "other.txt": "sibling\n",
+      "local.txt": "local sentinel\n",
+    },
+  },
+);
+add(
   "semantic-write-receipts",
   ["edit.semantic-write-receipt"],
   "Use Write once each on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode catch the expected failed calls so the remaining distinct actions can run. Report unknown for the uncertain action; do not call it a failed file save.",

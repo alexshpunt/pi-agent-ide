@@ -76,6 +76,70 @@ describe("source result targets", () => {
     expect(() => store.resolve(first, "/workspace")).toThrow("expired or unknown");
   });
 
+  test("known URI edits retire old selections even when the original text returns", async () => {
+    const store = new ResultTargetStore();
+    let content = "a b\n";
+    const owned = {
+      ...target,
+      source: "memory://demo/note",
+      readCurrent: async () => content,
+    };
+    const original = store.register([owned], "/workspace");
+    const derived = store.register(
+      [
+        {
+          ...owned,
+          ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 1 } }],
+        },
+      ],
+      "/workspace",
+    );
+    const published = store.publish(
+      { status: "success", data: { target: original } },
+      "Original resource",
+      "/workspace",
+      [owned.source],
+    );
+    store.registerSearchReference("SEARCH#ABCD:1:match", derived, "/workspace");
+    const sibling = store.register([{ ...owned, source: "memory://other/note" }], "/workspace");
+
+    content = "a c\n";
+    store.refresh(owned.source, "/workspace", true);
+    const changed = store.register([{ ...owned, expectedContent: content }], "/workspace");
+    await store.verify(store.resolve(changed, "/workspace"));
+    store.refresh(owned.source, "/workspace");
+    expect(store.resolve(changed, "/workspace").targets[0]?.ranges).toEqual(owned.ranges);
+
+    content = owned.expectedContent;
+    store.refresh(owned.source, "/workspace", true);
+    for (const reference of [original, derived, published, "SEARCH#ABCD:1:match", changed])
+      expect(() => store.resolve(reference, "/workspace")).toThrow(/expired/u);
+    expect(store.resolve(sibling, "/workspace").targets[0]?.source).toBe("memory://other/note");
+  });
+
+  test("a known edit preserves pending output handles and their resulting spans", async () => {
+    const store = new ResultTargetStore();
+    const owned = {
+      ...target,
+      source: "memory://demo/note",
+      readCurrent: async () => "a c\n",
+    };
+    const old = store.register([owned], "/workspace");
+    const pending = store.reserve("/workspace");
+    const published = store.publish(
+      { status: "success", data: { target: pending } },
+      "Pending mutation",
+      "/workspace",
+    );
+    store.refresh(owned.source, "/workspace", true);
+    expect(() => store.resolve(old, "/workspace")).toThrow(/expired/u);
+    const committed = { ...owned, expectedContent: "a c\n" };
+    store.confirm(pending, [committed], "/workspace");
+    const resolved = store.resolve(published, "/workspace");
+    expect(resolved.targets).toEqual([committed]);
+    await store.verify(resolved);
+  });
+
   test("confirms pending handles once without rebinding committed snapshots", () => {
     const store = new ResultTargetStore();
     const reference = store.reserve("/workspace");
