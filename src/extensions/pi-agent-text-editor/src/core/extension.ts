@@ -70,7 +70,13 @@ export default async function registerTextEditorCore(
   registerTextEditOrigins(pi, core);
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
   core.onDidEdit((completion) => {
-    resultTargets.refresh(completion.resourceSource, completion.cwd);
+    // A final formatting pass must not retire fresh mutation spans when it left the text unchanged.
+    const before = completion.beforePostProcessing ?? completion.before;
+    resultTargets.refresh(
+      completion.resourceSource,
+      completion.cwd,
+      before.content !== completion.after.content,
+    );
   });
   await core.registerPlugin({
     protocol: TEXT_EDITOR_PROTOCOL,
