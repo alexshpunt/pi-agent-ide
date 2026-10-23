@@ -61,7 +61,6 @@ test("ordinary search retains SSH identities, recipes, selections and file scope
           "ide.diagnostics",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
         ],
       }),
     );

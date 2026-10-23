@@ -7,7 +7,6 @@ import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doc
 import { astDoctorPlugin } from "#src/plugins/pi-agent-ide-ast/src/doctor-plugin.js";
 import { changesDoctorPlugin } from "#src/plugins/pi-agent-ide-changes/src/doctor-plugin.js";
 import { webDoctorPlugin } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/doctor-plugin.js";
-import { visionDoctorPlugin } from "#src/plugins/pi-agent-ide-vision/src/doctor-plugin.js";
 import { textSearchDoctorPlugin } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/doctor-plugin.js";
 import type { DoctorWorkspace } from "#src/api/doctor.js";
 import { vi } from "vitest";
@@ -237,51 +236,6 @@ test("Doctor browser readiness comes from its owner and never a controller insta
   ]);
 });
 
-test("Doctor capture readiness uses its owner and does not mistake a missing probe for local success", async () => {
-  const controller = new AbortController();
-  const probeCapture = vi.fn(async () => ({
-    display: { ok: true, detail: "Owned connection without pixels" },
-    window: { ok: false, detail: "Owned trusted identity unavailable" },
-  }));
-  const core = new DoctorCore();
-  await core.registerPlugin(visionDoctorPlugin);
-  const result = await runDoctor(core.snapshot(), project, {}, controller.signal, {
-    ...workspaceFixture(),
-    probeCapture,
-  });
-  expect(probeCapture).toHaveBeenCalledWith(controller.signal);
-  expect(result.sections.find((section) => section.pluginId === "vision")?.findings).toEqual([
-    {
-      status: "pass",
-      message: "Native display connection",
-      detail: "Owned connection without pixels",
-    },
-    {
-      status: "warn",
-      message: "Trusted native window identity",
-      detail: "Owned trusted identity unavailable",
-    },
-  ]);
-  const missing = await runDoctor(core.snapshot(), project, {}, undefined, workspaceFixture());
-  expect(missing.sections.find((section) => section.pluginId === "vision")?.findings).toEqual([
-    {
-      status: "warn",
-      message: "Native capture readiness is unavailable",
-      detail: "Project owner does not provide a capture readiness probe",
-    },
-  ]);
-  const reason = new Error("Cancel native capture readiness");
-  probeCapture.mockImplementation(async () => {
-    controller.abort(reason);
-    throw reason;
-  });
-  await expect(
-    runDoctor(core.snapshot(), project, {}, controller.signal, {
-      ...workspaceFixture(),
-      probeCapture,
-    }),
-  ).rejects.toBe(reason);
-});
 test.each([
   ["/native/adapter#café.js", "ssh://fixture/native/adapter#café.js"],
   ["adapter#café.js", `${project}/adapter#café.js`],

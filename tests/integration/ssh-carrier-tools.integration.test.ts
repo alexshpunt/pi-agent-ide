@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, expect, test } from "vitest";
 import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import {
   assistantMessage,
   getToolExecution,
@@ -50,7 +50,6 @@ test("ordinary Pi reports a genuinely lost SSH terminal without inventing exit z
           "ide.changes",
           "ide.diagnostics",
           "ide.debugger",
-          "ide.vision",
         ],
       }),
     );

@@ -21,7 +21,7 @@ afterEach(async () => {
   await rm(temporaryDirectory, { recursive: true, force: true });
 });
 
-test("text editor preset loads editing tools without terminal, debugger, or vision", async () => {
+test("text editor preset loads editing tools without terminal or debugger", async () => {
   await mkdir(path.dirname(configPath), { recursive: true });
   await writeFile(configPath, JSON.stringify({ preset: "text-editor" }));
   await writeFile(path.join(temporaryDirectory, "note.txt"), "alpha\n");

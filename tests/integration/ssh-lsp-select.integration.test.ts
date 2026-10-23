@@ -74,7 +74,6 @@ test.each(["scope", "mutation"] as const)(
             "ide.lint",
             "ide.debugger",
             "ide.terminal",
-            "ide.vision",
             "ide.diagnostics",
           ],
         }),

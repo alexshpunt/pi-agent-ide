@@ -37,7 +37,6 @@ test("real Pi bash selects remote cwd without mapping SSH references to local di
           "ide.changes",
           "ide.diagnostics",
           "ide.debugger",
-          "ide.vision",
         ],
       }),
     );

@@ -1,7 +1,7 @@
 import { startSshProcess } from "#src/backend/ssh-channel.js";
 import { SshBackendError } from "#src/backend/ssh.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { startSshCarrierFixture } from "./ssh-carrier-fixture.js";
 
 /** Check exact adopted descendants and an independent sibling before disposing the private SSH fixture. */

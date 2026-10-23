@@ -66,14 +66,7 @@ test("ordinary scoped SSH symbols and graphs preserve target identities and repo
       JSON.stringify({
         noAnimations: true,
         noPostProcessing: true,
-        disabled: [
-          "ide.ast",
-          "ide.formatter",
-          "ide.lint",
-          "ide.debugger",
-          "ide.terminal",
-          "ide.vision",
-        ],
+        disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger", "ide.terminal"],
       }),
     );
     const run = await new PiIntegrationTest({
@@ -229,7 +222,7 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
       JSON.stringify({
         noAnimations: true,
         noPostProcessing: true,
-        disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger", "ide.vision"],
+        disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger"],
       }),
     );
     const poll =

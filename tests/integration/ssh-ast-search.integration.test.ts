@@ -66,7 +66,6 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
           "ide.diagnostics",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
         ],
       }),
     );

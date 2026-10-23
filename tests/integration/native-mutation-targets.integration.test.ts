@@ -18,14 +18,7 @@ test("pending native results gain exact authority only after their original-snap
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
-        disabled: [
-          "ide.lsp",
-          "ide.lint",
-          "ide.formatter",
-          "ide.debugger",
-          "ide.terminal",
-          "ide.vision",
-        ],
+        disabled: ["ide.lsp", "ide.lint", "ide.formatter", "ide.debugger", "ide.terminal"],
       }),
     );
     await writeFile(path.join(cwd, "note.txt"), "alpha café beta\r\n");
@@ -78,14 +71,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
-        disabled: [
-          "ide.lsp",
-          "ide.lint",
-          "ide.formatter",
-          "ide.debugger",
-          "ide.terminal",
-          "ide.vision",
-        ],
+        disabled: ["ide.lsp", "ide.lint", "ide.formatter", "ide.debugger", "ide.terminal"],
       }),
     );
     await writeFile(path.join(cwd, "note.txt"), "alpha café\n");

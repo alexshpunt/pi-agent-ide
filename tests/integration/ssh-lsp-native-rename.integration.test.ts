@@ -77,14 +77,7 @@ test.each(["cold graph", "rename"] as const)(
         JSON.stringify({
           noAnimations: true,
           noPostProcessing: true,
-          disabled: [
-            "ide.ast",
-            "ide.formatter",
-            "ide.lint",
-            "ide.debugger",
-            "ide.vision",
-            "ide.diagnostics",
-          ],
+          disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger", "ide.diagnostics"],
         }),
       );
       const inspect = [

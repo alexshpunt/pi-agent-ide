@@ -1,6 +1,5 @@
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { afterAll, expect, test } from "vitest";
 import {
   assistantMessage,
@@ -104,7 +103,7 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
     );
     expect(getToolExecution(run, "local").isError).toBe(true);
     expect(getToolResultText(run, "local")).not.toContain("Isolated café HTTP");
-    for (const id of ["http", "literal", "regex", "browser", "image", "sequence"])
+    for (const id of ["http", "literal", "regex", "browser"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(getToolResultText(run, "http")).toContain("Isolated café HTTP");
     expect(getToolResultText(run, "http")).toContain(fixture.url + "/detail");
@@ -114,25 +113,21 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
     }
     expect(getToolResultText(run, "regex")).toContain("Native value 42");
     expect(getToolResultText(run, "browser")).toContain("Native value 43");
-    const frame = getToolResultMessage(run, "image").content.find((b) => b.type === "image");
-    if (!frame) throw new Error("No isolated native browser image");
-    const image = await loadImage(Buffer.from(frame.data, "base64"));
-    expect([image.width, image.height]).toEqual([320, 180]);
-    const paint = createCanvas(320, 180).getContext("2d");
-    paint.drawImage(image, 0, 0);
-    expect([...paint.getImageData(0, 0, 1, 1).data]).toEqual([255, 0, 0, 255]);
+    for (const id of ["image", "sequence"]) {
+      expect(getToolExecution(run, id).isError).toBe(true);
+      expect(getToolResultMessage(run, id).content.some((block) => block.type === "image")).toBe(
+        false,
+      );
+    }
     const sequenceRead = run.traceEvents.find(
       (trace) =>
         trace.type === "tool_result" &&
         (trace.event as { toolCallId?: string }).toolCallId === "sequence/1",
     );
     expect(sequenceRead?.event).toMatchObject({
-      isError: false,
-      details: { source: imageSource, resolvedBy: "vision" },
+      isError: true,
+      details: { failure: { code: "UNSUPPORTED_CAPABILITY" } },
     });
-    expect(
-      getToolResultMessage(run, "sequence").content.filter((block) => block.type === "image"),
-    ).toHaveLength(2);
     expect(run.tuiRenderedOutput).toContain(source);
     expect(run.tuiRenderedOutput).toContain("Isolated café HTTP");
     await expect(

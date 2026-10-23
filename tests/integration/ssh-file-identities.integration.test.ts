@@ -100,7 +100,6 @@ test("identical absolute file paths stay target-owned across private mount names
           "ide.changes",
           "ide.diagnostics",
           "ide.debugger",
-          "ide.vision",
           "ide.terminal",
         ],
       }),

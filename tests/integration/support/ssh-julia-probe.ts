@@ -3,7 +3,10 @@ import { JULIA_DEBUG_SOURCE } from "#integration/fixtures/julia-debug-source.js"
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { remoteLocation } from "#src/backend/identity.js";
-import { findSshProcessMetadata, readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import {
+  findSshProcessMetadata,
+  readSshProcessMetadata,
+} from "#integration/support/ssh-process-metadata.js";
 import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";
 import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 

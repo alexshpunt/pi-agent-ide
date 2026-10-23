@@ -4,7 +4,7 @@ import { startSshFixture } from "./ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.js";
 import { createSshLspTransport } from "#src/backend/lsp-transport.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
 import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
 

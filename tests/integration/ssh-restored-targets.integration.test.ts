@@ -52,7 +52,6 @@ test("whole-file transfers and last text undo publish only present native destin
           "ide.lint",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
           "ide.diagnostics",
         ],
       }),

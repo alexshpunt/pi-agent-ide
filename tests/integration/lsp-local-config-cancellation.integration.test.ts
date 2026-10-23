@@ -26,7 +26,7 @@ test("loaded local config cancellation preserves its reason and ordinary symbols
       JSON.stringify({
         noAnimations: true,
         noPostProcessing: true,
-        disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger", "ide.vision"],
+        disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger"],
       }),
     );
     const run = await new PiIntegrationTest({

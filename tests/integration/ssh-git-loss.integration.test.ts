@@ -64,7 +64,6 @@ test("ordinary and batched Git follow-up loss stays unknown after confirmed text
           "ide.diagnostics",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
         ],
       }),
     );

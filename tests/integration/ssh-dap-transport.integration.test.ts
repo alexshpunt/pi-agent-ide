@@ -5,7 +5,7 @@ import { SshBackendRegistry } from "#src/backend/registry.js";
 import { remoteLocation } from "#src/backend/identity.js";
 import { startSshDapTransport } from "#src/backend/dap-transport.js";
 import { startSshTcpDapTransport } from "#src/backend/dap-tcp-transport.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
 import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";

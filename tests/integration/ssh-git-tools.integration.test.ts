@@ -106,7 +106,6 @@ test.each(["present", "cached deletion", "missing index"])(
             "ide.diagnostics",
             "ide.debugger",
             "ide.terminal",
-            "ide.vision",
           ],
         }),
       );

@@ -109,7 +109,7 @@ test("ordinary SSH writes run the owner formatter and reread its final content",
       JSON.stringify({
         noAnimations: true,
         noPostProcessing: false,
-        disabled: ["ide.ast", "ide.debugger", "ide.terminal", "ide.vision"],
+        disabled: ["ide.ast", "ide.debugger", "ide.terminal"],
       }),
     );
     const run = await new PiIntegrationTest({

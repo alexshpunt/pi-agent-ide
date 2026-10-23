@@ -1,8 +1,7 @@
 import { readlink, stat } from "node:fs/promises";
-import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { expect, test } from "vitest";
 import { fetchSshWebResponse } from "#src/backend/web-http.js";
-import { captureSshBrowserImage, readSshBrowserPage } from "#src/backend/web-browser.js";
+import { readSshBrowserPage } from "#src/backend/web-browser.js";
 import { startIsolatedSshWebFixture } from "./support/ssh-isolated-web-fixture.js";
 
 test("native HTTP and Playwright reach an endpoint unavailable in the controller network", async () => {
@@ -24,14 +23,6 @@ test("native HTTP and Playwright reach an endpoint unavailable in the controller
     );
     expect(rendered.html).toContain("Isolated café browser");
     expect(rendered.html).toContain("Native value 43");
-    const red = new URL(fixture.url + "/red");
-    const image = await loadImage(
-      Buffer.from(await captureSshBrowserImage(target, red, `web:ssh://fixture/${red.href}`)),
-    );
-    const canvas = createCanvas(image.width, image.height);
-    const paint = canvas.getContext("2d");
-    paint.drawImage(image, 0, 0);
-    expect([...paint.getImageData(640, 360, 1, 1).data]).toEqual([255, 0, 0, 255]);
     expect(await readlink("/proc/self/ns/net")).toBe(controllerNamespace);
     await expect(
       fetch(fixture.url + "/red", { signal: AbortSignal.timeout(2000) }),

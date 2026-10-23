@@ -8,7 +8,7 @@ import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plug
 import { lspDoctorPlugin } from "#src/plugins/pi-agent-ide-lsp/src/doctor-plugin.js";
 import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { startSshFixture } from "./support/ssh-fixture.js";
 import { probeOwnedDoctorApply, probeOwnedDoctorBrowser } from "./support/ssh-doctor-probe.js";
 import { probeOwnedDoctorDebugger } from "./support/ssh-doctor-probe.js";

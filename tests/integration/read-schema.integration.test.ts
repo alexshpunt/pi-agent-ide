@@ -15,7 +15,7 @@ async function schema(disabled: string[], latePlugin = false) {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
-      JSON.stringify({ disabled, preferences: { "vision.imageScale": "0.75" } }),
+      JSON.stringify({ disabled }),
     );
     const result = await new PiIntegrationTest({
       testName: latePlugin ? "read-schema-late" : "read-schema-disabled",
@@ -41,7 +41,7 @@ async function schema(disabled: string[], latePlugin = false) {
 }
 
 test("delivers loaded source/view contracts and late metadata to the real Pi provider", async () => {
-  const read = await schema(["ide.terminal"], true);
+  const read = await schema([], true);
   const { path: source, views, offset, limit } = read.properties;
   expect(source?.description).toContain("current-schema-format");
   expect(source?.description).not.toContain("old-schema-format");
@@ -58,7 +58,7 @@ test("delivers loaded source/view contracts and late metadata to the real Pi pro
     "ast:",
     "diagnostics:",
     "debug:",
-    "window:",
+    "shell:<session>",
   ])
     expect(source?.description).toContain(prefix);
   for (const view of [
@@ -68,22 +68,21 @@ test("delivers loaded source/view contracts and late metadata to the real Pi pro
     "diagnostics",
     "breakpoints",
     "jq:<filter>",
-    "image:scale",
-    "sequence:duration",
+    "image[:scale=S]",
+    "sequence[:duration=D",
     "late-view",
   ])
     expect(views?.description).toContain(view);
-  expect(views?.description).toContain("scale=0.75");
-  expect(offset?.description).toContain("row-major");
-  expect(limit?.description).toContain("output pixels");
-  expect(source?.description).not.toContain("shell:<session>");
+  for (const prefix of ["process:", "window:", "display:"])
+    expect(source?.description).not.toContain(prefix);
+  expect(offset?.description).not.toContain("row-major");
+  expect(limit?.description).not.toContain("output pixels");
   expect(views).toMatchObject({ type: "array", items: { type: "string" } });
 });
 
 test("does not advertise disabled plugin syntax in the real Pi schema", async () => {
   const read = await schema([
     "ide.terminal",
-    "ide.vision",
     "ide.ast",
     "ide.changes",
     "ide.debugger",

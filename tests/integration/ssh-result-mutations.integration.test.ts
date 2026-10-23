@@ -55,7 +55,6 @@ test("registered whole-file and paired text mutations preserve native identity a
           "ide.lint",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
           "ide.diagnostics",
         ],
       }),

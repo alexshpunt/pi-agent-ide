@@ -48,7 +48,6 @@ test("ordinary and native tools keep private SSH diagnostics out of agent and TU
           "ide.changes",
           "ide.diagnostics",
           "ide.debugger",
-          "ide.vision",
         ],
       }),
     );

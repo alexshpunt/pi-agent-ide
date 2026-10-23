@@ -71,7 +71,6 @@ test("filesystem SSH Read keeps text, bytes, JSONL and media windows readonly an
           "ide.lint",
           "ide.formatter",
           "ide.debugger",
-          "ide.vision",
           "ide.diagnostics",
         ],
       }),

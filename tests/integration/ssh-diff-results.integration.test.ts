@@ -69,7 +69,6 @@ test("remote Diff keeps full snapshots, bounded output and session-owned tempora
           "ide.lint",
           "ide.formatter",
           "ide.debugger",
-          "ide.vision",
           "ide.diagnostics",
           "ide.terminal",
         ],

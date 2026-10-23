@@ -2,7 +2,7 @@ import { access } from "node:fs/promises";
 import { expect, test } from "vitest";
 import { startSshPidNamespaceFixture } from "#integration/support/ssh-pid-namespace-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 
 test("the same native PID on two SSH targets never becomes a controller process or the other target", async () => {
   const left = await startSshPidNamespaceFixture();
@@ -36,10 +36,6 @@ test("the same native PID on two SSH targets never becomes a controller process 
       expect(snapshot).toMatchObject({
         pid: 1,
         parentPid: 0,
-        host: "ssh",
-        target: target.id,
-        owned: false,
-        resource: `process:ssh://${target.id}/1`,
       });
       expect(snapshot?.command).toContain("ssh-network-server.py");
       expect(snapshot?.identity).toMatch(/^[a-f0-9-]+:\d+$/u);

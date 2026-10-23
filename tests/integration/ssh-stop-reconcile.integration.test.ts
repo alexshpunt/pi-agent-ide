@@ -2,7 +2,10 @@ import { expect, test } from "vitest";
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { SshBackendError } from "#src/backend/ssh.js";
-import { findSshProcessMetadata, readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import {
+  findSshProcessMetadata,
+  readSshProcessMetadata,
+} from "#integration/support/ssh-process-metadata.js";
 import { stopOwnedSshProcess } from "#src/backend/owned-process-stop.js";
 
 test("lost-stop reconciliation never treats a living PID or failed native inspection as confirmed cleanup", async () => {

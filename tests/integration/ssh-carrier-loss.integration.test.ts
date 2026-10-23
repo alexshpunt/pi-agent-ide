@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.js";
 import { SshBackend, SshBackendError } from "#src/backend/ssh.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
 
 test.each(["pipe", "pty", "execute"] as const)(

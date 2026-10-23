@@ -79,7 +79,6 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
             "ide.changes",
             "ide.debugger",
             "ide.terminal",
-            "ide.vision",
           ],
         }),
       );
@@ -293,7 +292,6 @@ test("scripted whole-file copies report the prior destination and final formatte
           "ide.changes",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
         ],
       }),
     );

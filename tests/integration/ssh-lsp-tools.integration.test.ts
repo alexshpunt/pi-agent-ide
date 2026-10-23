@@ -83,14 +83,7 @@ test.each(["diagnostics", "rename", "race"] as const)(
         JSON.stringify({
           noAnimations: true,
           noPostProcessing: true,
-          disabled: [
-            "ide.ast",
-            "ide.formatter",
-            "ide.lint",
-            "ide.debugger",
-            "ide.terminal",
-            "ide.vision",
-          ],
+          disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger", "ide.terminal"],
         }),
       );
       const run = await new PiIntegrationTest({

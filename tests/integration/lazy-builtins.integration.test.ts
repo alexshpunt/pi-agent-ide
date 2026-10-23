@@ -32,7 +32,7 @@ test("registers only selected built-ins", async () => {
       path.join(cwd, "src/composite/builtin-extensions.ts"),
       `export const BUILTIN_EXTENSIONS = [
   { id: "ide.tips", dependencies: [], register: async (pi, context) => (await import("#src/tips/extension.js")).default(pi, context) },
-  { id: "ide.vision", dependencies: [], defaultEnabled: false, register: async (pi, context) => (await import("#src/disabled/extension.js")).default(pi, context) },
+  { id: "disabled.fixture", dependencies: [], defaultEnabled: false, register: async (pi, context) => (await import("#src/disabled/extension.js")).default(pi, context) },
 ];
 `,
     );
@@ -48,7 +48,7 @@ test("registers only selected built-ins", async () => {
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
-        disabled: ["ide.vision"],
+        disabled: ["disabled.fixture"],
       }),
     );
     await new PiIntegrationTest({

@@ -190,8 +190,6 @@ test("ordinary explicit target web reads and searches retain their owner while b
       "target-browser",
       "ordinary-local",
       "structured",
-      "target-image",
-      "structured-images",
       "target-media",
       "target-pdf",
     ])
@@ -207,22 +205,15 @@ test("ordinary explicit target web reads and searches retain their owner while b
     expect(getToolExecution(run, "unknown-target").isError).toBe(true);
     expect(getToolResultText(run, "unknown-target")).toContain("UNKNOWN_TARGET");
     expect(getToolResultText(run, "structured")).toContain("Owned café HTTP");
-    const frame = getToolResultMessage(run, "target-image").content.find((b) => b.type === "image");
-    if (!frame) throw new Error("No target browser image");
-    const image = await loadImage(Buffer.from(frame.data, "base64"));
-    expect([image.width, image.height]).toEqual([320, 180]);
-    const canvas = createCanvas(image.width, image.height);
-    const drawing = canvas.getContext("2d");
-    drawing.drawImage(image, 0, 0);
-    expect(Array.from(drawing.getImageData(0, 0, 1, 1).data)).toEqual([255, 0, 0, 255]);
+    for (const id of ["target-image", "structured-images"]) {
+      expect(getToolExecution(run, id).isError).toBe(true);
+      expect(getToolResultMessage(run, id).content.some((block) => block.type === "image")).toBe(
+        false,
+      );
+    }
     expect(getToolExecutionDetails(getToolExecution(run, "target-image"))).toMatchObject({
-      source: imageSource,
+      failure: { code: "UNSUPPORTED_CAPABILITY" },
     });
-    expect(
-      getToolResultMessage(run, "structured-images").content.filter(
-        (block) => block.type === "image",
-      ),
-    ).toHaveLength(2);
     expect(getToolResultText(run, "target-pdf")).toContain("Owned target PDF value 42");
     const mediaFrame = getToolResultMessage(run, "target-media").content.find(
       (b) => b.type === "image",

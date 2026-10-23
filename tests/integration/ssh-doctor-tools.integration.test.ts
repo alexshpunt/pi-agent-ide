@@ -136,7 +136,6 @@ test("the public Doctor apply flag writes only its native project config and rec
           "search.text",
           "read.web",
           "read.filesystem.jq",
-          "ide.vision",
         ],
       }),
     );

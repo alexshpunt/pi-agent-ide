@@ -55,7 +55,6 @@ test("Select derives remote text and AST targets without confusing an identical 
           "ide.lsp",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
           "ide.lint",
           "ide.formatter",
           "ide.diagnostics",

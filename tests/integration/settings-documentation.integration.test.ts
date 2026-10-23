@@ -92,15 +92,14 @@ test.each(["direct", "codemode"] as const)(
     const json = resultText(result, "catalog").match(/```json\n([\s\S]*?)\n```/)?.[1];
     if (json === undefined) throw new Error("Missing structured settings catalog");
     const catalog = JSON.parse(json) as {
-      preferences: unknown[];
+      preferences: { id: string }[];
       presets: unknown[];
       flags: { id: string; default: boolean }[];
     };
     expect(catalog.preferences).toEqual(AGENT_IDE_PREFERENCES);
     expect(catalog.presets).toEqual(AGENT_IDE_PRESET_OPTIONS);
-    expect(catalog.flags.find(({ id }) => id === "pi-agent-ide-vision-displays")?.default).toBe(
-      false,
-    );
+    expect(catalog.flags.some(({ id }) => id.startsWith("pi-agent-ide-vision-"))).toBe(false);
+    expect(catalog.preferences.some(({ id }) => id.startsWith("vision."))).toBe(false);
     for (const id of ["scoped", "all"]) {
       expect(getToolExecution(result, id).isError).toBe(false);
       expect(resultText(result, id)).toMatch(/docs:ide-settings:\d+:/);

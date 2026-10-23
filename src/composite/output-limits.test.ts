@@ -2,11 +2,6 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 import { limitIdeOutput } from "./output-limits.js";
-import {
-  captureImages,
-  selectImage,
-  validateVisionOptions,
-} from "#src/plugins/pi-agent-ide-vision/src/vision.js";
 
 for (const shape of ["many-lines", "long-unicode", "many-blocks"] as const) {
   test(`bounds ${shape} across the whole payload`, async () => {
@@ -143,54 +138,15 @@ for (const count of [1, 5, 20, 25]) {
   });
 }
 
-for (const scale of [1, 0.5]) {
-  for (const crop of [false, true]) {
-    test(`bounds grid cells after crop=${crop} and scale=${scale}`, async () => {
-      const png = await createCanvas(640, 400).encode("png");
-      const width = Math.round(640 * (crop ? 0.5 : 1) * scale);
-      const height = Math.round(400 * (crop ? 0.5 : 1) * scale);
-      for (const cellSize of [1, 200, 5000]) {
-        const columns = Math.ceil(width / cellSize);
-        const rows = Math.ceil(height / cellSize);
-        for (const cellIndex of [undefined, 0, columns * rows - 1, columns * rows]) {
-          const options = validateVisionOptions({
-            mode: "image",
-            scale,
-            cellSize,
-            cellIndex,
-            ...(crop ? { region: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } } : {}),
-          });
-          if (cellIndex === columns * rows) {
-            await expect(selectImage(png, options)).rejects.toThrow("exceeds");
-            continue;
-          }
-          const blocks = await captureImages(async () => png, options);
-          const result = await limitIdeOutput(blocks);
-          expect(result.images).toHaveLength(1);
-          const image = result.images.find((block) => block.type === "image");
-          if (!image) throw new Error("Image was lost");
-          const actual = await loadImage(Buffer.from(image.data, "base64"));
-          expect(actual.width).toBe(
-            Math.min(cellSize, width - ((cellIndex ?? 0) % columns) * cellSize),
-          );
-          expect(actual.height).toBe(
-            Math.min(cellSize, height - Math.floor((cellIndex ?? 0) / columns) * cellSize),
-          );
-        }
-      }
-    });
-  }
-}
-test("shares the media budget after a maximum-length sequence capture", async () => {
-  const png = await createCanvas(640, 400).encode("png");
-  const blocks = await captureImages(async () => png, {
-    mode: "sequence",
-    durationSeconds: 0.019,
-    intervalSeconds: 0.001,
-    scale: 1,
-  });
-  expect(blocks).toHaveLength(20);
-  const result = await limitIdeOutput(blocks);
+test("shares the media budget across a maximum-length terminal sequence", async () => {
+  const png = (await createCanvas(640, 400).encode("png")).toString("base64");
+  const result = await limitIdeOutput(
+    Array.from({ length: 20 }, () => ({
+      type: "image" as const,
+      data: png,
+      mimeType: "image/png",
+    })),
+  );
   expect(result.images).toHaveLength(20);
   const pixels = await Promise.all(
     result.images

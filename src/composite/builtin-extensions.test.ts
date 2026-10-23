@@ -5,6 +5,15 @@ import { disabledByPreset } from "./presets.js";
 import { selectBuiltinExtensions } from "./selection.js";
 
 describe("built-in extension catalog", () => {
+  test("cannot restore removed Vision through the module catalog or old enable configuration", () => {
+    expect(BUILTIN_EXTENSIONS.some((extension) => extension.id === "ide.vision")).toBe(false);
+    expect(() => selectBuiltinExtensions(BUILTIN_EXTENSIONS, [], ["ide.vision"])).toThrow(
+      "Unknown Pi Agent IDE extension ID",
+    );
+    const enabled = selectBuiltinExtensions(BUILTIN_EXTENSIONS, []).enabled.map(({ id }) => id);
+    expect(enabled).toContain("ide.terminal");
+    expect(enabled).toContain("read.web");
+  });
   test("does not register removed editing restrictions", () => {
     const ids = BUILTIN_EXTENSIONS.map((extension) => extension.id);
     expect(ids).not.toContain("editor.argument-order");
@@ -32,7 +41,7 @@ describe("built-in extension catalog", () => {
 
     expect(disabled).toContain("ide.terminal");
     expect(disabled).toContain("ide.debugger");
-    expect(disabled).toContain("ide.vision");
+    expect(disabled).not.toContain("ide.vision");
     expect(disabled).toContain("ide.diagnostics");
     expect(disabled).toContain("ide.lsp");
     expect(disabledByPreset(BUILTIN_EXTENSIONS, "full")).toEqual([]);
