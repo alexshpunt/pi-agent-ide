@@ -22,7 +22,7 @@ Read the public contracts before implementation:
 - `src/extensions/pi-agent-read/src/core/tools/tool-read.ts`
 - `src/extensions/pi-agent-read/src/core/tools/read/read-result.ts`
 
-Use `src/plugins/pi-agent-ide-vision/` as the main example of named parameter parsing and native output. Use `src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-jq/` as the example of textual transformation.
+Use `src/plugins/pi-agent-ide-terminal/src/resources.ts` as the main example of named parameter parsing and native image output. Use `src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-jq/` as the example of textual transformation.
 
 ## Define syntax deliberately
 

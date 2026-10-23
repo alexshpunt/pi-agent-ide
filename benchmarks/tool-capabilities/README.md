@@ -96,7 +96,7 @@ A run freezes the checkout's current source and dependencies in a disposable clo
 
 Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Snapshot credentials are copied into private case state and removed with it. Explicit dedicated-auth files are mounted separately and survive cleanup with their refresh rotations. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
 
-Media, browser, display, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Window/display checks use a sandbox-owned Xvfb display, not host windows. Display and web setup use fixed local endpoints; do not run those cases concurrently.
+Media, browser, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Web setup uses a fixed local endpoint; do not run those cases concurrently.
 
 ## Evidence
 

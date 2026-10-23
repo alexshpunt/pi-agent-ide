@@ -73,4 +73,4 @@ Use `path: "docs:all"` to search every available packaged guide body, or `path: 
 
 Use an HTTP(S) URL as `path` for local web execution, or `web:ssh://target/https://example.com/page` for explicit target execution. Search converted page text with a literal or `regex:` query; no prior Read is needed. Web results keep the requested source and do not expose editable `SEARCH#` references. Use Read on that source for more context.
 
-Use `process:<query>` for running processes. Use `path: "shell:<session>"` to search retained terminal output beyond its current tail.
+Use `path: "shell:<session>"` to search retained terminal output beyond its current tail.
