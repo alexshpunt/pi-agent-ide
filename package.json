@@ -107,6 +107,10 @@
     "#scripts/*": "./scripts/*"
   },
   "exports": {
+    "./api/standalone": {
+      "types": "./src/api/standalone.ts",
+      "default": "./src/api/standalone.ts"
+    },
     "./api/settings": {
       "types": "./src/api/settings.ts",
       "default": "./src/api/settings.ts"

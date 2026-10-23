@@ -103,12 +103,16 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /** Keep tool records private while strings carry registered composition references. */
-export function createIdeTextResults(pi: ExtensionAPI) {
+export function createIdeTextResults(
+  pi: ExtensionAPI,
+  options: { readonly resourceOutput?: boolean; readonly promptSection?: string } = {},
+) {
   const store = connectResultTargets(pi);
   const resultImages = connectResultImages(pi);
   const names = new Set<string>();
   const outputs = new TempResourceStore();
-  const saveFullOutput = (text: string) => outputs.saveFile(text);
+  const saveFullOutput = (text: string) =>
+    options.resourceOutput ? outputs.save(text) : outputs.saveFile(text);
   const contextErrors = new Map<
     string,
     { source: string; content: Promise<AgentToolResult<unknown>["content"]> }
@@ -137,6 +141,17 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     id: "ide-output-retention",
     setup(api) {
       api.setOutputSaver(saveFullOutput);
+      if (options.resourceOutput)
+        api.addResolver({
+          priority: -1000,
+          resolver: {
+            id: "ide-output-retention",
+            async tryResolve(source, context) {
+              const result = await outputs.resolver.tryResolve(source, context);
+              return result.kind === "failed" ? { kind: "not-handled" } : result;
+            },
+          },
+        });
     },
   });
   pi.on("session_shutdown", () => outputs.dispose());
@@ -188,7 +203,7 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   pi.on("session_start", clear);
   pi.on("session_shutdown", clear);
   pi.on("before_agent_start", (event) => {
-    event.systemPromptOptions.sections.ide_results =
+    event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
       "Direct IDE calls return readable text. In Codemode, Search returns { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Other text results remain strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {

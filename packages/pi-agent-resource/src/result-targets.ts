@@ -285,9 +285,13 @@ export class ResultTargetStore {
         this.#results.delete(id);
   }
 
-  /** Detect filesystem generations, so restoring old bytes never revives an old reference. */
-  public refresh(source: string, cwd: string): void {
+  /**
+   * Detect filesystem generations; a known content change also retires URI snapshots without stamps.
+   * Pending mutation handles survive invalidation so their committed spans can still be confirmed.
+   */
+  public refresh(source: string, cwd: string, changed = false): void {
     const identity = sourcePath(source, cwd);
+    if (changed) this.invalidate(identity);
     const key = JSON.stringify([path.resolve(cwd), identity]);
     const stamp = fileStamp(source, cwd);
     const previous = this.#snapshots.get(key);

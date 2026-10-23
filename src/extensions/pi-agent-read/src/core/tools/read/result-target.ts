@@ -6,12 +6,14 @@ import type { ReadPostReadHandler, ReadToolPluginApi } from "#src/api/tools/read
 export function createReadResultTargetHandler(
   store: ResultTargetStore,
   read: ReadToolPluginApi["read"],
+  ownsSource: (source: string, resolver: string) => boolean = (_source, resolver) =>
+    ["filesystem", "ssh"].includes(resolver),
 ): ReadPostReadHandler {
   return async (context) => {
     const state = context.state;
     if (
       state?.contentKind !== "text" ||
-      !["filesystem", "ssh"].includes(state.resolvedBy) ||
+      !ownsSource(state.source, state.resolvedBy) ||
       context.sourceText !== state.text.content
     )
       return { kind: "continue", context };

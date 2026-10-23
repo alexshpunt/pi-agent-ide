@@ -44,16 +44,26 @@ interface FilePayload {
 }
 
 /** Search unhandled requests with literal-first hybrid matching. */
-export function createTextResolver(sessions: SearchSessionStore): SearchResolver {
-  return createMatchResolver("text", sessions, createSearchRecipe);
+export function createTextResolver(
+  sessions: SearchSessionStore,
+  resultScopeOnly = false,
+): SearchResolver {
+  return createMatchResolver("text", sessions, createSearchRecipe, resultScopeOnly);
 }
 
 /** Search an explicit regex without broadening or swallowing syntax errors. */
-export function createRegexResolver(sessions: SearchSessionStore): SearchResolver {
-  return createMatchResolver("regex", sessions, (request) =>
-    request.query.startsWith("regex:")
-      ? { ...request, query: request.query.slice("regex:".length), regex: true }
-      : undefined,
+export function createRegexResolver(
+  sessions: SearchSessionStore,
+  resultScopeOnly = false,
+): SearchResolver {
+  return createMatchResolver(
+    "regex",
+    sessions,
+    (request) =>
+      request.query.startsWith("regex:")
+        ? { ...request, query: request.query.slice("regex:".length), regex: true }
+        : undefined,
+    resultScopeOnly,
   );
 }
 
@@ -123,10 +133,11 @@ function createMatchResolver(
   id: "text" | "regex",
   sessions: SearchSessionStore,
   queryBody: (request: SearchRequest) => SearchRecipe | undefined,
+  resultScopeOnly = false,
 ): SearchResolver {
   return {
     readResources: (request, context) =>
-      queryBody(request) === undefined
+      queryBody(request) === undefined || (resultScopeOnly && context.scope === undefined)
         ? []
         : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
     id,
@@ -145,6 +156,7 @@ function createMatchResolver(
       };
     },
     async tryResolve(request, context) {
+      if (resultScopeOnly && context.scope === undefined) return { kind: "not-handled" };
       const recipe = queryBody(request);
       if (recipe === undefined) return { kind: "not-handled" };
       const result =

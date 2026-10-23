@@ -31,6 +31,7 @@ import type { TextEditorPluginApi } from "pi-agent-text-editor/api/plugin-protoc
 import type { TextEditorToolRendererRegistration } from "pi-agent-text-editor/api/tool-renderer";
 
 type ToolPresentation = "full" | "compact" | "disabled";
+type RenderRegistration = AnyTextMutationToolRegistration & { readonly displayName?: string };
 
 type MutationRenderOutcome =
   | { readonly kind: "completed"; readonly resources: readonly MutationRenderResource[] }
@@ -60,7 +61,7 @@ interface PendingResult {
 }
 
 interface RenderState {
-  registration: AnyTextMutationToolRegistration;
+  registration: RenderRegistration;
   epoch?: number;
   controller?: AbortController;
   key?: string;
@@ -96,17 +97,26 @@ export function registerMutationRenderers(
   animationPressure?: MutationAnimationPressure,
   animationsEnabled: () => boolean = () => true,
   presentation: ToolPresentation = "compact",
+  displayName?: (name: string) => string,
 ): void {
   api.onMutationTool((registration) => {
     api.addToolRenderer(
-      createRenderer(api, registration, animationPressure, animationsEnabled, presentation),
+      createRenderer(
+        api,
+        displayName === undefined
+          ? registration
+          : { ...registration, displayName: displayName(registration.name) },
+        animationPressure,
+        animationsEnabled,
+        presentation,
+      ),
     );
   });
 }
 
 function createRenderer(
   api: TextEditorPluginApi,
-  registration: AnyTextMutationToolRegistration,
+  registration: RenderRegistration,
   animationPressure: MutationAnimationPressure | undefined,
   animationsEnabled: () => boolean,
   presentation: ToolPresentation,
@@ -772,7 +782,7 @@ function sourceLabel(value: unknown): string | undefined {
 }
 
 function renderHeader(
-  registration: AnyTextMutationToolRegistration,
+  registration: RenderRegistration,
   input: Readonly<Record<string, unknown>>,
   preview: MutationRenderOutcome | undefined,
   theme: Theme,
@@ -799,7 +809,7 @@ function renderHeader(
       (target): target is { readonly field: string; readonly path: string } =>
         target.path !== undefined && (target.path === "result scope" || target.path !== path),
     );
-  let header = `${theme.fg("toolTitle", theme.bold(registration.name))} ${renderPath(
+  let header = `${theme.fg("toolTitle", theme.bold(registration.displayName ?? registration.name))} ${renderPath(
     displayedPath,
     sourceLink,
     theme,
