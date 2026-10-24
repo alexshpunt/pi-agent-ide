@@ -59,7 +59,7 @@ export function registerIdeAliasCompatibility(
       const definition = native === undefined ? undefined : definitions.get(native);
       if (!definition) continue;
       const descriptors = Object.getOwnPropertyDescriptors(definition);
-      // Preserve live metadata getters and outputSchema, but keep the alias's exposure and identity.
+      // Preserve live metadata getters and outputSchema without presenting a second IDE contract.
       delete descriptors.namespace;
       descriptors.name = {
         value: alias.name,
@@ -68,7 +68,23 @@ export function registerIdeAliasCompatibility(
         writable: true,
       };
       descriptors.exposure = {
-        value: alias.exposure,
+        // Deferred aliases remain callable by scripts without duplicating the Codemode catalogue.
+        value: alias.exposure === "model-only" ? alias.exposure : "deferred",
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      };
+      const prepareLoadout: ToolDefinition["prepareLoadout"] = (loadout) => {
+        const changes = definition.prepareLoadout?.(loadout);
+        if (!loadout.declared.some((tool) => tool.name === definition.name)) return changes;
+        // Keep the connector's active route and wire remapping, but declare the source only once.
+        return {
+          ...changes,
+          hiddenDeclarations: [...(changes?.hiddenDeclarations ?? []), alias.name],
+        };
+      };
+      descriptors.prepareLoadout = {
+        value: prepareLoadout,
         enumerable: true,
         configurable: true,
         writable: true,
