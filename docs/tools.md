@@ -163,7 +163,7 @@ For selected-text work, a path identifies the source and anchors identify the sp
 
 Use Select to derive new boundaries rather than reconstructing them from previews. Copy and Move can pair source and destination selections, with equal counts. With ordinary file paths, text transfers use `targetStart` as the insertion anchor or `targetStart`/`targetEnd` as the replacement range. These selectors do not apply to whole-object transfers.
 
-Use `start` alone for an exact fragment or one line anchor. With `end`, the range includes complete lines from the first containing line through the last. Snapshot-backed selectors reject changed files; missing or ambiguous exact text is rejected rather than guessed.
+Use `start` alone for an exact fragment or one line selection. Paired `start`/`end` and `targetStart`/`targetEnd` preserve each endpoint's extent: exact text and `SEARCH :match` keep character boundaries, while line anchors and `SEARCH :line` keep whole-line boundaries. A pair runs from the beginning of its first endpoint through the end of its last endpoint, including the ending match. Mixed types retain their independent extents. Snapshot-backed selectors reject changed files; missing or ambiguous exact text is rejected rather than guessed.
 
 Independent standalone edits in one tool-call batch use their original snapshots. Inside native Codemode, run dependent edits in order and independent resources concurrently. Dependent source-tool calls commit eligible pending edits before consuming their results; script completion saves the remaining batch. Write saves its file and finishes post-edit processing before returning. No Apply or Flush tool is needed.
 
