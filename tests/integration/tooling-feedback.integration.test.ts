@@ -50,7 +50,7 @@ async function run(cwd: string, name: string, conversation: AssistantMessageScen
       path.resolve("src/pi-agent-ide.ts"),
       "builtin:codemode",
     ],
-    tools: ["read", "search", "select", "replace", "insert", "delete", "codemode"],
+    tools: ["read", "search", "replace", "insert", "delete", "codemode"],
     conversation: [...conversation, assistantMessage([text("Done")])],
   }).run("Use the issued source ranges and report the real effect.");
 }
@@ -104,7 +104,7 @@ const sameFileEdits = [
     args: { text: "NEW" },
     after: "keep1\nNEW\nkeep2\nNEW\nkeep3\nNEW\n",
   },
-  { tool: "delete", kind: "item", args: {}, after: "keep1\nkeep2\nkeep3\n" },
+  { tool: "delete", kind: "uuid", args: {}, after: "keep1\nkeep2\nkeep3\n" },
   { tool: "delete", kind: "search", args: {}, after: "keep1\nkeep2\nkeep3\n" },
   {
     tool: "insert",
@@ -114,7 +114,7 @@ const sameFileEdits = [
   },
   {
     tool: "insert",
-    kind: "item",
+    kind: "uuid",
     args: { text: "ADDED", before: true },
     after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
   },
@@ -138,9 +138,10 @@ test.each(sameFileEdits)(
                     }),
                   ]
                 : [
-                    call(`selection${index}`, "select", {
+                    call(`selection${index}`, "read", {
                       path: "note.txt",
-                      operation: { kind: "lines", first: line, last: line },
+                      offset: line,
+                      limit: 1,
                     }),
                   ],
             );
@@ -273,28 +274,25 @@ test("same-file selection batches reject overlaps and later reuse without losing
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "first\nmiddle\nlast\n");
     const result = await run(cwd, "selection-batch-guards", [
-      call("first", "select", {
-        path: "note.txt",
-        operation: { kind: "lines", first: 1, last: 1 },
-      }),
-      call("last", "select", { path: "note.txt", operation: { kind: "lines", first: 3, last: 3 } }),
+      call("first", "read", { path: "note.txt", offset: 1, limit: 1 }),
+      call("last", "read", { path: "note.txt", offset: 3, limit: 1 }),
       assistantMessage(
         [
           toolCall({
             id: "accepted",
             name: "replace",
-            arguments: { path: "$issued-item:first", text: "FIRST\n" },
+            arguments: { path: "$issued-uuid:first", text: "FIRST\n" },
           }),
-          toolCall({ id: "overlap", name: "delete", arguments: { path: "$issued-item:first" } }),
+          toolCall({ id: "overlap", name: "delete", arguments: { path: "$issued-uuid:first" } }),
           toolCall({
             id: "peer",
             name: "replace",
-            arguments: { path: "$issued-item:last", text: "LAST\n" },
+            arguments: { path: "$issued-uuid:last", text: "LAST\n" },
           }),
         ],
         { stopReason: "toolUse" },
       ),
-      call("expired", "replace", { path: "$issued-item:last", text: "BAD\n" }),
+      call("expired", "replace", { path: "$issued-uuid:last", text: "BAD\n" }),
     ]);
     expect(
       getToolExecution(result, "accepted").isError,
@@ -377,11 +375,10 @@ test("issued Search line and match scopes stay sparse through direct calls and C
 });
 const consumers = [
   { name: "delete-uuid", tool: "delete", kind: "uuid", extra: {}, after: "first\nlast\n" },
-  { name: "delete-item", tool: "delete", kind: "item", extra: {}, after: "first\nlast\n" },
   {
-    name: "replace-item",
+    name: "replace-uuid",
     tool: "replace",
-    kind: "item",
+    kind: "uuid",
     extra: { text: "NEW\n" },
     after: "first\nNEW\nlast\n",
   },
@@ -398,10 +395,7 @@ test.each(consumers)("direct $name consumes the model's issued reference", async
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "first\nOLD\nlast\n");
     const result = await run(cwd, `direct-issued-${entry.name}`, [
-      call("selection", "select", {
-        path: "note.txt",
-        operation: { kind: "lines", first: 2, last: 2 },
-      }),
+      call("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
       call("consume", entry.tool, { path: `$issued-${entry.kind}:selection`, ...entry.extra }),
     ]);
     expect(getToolExecution(result, "consume").isError, getToolResultText(result, "consume")).toBe(
@@ -418,10 +412,7 @@ test.each(consumers)("batched direct $name keeps three independent selections", 
     }
     const result = await run(cwd, `batched-issued-${entry.name}`, [
       ...[1, 2, 3].map((index) =>
-        call(`selection${index}`, "select", {
-          path: `note-${index}.txt`,
-          operation: { kind: "lines", first: 2, last: 2 },
-        }),
+        call(`selection${index}`, "read", { path: `note-${index}.txt`, offset: 2, limit: 1 }),
       ),
       assistantMessage(
         [1, 2, 3].map((index) => {
@@ -491,10 +482,7 @@ test("direct references reject a changed snapshot without deleting its file", as
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "first\nOLD\nlast\n");
     const result = await run(cwd, "direct-issued-stale", [
-      call("selection", "select", {
-        path: "note.txt",
-        operation: { kind: "lines", first: 2, last: 2 },
-      }),
+      call("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
       call("change", "replace", { path: "note.txt", start: "OLD", text: "NEW" }),
       call("stale", "delete", { path: "$issued-uuid:selection" }),
     ]);
@@ -509,7 +497,7 @@ test("three sequential replacements report one file through native Codemode", as
     await writeFile(path.join(cwd, "note.txt"), "OLD\nOLD\nOLD\n");
     const result = await run(cwd, "grouped-one-file", [
       call("script", "codemode", {
-        code: `for (const line of [1,2,3]) { const selected = await tools.select({path:"note.txt",operation:{kind:"range",startLine:line,startColumn:0,endLine:line,endColumn:3}}); await tools.replace({path:selected,text:"NEW"}); } text("done");`,
+        code: `for (const line of [1,2,3]) { const selected = await tools.read({path:"note.txt",offset:line,limit:1}); await tools.replace({path:selected,text:"NEW\\n"}); } text("done");`,
       }),
     ]);
     expect(getToolExecution(result, "script").isError, getToolResultText(result, "script")).toBe(

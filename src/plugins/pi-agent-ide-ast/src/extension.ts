@@ -25,7 +25,6 @@ import { createAstOverflowHandler, reduceAstReadOutput } from "./overflow-handle
 import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.js";
 import { createAstScopeAnchorResolver } from "./scope-resolver.js";
 import { createAstSearchResolver } from "./search-resolver.js";
-import { registerSelect } from "./tool-select.js";
 
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "AST" });
 
@@ -77,7 +76,6 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         path: "ast:<path> — compact declaration outline for a code file.",
         views: "ast — scope boundaries alongside source text.",
       });
-      await registerSelect(pi, api);
     },
   } satisfies ReadPlugin;
   const editorPlugin = {
@@ -105,7 +103,7 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
       setup(api): void {
         api.addResolver({ resolver: createAstSearchResolver(api.registerSelection) });
         api.describe(
-          "Search code structure with ast:<pattern>, using source-code syntax and placeholders such as $NAME for one node and $$$BODY for several nodes. path, include and exclude narrow the search. Use returned SEARCH# references to read, replace, copy, move or delete exact AST matches, including multiline nodes. A single :match reference becomes stale after its file changes; :all:match reruns the original structural query. Incomplete results do not provide all selections. Use the displayed capture NAME reference as a Search/Select/edit source. Single captures contain one node; multi captures retain provider nodes, including punctuation. Strict result scopes return only wholly contained matches. These edits do not update imports or references.",
+          "Search code structure with ast:<pattern>, using source-code syntax and placeholders such as $NAME for one node and $$$BODY for several nodes. path, include and exclude narrow the search. Use returned SEARCH# references to read, replace, copy, move or delete exact AST matches, including multiline nodes. A single :match reference becomes stale after its file changes; :all:match reruns the original structural query. Incomplete results do not provide all selections. Use the displayed capture NAME reference as a Search or edit source. Single captures contain one node; multi captures retain provider nodes, including punctuation. Strict result scopes return only wholly contained matches. These edits do not update imports or references.",
         );
       },
     }),

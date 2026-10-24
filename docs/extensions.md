@@ -21,7 +21,7 @@ A connector still owns authentication and model transport. Keeping Pi tools work
 | You want to add                                          | Umbrella API                                                                                         |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | A readable source or read presentation                   | `pi-agent-ide/api/read`, `pi-agent-ide/api/resource`                                                 |
-| Isolated resource tools without the full IDE | `pi-agent-ide/api/standalone` |
+| Isolated resource tools without the full IDE             | `pi-agent-ide/api/standalone`                                                                        |
 | A search backend                                         | `pi-agent-ide/api/search`                                                                            |
 | A writable source, anchor, mutation, guard, or renderer  | `pi-agent-ide/api/text-editor`, `pi-agent-ide/api/text`                                              |
 | A formatter, compiler, or linter                         | `pi-agent-ide/api/connect-plugin`, `pi-agent-ide/api/toolchain`                                      |
@@ -62,11 +62,7 @@ This complete example holds one writable note in memory:
 ```ts
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createStandaloneResourceHost } from "pi-agent-ide/api/standalone";
-import {
-  connectReadPlugin,
-  READ_PROTOCOL,
-  READ_API_VERSION,
-} from "pi-agent-ide/api/read";
+import { connectReadPlugin, READ_PROTOCOL, READ_API_VERSION } from "pi-agent-ide/api/read";
 import {
   connectTextEditorPlugin,
   TEXT_EDITOR_PROTOCOL,
@@ -107,20 +103,24 @@ export default async function notes(pi: ExtensionAPI): Promise<void> {
     protocol: READ_PROTOCOL,
     apiVersion: READ_API_VERSION,
     id: "note",
-    setup(api) { api.addResolver({ resolver }); },
+    setup(api) {
+      api.addResolver({ resolver });
+    },
   });
   await connectTextEditorPlugin(host.api, {
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: "note",
-    setup(api) { api.addResolver({ resolver }); },
+    setup(api) {
+      api.addResolver({ resolver });
+    },
   });
 }
 ```
 
-Discover `notes` through `tool_search`. The deferred tools are `notes_read`, `notes_search`, `notes_select`, `notes_write`, `notes_replace`, `notes_insert`, `notes_delete`, `notes_copy`, `notes_move` and `notes_diff`. Set `tools`, such as `["read", "search", "select"]`, to expose a smaller subset. A namespace must be a unique lowercase identifier starting with a letter; digits and underscores are allowed after it.
+Discover `notes` through `tool_search`. The deferred tools are `notes_read`, `notes_search`, `notes_write`, `notes_replace`, `notes_insert`, `notes_delete`, `notes_copy`, `notes_move` and `notes_diff`. Set `tools`, such as `["read", "search", "replace"]`, to expose a smaller subset. A namespace must be a unique lowercase identifier starting with a letter; digits and underscores are allowed after it.
 
-Read a text window, pass its unchanged result to Search or Select, then pass the selected result to an editor. Native Codemode uses the same contracts: Search returns `{ result, hasMatches, complete }`, and `result` is the reusable source string. Result scopes and provenance stay private to the host; another host or the full IDE cannot reuse them. Changed snapshots and reloads retire references. Known host edits retire old URI snapshots even when later edits restore the same text. Your provider still owns concurrency checks and evidence for changes made outside the host.
+Read a text window, pass its unchanged result to Search to narrow it, then pass the Search result to an editor. Native Codemode uses the same contracts: Search returns `{ result, hasMatches, complete }`, and `result` is the reusable source string. Result scopes and provenance stay private to the host; another host or the full IDE cannot reuse them. Changed snapshots and reloads retire references. Known host edits retire old URI snapshots even when later edits restore the same text. Your provider still owns concurrency checks and evidence for changes made outside the host.
 
 The built-in text and regex Search resolvers search issued scopes only. Register a Search resolver on `host.api` for provider discovery or searches by URI. Package guides with `connectAgentDocumentation(host.api, documents)` to expose them through `notes_read` and `notes_search` on `docs:` sources.
 

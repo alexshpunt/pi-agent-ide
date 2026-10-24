@@ -30,7 +30,6 @@ for (const mode of ["on", "only"] as const) {
 const created=await tools.write({path:${JSON.stringify(source)},content:"first\\nsecond\\n"});
 check(body(await tools.read({path:created}))==="FIRST\\nSECOND\\n","Creation lost the formatted whole-file target");
 check(matches(await tools.search({path:created,query:"SECOND"}).then(value => value.result)).length===1,"Search cannot consume creation");
-check(items(await tools.select({path:created,operation:{kind:"lines",first:1,last:2}})).length===1,"Select lost the whole-file boundary");
 const overwritten=await tools.write({path:created,content:"😀 unique\\r\\nunique tail"});
 check(body(await tools.read({path:overwritten}))==="😀 UNIQUE\\r\\nUNIQUE TAIL","Overwrite lost final UTF16/CRLF text");
 const found=await tools.search({path:overwritten,query:"UNIQUE"}).then(value => value.result);
@@ -51,7 +50,7 @@ text(created); text(noop);`;
           "builtin:codemode",
           path.resolve("tests/integration/support/write-formatting-probe.ts"),
         ],
-        tools: ["write", "read", "search", "select", "replace", "codemode"],
+        tools: ["write", "read", "search", "replace", "codemode"],
         conversation: [
           assistantMessage([toolCall({ id: "composed", name: "codemode", arguments: { code } })], {
             stopReason: "toolUse",

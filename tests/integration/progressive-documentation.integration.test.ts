@@ -42,7 +42,7 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
   };
   expect(listDetails.kind).toBe("list");
   expect(listDetails.ids).toEqual(
-    expect.arrayContaining(["editing", "read-resources", "select-code", "ssh"]),
+    expect.arrayContaining(["editing", "read-resources", "search-code", "ssh"]),
   );
   expect(getToolResultMessage(result, "guide").details).toMatchObject({
     documentation: { kind: "document", id: "editing" },

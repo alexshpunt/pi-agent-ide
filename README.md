@@ -40,7 +40,6 @@ Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of develop
 | ------------------------------------ | ------------------------------------------------------------- |
 | Inspect content and state            | `read` with source-specific views                             |
 | Find text, paths, code and processes | `search`                                                      |
-| Derive exact text and AST selections | `select`                                                      |
 | Change text and filesystem objects   | `write`, `replace`, `insert`, `delete`, `copy`, `move`        |
 | Compare, stage and restore changes   | `diff`, `stage`, `unstage`, `undo`                            |
 | Run and interact with commands       | `bash` or `powershell`, then `shell:` resources               |
@@ -51,13 +50,12 @@ Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of develop
 
 All IDE tools support direct calls and Pi's built-in Codemode. The agent can combine reading, search, selection and editing into one workflow, with the same source checks in both modes.
 
-For example, this script finds a checklist item, selects its complete line, and marks it done:
+For example, this script reads a section, finds a checklist item inside it, and marks it done:
 
 ```js
-const source = await tools.read({ path: "notes.md" });
-const matches = await tools.search({ path: source, query: "- [ ] Update docs" });
-const lines = await tools.select({ path: matches, operation: { kind: "linesOf" } });
-text(await tools.replace({ path: lines, text: "- [x] Update docs\n" }));
+const section = await tools.read({ path: "notes.md", offset: 10, limit: 20 });
+const item = await tools.search({ path: section, query: "- [ ] Update docs" });
+text(await tools.replace({ path: item.result, text: "- [x] Update docs" }));
 ```
 
 ### Read anything through `read`
@@ -88,11 +86,11 @@ Views change how the same resource is presented. The agent can request source st
 
 </div>
 
-### Select and change exactly what you mean
+### Narrow and change exactly what you mean
 
-`select` helps the agent change the intended part of a file: a line, a function body, a parameter list, or the overlap between selections. JavaScript and TypeScript structure is supported without JSX/TSX, so the agent can work with code boundaries rather than guessing line numbers.
+The agent narrows a Read or Search result by searching inside it: a regex for a span between markers or part of a line, or an `ast:` pattern whose captures select a function body or an argument list. Edits then change only those exact ranges, so the agent works with real code boundaries rather than guessing line numbers.
 
-Language-server support adds declarations, references, call graphs, diagnostics, and semantic rename across references. Available features depend on the project's language server. See [selection](docs/agent-guides/select-code.md) and [code navigation](docs/agent-guides/search-code.md).
+Language-server support adds declarations, references, call graphs, diagnostics, and semantic rename across references. Available features depend on the project's language server. See [code navigation](docs/agent-guides/search-code.md).
 
 ### Review edits against your own rules
 
@@ -263,7 +261,6 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 | ------------------------------------------------------ | ------------------------------------------------------------------------ |
 | [Tools and workflow](./docs/tools.md)                  | Reading, search, selections, editing, terminals, and feedback            |
 | [Result composition](./docs/structured-results.md)     | Passing results between tools, reference lifetime, and commit boundaries |
-| [Selection](./docs/agent-guides/select-code.md)        | Text ranges, AST parts, and combining selections                         |
 | [Directory operations](./docs/directory-operations.md) | Copy, Move, Delete, symlinks, guards, and partial failures               |
 | [Settings guide](./docs/settings-help.md)              | Choosing settings, scope, saving and output presentation                 |
 | [Configuration](./docs/configuration.md)               | Project tools, SSH targets, Doctor, and presentation settings            |

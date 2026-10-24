@@ -24,7 +24,6 @@ const tools = [
   "delete",
   "copy",
   "move",
-  "select",
   "undo",
   "stage",
   "unstage",

@@ -40,9 +40,7 @@ for (const mode of ["standalone", "codemode"] as const) {
 check(written.includes("empty.txt"),"Write lost its file effect");
 const read=await tools.read({path:written});
 check(body(read)==="[Empty source.]","Read did not explain the empty source");
-const point=await tools.select({path:read,operation:{kind:"position",edge:"after"}});
-check(items(point).length===1 && items(point)[0].startColumn===0,"Empty source boundary lost");
-text(written); text(point);`,
+text(written);`,
               },
             });
       const run = await new PiIntegrationTest({
@@ -51,7 +49,7 @@ text(written); text(point);`,
         cwd,
         rawMode: false,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["read", "write", "select", "codemode"],
+        tools: ["read", "write", "codemode"],
         conversation: [
           assistantMessage([call], { stopReason: "toolUse" }),
           assistantMessage([text("Empty file creation finished.")]),

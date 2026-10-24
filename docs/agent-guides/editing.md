@@ -24,7 +24,7 @@ Re-read after a mutation before reusing line, scope, or individual Search anchor
 
 Direct results are readable text with a leading system-result envelope. In Codemode, Search returns facts and a `result` string. An image Read returns an image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames; show it with `image()` and pass its `note` string to other tools. To save it as a file, pass the image value itself as Write `content` (outside Codemode, the Read's UUID) and name the file with the image's extension; several frames become numbered files. Other text results remain strings. The envelope is an internal reference, not file content. Do not edit it or write it into a file. Pass the unchanged result string to another source parameter; outside Codemode you can also pass its UUID. Store/load keeps results in the current session. Read `docs:search-code` for the Search facts.
 
-Read results select their requested source windows. Search results select exact matches. Select derives new boundaries. A displayed item reference selects that item; the whole result retains all selections, including those omitted from its preview.
+Read results select their requested source windows. Search results select exact matches; Search inside a result narrows it. A displayed item reference selects that item; the whole result retains all selections, including those omitted from its preview.
 
 - `replace.path` replaces selected ranges. `delete.path` removes selected text but keeps the file, even for a whole-file selection.
 - `write.path` and `undo.file` require one whole-file selection. Partial and multi-file scopes are rejected, not widened.

@@ -34,7 +34,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -233,7 +233,7 @@ test("native symbol search honors its file scope before the result limit", async
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -270,7 +270,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -307,7 +307,7 @@ test("native AST edits use fresh selections after automatic commits", async () =
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(

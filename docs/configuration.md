@@ -59,7 +59,7 @@ Tools use fixed native exposure; there are no IDE exposure overrides or named pr
 | `ide_git`      | `stage`, `unstage`               | `deferred` |
 | `ide_debug`    | `debug`                          | `deferred` |
 
-Direct tools keep their normal calls and can also run through Codemode while active. Select derives exact boundaries; edits consume its snapshot-bound targets.
+Direct tools keep their normal calls and can also run through Codemode while active. Edits consume the snapshot-bound targets that Read and Search return.
 
 Git staging and debugger tools are not declared ahead of time. Short agent guidance names the enabled capabilities and tells the agent to find them through native `tool_search`. IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
 

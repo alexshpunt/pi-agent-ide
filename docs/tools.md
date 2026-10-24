@@ -37,7 +37,7 @@ A source field such as `path` or mutation `target` is therefore a resource field
 
 ## SSH resources
 
-Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, Select, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads use explicit remote sources rather than changing where ordinary URLs execute.
+Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads use explicit remote sources rather than changing where ordinary URLs execute.
 
 Authentication stays in OpenSSH. Target programs require their dependencies on that machine; missing support does not fall back to local execution. See [SSH configuration](./configuration.md#ssh-targets) and the [SSH guide](./agent-guides/ssh.md) for setup, prerequisites and supported sources.
 
@@ -134,11 +134,9 @@ A `:line` range includes its LF or CRLF line ending. A whole-line replacement pr
 
 Per-result forms keep the search-time snapshot and fail as stale after their matched file changes. Complete `:all` forms rerun the original search recipe when a matched file changes, then select the current complete result set. Limited or otherwise incomplete searches omit the `:all` forms. A forged `:all` value for an incomplete search is rejected.
 
-## Select
+## Narrowing a result
 
-`select` derives source-backed ranges or positions without editing. Text operations include lines, slices, marker pairs, columns and insertion positions. Selection-set operations keep, intersect, subtract or merge ranges within each source. JavaScript and TypeScript AST operations can find enclosing constructs, their named parts and related nodes; JSX/TSX is not supported by these structural selections.
-
-Pass the returned result to Read, Search or an editing tool. Explicit boundary operations can expand a match to its containing line or construct, but displayed context alone does not expand its edit selection. See the [selection guide](./agent-guides/select-code.md).
+Search inside a returned Read, Search or edit result to narrow it before editing. A regex inside the result selects a span between markers, part of a line or an insertion point; `multiline: true` lets one match span several lines. `ast:` captures select construct parts such as a function body or an argument list, and `SEARCH#...:line` references select complete containing lines. Displayed context alone does not expand an edit selection.
 
 ## Editing
 
@@ -159,9 +157,9 @@ Use an ordinary path without text selectors for whole-file Write or whole-object
 
 To save an image a Read returned, such as a terminal screenshot or image file, pass that Read result as Write `content`: the image value itself in Codemode, or the result's UUID or `RESULT#` reference in a direct call. Write saves the exact image bytes, and the file extension must match the image type (`.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`). Several frames become numbered files: `<name>-01.png`, `<name>-02.png`… beside the path, or `frame-01.png`… inside a folder path. Any other text, including a UUID of a result without images, is not image content: plain text is written as before, and an image-less result reference is refused.
 
-For selected-text work, a path identifies the source and anchors identify the span. Pass an unchanged Read, Search, Select or mutation result when it already selects the wanted text. `replace` changes each selected range; `delete` removes those ranges while keeping the file; `insert` adds text around the selected lines. A directory listing or read-only view does not grant text-edit authority.
+For selected-text work, a path identifies the source and anchors identify the span. Pass an unchanged Read, Search or mutation result when it already selects the wanted text. `replace` changes each selected range; `delete` removes those ranges while keeping the file; `insert` adds text around the selected lines. A directory listing or read-only view does not grant text-edit authority.
 
-Use Select to derive new boundaries rather than reconstructing them from previews. Copy and Move can pair source and destination selections, with equal counts. With ordinary file paths, text transfers use `targetStart` as the insertion anchor or `targetStart`/`targetEnd` as the replacement range. These selectors do not apply to whole-object transfers.
+Narrow a result with Search rather than reconstructing boundaries from previews. Copy and Move can pair source and destination selections, with equal counts. With ordinary file paths, text transfers use `targetStart` as the insertion anchor or `targetStart`/`targetEnd` as the replacement range. These selectors do not apply to whole-object transfers.
 
 Use `start` alone for an exact fragment or one line selection. Paired `start`/`end` and `targetStart`/`targetEnd` preserve each endpoint's extent: exact text and `SEARCH :match` keep character boundaries, while line anchors and `SEARCH :line` keep whole-line boundaries. A pair runs from the beginning of its first endpoint through the end of its last endpoint, including the ending match. Mixed types retain their independent extents. Snapshot-backed selectors reject changed files; missing or ambiguous exact text is rejected rather than guessed.
 

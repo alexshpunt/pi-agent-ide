@@ -8,9 +8,9 @@ Read-only views, bytes, images and directory listings do not grant text-edit aut
 
 ## Continue with another tool
 
-Search a Read result to look only inside its selection. Use Select to derive new boundaries before editing.
+Search a Read result to look only inside its selection. Narrow it with a regex or `ast:` captures before editing.
 
-Read `docs:select-code` for selection workflows and `docs:editing` for using results in mutations.
+Read `docs:search-code` for narrowing workflows and `docs:editing` for using results in mutations.
 
 ## Comparing text sources
 

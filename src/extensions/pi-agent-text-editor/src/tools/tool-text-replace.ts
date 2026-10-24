@@ -18,7 +18,7 @@ export const replaceSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "Source path, SEARCH# selector, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Omit start/end when the result selects the intended text. Changed or expired results are rejected without writing.",
+          "Source path, SEARCH# selector, unchanged Read/Search/edit result, its UUID, or an array of such results. Omit start/end when the result selects the intended text. Changed or expired results are rejected without writing.",
       }),
     ),
     ...sourceRangeProperties(),

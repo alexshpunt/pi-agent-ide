@@ -21,7 +21,7 @@ test.each(["scope", "mutation"] as const)(
   "native SSH symbol targets keep exact %s authority",
   async (mode) => {
     const fixture = await startSshFixture({}, { PI_CODING_AGENT_DIR: "{workspace}/agent-home" });
-    const base = path.resolve(".tmp/ssh-lsp-select-tests");
+    const base = path.resolve(".tmp/ssh-lsp-scope-tests");
     await mkdir(base, { recursive: true });
     const cwd = await mkdtemp(path.join(base, "workspace-"));
     const backend = new SshBackend({
@@ -79,13 +79,13 @@ test.each(["scope", "mutation"] as const)(
         }),
       );
       const run = await new PiIntegrationTest({
-        testName: `ssh-lsp-select-${mode}`,
+        testName: `ssh-lsp-scope-${mode}`,
         artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
         cwd,
         rawMode: false,
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["read", "select", "search", "replace", "codemode"],
+        tools: ["read", "search", "replace", "codemode"],
         timeoutMs: 90000,
         conversation: [
           assistantMessage([
@@ -102,28 +102,24 @@ test.each(["scope", "mutation"] as const)(
               arguments: {
                 code: `
 const read = await tools.read({ path: ${JSON.stringify(`${root}/note.ts`)} });
-const seed = await tools.select({ path: read, operation: { kind: "range", startLine: 1, startColumn: 6, endLine: 1, endColumn: 11 } });
+const seed = await tools.search({ path: read, query: "label", caseSensitive: true, wholeWord: true }).then(value => value.result);
 
 const strict=await tools.search({query:"symbols:label",path:seed}).then(value => value.result);
 if(!strict.includes("definition label") || strict.includes("reference label")) throw Error(strict);
-const name=await tools.select({path:strict,operation:{kind:"sliceText",from:0}});
-if(!name.includes("label")) throw Error(name);
+const name=strict;
 if(${JSON.stringify(mode)} === "scope") {
- const local=await tools.read({path:${JSON.stringify(local)}});
- const overlap=await tools.select({path:strict,operation:{kind:"intersection",scopes:local}});
- if(!overlap.includes("0 selection(s)")) throw Error(overlap);
  const navigation=await tools.search({query:"symbols:label",path:seed,navigation:"references"}).then(value => value.result);
  if(!navigation.includes(${JSON.stringify(`${root}/reference.ts`)}) || !navigation.includes("reference label")) throw Error(navigation);
  const declarations=[...navigation.matchAll(/declared at (.+)/g)].map(m=>m[1]);
  if(declarations.length!==2 || new Set(declarations).size!==1) throw Error("Lost declaration identity: "+navigation);
- const cut=await tools.select({path:seed,operation:{kind:"sliceText",from:1}});
+ const cut=await tools.search({path:seed,query:"abel",caseSensitive:true}).then(value => value.result);
  const absent=await tools.search({query:"symbols:label",path:cut}).then(value => value.result);
  if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);
  text({strict,name,navigation,absent});
 } else {
  text(await tools.replace({path:name,text:"renamed"}));
  let stale; try { await tools.search({query:"symbols:label",path:seed}); } catch(error) { stale=String(error); }
- if(!stale || !/stale|changed/.test(stale)) throw Error("Changed snapshot was accepted: "+stale);
+ if(!stale || !/stale|changed|expired/.test(stale)) throw Error("Changed snapshot was accepted: "+stale);
  text({stale});
 }
 
@@ -133,7 +129,7 @@ if(${JSON.stringify(mode)} === "scope") {
           ]),
           assistantMessage([text("Native declaration identity and source bounds stayed intact.")]),
         ],
-      }).run("Use the existing Select and Search tools on only the configured SSH source.");
+      }).run("Use the existing Read and Search tools on only the configured SSH source.");
       expect(getToolExecution(run, "ordinary").isError, getToolResultText(run, "ordinary")).toBe(
         false,
       );

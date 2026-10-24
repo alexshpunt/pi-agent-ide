@@ -22,7 +22,7 @@ test("unavailable diagnostics remain visible without entering source selections"
       isolateUserResources: true,
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["read", "search", "select", "codemode"],
+      tools: ["read", "search", "codemode"],
       conversation: [
         assistantMessage(
           [
@@ -50,8 +50,7 @@ store("diagnosticReadiness",result);
               arguments: {
                 code: String.raw`
 const beta = await tools.search({path:load("diagnosticReadiness"),query:"beta"}).then(value => value.result);
-const selected = await tools.select({path:beta,operation:{kind:"trim",side:"both"}});
-const value = await tools.read({path:selected});
+const value = await tools.read({path:beta});
 if(!value.includes("beta") || value.includes("alpha") || value.includes("gamma")) throw Error(value);
 await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]});
 `,
