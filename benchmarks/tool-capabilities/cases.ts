@@ -1031,6 +1031,159 @@ add(
 );
 
 add(
+  "exact-range-replace",
+  ["edit.replace-exact-range", "edit.leading-newline-range"],
+  "Use Replace with paired exact-text start/end on both files. In sentence.txt replace START through END, including both endpoint fragments, with NEW while preserving left and right on the same line. In credit.txt remove only the suffix beginning with the two newlines immediately before Based on and ending with the closing period of Based on [source](credit). Include those two leading newlines in start and use an empty replacement. Keep the entire preceding paragraph, including its text and punctuation. Do not rewrite either whole file or use line anchors.",
+  [
+    {
+      tool: "replace",
+      args: { path: "sentence.txt", start: "START", end: "END", text: "NEW" },
+    },
+    {
+      tool: "replace",
+      args: {
+        path: "credit.txt",
+        start: "\n\nBased on",
+        end: "[source](credit).",
+        text: "",
+      },
+    },
+  ],
+  {
+    files: {
+      "sentence.txt": "left START old words END right\n",
+      "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.\n\nBased on [source](credit).",
+    },
+    expected: {
+      "sentence.txt": "left NEW right\n",
+      "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.",
+    },
+  },
+);
+
+add(
+  "exact-range-delete",
+  ["edit.delete-exact-range", "compose.search-range-endpoints"],
+  "Search sentence.txt separately for DELETE_BEGIN and DELETE_END. Use the exact :match reference from each Search as Delete start and end, respectively. Delete the inclusive span between those endpoints, retaining left, right, both surrounding spaces and the line ending. Do not use :line references, a whole-file deletion, or one combined Search result as the source.",
+  [
+    { tool: "search", args: { path: "sentence.txt", query: "DELETE_BEGIN" } },
+    { tool: "search", args: { path: "sentence.txt", query: "DELETE_END" } },
+    {
+      tool: "delete",
+      args: {
+        path: "sentence.txt",
+        start: /^SEARCH#[A-F0-9]+:1:match$/u,
+        end: /^SEARCH#[A-F0-9]+:1:match$/u,
+      },
+      reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
+    },
+  ],
+  {
+    files: { "sentence.txt": "left DELETE_BEGIN old words DELETE_END right\n" },
+    expected: { "sentence.txt": "left  right\n" },
+  },
+);
+
+add(
+  "exact-range-copy",
+  ["edit.copy-exact-range", "edit.copy-exact-destination", "compose.search-range-endpoints"],
+  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references as targetStart and targetEnd. Replace only that inclusive destination span. Preserve both files' surrounding sentence text and line endings, and leave the source unchanged. Do not use an unpaired insertion or whole-file copy.",
+  [
+    { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
+    { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
+    {
+      tool: "copy",
+      args: {
+        path: "source.txt",
+        start: "COPY_BEGIN",
+        end: "COPY_END",
+        target: "target.txt",
+        targetStart: /^SEARCH#[A-F0-9]+:1:match$/u,
+        targetEnd: /^SEARCH#[A-F0-9]+:1:match$/u,
+      },
+      reuse: [reuse(0, "targetStart", "anchor"), reuse(1, "targetEnd", "anchor")],
+    },
+  ],
+  {
+    files: {
+      "source.txt": "source prefix COPY_BEGIN body COPY_END source suffix\n",
+      "target.txt": "target prefix TARGET_BEGIN old TARGET_END target suffix\n",
+    },
+    expected: {
+      "source.txt": "source prefix COPY_BEGIN body COPY_END source suffix\n",
+      "target.txt": "target prefix COPY_BEGIN body COPY_END target suffix\n",
+    },
+  },
+);
+
+add(
+  "exact-range-move",
+  ["edit.move-exact-range", "edit.move-exact-destination", "compose.search-range-endpoints"],
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references as Move start/end. Move that inline inclusive span into target.txt using the exact strings TARGET_BEGIN and TARGET_END as targetStart/targetEnd. Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Do not use an unpaired insertion or whole-file move.",
+  [
+    { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
+    { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
+    {
+      tool: "move",
+      args: {
+        path: "source.txt",
+        start: /^SEARCH#[A-F0-9]+:1:match$/u,
+        end: /^SEARCH#[A-F0-9]+:1:match$/u,
+        target: "target.txt",
+        targetStart: "TARGET_BEGIN",
+        targetEnd: "TARGET_END",
+      },
+      reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
+    },
+  ],
+  {
+    files: {
+      "source.txt": "source prefix MOVE_BEGIN body MOVE_END source suffix\r\n",
+      "target.txt": "target prefix TARGET_BEGIN old TARGET_END target suffix\r\n",
+    },
+    expected: {
+      "source.txt": "source prefix  source suffix\r\n",
+      "target.txt": "target prefix MOVE_BEGIN body MOVE_END target suffix\r\n",
+    },
+  },
+);
+
+add(
+  "mixed-range-replace",
+  ["edit.mixed-range-endpoints"],
+  "Read line-start.txt with anchors. Replace from its returned first-line anchor through the exact END fragment on line 2 with NEW, preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference with NEW followed by a newline. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
+  [
+    { tool: "read", args: { path: "line-start.txt", views: ["anchors"] } },
+    {
+      tool: "replace",
+      args: { path: "line-start.txt", start: /^1#/u, end: "END", text: "NEW" },
+      reuse: reuse(0, "start", "anchor"),
+    },
+    { tool: "search", args: { path: "line-end.txt", query: "END" } },
+    {
+      tool: "replace",
+      args: {
+        path: "line-end.txt",
+        start: "START",
+        end: /^SEARCH#[A-F0-9]+:1:line$/u,
+        text: "NEW\n",
+      },
+      reuse: reuse(2, "end", "anchor"),
+    },
+  ],
+  {
+    files: {
+      "line-start.txt": "KEEP prefix START selected\nEND suffix KEEP\nlast\n",
+      "line-end.txt": "KEEP prefix START selected\nEND suffix KEEP\nlast\n",
+    },
+    expected: {
+      "line-start.txt": "NEW suffix KEEP\nlast\n",
+      "line-end.txt": "KEEP prefix NEW\nlast\n",
+    },
+  },
+);
+
+add(
   "write-read",
   ["edit.write", "edit.write-receipt", "compose.write-read"],
   "Use write to create answer.txt containing exactly ready plus a newline. Pass the returned whole-file result into read, and report the saved value.",
