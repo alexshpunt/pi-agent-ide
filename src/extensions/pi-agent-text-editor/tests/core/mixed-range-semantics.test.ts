@@ -65,13 +65,21 @@ const match = (line: number, column: number, endLine: number, endColumn: number)
     { start: { lineNumber: line, column }, end: { lineNumber: endLine, column: endColumn } },
   ]);
 
-test("mixed endpoints select whole CRLF lines while a single match stays exact", () => {
+test("mixed endpoints keep the exact start and the whole-line end", () => {
   const start = map(match(1, 5, 1, 10));
   const end = map(new Position("end", 3));
   expect(document.text(anchorSpanRange(context, start, end, "start", "end"))).toBe(
-    "left START right\r\nmiddle\r\nleft END right\r\n",
+    "START right\r\nmiddle\r\nleft END right\r\n",
   );
   expect(document.text(singleAnchorSpan(context, start, "start"))).toBe("START");
+});
+
+test("mixed endpoints keep the whole-line start and exact end", () => {
+  const start = map(new Position("start", 1));
+  const end = map(match(3, 5, 3, 8));
+  const span = anchorSpanRange(context, start, end, "start", "end");
+  expect(document.text(span)).toBe("left START right\r\nmiddle\r\nleft END");
+  expect(replaceAnchorSpan(context, span, "NEW").insert).toBe("NEW");
 });
 
 test("multiline match ending at column zero does not include the next line", () => {

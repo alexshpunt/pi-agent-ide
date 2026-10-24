@@ -16,8 +16,8 @@ import { createExtensionSet } from "#integration/support/pi-runtime/extension-se
 const original =
   "HEADER\nleft START suffix\nmiddle\nprefix END suffix\nGAP\nprefix DEST suffix\nTAIL\n";
 const selected = "left START suffix\nmiddle\nprefix END suffix\n";
-const anchor = "SEARCH#RUNTIME:1:1:match";
-const destination = "SEARCH#RUNTIME:2:1:match";
+const anchor = "SEARCH#RUNTIME:1:1:line";
+const destination = "SEARCH#RUNTIME:2:1:line";
 const root = path.resolve(".agents/tmp/mixed-anchor-ranges");
 const marker = "serializes checkout‑payload 0042";
 const prefix = "// unchanged\n".repeat(19);
@@ -51,12 +51,12 @@ const cases: {
   },
   {
     name: "replace",
-    args: { path: anchor, end: "GAP", text: "NEW" },
+    args: { path: anchor, end: "GAP\n", text: "NEW\n" },
     expected: original.replace("prefix END suffix\nGAP\n", "NEW\n"),
   },
   {
     name: "copy",
-    args: { start: "LINE#RUNTIME:1", end: anchor, target: destination, targetEnd: "TAIL" },
+    args: { start: "LINE#RUNTIME:1", end: anchor, target: destination, targetEnd: "TAIL\n" },
     expected: original.replace("prefix DEST suffix\nTAIL\n", selected),
   },
   {
@@ -100,12 +100,12 @@ const cases: {
   },
   {
     name: "copy",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination, targetEnd: "TAIL" },
+    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination, targetEnd: "TAIL\n" },
     expected: original.replace("prefix DEST suffix\nTAIL\n", selected),
   },
   {
     name: "replace",
-    args: { start: anchor, text: "NEW" },
+    args: { start: "SEARCH#RUNTIME:1:1:match", text: "NEW" },
     expected: original.replace("END", "NEW"),
   },
   {
