@@ -90,7 +90,12 @@ export function resolveExactTextAnchor(
   };
   return {
     kind: "resolved",
-    anchor: new TextSelectionAnchor(value, context.source, [range]),
+    anchor: new TextSelectionAnchor(
+      value,
+      context.source,
+      [range],
+      [{ start: range.start, end: positionAt(context.content, endOffset) }],
+    ),
   };
 }
 
