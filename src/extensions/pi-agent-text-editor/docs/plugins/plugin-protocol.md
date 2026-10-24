@@ -51,7 +51,7 @@ A mutation may read and change more than one Resource. Core expands global ancho
 
 For built-in span mutations, a plain source path only scopes anchor resolution. It never selects the full document by itself. A typed source path can supply the selection ranges, so `replace`, `delete`, and `insert` may omit their source anchor. `copy` and `move` may omit their source start only when the typed path yields one usable span in one Resource.
 
-Supplying both start and end fields selects whole containing lines inclusively. Endpoint types may differ, but each must resolve uniquely in the same Resource. Reversed endpoints are rejected before writes, not reordered. Without an end field, exact selections keep their fragment extent; supported selection operations may apply independently to several ranges and Resources. Insert uses containing-line boundaries, including for SEARCH match selections, and inserts once per distinct insertion line.
+Supplying both start and end fields selects from the beginning of the start endpoint through the end of the end endpoint. Exact text and SEARCH match endpoints retain their character boundaries; line anchors and SEARCH line endpoints retain whole-line boundaries. Mixed types keep each endpoint's own extent. Each endpoint must resolve uniquely in the same Resource. Reversed endpoints are rejected before writes, not reordered. Without an end field, selections keep their single-selector behavior, including whole-line behavior for complete-line exact matches; supported selection operations may apply independently to several ranges and Resources. Insert uses containing-line boundaries, including for SEARCH match selections, and inserts once per distinct insertion line.
 
 A mutation may return `afterWrite` when it must update related state only after all Resource writes, post-edit handlers, and final rereads succeed. Direct and batched calls await it before reporting success. If it fails, the tool reports `POST_WRITE_FAILED` with an applied effect because the Resource writes have already completed. Mutation previews do not run it.
 
@@ -87,7 +87,7 @@ Core snapshots committed guards once per invocation and runs them after all anch
 
 All Resource resolution, reads, target and anchor checks, change application, and guards finish before the first write. Those failures have no applied effect. If a later Resource write fails, core attempts to restore the failed Resource and every Resource already written, and reports any rollback failures.
 
-`copy` and `move` always need a destination selection. `target` supplies its Resource scope and defaults to the source scope; it does not select a position by itself. `targetStart`, or a typed `target` with an implicit range, supplies the destination selection. Without `targetEnd`, the tools insert after its last containing line. With `targetEnd`, they replace the inclusive whole-line destination range using independently resolved, forward-ordered endpoints. The old destination `anchor` field does not exist.
+`copy` and `move` always need a destination selection. `target` supplies its Resource scope and defaults to the source scope; it does not select a position by itself. `targetStart`, or a typed `target` with an implicit range, supplies the destination selection. Without `targetEnd`, the tools insert after its last containing line. With `targetEnd`, they replace the range from the beginning of `targetStart` through the end of `targetEnd`, preserving each endpoint's exact or whole-line extent. Endpoints must resolve uniquely in the same destination Resource and stay in forward order. The old destination `anchor` field does not exist.
 
 ## Resource resolvers
 
@@ -128,6 +128,8 @@ Presentation type does not change compatibility or ordering. Priority defaults t
 The resolver owns format recognition, freshness checks, and recovery data. It returns `not-handled`, `resolved`, `rejected`, or `failed`. A rejected result contains a reason and may include a Resource range that the read pipeline can render for recovery.
 
 A resolver may return `TextSelectionAnchor` when the editor operation needs exact text instead of whole lines. It carries ordered, non-overlapping ranges for one Resource. Core rejects ranges whose source, lines, or columns do not match the current snapshot.
+
+The optional fourth constructor argument, `endpointRanges`, supplies unexpanded extents for paired range endpoints and defaults to `ranges`. Supply one ordered, non-overlapping endpoint range per selection, wholly contained in its corresponding selection range. The exact-text resolver uses these extents to preserve literal match boundaries in pairs while keeping complete-line single selections linewise.
 
 `api.inspectTextAnchors()` resolves and reads the current Resource, then sends each anchor through the same registry path used by direct edits, batches, and recovery. It resolves each value independently. The registry does not define relationships between multiple anchors; the mutation that owns the fields validates any relationship it needs.
 

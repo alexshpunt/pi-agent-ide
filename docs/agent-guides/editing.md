@@ -14,7 +14,7 @@ Use a returned anchor when it identifies the intended text. Otherwise use the sm
 - `begin` and `end` select the first and last existing lines.
 - A unique exact string selects that fragment.
 
-With `end`, the operation covers complete lines from the first line containing `start` through the last line containing `end`, inclusive. Without `end`, an exact string selects just that fragment.
+With `end`, the range runs from the beginning of `start` through the end of `end`, including the ending match. Exact text and `SEARCH#...:match` retain character boundaries; line anchors and `SEARCH#...:line` retain whole-line boundaries. Keep each endpoint's extent when mixing types. Paired `targetStart`/`targetEnd` use the same rule. Without `end`, partial-line exact text selects only its fragment; complete-line exact matches keep whole-line behavior.
 
 After an exact-text selector fails, exact-text edits are blocked for that file, except for Copy destination selectors (`targetStart` and `targetEnd`). Find the intended location among the returned current anchors, or use Read/Search for another section. Edit with its anchor. After that edit succeeds, exact text is available again. Do not retry a guessed string.
 
