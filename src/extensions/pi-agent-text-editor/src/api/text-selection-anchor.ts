@@ -8,6 +8,8 @@ const textSelectionAnchorBrand = Symbol.for("pi-agent-text-editor/TextSelectionA
 export class TextSelectionAnchor extends TextAnchor {
   readonly [textSelectionAnchorBrand] = true;
   public readonly ranges: readonly TextSelectionRange[];
+  /** Unexpanded selector extents for paired range endpoints; defaults to ranges. */
+  public readonly endpointRanges?: readonly TextSelectionRange[];
 
   public static is(value: unknown): value is TextSelectionAnchor {
     if (!TextAnchor.is(value)) {
@@ -23,7 +25,11 @@ export class TextSelectionAnchor extends TextAnchor {
         candidate.source.length > 0 &&
         Array.isArray(ranges) &&
         ranges.length > 0 &&
-        ranges.every(isTextSelectionRange)
+        ranges.every(isTextSelectionRange) &&
+        (candidate.endpointRanges === undefined ||
+          (Array.isArray(candidate.endpointRanges) &&
+            candidate.endpointRanges.length === ranges.length &&
+            candidate.endpointRanges.every(isTextSelectionRange)))
       );
     } catch {
       return false;
@@ -34,6 +40,7 @@ export class TextSelectionAnchor extends TextAnchor {
     value: string,
     readonly source: string,
     ranges: readonly TextSelectionRange[],
+    endpointRanges?: readonly TextSelectionRange[],
   ) {
     const copied = ranges.map((range) => ({
       start: { ...range.start },
@@ -48,6 +55,29 @@ export class TextSelectionAnchor extends TextAnchor {
     }
 
     this.ranges = copied;
+    if (endpointRanges !== undefined) {
+      const endpoints = endpointRanges.map((range) => ({
+        start: { ...range.start },
+        end: { ...range.end },
+        ...(range.linewise === true && { linewise: true }),
+      }));
+      assertSelectionRanges(endpoints);
+      if (
+        endpoints.length !== copied.length ||
+        endpoints.some((range, index) => {
+          const outer = requiredValue(copied[index]);
+          return (
+            comparePositions(range.start, outer.start) < 0 ||
+            comparePositions(range.end, outer.end) > 0
+          );
+        })
+      ) {
+        throw new RangeError(
+          "Endpoint ranges must stay within their corresponding selection ranges",
+        );
+      }
+      this.endpointRanges = endpoints;
+    }
   }
 }
 

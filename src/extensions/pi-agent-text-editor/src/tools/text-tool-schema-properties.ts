@@ -18,14 +18,14 @@ export function sourceRangeProperties(descriptions: Partial<Record<"start" | "en
       Type.String({
         description:
           descriptions.start ??
-          "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects only its line. Omit when path already selects text through a supported resource reference. With end, selects a whole-line range.",
+          "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects its line. With end, starts at this selector's beginning: exact text and SEARCH :match keep character boundaries; line anchors and SEARCH :line keep whole lines. Omit when path already selects text through a supported resource reference.",
       }),
     ),
     end: Type.Optional(
       Type.String({
         description:
           descriptions.end ??
-          "Optional anchor or unique exact text. Range includes start's first line through end's last line, even for SEARCH :match. Mixed types allowed; boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start. The end line is included, not a stopping point before it.",
+          "Optional anchor or unique exact text. Ends after this selector: exact text and SEARCH :match include the ending match without widening to lines; line anchors and SEARCH :line include their whole line. Mixed endpoint types keep their own extents. Boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start.",
       }),
     ),
   };
@@ -40,13 +40,13 @@ export function targetProperties(directorySemantics: string) {
     targetStart: Type.Optional(
       Type.String({
         description:
-          "Registered anchor or unique exact text in the destination. Required for text transfers to a file path; omit for whole-file transfers or a result destination. Without targetEnd, inserts after the last containing line, keeping the selected text. With targetEnd, replacement starts at the first containing line. SEARCH :match also uses these line boundaries.",
+          "Registered anchor or unique exact text in the destination. Required for text transfers to a file path; omit for whole-file transfers or a result destination. Without targetEnd, inserts after the last containing line, keeping the selected text. With targetEnd, starts replacement at this selector's beginning: exact text and SEARCH :match keep character boundaries; line anchors and SEARCH :line keep whole lines.",
       }),
     ),
     targetEnd: Type.Optional(
       Type.String({
         description:
-          "Optional inclusive destination end. Replaces whole lines through the last line containing this anchor, including SEARCH :match. May differ in type from targetStart; both must resolve uniquely in the target file and in forward order. Omit to insert after targetStart instead.",
+          "Optional destination end. Ends replacement after the exact text or SEARCH :match, or after the whole line for line anchors and SEARCH :line. Mixed endpoint types keep their own extents. Both boundaries must resolve uniquely in the target file and in forward order. Omit to insert after targetStart instead.",
       }),
     ),
   };

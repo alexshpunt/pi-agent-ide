@@ -23,7 +23,7 @@ export const deleteSchema = Type.Object(
     ...sourceRangeProperties({
       start:
         "Anchor or unique exact text locating the text to remove. Without end, exact text selects only that fragment; a line anchor selects its whole line. Omit when path already selects text.",
-      end: "Anchor or unique exact text locating the last line to remove. With start, removes whole lines including both boundary lines, even for SEARCH :match anchors. Both boundaries must be unique, in one file, and in forward order. Mixed anchor types are allowed. Omit when start alone selects the intended text.",
+      end: "Optional anchor or unique exact text ending the deletion. Includes the ending match for exact text and SEARCH :match, or the whole ending line for line anchors and SEARCH :line. Each endpoint keeps its own extent. Both boundaries must be unique, in one file, and forward-ordered. Omit when start alone selects the intended text.",
     }),
   },
   { additionalProperties: false },
