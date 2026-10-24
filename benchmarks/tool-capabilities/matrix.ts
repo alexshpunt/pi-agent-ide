@@ -71,6 +71,9 @@ const groups: [string[], string[]][] = [
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
   [["edit.semantic-write-receipt"], ["semantic-write-receipts"]],
   [["compose.provider-structured-receipt"], ["semantic-script-receipts"]],
+  // Local forwarding aliases may be deferred and absent from the initial catalogue. The alias
+  // receipt case asks for discovery and requires the real native child; prompt deduplication is
+  // checked separately by deterministic real-Pi loadout tests.
   [["compose.local-alias-structured-receipt"], ["semantic-local-alias-receipts"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [

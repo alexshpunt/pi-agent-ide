@@ -2,6 +2,7 @@ import type {
   ExtensionAPI,
   ToolDefinition,
   ToolInfo,
+  ToolLoadout,
   ToolRendererResolver,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -76,6 +77,47 @@ test("forwarding keeps the source output schema and the alias exposure", () => {
   expect(forwarded?.outputSchema).toBe(run.definition.outputSchema);
   expect(forwarded?.exposure).toBe("deferred");
   expect(forwarded?.namespace).toBeUndefined();
+});
+function loadout(run: ReturnType<typeof fixture>, native = true): ToolLoadout {
+  return {
+    declared: (native ? [run.definition, run.alias] : [run.alias]).map((tool) => ({
+      ...tool,
+      label: tool.name,
+      execute: async () => ({ content: [], details: undefined }),
+    })),
+    callable: [],
+    registered: [],
+    getExposure: () => "direct",
+    getNamespace: () => undefined,
+    getPromptGuidelines: () => [],
+  };
+}
+
+test("a forwarding alias stays callable without declaring the native contract twice", () => {
+  const run = fixture();
+  run.tools.push(run.alias);
+  run.start();
+  const forwarded = run.registered.find((tool) => tool.name === run.alias.name);
+  expect(forwarded?.exposure).toBe("deferred");
+  expect(forwarded?.prepareLoadout?.(loadout(run))).toEqual({
+    hiddenDeclarations: [run.alias.name],
+  });
+  expect(forwarded?.prepareLoadout?.(loadout(run, false))?.hiddenDeclarations ?? []).toEqual([]);
+});
+
+test("alias deduplication composes with the source loadout hook", () => {
+  const run = fixture();
+  run.definition.prepareLoadout = () => ({
+    descriptions: { other: "Other description" },
+    hiddenDeclarations: ["other"],
+  });
+  run.tools.push(run.alias);
+  run.start();
+  const forwarded = run.registered.find((tool) => tool.name === run.alias.name);
+  expect(forwarded?.prepareLoadout?.(loadout(run))).toEqual({
+    descriptions: { other: "Other description" },
+    hiddenDeclarations: ["other", run.alias.name],
+  });
 });
 test.each(["namespace", "schema", "description", "hidden"] as const)(
   "do not take over aliases with a foreign %s",

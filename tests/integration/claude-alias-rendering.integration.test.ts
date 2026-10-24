@@ -1,7 +1,9 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { getCurrentTools, type Message } from "@earendil-works/pi-ai";
 import {
   assistantMessage,
+  getProviderSystemPrompt,
   getToolExecution,
   getToolResultText,
   PiIntegrationTest,
@@ -16,6 +18,79 @@ const extensions = [
   path.resolve("src/pi-agent-ide.ts"),
   path.resolve("tests/integration/fixtures/ide-alias-tools.ts"),
 ];
+
+test.each(["on", "only"] as const)(
+  "local aliases stay callable without duplicate declarations in Codemode %s mode",
+  async (mode) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), "OLD\n");
+      await mkdir(path.join(cwd, ".pi"), { recursive: true });
+      await writeFile(path.join(cwd, ".pi/settings.json"), JSON.stringify({ codemode: { mode } }));
+      const run = await new PiIntegrationTest({
+        testName: `ide-alias-single-loadout-${mode}`,
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        isolateUserResources: true,
+        timeoutMs: 90_000,
+        extensions: [...extensions, "builtin:codemode"],
+        tools: ["read", "replace", "codemode", "mcp__fixture__read", "mcp__fixture__replace"],
+        conversation: [
+          assistantMessage(
+            [
+              toolCall({
+                id: "direct-alias",
+                name: "mcp__fixture__replace",
+                arguments: { path: "note.txt", start: "OLD", text: "NEW" },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: "nested-alias",
+                name: "codemode",
+                arguments: {
+                  code: 'text(await tools.mcp__fixture__read({path:"docs:editing"})); text(await tools.mcp__fixture__read({path:"note.txt"}));',
+                },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("Done")]),
+        ],
+      }).run("Use the local aliases directly and from Codemode, including their editing guide");
+      const messages = run.providerRequests[0]?.messages as Message[];
+      const declared = getCurrentTools(messages);
+      expect(getProviderSystemPrompt(run)).not.toContain("mcp__fixture__");
+      expect(
+        declared.some((tool) =>
+          ["mcp__fixture__read", "mcp__fixture__replace"].includes(tool.name),
+        ),
+      ).toBe(false);
+      expect(declared.find((tool) => tool.name === "codemode")?.description).not.toContain(
+        "mcp__fixture__read",
+      );
+      expect(declared.find((tool) => tool.name === "codemode")?.description).not.toContain(
+        "mcp__fixture__replace",
+      );
+      if (mode === "on") {
+        expect(declared.filter((tool) => tool.name === "read")).toHaveLength(1);
+        expect(declared.filter((tool) => tool.name === "replace")).toHaveLength(1);
+        expect(getProviderSystemPrompt(run).match(/^- read:/gmu)).toHaveLength(1);
+      }
+      expect(getToolExecution(run, "direct-alias").isError).toBe(false);
+      expect(
+        getToolExecution(run, "nested-alias").isError,
+        getToolResultText(run, "nested-alias"),
+      ).toBe(false);
+      expect(getToolResultText(run, "nested-alias")).toContain("# Precise text editing");
+      expect(getToolResultText(run, "nested-alias")).toContain("NEW");
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("NEW\n");
+      expect(run.tuiRenderedOutput).not.toContain("GENERIC_ALIAS_");
+    });
+  },
+);
 
 test("local MCP aliases keep native IDE rendering without duplicate child panels", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -156,6 +231,9 @@ test("an unrelated MCP server keeps its own renderer even with identical read me
     }).run("Call the unrelated MCP fixture");
     expect(getToolExecution(run, "foreign").isError).toBe(false);
     expect(getToolResultText(run, "foreign")).toContain("FOREIGN_RESULT");
+    const declared = getCurrentTools(run.providerRequests[0]?.messages as Message[]);
+    expect(declared.some((tool) => tool.name === "mcp__foreign__read")).toBe(true);
+    expect(declared.some((tool) => tool.name === "read")).toBe(true);
     expect(run.tuiRenderedOutput).toContain("FOREIGN_MCP_CALL");
     expect(run.tuiRenderedOutput).toContain("FOREIGN_MCP_RESULT");
   });
