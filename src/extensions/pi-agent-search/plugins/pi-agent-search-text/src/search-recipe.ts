@@ -36,7 +36,8 @@ export function createSearchRecipe(request: TextSearchRequest): SearchRecipe {
   if (regex !== query || JSON.stringify(condition) !== JSON.stringify(regexCondition)) {
     fallbacks.push({ query: regex, mode: "regex", condition: regexCondition });
   }
-  if (words !== undefined && words !== query && words !== regex) {
+  // Separate words cannot reproduce one match that spans lines.
+  if (request.multiline !== true && words !== undefined && words !== query && words !== regex) {
     fallbacks.push({ query: words, mode: "words" });
   }
   return { ...request, query, regex: true, condition, fallbacks };

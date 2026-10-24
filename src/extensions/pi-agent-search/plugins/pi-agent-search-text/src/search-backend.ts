@@ -19,7 +19,26 @@ export interface TextSearchRequest {
   readonly condition?: SearchCondition;
   readonly caseSensitive?: boolean;
   readonly wholeWord?: boolean;
+  /** Let one match span line breaks (`--multiline --multiline-dotall`). */
+  readonly multiline?: boolean;
   readonly limit?: number;
+}
+
+/** Reject inputs that line-based matching cannot honor instead of silently changing them. */
+function assertSupportedPattern(request: TextSearchRequest): void {
+  if (request.multiline === true) {
+    if (request.condition !== undefined)
+      throw new Error(
+        "Boolean conditions check single lines and cannot be combined with multiline. Use one regex with multiline instead.",
+      );
+    return;
+  }
+  if (/\r|\n/u.test(request.query))
+    throw new Error("A pattern with line breaks requires multiline: true.");
+}
+
+function multilineArguments(request: TextSearchRequest): string[] {
+  return request.multiline === true ? ["--multiline", "--multiline-dotall"] : [];
 }
 
 export interface TextSearchBackendResult {
@@ -51,9 +70,7 @@ export async function searchText(
     throw new Error("Search query must not be empty.");
   }
 
-  if (/\r|\n/u.test(request.query)) {
-    throw new Error("Search supports one-line patterns only.");
-  }
+  assertSupportedPattern(request);
 
   if (request.condition !== undefined)
     return searchBoolean(
@@ -106,6 +123,7 @@ export async function searchTextContent(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<TextSearchBackendResult> {
+  assertSupportedPattern(request);
   if (request.condition !== undefined)
     return searchBoolean(
       request,
@@ -116,7 +134,6 @@ export async function searchTextContent(
       },
       signal,
     );
-  if (/\r|\n/u.test(request.query)) throw new Error("Search supports one-line patterns only.");
   const result = await runRipgrep(
     [
       "--json",
@@ -127,6 +144,7 @@ export async function searchTextContent(
       ...(request.regex === true ? ["--engine", "auto"] : ["--fixed-strings"]),
       request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
       ...(request.wholeWord === true ? ["--word-regexp"] : []),
+      ...multilineArguments(request),
       "--",
       request.query,
       "-",
@@ -164,6 +182,7 @@ async function searchPattern(
     "--line-number",
     request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
     ...(request.wholeWord === true ? ["--word-regexp"] : []),
+    ...multilineArguments(request),
     ...scope.arguments,
     "--",
     request.query,
@@ -468,8 +487,14 @@ function matchesFromEvent(
     return [];
   }
 
-  const lineText = rawLine.replace(/(?:\r\n|\n)$/u, "");
+  // Multiline mode reports every line a match touches in one event; offsets count from its start.
+  const lines = rawLine.split("\n").map((line) => line.replace(/\r$/u, ""));
   const lineBuffer = Buffer.from(rawLine);
+  const position = (byteOffset: number) => {
+    const prefix = lineBuffer.subarray(0, byteOffset).toString("utf8");
+    const lineIndex = prefix.split("\n").length - 1;
+    return { lineIndex, column: prefix.length - prefix.lastIndexOf("\n") - 1 };
+  };
   const matches: TextSearchMatch[] = [];
 
   for (const submatch of event.data.submatches) {
@@ -477,15 +502,21 @@ function matchesFromEvent(
       continue;
     }
 
-    const startColumn = lineBuffer.subarray(0, submatch.start).toString("utf8").length;
-    const endColumn = lineBuffer.subarray(0, submatch.end).toString("utf8").length;
+    const start = position(submatch.start);
+    const end = position(submatch.end);
     matches.push({
       source: environment?.resolve(cwd, source) ?? path.resolve(cwd, source),
-      lineNumber: event.data.line_number,
-      startColumn,
-      endColumn,
-      matchedText: lineText.slice(startColumn, endColumn),
-      lineText,
+      lineNumber: event.data.line_number + start.lineIndex,
+      startColumn: start.column,
+      ...(end.lineIndex === start.lineIndex
+        ? {}
+        : { endLineNumber: event.data.line_number + end.lineIndex }),
+      endColumn: end.column,
+      matchedText:
+        end.lineIndex === start.lineIndex
+          ? (lines[start.lineIndex] ?? "").slice(start.column, end.column)
+          : lineBuffer.subarray(submatch.start, submatch.end).toString("utf8"),
+      lineText: lines[start.lineIndex] ?? "",
     });
   }
 

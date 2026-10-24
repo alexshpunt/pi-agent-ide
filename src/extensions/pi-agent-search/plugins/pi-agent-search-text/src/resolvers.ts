@@ -142,6 +142,7 @@ function createMatchResolver(
         : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
     id,
     supportsResultScope: true,
+    supportsMultiline: true,
     toScriptData(payload, details) {
       const result = payload as TextPayload;
       const formatted = details as SearchToolDetails & {
@@ -166,6 +167,7 @@ function createMatchResolver(
       const fuzzy =
         context.scope === undefined &&
         id === "text" &&
+        request.multiline !== true &&
         result.complete &&
         result.matches.length === 0 &&
         isFuzzyQuery(request.query)
