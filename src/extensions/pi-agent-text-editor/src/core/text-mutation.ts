@@ -763,10 +763,14 @@ function mergeTargets(left: readonly TextTarget[], right: readonly TextTarget[])
   return [...merged.values()];
 }
 
+function selectionRangeKey(range: TextSelectionRange): string {
+  return JSON.stringify({ start: range.start, end: range.end });
+}
+
 function deduplicateRanges(ranges: readonly TextSelectionRange[]): readonly TextSelectionRange[] {
   const merged = new Map<string, TextSelectionRange>();
   for (const range of ranges) {
-    const key = JSON.stringify({ start: range.start, end: range.end });
+    const key = selectionRangeKey(range);
     const previous = merged.get(key);
     merged.set(key, {
       ...range,
@@ -827,7 +831,29 @@ function mergeResolvedAnchors(
           throw new Error(`Anchor ${field} selections overlap or are ambiguous.`);
         }
       }
-      return [source, new TextSelectionAnchor(field, source, unique)] as const;
+      // A typed source can duplicate an explicit literal's linewise selection.
+      // Keep the explicit endpoint extent when deduplicating that selection.
+      const explicitEndpoints = explicitSelection.endpointRanges;
+      const endpoints =
+        explicitEndpoints === undefined
+          ? undefined
+          : new Map(
+              explicitSelection.ranges.map((range, index) => [
+                selectionRangeKey(range),
+                requiredValue(explicitEndpoints[index]),
+              ]),
+            );
+      return [
+        source,
+        new TextSelectionAnchor(
+          field,
+          source,
+          unique,
+          endpoints === undefined
+            ? undefined
+            : unique.map((range) => endpoints.get(selectionRangeKey(range)) ?? range),
+        ),
+      ] as const;
     }),
   );
 }
