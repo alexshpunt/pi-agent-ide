@@ -86,3 +86,83 @@ test("keeps restored and uncertain rollback resources beside confirmed applied p
     ],
   });
 });
+
+test.each(["not-applied", "unknown"] as const)(
+  "structured Write errors retain only closed retry metadata with %s effects",
+  (effect) => {
+    const privateDiagnostic = "private-write-metadata";
+    const offered = {
+      rateLimit: { retryAfterMs: 37000, authorization: privateDiagnostic },
+      headers: privateDiagnostic,
+    };
+    const outcome = mutationOutcome(
+      {
+        content: [],
+        isError: true,
+        details: {
+          effect,
+          results: [
+            new FileMutationResult({
+              ok: false,
+              path: source,
+              errors: [
+                { path: source, code: "RATE_LIMITED", reason: "Rate limited", metadata: offered },
+              ],
+            }),
+          ],
+        },
+      },
+      "write",
+    );
+    expect(outcome.errors).toEqual([
+      {
+        code: "RATE_LIMITED",
+        message: "Rate limited",
+        source,
+        metadata: { rateLimit: { retryAfterMs: 37000 } },
+      },
+    ]);
+    expect(outcome.data?.effect).toBe(effect);
+    offered.rateLimit.retryAfterMs = 1;
+    expect(outcome.errors[0]?.metadata?.rateLimit?.retryAfterMs).toBe(37000);
+    expect(Object.isFrozen(outcome.errors[0]?.metadata)).toBe(true);
+    expect(Object.isFrozen(outcome.errors[0]?.metadata?.rateLimit)).toBe(true);
+    expect(JSON.stringify(outcome)).not.toContain(privateDiagnostic);
+  },
+);
+
+test.each(["getter", "inherited"] as const)(
+  "structured Write errors ignore %s metadata without changing their effect",
+  (kind) => {
+    let reads = 0;
+    const error = { path: source, code: "RATE_LIMITED", reason: "Rate limited" };
+    if (kind === "getter")
+      Object.defineProperty(error, "metadata", {
+        get() {
+          reads++;
+          throw new Error("private-write-metadata");
+        },
+      });
+    else Object.setPrototypeOf(error, { metadata: { rateLimit: { retryAfterMs: 37000 } } });
+    const outcome = mutationOutcome(
+      {
+        content: [],
+        isError: true,
+        details: {
+          effect: "unknown",
+          results: [
+            new FileMutationResult({
+              ok: false,
+              path: source,
+              errors: [error],
+            }),
+          ],
+        },
+      },
+      "write",
+    );
+    expect(reads).toBe(0);
+    expect(outcome.errors).toEqual([{ code: "RATE_LIMITED", message: "Rate limited", source }]);
+    expect(outcome.data?.effect).toBe("unknown");
+  },
+);

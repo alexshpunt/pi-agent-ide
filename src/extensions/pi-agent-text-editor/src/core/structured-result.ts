@@ -1,6 +1,7 @@
 import { Type, type Static } from "typebox";
 import {
   resultError,
+  resourceErrorMetadataOf,
   structuredResultSchema,
   withStructuredResult,
   type StructuredResult,
@@ -128,12 +129,15 @@ export function mutationOutcome(
                 ? "not-applied"
                 : (details.effect ?? "unknown"),
       });
-    for (const error of data.errors ?? [])
+    for (const error of data.errors ?? []) {
+      const metadata = resourceErrorMetadataOf(error);
       errors.push({
         code: error.code ?? "MUTATION_FAILED",
         message: error.reason ?? "Mutation failed",
         source: error.path,
+        ...(metadata === undefined ? {} : { metadata }),
       });
+    }
     if (data.ok === false && (data.errors?.length ?? 0) === 0)
       errors.push({
         code: "MUTATION_FAILED",
