@@ -317,6 +317,8 @@ export default function register(pi: ExtensionAPI): void | Promise<void> {
 }
 ```
 
+Use `ResourceError` for provider failures with a public code and source. Its optional bounded rate-limit metadata survives Read sanitization; see [safe provider error metadata](./structured-results.md#safe-provider-error-metadata).
+
 A read Resource does not become writable automatically. Register a matching resolver with the text-editor protocol only when writes are safe and well defined.
 
 Read plugins can also add pipeline handlers, text presenters, and resolver-specific TUI renderers. See the [read plugin contract](https://github.com/alexshpunt/pi-agent-ide/blob/main/src/extensions/pi-agent-read/docs/plugins/plugin-protocol.md).
