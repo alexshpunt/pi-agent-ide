@@ -185,6 +185,7 @@ const groups: [string[], string[]][] = [
   ],
   [["compose.search-narrow-result"], ["read-search-narrow"]],
   [["read.ast", "search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
+  [["ast_search.rule", "compose.ast-search-enclosing"], ["ast-search-enclosing"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],

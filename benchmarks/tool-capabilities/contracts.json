@@ -2,6 +2,68 @@
   "pi": "1.4.0",
   "tools": [
     {
+      "name": "ast_search",
+      "namespace": "ide_ast_search",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "exclude": {
+            "type": "string"
+          },
+          "include": {
+            "type": "string"
+          },
+          "language": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "pattern": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "relation": {
+            "anyOf": [
+              {
+                "const": "inside",
+                "type": "string"
+              },
+              {
+                "const": "enclosing",
+                "type": "string"
+              }
+            ]
+          },
+          "rule": {
+            "patternProperties": {
+              "^.*$": {}
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
       "name": "bash",
       "namespace": "ide_terminal",
       "exposure": "direct",

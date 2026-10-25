@@ -46,12 +46,6 @@ const calls = [
     resolverId: "symbols",
     arguments: { limit: 5 },
   },
-  {
-    id: "search-ast",
-    query: "ast:createResolverAtlas()",
-    resolverId: "ast",
-    arguments: { path: "src" },
-  },
 ] as const;
 
 afterAll(() => extensions.dispose());
@@ -84,7 +78,7 @@ describe("interactive Search resolver demos", () => {
           ...conversation,
           assistantMessage([text("All installed Search resolvers completed", { delayMs: 0 })]),
         ],
-      }).run("Demonstrate text, regex, file, LSP, and AST search through one tool");
+      }).run("Demonstrate text, regex, file and LSP search through one tool");
 
       for (const call of calls) {
         const execution = getToolExecution(result, call.id);
@@ -98,7 +92,6 @@ describe("interactive Search resolver demos", () => {
       }
 
       expect(getToolResultText(result, "search-lsp")).toContain("createResolverAtlas");
-      expect(getToolResultText(result, "search-ast")).toContain("createResolverAtlas()");
     });
   }, 240_000);
 });

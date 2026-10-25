@@ -25,7 +25,7 @@ test("warns about inherited incomplete coverage for empty and non-empty searches
     );
     const source = "probe(first);\nprobe(second);\n";
     await writeFile(path.join(cwd, "sample.ts"), source);
-    const code = `const seed = await tools.search({query:"ast:probe($ARG)",path:"sample.ts",limit:1}).then(value => value.result);
+    const code = `const seed = await tools.ast_search({pattern:"probe($ARG)",path:"sample.ts",limit:1}).then(value => value.result);
 const warning = "incomplete";
 const zero = await tools.search({path:seed,query:"regex:missing"}).then(value => value.result);
 const found = await tools.search({path:seed,query:"regex:probe"}).then(value => value.result);

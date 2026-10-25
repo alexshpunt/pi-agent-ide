@@ -7,7 +7,7 @@ import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/
 
 import type { SearchEnvironment, SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 import { selectionData, containsSearchMatch } from "pi-agent-search/api/search";
-import { verifyResultTargets } from "pi-agent-resource";
+import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
 
 import { createAstSearchPresentation } from "./search-presentation.js";
@@ -33,6 +33,57 @@ interface AstCapture {
   readonly range: AstGrepMatch["range"];
 }
 
+/** Options the `ast_search` tool passes in `SearchRequest.options.ast`; their presence selects this resolver. */
+export interface AstSearchOptions {
+  readonly pattern?: string;
+  /** An ast-grep rule object (the value of `rule:` in a rule file); requires `language`. */
+  readonly rule?: Readonly<Record<string, unknown>>;
+  readonly language?: string;
+  /** `inside` keeps matches within the scope ranges; `enclosing` keeps the innermost match containing each range. */
+  readonly relation?: "inside" | "enclosing";
+}
+
+function astOptions(request: SearchRequest): AstSearchOptions | undefined {
+  const value = request.options?.ast;
+  return typeof value === "object" && value !== null ? value : undefined;
+}
+
+interface Position {
+  readonly line: number;
+  readonly column: number;
+}
+const before = (a: Position, b: Position) =>
+  a.line < b.line || (a.line === b.line && a.column <= b.column);
+
+/** For each scope range, keep the smallest match that wholly contains it, once per match. */
+function innermostEnclosing<T extends { readonly selection: SearchSelectionMatch }>(
+  eligible: readonly T[],
+  targets: ResolvedResultTargets["targets"],
+): T[] {
+  const chosen = new Set<T>();
+  for (const target of targets) {
+    for (const range of target.ranges) {
+      const start = { line: range.start.lineNumber, column: range.start.column };
+      const end = { line: range.end.lineNumber, column: range.end.column };
+      let best: T | undefined;
+      let bestLength = Number.POSITIVE_INFINITY;
+      for (const item of eligible) {
+        const match = item.selection;
+        if (match.source !== target.source) continue;
+        const matchStart = { line: match.lineNumber, column: match.startColumn };
+        const matchEnd = { line: match.endLineNumber ?? match.lineNumber, column: match.endColumn };
+        if (!before(matchStart, start) || !before(end, matchEnd)) continue;
+        if (match.matchedText.length < bestLength) {
+          best = item;
+          bestLength = match.matchedText.length;
+        }
+      }
+      if (best !== undefined) chosen.add(best);
+    }
+  }
+  return eligible.filter((item) => chosen.has(item));
+}
+
 /** Search existing AST patterns inside exact source scopes and retain associated capture targets. */
 export function createAstSearchResolver(
   registerSelection: SearchPluginApi["registerSelection"],
@@ -41,19 +92,30 @@ export function createAstSearchResolver(
     id: "ast",
     supportsResultScope: true,
     readResources: (request, context) =>
-      request.query.startsWith("ast:")
-        ? (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd])
-        : [],
+      astOptions(request) === undefined
+        ? []
+        : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
     renderResult: renderSearchResult as SearchResolver["renderResult"],
     async tryResolve(request, context) {
-      if (!request.query.startsWith("ast:")) {
-        return { kind: "not-handled" };
+      const options = astOptions(request);
+      if (options === undefined) return { kind: "not-handled" };
+
+      const pattern = options.pattern?.trim() ?? "";
+      const enclosing = options.relation === "enclosing";
+
+      if (pattern.length === 0 && options.rule === undefined) {
+        return { kind: "failed", error: new Error("Pass a pattern or a rule.") };
       }
-
-      const pattern = request.query.slice("ast:".length).trim();
-
-      if (pattern.length === 0) {
-        return { kind: "failed", error: new Error("ast: pattern must not be empty") };
+      if (options.rule !== undefined && (options.language ?? "").trim().length === 0) {
+        return { kind: "failed", error: new Error("A rule requires language.") };
+      }
+      if (enclosing && context.scope === undefined) {
+        return {
+          kind: "failed",
+          error: new Error(
+            'relation "enclosing" needs a Read, Search or edit result as path; it returns the innermost match containing each of its ranges.',
+          ),
+        };
       }
 
       const owner = (source: string): SearchEnvironment | undefined =>
@@ -95,7 +157,11 @@ export function createAstSearchResolver(
             await selectionMatches([match], context.cwd, signal, owner(match.file))
           )[0];
           if (selection === undefined) throw new Error("Missing AST selection snapshot");
-          if (context.scope !== undefined && !containsSearchMatch(context.scope, selection))
+          if (
+            !enclosing &&
+            context.scope !== undefined &&
+            !containsSearchMatch(context.scope, selection)
+          )
             continue;
           eligible.push({
             selection,
@@ -112,12 +178,17 @@ export function createAstSearchResolver(
             },
           });
         }
-        const kept = eligible.slice(0, request.limit ?? 100);
+        const candidates =
+          enclosing && context.scope !== undefined
+            ? innermostEnclosing(eligible, context.scope.targets)
+            : eligible;
+        const kept = candidates.slice(0, request.limit ?? 100);
         if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
         return {
           raw: kept.map((item) => item.raw),
           matches: kept.map((item) => item.selection),
-          complete: (context.scope?.complete ?? true) && eligible.length <= (request.limit ?? 100),
+          complete:
+            (context.scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
         };
       };
       const selected = await collect(context.signal);
@@ -133,7 +204,10 @@ export function createAstSearchResolver(
           ...Object.fromEntries(
             Object.entries(raw.metaVariables?.single ?? {}).map(([name, node]) => [name, [node]]),
           ),
-          ...raw.metaVariables?.multi,
+          // `scan` reports relational rule labels as a `secondary` group; they are not captures.
+          ...Object.fromEntries(
+            Object.entries(raw.metaVariables?.multi ?? {}).filter(([name]) => name !== "secondary"),
+          ),
         });
         const projected = [];
         const groupsForMatch: Record<string, { target: string; nodes: number }> = {};
@@ -318,7 +392,19 @@ function runAstGrep(
   environment?: SearchEnvironment,
 ): Promise<AstGrepMatch[]> {
   signal?.throwIfAborted();
-  const arguments_ = ["run", "--pattern", pattern, "--json=compact", "--no-ignore", "parent"];
+  const { rule, language } = astOptions(request) ?? {};
+  // A rule runs through `scan` with one inline rule; JSON is valid YAML for ast-grep.
+  const arguments_ =
+    rule === undefined
+      ? ["run", "--pattern", pattern, "--json=compact", "--no-ignore", "parent"]
+      : [
+          "scan",
+          "--inline-rules",
+          JSON.stringify({ id: "ast_search", language, severity: "hint", rule }),
+          "--json=compact",
+          "--no-ignore",
+          "parent",
+        ];
 
   for (const include of splitGlobs(request.include)) {
     arguments_.push("--globs", include);

@@ -43,7 +43,10 @@ test("AST matches and captures stay inside one exact scope with their source aut
     ],
   };
   const result = await resolver.tryResolve(
-    { query: "ast:function $NAME($$$ARGS) { $$$BODY }" },
+    {
+      query: "function $NAME($$$ARGS) { $$$BODY }",
+      options: { ast: { pattern: "function $NAME($$$ARGS) { $$$BODY }" } },
+    },
     { cwd, scope },
   );
   if (result.kind !== "resolved") throw new Error("AST discovery failed");

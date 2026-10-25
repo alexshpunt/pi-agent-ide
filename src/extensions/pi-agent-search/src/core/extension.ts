@@ -91,10 +91,10 @@ export default async function registerSearchCore(
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "search-code",
-      description: "Text search, AST patterns, symbols, graphs, and semantic rename",
+      description: "Text search, symbols, graphs, and semantic rename",
       triggers: [
         { tool: "search" },
-        { tool: "read", resourcePrefixes: ["ast:", "symbol:", "symbols:", "graph:"] },
+        { tool: "read", resourcePrefixes: ["symbol:", "symbols:", "graph:"] },
       ],
     }),
   ]);
@@ -126,9 +126,9 @@ export default async function registerSearchCore(
         },
         label: "search",
         description:
-          "Use search to find text, file paths, syntax patterns, language symbols, web-page text, and running processes.",
+          "Use search to find text, file paths, language symbols, web-page text, and running processes.",
         promptSnippet:
-          "Search files and text with literals or regular expressions, plus syntax trees and language symbols",
+          "Search files and text with literals or regular expressions, plus language symbols",
         get promptGuidelines(): string[] {
           return [
             "Use the narrowest useful search query and scope; broaden when needed.",

@@ -14,7 +14,7 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
 const coverageCode = `
 function check(value, message) { if (!value) throw Error(message); }
-const seed = await tools.search({path:"sample.ts",query:"ast:probe($ARG)",limit:1});
+const seed = await tools.ast_search({path:"sample.ts",pattern:"probe($ARG)",limit:1});
 check(seed.hasMatches === true && seed.complete === false,"Limited search claimed complete coverage");
 const zero = await tools.search({path:seed.result,query:"regex:absent"});
 const some = await tools.search({path:seed.result,query:"regex:probe"});

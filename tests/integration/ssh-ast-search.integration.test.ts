@@ -86,8 +86,8 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
         assistantMessage([
           toolCall({
             id: "search",
-            name: "search",
-            arguments: { query: "ast:console.log($VALUE)", path: note },
+            name: "ast_search",
+            arguments: { pattern: "console.log($VALUE)", path: note },
           }),
         ]),
         assistantMessage([
@@ -103,7 +103,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r = await tools.search({query: "ast:console.info($VALUE)", path: ${JSON.stringify(scope)}}).then(value => value.result); if (!r.includes(${JSON.stringify(note)}) || !r.includes("console.info(label)")) throw new Error(r); text(r);`,
+              code: `const r = await tools.ast_search({pattern:"console.info($VALUE)", path: ${JSON.stringify(scope)}}).then(value => value.result); if (!r.includes(${JSON.stringify(note)}) || !r.includes("console.info(label)")) throw new Error(r); text(r);`,
             },
           }),
         ]),

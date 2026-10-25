@@ -102,7 +102,7 @@ Deleting an active session first requests graceful termination, then forcefully 
 `search` gives the agent one discovery interface. Built-in resolvers cover:
 
 - file and text search;
-- language-aware and structural search;
+- language-aware symbol search;
 
 A resolver decides whether it understands a query. The first successful resolver returns the result. Search plugins can add new query forms without adding another agent tool.
 
@@ -134,9 +134,13 @@ A `:line` range includes its LF or CRLF line ending. A whole-line replacement pr
 
 Per-result forms keep the search-time snapshot and fail as stale after their matched file changes. Complete `:all` forms rerun the original search recipe when a matched file changes, then select the current complete result set. Limited or otherwise incomplete searches omit the `:all` forms. A forged `:all` value for an incomplete search is rejected.
 
+## Syntax search
+
+`ast_search` runs [ast-grep](https://ast-grep.github.io/) in files or inside a returned Read, Search or edit result, for every language ast-grep supports. It takes either a `pattern` in source-code syntax, with `$NAME` and `$$$ARGS` captures, or an ast-grep `rule` object with a `language`. Rules add relations such as `inside`, `has`, `not`, `follows` and `precedes`. With a result as `path`, `relation: "enclosing"` returns the innermost match that contains each range, for example the function around a text match. Matches and captures are guarded `SEARCH#` and `RESULT#` selections like text search results. The agent guide is `docs:ast-search`.
+
 ## Narrowing a result
 
-Search inside a returned Read, Search or edit result to narrow it before editing. A regex inside the result selects a span between markers, part of a line or an insertion point; `multiline: true` lets one match span several lines. `ast:` captures select construct parts such as a function body or an argument list, and `SEARCH#...:line` references select complete containing lines. Displayed context alone does not expand an edit selection.
+Search inside a returned Read, Search or edit result to narrow it before editing. A regex inside the result selects a span between markers, part of a line or an insertion point; `multiline: true` lets one match span several lines. `ast_search` on the same result selects construct parts such as a function body or an argument list through its captures, or the function that encloses a match, and `SEARCH#...:line` references select complete containing lines. Displayed context alone does not expand an edit selection.
 
 ## Editing
 

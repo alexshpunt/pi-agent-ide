@@ -575,9 +575,9 @@ describe("pi-agent-text-editor search", () => {
             [
               toolCall({
                 id: "search-ast",
-                name: "search",
+                name: "ast_search",
                 arguments: {
-                  query: "ast:export function $NAME($ARG): $RET { $$$BODY }",
+                  pattern: "export function $NAME($ARG): $RET { $$$BODY }",
                   path: "src",
                 },
               }),
@@ -594,7 +594,7 @@ describe("pi-agent-text-editor search", () => {
       expect(getToolResultText(result, "search-ast")).toContain("src/queue.ts:1");
       expect(getToolResultText(result, "search-ast")).toContain("legacyQueue");
       const astView = result.tuiRenderedOutput.slice(
-        result.tuiRenderedOutput.indexOf('search "ast:export function'),
+        result.tuiRenderedOutput.indexOf("ast_search export function"),
       );
       expect(astView).toContain("1 match in 1 file");
       expect(astView).toMatch(/src\/queue\.ts\s+1/u);
