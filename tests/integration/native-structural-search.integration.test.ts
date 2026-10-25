@@ -37,7 +37,7 @@ async function runAstComposition(
     rawMode: true,
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-    tools: ["read", "search", "replace", "codemode"],
+    tools: ["read", "search", "ast_search", "replace", "codemode"],
     conversation: [
       ...scripts.map((code, index) =>
         assistantMessage(
@@ -73,7 +73,7 @@ test("searches AST inside a Read window and edits a named capture with exact CRL
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runAstComposition(cwd, "ast-window-capture-edit", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:1});
-const found=await tools.search({path:window,query:"ast:legacyRequest($OPTIONS)"}).then(value => value.result);
+const found=await tools.ast_search({path:window,pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
 check(matches(found).length===1 && found.includes("calls.ts:2:7"),"AST escaped Read or lost UTF16 coordinates");
 const options=capture(found,"OPTIONS");
 check(options.length===1,"Capture lost association");
@@ -98,12 +98,12 @@ test("keeps sparse multi-file AST scopes and capture groups without matching acr
     const run = await runAstComposition(cwd, "ast-sparse-multi-captures", [
       `const seed=await tools.search({path:".",include:"*.ts",query:"regex:legacyRequest[(](a, b|c, d|e, f)[)]"}).then(value => value.result);
 check(matches(seed).length===3,"Fixture scopes missing");
-const found=await tools.search({path:seed,query:"ast:legacyRequest($$$ARGS)"}).then(value => value.result);
+const found=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)"}).then(value => value.result);
 check(matches(found).length===3,"Sparse AST scope widened");
 const groups=capture(found,"ARGS");
 check(groups.length===3 && found.split("3 node(s)").length-1===3,"Multi-capture association lost");
 for(const group of groups) check(matches(await tools.search({path:group,query:"ignored"}).then(value => value.result)).length===0,"Capture escaped");
-const partial=await tools.search({path:seed,query:"ast:legacyRequest($$$ARGS)",limit:1}).then(value => value.result);
+const partial=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)",limit:1}).then(value => value.result);
 check(matches(partial).length===1 && /[Ii]ncomplete/.test(partial),"Limited Search must report one match and incomplete coverage");
 await rejects(()=>tools.replace({path:partial,text:"BAD"}),/[Ii]ncomplete/);
 text({groups:3,complete:true});`,
@@ -177,7 +177,7 @@ test("retains every node of a capture larger than the ordinary match preview", a
     const arguments_ = Array.from({ length: 120 }, (_, index) => `arg${String(index)}`);
     await writeFile(path.join(cwd, "large.ts"), `legacyRequest(${arguments_.join(", ")});\n`);
     const run = await runAstComposition(cwd, "ast-large-capture", [
-      `const found=await tools.search({path:"large.ts",query:"ast:legacyRequest($$$ARGS)"}).then(value => value.result);
+      `const found=await tools.ast_search({path:"large.ts",pattern:"legacyRequest($$$ARGS)"}).then(value => value.result);
 const args=capture(found,"ARGS");
 check(args.length===1 && found.includes("239 node(s)"),"Capture group silently shortened");
 const last=await tools.search({path:args,query:"arg119"}).then(value => value.result);
@@ -195,14 +195,14 @@ test("preserves AST input forms across calls and rejects captures after a depend
     const run = await runAstComposition(cwd, "ast-forms-cross-call-stale", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:1});
 for(const input of [window,uuid(window),"RESULT#"+uuid(window)]) {
- const found=await tools.search({path:input,query:"ast:legacyRequest($OPTIONS)"}).then(value => value.result);
+ const found=await tools.ast_search({path:input,pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
  check(matches(found).length===1,"Read input forms differ");
  store("ast-capture",capture(found,"OPTIONS"));
 }
 text({saved:true});`,
       `const old=load("ast-capture");
 const changed=await tools.replace({path:old,text:"{ timeout: 99 }"});
-const found=await tools.search({path:changed,query:"ast:{ timeout: $VALUE }"}).then(value => value.result);
+const found=await tools.ast_search({path:changed,pattern:"{ timeout: $VALUE }"}).then(value => value.result);
 check(matches(found).length===1,"AST cannot consume mutation");
 const values=await tools.search({path:capture(found,"VALUE"),query:"99"}).then(value => value.result);
 check(matches(values).length===1,"Capture VALUE lost authority");
@@ -218,8 +218,8 @@ test("never widens an empty AST scope or a range cutting through an AST node", a
     await writeFile(path.join(cwd, "calls.ts"), "legacyRequest({ timeout: 10 });\n");
     const run = await runAstComposition(cwd, "ast-boundary-empty-scope", [
       `const seed=await tools.search({path:"calls.ts",query:"timeout"}).then(value => value.result);
-const cut=await tools.search({path:seed,query:"ast:legacyRequest($OPTIONS)"}).then(value => value.result);
-const empty=await tools.search({path:[],query:"ast:legacyRequest($OPTIONS)"}).then(value => value.result);
+const cut=await tools.ast_search({path:seed,pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
+const empty=await tools.ast_search({path:[],pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
 for(const found of [cut,empty]) check(matches(found).length===0 && !found.includes("Result limit reached"),"AST scope widened");
 text({cut:0,empty:0});`,
     ]);

@@ -13,6 +13,8 @@ export interface SearchRequest {
   readonly limit?: number;
   /** Explicitly follow scoped LSP symbols to references outside the input scope. */
   readonly navigation?: "references";
+  /** Options from a focused tool for its own resolver; not part of the public search schema. */
+  readonly options?: Readonly<Record<string, unknown>>;
 }
 
 /** Public calls accept registered result objects; resolvers receive normalized string paths. */
@@ -190,6 +192,13 @@ export interface SearchPluginApi {
   addPromptGuideline(guideline: SearchDescriptionSource): void;
   /** Execute configured resolvers and register references before returning script data. */
   search(
+    request: SearchInput,
+    context: SearchContext,
+    audience?: "agent" | "script",
+  ): Promise<SearchToolResult>;
+  /** Run one resolver that is not registered with `search`, reusing scopes, owners and selections. */
+  searchWith(
+    resolver: SearchResolver,
     request: SearchInput,
     context: SearchContext,
     audience?: "agent" | "script",

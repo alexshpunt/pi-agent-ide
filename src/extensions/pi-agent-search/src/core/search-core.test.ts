@@ -312,7 +312,7 @@ test("issued-scope providers register atomically and refuse before resolver exec
   expect(specialized).not.toHaveBeenCalled();
   expect(fallback).not.toHaveBeenCalled();
 });
-test.each(["ast:call($ARG)", "symbols:entry", "ast:", "symbols:"])(
+test.each(["symbols:entry", "symbols:"])(
   "does not turn unsupported scoped %s into text search",
   async (query) => {
     const core = createSearchCore();

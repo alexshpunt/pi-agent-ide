@@ -540,7 +540,7 @@ describe("pi-agent-text-editor search", () => {
     });
   }, 180_000);
 
-  test("routes files and AST protocols through their installed resolvers", async () => {
+  test("routes file search through search and syntax search through ast_search", async () => {
     await withTempWorkspace(async (directory) => {
       const source = path.join(directory, "src", "queue.ts");
       await mkdir(path.dirname(source), { recursive: true });
@@ -558,7 +558,7 @@ describe("pi-agent-text-editor search", () => {
         testName: "search-protocol-routing",
         cwd: directory,
         extensions: extensions.paths,
-        tools: ["search"],
+        tools: ["search", "ast_search"],
         rawMode: false,
         conversation: [
           assistantMessage(
@@ -575,9 +575,9 @@ describe("pi-agent-text-editor search", () => {
             [
               toolCall({
                 id: "search-ast",
-                name: "search",
+                name: "ast_search",
                 arguments: {
-                  query: "ast:export function $NAME($ARG): $RET { $$$BODY }",
+                  pattern: "export function $NAME($ARG): $RET { $$$BODY }",
                   path: "src",
                 },
               }),
@@ -594,7 +594,7 @@ describe("pi-agent-text-editor search", () => {
       expect(getToolResultText(result, "search-ast")).toContain("src/queue.ts:1");
       expect(getToolResultText(result, "search-ast")).toContain("legacyQueue");
       const astView = result.tuiRenderedOutput.slice(
-        result.tuiRenderedOutput.indexOf('search "ast:export function'),
+        result.tuiRenderedOutput.indexOf("ast_search export function"),
       );
       expect(astView).toContain("1 match in 1 file");
       expect(astView).toMatch(/src\/queue\.ts\s+1/u);

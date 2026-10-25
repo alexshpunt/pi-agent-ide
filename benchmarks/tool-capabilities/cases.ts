@@ -528,7 +528,7 @@ function add(
 add(
   "search-script-facts",
   ["search.script-facts", "compose.search-script-result"],
-  "Use native Codemode to Search task.txt for regex:^ABSENT$, Search scope.ts for ast:probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
+  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
   [
     {
       tool: "search",
@@ -536,8 +536,8 @@ add(
       scriptResult: { hasMatches: false, complete: true },
     },
     {
-      tool: "search",
-      args: { path: "scope.ts", query: "ast:probe($ARG)", limit: 1 },
+      tool: "ast_search",
+      args: { path: "scope.ts", pattern: "probe($ARG)", limit: 1 },
       scriptResult: { hasMatches: true, complete: false },
     },
     {
@@ -1783,12 +1783,33 @@ add(
   "Read ast:task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the displayed NAME capture reference with renamed. Use the actual capture reference, not a file path or anchor.",
   [
     { tool: "read", args: { path: "ast:task.ts" }, contains: "first" },
-    { tool: "search", args: { path: "task.ts", query: /^ast:.*\$NAME/ }, contains: "capture NAME" },
+    // A pattern or a rule with a pattern can both capture NAME.
+    { tool: "ast_search", args: { path: "task.ts" }, contains: "capture NAME" },
     { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
   ],
   {
     files: syntax,
     expected: { "task.ts": "function renamed() { return 7; }\nfunction second() { return 9; }\n" },
+  },
+);
+
+add(
+  "ast-search-enclosing",
+  ["ast_search.rule", "compose.ast-search-enclosing"],
+  'Search task.ts for the text "return 9". Then use ast_search with that unchanged Search result as path, relation "enclosing", language typescript and an ast-grep rule for function declarations, to select the function that contains it. Replace that whole function with function second() { return 10; }. Keep the first function unchanged.',
+  [
+    { tool: "search", args: { path: "task.ts" }, contains: "return 9" },
+    {
+      tool: "ast_search",
+      args: { relation: "enclosing", language: /^typescript$/i },
+      reuse: reuse(0),
+      contains: "function second",
+    },
+    { tool: "replace", args: { text: /^function second\(\) \{ return 10; \}$/ }, reuse: reuse(1) },
+  ],
+  {
+    files: syntax,
+    expected: { "task.ts": "function first() { return 7; }\nfunction second() { return 10; }\n" },
   },
 );
 

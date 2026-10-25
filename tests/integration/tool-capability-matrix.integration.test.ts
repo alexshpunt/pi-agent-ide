@@ -30,7 +30,7 @@ test("the capability validator checks Search facts and unchanged result provenan
       rawMode: false,
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "ast_search", "replace", "codemode"],
       conversation: [
         assistantMessage(
           [
@@ -40,7 +40,7 @@ test("the capability validator checks Search facts and unchanged result provenan
               arguments: {
                 code: `const empty = await tools.search({path:"task.txt",query:"regex:^ABSENT$"});
 if (empty.hasMatches !== false || empty.complete !== true) throw Error("Empty facts missing");
-const limited = await tools.search({path:"scope.ts",query:"ast:probe($ARG)",limit:1});
+const limited = await tools.ast_search({path:"scope.ts",pattern:"probe($ARG)",limit:1});
 if (limited.hasMatches !== true || limited.complete !== false) throw Error("Incomplete facts missing");
 let failed = false;
 try { await tools.search({path:"task.txt",query:"regex:("}); } catch { failed = true; }

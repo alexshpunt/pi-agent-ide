@@ -8,7 +8,7 @@ Read-only views, bytes, images and directory listings do not grant text-edit aut
 
 ## Continue with another tool
 
-Search a Read result to look only inside its selection. Narrow it with a regex or `ast:` captures before editing.
+Search a Read result to look only inside its selection. Narrow it with a regex, or with `ast_search` for syntax, before editing.
 
 Read `docs:search-code` for narrowing workflows and `docs:editing` for using results in mutations.
 
