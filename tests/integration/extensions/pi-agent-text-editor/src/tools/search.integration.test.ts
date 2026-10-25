@@ -540,7 +540,7 @@ describe("pi-agent-text-editor search", () => {
     });
   }, 180_000);
 
-  test("routes files and AST protocols through their installed resolvers", async () => {
+  test("routes file search through search and syntax search through ast_search", async () => {
     await withTempWorkspace(async (directory) => {
       const source = path.join(directory, "src", "queue.ts");
       await mkdir(path.dirname(source), { recursive: true });
@@ -558,7 +558,7 @@ describe("pi-agent-text-editor search", () => {
         testName: "search-protocol-routing",
         cwd: directory,
         extensions: extensions.paths,
-        tools: ["search"],
+        tools: ["search", "ast_search"],
         rawMode: false,
         conversation: [
           assistantMessage(
