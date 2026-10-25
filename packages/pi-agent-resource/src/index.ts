@@ -12,6 +12,13 @@ export {
   type StructuredResult,
 } from "./tool-result.js";
 export { ResourceError } from "./resource-error.js";
+export {
+  resourceErrorMetadata,
+  resourceErrorMetadataOf,
+  resourceErrorMetadataSchema,
+  type ResourceErrorMetadata,
+  type ResourceRateLimit,
+} from "./resource-error-metadata.js";
 export type {
   AgentContent,
   AgentContentBlock,
