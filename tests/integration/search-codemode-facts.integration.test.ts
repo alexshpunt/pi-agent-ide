@@ -63,7 +63,7 @@ test("Search separates incomplete coverage, clipped presentation, unknown facts 
         path.resolve("tests/integration/fixtures/search-facts-provider.ts"),
         "builtin:codemode",
       ],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "ast_search", "replace", "codemode"],
       conversation: [
         assistantMessage(
           [

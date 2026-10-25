@@ -37,7 +37,7 @@ async function runAstComposition(
     rawMode: true,
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-    tools: ["read", "search", "replace", "codemode"],
+    tools: ["read", "search", "ast_search", "replace", "codemode"],
     conversation: [
       ...scripts.map((code, index) =>
         assistantMessage(

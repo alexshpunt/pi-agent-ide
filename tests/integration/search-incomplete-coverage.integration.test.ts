@@ -50,7 +50,7 @@ text(found);`;
       tuiSize: { cols: 160, rows: 50 },
       isolateUserResources: false,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "ast_search", "replace", "codemode"],
       conversation: [
         assistantMessage(
           [toolCall({ id: "incomplete-searches", name: "codemode", arguments: { code } })],

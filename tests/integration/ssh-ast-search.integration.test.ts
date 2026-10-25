@@ -80,7 +80,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
         path.resolve("tests/integration/fixtures/ssh-search.ts"),
         "builtin:codemode",
       ],
-      tools: ["search", "replace", "read", "codemode"],
+      tools: ["search", "ast_search", "replace", "read", "codemode"],
       timeoutMs: 60000,
       conversation: [
         assistantMessage([

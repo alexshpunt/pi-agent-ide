@@ -30,7 +30,7 @@ test("the capability validator checks Search facts and unchanged result provenan
       rawMode: false,
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "ast_search", "replace", "codemode"],
       conversation: [
         assistantMessage(
           [

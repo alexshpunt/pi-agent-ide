@@ -270,7 +270,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -307,7 +307,7 @@ test("native AST edits use fresh selections after automatic commits", async () =
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
