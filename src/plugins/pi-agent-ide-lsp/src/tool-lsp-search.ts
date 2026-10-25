@@ -68,8 +68,8 @@ export async function registerLspSearchTool(
   pi: ExtensionAPI,
   runtime: Promise<LspSearchRuntime>,
 ): Promise<void> {
-  let resolver: SearchResolver | undefined;
-  void runtime.then((value) => (resolver = value.resolver));
+  let resolved: LspSearchRuntime | undefined;
+  void runtime.then((value) => (resolved = value));
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "lsp-search",
@@ -133,12 +133,12 @@ export async function registerLspSearchTool(
         renderResult(result, options, theme, context) {
           const details = result.details as SearchToolDetails | undefined;
           if (
-            resolver?.renderResult !== undefined &&
+            resolved?.resolver.renderResult !== undefined &&
             details?.payload !== undefined &&
             !context.isError &&
             !options.isPartial
           )
-            return resolver.renderResult(
+            return resolved.resolver.renderResult(
               { ...result, details: details.payload },
               options,
               theme,
@@ -177,7 +177,12 @@ export async function registerLspSearchTool(
             ...(parameters.calls === undefined ? {} : { calls: parameters.calls }),
             ...(parameters.references === true ? { references: true } : {}),
           };
-          const { api, resolver: lsp } = await runtime;
+          // The Search core registers this runtime during startup; without it the tool cannot run.
+          if (resolved === undefined)
+            return failure(
+              "lsp_search needs the Search module (search.core), which is not loaded.",
+            );
+          const { api, resolver: lsp } = resolved;
           return (await api.searchWith(
             lsp,
             {

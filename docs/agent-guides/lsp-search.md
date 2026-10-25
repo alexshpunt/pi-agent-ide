@@ -17,7 +17,7 @@ const uses = await tools.lsp_search({ path: window, query: "start", references: 
 
 ## Read a declaration
 
-`declaration` takes `file#selector`, such as `src/app.ts#App/start`. A selector names nested symbols with `/`; a one-part name must be unique in the file. The result is the exact declaration as a `SEARCH#` selection, so Read, Search, Copy, Move and Delete can use it directly.
+`declaration` takes `file#selector`, such as `src/app.ts#App/start`. A selector names nested symbols with `/`; a one-part name must be unique in the file. The result selects the declaration's complete lines as a `SEARCH#` selection, so Read, Search, Copy, Move and Delete can use it directly.
 
 ## Calls and references
 

@@ -273,13 +273,16 @@ export function createLspSearchResolver(
         return { content: [{ type: "text", text: result.text }], details: result };
       if (result.mode === "declaration") {
         const { match } = result;
+        // A selection ending at column 0 of the next line ends on the line before it.
+        const end = match.endLineNumber ?? match.lineNumber;
+        const lastLine = end > match.lineNumber && match.endColumn === 0 ? end - 1 : end;
         return {
           content: [
             {
               type: "text",
               text: [
-                `SEARCH#${result.sessionId}:1:match ${display(match.source)}:${match.lineNumber}-${match.endLineNumber ?? match.lineNumber} declaration ${result.selector}`,
-                match.matchedText,
+                `SEARCH#${result.sessionId}:1:match ${display(match.source)}:${match.lineNumber}-${lastLine} declaration ${result.selector}`,
+                match.matchedText.replace(/\r?\n$/u, ""),
               ].join("\n"),
             },
           ],
@@ -309,27 +312,36 @@ export function createLspSearchResolver(
   };
 }
 
-/** Map an LSP range (zero-based lines, UTF-16 columns) onto a Search selection. */
+/**
+ * Select the complete lines of an LSP range (zero-based lines), including the final line ending,
+ * so deleting or moving a declaration does not leave an empty line behind.
+ */
 function declarationMatch(
   source: string,
   content: string,
   range: {
-    readonly start: { readonly line: number; readonly character: number };
-    readonly end: { readonly line: number; readonly character: number };
+    readonly start: { readonly line: number };
+    readonly end: { readonly line: number };
   },
 ): SearchSelectionMatch {
-  const lines = content.split("\n").map((line) => line.replace(/\r$/u, ""));
+  const raw = content.split("\n");
+  const lines = raw.map((line) => line.replace(/\r$/u, ""));
   const starts = [0];
-  for (const line of content.split("\n")) starts.push((starts.at(-1) ?? 0) + line.length + 1);
-  const from = (starts[range.start.line] ?? content.length) + range.start.character;
-  const to = (starts[range.end.line] ?? content.length) + range.end.character;
+  for (const line of raw) starts.push((starts.at(-1) ?? 0) + line.length + 1);
+  const first = range.start.line;
+  const hasNextLine = range.end.line + 1 < raw.length;
+  // Without a following line, the selection ends at the end of the last declaration line.
+  const endLine = hasNextLine ? range.end.line + 1 : range.end.line;
+  const endColumn = hasNextLine ? 0 : (lines[range.end.line] ?? "").length;
+  const from = starts[first] ?? content.length;
+  const to = Math.min(content.length, (starts[endLine] ?? content.length) + endColumn);
   return {
     source,
-    lineNumber: range.start.line + 1,
-    startColumn: range.start.character,
-    ...(range.end.line === range.start.line ? {} : { endLineNumber: range.end.line + 1 }),
-    endColumn: range.end.character,
+    lineNumber: first + 1,
+    startColumn: 0,
+    ...(endLine === first ? {} : { endLineNumber: endLine + 1 }),
+    endColumn,
     matchedText: content.slice(from, to),
-    lineText: lines[range.start.line] ?? "",
+    lineText: lines[first] ?? "",
   };
 }

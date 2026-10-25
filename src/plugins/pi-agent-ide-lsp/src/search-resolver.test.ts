@@ -73,9 +73,9 @@ test("returns a declaration as an exact selection that refreshes from the server
       source,
       lineNumber: 2,
       startColumn: 0,
-      endLineNumber: 4,
-      endColumn: 1,
-      matchedText: "class App {\r\n  start() {}\r\n}",
+      endLineNumber: 5,
+      endColumn: 0,
+      matchedText: "class App {\r\n  start() {}\r\n}\r\n",
       lineText: "class App {",
     },
   ]);
@@ -86,6 +86,28 @@ test("returns a declaration as an exact selection that refreshes from the server
   expect(text).toContain("  start() {}");
   await expect(registered?.refresh()).resolves.toMatchObject({ complete: true });
   expect(backend.resolveLspDeclaration).toHaveBeenCalledTimes(2);
+});
+
+test("ends a declaration on the last line of a file without a final line break", async () => {
+  const source = path.join(cwd, "tail.ts");
+  backend.resolveLspDeclaration.mockResolvedValue({
+    source,
+    content: "const a = 1;\nexport function tail() {}",
+    range: { start: { line: 1, character: 7 }, end: { line: 1, character: 25 } },
+  });
+
+  await resolver.tryResolve(request({ declaration: "tail.ts#tail" }), { cwd });
+
+  expect(registered?.matches).toEqual([
+    {
+      source,
+      lineNumber: 2,
+      startColumn: 0,
+      endColumn: 25,
+      matchedText: "export function tail() {}",
+      lineText: "export function tail() {}",
+    },
+  ]);
 });
 
 test("requires a selector for declarations", async () => {

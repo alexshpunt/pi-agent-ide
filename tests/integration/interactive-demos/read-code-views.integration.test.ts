@@ -17,6 +17,8 @@ const generatedExtensions = await generateReadExtensions([
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.ts",
   "src/plugins/pi-agent-ide-ast/index.ts",
+  "src/extensions/pi-agent-search/index.ts",
+  "src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.ts",
   "src/plugins/pi-agent-ide-lsp/index.ts",
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/index.ts",
 ]);
