@@ -521,7 +521,7 @@ function add(
 add(
   "search-script-facts",
   ["search.script-facts", "compose.search-script-result"],
-  "Use native Codemode to Search task.txt for regex:^ABSENT$, Search scope.ts for ast:probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
+  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
   [
     {
       tool: "search",
@@ -1776,7 +1776,8 @@ add(
   "Read ast:task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the displayed NAME capture reference with renamed. Use the actual capture reference, not a file path or anchor.",
   [
     { tool: "read", args: { path: "ast:task.ts" }, contains: "first" },
-    { tool: "ast_search", args: { path: "task.ts", pattern: /\$NAME/ }, contains: "capture NAME" },
+    // A pattern or a rule with a pattern can both capture NAME.
+    { tool: "ast_search", args: { path: "task.ts" }, contains: "capture NAME" },
     { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
   ],
   {
