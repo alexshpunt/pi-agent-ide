@@ -80,8 +80,8 @@ const bytes=await tools.read({path:"raw:bytes.bin",offset:-2,limit:2});
 if(!bytes.includes("Bytes 2..4")||!bytes.includes("c3 28")) throw Error("Raw bytes altered");
 text(await tools.read({path:"fixture-image:"}));
 for(const args of [{path:"absent.txt"}]) {
-  let rejected=false; try { await tools.read(args); } catch(error) { rejected=String(error).length>0; }
-  if(!rejected) throw Error("Missing source looked empty");
+  const failed = await tools.read(args);
+  if(failed.status !== "error" || !failed.errors.length) throw Error("Missing source looked empty");
 }
 for(const query of ["missing-adapter:value","invalid-adapter:value"]) {
   let rejected=false; try { await tools.search({query}); } catch(error) { rejected=String(error).length>0; }

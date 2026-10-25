@@ -230,12 +230,10 @@ store("emptyWindow",pastEnd);
 const saved = load("emptyWindow");
 const found = await tools.search({path:saved,query:"alpha"}).then(value => value.result);
 if (!found.includes("No matches found")) throw Error("Stored empty selection widened to the source");
-let emptyReadRejected = false;
-try { await tools.read({path:saved}); } catch (error) { emptyReadRejected = String(error).includes("Empty result target set"); }
-if (!emptyReadRejected) throw Error("Read widened an empty target set");
-let failed = false;
-try { await tools.read({path:"missing.txt"}); } catch { failed = true; }
-if (!failed) throw Error("Missing source became an empty success");
+const emptyRead = await tools.read({path:saved});
+if (emptyRead.status !== "error" || !emptyRead.errors.length) throw Error("Read widened an empty target set");
+const failed = await tools.read({path:"missing.txt"});
+if (failed.status !== "error" || !failed.errors.length) throw Error("Missing source became an empty success");
 text(found);
 `,
     ]);
