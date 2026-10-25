@@ -1,5 +1,6 @@
 import { appendFile } from "node:fs/promises";
 import { Type } from "typebox";
+import { ResourceError } from "pi-agent-resource";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_API_VERSION, READ_PROTOCOL } from "pi-agent-read/api/plugin-protocol";
@@ -18,6 +19,24 @@ export default async function structuredResultsFixture(pi: ExtensionAPI): Promis
       api.addResolver({ resolver: {
         id: "structured-image",
         async tryResolve(source) {
+          if (source === "fixture-rate-limited:") {
+            const metadata = {
+              rateLimit: {
+                retryAfterMs: 1250,
+                resetAt: 2_000_000_000_000,
+                requestsRemaining: 0,
+                endpoint: "core",
+                authorization: "fixture-private-token",
+              },
+              headers: { authorization: "fixture-private-token" },
+            };
+            const error = new ResourceError("FIXTURE_RATE_LIMITED", source, "not-applied", {
+              metadata,
+              cause: new ResourceError("FIXTURE_PRIVATE_CAUSE", "fixture-private-cause", "unknown"),
+            });
+            error.message = "fixture-private-message";
+            return { kind: "failed", error };
+          }
           if (source !== "fixture-image:") return { kind: "not-handled" };
           return { kind: "resolved", resource: {
             source,
