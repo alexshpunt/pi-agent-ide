@@ -97,6 +97,13 @@ for (const viaLocalAlias of [false, true])
       error: effect !== "applied",
       contains: `Semantic action ${effect}`,
       parentStructuredValue: true,
+      scriptResult: {
+        kind: "fixture-action",
+        ok: effect === "applied",
+        effect,
+        receipt: { attempted: 1, delivered: effect !== "not-applied" },
+        nonce: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+      },
       ...(viaLocalAlias && { viaLocalAlias: true }),
     })),
     {

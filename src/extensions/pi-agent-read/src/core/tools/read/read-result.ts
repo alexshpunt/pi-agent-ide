@@ -11,6 +11,7 @@ import type {
 } from "#src/api/tools/read.js";
 import {
   ResourceError,
+  resourceErrorMetadataOf,
   type AgentContent,
   type ImageContent,
   type TextContent,
@@ -202,7 +203,9 @@ export function failureResult(failure: ReadFailure): ReadToolResult {
       ...failure,
       source: failure.source ?? safe.source,
       message: `${safe.code}: ${failure.source ?? safe.source}`,
-      cause: new ResourceError(safe.code, safe.source, safe.effect),
+      cause: new ResourceError(safe.code, safe.source, safe.effect, {
+        metadata: resourceErrorMetadataOf(safe),
+      }),
     };
   } else if (
     failure.cause instanceof Error &&

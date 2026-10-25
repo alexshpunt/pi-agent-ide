@@ -1,4 +1,10 @@
 import { Type, type TSchema } from "typebox";
+import { ResourceError } from "./resource-error.js";
+import {
+  resourceErrorMetadataOf,
+  resourceErrorMetadataSchema,
+  type ResourceErrorMetadata,
+} from "./resource-error-metadata.js";
 import { Value } from "typebox/value";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 
@@ -7,6 +13,7 @@ export interface ResultError {
   readonly code: string;
   readonly message: string;
   readonly source?: string;
+  readonly metadata?: ResourceErrorMetadata;
 }
 /** Public data is separate from renderer details. Partial means incomplete execution, not clipped data. */
 export interface StructuredResult<T = unknown> {
@@ -19,6 +26,7 @@ export const resultErrorSchema = Type.Object(
     code: Type.String(),
     message: Type.String(),
     source: Type.Optional(Type.String()),
+    metadata: Type.Optional(resourceErrorMetadataSchema),
   },
   { additionalProperties: false },
 );
@@ -92,6 +100,15 @@ export function resultError(
   code = "EXECUTION_FAILED",
   source?: string,
 ): ResultError {
+  if (error instanceof ResourceError) {
+    const metadata = resourceErrorMetadataOf(error);
+    return {
+      code: error.code,
+      message: `${error.code}: ${error.source}`,
+      source: source ?? error.source,
+      ...(metadata ? { metadata } : {}),
+    };
+  }
   return {
     code:
       typeof error === "object" &&
