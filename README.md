@@ -36,16 +36,17 @@ To configure it yourself, read the [short settings guide](./docs/settings-help.m
 
 Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of development tools for understanding, changing, running, debugging, and observing software. The same tools work with local resources and configured Linux SSH targets.
 
-| Work                                 | Interfaces                                                    |
-| ------------------------------------ | ------------------------------------------------------------- |
-| Inspect content and state            | `read` with source-specific views                             |
-| Find text, paths, symbols, processes | `search`                                                      |
-| Find code by syntax structure        | `ast_search`                                                  |
-| Change text and filesystem objects   | `write`, `replace`, `insert`, `delete`, `copy`, `move`        |
-| Compare, stage and restore changes   | `diff`, `stage`, `unstage`, `undo`                            |
-| Run and interact with commands       | `bash` or `powershell`, then `shell:` resources               |
-| Debug programs                       | `debug`, then `debug:` resources                              |
-| Work remotely                        | The same supported tools with `ssh://` paths and remote `cwd` |
+| Work                               | Interfaces                                                    |
+| ---------------------------------- | ------------------------------------------------------------- |
+| Inspect content and state          | `read` with source-specific views                             |
+| Find text, symbols and processes   | `search`                                                      |
+| Find files by path                 | `file_search`                                                 |
+| Find code by syntax structure      | `ast_search`                                                  |
+| Change text and filesystem objects | `write`, `replace`, `insert`, `delete`, `copy`, `move`        |
+| Compare, stage and restore changes | `diff`, `stage`, `unstage`, `undo`                            |
+| Run and interact with commands     | `bash` or `powershell`, then `shell:` resources               |
+| Debug programs                     | `debug`, then `debug:` resources                              |
+| Work remotely                      | The same supported tools with `ssh://` paths and remote `cwd` |
 
 ### Combine tools through direct calls or native Codemode
 
@@ -79,7 +80,7 @@ Views change how the same resource is presented. The agent can request source st
 
 ### Find anything through `search`
 
-`search` provides one interface for paths, exact text, regular expressions, symbols, references, code relationships, process discovery, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
+`search` provides one interface for exact text, regular expressions, symbols, references, code relationships, process discovery, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
 
 <div align="center">
 

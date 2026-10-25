@@ -9,6 +9,8 @@ import {
 } from "pi-agent-read/api/plugin-protocol";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
+import type { SearchPluginApi } from "pi-agent-search/api/search";
+import { registerFileSearchTool } from "#src/tool-file-search.js";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import {
   TEXT_EDITOR_API_VERSION,
@@ -35,6 +37,10 @@ export async function registerResourceSearchSelections(pi: ExtensionAPI): Promis
 }
 
 async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Promise<void> {
+  let resolveSearchApi!: (api: SearchPluginApi) => void;
+  const searchApi = new Promise<SearchPluginApi>((resolve) => (resolveSearchApi = resolve));
+  // Not registered with search: file_search runs it through the shared execution core.
+  if (includeFilesystem) registerFileSearchTool(pi, createFileResolver(), searchApi);
   let read: ReadPluginApi | undefined;
   const sessions = new SearchSessionStore(
     undefined,
@@ -149,8 +155,8 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
           ),
         );
         if (includeFilesystem) {
+          resolveSearchApi(api);
           api.addResolver({ resolver: createRegexResolver(sessions), priority: -10 });
-          api.addResolver({ resolver: createFileResolver(), priority: -10 });
           api.addResolver({ resolver: createTextResolver(sessions), fallback: true });
         } else {
           api.addResolver({ resolver: createRegexResolver(sessions, true), priority: -10 });
@@ -159,7 +165,7 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
         if (includeFilesystem)
           api.describe(
             [
-              "Local queries try literal terms first, then unquoted terms as regex when no literal results exist, then separate words for ordinary multi-word queries. Quoted terms stay literal. Boolean conditions stay intact across fallback. Uppercase AND/OR, infix NOT, ||, and space-separated | are Boolean operators; unspaced | and regex groups/classes belong to regex terms. Parentheses containing Boolean operators group Boolean conditions. regex:<pattern> forces regex-only matching; files:<pattern> searches file paths: glob patterns use *, **, ?, character classes and braces; other queries use case-insensitive subsequence matching. Slash-containing globs match cwd-relative paths; basename globs match at any depth.",
+              "Local queries try literal terms first, then unquoted terms as regex when no literal results exist, then separate words for ordinary multi-word queries. Quoted terms stay literal. Boolean conditions stay intact across fallback. Uppercase AND/OR, infix NOT, ||, and space-separated | are Boolean operators; unspaced | and regex groups/classes belong to regex terms. Parentheses containing Boolean operators group Boolean conditions. regex:<pattern> forces regex-only matching.",
               "After a complete zero result, a single unquoted ASCII identifier may produce separate possible-name groups: naming-style changes, one leading/trailing component, then small typos. Each group reports a verified case-sensitive whole-identifier alternative in the same scope, its count/completeness, and Read references. Budget skips are explicit. A candidate all-reference refreshes that exact alternative, not the fuzzy ranking. Registered local candidate selections also expose strict snapshot targets. Result scopes stay exact and do not run this extra branch.",
               "The result says when a query was broadened. Empty or unknown prefixes are searched as plain text. A recognized prefixed query returns its own results or error; it does not silently become a text search.",
               "SEARCH#HASH:N:line selects one containing line; :match selects its exact match. :all:line selects all unique containing lines and :all:match selects all matches. Read returns containing lines for both forms. A SEARCH resource can be used as a read path or mutation path/anchor; omit the file path for an all-selection spanning files.",

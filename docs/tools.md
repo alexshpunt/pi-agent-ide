@@ -101,7 +101,7 @@ Deleting an active session first requests graceful termination, then forcefully 
 
 `search` gives the agent one discovery interface. Built-in resolvers cover:
 
-- file and text search;
+- file content search;
 - language-aware symbol search;
 
 A resolver decides whether it understands a query. The first successful resolver returns the result. Search plugins can add new query forms without adding another agent tool.
@@ -133,6 +133,10 @@ These values are both edit anchors and typed text resources. `read` and mutation
 A `:line` range includes its LF or CRLF line ending. A whole-line replacement preserves that separator when the replacement text does not provide one. Insertion happens after the line by default and before it when `before: true`. A final line without a line ending selects through EOF and stays without a trailing separator when replaced, unless the replacement text provides a line ending. Whole-line deletion removes the preceding separator when that is needed to remove a final no-LF line cleanly. Adjacent whole-line deletions are coalesced. A `:match` range contains only the matched characters, so deleting it keeps surrounding text and line endings.
 
 Per-result forms keep the search-time snapshot and fail as stale after their matched file changes. Complete `:all` forms rerun the original search recipe when a matched file changes, then select the current complete result set. Limited or otherwise incomplete searches omit the `:all` forms. A forged `:all` value for an incomplete search is rejected.
+
+## File search
+
+`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored. Results are sorted, limited by `limit` (default 100), and mark an incomplete list when the limit is reached.
 
 ## Syntax search
 

@@ -34,7 +34,9 @@
     "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
-    "pi-agent-tool-ui": "workspace:^"
+    "pi-agent-tool-call-interception": "workspace:^",
+    "pi-agent-tool-ui": "workspace:^",
+    "typebox": "^1.1.38"
   },
   "pi": {
     "extensions": [

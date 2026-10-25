@@ -997,10 +997,10 @@ add(
 
 add(
   "search-query",
-  ["search.boolean", "search.regex", "search.files", "search.flags"],
-  "Use search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Finally regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Report the matching line.",
+  ["search.boolean", "search.regex", "file_search.glob", "search.flags"],
+  "Use file_search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Finally regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Report the matching line.",
   [
-    { tool: "search", args: { query: "files:task*.txt" } },
+    { tool: "file_search", args: { pattern: /task\*?\.txt|task\*/ } },
     {
       tool: "search",
       args: {

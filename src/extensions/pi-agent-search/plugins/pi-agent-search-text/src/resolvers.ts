@@ -67,22 +67,31 @@ export function createRegexResolver(
   );
 }
 
-/** Resolve file-pattern queries through the local file search backend. */
+/** Options the `file_search` tool passes in `SearchRequest.options.files`; their presence selects this resolver. */
+export interface FileSearchOptions {
+  readonly pattern: string;
+}
+
+function fileOptions(request: SearchRequest): FileSearchOptions | undefined {
+  const value = request.options?.files as FileSearchOptions | undefined;
+  return typeof value?.pattern === "string" ? value : undefined;
+}
+
+/** Resolve file-path patterns through the local or owned file search backend. */
 export function createFileResolver(): SearchResolver {
   return {
     id: "files",
     readResources: (request, context) =>
-      request.query.startsWith("files:") ? [request.path ?? context.cwd] : [],
+      fileOptions(request) === undefined ? [] : [request.path ?? context.cwd],
     toScriptData(payload) {
       const result = payload as FilePayload;
       return { kind: "files", files: [...result.files], complete: result.complete };
     },
     async tryResolve(request, context) {
-      if (!request.query.startsWith("files:")) {
-        return { kind: "not-handled" };
-      }
+      const options = fileOptions(request);
+      if (options === undefined) return { kind: "not-handled" };
 
-      const query = request.query.slice("files:".length).trim();
+      const query = options.pattern.trim();
       const result = await searchFiles(
         query,
         request,

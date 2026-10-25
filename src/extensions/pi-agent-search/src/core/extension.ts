@@ -126,9 +126,9 @@ export default async function registerSearchCore(
         },
         label: "search",
         description:
-          "Use search to find text, file paths, language symbols, web-page text, and running processes.",
+          "Use search to find text, language symbols, web-page text, and running processes.",
         promptSnippet:
-          "Search files and text with literals or regular expressions, plus language symbols",
+          "Search file contents with literals or regular expressions, plus language symbols",
         get promptGuidelines(): string[] {
           return [
             "Use the narrowest useful search query and scope; broaden when needed.",
@@ -186,7 +186,7 @@ export default async function registerSearchCore(
               const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
               if (scope !== undefined) {
                 await targets.verify(scope, operationSignal);
-                if (/^(?:files|symbol|graph|process):/u.test(parameters.query))
+                if (/^(?:symbol|graph|process):/u.test(parameters.query))
                   throw new Error("This query provider does not support result scopes yet.");
               }
               return core.execute(

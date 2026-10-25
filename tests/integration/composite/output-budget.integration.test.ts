@@ -246,15 +246,17 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
   async (limit) => {
     const cwd = await workspace();
     const cases: Record<string, unknown>[] = [];
+    const toolFor = (args: Record<string, unknown>) =>
+      "pattern" in args ? "file_search" : "search";
     for (const query of [
       "needle",
       "regex:needle",
       "needle AND item",
-      "files:*.txt",
       "ast:const $NAME = $VALUE;",
     ]) {
       cases.push({ query, path: "matrix", ...(limit === undefined ? {} : { limit }) });
     }
+    cases.push({ pattern: "*.txt", path: "matrix", ...(limit === undefined ? {} : { limit }) });
     for (const caseSensitive of [false, true])
       for (const wholeWord of [false, true]) {
         cases.push({
@@ -309,13 +311,13 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
           cwd,
           extensions: [extension, "builtin:codemode"],
           transport: "rpc",
-          tools: ["search", "read", "codemode"],
+          tools: ["search", "file_search", "read", "codemode"],
           isolateUserResources: true,
         },
         [
           ...cases.map((args, index) =>
             assistantMessage(
-              [toolCall({ id: `search-${index}`, name: "search", arguments: args })],
+              [toolCall({ id: `search-${index}`, name: toolFor(args), arguments: args })],
               {
                 stopReason: "toolUse",
               },
