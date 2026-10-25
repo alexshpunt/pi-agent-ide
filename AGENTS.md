@@ -1,6 +1,6 @@
 # Feature PRs and checks
 
-Deliver each feature to `develop`. Keep test changes and separate project documentation out of the implementation PR. Explain the problem and the chosen solution in the PR description and link the Task.
+Deliver each feature to `develop`. Keep separate project documentation and unrelated test changes out of the implementation PR. When the implementation removes or changes behavior that existing tests rely on, update those tests in the same PR so it stays green. Explain the problem and the chosen solution in the PR description and link the Task.
 
 Keep detailed reports, logs, screenshots, traces, and other task evidence in Task-linked artifacts, not PR files or project documentation. Complete all required deliveries and acceptance checks before removing the task worktrees and branches.
 Never commit task evidence or run artifacts to Git, including summaries, reports, logs, screenshots, and traces. When retention is required, attach them to the corresponding Task; disposable local copies belong in ignored temporary directories. Reusable test fixtures and executable benchmarks are not run artifacts.
