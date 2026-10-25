@@ -41,6 +41,24 @@ The unified registration adapter declares the small public Codemode schemas of S
 Nested image blocks are delivered on the parent Codemode result once; an image the script already showed with `image()` is not attached again. Their bytes are not printed as text. Images remain ordinary native image content.
 Read's private native record contains image type and MIME metadata, not another copy of the image bytes. Large images therefore do not overflow the JSON-record budget while their native content stays unchanged.
 
+## Safe provider error metadata
+
+A provider can attach public rate-limit data to `ResourceError` through its fourth constructor argument:
+
+```ts
+import { ResourceError } from "pi-agent-ide/api/resource";
+
+throw new ResourceError("SERVICE_RATE_LIMITED", source, "not-applied", {
+  metadata: { rateLimit: { retryAfterMs: 60_000, requestsRemaining: 0 } },
+});
+```
+
+`metadata.rateLimit` accepts `retryAfterMs`, `resetAt`, `requestsLimit`, `requestsRemaining`, `complexityLimit`, `complexityRemaining`, `endpointLimit`, `endpointRemaining` and `endpoint`. Numeric values must be non-negative safe integers; `retryAfterMs` must not exceed 24 hours. `resetAt` is a Unix timestamp in milliseconds. `endpoint` is an identifier of at most 80 characters using letters, digits, underscores, colons or hyphens.
+
+Construction keeps a fresh frozen snapshot of the allowed fields. Unknown keys and malformed values are dropped. Read preserves this metadata while rebuilding safe errors and includes it in `ResultError.metadata`. Arbitrary exception properties, private causes, response bodies and raw headers are excluded. Other tool adapters must opt into the same public metadata contract.
+
+Metadata does not change an operation's effect or authorize a retry. A renderer or provider adapter may present the supplied timing without exposing its private transport diagnostics.
+
 ## Errors and writes
 
 Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the readable file/operation effects and final parent result before retrying. An error does not prove rollback.
