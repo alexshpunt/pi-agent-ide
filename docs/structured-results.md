@@ -2,7 +2,7 @@
 
 IDE tools expose readable text in direct calls. In native Codemode, Search returns `{ result, hasMatches, complete }`. `result` is the unchanged readable Search string used for composition. The two nullable facts describe original matches and query coverage, independently of display truncation. Unknown facts are `null`; a failed call still rejects.
 
-An image Read in Codemode returns the native image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames, so scripts can pass it to `image()`, `models.classify()` or Write `content` to save it as a file. Its `note` is the readable result string used for composition. Other text results remain strings. Private result records remain hidden.
+An image Read in Codemode returns the native image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames, so scripts can pass it to `image()`, `models.classify()` or Write `content` to save it as a file. Its `note` is the readable result string used for composition. Successful text Reads and other text tools return strings. Private result records remain hidden.
 
 ## Composition
 
@@ -10,8 +10,12 @@ Each readable result string starts with a labelled system-result envelope contai
 
 ```js
 const source = await tools.read({ path: "notes.txt", offset: 10, limit: 20 });
-const matches = await tools.search({ path: source, query: "regex:old\\w*" });
-text(await tools.replace({ path: matches.result, text: "new" }));
+if (typeof source === "string") {
+  const matches = await tools.search({ path: source, query: "regex:old\\w*" });
+  text(await tools.replace({ path: matches.result, text: "new" }));
+} else if ("status" in source && source.status === "error") {
+  text(source.errors);
+}
 ```
 
 Pass the unchanged result string to a supported source parameter. Use Search's `result` field inside Codemode. Direct calls also accept the issued UUID. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
@@ -61,7 +65,9 @@ Metadata does not change an operation's effect or authorize a retry. A renderer 
 
 ## Errors and writes
 
-Failed tools reject in Codemode. Use try/catch or Promise.allSettled when independent calls may fail. Inspect the readable file/operation effects and final parent result before retrying. An error does not prove rollback.
+A completed failed Read resolves to `{ status: "error", errors }` in Codemode. The nonempty `errors` array contains public errors with `code`, `message`, optional `source` and permitted `metadata`. Private Read data and diagnostics are excluded. This value supplies no usable source selection; inspect it before composing another tool call. Direct calls keep readable failure text and the error flag.
+
+Other failure paths, including blocked calls and pending-edit commit failures, can still reject. Use try/catch or Promise.allSettled when independent calls may fail, and inspect fulfilled Read values for `status: "error"`. Check the readable operation effects and final parent result before retrying. An error does not prove rollback.
 
 Automatic batch boundaries save pending edits, not their final formatting. Write finishes its own post-edit processing before returning. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
 
