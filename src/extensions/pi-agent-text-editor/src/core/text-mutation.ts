@@ -1,5 +1,9 @@
 import { requiredValue } from "pi-agent-invariant";
-import { ResourceError } from "pi-agent-resource";
+import {
+  ResourceError,
+  resourceErrorMetadataOf,
+  type ResourceErrorMetadata,
+} from "pi-agent-resource";
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
@@ -1551,6 +1555,8 @@ async function buildToolResult(
           effect,
           outcome.failure.rollback,
           outcome.failure.code,
+          false,
+          resourceErrorMetadataOf(safe),
         );
   }
 
@@ -1934,6 +1940,7 @@ function failureToolResult(
   rollback?: TextResourceEditFailure["rollback"],
   stage?: string,
   copyExecutionFailure = false,
+  metadata?: ResourceErrorMetadata,
 ): { content: [{ type: "text"; text: string }]; details: FileMutationBatchResult } {
   const uncertain =
     effect === "unknown" ||
@@ -1960,7 +1967,15 @@ function failureToolResult(
   const result = new FileMutationResult({
     ok: false,
     path: source,
-    errors: [{ path: source, code, reason, ...(stage === undefined ? {} : { stage }) }],
+    errors: [
+      {
+        path: source,
+        code,
+        reason,
+        ...(stage === undefined ? {} : { stage }),
+        ...(metadata === undefined ? {} : { metadata }),
+      },
+    ],
     ...(fileChangedStatement === undefined
       ? {}
       : {

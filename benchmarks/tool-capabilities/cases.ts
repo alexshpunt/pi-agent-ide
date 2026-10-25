@@ -1441,6 +1441,8 @@ add(
     answer: "saved",
   },
 );
+// Optional closed provider metadata does not change this effect/readback route.
+// Write metadata projection is checked by deterministic resource-failure and structured-result tests.
 add(
   "write-unknown-effects",
   ["edit.write-failure-recovery", "compose.uncertain-write-read"],
