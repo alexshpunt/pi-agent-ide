@@ -43,19 +43,25 @@ export async function runScopedSearch(
         );
         for (const match of result.matches) {
           const lineNumber = range.start.lineNumber + match.lineNumber - 1;
-          const shift = match.lineNumber === 1 ? range.start.column : 0;
+          const endLine = match.endLineNumber ?? match.lineNumber;
+          // Only positions on the range's first line are offset by its starting column.
+          const shift = (line: number) => (line === 1 ? range.start.column : 0);
           const mapped: TextSearchMatch = {
             ...match,
             source: target.source,
             lineNumber,
-            startColumn: match.startColumn + shift,
-            endColumn: match.endColumn + shift,
+            startColumn: match.startColumn + shift(match.lineNumber),
+            ...(match.endLineNumber === undefined
+              ? {}
+              : { endLineNumber: range.start.lineNumber + match.endLineNumber - 1 }),
+            endColumn: match.endColumn + shift(endLine),
             lineText: document.lines[lineNumber - 1]?.content ?? "",
           };
           const key = JSON.stringify([
             mapped.source,
             lineNumber,
             mapped.startColumn,
+            mapped.endLineNumber ?? lineNumber,
             mapped.endColumn,
           ]);
           if (seen.has(key)) continue;

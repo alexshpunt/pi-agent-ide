@@ -64,6 +64,7 @@ export function searchCallModel(
     ...(arguments_.exclude === undefined ? [] : [{ text: `exclude ${arguments_.exclude}` }]),
     ...(arguments_.caseSensitive === true ? [{ text: "case sensitive" }] : []),
     ...(arguments_.wholeWord === true ? [{ text: "whole word" }] : []),
+    ...(arguments_.multiline === true ? [{ text: "multiline" }] : []),
     ...(arguments_.limit === undefined ? [] : [{ text: `limit ${String(arguments_.limit)}` }]),
   ];
   return {
@@ -250,6 +251,10 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
     ...optionalDetail(
       "wholeWord",
       arguments_.wholeWord === undefined ? undefined : String(arguments_.wholeWord),
+    ),
+    ...optionalDetail(
+      "multiline",
+      arguments_.multiline === undefined ? undefined : String(arguments_.multiline),
     ),
     ...optionalDetail(
       "limit",

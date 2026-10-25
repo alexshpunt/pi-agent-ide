@@ -142,6 +142,7 @@ function createMatchResolver(
         : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
     id,
     supportsResultScope: true,
+    supportsMultiline: true,
     toScriptData(payload, details) {
       const result = payload as TextPayload;
       const formatted = details as SearchToolDetails & {
@@ -166,6 +167,7 @@ function createMatchResolver(
       const fuzzy =
         context.scope === undefined &&
         id === "text" &&
+        request.multiline !== true &&
         result.complete &&
         result.matches.length === 0 &&
         isFuzzyQuery(request.query)
@@ -358,7 +360,11 @@ function formatSearchSession(
     for (const match of file.matches) {
       const index = indices.get(match);
       if (index === undefined) continue;
-      const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${String(match.endColumn + 1)}`;
+      const end =
+        match.endLineNumber === undefined
+          ? String(match.endColumn + 1)
+          : `${String(match.endLineNumber)}:${String(match.endColumn + 1)}`;
+      const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${end}`;
       lines.push(
         anchorsRegistered
           ? `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
@@ -383,6 +389,17 @@ function formatSearchSession(
 
 function previewMatch(match: TextSearchMatch): string {
   const context = 64;
+  if (match.endLineNumber !== undefined) {
+    // Show the matched lines themselves, bounded; continuation lines keep the preview indent.
+    const maximumLines = 8;
+    const from = Math.max(0, match.startColumn - context);
+    const matched = match.matchedText.replace(/\r\n/gu, "\n").split("\n");
+    const shown = matched.slice(0, maximumLines);
+    const more = matched.length - shown.length;
+    return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${shown.join("\n  ")}${
+      more > 0 ? `\n  … ${String(more)} more lines` : ""
+    }⟧`;
+  }
   const from = Math.max(0, match.startColumn - context);
   const to = Math.min(match.lineText.length, match.endColumn + context);
   return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${match.lineText.slice(

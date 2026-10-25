@@ -416,6 +416,9 @@
             "minimum": 1,
             "type": "integer"
           },
+          "multiline": {
+            "type": "boolean"
+          },
           "navigation": {
             "const": "references",
             "type": "string"

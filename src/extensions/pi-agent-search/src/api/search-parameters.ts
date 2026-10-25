@@ -29,6 +29,12 @@ export const searchSchema = Type.Object(
     ),
     caseSensitive: Type.Optional(Type.Boolean({ description: "Match letter case" })),
     wholeWord: Type.Optional(Type.Boolean({ description: "Match complete words" })),
+    multiline: Type.Optional(
+      Type.Boolean({
+        description:
+          "Let text or regex:<pattern> match across lines; . also matches line breaks. Local or SSH files and result scopes only.",
+      }),
+    ),
     limit: Type.Optional(
       Type.Integer({
         minimum: 1,

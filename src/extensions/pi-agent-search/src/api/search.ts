@@ -8,6 +8,8 @@ export interface SearchRequest {
   readonly exclude?: string;
   readonly caseSensitive?: boolean;
   readonly wholeWord?: boolean;
+  /** Let one match span line breaks; only resolvers declaring support accept it. */
+  readonly multiline?: boolean;
   readonly limit?: number;
   /** Explicitly follow scoped LSP symbols to references outside the input scope. */
   readonly navigation?: "references";
@@ -69,6 +71,8 @@ export type SearchResolutionAttempt =
 export interface SearchResolver {
   /** Handle exact source ranges instead of widening a structured input to a path. */
   readonly supportsResultScope?: boolean;
+  /** Accept `multiline: true`; other resolvers fail such requests instead of matching per line. */
+  readonly supportsMultiline?: boolean;
   /** Complete read scope for resolving and formatting. Empty means no resource reads;
    * undefined means unknown scope, compatible with reads but conflicting with every write.
    * Declaring a scope must not read resource contents.
