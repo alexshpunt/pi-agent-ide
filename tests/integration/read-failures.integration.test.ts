@@ -49,8 +49,6 @@ if(!selected.includes("beta") || selected.includes("alpha")) throw Error(selecte
 store("failedRead",absent);
 const missing = await rejected({});
 if(!missing.includes("path") || missing.includes("INVALID_REQUEST")) throw Error(missing);
-const symbol = await rejected({path:"symbol:notes.txt"});
-if(!symbol.includes("selector") || symbol.includes("resolver") || symbol.includes("RESOLVE_FAILED")) throw Error(symbol);
 const raw = await rejected({path:"raw:notes.txt",views:["anchors"]});
 if(!raw.includes("views")) throw Error(raw);
 const bytes = await tools.read({path:"raw:notes.txt",limit:4});

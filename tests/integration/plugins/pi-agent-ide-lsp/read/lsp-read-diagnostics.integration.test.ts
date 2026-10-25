@@ -22,6 +22,8 @@ const generatedExtensions = await generateReadExtensions([
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.ts",
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/index.ts",
+  "src/extensions/pi-agent-search/index.ts",
+  "src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.ts",
   "src/plugins/pi-agent-ide-lsp/index.ts",
 
   "src/plugins/pi-agent-ide-lint/index.ts",
@@ -132,14 +134,14 @@ test("symbol and graph sources expose layered LSP code views", async () => {
       testName: "read-lsp-code-views",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read"],
+      tools: ["lsp_search"],
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "read-symbol-view",
-              name: "read",
-              arguments: { path: `symbol:${serviceName}#UserService/getUser`, views: ["anchors"] },
+              name: "lsp_search",
+              arguments: { declaration: `${serviceName}#UserService/getUser` },
             }),
           ],
           { stopReason: "toolUse" },
@@ -148,8 +150,8 @@ test("symbol and graph sources expose layered LSP code views", async () => {
           [
             toolCall({
               id: "read-symbol-graph",
-              name: "read",
-              arguments: { path: `graph:${serviceName}#UserService/getUser`, views: ["anchors"] },
+              name: "lsp_search",
+              arguments: { calls: `${serviceName}#UserService/getUser` },
             }),
           ],
           { stopReason: "toolUse" },
@@ -158,8 +160,8 @@ test("symbol and graph sources expose layered LSP code views", async () => {
           [
             toolCall({
               id: "read-file-graph",
-              name: "read",
-              arguments: { path: `graph:${serviceName}` },
+              name: "lsp_search",
+              arguments: { calls: serviceName },
             }),
           ],
           { stopReason: "toolUse" },
@@ -168,8 +170,8 @@ test("symbol and graph sources expose layered LSP code views", async () => {
           [
             toolCall({
               id: "read-malformed-symbol-view",
-              name: "read",
-              arguments: { path: `symbol:${serviceName}` },
+              name: "lsp_search",
+              arguments: { declaration: serviceName },
             }),
           ],
           { stopReason: "toolUse" },
@@ -178,8 +180,8 @@ test("symbol and graph sources expose layered LSP code views", async () => {
           [
             toolCall({
               id: "read-missing-symbol-view",
-              name: "read",
-              arguments: { path: `symbol:${serviceName}#UserService/missing` },
+              name: "lsp_search",
+              arguments: { declaration: `${serviceName}#UserService/missing` },
             }),
           ],
           { stopReason: "toolUse" },
@@ -189,15 +191,10 @@ test("symbol and graph sources expose layered LSP code views", async () => {
     }).run("Inspect one symbol and its symbol and file graphs");
 
     const symbol = getToolResultText(result, "read-symbol-view");
-    expect(symbol).toContain("## symbol: UserService/getUser");
+    expect(symbol).toMatch(/SEARCH#[A-F0-9]+:1:match service\.ts:4-\d+ declaration/u);
     expect(symbol).toContain("getUser(id: string): string");
     expect(symbol).toContain("return normalize(`${this.prefix}:${id}`);");
     expect(symbol).not.toContain("export function normalize");
-    expect(symbol).toMatch(/4#[A-Z0-9]{4}\|    getUser/u);
-
-    const symbolMessage = getToolResultMessage(result, "read-symbol-view");
-    const symbolDetails = symbolMessage.details as { readonly source?: string };
-    expect(symbolDetails.source).toMatch(/^symbol:\/.*\/service\.ts#UserService\/getUser$/u);
 
     const graph = getToolResultText(result, "read-symbol-graph");
     expect(graph).toContain("## graph: UserService/getUser");
@@ -213,10 +210,10 @@ test("symbol and graph sources expose layered LSP code views", async () => {
     expect(fileGraph).toContain("### Class UserService");
     expect(fileGraph).toContain("### Function normalize");
     expect(fileGraph).toContain("### Variable version");
-    expect(fileGraph).toContain("graph:service.ts#UserService/getUser");
+    expect(fileGraph).toContain("calls service.ts#UserService/getUser");
 
     const malformed = getToolResultText(result, "read-malformed-symbol-view");
-    expect(malformed).toContain("symbol: requires #<symbol-selector> after the file path.");
+    expect(malformed).toContain("declaration requires file#selector");
 
     const missing = getToolResultText(result, "read-missing-symbol-view");
     expect(missing).toContain('Symbol "UserService/missing" was not found in service.ts.');

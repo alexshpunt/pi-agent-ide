@@ -98,14 +98,14 @@ test.each(["cold graph", "rename"] as const)(
         rawMode: false,
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["read", "replace", "search", "bash", "delete", "codemode"],
+        tools: ["read", "replace", "lsp_search", "bash", "delete", "codemode"],
         timeoutMs: 90000,
         conversation: [
           assistantMessage([
             toolCall({
               id: "graph",
-              name: "read",
-              arguments: { path: `graph:${root}/note.ts#greet` },
+              name: "lsp_search",
+              arguments: { calls: `${root}/note.ts#greet` },
             }),
           ]),
           ...(mode === "rename"
@@ -134,8 +134,8 @@ test.each(["cold graph", "rename"] as const)(
                 assistantMessage([
                   toolCall({
                     id: "renamed-graph",
-                    name: "read",
-                    arguments: { path: `graph:${root}/note.ts#welcome` },
+                    name: "lsp_search",
+                    arguments: { calls: `${root}/note.ts#welcome` },
                   }),
                 ]),
               ]
@@ -146,9 +146,9 @@ test.each(["cold graph", "rename"] as const)(
               name: "codemode",
               arguments: {
                 code: `
-const definition = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: ${JSON.stringify(`${root}/note.ts`)} }).then(value => value.result);
+const definition = await tools.lsp_search({ query: ${JSON.stringify(mode === "rename" ? "welcome" : "greet")}, path: ${JSON.stringify(`${root}/note.ts`)} }).then(value => value.result);
 if(!definition.includes("definition ") || definition.includes("reference ")) throw Error(definition);
-const references = await tools.search({ query: ${JSON.stringify(`symbols:${mode === "rename" ? "welcome" : "greet"}`)}, path: definition, navigation: "references" }).then(value => value.result);
+const references = await tools.lsp_search({ query: ${JSON.stringify(mode === "rename" ? "welcome" : "greet")}, path: definition, references: true }).then(value => value.result);
 const declarations=[...references.matchAll(/declared at (.+)/g)].map(m=>m[1]); if(declarations.length!==3 || new Set(declarations).size!==1) throw Error(references);
 const inspected = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} });
 text({ definition, references, inspected });

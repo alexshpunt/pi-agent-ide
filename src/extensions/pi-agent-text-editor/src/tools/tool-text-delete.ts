@@ -18,7 +18,7 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 export const deleteSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Filesystem path, shell:<session>, debug:<session>, debug:<session>/breakpoint/<id>, unchanged source result or its UUID, or an array of results. An ordinary filesystem path without start/end deletes the object: directories recursively, symlinks only as links. A text result input removes only selected text and keeps the file, even for a whole-file selection. For Read results from symbol:<file>#<selector>, deletion removes only the declaration text; imports and references are unchanged. Omit start/end for result inputs. Omit path when a supplied text anchor identifies the file.",
+      "Filesystem path, shell:<session>, debug:<session>, debug:<session>/breakpoint/<id>, unchanged source result or its UUID, or an array of results. An ordinary filesystem path without start/end deletes the object: directories recursively, symlinks only as links. A text result input removes only selected text and keeps the file, even for a whole-file selection. For a symbol:<file>#<selector> path or an lsp_search declaration result, deletion removes only the declaration text; imports and references are unchanged. Omit start/end for result inputs. Omit path when a supplied text anchor identifies the file.",
     ),
     ...sourceRangeProperties({
       start:

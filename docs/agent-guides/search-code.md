@@ -1,4 +1,4 @@
-# Search and LSP workflow
+# Search workflow
 
 ## Text search
 
@@ -30,14 +30,13 @@ If a result has no local edit references, use its locations to inspect the sourc
 
 Use unchanged Read/Search result text, its UUID, returned items, or `RESULT#` targets as Search scopes. These inputs keep exact source ranges and sparse gaps. Reconstructed coordinates do not grant access. Refresh stale snapshots before searching again.
 
-Use `navigation: "references"` only for symbol searches that must follow declarations outside the input scope. Without navigation, symbol results stay inside the supplied ranges. Reference results retain the originating declaration identity; equal names do not establish that identity.
 Local text results expose `SEARCH#HASH:N:line` for its containing line and `SEARCH#HASH:N:match` for the exact match. Complete selections use `:all:line` or `:all:match`. Pass these references directly to read or editing tools; omit the file path when an all-selection spans files.
 
 A single-result reference becomes stale after its file changes. Re-run the search before reuse. A complete `:all` reference refreshes its original query when selected files change. Compacted output retains complete all-selections.
 
 ## Searching returned scopes
 
-Pass an unchanged Read/Search/edit result, its UUID or a `RESULT#` reference as `path`. Arrays of registered results also work. Local text, `regex:` and `symbols:` queries search their exact ranges. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
+Pass an unchanged Read/Search/edit result, its UUID or a `RESULT#` reference as `path`. Arrays of registered results also work. Local text and `regex:` queries search their exact ranges. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
 
 Search inside a result to narrow it before editing. A regex selects a span between markers, part of a line or a zero-width insertion point. With `multiline: true`, one match can span several lines but never crosses a range boundary. `SEARCH#...:line` references select complete containing lines. For syntax structure, use `ast_search` on the same result.
 
@@ -55,17 +54,7 @@ A replace/insert result searches only that call's resulting text, including an e
 
 Use a displayed item or capture reference for a subset. The whole result retains its complete stored scope; editing copied preview text never narrows that scope.
 
-Incomplete registered result scopes cannot authorize edits, even through non-empty subsets. A numbered local text Search reference remains editable while its file snapshot is current, even if collection was incomplete. Use it only for its containing line or exact match, not as a complete match set. Empty arrays select no sources; they do not default to the workspace. Result-scoped Boolean text queries check each line inside each selected range separately; conditions cannot borrow terms from gaps or neighboring text. Text include/exclude globs remain unsupported for result scopes. LSP providers retain their own path/glob filters. File/process and unsupported provider scopes fail without widening the scope.
-
-## Symbols and graphs
-
-Use `symbols:<query>` to locate declarations and references when the source file is unknown. Use `symbol:<file>#<selector>` to read one declaration. Use `graph:<file>` for the file's top-level declarations and relationships, or `graph:<file>#<selector>` for incoming and outgoing references of one declaration.
-
-Pass a result scope to `symbols:` for strict discovery inside its exact ranges. Read the displayed definition/reference and symbol information. Name equality alone does not establish reference identity.
-
-Use `navigation: "references"` only when following symbols represented inside the input scope to references outside it. Navigation stays within the workspace. Path and globs define the seed scope in this mode, not the destination references. Omit navigation for strict discovery. Incomplete, failed or unavailable provider results do not prove absence. Text replacement through an LSP match changes only that range; it is not semantic rename.
-
-Append `#name` to an exact symbol resource only for a native language-server rename across references. If semantic support is unavailable, use a precise text or `ast_search` edit instead of pretending it was a semantic rename. Pending or empty language-server output does not prove that no declaration or reference exists.
+Incomplete registered result scopes cannot authorize edits, even through non-empty subsets. A numbered local text Search reference remains editable while its file snapshot is current, even if collection was incomplete. Use it only for its containing line or exact match, not as a complete match set. Empty arrays select no sources; they do not default to the workspace. Result-scoped Boolean text queries check each line inside each selected range separately; conditions cannot borrow terms from gaps or neighboring text. Text include/exclude globs remain unsupported for result scopes. File/process and unsupported provider scopes fail without widening the scope.
 
 ## Other search protocols
 

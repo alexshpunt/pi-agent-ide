@@ -39,9 +39,10 @@ Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of develop
 | Work                               | Interfaces                                                    |
 | ---------------------------------- | ------------------------------------------------------------- |
 | Inspect content and state          | `read` with source-specific views                             |
-| Find text, symbols and processes   | `search`                                                      |
+| Find text and processes            | `search`                                                      |
 | Find files by path                 | `file_search`                                                 |
 | Find code by syntax structure      | `ast_search`                                                  |
+| Find symbols, references and calls | `lsp_search`                                                  |
 | Change text and filesystem objects | `write`, `replace`, `insert`, `delete`, `copy`, `move`        |
 | Compare, stage and restore changes | `diff`, `stage`, `unstage`, `undo`                            |
 | Run and interact with commands     | `bash` or `powershell`, then `shell:` resources               |
@@ -80,7 +81,7 @@ Views change how the same resource is presented. The agent can request source st
 
 ### Find anything through `search`
 
-`search` provides one interface for exact text, regular expressions, symbols, references, code relationships, process discovery, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
+`search` provides one interface for exact text, regular expressions, process discovery, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
 
 <div align="center">
 
@@ -92,7 +93,7 @@ Views change how the same resource is presented. The agent can request source st
 
 The agent narrows a Read or Search result by searching inside it: a regex for a span between markers or part of a line, or an `ast_search` pattern whose captures select a function body or an argument list. Edits then change only those exact ranges, so the agent works with real code boundaries rather than guessing line numbers.
 
-Language-server support adds declarations, references, call graphs, diagnostics, and semantic rename across references. Available features depend on the project's language server. See [code navigation](docs/agent-guides/search-code.md).
+Language-server support adds `lsp_search` for declarations, references and call graphs, plus diagnostics and semantic rename across references. Available features depend on the project's language server. See [code navigation](docs/agent-guides/lsp-search.md).
 
 ### Review edits against your own rules
 

@@ -102,7 +102,6 @@ Deleting an active session first requests graceful termination, then forcefully 
 `search` gives the agent one discovery interface. Built-in resolvers cover:
 
 - file content search;
-- language-aware symbol search;
 
 A resolver decides whether it understands a query. The first successful resolver returns the result. Search plugins can add new query forms without adding another agent tool.
 
@@ -115,7 +114,7 @@ Local groups provide current Read selections; a complete candidate all-reference
 Boolean queries keep their conditions across literal and regex attempts. They support uppercase `AND`, `OR`, infix `NOT`, `||`, and space-separated `|`. Adjacent terms imply `AND`; `AND` and `NOT` bind more tightly than `OR`. Parentheses containing Boolean operators group conditions. Regex groups, classes, and escapes stay inside terms: `(?:foo|bar)\d+ AND "keep.me" NOT ignored`. An unspaced `foo|bar` is searched as literal text first, then as regex alternatives. Single or double quotes keep a term literal in every attempt. Quoted and Boolean queries never fall back to separate words. Invalid Boolean expressions report the source column and expected syntax.
 Boolean text searches also work with registered result scopes. Each selected range is searched on its own: terms outside it, in sparse gaps, or on another line cannot satisfy a condition.
 
-Empty protocol queries such as `symbols:` and unhandled prefixes such as `unknown:needle` search their original text, including the prefix. The tool reports this fallback. Nonempty installed protocols keep their specialized behavior; service errors, timeouts, and successful protocol searches with no results do not launch local text search. Plugins mark a local fallback resolver with `fallback: true`; these resolvers run after specialists regardless of numeric priority and receive empty protocol queries directly.
+Empty protocol queries such as `regex:` and unhandled prefixes such as `unknown:needle` search their original text, including the prefix. The tool reports this fallback. Nonempty installed protocols keep their specialized behavior; service errors, timeouts, and successful protocol searches with no results do not launch local text search. Plugins mark a local fallback resolver with `fallback: true`; these resolvers run after specialists regardless of numeric priority and receive empty protocol queries directly.
 
 A complete search call times out after 30 seconds by default, including resolver work and result formatting. The timeout cancels the active resolver and tells the agent to retry with a smaller `path` scope. Global and project `search.json` files can change or disable the timeout as described in [Configuration](./configuration.md#search-timeout).
 
@@ -141,6 +140,10 @@ Per-result forms keep the search-time snapshot and fail as stale after their mat
 ## Syntax search
 
 `ast_search` runs [ast-grep](https://ast-grep.github.io/) in files or inside a returned Read, Search or edit result, for every language ast-grep supports. It takes either a `pattern` in source-code syntax, with `$NAME` and `$$$ARGS` captures, or an ast-grep `rule` object with a `language`. Rules add relations such as `inside`, `has`, `not`, `follows` and `precedes`. With a result as `path`, `relation: "enclosing"` returns the innermost match that contains each range, for example the function around a text match. Matches and captures are guarded `SEARCH#` and `RESULT#` selections like text search results. The agent guide is `docs:ast-search`.
+
+## Language-server search
+
+`lsp_search` asks the project's language servers. `query` finds declarations and references by symbol name in the workspace, a path or a returned result; `references: true` follows symbols found inside that scope to references elsewhere in the workspace. `declaration: "file#selector"` returns one declaration as a guarded `SEARCH#` selection. `calls: "file"` or `calls: "file#selector"` lists references and incoming and outgoing calls. Editing tools keep accepting `symbol:<file>#<selector>` paths, and `symbol:<file>#<selector>#name` triggers a native rename. The agent guide is `docs:lsp-search`.
 
 ## Narrowing a result
 

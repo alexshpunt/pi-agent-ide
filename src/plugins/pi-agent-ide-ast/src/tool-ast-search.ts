@@ -73,6 +73,8 @@ export async function registerAstSearchTool(
   pi: ExtensionAPI,
   runtime: () => Promise<AstSearchRuntime>,
 ): Promise<void> {
+  let resolved: AstSearchRuntime | undefined;
+  void runtime().then((value) => (resolved = value));
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "ast-search",
@@ -166,7 +168,12 @@ export async function registerAstSearchTool(
             ...(parameters.language === undefined ? {} : { language: parameters.language }),
             ...(parameters.relation === undefined ? {} : { relation: parameters.relation }),
           };
-          const { api, resolver } = await runtime();
+          // The Search core registers this runtime during startup; without it the tool cannot run.
+          if (resolved === undefined)
+            return failure(
+              "ast_search needs the Search module (search.core), which is not loaded.",
+            );
+          const { api, resolver } = resolved;
           return (await api.searchWith(
             resolver,
             {

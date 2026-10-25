@@ -1,16 +1,11 @@
 import { requiredValue } from "pi-agent-invariant";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
   formatCodeViewReference,
   resolveCodeViewPath,
-  formatSourceViewResults,
   formatSymbolSelector,
-  renderSourceViewLine,
-  type SourceMappedTextContent,
-  type SourceViewBlock,
 } from "pi-agent-ide/api/code-view";
 
 import { requestCallHierarchy, requestReferences } from "./navigation.js";
@@ -27,10 +22,6 @@ import type {
 import type { LspDocumentSymbol } from "./symbols.js";
 import type { LspRange } from "./types.js";
 
-const SOURCE_VIEW_FORMAT_OPTIONS = {
-  failureLabel: "SYMBOL_READ_FAILED",
-  emptyReason: "no symbol source was produced.",
-} as const;
 const MAX_GROUPS = 10;
 const MAX_ITEMS_PER_GROUP = 5;
 const MAX_CALLS = 10;
@@ -95,49 +86,6 @@ export async function resolveLspRenameTarget(
 interface SymbolRelations {
   readonly references: readonly LspLocation[];
   readonly calls: LspCallHierarchyResult;
-}
-
-export async function readLspSymbolBody(
-  manager: LspManager,
-  filePath: string,
-  selector: readonly string[],
-  cwd: string,
-  signal?: AbortSignal,
-): Promise<SourceMappedTextContent> {
-  throwIfAborted(signal);
-  const document = await openCodeDocument(manager, filePath, cwd, signal);
-  const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-  const snapshot = await readTextFile(document.filePath, manager, signal);
-  throwIfAborted(signal);
-
-  const startLine = symbol.range.start.line + 1;
-  const endLine = Math.min(symbol.range.end.line + 1, snapshot.lines.length);
-  const renderedLines = snapshot.lines
-    .slice(Math.max(0, startLine - 1), Math.max(0, endLine))
-    .map((content, index) => {
-      const lineNumber = startLine + index;
-
-      return renderSourceViewLine({
-        content,
-        sourceLine: {
-          source: document.filePath,
-          lineNumber,
-          content,
-        },
-      });
-    });
-  const block: SourceViewBlock = {
-    path: document.displayPath,
-    heading: `symbol: ${formatSymbolSelector(symbol.selector)}`,
-    details: [
-      `defined in: ${document.displayPath}:${startLine}-${endLine} (${symbolKindName(symbol.kind)})`,
-    ],
-    startLine,
-    endLine,
-    totalLines: snapshot.lines.length,
-    renderedLines,
-  };
-  return formatSourceViewResults([block], SOURCE_VIEW_FORMAT_OPTIONS);
 }
 
 export async function readLspSymbolGraph(
@@ -322,7 +270,7 @@ async function formatSymbolGraph(
   const lines = [
     `## graph: ${selector}`,
     `Definition: ${document.displayPath} ${definitionAnchor} (${symbolKindName(symbol.kind)})`,
-    `Source: ${formatCodeViewReference("graph", document.displayPath, symbol.selector)}`,
+    `Source: calls ${callsReference(document.displayPath, symbol.selector)}`,
     "",
     ...(await formatReferences(relations.references, locations)),
     "",
@@ -430,12 +378,17 @@ async function formatFileGraphSymbol(
     lines.push("Members:");
 
     for (const child of symbol.children) {
-      const source = formatCodeViewReference("graph", document.displayPath, child.selector);
-      lines.push(`- ${symbolKindName(child.kind)} ${child.name} — ${source}`);
+      const source = callsReference(document.displayPath, child.selector);
+      lines.push(`- ${symbolKindName(child.kind)} ${child.name} — calls ${source}`);
     }
   }
 
   return lines;
+}
+
+/** The `lsp_search` `calls` value for a declaration, with the same encoding as symbol references. */
+function callsReference(filePath: string, selector: readonly string[]): string {
+  return formatCodeViewReference("graph", filePath, selector).slice("graph:".length);
 }
 
 function summarize(items: readonly string[], limit = 5): string {
@@ -469,35 +422,6 @@ function groupLocationsByUri(locations: readonly LspLocation[]): [string, LspLoc
         ] as [string, LspLocation[]],
     )
     .sort(([left], [right]) => left.localeCompare(right));
-}
-
-interface TextFileSnapshot {
-  readonly lines: string[];
-  readonly content: string;
-}
-
-async function readTextFile(
-  filePath: string,
-  manager: LspManager,
-  signal?: AbortSignal,
-): Promise<TextFileSnapshot> {
-  const buffer = filePath.startsWith("ssh://")
-    ? Buffer.from(await manager.readSourceBytes(filePath, signal))
-    : await readFile(filePath, { signal });
-
-  if (buffer.byteLength > 256 * 1024) {
-    throw new Error(`File exceeds the 262144-byte code-view limit: ${filePath}`);
-  }
-
-  if (buffer.includes(0)) {
-    throw new Error(`File appears to be binary and cannot be read as text: ${filePath}`);
-  }
-
-  const content = buffer.toString("utf8").replaceAll("\r\n", "\n");
-  const withoutFinalNewline = content.endsWith("\n") ? content.slice(0, -1) : content;
-  const lines = withoutFinalNewline.length === 0 ? [] : withoutFinalNewline.split("\n");
-
-  return { content, lines };
 }
 
 class LocationPresenter {

@@ -975,6 +975,9 @@ importers:
       pi-agent-doctor:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-doctor
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-documentation
       pi-agent-ide:
         specifier: workspace:^
         version: link:../../..
@@ -996,6 +999,15 @@ importers:
       pi-agent-text-editor:
         specifier: workspace:^
         version: link:../../extensions/pi-agent-text-editor
+      pi-agent-tool-call-interception:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-tool-call-interception
+      pi-agent-tool-ui:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-tool-ui
+      typebox:
+        specifier: ^1.1.38
+        version: 1.3.27
       vscode-jsonrpc:
         specifier: ^9.0.0
         version: 9.0.1

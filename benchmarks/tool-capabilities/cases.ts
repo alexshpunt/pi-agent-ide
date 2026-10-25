@@ -1314,9 +1314,9 @@ const deletedDeclaration = {
 add(
   "delete-symbol",
   ["edit.delete-declaration"],
-  "Read symbol:task.ts#doomed to confirm the declaration. Then delete that same direct symbol path without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not use the Read result as the Delete input for this route.",
+  "Use lsp_search with declaration task.ts#doomed to confirm the declaration. Then delete the direct symbol path symbol:task.ts#doomed without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not use the lsp_search result as the Delete input for this route.",
   [
-    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
     {
       tool: "delete",
       args: { path: "symbol:task.ts#doomed", start: undefined, end: undefined },
@@ -1333,9 +1333,9 @@ add(
 add(
   "read-symbol-delete",
   ["compose.symbol-read-delete"],
-  "Read symbol:task.ts#doomed, then pass its unchanged Read result or UUID to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
+  "Use lsp_search with declaration task.ts#doomed, then pass its unchanged result or UUID to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
   [
-    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
     { tool: "delete", args: { start: undefined, end: undefined }, reuse: reuse(0) },
   ],
   {
@@ -2088,17 +2088,17 @@ add(
 add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
-  "Use symbol search on task.ts to find count, then search that returned result with navigation references to find its usage. Read the symbol declaration and call graph. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
+  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search for the declaration of count and for its calls. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
   [
-    { tool: "search", args: { path: "task.ts", query: /symbols:count/ }, contains: "count" },
+    { tool: "lsp_search", args: { path: "task.ts", query: "count" }, contains: "count" },
     {
-      tool: "search",
-      args: { query: /symbols:count/, navigation: "references" },
+      tool: "lsp_search",
+      args: { query: "count", references: true },
       reuse: reuse(0),
       contains: "count",
     },
-    { tool: "read", args: { path: /symbol:task.ts#.*count/ }, contains: "3" },
-    { tool: "read", args: { path: /^graph:task.ts(?:#.*)?$/ }, contains: "References" },
+    { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "3" },
+    { tool: "lsp_search", args: { calls: /^task.ts(?:#.*)?$/ }, contains: "References" },
     {
       tool: "read",
       args: { path: "diagnostics:problem.ts" },
@@ -2130,9 +2130,9 @@ add(
     "lsp.rename-keeps-unrelated-names",
     "compose.symbol-read-rename",
   ],
-  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
+  "First get the declaration of count in task.ts with lsp_search and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
   [
-    { tool: "read", args: { path: /symbol:task.ts#.*count/ }, contains: "count" },
+    { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
     {
       tool: "replace",
       args: { path: /symbol:task.ts#.*count#name/, text: "total" },

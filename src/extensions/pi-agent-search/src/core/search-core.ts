@@ -203,11 +203,6 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
 
-      if (input.navigation !== undefined && !input.query.startsWith("symbols:"))
-        return failure(
-          "INVALID_REQUEST",
-          "Reference navigation is supported only for symbols: queries.",
-        );
       try {
         if (typeof input.path === "string") {
           for (const provider of scopeProviders) {
@@ -283,9 +278,6 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
       const protocolLike = /^[a-z][\w-]*:/iu.test(request.query);
       for (const entry of snapshot) {
         if (context.scope !== undefined && entry.registration.resolver.supportsResultScope !== true)
-          continue;
-        const structuralProtocol = request.query.startsWith("symbols:");
-        if (entry.registration.fallback && structuralProtocol && context.scope !== undefined)
           continue;
         if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;

@@ -1,30 +1,24 @@
-# LSP read views
+# LSP plugin
 
-This extension adds LSP diagnostics to normal filesystem reads and owns two semantic `read` sources.
+This extension adds LSP diagnostics to normal filesystem reads, the `lsp_search` tool, and symbol targets for editing tools.
 
-```text
-symbol:<path>#<selector>
-graph:<path>
-graph:<path>#<selector>
-```
+## lsp_search
 
-`<path>` is required. It may be relative to the session directory or absolute. A selector uses `/` for nesting, for example `UserService/getUser`.
+Pass exactly one mode:
 
-## Symbol body
+- `query`: workspace symbol search for declarations and references. `path` (file, directory or a returned result), `include` and `exclude` narrow it. `references: true` follows symbols found inside `path` to their references anywhere in the workspace.
+- `declaration: "<path>#<selector>"`: the full LSP document-symbol range as a guarded `SEARCH#` selection. A selector uses `/` for nesting, for example `UserService/getUser`. A one-part selector finds a nested symbol only when that name is unique in the file; a multi-part selector must match the document-symbol hierarchy exactly.
+- `calls: "<path>#<selector>"`: the definition, references grouped by file, incoming calls and outgoing calls. `calls: "<path>"` reports every top-level declaration in source order with the same relations and lists direct members with their `calls` values.
 
-`symbol:<path>#<selector>` reads the full LSP document-symbol range. The result contains the original source lines and line hashes. A one-part selector may find a nested symbol only when that name is unique in the file. A multi-part selector must match the document-symbol hierarchy exactly.
+`<path>` may be relative to the session directory or absolute. The tool runs its resolver through the shared Search execution core, so scopes, SSH owners and selections behave as in `search`; it is not registered as a `search` query form.
 
-## Symbol graph
+## Editing targets
 
-`graph:<path>#<selector>` returns the definition, references grouped by file, incoming calls, and outgoing calls. Locations use line hashes when the target is a local file. Long groups report how many files or locations were omitted.
-
-## File graph
-
-`graph:<path>` reports every top-level declaration in source order. Each declaration includes its definition, files that reference it, incoming calls, and outgoing calls. Direct members are listed with ready `graph:` selectors, but the extension does not run a separate graph query for each member.
+`symbol:<path>#<selector>` is a path for `replace`, `copy`, `move` and `delete` without start/end. It edits only the declaration text; imports and references stay unchanged. `replace` on `symbol:<path>#<selector>#name` performs a native rename across references.
 
 ## Failures
 
-Malformed sources, missing symbols, missing files, and unavailable LSP servers return failed `read` results. A claimed `symbol:` or `graph:` source never falls back to the filesystem resolver.
+Malformed selectors, missing symbols, missing files and unavailable LSP servers return failed results. They never fall back to text search.
 
 ## Demo
 
@@ -34,4 +28,4 @@ Run the live TUI replay:
 ./scripts/interactive-demos/run-read-code-views-tui-loop.sh
 ```
 
-The demo copies `src/code-view/reference.ts` into an isolated TypeScript project and shows `ast:`, `symbol:`, symbol `graph:`, and file `graph:` results in order.
+The demo copies `src/code-view/reference.ts` into an isolated TypeScript project and shows the `ast:` outline and `lsp_search` declaration, symbol calls and file calls results in order.

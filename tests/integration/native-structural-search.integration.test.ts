@@ -37,7 +37,7 @@ async function runAstComposition(
     rawMode: true,
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-    tools: ["read", "search", "ast_search", "replace", "codemode"],
+    tools: ["read", "search", "ast_search", "lsp_search", "replace", "codemode"],
     conversation: [
       ...scripts.map((code, index) =>
         assistantMessage(
@@ -147,9 +147,9 @@ test("composes real LSP discovery and explicit external references without mixin
       "lsp-scope-navigation-composition",
       [
         `const window=await tools.read({path:"service.ts",offset:1,limit:1});
-const strict=await tools.search({path:window,query:"symbols:ping"}).then(value => value.result);
+const strict=await tools.lsp_search({path:window,query:"ping"}).then(value => value.result);
 check(matches(strict).length===1 && strict.includes("service.ts:1:17 definition ping"),"LSP escaped Read or lost exact coordinates");
-const nav=await tools.search({path:window,query:"symbols:ping",navigation:"references"}).then(value => value.result);
+const nav=await tools.lsp_search({path:window,query:"ping",references:true}).then(value => value.result);
 text(nav);
 check(!nav.includes("other.ts"),"LSP mixed same-name declarations");
 const rows=nav.split(String.fromCharCode(10)).filter(row=>/SEARCH#.*:match .*reference ping/.test(row));

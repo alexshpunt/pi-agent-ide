@@ -18,8 +18,8 @@ await mkdir(`${cwd}/.pi`, { recursive: true });
 await writeFile(`${cwd}/.pi/settings.json`, JSON.stringify({ codemode: { mode: "on" } }));
 const read = toolCall({
   id: "read-symbol",
-  name: "read",
-  arguments: { path: "symbol:task.ts#count" },
+  name: "lsp_search",
+  arguments: { declaration: "task.ts#count" },
 });
 const rename = toolCall({
   id: "rename",
@@ -40,7 +40,7 @@ const calls =
           id: "compose",
           name: "codemode",
           arguments: {
-            code: 'let rejected=false; try { await tools.replace({path:"symbol:task.ts#count#name",text:""}); } catch { rejected=true; } if(!rejected) throw Error("Invalid rename succeeded"); text(await tools.read({path:"task.ts"})); await tools.read({path:"symbol:task.ts#count"}); text(await tools.replace({path:"symbol:task.ts#count#name",text:"total"}));',
+            code: 'let rejected=false; try { await tools.replace({path:"symbol:task.ts#count#name",text:""}); } catch { rejected=true; } if(!rejected) throw Error("Invalid rename succeeded"); text(await tools.read({path:"task.ts"})); await tools.lsp_search({declaration:"task.ts#count"}); text(await tools.replace({path:"symbol:task.ts#count#name",text:"total"}));',
           },
         }),
       ];
@@ -53,7 +53,7 @@ const run = await new PiIntegrationTest({
   transport: "rpc",
   timeoutMs: 90_000,
   extensions: ["/source/src/pi-agent-ide.ts", "builtin:codemode"],
-  tools: ["read", "replace", "codemode"],
+  tools: ["read", "lsp_search", "replace", "codemode"],
   conversation: [
     ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
     assistantMessage([text("Done")]),

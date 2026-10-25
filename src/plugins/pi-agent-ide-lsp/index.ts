@@ -11,16 +11,15 @@ import {
   READ_PROTOCOL,
   type ReadPlugin,
 } from "pi-agent-read/api/plugin-protocol";
-import { createReadResultRenderer } from "pi-agent-read/api/rendering";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 
 import { LSP_RECIPES } from "./src/catalog.js";
-import { createLspGraphResolver, createLspSymbolResolver } from "./src/code-view-resolvers.js";
 import { createLspDiagnosticSource } from "./src/diagnostic-source.js";
 import { lspDoctorPlugin } from "./src/doctor-plugin.js";
 import { createLspCompiler, LspManager, LspServerRegistry } from "./src/lsp/index.js";
 import { createLspSearchResolver } from "./src/search-resolver.js";
+import { registerLspSearchTool, type LspSearchRuntime } from "./src/tool-lsp-search.js";
 import { createDeclarationTargets } from "./src/declaration-targets.js";
 import { prepareSymbolRename } from "./src/rename-plan.js";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
@@ -44,7 +43,6 @@ export type {
 export type { LspOwnerTransport, LspOwnedProcess } from "./src/lsp/owner-transport.js";
 export { LspServerRegistry } from "./src/lsp/registry.js";
 export { LSP_RECIPES } from "./src/catalog.js";
-const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "LSP" });
 
 /** Resource-owner hooks for root registration without backend imports in the LSP package. */
 export interface LspRegistrationOwner {
@@ -66,6 +64,10 @@ export async function registerLspWithOwner(
   pi: ExtensionAPI,
   owner?: LspRegistrationOwner,
 ): Promise<void> {
+  let resolveSearchRuntime!: (value: LspSearchRuntime) => void;
+  const searchRuntime = new Promise<LspSearchRuntime>(
+    (resolve) => (resolveSearchRuntime = resolve),
+  );
   const managers = new Map<string, SharedStartup<LspManager>>();
   let disposed = false;
   const managerFor = async (
@@ -161,21 +163,10 @@ export async function registerLspWithOwner(
     apiVersion: READ_API_VERSION,
     id: "lsp",
     setup(api) {
-      api.addResolver({
-        resolver: createLspSymbolResolver(managerForFile),
-        renderResult: renderReadResult,
-      });
-      api.addResolver({
-        resolver: createLspGraphResolver(managerForFile),
-        renderResult: renderReadResult,
-      });
       api.addHandler({
         stage: "read",
         when: { resolvedBy: "any", contentKind: "text" },
         handler: createSourceMappedTextReadHandler(),
-      });
-      api.describe({
-        path: "symbol:<file>#<selector> — declaration source, e.g. symbol:src/catalog.ts#Catalog/find. graph:<file> — top-level declarations, references and calls; members include selectors. graph:<file>#<selector> — references and incoming/outgoing calls for that declaration or member.",
       });
     },
   } satisfies ReadPlugin;
@@ -267,7 +258,7 @@ export async function registerLspWithOwner(
         api
           .tool("insert")
           .describe(
-            "Symbol targets are unsupported for insert. Read the declaration and select an ordinary text line anchor instead.",
+            "Symbol targets are unsupported for insert. Get the declaration with lsp_search and select an ordinary text line anchor instead.",
           );
         api.tool("insert").addHandler({
           stage: "text-pre-edit",
@@ -279,7 +270,7 @@ export async function registerLspWithOwner(
               )
             )
               throw new Error(
-                "Semantic insert is not supported. Read the declaration and use an explicit text line anchor instead.",
+                "Semantic insert is not supported. Get the declaration with lsp_search and use an explicit text line anchor instead.",
               );
             return state;
           },
@@ -291,16 +282,16 @@ export async function registerLspWithOwner(
     connectSearchPlugin(pi, {
       protocol: SEARCH_PROTOCOL,
       apiVersion: SEARCH_API_VERSION,
-      id: "symbols",
+      id: "lsp-search",
       setup(api): void {
-        api.addResolver({
+        // Not registered with search: lsp_search runs it through the shared execution core.
+        resolveSearchRuntime({
+          api,
           resolver: createLspSearchResolver(managerForFile, api.registerSelection),
         });
-        api.describe(
-          'Use `symbols:<query>` to locate named workspace declarations and references through configured language servers when the file is unknown. Results contain exact source targets, roles, and originating symbols. Default search stays within path. Use navigation: "references" explicitly to follow symbols represented inside path to references outside it, within the workspace.',
-        );
       },
     }),
+    registerLspSearchTool(pi, searchRuntime),
   ]);
 }
 

@@ -11,8 +11,6 @@ export interface SearchRequest {
   /** Let one match span line breaks; only resolvers declaring support accept it. */
   readonly multiline?: boolean;
   readonly limit?: number;
-  /** Explicitly follow scoped LSP symbols to references outside the input scope. */
-  readonly navigation?: "references";
   /** Options from a focused tool for its own resolver; not part of the public search schema. */
   readonly options?: Readonly<Record<string, unknown>>;
 }
