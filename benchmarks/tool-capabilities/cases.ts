@@ -984,6 +984,20 @@ add(
 );
 
 add(
+  "search-multiline-between",
+  ["search.multiline", "compose.search-multiline-replace"],
+  "Search task.txt with one multiline regex that selects only the lines between the BEGIN and END marker lines, without the markers. Replace that Search selection with NEW and a line break. Keep the marker lines and all other bytes.",
+  [
+    { tool: "search", args: { path: "task.txt", query: /^regex:/, multiline: true } },
+    { tool: "replace", args: { text: /^NEW\r?\n$/ }, reuse: reuse(0) },
+  ],
+  {
+    files: { "task.txt": "keep\nBEGIN\nold one\nold two\nEND\nkeep\n" },
+    expected: { "task.txt": "keep\nBEGIN\nNEW\nEND\nkeep\n" },
+  },
+);
+
+add(
   "search-query",
   ["search.boolean", "search.regex", "search.files", "search.flags"],
   "Use search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Finally regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Report the matching line.",
