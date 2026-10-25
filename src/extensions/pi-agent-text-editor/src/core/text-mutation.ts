@@ -32,6 +32,7 @@ import {
   type TextMutationContext,
   type TextMutationEdit,
   type TextMutationToolRegistration,
+  type TextSemanticMutationResult,
   withoutEmptyOptionalAnchors,
 } from "#src/api/mutation-tool.js";
 import {
@@ -313,19 +314,7 @@ export function createTextTool<TParameters extends TSchema>(
                       { cwd: context.cwd, ...(signal !== undefined && { signal }) },
                       input,
                     );
-                    return {
-                      content: [{ type: "text", text: action.summary }],
-                      details: {
-                        results: [],
-                        metadata: {
-                          semanticAction: {
-                            ...action.data,
-                            source: action.source,
-                            ...(action.script !== undefined && { script: action.script }),
-                          },
-                        },
-                      },
-                    };
+                    return semanticActionResult(action);
                   } catch (error) {
                     const code =
                       error !== null && typeof error === "object" && "code" in error
@@ -1555,23 +1544,7 @@ async function buildToolResult(
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
-  if (mutation.semanticAction !== undefined) {
-    return {
-      content: [{ type: "text", text: mutation.semanticAction.summary }],
-      details: {
-        results: [],
-        metadata: {
-          semanticAction: {
-            ...mutation.semanticAction.data,
-            source: mutation.semanticAction.source,
-            ...(mutation.semanticAction.script !== undefined && {
-              script: mutation.semanticAction.script,
-            }),
-          },
-        },
-      },
-    };
-  }
+  if (mutation.semanticAction !== undefined) return semanticActionResult(mutation.semanticAction);
   if (operation === "write" && outcome.resources.length === 0 && mutation.unchangedWrite) {
     const { source: unchangedSource, content } = mutation.unchangedWrite;
     return {
@@ -1895,6 +1868,27 @@ function declaredMutationEffect(error: unknown): "applied" | "not-applied" | "un
   )
     return error.effect;
   return "unknown";
+}
+/**
+ * The tool result of a semantic or direct action: its summary, then any images it returned for the model.
+ * Image data stays out of details, which carry only the receipt and the script value.
+ */
+function semanticActionResult(
+  action: TextSemanticMutationResult,
+): AgentToolResult<FileMutationBatchResult> {
+  return {
+    content: [{ type: "text", text: action.summary }, ...(action.images ?? [])],
+    details: {
+      results: [],
+      metadata: {
+        semanticAction: {
+          ...action.data,
+          source: action.source,
+          ...(action.script !== undefined && { script: action.script }),
+        },
+      },
+    },
+  };
 }
 /** Write images named by Write content; returns undefined when the content is ordinary text. */
 async function writeImageContent(
