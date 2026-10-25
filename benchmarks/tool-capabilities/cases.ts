@@ -598,6 +598,23 @@ add(
   { answer: "OLD" },
 );
 
+for (const mode of both)
+  add(
+    `read-error-${mode}`,
+    mode === "codemode" ? ["read.failure", "compose.read-error-value"] : ["read.failure"],
+    "Read absent.txt once, then read task.txt. Keep all files unchanged and report the first line of task.txt. In Codemode, inspect the failed Read's status and errors fields and pass that returned error object unchanged to text(); a completed Read failure resolves to an error value. Continue with the independent task.txt read. Do not retry the absent resource or parse the readable error text.",
+    [
+      {
+        tool: "read",
+        args: { path: "absent.txt" },
+        error: true,
+        scriptResult: { status: "error" },
+        ...(mode === "codemode" ? { parentStructuredValue: true } : {}),
+      },
+      { tool: "read", args: { path: "task.txt" }, contains: "keep" },
+    ],
+    { modes: [mode], expected: textFile, answer: "keep" },
+  );
 add(
   "read-jq",
   ["read.jq"],
