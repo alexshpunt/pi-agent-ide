@@ -118,7 +118,7 @@ const surfaces: readonly (readonly [string, string, string])[] = [
   ],
   ["HTTP(S), web:ssh://target/URL", "M23", "src/backend/web-registration.ts"],
   ["docs: / docs:id and lazy guides", "M25", "src/documentation/extension.ts"],
-  ["ast:, scopes, symbol:, graph:, symbols:", "M06 M08 M14 M15", "src/backend/lsp-registration.ts"],
+  ["ast:, scopes, ast_search, lsp_search", "M06 M08 M14 M15", "src/backend/lsp-registration.ts"],
   ["diagnostics: and diagnostics view", "M16", "src/plugins/pi-agent-ide-diagnostics/index.ts"],
   [
     "shell: (Read/Search/input/keys/delete/image/sequence)",

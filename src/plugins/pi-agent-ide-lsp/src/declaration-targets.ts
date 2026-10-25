@@ -1,7 +1,7 @@
 import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 import type { TextTargetResolver } from "pi-agent-text";
 import { resolveLspDeclaration } from "./lsp/code-views.js";
-import type { LspManagerProvider } from "./code-view-resolvers.js";
+import type { LspManagerProvider } from "./manager-provider.js";
 
 /** Resolve a live symbol reference to its exact declaration, not matching identifier words. */
 export function createDeclarationTargets(managerFor: LspManagerProvider): TextTargetResolver {

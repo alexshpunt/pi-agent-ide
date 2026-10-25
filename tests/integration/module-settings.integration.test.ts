@@ -31,7 +31,7 @@ test.each([true, false])(
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["codemode", "read", "write"],
+        tools: ["codemode", "read", "write", "lsp_search"],
         timeoutMs: 120_000,
         conversation: [
           assistantMessage(
@@ -44,7 +44,7 @@ test.each([true, false])(
 const file = await tools.read({path: "source.ts"});
 if(typeof file!=="string"||!file.includes("Example")) throw Error(file);
 let available = false;
-try { const symbol=await tools.read({path:"symbol:source.ts#Example"}); available=typeof symbol==="string" && symbol.includes("Example"); } catch {}
+try { const symbol=await tools.lsp_search({declaration:"source.ts#Example"}).then(value => value.result); available=typeof symbol==="string" && symbol.includes("Example"); } catch {}
 if (available !== ${!disabled}) throw new Error("Wrong LSP module state");
 `,
                 },

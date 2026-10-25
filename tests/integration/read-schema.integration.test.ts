@@ -53,8 +53,6 @@ test("delivers loaded source/view contracts and late metadata to the real Pi pro
     "temp:",
     "SEARCH#",
     "RESULT#",
-    "symbol:",
-    "graph:",
     "ast:",
     "diagnostics:",
     "debug:",

@@ -380,6 +380,57 @@
       }
     },
     {
+      "name": "lsp_search",
+      "namespace": "ide_lsp_search",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "calls": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "declaration": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "exclude": {
+            "type": "string"
+          },
+          "include": {
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "~optional": true
+          },
+          "query": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "references": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
       "name": "move",
       "namespace": "ide_edit",
       "exposure": "direct",
@@ -510,10 +561,6 @@
           },
           "multiline": {
             "type": "boolean"
-          },
-          "navigation": {
-            "const": "references",
-            "type": "string"
           },
           "path": {
             "anyOf": [

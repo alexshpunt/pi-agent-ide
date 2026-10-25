@@ -69,4 +69,4 @@ After an interruption, read the affected files before retrying. Retry only unapp
 - `debug:<session>`: insert controls the debugger; delete removes a breakpoint or terminates it.
 - `symbol:<file>#<selector>#name`: replace performs a native language-server rename when available.
 
-Read `docs:terminal`, `docs:debugger`, or `docs:search-code` before using these resources. Never guess after a stale snapshot, ambiguous target, incomplete selection, or unknown rollback effect.
+Read `docs:terminal`, `docs:debugger`, or `docs:lsp-search` before using these resources. Never guess after a stale snapshot, ambiguous target, incomplete selection, or unknown rollback effect.

@@ -724,8 +724,8 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
       Array.from({ length: 400 }, (_, index) => `const use_${index} = ${exact}();`).join("\n"),
     );
     const cases = [1, 80, 1000].flatMap((limit) => [
-      { query: `symbols:${prefix}`, path: source, limit },
-      { query: `symbols:${exact}`, path: source, limit, navigation: "references" as const },
+      { query: prefix, path: source, limit },
+      { query: exact, path: source, limit, references: true as const },
     ]);
     const resultFor = await runBatches(
       {
@@ -735,13 +735,16 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
         extensions: [extension],
         transport: "rpc",
         isolateUserResources: true,
-        tools: ["search"],
+        tools: ["lsp_search"],
         timeoutMs: 60000,
       },
       cases.map((args, index) =>
-        assistantMessage([toolCall({ id: `symbol-${index}`, name: "search", arguments: args })], {
-          stopReason: "toolUse",
-        }),
+        assistantMessage(
+          [toolCall({ id: `symbol-${index}`, name: "lsp_search", arguments: args })],
+          {
+            stopReason: "toolUse",
+          },
+        ),
       ),
       3,
     );
@@ -754,7 +757,7 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
       expect((output.match(/SEARCH#[^\n]*:\d+:match /gu) ?? []).length).toBeLessThanOrEqual(
         args.limit,
       );
-      if (args.navigation === "references" && args.limit > 1) expect(output).toContain("uses.ts");
+      if ("references" in args && args.limit > 1) expect(output).toContain("uses.ts");
     }
   } finally {
     await rm(cwd, { recursive: true, force: true });

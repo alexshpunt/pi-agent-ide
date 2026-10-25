@@ -93,7 +93,7 @@ test.each(["diagnostics", "rename", "race"] as const)(
         rawMode: false,
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: ["read", "replace", "write"],
+        tools: ["read", "lsp_search", "replace", "write"],
         timeoutMs: 60000,
         conversation: [
           ...(mode === "diagnostics"
@@ -132,8 +132,8 @@ test.each(["diagnostics", "rename", "race"] as const)(
                   assistantMessage([
                     toolCall({
                       id: "symbol",
-                      name: "read",
-                      arguments: { path: `symbol:${note}#label` },
+                      name: "lsp_search",
+                      arguments: { declaration: `${note}#label` },
                     }),
                   ]),
                   assistantMessage([

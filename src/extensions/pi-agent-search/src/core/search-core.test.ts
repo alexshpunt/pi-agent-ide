@@ -116,27 +116,6 @@ async function setup(attempt: SearchResolutionAttempt | Error, supportsResultSco
   return { core, specialized, fallback };
 }
 
-test("reference navigation on a text query never reaches a scope owner or resolver", async () => {
-  const { core, specialized, fallback } = await setup({ kind: "resolved", payload: [] });
-  const owner = vi.fn(() => undefined);
-  await core.registerPlugin({
-    protocol: SEARCH_PROTOCOL,
-    apiVersion: SEARCH_API_VERSION,
-    id: "navigation-owner",
-    setup(api) {
-      api.addEnvironmentProvider(owner);
-    },
-  });
-  const result = await core.execute(
-    { query: "needle", path: "ssh://unused/work", navigation: "references" },
-    { cwd: process.cwd() },
-  );
-  expect(result.isError).toBe(true);
-  expect(result.details.failure?.code).toBe("INVALID_REQUEST");
-  expect(owner).not.toHaveBeenCalled();
-  expect(specialized).not.toHaveBeenCalled();
-  expect(fallback).not.toHaveBeenCalled();
-});
 test("search waits for conflicting writes without blocking a disjoint query", async () => {
   const core = createSearchCore();
   const observed: string[] = [];
@@ -312,46 +291,7 @@ test("issued-scope providers register atomically and refuse before resolver exec
   expect(specialized).not.toHaveBeenCalled();
   expect(fallback).not.toHaveBeenCalled();
 });
-test.each(["symbols:entry", "symbols:"])(
-  "does not turn unsupported scoped %s into text search",
-  async (query) => {
-    const core = createSearchCore();
-    const fallback = vi.fn(() => ({ kind: "resolved" as const, payload: "wrong" }));
-    await core.registerPlugin({
-      protocol: SEARCH_PROTOCOL,
-      apiVersion: SEARCH_API_VERSION,
-      id: "text-only",
-      setup(api) {
-        api.addResolver({
-          fallback: true,
-          resolver: {
-            id: "text",
-            supportsResultScope: true,
-            tryResolve: fallback,
-            format: () => ({ content: [{ type: "text", text: "Wrong fallback" }], details: {} }),
-          },
-        });
-      },
-    });
-    const result = await core.execute(
-      { query },
-      { cwd: process.cwd(), scope: { targets: [], complete: true } },
-    );
-    expect(result.details.failure?.code).toBe("NO_RESOLVER");
-    expect(fallback).not.toHaveBeenCalled();
-  },
-);
 
-test("rejects reference navigation for non-LSP queries before dispatch", async () => {
-  const { core, fallback, specialized } = await setup({ kind: "not-handled" });
-  const result = await core.execute(
-    { query: "ast:call($ARG)", navigation: "references" },
-    { cwd: process.cwd() },
-  );
-  expect(result.details.failure?.code).toBe("INVALID_REQUEST");
-  expect(fallback).not.toHaveBeenCalled();
-  expect(specialized).not.toHaveBeenCalled();
-});
 test.each(["matches", "files"] as const)(
   "warns about incomplete %s coverage without turning it into an error",
   async (kind) => {

@@ -85,14 +85,14 @@ test.each(["scope", "mutation"] as const)(
         rawMode: false,
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["read", "search", "replace", "codemode"],
+        tools: ["read", "search", "lsp_search", "replace", "codemode"],
         timeoutMs: 90000,
         conversation: [
           assistantMessage([
             toolCall({
               id: "ordinary",
-              name: "search",
-              arguments: { query: "symbols:label", path: `${root}/note.ts` },
+              name: "lsp_search",
+              arguments: { query: "label", path: `${root}/note.ts` },
             }),
           ]),
           assistantMessage([
@@ -104,21 +104,21 @@ test.each(["scope", "mutation"] as const)(
 const read = await tools.read({ path: ${JSON.stringify(`${root}/note.ts`)} });
 const seed = await tools.search({ path: read, query: "label", caseSensitive: true, wholeWord: true }).then(value => value.result);
 
-const strict=await tools.search({query:"symbols:label",path:seed}).then(value => value.result);
+const strict=await tools.lsp_search({query:"label",path:seed}).then(value => value.result);
 if(!strict.includes("definition label") || strict.includes("reference label")) throw Error(strict);
 const name=strict;
 if(${JSON.stringify(mode)} === "scope") {
- const navigation=await tools.search({query:"symbols:label",path:seed,navigation:"references"}).then(value => value.result);
+ const navigation=await tools.lsp_search({query:"label",path:seed,references:true}).then(value => value.result);
  if(!navigation.includes(${JSON.stringify(`${root}/reference.ts`)}) || !navigation.includes("reference label")) throw Error(navigation);
  const declarations=[...navigation.matchAll(/declared at (.+)/g)].map(m=>m[1]);
  if(declarations.length!==2 || new Set(declarations).size!==1) throw Error("Lost declaration identity: "+navigation);
  const cut=await tools.search({path:seed,query:"abel",caseSensitive:true}).then(value => value.result);
- const absent=await tools.search({query:"symbols:label",path:cut}).then(value => value.result);
+ const absent=await tools.lsp_search({query:"label",path:cut}).then(value => value.result);
  if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);
  text({strict,name,navigation,absent});
 } else {
  text(await tools.replace({path:name,text:"renamed"}));
- let stale; try { await tools.search({query:"symbols:label",path:seed}); } catch(error) { stale=String(error); }
+ let stale; try { await tools.lsp_search({query:"label",path:seed}); } catch(error) { stale=String(error); }
  if(!stale || !/stale|changed|expired/.test(stale)) throw Error("Changed snapshot was accepted: "+stale);
  text({stale});
 }

@@ -34,12 +34,6 @@ const calls = [
     resolverId: "regex",
     arguments: { path: "src", include: "**/*.ts" },
   },
-  {
-    id: "search-lsp",
-    query: "symbols:createResolverAtlas",
-    resolverId: "symbols",
-    arguments: { limit: 5 },
-  },
 ] as const;
 
 afterAll(() => extensions.dispose());
@@ -72,7 +66,7 @@ describe("interactive Search resolver demos", () => {
           ...conversation,
           assistantMessage([text("All installed Search resolvers completed", { delayMs: 0 })]),
         ],
-      }).run("Demonstrate text, regex and LSP search through one tool");
+      }).run("Demonstrate text and regex search through one tool");
 
       for (const call of calls) {
         const execution = getToolExecution(result, call.id);
@@ -84,8 +78,6 @@ describe("interactive Search resolver demos", () => {
         expect(getToolResultText(result, call.id).length, call.id).toBeGreaterThan(0);
         expect(result.tuiRenderedOutput).toContain(`search "${call.query}"`);
       }
-
-      expect(getToolResultText(result, "search-lsp")).toContain("createResolverAtlas");
     });
   }, 240_000);
 });

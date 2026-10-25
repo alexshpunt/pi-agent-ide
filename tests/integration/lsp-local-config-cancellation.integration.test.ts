@@ -39,13 +39,13 @@ test("loaded local config cancellation preserves its reason and ordinary symbols
         path.resolve("src/pi-agent-ide.ts"),
         path.resolve("tests/integration/fixtures/lsp-local-config-live.ts"),
       ],
-      tools: ["search"],
+      tools: ["lsp_search"],
       conversation: [
         assistantMessage([
           toolCall({
             id: "retry-symbols",
-            name: "search",
-            arguments: { query: "symbols:label", path: cwd, include: "*.ts" },
+            name: "lsp_search",
+            arguments: { query: "label", path: cwd, include: "*.ts" },
           }),
         ]),
         assistantMessage([text("The owned local registry recovered.")]),

@@ -34,7 +34,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -43,7 +43,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
               id: "semantic-edit",
               name: "codemode",
               arguments: {
-                code: 'const declaration=await tools.read({path:"symbol:source.ts#Example"}); if(typeof declaration!=="string") throw Error("Expected readable declaration"); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
+                code: 'const declaration=await tools.lsp_search({declaration:"source.ts#Example"}).then(value => value.result); if(typeof declaration!=="string") throw Error("Expected readable declaration"); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
               },
             }),
           ],
@@ -233,7 +233,7 @@ test("native symbol search honors its file scope before the result limit", async
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -244,7 +244,7 @@ test("native symbol search honors its file scope before the result limit", async
               arguments: {
                 code:
                   textResultChecks +
-                  'const hit=await tools.search({query:"symbols:ScopedExample",path:"second.ts",limit:1}).then(value => value.result); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}).then(value => value.result); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
+                  'const hit=await tools.lsp_search({query:"ScopedExample",path:"second.ts",limit:1}).then(value => value.result); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.lsp_search({query:"ScopedExample",path:"second.ts",exclude:"second.ts"}).then(value => value.result); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
               },
             }),
           ],
@@ -270,7 +270,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "ast_search", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -307,7 +307,7 @@ test("native AST edits use fresh selections after automatic commits", async () =
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "ast_search", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(

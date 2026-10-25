@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/edit-pipeline";
-import type { LspManagerProvider } from "./code-view-resolvers.js";
+import type { LspManagerProvider } from "./manager-provider.js";
 import { resolveLspRenameTarget } from "./lsp/code-views.js";
 import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.js";
 import type { LspClient } from "./lsp/client.js";

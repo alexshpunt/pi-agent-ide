@@ -76,23 +76,23 @@ test("ordinary scoped SSH symbols and graphs preserve target identities and repo
       rawMode: false,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "read", "codemode"],
+      tools: ["lsp_search", "codemode"],
       // Nine sequential native queries now publish guarded snapshot targets as well.
       timeoutMs: 90000,
       conversation: [
         assistantMessage([
           toolCall({
             id: "symbols",
-            name: "search",
-            arguments: { query: "symbols:label", path: root, include: "*.ts", limit: 50 },
+            name: "lsp_search",
+            arguments: { query: "label", path: root, include: "*.ts", limit: 50 },
           }),
         ]),
         assistantMessage([
           toolCall({
             id: "scoped",
-            name: "search",
+            name: "lsp_search",
             arguments: {
-              query: "symbols:label",
+              query: "label",
               path: root,
               include: "*.ts",
               exclude: "reference.ts",
@@ -103,15 +103,15 @@ test("ordinary scoped SSH symbols and graphs preserve target identities and repo
         assistantMessage([
           toolCall({
             id: "graph",
-            name: "read",
-            arguments: { path: `graph:${root}/note.ts#label` },
+            name: "lsp_search",
+            arguments: { calls: `${root}/note.ts#label` },
           }),
         ]),
         assistantMessage([
           toolCall({
             id: "broken",
-            name: "search",
-            arguments: { query: "symbols:broken", path: root, include: "*.ts" },
+            name: "lsp_search",
+            arguments: { query: "broken", path: root, include: "*.ts" },
           }),
         ]),
         assistantMessage([
@@ -119,29 +119,29 @@ test("ordinary scoped SSH symbols and graphs preserve target identities and repo
             id: "native",
             name: "codemode",
             arguments: {
-              code: `const result = await tools.search({ query: "symbols:label", path: ${JSON.stringify(root)}, include: "*.ts" }).then(value => value.result); text(result);`,
+              code: `const result = await tools.lsp_search({ query: "label", path: ${JSON.stringify(root)}, include: "*.ts" }).then(value => value.result); text(result);`,
             },
           }),
         ]),
         assistantMessage([
           toolCall({
             id: "unsupported",
-            name: "search",
-            arguments: { query: "symbols:unsupported", path: root, include: "*.ts" },
+            name: "lsp_search",
+            arguments: { query: "unsupported", path: root, include: "*.ts" },
           }),
         ]),
         assistantMessage([
           toolCall({
             id: "exited",
-            name: "search",
-            arguments: { query: "symbols:exit", path: root, include: "*.ts" },
+            name: "lsp_search",
+            arguments: { query: "exit", path: root, include: "*.ts" },
           }),
         ]),
         assistantMessage([
           toolCall({
             id: "restarted",
-            name: "search",
-            arguments: { query: "symbols:label", path: root, include: "*.ts" },
+            name: "lsp_search",
+            arguments: { query: "label", path: root, include: "*.ts" },
           }),
         ]),
         assistantMessage([text("Checked owned symbol and graph navigation.")]),
@@ -236,7 +236,7 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
       rawMode: false,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "bash", "delete", "codemode"],
+      tools: ["lsp_search", "bash", "delete", "codemode"],
       timeoutMs: 45000,
       conversation: [
         assistantMessage([
@@ -244,7 +244,7 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
             id: "cancel-startup",
             name: "codemode",
             arguments: {
-              code: `const pending = tools.search({ query: "symbols:label", path: ${JSON.stringify(root)}, include: "*.ts" }); pending.catch(() => undefined); const observed = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} }); text(observed); const session = observed.match(/^session: (shell:[^\\s]+)/m)?.[1]; if (!session) throw new Error("Bash did not publish its session"); store("startupPollSession", session);`,
+              code: `const pending = tools.lsp_search({ query: "label", path: ${JSON.stringify(root)}, include: "*.ts" }); pending.catch(() => undefined); const observed = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} }); text(observed); const session = observed.match(/^session: (shell:[^\\s]+)/m)?.[1]; if (!session) throw new Error("Bash did not publish its session"); store("startupPollSession", session);`,
             },
           }),
         ]),

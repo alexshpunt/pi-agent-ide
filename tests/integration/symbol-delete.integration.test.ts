@@ -43,8 +43,8 @@ for (const route of ["direct", "codemode", "read-result"] as const) {
               arguments: {
                 code:
                   route === "read-result"
-                    ? 'const declaration = await tools.read({path:"symbol:source.ts#doomed"}); text(await tools.delete({path:declaration}));'
-                    : 'const declaration = await tools.read({path:"symbol:source.ts#doomed"}); if (!declaration.includes("function doomed")) throw Error("Symbol did not resolve"); text(await tools.delete({path:"symbol:source.ts#doomed"}));',
+                    ? 'const declaration = await tools.lsp_search({declaration:"source.ts#doomed"}).then(value => value.result); text(await tools.delete({path:declaration}));'
+                    : 'const declaration = await tools.lsp_search({declaration:"source.ts#doomed"}).then(value => value.result); if (!declaration.includes("function doomed")) throw Error("Symbol did not resolve"); text(await tools.delete({path:"symbol:source.ts#doomed"}));',
               },
             });
       const run = await new PiIntegrationTest({
@@ -52,7 +52,7 @@ for (const route of ["direct", "codemode", "read-result"] as const) {
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["read", "delete", "codemode"],
+        tools: ["lsp_search", "delete", "codemode"],
         timeoutMs: 120_000,
         conversation: [
           assistantMessage([call], { stopReason: "toolUse" }),

@@ -57,9 +57,6 @@ export function searchCallModel(
             truncate: "start" as const,
           },
         ]),
-    ...(arguments_.navigation === undefined
-      ? []
-      : [{ text: "reference navigation", color: "warning" as const }]),
     ...(arguments_.include === undefined ? [] : [{ text: `include ${arguments_.include}` }]),
     ...(arguments_.exclude === undefined ? [] : [{ text: `exclude ${arguments_.exclude}` }]),
     ...(arguments_.caseSensitive === true ? [{ text: "case sensitive" }] : []),
@@ -91,11 +88,8 @@ export default async function registerSearchCore(
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "search-code",
-      description: "Text search, symbols, graphs, and semantic rename",
-      triggers: [
-        { tool: "search" },
-        { tool: "read", resourcePrefixes: ["symbol:", "symbols:", "graph:"] },
-      ],
+      description: "Text, regex and path search",
+      triggers: [{ tool: "search" }],
     }),
   ]);
   const targets = connectResultTargets(pi);
@@ -125,10 +119,8 @@ export default async function registerSearchCore(
           openWorldHint: false,
         },
         label: "search",
-        description:
-          "Use search to find text, language symbols, web-page text, and running processes.",
-        promptSnippet:
-          "Search file contents with literals or regular expressions, plus language symbols",
+        description: "Use search to find text, web-page text, and running processes.",
+        promptSnippet: "Search file contents with literals or regular expressions",
         get promptGuidelines(): string[] {
           return [
             "Use the narrowest useful search query and scope; broaden when needed.",
@@ -186,7 +178,7 @@ export default async function registerSearchCore(
               const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
               if (scope !== undefined) {
                 await targets.verify(scope, operationSignal);
-                if (/^(?:symbol|graph|process):/u.test(parameters.query))
+                if (parameters.query.startsWith("process:"))
                   throw new Error("This query provider does not support result scopes yet.");
               }
               return core.execute(
@@ -241,7 +233,6 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
           ? arguments_.path
           : "result scope",
     ),
-    ...optionalDetail("navigation", arguments_.navigation),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),
     ...optionalDetail(

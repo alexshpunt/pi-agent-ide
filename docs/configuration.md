@@ -409,13 +409,13 @@ Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, 
 
 ### Code intelligence and feedback
 
-| ID              | Contribution                                            |
-| --------------- | ------------------------------------------------------- |
-| `ide.ast`       | AST scopes, outlines, and structural search             |
-| `ide.formatter` | Formatter toolchain integration                         |
-| `ide.lint`      | Lint toolchain integration                              |
-| `ide.changes`   | Git changes, staging, and undo support                  |
-| `ide.lsp`       | LSP symbols, graphs, diagnostics, and compiler feedback |
+| ID              | Contribution                                     |
+| --------------- | ------------------------------------------------ |
+| `ide.ast`       | AST scopes, outlines, and structural search      |
+| `ide.formatter` | Formatter toolchain integration                  |
+| `ide.lint`      | Lint toolchain integration                       |
+| `ide.changes`   | Git changes, staging, and undo support           |
+| `ide.lsp`       | `lsp_search`, diagnostics, and compiler feedback |
 
 ## Dependency examples
 
