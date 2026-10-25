@@ -353,7 +353,14 @@ function formatSearchSession(
         `${source}: ${String(file.matchCount)} matches across ${String(file.uniqueLineCount)} unique line texts (compacted)`,
       );
       for (const group of file.groups) {
-        lines.push(`  ×${String(group.matchCount)} ${previewLine(group.text)}`);
+        const index = indices.get(group.first);
+        const first = group.first;
+        lines.push(
+          anchorsRegistered && index !== undefined
+            ? `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
+            : `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)}`,
+          `    ${previewLine(group.text)}`,
+        );
       }
       if (file.groups.length < file.uniqueLineCount) {
         lines.push(
