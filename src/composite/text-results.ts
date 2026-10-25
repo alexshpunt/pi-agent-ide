@@ -15,9 +15,15 @@ import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protoc
 import { limitIdeOutput } from "./output-limits.js";
 import { searchFacts, searchFactsSchema } from "./search-facts.js";
 
+/** Tools whose Codemode value is `{ result, hasMatches, complete }`. */
+const searchTools = new Set(["search", "ast_search", "lsp_search", "file_search"]);
+
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
   search: ["path"],
+  ast_search: ["path"],
+  lsp_search: ["path"],
+  file_search: ["path"],
   replace: ["path"],
   insert: ["path"],
   delete: ["path"],
@@ -203,7 +209,7 @@ export function createIdeTextResults(
   pi.on("session_shutdown", clear);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
-      "Direct IDE calls return readable text. In Codemode, Search returns { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Other text results remain strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
+      "Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Other text results remain strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -263,7 +269,7 @@ export function createIdeTextResults(
     const descriptors = Object.getOwnPropertyDescriptors(definition);
     // Keep readable composition strings except for explicitly declared public script values.
     delete descriptors.outputSchema;
-    if (definition.name === "search")
+    if (searchTools.has(definition.name))
       descriptors.outputSchema = {
         value: searchFactsSchema,
         enumerable: true,
@@ -443,7 +449,7 @@ export function createIdeTextResults(
           : [],
       );
       const value =
-        event.toolName === "search" && succeeded
+        searchTools.has(event.toolName) && succeeded
           ? searchFacts(outcome, shown)
           : event.toolName === "read"
             ? succeeded
