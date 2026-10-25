@@ -94,6 +94,25 @@ test("rejects animated PNG and malformed recognized images", async () => {
   expect(normalizationFailure.kind).toBe("failed");
 });
 
+test("leaves undeclared text that starts like an image signature to the text converter", async () => {
+  const converter = createImageContentConverter();
+
+  for (const [source, text] of [
+    ["notes.txt", "BMW service notes\n"],
+    ["formats.md", "GIF89a is the animated GIF version.\n"],
+  ] as const) {
+    await expect(
+      converter.tryConvert({ source, bytes: Buffer.from(text, "utf8") }, {}),
+    ).resolves.toEqual({ kind: "not-handled" });
+  }
+
+  const declared = await converter.tryConvert(
+    { source: "broken.bmp", bytes: Buffer.from("BMW service notes\n", "utf8") },
+    {},
+  );
+  expect(declared.kind).toBe("failed");
+});
+
 test("reports resize hints for images outside Pi dimensions", async () => {
   const converter = createImageContentConverter();
   const outcome = await converter.tryConvert({ source: "wide.bmp", bytes: createBmp(2001, 1) }, {});
