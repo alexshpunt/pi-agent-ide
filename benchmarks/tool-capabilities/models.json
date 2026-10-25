@@ -54,6 +54,11 @@
       "thinking": "low"
     },
     {
+      "id": "luna-5.6-high",
+      "model": "openai-codex/gpt-5.6-luna",
+      "thinking": "high"
+    },
+    {
       "id": "deepseek-flash",
       "model": "deepseek/deepseek-flash",
       "thinking": "low"

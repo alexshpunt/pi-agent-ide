@@ -320,6 +320,14 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
                 return undefined;
               }
 
+              if (request.multiline === true && resolver.supportsMultiline !== true) {
+                return failure(
+                  "INVALID_REQUEST",
+                  "multiline applies only to text and regex search in local or SSH files and result scopes. Remove multiline for this query.",
+                  resolver.id,
+                );
+              }
+
               if (attempt.kind === "failed") {
                 return failure(
                   "RESOLVE_FAILED",

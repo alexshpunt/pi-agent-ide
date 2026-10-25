@@ -143,6 +143,7 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
     exclude: recipe.exclude ?? "",
     caseSensitive: recipe.caseSensitive === true,
     wholeWord: recipe.wholeWord === true,
+    multiline: recipe.multiline === true,
     limit: recipe.limit ?? 50,
     regex: recipe.regex === true,
     condition: recipe.condition,
