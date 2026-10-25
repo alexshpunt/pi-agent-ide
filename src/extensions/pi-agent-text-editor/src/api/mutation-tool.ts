@@ -1,5 +1,6 @@
 import type { TextEditIntent } from "#src/api/edit-completion.js";
 import type { TextChange, TextChangeDocument } from "#src/core/text-change-engine.js";
+import type { ImageContent } from "pi-agent-resource";
 import type { TextAnchor } from "pi-agent-text";
 import type { Static, TSchema } from "typebox";
 
@@ -90,6 +91,11 @@ export interface TextSemanticMutationResult {
    * The call then resolves with this value even when `data.ok` is false, so scripts branch on it without try/catch.
    */
   readonly script?: Readonly<Record<string, unknown>>;
+  /**
+   * Images shown to the model after the summary, such as before/after crops of an action's effect.
+   * They stay out of result details; Codemode scripts still receive `script`.
+   */
+  readonly images?: readonly ImageContent[];
 }
 
 /** Handles one tool invocation after its current source and anchors are available. */
