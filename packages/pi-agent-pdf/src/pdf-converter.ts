@@ -24,6 +24,15 @@ export function createPdfContentConverter(): ContentConverter {
         const content = await createPdfContent(input.bytes, context.signal);
         return { kind: "converted", content };
       } catch (error) {
+        // The header check also matches text that only mentions "%PDF-", such as source code.
+        // Leave undeclared readable text to the text converter instead of failing the read.
+        if (
+          cancellationError(context.signal) === undefined &&
+          !declaresPdf(input.source, input.mediaType) &&
+          isUtf8Text(input.bytes)
+        ) {
+          return { kind: "not-handled" };
+        }
         return {
           kind: "failed",
           error:
@@ -146,6 +155,19 @@ function endsWithWhitespace(value: string): boolean {
 
 function isPdfMediaType(value: string | undefined): boolean {
   return value?.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf";
+}
+
+function declaresPdf(source: string, mediaType: string | undefined): boolean {
+  return isPdfMediaType(mediaType) || /\.pdf$/iu.test(source.split(/[?#]/u, 1)[0] ?? "");
+}
+
+function isUtf8Text(bytes: Uint8Array): boolean {
+  try {
+    new TextDecoder("utf8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function errorMessage(error: unknown): string {

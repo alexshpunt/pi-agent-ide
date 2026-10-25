@@ -66,6 +66,16 @@ test("does not claim unrelated bytes and rejects malformed declared PDFs", async
   ).toBe("failed");
 });
 
+test("leaves undeclared text that mentions the PDF header to the text converter", async () => {
+  const bytes = new TextEncoder().encode(
+    'const pdfHeader = new TextEncoder().encode("%PDF-");\nexport {};\n',
+  );
+
+  await expect(
+    createPdfContentConverter().tryConvert({ source: "pdf-converter.ts", bytes }, {}),
+  ).resolves.toEqual({ kind: "not-handled" });
+});
+
 test("honors cancellation", async () => {
   const controller = new AbortController();
   controller.abort();
