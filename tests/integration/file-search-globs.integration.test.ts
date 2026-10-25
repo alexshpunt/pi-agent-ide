@@ -24,24 +24,30 @@ test("real Pi discovers file globs below an ignored parent", async () => {
       path.join(cwd, "cases/part-001.test.ts"),
       "legacy\u200bCheckout\n".repeat(1000),
     );
-    const queries = ["files:cases/*.test.ts", "files:**/cases/*.test.ts", "files:*.test.ts"];
+    const patterns = ["cases/*.test.ts", "**/cases/*.test.ts", "*.test.ts"];
     const result = await new PiIntegrationTest({
       testName: "file-search-globs",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["search"],
+      tools: ["file_search"],
       conversation: [
-        ...queries.map((query, index) =>
+        ...patterns.map((pattern, index) =>
           assistantMessage(
-            [toolCall({ id: `search-${index}`, name: "search", arguments: { query, path: "." } })],
+            [
+              toolCall({
+                id: `search-${index}`,
+                name: "file_search",
+                arguments: { pattern, path: "." },
+              }),
+            ],
             { stopReason: "toolUse" },
           ),
         ),
         assistantMessage([text("Done")]),
       ],
     }).run("Find the matching files using each supplied query.");
-    for (let index = 0; index < queries.length; index += 1) {
+    for (let index = 0; index < patterns.length; index += 1) {
       const call = getToolExecution(result, `search-${index}`);
       expect(call.isError).toBe(false);
       expect(getToolExecutionDetails(call)).toMatchObject({

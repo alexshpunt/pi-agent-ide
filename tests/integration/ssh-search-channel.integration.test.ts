@@ -64,7 +64,7 @@ test("a completed remote search does not fail while closing unused stdin", async
       return channel;
     };
     const environment = createSshSearchEnvironmentProvider(registry)(
-      { query: "files:*.txt", path: scope },
+      { query: "needle", path: scope },
       { cwd: fixture.workspace },
     );
     if (environment === undefined) throw new Error("Missing search environment");

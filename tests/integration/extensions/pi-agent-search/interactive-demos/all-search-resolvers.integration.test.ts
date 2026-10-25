@@ -35,12 +35,6 @@ const calls = [
     arguments: { path: "src", include: "**/*.ts" },
   },
   {
-    id: "search-files",
-    query: "files:search-demo",
-    resolverId: "files",
-    arguments: { path: "src", include: "**/*.ts" },
-  },
-  {
     id: "search-lsp",
     query: "symbols:createResolverAtlas",
     resolverId: "symbols",
@@ -78,7 +72,7 @@ describe("interactive Search resolver demos", () => {
           ...conversation,
           assistantMessage([text("All installed Search resolvers completed", { delayMs: 0 })]),
         ],
-      }).run("Demonstrate text, regex, file and LSP search through one tool");
+      }).run("Demonstrate text, regex and LSP search through one tool");
 
       for (const call of calls) {
         const execution = getToolExecution(result, call.id);

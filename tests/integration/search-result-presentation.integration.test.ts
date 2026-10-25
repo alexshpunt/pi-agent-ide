@@ -25,7 +25,7 @@ test("uses Search frames for file lists and readonly process records without cha
     );
     await writeFile(path.join(cwd, "a.ts"), "function task() { probe(); }\r\n");
     const scripts = [
-      `const r=await tools.search({query:"files:*.ts"}).then(value => value.result); if(typeof r!=="string" || !r.includes("a.ts")) throw Error(r); text({fileCount:1});`,
+      `const r=await tools.file_search({pattern:"*.ts"}).then(value => value.result); if(typeof r!=="string" || !r.includes("a.ts")) throw Error(r); text({fileCount:1});`,
       `const r=await tools.search({query:${JSON.stringify(`process:${process.pid}`)}}).then(value => value.result); if(typeof r!=="string" || !r.includes(String(${process.pid}))) throw Error(r); text({readonlyProcess:true});`,
     ];
     const run = await new PiIntegrationTest({
@@ -34,7 +34,7 @@ test("uses Search frames for file lists and readonly process records without cha
       cwd,
       rawMode: false,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "codemode"],
+      tools: ["search", "file_search", "codemode"],
       conversation: [
         ...scripts.map((code, index) =>
           assistantMessage(

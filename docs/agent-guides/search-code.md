@@ -1,6 +1,6 @@
 # Search and LSP workflow
 
-## Text and path search
+## Text search
 
 Use ordinary queries for literal text. If no literal result exists, unquoted input is tried as a regular expression and then ordinary multi-word input may be broadened to separate words. Quoted terms stay literal. Treat broadened results as location hints rather than safe edit selections.
 
@@ -8,7 +8,7 @@ Use uppercase `AND` and `OR`, infix `NOT`, `||`, or a space-separated `|` for Bo
 
 A match stays within one line by default. Set `multiline: true` to let text or a `regex:` pattern span lines; `.` then also matches line breaks. Use a lazy pattern and look-around to select only the text between markers, for example `regex:(?<=BEGIN\n).*?(?=END)`. Inside a result scope, a match never crosses a range boundary. Boolean queries check single lines and reject `multiline`.
 
-Use `files:<pattern>` for paths. Slash-containing globs match workspace-relative paths; basename globs match at any depth. Narrow with `path`, `include`, and `exclude` before broadening a noisy query.
+Narrow with `path`, `include`, and `exclude` before broadening a noisy query. Use `file_search` to find files by path.
 
 ## Possible names after zero matches
 

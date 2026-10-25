@@ -313,6 +313,36 @@
       }
     },
     {
+      "name": "file_search",
+      "namespace": "ide_file_search",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "exclude": {
+            "type": "string"
+          },
+          "include": {
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "pattern": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["pattern"],
+        "type": "object"
+      }
+    },
+    {
       "name": "insert",
       "namespace": "ide_edit",
       "exposure": "direct",

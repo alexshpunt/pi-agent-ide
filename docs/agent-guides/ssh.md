@@ -27,7 +27,7 @@ Use the existing read and text-editing tools with `ssh://target/absolute/path`. 
 
 Use `raw:ssh://target/absolute/path` to read original bytes with `offset` and `limit`. Raw reads do not convert content or accept views. Text snapshots have a 32 MiB transport limit; raw reads fetch bounded chunks instead. Separate byte windows are not an immutable snapshot.
 
-Use `search` with an SSH `path` for text, `regex:` and `files:` queries. Ripgrep runs on that target; include/exclude globs, Boolean queries and fallback rules stay the same. Results use canonical SSH paths. `SEARCH#` selections keep their owning backend for stale checks, complete-selection refresh and observation after editing. Remote text snapshots for anchors have the same 32 MiB limit.
+Use `search` with an SSH `path` for text and `regex:` queries, and `file_search` with an SSH `path` for file paths. Ripgrep runs on that target; include/exclude globs, Boolean queries and fallback rules stay the same. Results use canonical SSH paths. `SEARCH#` selections keep their owning backend for stale checks, complete-selection refresh and observation after editing. Remote text snapshots for anchors have the same 32 MiB limit.
 
 Use `ast_search` with an SSH `path` for structural matches. It needs `ast-grep` on that target. Returned `SEARCH#` ranges use the same owned snapshots and refresh rules as text search. Use `read` with `ast:ssh://target/path` for a compact outline, or `views: ["ast"]` for scope anchors on source text. These presentations parse the fetched snapshot locally; they do not read a local copy of the remote path. Explicit outlines keep the existing 256 KiB source limit.
 

@@ -57,7 +57,7 @@ const groups: [string[], string[]][] = [
   ],
   [["compose.overview-store-load"], ["read-overview-store"]],
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
-  [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
+  [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
   [["search.multiline", "compose.search-multiline-replace"], ["search-multiline-between"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
