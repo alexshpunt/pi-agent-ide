@@ -83,7 +83,7 @@ export function createSearchToolDetails(
           link: pathToFileURL(file.source).href,
           matchCount: file.matchCount,
           uniqueLineCount: file.uniqueLineCount,
-          groups: file.groups,
+          groups: file.groups.map(({ text, matchCount }) => ({ text, matchCount })),
           lines: [],
         },
   );

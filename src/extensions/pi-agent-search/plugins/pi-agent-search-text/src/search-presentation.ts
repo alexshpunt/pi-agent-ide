@@ -3,6 +3,8 @@ import type { TextSearchMatch } from "#src/search-session.js";
 export interface SearchPresentationGroup {
   readonly text: string;
   readonly matchCount: number;
+  /** First match with this line text, so the summary can show a usable reference. */
+  readonly first: TextSearchMatch;
 }
 
 export type SearchPresentationFile =
@@ -23,7 +25,7 @@ export interface SearchPresentation {
   readonly files: readonly SearchPresentationFile[];
 }
 
-/** Shares one item budget between complete small files, compact summaries and groups. */
+/** Shares one item budget between complete small files, compact summaries and groups. A summary item includes its first group. */
 export function planSearchPresentation(
   matches: readonly TextSearchMatch[],
   detailBudget: number,
@@ -63,20 +65,22 @@ export function planSearchPresentation(
     }
     if (remaining < 1) continue;
     remaining--;
-    const counts = new Map<string, number>();
-    for (const match of sourceMatches)
-      counts.set(match.lineText, (counts.get(match.lineText) ?? 0) + 1);
-    const groups =
-      bySource.size === 1
-        ? [...counts]
-            .sort(
-              ([leftText, leftCount], [rightText, rightCount]) =>
-                rightCount - leftCount || leftText.localeCompare(rightText),
-            )
-            .slice(0, remaining)
-            .map(([text, matchCount]) => ({ text, matchCount }))
-        : [];
-    remaining -= groups.length;
+    const counts = new Map<string, { matchCount: number; first: TextSearchMatch }>();
+    for (const match of sourceMatches) {
+      const group = counts.get(match.lineText);
+      if (group === undefined) counts.set(match.lineText, { matchCount: 1, first: match });
+      else group.matchCount++;
+    }
+    const sorted = [...counts]
+      .sort(
+        ([leftText, left], [rightText, right]) =>
+          right.matchCount - left.matchCount || leftText.localeCompare(rightText),
+      )
+      .map(([text, group]) => ({ text, ...group }));
+    // The summary item always shows its most frequent line; a single file spends the rest on more lines.
+    const extra = bySource.size === 1 ? Math.min(remaining, sorted.length - 1) : 0;
+    const groups = sorted.slice(0, 1 + extra);
+    remaining -= extra;
     files.push({
       kind: "compacted",
       source,
