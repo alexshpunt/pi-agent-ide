@@ -33,7 +33,7 @@ async function runContract(cwd: string, name: string, code: string) {
       "builtin:codemode",
       path.resolve("tests/integration/fixtures/structured-results-fixture.ts"),
     ],
-    tools: ["read", "search", "replace", "select", "receipt_edit", "codemode", "diff"],
+    tools: ["read", "search", "replace", "receipt_edit", "codemode", "diff"],
     conversation: [
       assistantMessage([toolCall({ id: "script", name: "codemode", arguments: { code } })], {
         stopReason: "toolUse",
@@ -142,7 +142,7 @@ for(const args of [{path:"raw:data.json"},{path:"data.json",views:["jq:.value"]}
   text(typeof again==="string" ? again : again.note);
 }
 const anchored=await tools.read({path:"data.json",views:["anchors"]});
-const selected=await tools.select({path:anchored,operation:{kind:"trim",side:"both"}});
+const selected=(await tools.search({path:anchored,query:"regex:\\S.*\\S"})).result;
 text(await tools.replace({path:selected,text:'{"value":"changed"}'}));
 `,
     );

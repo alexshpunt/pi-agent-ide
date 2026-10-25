@@ -27,13 +27,11 @@ import registerHashAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi
 import registerExactAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-exact/index.js";
 import registerRenderer from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/index.js";
 import registerDocumentation from "#src/documentation/extension.js";
-import { registerSelect } from "#src/plugins/pi-agent-ide-ast/src/tool-select.js";
 import { createResourceHostApi } from "./scoped-api.js";
 
 export type StandaloneResourceTool =
   | "read"
   | "search"
-  | "select"
   | "write"
   | "replace"
   | "insert"
@@ -130,7 +128,6 @@ export async function createStandaloneResourceHost(
     await registerExactAnchors(api);
     await registerResourceSearchSelections(api);
     if (!read) throw new Error("Standalone Read host did not initialize.");
-    await registerSelect(api, read);
     await registerDocumentation(api, {
       recordType: `agent-documentation-read/${options.namespace.name}`,
       ownsTool: (name) => typeof name === "string" && scope.tools.includes(name),

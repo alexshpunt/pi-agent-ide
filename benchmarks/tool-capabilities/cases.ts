@@ -794,11 +794,11 @@ for (const operation of ["replace", "delete", "insert"] as const) {
       `edit.selection-batch-${operation}`,
       ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
     ],
-    `Select complete lines 2, 4 and 6 of task.txt separately before editing. In ONE assistant message issue three direct ${operation} calls, forwarding each corresponding selection result/UUID/RESULT# item without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset and limit 1) before editing. In ONE assistant message issue three direct ${operation} calls, forwarding each corresponding Read result or UUID without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
     [
       ...[2, 4, 6].map((line): RouteStep => ({
-        tool: "select",
-        args: { path: "task.txt", operation: { kind: "lines", first: line, last: line } },
+        tool: "read",
+        args: { path: "task.txt", offset: line, limit: 1 },
       })),
       ...[0, 1, 2].map((index): RouteStep => ({
         tool: operation,
@@ -843,14 +843,11 @@ for (const operation of ["replace", "delete", "insert"] as const) {
 }
 for (const operation of ["delete", "insert"] as const) {
   add(
-    `select-result-${operation}`,
-    [`compose.select-${operation}`],
-    `Select the second complete line of task.txt. Forward that selection result, its UUID or its full RESULT# item to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE before that line; keep every original byte."}`,
+    `read-window-${operation}`,
+    [`compose.read-window-${operation}`],
+    `Read only the second line of task.txt (offset 2, limit 1). Forward that Read result or its UUID to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE before that line; keep every original byte."}`,
     [
-      {
-        tool: "select",
-        args: { path: "task.txt", operation: { kind: "lines", first: 2, last: 2 } },
-      },
+      { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
       {
         tool: operation,
         ...(operation === "insert" && { args: { text: "BEFORE", before: true } }),
@@ -867,18 +864,12 @@ for (const operation of ["delete", "insert"] as const) {
 add(
   "grouped-replace-file-count",
   ["edit.grouped-file-count"],
-  "In one native Codemode script, sequentially select columns 0..3 of lines 1, 2, then 3 in task.txt and replace each issued selection with NEW. Await each replacement before selecting the next line so each gets a fresh snapshot. Keep the final newline. Inspect the final editor summary: it must report three replacements in one file, not three files.",
+  "In one native Codemode script, sequentially read lines 1, 2, then 3 of task.txt as one-line windows (offset and limit 1) and replace each issued Read result with NEW followed by a newline. Await each replacement before reading the next line so each gets a fresh snapshot. Inspect the final editor summary: it must report three replacements in one file, not three files.",
   [1, 2, 3].flatMap((line, index): RouteStep[] => [
-    {
-      tool: "select",
-      args: {
-        path: "task.txt",
-        operation: { kind: "range", startLine: line, startColumn: 0, endLine: line, endColumn: 3 },
-      },
-    },
+    { tool: "read", args: { path: "task.txt", offset: line, limit: 1 } },
     {
       tool: "replace",
-      args: { text: "NEW" },
+      args: { text: "NEW\n" },
       reuse: reuse(index * 2),
       ...(line === 3 && { parentContains: "Applied 3 replacements in 1 file." }),
     },
@@ -1530,15 +1521,18 @@ add(
 );
 add(
   "selection-copy-move",
-  ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
-  "Read task.txt and select its second complete line. Copy that selection after the first line of dest.txt. Read task.txt again, select the original second line, and move it after the last line of dest.txt. Use Read results for select and selection results as copy/move sources. Use dest.txt as target with targetStart identifying DEST for copy and TAIL for move; do not replace a destination selection.",
   [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "lines", first: 2, last: 2 } }, reuse: reuse(0) },
-    { tool: "copy", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(1) },
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "lines", first: 2, last: 2 } }, reuse: reuse(3) },
-    { tool: "move", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(4) },
+    "edit.copy-selection",
+    "edit.move-selection",
+    "compose.read-window-copy",
+    "compose.read-window-move",
+  ],
+  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result after the first line of dest.txt. Read the second line of task.txt again the same way and move it after the last line of dest.txt. Use the Read results as copy/move sources. Use dest.txt as target with targetStart identifying DEST for copy and TAIL for move; do not replace a destination selection.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    { tool: "copy", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(0) },
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    { tool: "move", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(2) },
   ],
   {
     files: { ...textFile, "dest.txt": "DEST\nTAIL\n" },
@@ -1617,18 +1611,16 @@ add(
 add(
   "move-zero-width",
   ["edit.move-zero-width", "compose.move-point-replace"],
-  "Read task.txt and select its point at offset 0 using sliceText from=0,to=0. Read dest.txt and select its point at offset 5 using sliceText from=5,to=5. Move the source point to the destination point using both unchanged Select results as path and target. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.",
+  'Search task.txt with a zero-width regex for the point at its start. Search dest.txt with a zero-width regex for the point directly after "left " (offset 5). Move the source point to the destination point using both unchanged Search results as path and target. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.',
   [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "sliceText", from: 0, to: 0 } }, reuse: reuse(0) },
-    { tool: "read", args: { path: "dest.txt" } },
-    { tool: "select", args: { operation: { kind: "sliceText", from: 5, to: 5 } }, reuse: reuse(2) },
+    { tool: "search", args: { path: "task.txt", query: /^regex:/ } },
+    { tool: "search", args: { path: "dest.txt", query: /^regex:/ } },
     {
       tool: "move",
-      reuse: [reuse(1), reuse(3, "target")],
+      reuse: [reuse(0), reuse(1, "target")],
       contains: "No changes: zero-width selections.",
     },
-    { tool: "replace", args: { text: "NEW " }, reuse: reuse(4) },
+    { tool: "replace", args: { text: "NEW " }, reuse: reuse(2) },
   ],
   {
     files: { "task.txt": "source\n", "dest.txt": "left right\n" },
@@ -1762,121 +1754,30 @@ add(
   { git: true },
 );
 
-const geometric = [
-  [
-    "range",
-    { kind: "range", startLine: 2, startColumn: 0, endLine: 2, endColumn: 3 },
-    textFile,
-    "keep\nNEW\nlast\n",
-  ],
-  ["lines", { kind: "lines", first: 2, last: 2 }, textFile, "keep\nNEW\nlast\n"],
-  [
-    "between",
-    { kind: "between", start: "[", end: "]", extent: "inside" },
-    { "task.txt": "[OLD]\n" },
-    "[NEW]\n",
-  ],
-  ["sliceText", { kind: "sliceText", from: 5, to: 8 }, textFile, "keep\nNEW\nlast\n"],
-  ["trim", { kind: "trim", side: "both" }, { "task.txt": "  OLD \n" }, "  NEW \n"],
-  ["split", { kind: "split", delimiter: "|" }, { "task.txt": "OLD|OLD" }, "NEW|NEW"],
-  [
-    "columns",
-    { kind: "columns", from: 2, to: 5 },
-    { "task.txt": "aaOLDzz\naaOLDzz\n" },
-    "aaNEWzz\naaNEWzz\n",
-  ],
-] as const;
-for (const [kind, operation, files, expected] of geometric) {
-  add(
-    `select-${kind}`,
-    [`select.${kind}`, "compose.read-select", "compose.select-replace"],
-    `Read task.txt. Use select with the ${kind} operation to choose ${kind === "split" ? "the two delimiter-separated values" : kind === "trim" ? "the non-whitespace text" : "only the OLD text or line"}, then pass its result into replace to change the selection to NEW. Keep all other bytes. ${kind === "range" ? "Use line 2, columns 0 through 3 (exclusive)." : kind === "lines" ? "Choose line 2 including its line ending, and replace it with NEW plus that same line ending." : kind === "sliceText" ? "Use offsets 5 through 8 (exclusive)." : kind === "columns" ? "Use columns 2 through 5 (exclusive) on each line." : kind === "between" ? "Choose inside the square brackets." : kind === "split" ? "Split on the vertical bar." : "Trim both sides."}`,
-    [
-      { tool: "read", args: { path: "task.txt" } },
-      { tool: "select", args: { operation }, reuse: reuse(0) },
-      { tool: "replace", args: { text: kind === "lines" ? "NEW\n" : "NEW" }, reuse: reuse(1) },
-    ],
-    { files, expected: { "task.txt": expected } },
-  );
-}
-
 add(
-  "select-linesOf",
-  ["select.linesOf"],
-  "Search task.txt for OLD, expand the exact match into whole containing lines with select linesOf, then replace the entire selected line with only NEW plus its original line ending. Remove prefix and suffix, not just OLD. Keep the other lines unchanged.",
+  "read-search-narrow",
+  ["compose.search-narrow-result"],
+  "Read only line 1 of task.txt (offset 1, limit 1). Search inside that unchanged Read result with a regex that matches only the text between the square brackets, without the brackets. Replace that Search selection with NEW. Keep all other bytes, including the bracketed text on line 2.",
   [
-    { tool: "search", args: { path: "task.txt", query: "OLD" } },
-    { tool: "select", args: { operation: { kind: "linesOf" } }, reuse: reuse(0) },
-    { tool: "replace", args: { text: "NEW\n" }, reuse: reuse(1) },
-  ],
-  {
-    files: { "task.txt": "keep\nprefix OLD suffix\nlast\n" },
-    expected: { "task.txt": "keep\nNEW\nlast\n" },
-  },
-);
-
-add(
-  "select-position",
-  ["select.position"],
-  "Read task.txt. Select its zero-width after position and use replace to append NEW there, without replacing the existing file.",
-  [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "position", edge: "after" } }, reuse: reuse(0) },
+    { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
+    { tool: "search", args: { query: /^regex:/ }, reuse: reuse(0) },
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
-  { expected: { "task.txt": "keep\nOLD\nlast\nNEW" } },
-);
-
-for (const kind of ["within", "intersection", "difference"]) {
-  add(
-    `select-${kind}`,
-    [`select.${kind}`],
-    `Read only line 1 of task.txt to get a comparison scope. Search the entire task.txt for OLD. Use select ${kind} with the Read result as scopes and the Search result as path. Replace the resulting selection with NEW.`,
-    [
-      { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
-      { tool: "search", args: { path: "task.txt", query: "OLD" } },
-      {
-        tool: "select",
-        args: { operation: { kind } },
-        reuse: [reuse(1), reuse(0, "operation.scopes")],
-      },
-      { tool: "replace", args: { text: "NEW" }, reuse: reuse(2) },
-    ],
-    {
-      files: { "task.txt": "OLD first\nOLD second\n" },
-      expected: {
-        "task.txt": kind === "difference" ? "OLD first\nNEW second\n" : "NEW first\nOLD second\n",
-      },
-    },
-  );
-}
-add(
-  "select-merge",
-  ["select.merge"],
-  "Read task.txt, pass an array containing that same result twice to select merge, then replace the merged whole-file selection with READY plus a newline. There must be just one resulting copy.",
-  [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "merge" } }, reuse: reuse(0) },
-    { tool: "replace", args: { text: "READY\n" }, reuse: reuse(1) },
-  ],
-  { expected: { "task.txt": "READY\n" } },
+  {
+    files: { "task.txt": "keep [OLD] keep\n[KEEP]\n" },
+    expected: { "task.txt": "keep [NEW] keep\n[KEEP]\n" },
+  },
 );
 
 const syntax = { "task.ts": "function first() { return 7; }\nfunction second() { return 9; }\n" };
 add(
-  "select-object-part",
-  ["select.object", "select.part", "read.ast", "search.ast"],
-  "Read ast:task.ts. AST-search for return 7, take its match selection, select the enclosing function, then select the function's name part and replace it with renamed. Use the actual source references.",
+  "ast-capture-rename",
+  ["read.ast", "search.ast", "compose.ast-capture-edit"],
+  "Read ast:task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the displayed NAME capture reference with renamed. Use the actual capture reference, not a file path or anchor.",
   [
     { tool: "read", args: { path: "ast:task.ts" }, contains: "first" },
-    { tool: "search", args: { path: "task.ts", query: "ast:return 7" } },
-    {
-      tool: "select",
-      args: { operation: { kind: "object", object: "function" } },
-      reuse: reuse(1),
-    },
-    { tool: "select", args: { operation: { kind: "part", part: "name" } }, reuse: reuse(2) },
-    { tool: "replace", args: { text: "renamed" }, reuse: reuse(3) },
+    { tool: "search", args: { path: "task.ts", query: /^ast:.*\$NAME/ }, contains: "capture NAME" },
+    { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
   ],
   {
     files: syntax,
@@ -1907,42 +1808,6 @@ add(
     },
     expected: { "task.ts": "function renamed() { return 8; }\nfunction second() { return 9; }\n" },
   },
-);
-
-add(
-  "select-navigate",
-  ["select.navigate"],
-  "AST-search task.ts for the whole declaration named first, using a wildcard body. Take its exact Search match selection and use select navigate to its next function sibling directly, without an intermediate enclosing selection. Read that returned selection and report the sibling name.",
-  [
-    { tool: "search", args: { path: "task.ts", query: /ast:/ } },
-    {
-      tool: "select",
-      args: { operation: { kind: "navigate", relation: "siblings", direction: "next" } },
-      reuse: reuse(0),
-    },
-    { tool: "read", reuse: reuse(1), contains: "second" },
-  ],
-  { files: syntax, answer: "second" },
-);
-
-add(
-  "select-elementExtent",
-  ["select.elementExtent"],
-  "Search task.js for the exact digit 2. Select that call argument with elementExtent around, then delete its selection so the call becomes sum(1, 3).",
-  [
-    {
-      tool: "search",
-      args: { query: "2" },
-      argsAny: [{ path: "task.js" }, { include: "task.js" }],
-    },
-    {
-      tool: "select",
-      args: { operation: { kind: "elementExtent", extent: "around" } },
-      reuse: reuse(0),
-    },
-    { tool: "delete", reuse: reuse(1) },
-  ],
-  { files: { "task.js": "sum(1, 2, 3);\n" }, expected: { "task.js": "sum(1, 3);\n" } },
 );
 
 add(

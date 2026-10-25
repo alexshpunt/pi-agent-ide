@@ -325,7 +325,6 @@ async function attempt(
         "write",
         "bash",
         "search",
-        "select",
         "replace",
         "insert",
         "delete",

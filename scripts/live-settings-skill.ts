@@ -16,7 +16,7 @@ import {
   VERSION,
 } from "@earendil-works/pi-coding-agent";
 
-const tools = ["read", "search", "replace", "insert", "write", "select", "codemode"];
+const tools = ["read", "search", "replace", "insert", "write", "codemode"];
 const mutations = new Set(["replace", "insert", "write"]);
 
 function inside(file: string, root: string): boolean {

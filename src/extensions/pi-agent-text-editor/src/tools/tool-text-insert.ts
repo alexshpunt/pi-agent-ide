@@ -15,7 +15,7 @@ export const insertSchema = Type.Object(
     path: Type.Optional(
       Type.String({
         description:
-          "Pass a file path, source resource reference, unchanged Read/Search/Select/edit result, or its UUID. Result inputs select only their registered ranges.",
+          "Pass a file path, source resource reference, unchanged Read/Search/edit result, or its UUID. Result inputs select only their registered ranges.",
       }),
     ),
     anchor: Type.Optional(

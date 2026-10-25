@@ -47,8 +47,8 @@ const groups: [string[], string[]][] = [
     [`edit.selection-batch-${operation}`],
     [`selection-batch-${operation}`],
   ]),
-  [["compose.select-delete"], ["select-result-delete"]],
-  [["compose.select-insert"], ["select-result-insert"]],
+  [["compose.read-window-delete"], ["read-window-delete"]],
+  [["compose.read-window-insert"], ["read-window-insert"]],
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [
@@ -144,7 +144,12 @@ const groups: [string[], string[]][] = [
     ["move-temporary-directories"],
   ],
   [
-    ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
+    [
+      "edit.copy-selection",
+      "edit.move-selection",
+      "compose.read-window-copy",
+      "compose.read-window-move",
+    ],
     ["selection-copy-move"],
   ],
   [
@@ -178,22 +183,9 @@ const groups: [string[], string[]][] = [
     ],
     ["git-stage-unstage-undo"],
   ],
-  [
-    ["compose.read-select", "compose.select-replace"],
-    [
-      "select-range",
-      "select-lines",
-      "select-between",
-      "select-sliceText",
-      "select-trim",
-      "select-split",
-      "select-columns",
-    ],
-  ],
-  [["select.object", "select.part", "read.ast", "search.ast"], ["select-object-part"]],
+  [["compose.search-narrow-result"], ["read-search-narrow"]],
+  [["read.ast", "search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
-  [["select.navigate"], ["select-navigate"]],
-  [["select.elementExtent"], ["select-elementExtent"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
   [["compose.result-selector-rejection"], ["result-selector-rejection"]],
@@ -258,22 +250,6 @@ const groups: [string[], string[]][] = [
   [["compose.read-image-write"], ["read-image-write"]],
   [["web.read", "web.search"], ["web-read-search"]],
 ];
-for (const kind of [
-  "range",
-  "lines",
-  "between",
-  "sliceText",
-  "trim",
-  "split",
-  "columns",
-  "linesOf",
-  "position",
-  "within",
-  "intersection",
-  "difference",
-  "merge",
-])
-  groups.push([[`select.${kind}`], [`select-${kind}`]]);
 
 /** Intended contracts and the cases that can establish them, not every tool permutation. */
 export const capabilityMatrix: Capability[] = groups.flatMap(([ids, cases]) =>

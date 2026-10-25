@@ -9,13 +9,9 @@ An image Read in Codemode returns the native image block `{ type: "image", data,
 Each readable result string starts with a labelled system-result envelope containing a random UUID. It is not part of a file and must not be edited or inserted into file contents.
 
 ```js
-const source = await tools.read({ path: "notes.txt" });
-const matches = await tools.search({ path: source, query: "old" });
-const selected = await tools.select({
-  path: matches.result,
-  operation: { kind: "trim", side: "both" },
-});
-text(await tools.replace({ path: selected, text: "new" }));
+const source = await tools.read({ path: "notes.txt", offset: 10, limit: 20 });
+const matches = await tools.search({ path: source, query: "regex:old\\w*" });
+text(await tools.replace({ path: matches.result, text: "new" }));
 ```
 
 Pass the unchanged result string to a supported source parameter. Use Search's `result` field inside Codemode. Direct calls also accept the issued UUID. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
@@ -36,7 +32,7 @@ Read-only views, raw bytes, images and directory listings do not acquire text-ed
 
 ## Internal records
 
-Each tool owns its validated record. Read, Search, Select, Diff, terminals, Git and debugger operations keep their own domain adapters. File edit receipts contain only operation, observed effect, file states and an optional verified selection handle. Delete omits selection fields. The parent Codemode result retains committed operation effects and errors.
+Each tool owns its validated record. Read, Search, Diff, terminals, Git and debugger operations keep their own domain adapters. File edit receipts contain only operation, observed effect, file states and an optional verified selection handle. Delete omits selection fields. The parent Codemode result retains committed operation effects and errors.
 
 The text registry stores only ownership, a digest of the issued text, source references, resource identities and whether the result can be consumed. It does not copy line arrays, removed file contents, image bytes or debugger records into a second ledger. Source ranges and snapshots remain in the source-target store.
 
@@ -53,4 +49,4 @@ Automatic batch boundaries save pending edits, not their final formatting. Write
 
 After an exact-text selector fails, the tool returns current anchors and blocks further exact-text edits for that file. Use a current anchor for the next successful edit. Exact text is then available again.
 
-See [editing](./agent-guides/editing.md), [Read](./agent-guides/read-resources.md) and [Select](./agent-guides/select-code.md) for their source and boundary contracts.
+See [editing](./agent-guides/editing.md), [Read](./agent-guides/read-resources.md) and [Search](./agent-guides/search-code.md) for their source and boundary contracts.

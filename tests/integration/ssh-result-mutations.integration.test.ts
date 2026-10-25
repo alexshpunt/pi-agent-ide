@@ -66,7 +66,7 @@ test("registered whole-file and paired text mutations preserve native identity a
       rawMode: false,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["read", "select", "search", "write", "delete", "copy", "move", "undo", "codemode"],
+      tools: ["read", "search", "write", "delete", "copy", "move", "undo", "codemode"],
       timeoutMs: 150000,
       conversation: [
         assistantMessage([
@@ -77,7 +77,7 @@ test("registered whole-file and paired text mutations preserve native identity a
               code: `
 const file = ${JSON.stringify(`${root}/note.txt`)};
 const whole = await tools.read({ path: file });
-const partial = await tools.select({ path: whole, operation: { kind: "range", startLine: 1, startColumn: 6, endLine: 1, endColumn: 10 } });
+const partial = await tools.search({ path: whole, query: "café" }).then(value => value.result);
 let refused;
 try { await tools.write({path:partial,content:"must not widen"}); } catch(error) { refused = String(error); }
 if (!refused) throw Error("Partial write widened to whole-file authority");
@@ -86,25 +86,25 @@ const written = await tools.write({ path: whole, content: "after café\\r\\n" })
 const saved = await tools.read({ path: written });
 const restored = await tools.undo({ file: saved, change: "last" });
 const fresh = await tools.read({ path: restored });
-const span = await tools.select({ path: fresh, operation: { kind: "range", startLine: 1, startColumn: 6, endLine: 1, endColumn: 10 } });
+const span = await tools.search({ path: fresh, query: "café" }).then(value => value.result);
 const removed = await tools.delete({ path: span });
 const remaining = await tools.read({ path: file });
 const cleared = await tools.delete({ path: remaining });
 text({ written, restored, removed, cleared });
 const sourceRead = await tools.read({ path: ${JSON.stringify(local)} });
-const source = await tools.select({ path: sourceRead, operation: { kind: "sliceText", from: 0, to: 5 } });
+const source = await tools.search({ path: sourceRead, query: "LOCAL" }).then(value => value.result);
 const destinationRead = await tools.read({ path: ${JSON.stringify(`${root}/destination.txt`)} });
-const destination = await tools.select({ path: destinationRead, operation: { kind: "sliceText", from: 0, to: 6 } });
+const destination = await tools.search({ path: destinationRead, query: "REMOTE" }).then(value => value.result);
 const copied = await tools.copy({ path: source, target: destination });
 text(copied);
 const copyScope = await tools.search({path:copied,query:"destination"}).then(value => value.result);
 if (!copyScope.includes("No matches found")) throw Error("Copy target widened: " + copyScope);
 const destinationFresh = await tools.read({ path: ${JSON.stringify(`${root}/destination.txt`)} });
-const point = await tools.select({ path: destinationFresh, operation: { kind: "sliceText", from: 5, to: 5 } });
+const point = await tools.search({ path: destinationFresh, query: "regex:(?<=^LOCAL)" }).then(value => value.result);
 const moved = await tools.move({ path: source, target: point });
 text(moved);
 const moveScope = await tools.search({path:moved,query:"LOCAL"}).then(value => value.result);
-const movedSpan = await tools.select({path:moveScope,operation:{kind:"sliceText",from:0}}); if (!movedSpan.includes("LOCAL")) throw Error(movedSpan);
+if (!moveScope.includes("1 match")) throw Error(moveScope);
 const empty = await tools.delete({path:[]});
 if (!/no changes/i.test(empty)) throw Error("Empty deletion is a no-op: " + empty);
 `,

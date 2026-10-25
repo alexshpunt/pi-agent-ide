@@ -7,17 +7,7 @@ import { piRuntime } from "#capabilities/inventory.ts";
 import { runProcess } from "#capabilities/sandbox.ts";
 
 const connector = process.env.PI_AGENT_IDE_TEST_SUBSCRIPTION_CONNECTOR;
-const ideTools = [
-  "search",
-  "replace",
-  "insert",
-  "delete",
-  "copy",
-  "move",
-  "select",
-  "undo",
-  "diff",
-];
+const ideTools = ["search", "replace", "insert", "delete", "copy", "move", "undo", "diff"];
 
 interface Snapshot {
   system: string;

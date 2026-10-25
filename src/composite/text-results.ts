@@ -18,7 +18,6 @@ import { searchFacts, searchFactsSchema } from "./search-facts.js";
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
   search: ["path"],
-  select: ["path"],
   replace: ["path"],
   insert: ["path"],
   delete: ["path"],
@@ -239,17 +238,6 @@ export function createIdeTextResults(
             input[field] = store.register(selected.targets, context.cwd, selected.complete);
           } else input[field] = source;
         }
-      }
-      if (
-        event.toolName === "select" &&
-        input.operation &&
-        typeof input.operation === "object" &&
-        "scopes" in input.operation
-      ) {
-        input.operation = {
-          ...input.operation,
-          scopes: store.source(input.operation.scopes, context.cwd),
-        };
       }
       for (const field of ["text", "content"]) {
         const value = input[field];

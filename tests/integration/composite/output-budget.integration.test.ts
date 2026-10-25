@@ -309,7 +309,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
           cwd,
           extensions: [extension, "builtin:codemode"],
           transport: "rpc",
-          tools: ["search", "read", "select", "codemode"],
+          tools: ["search", "read", "codemode"],
           isolateUserResources: true,
         },
         [
@@ -327,7 +327,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
                 id: "scoped-search",
                 name: "codemode",
                 arguments: {
-                  code: 'const result = await tools.search({ query: "needle", path: "regression", limit: 1 }).then(value => value.result); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"regression/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }).then(value => value.result));',
+                  code: 'const tail = await tools.read({path:"regression/1724-"+ "long-path-".repeat(8)+".txt"}); text(await tools.search({ query: "needle", path: tail, limit: 1 }).then(value => value.result));',
                 },
               }),
             ],
@@ -366,7 +366,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
   },
   210000,
 );
-test("stresses array scopes, verified anchors and annotation views without widening limits", async () => {
+test("stresses write-result scopes, verified anchors and annotation views without widening limits", async () => {
   const cwd = await workspace();
   try {
     for (const name of ["a", "b"])
@@ -382,7 +382,6 @@ test("stresses array scopes, verified anchors and annotation views without widen
       const a = await tools.write({path:"a.ts",content:source("a")});
       const b = await tools.write({path:"b.ts",content:source("b")});
       if (source("a").length <= 51200) throw new Error("Scope fixture is too small");
-      const combined = await tools.select({path:[a,b],operation:{kind:"merge"}});
       let checked = 0;
       const verify = (value, limit, resources) => {
         const body = value.replace(/^<system-result[^\\n]*>\\n/u,"").split("\\n\\n[Output truncated:")[0];
@@ -393,7 +392,7 @@ test("stresses array scopes, verified anchors and annotation views without widen
       };
       for (const offset of [-1,1,2]) for (const limit of [0,1,1000000]) {
         for (const views of [["anchors"],["ast"],["anchors","ast"],["diagnostics"],["breakpoints"]]) {
-          verify(await tools.read({path:combined,offset,limit,views}),limit,2);
+          for (const source of [a,b]) verify(await tools.read({path:source,offset,limit,views}),limit,1);
         }
       }
       const selected = await tools.read({path:"a.ts",offset:299,limit:1,views:["anchors"]});
@@ -411,7 +410,7 @@ test("stresses array scopes, verified anchors and annotation views without widen
       extensions: [extension, "builtin:codemode"],
       transport: "rpc",
       isolateUserResources: true,
-      tools: ["read", "write", "select", "codemode"],
+      tools: ["read", "write", "codemode"],
       systemPrompt: "Execute the tool checks.",
       conversation: [
         assistantMessage([toolCall({ id: "scope-views", name: "codemode", arguments: { code } })], {
@@ -423,7 +422,7 @@ test("stresses array scopes, verified anchors and annotation views without widen
     }).run("Stress exact source scopes and view combinations");
     await expectProviderBudgets(result);
     expect(getToolResultMessage(result, "scope-views").isError).toBe(false);
-    expect(getToolResultText(result, "scope-views")).toMatch(/"checked"\s*:\s*57/u);
+    expect(getToolResultText(result, "scope-views")).toMatch(/"checked"\s*:\s*102/u);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -550,7 +549,7 @@ test("keeps full mutation effects and selections behind bounded useful previews"
   ).join("\n");
   const scripts = [
     'const value = await tools.write({path:"large.txt",content:Array.from({length:4000}, (_,index)=>`row_${index}: ${"content ".repeat(12)}`).join("\\n")}); store("written",value); text(value);',
-    'const selected = await tools.select({path:load("written"), operation:{kind:"lines",first:4000,last:4000}}); text(await tools.read({path:selected}));',
+    'text(await tools.read({path:load("written"), offset:4000, limit:1}));',
     'text(await tools.copy({path:"large.txt",target:"copy.txt"})); text(await tools.move({path:"copy.txt",target:"moved.txt"}));',
     'const replaced=await tools.replace({path:"moved.txt",start:"row_3999:",text:"last_row:"}); text(await tools.read({path:replaced,limit:1})); text(await tools.insert({path:"moved.txt",anchor:"last_row:",text:"inserted"}));',
     'text(await tools.undo({file:"moved.txt",change:"last"})); text(await tools.diff({before:"large.txt",after:"moved.txt"})); text(await tools.delete({path:"moved.txt"}));',
@@ -567,7 +566,6 @@ test("keeps full mutation effects and selections behind bounded useful previews"
       tools: [
         "read",
         "write",
-        "select",
         "copy",
         "move",
         "replace",
@@ -608,7 +606,6 @@ test("keeps full mutation effects and selections behind bounded useful previews"
     expect(getToolCallNames(result)).toEqual(
       expect.arrayContaining([
         "write",
-        "select",
         "read",
         "copy",
         "move",
@@ -874,7 +871,6 @@ test("bounds malformed argument failures before they enter provider context", as
     copy: { path: [payload], target: "unused.txt" },
     move: { path: [payload], target: "unused.txt" },
     diff: { before: { path: [payload] }, after: "unused.txt" },
-    select: { path: "unused.txt", operation: { kind: payload } },
     undo: { file: "unused.txt", change: payload },
     stage: { file: "unused.txt", change: payload },
     unstage: { file: "unused.txt", change: payload },
@@ -930,7 +926,6 @@ for (const nested of [false, true]) {
       copy: { path: hugePath, target: "copy.txt" },
       move: { path: hugePath, target: "moved.txt" },
       diff: { before: hugePath, after: "small.txt" },
-      select: { path: hugePath, operation: { kind: "lines", first: 1, last: 1 } },
       undo: { file: hugePath, change: "last" },
       stage: { file: hugePath, change: "CHANGE#ABCD" },
       unstage: { file: hugePath, change: "CHANGE#ABCD" },

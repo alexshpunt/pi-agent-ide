@@ -28,7 +28,7 @@ If Search is interrupted or cancelled, do not treat it as zero matches or comple
 
 If a result has no local edit references, use its locations to inspect the source, not as an edit scope. For changed local files, repeat Search or Read to obtain a current selection before editing.
 
-Use unchanged Read/Search/Select result text, its UUID, returned items, or `RESULT#` targets as Search scopes. These inputs keep exact source ranges and sparse gaps. Reconstructed coordinates do not grant access. Refresh stale snapshots before searching again.
+Use unchanged Read/Search result text, its UUID, returned items, or `RESULT#` targets as Search scopes. These inputs keep exact source ranges and sparse gaps. Reconstructed coordinates do not grant access. Refresh stale snapshots before searching again.
 
 Use `navigation: "references"` only for symbol searches that must follow declarations outside the input scope. Without navigation, symbol results stay inside the supplied ranges. Reference results retain the originating declaration identity; equal names do not establish that identity.
 Local text results expose `SEARCH#HASH:N:line` for its containing line and `SEARCH#HASH:N:match` for the exact match. Complete selections use `:all:line` or `:all:match`. Pass these references directly to read or editing tools; omit the file path when an all-selection spans files.
@@ -37,7 +37,19 @@ A single-result reference becomes stale after its file changes. Re-run the searc
 
 ## Searching returned scopes
 
-Pass an unchanged Read/Search/Select/edit result, its UUID or a `RESULT#` reference as `path`. Arrays of registered results also work. Local text, `regex:`, `ast:`, and `symbols:` queries search their exact ranges. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
+Pass an unchanged Read/Search/edit result, its UUID or a `RESULT#` reference as `path`. Arrays of registered results also work. Local text, `regex:`, `ast:`, and `symbols:` queries search their exact ranges. Sparse ranges and files stay separate; gaps and neighboring text are not searched.
+
+Search inside a result to narrow it before editing. A regex selects a span between markers, part of a line or a zero-width insertion point. With `multiline: true`, one match can span several lines but never crosses a range boundary. `SEARCH#...:line` references select complete containing lines, and `ast:` captures select construct parts.
+
+```js
+const section = await tools.read({ path: "notes.md", offset: 20, limit: 40 });
+const body = await tools.search({
+  path: section,
+  query: "regex:(?<=<!-- START -->\\n).*?(?=<!-- END -->)",
+  multiline: true,
+});
+await tools.replace({ path: body.result, text: "new body\n" });
+```
 
 A replace/insert result searches only that call's resulting text, including an empty resulting position. Copy/move search only destination text; whole-file transfers, write and undo search whole resulting files. Delete and restored absence have no live text target. In Codemode, passing a pending result commits the batch first. Final formatting runs at script end; results from before changed formatting become stale, not silently rebound.
 
@@ -49,7 +61,7 @@ Incomplete registered result scopes cannot authorize edits, even through non-emp
 
 Use `ast:<pattern>` for syntax-aware matching. `$NAME` captures one syntax node and `$$$BODY` captures several nodes. Returned search references can select multiline matches for read, replace, copy, move, and delete. An incomplete result does not provide a complete all-selection. Text replacement through an AST selection does not update imports or references automatically.
 
-Use the displayed `capture NAME: RESULT#...` reference to Search or edit a capture without Select. It belongs to that parent match and retains every captured node, including punctuation. Its node count does not change the selection. An empty capture selects nothing; an absent capture has no reference. AST matches and captures must be wholly contained in one requested region; they are not clipped at a scope boundary.
+Use the displayed `capture NAME: RESULT#...` reference to Search or edit a capture. It belongs to that parent match and retains every captured node, including punctuation. Its node count does not change the selection. An empty capture selects nothing; an absent capture has no reference. AST matches and captures must be wholly contained in one requested region; they are not clipped at a scope boundary.
 
 ```js
 const window = await tools.read({ path: "client.ts", offset: 10, limit: 4 });

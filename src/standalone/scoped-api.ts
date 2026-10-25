@@ -14,7 +14,6 @@ import type { StandaloneResourceHostOptions, StandaloneResourceTool } from "./re
 const verbs: readonly StandaloneResourceTool[] = [
   "read",
   "search",
-  "select",
   "write",
   "replace",
   "insert",
@@ -26,7 +25,6 @@ const verbs: readonly StandaloneResourceTool[] = [
 const fields: Record<string, readonly string[]> = {
   read: ["path"],
   search: ["path"],
-  select: ["path"],
   write: ["path"],
   replace: ["path"],
   insert: ["path"],
@@ -35,7 +33,7 @@ const fields: Record<string, readonly string[]> = {
   move: ["path", "target"],
   diff: ["before", "after"],
 };
-const readonly = new Set(["read", "search", "select", "diff"]);
+const readonly = new Set(["read", "search", "diff"]);
 const reservationChannel = "pi-agent-ide/standalone-reservation/v1";
 type Handler = (event: Record<string, unknown>, context: ExtensionContext) => unknown;
 type Subscribe = (event: string, handler: Handler) => () => void;
@@ -144,7 +142,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
     if (!record(value)) throw new Error("Resource tool arguments must be an object.");
     const mutation = !readonly.has(name);
     const sources = fields[name] ?? [];
-    if (["read", "search", "select"].includes(name) && value.path === undefined)
+    if (["read", "search"].includes(name) && value.path === undefined)
       throw new Error("Supply an explicit owned resource or source result.");
     if (mutation && value.path === undefined) {
       const inherited = getLastResolvedResource(api)?.source;
@@ -158,8 +156,6 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       if (typeof anchor === "string" && /^(?:RESULT#|SEARCH#|<system-result)/u.test(anchor))
         await checkSource(anchor, context, mutation);
     }
-    if (name === "select" && record(value.operation) && "scopes" in value.operation)
-      await checkSource(value.operation.scopes, context, false);
     if (name === "write" && typeof value.content !== "string")
       throw new Error(
         "Standalone resource Write accepts text/JSON content, not filesystem image writes.",
@@ -300,7 +296,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
     descriptors.exposure = { value: "deferred", enumerable: true, configurable: true };
     descriptors.description = {
       get: () =>
-        `Use ${publicName(name)} to ${name === "read" ? "inspect provider-owned resources and packaged guides" : name === "search" ? "find objects or text within an explicit provider-owned resource" : name === "select" ? "derive guarded text selections from owned resources" : `${name} provider-owned text resources`}.`,
+        `Use ${publicName(name)} to ${name === "read" ? "inspect provider-owned resources and packaged guides" : name === "search" ? "find objects or text within an explicit provider-owned resource" : `${name} provider-owned text resources`}.`,
       enumerable: true,
       configurable: true,
     };
