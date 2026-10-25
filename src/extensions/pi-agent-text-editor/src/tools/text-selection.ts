@@ -95,6 +95,24 @@ export function singleAnchorSpan(
   };
 }
 
+/**
+ * Text to transfer into a destination. A whole-line literal source selects its line, but an
+ * exact character destination receives the literal itself, so no extra line break is added.
+ */
+export function transferText(
+  context: TextMutationContext,
+  starts: ReadonlyMap<string, TextAnchor>,
+  ends: ReadonlyMap<string, TextAnchor> | undefined,
+  sourceSpan: TextAnchorSpan,
+  targetSpan: TextAnchorSpan | undefined,
+): string {
+  const span =
+    ends === undefined && targetSpan?.selection === true && !sourceSpan.selection
+      ? singleAnchorSpan(context, starts, "start", false, true)
+      : sourceSpan;
+  return context.documentFor(span.source).text(span);
+}
+
 /** Join ordered endpoint extents without widening exact matches to containing lines. */
 export function anchorSpanRange(
   context: TextMutationContext,

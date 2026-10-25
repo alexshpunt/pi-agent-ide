@@ -54,6 +54,8 @@ async function runComposition(
       "copy-execution-failure",
       "file-operation-binary-and-refusal",
     ].includes(name),
+    // Both parallel Copy cards finish in one frame; a taller viewport keeps the first one visible.
+    ...(name === "copy-rollback-standalone" && { tuiSize: { cols: 160, rows: 120 } }),
     cwd,
     extensions: [
       path.resolve("src/pi-agent-ide.ts"),
@@ -434,7 +436,7 @@ test("native unchanged Copy commits without reporting an applied change", async 
     const run = await runComposition(cwd, "copy-identical-commit", [
       `const copied=await tools.copy({path:"source.txt",start:"alpha",target:"destination.txt",targetStart:"alpha",targetEnd:"alpha"});
 check(matches(await tools.search({path:copied,query:"alpha"}).then(value => value.result)).length===1,"Commit lost unchanged destination");
-text(await tools.replace({path:copied,text:"NEW\\n"}));`,
+text(await tools.replace({path:copied,text:"NEW"}));`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
@@ -1336,7 +1338,7 @@ test("retains complete targets beyond both Read and Search previews", async () =
       `const read = await tools.read({path:"large.txt"});
 check(read.includes("Showing lines 1-2000 of 2101") && read.includes("offset=2001"),"Expected bounded Read preview");
 const found=await tools.search({path:read,query:"old",limit:1}).then(value => value.result);
-check(found.includes("2101 matches") && found.includes("(compacted)") && matches(found).length===0,"Expected compacted Search presentation");
+check(found.includes("2101 matches") && found.includes("(compacted)") && matches(found).length===1,"Expected compacted Search presentation with one example reference");
 store("completeSelection",found); text(found);`,
       `const changed = await tools.replace({path:load("completeSelection"),text:"NEW"});
 if (typeof changed !== "string") throw Error(JSON.stringify(changed)); text(changed);`,

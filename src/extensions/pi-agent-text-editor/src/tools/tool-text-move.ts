@@ -9,6 +9,7 @@ import {
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import {
   anchorSpanRange,
+  transferText,
   deleteAnchorSpan,
   insertionAfterAnchor,
   replaceAnchorSpan,
@@ -94,7 +95,11 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
         "targetEnd",
       );
       target = targetSpan.source;
-      targetChange = replaceAnchorSpan(context, targetSpan, copied);
+      targetChange = replaceAnchorSpan(
+        context,
+        targetSpan,
+        transferText(context, starts, ends, sourceSpan, targetSpan),
+      );
     }
 
     if (sourceSpan.source === target && rangesTouch(deletion, targetChange)) {

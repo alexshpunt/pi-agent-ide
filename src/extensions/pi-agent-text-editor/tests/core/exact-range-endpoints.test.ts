@@ -1,7 +1,12 @@
 import { expect, test } from "vitest";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
 import { TextChangeDocument } from "#src/core/text-change-engine.js";
-import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.js";
+import {
+  anchorSpanRange,
+  deleteAnchorSpan,
+  replaceAnchorSpan,
+  transferText,
+} from "#src/tools/text-selection.js";
 import type { TextMutationContext } from "#src/api/mutation-tool.js";
 
 function fixture(content: string) {
@@ -38,8 +43,23 @@ function fixture(content: string) {
     const change = replaceAnchorSpan(context, span(start, end), text);
     return content.slice(0, change.from) + change.insert + content.slice(change.to);
   };
-  return { document, context, span, replace };
+  /** Copy a single-anchor source over a paired destination span, as Copy does. */
+  const copyOver = (source: string, targetStart: string, targetEnd: string) => {
+    const target = span(targetStart, targetEnd);
+    const text = transferText(context, resolve(source), undefined, span(source), target);
+    const change = replaceAnchorSpan(context, target, text);
+    return content.slice(0, change.from) + change.insert + content.slice(change.to);
+  };
+  return { document, context, span, replace, copyOver };
 }
+
+test.each(["\n", "\r\n"])(
+  "a whole-line literal copied over an exact span adds no line break (%j)",
+  (eol) => {
+    const { copyOver } = fixture(`alpha${eol}rest${eol}`);
+    expect(copyOver("alpha", "alpha", "alpha")).toBe(`alpha${eol}rest${eol}`);
+  },
+);
 
 test.each(["\n", "\r\n"])("leading newlines do not select the previous paragraph (%j)", (eol) => {
   const content = `## Leave alone${eol}${eol}Keep this paragraph.${eol}${eol}Based on [source](url).${eol}`;
