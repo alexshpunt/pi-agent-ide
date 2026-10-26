@@ -75,13 +75,7 @@ export async function registerAstSearchTool(
 ): Promise<void> {
   let resolved: AstSearchRuntime | undefined;
   void runtime().then((value) => (resolved = value));
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "ast-search",
-      description: "Syntax patterns, ast-grep rules and enclosing constructs",
-      triggers: [{ tool: "ast_search" }],
-    }),
-  ]);
+
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
@@ -193,6 +187,14 @@ export async function registerAstSearchTool(
       new ToolCallInterceptionRenderStore(),
     ),
   );
+  // Register the tool before awaiting the guide: Pi fixes an explicit tool allowlist at startup.
+  connectAgentDocumentation(pi, [
+    await loadPackagedAgentGuide({
+      id: "ast-search",
+      description: "Syntax patterns, ast-grep rules and enclosing constructs",
+      triggers: [{ tool: "ast_search" }],
+    }),
+  ]);
 }
 
 function failure(message: string): AgentToolResult<SearchToolDetails> {
