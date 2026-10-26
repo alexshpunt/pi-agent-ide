@@ -1,12 +1,12 @@
 # Read JSON and JSONL with jq
 
-Use a `jq:` view when a JSON or JSONL file is too large or you need a structured subset. Use the same view for Pi session `.jsonl` files; no separate format option or shell command is needed.
+Use a `jq:` view to inspect JSON or JSONL files, including acquired SSH file content. Use the same view for Pi session `.jsonl` files. Structured-resource providers can also supply JSON for this view; read their domain guide for supported resources and value shapes.
 
 ```json
 { "path": "package.json", "views": ["jq:.scripts"] }
 ```
 
-The text after `jq:` is a normal jq filter. It is passed as one argument to the installed `jq` executable, while the selected resource is sent through standard input.
+The text after `jq:` is a normal jq filter. It is passed as one argument to the installed `jq` executable, while the acquired JSON is sent through standard input.
 
 ## Common filters
 
@@ -18,6 +18,12 @@ jq:[.items[].price] | add
 ```
 
 A filter may produce no values, one value, or several values. Output keeps jq's normal pretty-printed JSON form.
+
+## Structured resources
+
+Provider-backed views use the structured value retained for that acquisition, which may differ from the displayed card. Strings, numbers, arrays and explicit `null` keep their JSON types. Plain body text, images and downloaded assets are unsupported unless the provider explicitly supplies JSON for them.
+
+Use the provider's documented shape and page coverage. A jq view does not fetch linked bodies or additional API pages. Filtering one acquired page does not make it a complete collection; read a returned continuation separately when needed.
 
 ## Session files and other JSONL input
 
@@ -45,13 +51,19 @@ Malformed input fails the whole Read with jq's parse error and input line/column
 
 Follow the continuation offset returned by Read. Oversized complete output may also provide a temporary resource.
 
+## Source scope and edits
+
+Use an explicit complete JSON source path for jq. Bounded `RESULT#` and `SEARCH#` references and generic text anchors are rejected before they can query unseen JSON. A provider-owned semantic field fragment can supply its own complete JSON value; follow the provider's domain guide.
+
+Treat jq output as derived inspection data, including identity output from `jq:.`. It carries no original anchors or mutation target authority. Use an ordinary Read of the source when you need source anchors for an edit.
+
 ## Limits
 
 - Supply exactly one non-empty `jq:` view.
 - Do not combine `jq:` with annotation views. Their source coordinates would not describe the transformed JSON.
-- The file must contain valid JSON or a stream of JSON values, such as JSONL.
+- The acquired input must contain valid JSON or a stream of JSON values, such as JSONL.
 - jq must be installed and available on the project or system `PATH`.
 - Module loading is disabled. The process receives only a minimal environment and the selected JSON on standard input.
-- Execution is limited to five seconds and 10 MB of jq output.
+- Execution is limited to five seconds and 10 MiB of jq output.
 
-Use ordinary Read when you need the original source lines or anchors. Use the jq view for inspection and computation only; it does not edit the file.
+Use the jq view for inspection and computation only; it does not edit the source.
