@@ -157,7 +157,10 @@ for(let i=0;i<sources.length;i++) {
  text(found);
 }
 async function inspect(request) {
- try { return {text:await tools.read(request)}; } catch(error) { return {error:String(error)}; }
+ try {
+  const value=await tools.read(request);
+  return value?.status==="error" ? {error:value.errors.map(error=>error.code).join(",")} : {text:value};
+ } catch(error) { return {error:String(error)}; }
 }
 const local=await inspect({path:"invalid.txt"});
 const remote=await inspect({path:${JSON.stringify(invalidSource)}});
