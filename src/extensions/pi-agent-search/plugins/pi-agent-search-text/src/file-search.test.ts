@@ -70,3 +70,23 @@ test("include and exclude globs keep comma-separated brace alternatives", async 
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("a limited search returns the first matches in sort order and reports the rest", async () => {
+  const root = path.resolve(".agents/tmp/file-search");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "limit-"));
+  try {
+    const names = Array.from(
+      { length: 40 },
+      (_, index) => `file-${String(index).padStart(2, "0")}.ts`,
+    );
+    await Promise.all(names.map((name) => writeFile(path.join(cwd, name), "")));
+    await writeFile(path.join(cwd, "other.md"), "");
+    const limited = await searchFiles("*.ts", { query: "*.ts", path: ".", limit: 5 }, cwd);
+    expect(limited).toEqual({ files: names.slice(0, 5), complete: false });
+    const all = await searchFiles("*.ts", { query: "*.ts", path: ".", limit: 40 }, cwd);
+    expect(all).toEqual({ files: names, complete: true });
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
