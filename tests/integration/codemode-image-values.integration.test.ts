@@ -76,9 +76,8 @@ const note = await tools.read({path:"note.txt"});
 if (typeof note !== "string") throw Error("Text Read must stay a string");
 const found = await tools.search({path:note, query:"beta"});
 text("composed:" + found.hasMatches);
-let rejected = false;
-try { await tools.read({path:"missing.png"}); } catch { rejected = true; }
-text("missing:" + rejected);
+const missing = await tools.read({path:"missing.png"});
+text("missing:" + (missing?.status === "error" && missing.errors.length > 0 && missing.type === undefined));
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(

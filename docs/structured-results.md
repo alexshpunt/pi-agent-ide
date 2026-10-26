@@ -65,7 +65,7 @@ Metadata does not change an operation's effect or authorize a retry. A renderer 
 
 ## Errors and writes
 
-A completed failed Read resolves to `{ status: "error", errors }` in Codemode. The nonempty `errors` array contains public errors with `code`, `message`, optional `source` and permitted `metadata`. Private Read data and diagnostics are excluded. This value supplies no usable source selection; inspect it before composing another tool call. Direct calls keep readable failure text and the error flag.
+A completed failed Read resolves to `{ status: "error", errors }` in Codemode. The nonempty `errors` array contains public errors with `code`, `message`, optional `source` and permitted `metadata`. Private Read data and diagnostics are excluded. An error `message` carries the same recovery steps a direct call shows, such as the anchors Read to repeat or exact path candidates. This value supplies no usable source selection; inspect it before composing another tool call. Direct calls keep readable failure text and the error flag.
 
 Other failure paths, including blocked calls and pending-edit commit failures, can still reject. Use try/catch or Promise.allSettled when independent calls may fail, and inspect fulfilled Read values for `status: "error"`. Check the readable operation effects and final parent result before retrying. An error does not prove rollback.
 

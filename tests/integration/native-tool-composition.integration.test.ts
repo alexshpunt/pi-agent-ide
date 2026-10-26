@@ -436,7 +436,7 @@ test("native unchanged Copy commits without reporting an applied change", async 
     const run = await runComposition(cwd, "copy-identical-commit", [
       `const copied=await tools.copy({path:"source.txt",start:"alpha",target:"destination.txt",targetStart:"alpha",targetEnd:"alpha"});
 check(matches(await tools.search({path:copied,query:"alpha"}).then(value => value.result)).length===1,"Commit lost unchanged destination");
-text(await tools.replace({path:copied,text:"NEW"}));`,
+text(await tools.replace({path:copied,text:"NEW\\n"}));`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
