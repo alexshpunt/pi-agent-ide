@@ -34,8 +34,14 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   const nestedRendering = createNestedIdeRendering(pi, hideCodemodeToolResults);
   const textResults = createIdeTextResults(nestedRendering.api);
   const availability = createIdeToolAvailability(textResults.api);
+  // Pi can still run an in-flight request's payload hook after it disposed the session that
+  // issued it. Its context is stale then, and the request is being cancelled anyway.
+  let shutDown = false;
+  pi.on("session_shutdown", () => {
+    shutDown = true;
+  });
   pi.on("before_provider_request", (event, context) => {
-    if (context.model?.api !== "openai-responses") return;
+    if (shutDown || context.model?.api !== "openai-responses") return;
     const names = new Set(
       pi
         .getAllTools()
@@ -45,6 +51,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     return preserveResponsesToolOmission(event.payload, names);
   });
   pi.on("session_start", (event, context) => {
+    shutDown = false;
     // Pi 1.3 restores transcript tools and applies defaultTools and CLI +/- selections itself.
     if (hostOwnsToolLoadout(VERSION)) {
       availability.reconcile(true, [], true);
