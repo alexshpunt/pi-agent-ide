@@ -17,6 +17,8 @@ runs:
     - name: Setup runtime tools
       shell: bash
       run: |
+        # The Azure mirror can stall package downloads for over 30 minutes.
+        sudo sed --in-place 's|http://azure\.archive\.ubuntu\.com/ubuntu/|https://archive.ubuntu.com/ubuntu/|g' /etc/apt/apt-mirrors.txt
         sudo apt-get update
         sudo apt-get install --yes bubblewrap build-essential clang clangd fd-find lldb-18 lua5.4 php-cli php-xdebug python3-debugpy ripgrep ruby-dev ruby-full rustc openssh-server iproute2
         sudo ln --symbolic --force /usr/bin/fdfind /usr/local/bin/fd
