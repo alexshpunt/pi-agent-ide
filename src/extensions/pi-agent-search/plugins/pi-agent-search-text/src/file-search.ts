@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { resolveRipgrepExecutable } from "#src/ripgrep.js";
 
-import type { SearchRequest } from "pi-agent-search/api/search";
+import { splitGlobList, type SearchRequest } from "pi-agent-search/api/search";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
 
 export interface FileSearchResult {
@@ -28,11 +28,11 @@ export async function searchFiles(
     "!.git/**",
   ];
 
-  for (const include of splitGlobs(request.include)) {
+  for (const include of splitGlobList(request.include)) {
     arguments_.push("--glob", include);
   }
 
-  for (const exclude of splitGlobs(request.exclude)) {
+  for (const exclude of splitGlobList(request.exclude)) {
     arguments_.push("--glob", `!${exclude}`);
   }
 
@@ -99,15 +99,6 @@ export async function searchFiles(
       resolve({ files: matches.slice(0, limit), complete: matches.length <= limit });
     });
   });
-}
-
-function splitGlobs(value: string | undefined): string[] {
-  return (
-    value
-      ?.split(",")
-      .map((item) => item.trim())
-      .filter(Boolean) ?? []
-  );
 }
 
 function matchFile(file: string, query: string): boolean {
