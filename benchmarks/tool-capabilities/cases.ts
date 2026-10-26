@@ -617,16 +617,40 @@ for (const mode of both)
   );
 add(
   "read-jq",
-  ["read.jq"],
-  "Use read with a jq view to select only .status from config.json and report its value. Do not edit anything.",
-  [{ tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" }],
+  ["read.jq", "read.jq-paging"],
+  "Use read with a jq view to select .status from config.json. Then read with jq:.status, .untouched, offset=2 and limit=1 to select the second transformed value. Report that number. Do not edit anything.",
+  [
+    { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
+    {
+      tool: "read",
+      args: { path: "config.json", views: ["jq:.status, .untouched"], offset: 2, limit: 1 },
+      contains: "7",
+    },
+  ],
   {
     files: { "config.json": '{"status":"ready","untouched":7}\n' },
-    answer: "ready",
+    expected: { "config.json": '{"status":"ready","untouched":7}\n' },
+    answer: "7",
     prerequisite: "jq",
   },
 );
 
+add(
+  "read-jq-bounded-input",
+  ["read.jq-bounded-input"],
+  "Read the first line of config.json. Pass that unchanged Read result or its UUID to Read with views jq:.status; the bounded-input query must be refused. Then query jq:.status using the explicit config.json path and report its value. Do not edit or widen the issued selection.",
+  [
+    { tool: "read", args: { path: "config.json", offset: 1, limit: 1 } },
+    { tool: "read", args: { views: ["jq:.status"] }, reuse: reuse(0), error: true },
+    { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
+  ],
+  {
+    files: { "config.json": '{\n  "status": "ready"\n}\n' },
+    expected: { "config.json": '{\n  "status": "ready"\n}\n' },
+    answer: "ready",
+    prerequisite: "jq",
+  },
+);
 add(
   "read-search-replace",
   ["compose.read-search", "compose.search-replace", "compose.provider-reference-roundtrip"],

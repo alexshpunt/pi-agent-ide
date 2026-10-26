@@ -10,7 +10,8 @@ const groups: [string[], string[]][] = [
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["read.failure"], ["read-error-direct", "read-error-codemode"]],
   [["compose.read-error-value"], ["read-error-codemode"]],
-  [["read.jq"], ["read-jq"]],
+  [["read.jq", "read.jq-paging"], ["read-jq"]],
+  [["read.jq-bounded-input"], ["read-jq-bounded-input"]],
   [["read.ssh-guide"], ["ssh-guide"]],
   [["read.ide-settings", "search.ide-settings"], ["ide-settings-catalog"]],
   [
