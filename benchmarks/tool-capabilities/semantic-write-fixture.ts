@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { connectReadPlugin, READ_PROTOCOL, READ_API_VERSION } from "pi-agent-ide/api/read";
+import { ResourceError } from "pi-agent-ide/api/resource";
 import {
   connectTextEditorPlugin,
   TEXT_EDITOR_PROTOCOL,
@@ -11,8 +13,41 @@ import {
 const semanticSource = /^fixture:semantic(?:-script)?\/(applied|not-applied|unknown)$/;
 const scriptSource = /^fixture:semantic-script\/(applied|not-applied|unknown)$/;
 
-/** Synthetic semantic actions only: preserve provider receipts without filesystem completions. */
+/** Synthetic provider failures and semantic actions; no external service or native input. */
 export default async function semanticWriteFixture(pi: ExtensionAPI): Promise<void> {
+  await connectReadPlugin(pi, {
+    protocol: READ_PROTOCOL,
+    apiVersion: READ_API_VERSION,
+    id: "capability-read-provider",
+    setup(api) {
+      api.addResolver({
+        priority: -200,
+        resolver: {
+          id: "capability-read-provider",
+          async tryResolve(source, context) {
+            if (source !== "fixture:read-provider#metadata" && source !== "fixture:read-provider")
+              return { kind: "not-handled" };
+            await appendFile(
+              path.join(context.cwd, "provider-reads.jsonl"),
+              JSON.stringify(source) + "\n",
+            );
+            if (source.endsWith("#metadata"))
+              return {
+                kind: "failed",
+                error: new ResourceError("FIXTURE_FIELD_UNAVAILABLE", source, "not-applied"),
+              };
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                read: async () => [{ type: "text", text: "metadata metadata\n" }],
+              },
+            };
+          },
+        },
+      });
+    },
+  });
   await connectTextEditorPlugin(pi, {
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,

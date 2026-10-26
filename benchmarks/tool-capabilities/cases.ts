@@ -601,8 +601,10 @@ add(
 for (const mode of both)
   add(
     `read-error-${mode}`,
-    mode === "codemode" ? ["read.failure", "compose.read-error-value"] : ["read.failure"],
-    "Read absent.txt once, then read task.txt. Keep all files unchanged and report the first line of task.txt. In Codemode, inspect the failed Read's status and errors fields and pass that returned error object unchanged to text(); a completed Read failure resolves to an error value. Continue with the independent task.txt read. Do not retry the absent resource or parse the readable error text.",
+    mode === "codemode"
+      ? ["read.failure", "read.provider-failure-ownership", "compose.read-error-value"]
+      : ["read.failure", "read.provider-failure-ownership"],
+    "Read absent.txt once, then fixture:read-provider#metadata once, then read task.txt. The synthetic provider declares the fragmented resource unavailable; do not retry its bare source or interpret metadata as text. Keep existing files unchanged and report the first line of task.txt. In Codemode, inspect each failed Read's status and errors fields and pass each returned error object unchanged to text(); a completed Read failure resolves to an error value. Continue with the independent task.txt read. Do not parse readable error text.",
     [
       {
         tool: "read",
@@ -611,9 +613,27 @@ for (const mode of both)
         scriptResult: { status: "error" },
         ...(mode === "codemode" ? { parentStructuredValue: true } : {}),
       },
+      {
+        tool: "read",
+        args: { path: "fixture:read-provider#metadata" },
+        error: true,
+        scriptResult: {
+          status: "error",
+          errors: [{ code: "FIXTURE_FIELD_UNAVAILABLE", source: "fixture:read-provider#metadata" }],
+        },
+        ...(mode === "codemode" ? { parentStructuredValue: true } : {}),
+      },
       { tool: "read", args: { path: "task.txt" }, contains: "keep" },
     ],
-    { modes: [mode], expected: textFile, answer: "keep" },
+    {
+      modes: [mode],
+      setup: "semantic-write",
+      expected: {
+        ...textFile,
+        "provider-reads.jsonl": '"fixture:read-provider#metadata"\n',
+      },
+      answer: "keep",
+    },
   );
 add(
   "read-jq",
