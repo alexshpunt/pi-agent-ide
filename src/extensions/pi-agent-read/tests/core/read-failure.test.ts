@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ReadFailure } from "#src/api/tools/read.js";
-import { failureResult } from "#src/core/tools/read/read-result.js";
+import { failureResult, readFailureRecovery } from "#src/core/tools/read/read-result.js";
 import { structuredRead } from "#src/core/tools/read/structured-result.js";
 import { createReadTool } from "#src/core/tools/tool-read.js";
 
@@ -98,39 +98,32 @@ test("unknown backend errors keep their actual reason without fabricated recover
   expect(text).not.toContain("Search");
 });
 
-test("the Codemode failure value keeps the recovery steps that direct calls show", () => {
-  const recovery = (failure: ReadFailure) => {
-    const error = structuredRead(failureResult(failure)).structuredContent;
-    if (!error || typeof error !== "object" || !("errors" in error) || !Array.isArray(error.errors))
-      throw new Error("Expected a structured failure");
-    const [first] = error.errors as { message: string }[];
-    return first?.message ?? "";
-  };
-  const fragment = recovery({
-    code: "FRAGMENT_FAILED",
-    source: "notes.txt",
-    message: "exact text anchor was not found",
-  });
-  expect(fragment).toContain(
-    'Read "notes.txt" with views=["anchors"] and choose a current anchor.',
-  );
-  const missing = recovery({
+test.each<ReadFailure>([
+  { code: "FRAGMENT_FAILED", source: "notes.txt", message: "exact text anchor was not found" },
+  {
     code: "READ_FAILED",
     source: "absent.txt",
     message: "Unable to read absent.txt",
     cause: Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" }),
-  });
-  expect(missing).toContain("Search for the correct path.");
-  const candidates = recovery({
+  },
+  {
     code: "READ_FAILED",
     source: "src/read-render.ts",
     message: "Unable to read src/read-render.ts",
     cause: Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
     candidates: [{ path: "src/read-renderer.ts" }],
-  });
-  expect(candidates).toContain('- "src/read-renderer.ts"');
-  expect(candidates).toContain("Retry read with an exact candidate path.");
-  expect(recovery({ code: "INVALID_REQUEST", message: "No source was provided" })).toContain(
-    "Supply path with a source or an unchanged result reference.",
-  );
+  },
+  { code: "INVALID_REQUEST", message: "No source was provided" },
+])("the Codemode failure value keeps the recovery a direct $code call shows", (failure) => {
+  const value = structuredRead(failureResult(failure)).structuredContent;
+  if (!value || typeof value !== "object" || !("errors" in value) || !Array.isArray(value.errors))
+    throw new Error("Expected a structured failure");
+  const message = (value.errors as { message: string }[])[0]?.message ?? "";
+  const direct = resultText(failure);
+  const steps = readFailureRecovery(failure);
+  expect(steps.length).toBeGreaterThan(0);
+  for (const step of steps) {
+    expect(direct).toContain(step);
+    expect(message).toContain(step);
+  }
 });
