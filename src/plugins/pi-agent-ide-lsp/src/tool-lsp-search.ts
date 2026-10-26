@@ -34,11 +34,12 @@ export const lspSearchSchema = Type.Object(
         description: "file or file#selector: references and incoming/outgoing calls.",
       }),
     ),
-    path: Type.Optional({
-      ...resultInputSchema,
-      description:
-        "For query: file, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
-    }),
+    path: Type.Optional(
+      Type.Union(resultInputSchema.anyOf, {
+        description:
+          "For query: file, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
+      }),
+    ),
     references: Type.Optional(
       Type.Boolean({
         description:
