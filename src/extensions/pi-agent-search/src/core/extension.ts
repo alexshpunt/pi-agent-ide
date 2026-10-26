@@ -119,7 +119,7 @@ export default async function registerSearchCore(
           openWorldHint: false,
         },
         label: "search",
-        description: "Use search to find text, web-page text, and running processes.",
+        description: "Use search to find text in files, web pages, guides and terminal output.",
         promptSnippet: "Search file contents with literals or regular expressions",
         get promptGuidelines(): string[] {
           return [
@@ -178,8 +178,6 @@ export default async function registerSearchCore(
               const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
               if (scope !== undefined) {
                 await targets.verify(scope, operationSignal);
-                if (parameters.query.startsWith("process:"))
-                  throw new Error("This query provider does not support result scopes yet.");
               }
               return core.execute(
                 {

@@ -12,7 +12,7 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
-test("uses Search frames for file lists and readonly process records without changing data", async () => {
+test("uses Search frames for file lists without changing data", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
@@ -26,7 +26,6 @@ test("uses Search frames for file lists and readonly process records without cha
     await writeFile(path.join(cwd, "a.ts"), "function task() { probe(); }\r\n");
     const scripts = [
       `const r=await tools.file_search({pattern:"*.ts"}).then(value => value.result); if(typeof r!=="string" || !r.includes("a.ts")) throw Error(r); text({fileCount:1});`,
-      `const r=await tools.search({query:${JSON.stringify(`process:${process.pid}`)}}).then(value => value.result); if(typeof r!=="string" || !r.includes(String(${process.pid}))) throw Error(r); text({readonlyProcess:true});`,
     ];
     const run = await new PiIntegrationTest({
       testName: "search-list-style",
@@ -44,7 +43,7 @@ test("uses Search frames for file lists and readonly process records without cha
         ),
         assistantMessage([text("Search presentation finished.")]),
       ],
-    }).run("Inspect file and process results through native Search");
+    }).run("Inspect file results through native Search");
     for (let index = 0; index < scripts.length; index++)
       expect(
         getToolExecution(run, `style-${index}`).isError,
@@ -53,7 +52,5 @@ test("uses Search frames for file lists and readonly process records without cha
     expect(run.tuiRenderedOutput).toContain("╭─ 1 file");
     expect(run.tuiRenderedOutput).toContain("TS");
     expect(run.tuiRenderedOutput).toContain("a.ts");
-    expect(run.tuiRenderedOutput).toContain("╭─ 1 processes shown");
-    expect(run.tuiRenderedOutput).toContain(String(process.pid));
   });
 });

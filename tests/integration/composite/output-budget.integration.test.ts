@@ -763,7 +763,7 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
     await rm(cwd, { recursive: true, force: true });
   }
 }, 150000);
-test("stresses limits on HTTP text, process lists and terminal search", async () => {
+test("stresses limits on HTTP text and terminal search", async () => {
   const cwd = await workspace();
   const body = Array.from(
     { length: 4000 },
@@ -787,7 +787,6 @@ test("stresses limits on HTTP text, process lists and terminal search", async ()
           arguments: { query, path: url, limit, wholeWord, caseSensitive: true },
         })),
       ),
-      { name: "search", arguments: { query: "process:node", limit } },
     ]);
     const resultFor = await runBatches(
       {
@@ -811,9 +810,7 @@ test("stresses limits on HTTP text, process lists and terminal search", async ()
       expect(getToolResultMessage(result, `resource-${index}`).isError, output).toBe(false);
       expectBounded(output);
       if (entry.name === "search") {
-        const count = entry.arguments.query?.startsWith("process:")
-          ? (output.match(/^PID: /gmu) ?? []).length
-          : Number(/^(\d+)\+? matches/mu.exec(usefulText(output))?.[1]);
+        const count = Number(/^(\d+)\+? matches/mu.exec(usefulText(output))?.[1]);
         expect(count, output).toBeGreaterThan(0);
         expect(count, output).toBeLessThanOrEqual(entry.arguments.limit);
       }
@@ -924,6 +921,9 @@ for (const nested of [false, true]) {
     const cases: Record<string, Record<string, unknown>> = {
       read: { path: hugePath },
       search: { query: "needle", path: hugePath },
+      file_search: { pattern: "needle", path: hugePath },
+      ast_search: { pattern: "needle($A)", path: hugePath },
+      lsp_search: { declaration: `${hugePath}#needle` },
       write: { path: hugePath, content: "new" },
       replace: { path: hugePath, start: "needle", text: "new" },
       insert: { path: hugePath, anchor: "needle", text: "new" },

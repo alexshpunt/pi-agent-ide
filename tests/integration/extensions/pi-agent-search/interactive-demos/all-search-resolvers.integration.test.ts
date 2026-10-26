@@ -10,7 +10,6 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
@@ -242,7 +241,8 @@ test("wraps a long structured search line in the real native renderer", async ()
       ],
     }).run("Search the long source line");
 
-    const rendered = stripTerminalSequences(result.terminalOutput);
+    // The raw stream moves the cursor between rows; the rendered screen keeps one row per line.
+    const rendered = result.tuiRenderedOutput;
     const panel = rendered.slice(rendered.indexOf("╭─ 1 match"));
     const panelRows = panel.split("\n").filter((row) => row.includes("│"));
 

@@ -39,7 +39,7 @@ Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of develop
 | Work                               | Interfaces                                                    |
 | ---------------------------------- | ------------------------------------------------------------- |
 | Inspect content and state          | `read` with source-specific views                             |
-| Find text and processes            | `search`                                                      |
+| Find text and terminal output      | `search`                                                      |
 | Find files by path                 | `file_search`                                                 |
 | Find code by syntax structure      | `ast_search`                                                  |
 | Find symbols, references and calls | `lsp_search`                                                  |
@@ -81,7 +81,7 @@ Views change how the same resource is presented. The agent can request source st
 
 ### Find anything through `search`
 
-`search` provides one interface for exact text, regular expressions, process discovery, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
+`search` provides one interface for exact text, regular expressions, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
 
 <div align="center">
 
