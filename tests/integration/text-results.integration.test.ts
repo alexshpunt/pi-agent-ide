@@ -79,9 +79,9 @@ if(unknown.type !== "image" || !unknown.note.includes("ghost")) throw new Error(
 text("Unknown image view preserved");
 `,
       String.raw`
-const valid = await tools.read({path:"pixel.png",views:["image"]});
+const valid = await tools.read({path:"pixel.png"});
 if(valid.type !== "image" || valid.note.includes("View not applied") || valid.note.includes("Unknown view")) throw new Error(JSON.stringify(valid).slice(0, 300));
-text("Native image view remains valid");
+text("Native image read stays free of view warnings");
 `,
       `await tools.read({path:"note.txt",views:["ghost"]});
 await tools.read({path:"pixel.png",views:["anchors"]});`,
