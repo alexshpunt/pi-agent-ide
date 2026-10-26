@@ -32,6 +32,9 @@ importers:
       pi-agent-documentation:
         specifier: workspace:^
         version: link:packages/pi-agent-documentation
+      pi-agent-filesystem-jq:
+        specifier: workspace:^
+        version: link:src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-jq
       pi-agent-image:
         specifier: workspace:^
         version: link:packages/pi-agent-image
