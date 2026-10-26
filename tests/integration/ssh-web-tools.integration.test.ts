@@ -205,8 +205,13 @@ test("ordinary explicit target web reads and searches retain their owner while b
     expect(getToolExecution(run, "unknown-target").isError).toBe(true);
     expect(getToolResultText(run, "unknown-target")).toContain("UNKNOWN_TARGET");
     expect(getToolResultText(run, "structured")).toContain("Owned café HTTP");
+    expect(getToolExecution(run, "target-image").isError).toBe(true);
+    // Codemode receives the completed Read failure as its public error value instead of a throw.
+    expect(getToolExecution(run, "structured-images").isError).toBe(false);
+    expect(getToolResultText(run, "structured-images")).toContain(
+      '{"status":"error","errors":[{"code":"UNSUPPORTED_CAPABILITY"',
+    );
     for (const id of ["target-image", "structured-images"]) {
-      expect(getToolExecution(run, id).isError).toBe(true);
       expect(getToolResultMessage(run, id).content.some((block) => block.type === "image")).toBe(
         false,
       );
