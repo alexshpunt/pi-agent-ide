@@ -1,7 +1,6 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectResultTargets } from "pi-agent-resource";
 import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.js";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   ToolCallInterceptionRenderStore,
   withToolCallInterceptionRendering,
@@ -29,13 +28,6 @@ export default async function registerReadCore(
   pi: ExtensionAPI,
   context?: { readonly preferences: Readonly<Record<string, string>> },
 ): Promise<void> {
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "read-resources",
-      description: "Read results, selection boundaries, and composition",
-      triggers: [{ tool: "read" }],
-    }),
-  ]);
   const core = createReadCore(parsePresentation(context?.preferences["ui.read"]));
   const targets = connectResultTargets(pi);
   await core.registerPlugin({

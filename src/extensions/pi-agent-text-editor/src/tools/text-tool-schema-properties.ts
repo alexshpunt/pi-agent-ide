@@ -18,14 +18,14 @@ export function sourceRangeProperties(descriptions: Partial<Record<"start" | "en
       Type.String({
         description:
           descriptions.start ??
-          "Anchor or unique exact text. Alone, selects that fragment; a line anchor selects its line. With end, starts at this selector's beginning: exact text and SEARCH :match keep character boundaries; line anchors and SEARCH :line keep whole lines. Omit when path already selects text through a supported resource reference.",
+          "Anchor or unique exact text where the selection begins. Without end, selects only this text, or only this one line for a line anchor; add end to select several lines. Omit when path is a result that already selects text.",
       }),
     ),
     end: Type.Optional(
       Type.String({
         description:
           descriptions.end ??
-          "Optional anchor or unique exact text. Ends after this selector: exact text and SEARCH :match include the ending match without widening to lines; line anchors and SEARCH :line include their whole line. Mixed endpoint types keep their own extents. Boundaries must be unique, in one file, and forward-ordered. Omit when start already selects the intended content; do not repeat start.",
+          "Anchor or unique exact text where the selection ends, inclusive. Omit when start selects everything.",
       }),
     ),
   };
@@ -35,18 +35,18 @@ export function sourceRangeProperties(descriptions: Partial<Record<"start" | "en
 export function targetProperties(directorySemantics: string) {
   return {
     target: resultSourceProperty(
-      `Destination path, unchanged source result or its UUID. A result replaces its exact ranges (zero-width ranges insert); omit targetStart/targetEnd. Source and destination selections pair in declared order with equal counts. A path with text selectors keeps its existing anchor semantics. Whole-object transfers create missing parents and replace regular destination files. ${directorySemantics} Reject symlink destinations, type conflicts, and overlapping directory trees.`,
+      `Destination: a path, or an unchanged result whose ranges are replaced. A whole-file transfer creates missing folders and replaces an existing file. ${directorySemantics}`,
     ),
     targetStart: Type.Optional(
       Type.String({
         description:
-          "Registered anchor or unique exact text in the destination. Required for text transfers to a file path; omit for whole-file transfers or a result destination. Without targetEnd, inserts after the last containing line, keeping the selected text. With targetEnd, starts replacement at this selector's beginning: exact text and SEARCH :match keep character boundaries; line anchors and SEARCH :line keep whole lines.",
+          "Anchor or unique exact text in the destination file; the text goes after its line. Required when the text goes into a file path.",
       }),
     ),
     targetEnd: Type.Optional(
       Type.String({
         description:
-          "Optional destination end. Ends replacement after the exact text or SEARCH :match, or after the whole line for line anchors and SEARCH :line. Mixed endpoint types keep their own extents. Both boundaries must resolve uniquely in the target file and in forward order. Omit to insert after targetStart instead.",
+          "Replace from targetStart through targetEnd instead of inserting after targetStart.",
       }),
     ),
   };

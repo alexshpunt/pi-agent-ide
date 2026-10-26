@@ -79,7 +79,7 @@ export default async function registerProgressiveDocumentation(
         path: () =>
           registry.list().length === 0
             ? undefined
-            : "docs: lists packaged agent guidance; docs:<id> reads a listed guide.",
+            : "docs: — list of guides; docs:<id> — one guide.",
       });
       api.addPromptGuideline(() => renderPromptGuideline(registry.list()));
     },
@@ -190,8 +190,7 @@ function renderListing(documents: readonly AgentDocumentation[]): string {
 function renderPromptGuideline(documents: readonly AgentDocumentation[]): string | undefined {
   if (documents.length === 0) return undefined;
   return [
-    "Read the matching docs:<id> before using any tool or feature with packaged guidance, including tools discovered later or called through Codemode. Read each guide once per branch. Tool descriptions and docs: listings do not replace the full guide.",
-    "If a result includes a Guide, read it before your next use. The call has already run: do not repeat it just to obtain documentation. Nested calls keep their guides on the parent result, even when the script does not print the child output.",
+    "Before using a tool or feature that has a guide below, read its docs:<id> once.",
     "Available documents:",
     ...documents.map((document) => `  - ${document.id} — ${document.description}`),
   ].join("\n");

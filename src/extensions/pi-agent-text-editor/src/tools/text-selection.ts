@@ -113,7 +113,18 @@ export function transferText(
   return context.documentFor(span.source).text(span);
 }
 
-/** Join ordered endpoint extents without widening exact matches to containing lines. */
+/** Whether an endpoint selects complete lines: a line anchor or text matching a whole line. */
+function selectsWholeLines(anchors: ReadonlyMap<string, TextAnchor>): boolean {
+  const anchor = anchors.values().next().value;
+  if (anchor === undefined) return false;
+  if (!TextSelectionAnchor.is(anchor)) return true;
+  return anchor.ranges.length === 1 && anchor.ranges[0]?.linewise === true;
+}
+
+/**
+ * Join ordered endpoints. Two whole-line endpoints, such as BEGIN/END marker lines, select their
+ * complete lines; otherwise exact text and :match keep character boundaries.
+ */
 export function anchorSpanRange(
   context: TextMutationContext,
   starts: ReadonlyMap<string, TextAnchor>,
@@ -122,8 +133,9 @@ export function anchorSpanRange(
   endField: string,
 ): TextAnchorSpan {
   if (ends === undefined) return singleAnchorSpan(context, starts, startField);
-  const start = singleAnchorSpan(context, starts, startField, false, true);
-  const end = singleAnchorSpan(context, ends, endField, false, true);
+  const exactEndpoints = !(selectsWholeLines(starts) && selectsWholeLines(ends));
+  const start = singleAnchorSpan(context, starts, startField, false, exactEndpoints);
+  const end = singleAnchorSpan(context, ends, endField, false, exactEndpoints);
   if (start.source !== end.source) {
     throw new Error(`Anchors ${startField} and ${endField} must resolve in one resource.`);
   }

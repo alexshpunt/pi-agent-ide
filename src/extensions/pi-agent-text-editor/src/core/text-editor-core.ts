@@ -215,6 +215,8 @@ interface PromptContribution {
   readonly description: string;
   readonly pluginId: string;
   readonly tool: TextEditorToolId;
+  /** Schema field this text describes; absent for the tool description. */
+  readonly field?: string;
 }
 
 interface WritablePromptContribution {
@@ -454,6 +456,8 @@ export interface TextEditorCore {
   /** Returns the configured number of lines around recovery candidates. */
   recoveryContextLines(): number;
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
+  /** Plugin text for one schema field of a tool, from active plugins only. */
+  renderToolFieldDescription(tool: TextEditorToolId, field: string): string | undefined;
 }
 
 /** Share issued-result authority with streamed anchor inspection, before tool-call normalization. */
@@ -1130,7 +1134,9 @@ export function createTextEditorCore(
 
         const contribution = promptContributions.find(
           (candidate) =>
-            candidate.pluginId === registeredPlugin.plugin.id && candidate.tool === tool,
+            candidate.pluginId === registeredPlugin.plugin.id &&
+            candidate.tool === tool &&
+            candidate.field === undefined,
         );
 
         if (contribution !== undefined) {
@@ -1139,6 +1145,28 @@ export function createTextEditorCore(
       }
 
       return entries.length === 0 ? undefined : entries.join("\n");
+    },
+    renderToolFieldDescription(tool, field): string | undefined {
+      const entries: string[] = [];
+
+      for (const registeredPlugin of plugins.values()) {
+        if (registeredPlugin.lifecycle.status !== "active") {
+          continue;
+        }
+
+        const contribution = promptContributions.find(
+          (candidate) =>
+            candidate.pluginId === registeredPlugin.plugin.id &&
+            candidate.tool === tool &&
+            candidate.field === field,
+        );
+
+        if (contribution !== undefined) {
+          entries.push(contribution.description);
+        }
+      }
+
+      return entries.length === 0 ? undefined : entries.join(" ");
     },
     async waitForPendingPlugins(): Promise<void> {
       await Promise.all(pendingPlugins);
@@ -2392,6 +2420,22 @@ function createPluginContributionController(
       throw new Error(`Plugin ${pluginId} API is closed`);
     }
   };
+  const addPromptContribution = (contribution: PromptContribution): void => {
+    if (state === "setup") {
+      assertNoDraftDescription(setupDraft.promptContributions, contribution);
+      setupDraft.promptContributions.push(contribution);
+      return;
+    }
+
+    registerContributions({
+      resolvers: [],
+      anchorResolvers: [],
+      handlers: [],
+      promptContributions: [contribution],
+      writablePromptContributions: [],
+      tools: [],
+    });
+  };
   const createToolApi = (tool: TextEditorToolId): TextEditorToolPluginApi => ({
     addSemanticHandler(handler): void {
       assertAvailable();
@@ -2443,25 +2487,22 @@ function createPluginContributionController(
     },
     describe(description): void {
       assertAvailable();
-      const contribution: PromptContribution = {
+      addPromptContribution({
         description: normalizeDescription(`Plugin prompt description for ${tool}`, description),
         pluginId,
         tool,
-      };
-
-      if (state === "setup") {
-        assertNoDraftDescription(setupDraft.promptContributions, contribution);
-        setupDraft.promptContributions.push(contribution);
-        return;
-      }
-
-      registerContributions({
-        resolvers: [],
-        anchorResolvers: [],
-        handlers: [],
-        promptContributions: [contribution],
-        writablePromptContributions: [],
-        tools: [],
+      });
+    },
+    describeField(field, description): void {
+      assertAvailable();
+      addPromptContribution({
+        description: normalizeDescription(
+          `Plugin prompt description for ${tool}.${field}`,
+          description,
+        ),
+        pluginId,
+        tool,
+        field,
       });
     },
   });
@@ -2887,7 +2928,7 @@ function handlerKey(handler: RegisteredHandler): string {
 }
 
 function descriptionKey(contribution: PromptContribution): string {
-  return `${contribution.pluginId}\0${contribution.tool}`;
+  return `${contribution.pluginId}\0${contribution.tool}\0${contribution.field ?? ""}`;
 }
 
 function normalizeDescriptionSource(value: unknown): PromptDescriptionSource {

@@ -1,6 +1,6 @@
 # Syntax search with ast_search
 
-`ast_search` runs ast-grep in files or inside a Read, Search or edit result. It works for every language ast-grep supports. Use it when a match depends on code structure; use `search` for plain text and regex.
+`ast_search` runs ast-grep in files or inside a Read, Search or edit result. It works for every language ast-grep supports.
 
 ## Patterns
 
@@ -56,7 +56,3 @@ const fn = await tools.ast_search({
 ```
 
 Without `relation`, a result scope keeps only matches wholly inside its ranges; matches are never clipped.
-
-## Limits
-
-Missing ast-grep, unsupported languages, syntax errors and invalid rules are errors, not evidence of absence. An incomplete result proves nothing about absence and gives no `:all` selection. Edits through a match change only its text; they do not update imports or references.

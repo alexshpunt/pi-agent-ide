@@ -52,16 +52,6 @@ export async function registerSshResources(
       markdown: `${guide.markdown}\n## Configured workspaces\n\n${targets.length === 0 ? "No SSH targets are configured. Follow the setup steps above." : targets.map((target) => `- \`${remoteLocation(target.id, target.workspace).source}\``).join("\n")}\n`,
     },
   ]);
-  await connectReadPlugin(pi, {
-    protocol: READ_PROTOCOL,
-    apiVersion: READ_API_VERSION,
-    id: "ssh-guidance",
-    setup(api) {
-      api.addPromptGuideline(
-        "When the user asks to connect to or work on a remote device or environment over SSH, read docs:ssh first and follow its setup and usage steps.",
-      );
-    },
-  });
   if (targets.length === 0) return;
   const registry = new SshBackendRegistry(targets);
   // Reuse installed byte converters; readable images/PDFs never become writable text.

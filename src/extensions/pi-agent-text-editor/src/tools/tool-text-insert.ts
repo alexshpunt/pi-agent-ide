@@ -15,30 +15,28 @@ export const insertSchema = Type.Object(
     path: Type.Optional(
       Type.String({
         description:
-          "Pass a file path, source resource reference, unchanged Read/Search/edit result, or its UUID. Result inputs select only their registered ranges.",
+          "File path, resource reference, unchanged Read/Search/edit result or its UUID; a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
       }),
     ),
     anchor: Type.Optional(
       Type.String({
         description:
-          "For text edits, use a registered anchor or unique exact text to locate the insertion. Omit anchor when path already supplies the intended selection; otherwise it is required. For live resources, follow the action rules above.",
+          "Line anchor or unique exact text; insertion is always whole-line. Omit when path already selects the lines.",
       }),
     ),
     text: Type.String({
       minLength: 1,
-      description:
-        "For text edits, supply non-empty new text. The tool adds missing line breaks between the insertion and existing text. Add a leading newline only for an intentional blank line, not to start a new line. Payload newlines are kept, with line endings converted to the file's LF/CRLF style. No trailing newline is added at EOF.",
+      description: "Non-empty text to insert; line breaks around it are added for you.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
-        description:
-          "For text edits, defaults to line: separate inserted text from existing lines without adding extra blank lines. Use blank-line to add only missing blank lines between the insertion and existing text.",
+        description: "line (default) or blank-line: add blank lines around the insertion.",
       }),
     ),
     before: Type.Optional(
       Type.Boolean({
         description:
-          "For text edits, defaults to false: insert after the last containing line of each selection. With true, insert before its first containing line. Selected text is kept. Multiple selections on the same insertion line produce one insertion.",
+          "true inserts before the first selected line; default false inserts after the last.",
       }),
     ),
   },
@@ -56,7 +54,7 @@ interface InsertParameters {
 export const insertMutationTool: TextMutationToolRegistration<typeof insertSchema> = {
   name: "insert",
   description:
-    "Use insert to edit text or act on a live resource. For text edits, add new text before or after selected lines while keeping existing text. Insertion is line-based, including for exact-text and SEARCH :match anchors. An empty result selection makes no changes and is not an error.",
+    "Use insert to add text before or after lines without changing them, to send keys to a terminal session, or to control a debugger.",
 
   promptSnippet: "Insert file text, send terminal keys, or perform debugger actions",
   parameters: insertSchema,

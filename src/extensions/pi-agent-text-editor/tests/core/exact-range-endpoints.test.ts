@@ -69,15 +69,19 @@ test.each(["\n", "\r\n"])("leading newlines do not select the previous paragraph
   );
 });
 
-test.each(["\n", "\r\n"])(
-  "paired exact whole-line text keeps its trailing separator outside (%j)",
-  (eol) => {
-    const { replace } = fixture(`before${eol}START${eol}END${eol}after${eol}`);
-    expect(replace("START", "END", "NEW")).toBe(`before${eol}NEW${eol}after${eol}`);
-    expect(replace("START", "END", "")).toBe(`before${eol}${eol}after${eol}`);
-    expect(replace("START", undefined, "NEW")).toBe(`before${eol}NEW${eol}END${eol}after${eol}`);
-  },
-);
+test.each(["\n", "\r\n"])("paired whole-line markers select their complete lines (%j)", (eol) => {
+  const { replace } = fixture(`before${eol}START${eol}body${eol}END${eol}after${eol}`);
+  expect(replace("START", "END", "NEW")).toBe(`before${eol}NEW${eol}after${eol}`);
+  expect(replace("START", "END", "")).toBe(`before${eol}after${eol}`);
+  expect(replace("START", undefined, "NEW")).toBe(
+    `before${eol}NEW${eol}body${eol}END${eol}after${eol}`,
+  );
+});
+
+test("a whole-line marker paired with a partial endpoint keeps exact characters", () => {
+  const { replace } = fixture("before\nSTART\nkeep the END here\n");
+  expect(replace("START", "END", "")).toBe("before\n here\n");
+});
 
 test("paired endpoints replace only the selected part of a sentence", () => {
   const { replace } = fixture("Keep the START old words END and this suffix.");

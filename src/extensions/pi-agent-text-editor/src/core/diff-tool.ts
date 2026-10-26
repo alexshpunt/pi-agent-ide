@@ -33,26 +33,17 @@ export const diffDataSchema = Type.Object(
 );
 export const diffOutputSchema = structuredResultSchema(diffDataSchema);
 
+// The before field points to read's fields, so the nested copies carry no descriptions.
 const comparisonReadParameters = {
   ...readParameters,
-  properties: {
-    ...readParameters.properties,
-    path: {
-      ...readParameters.properties.path,
-      description:
-        "Text-readable source accepted by Read, such as a file path, URL, temp: reference, SEARCH# or RESULT# reference, or registered resource. Supply a path.",
-    },
-    offset: {
-      ...readParameters.properties.offset,
-      description:
-        "First text line to compare, numbered from 1. Omit or use 0 to start at line 1; negative offsets count from the end. For path#anchor, SEARCH# or RESULT# selections, count from the containing line: omitted, 0 or 1 starts there, 2 starts one line later, -1 one line earlier.",
-    },
-    limit: {
-      ...readParameters.properties.limit,
-      description:
-        "Maximum text lines to compare from the selected starting position. Omit to compare all resolved text in the selected range. Read's display limits do not shorten the comparison inputs.",
-    },
-  },
+  properties: Object.fromEntries(
+    Object.entries(readParameters.properties).map(([name, property]) => {
+      const { description: _description, ...undescribed } = property as typeof property & {
+        description?: string;
+      };
+      return [name, undescribed];
+    }),
+  ) as typeof readParameters.properties,
 };
 const source = Type.Union([Type.String({ minLength: 1 }), comparisonReadParameters]);
 /** Each side accepts a source string or the same request object as read. */
@@ -61,12 +52,11 @@ export const diffParameters = Type.Object(
     before: {
       ...source,
       description:
-        "Source for the removed (-) side. Supply a non-empty source reference string or a Read request object. Strings identify sources, not literal text.",
+        "Removed (−) side: a source string as for read, or {path, offset, limit, views} with the same meaning as read's fields. A string names a source, not literal text.",
     },
     after: {
       ...source,
-      description:
-        "Source for the added (+) side. Supply a non-empty source reference string or a Read request object. Strings identify sources, not literal text.",
+      description: "Added (+) side, in the same form as before.",
     },
   },
   { additionalProperties: false },
