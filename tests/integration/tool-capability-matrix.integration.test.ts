@@ -14,6 +14,69 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 import { parseEvents, validateRoute, type RunEvent } from "#capabilities/validation.ts";
 import { capabilityCases } from "#capabilities/cases.ts";
 
+test.each(["direct", "codemode"] as const)(
+  "the capability validator preserves declared provider failures (%s)",
+  async (mode) => {
+    await withTempWorkspace(async (cwd) => {
+      const task = capabilityCases.find((candidate) => candidate.id === `read-error-${mode}`);
+      if (!task?.expected) throw Error("Missing provider failure case");
+      await writeFile(path.join(cwd, "task.txt"), "keep\nOLD\nlast\n");
+      const requests = ["absent.txt", "fixture:read-provider#metadata", "task.txt"];
+      const conversation =
+        mode === "direct"
+          ? requests.map((source, index) =>
+              assistantMessage(
+                [toolCall({ id: `read-${index}`, name: "read", arguments: { path: source } })],
+                { stopReason: "toolUse" },
+              ),
+            )
+          : [
+              assistantMessage(
+                [
+                  toolCall({
+                    id: "read-errors",
+                    name: "codemode",
+                    arguments: {
+                      code: `for (const path of ${JSON.stringify(requests)}) {
+  const result = await tools.read({ path });
+  text(result);
+}`,
+                    },
+                  }),
+                ],
+                { stopReason: "toolUse" },
+              ),
+            ];
+      const run = await new PiIntegrationTest({
+        testName: `capability-provider-failure-${mode}`,
+        transport: "rpc",
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        rawMode: false,
+        cwd,
+        extensions: [
+          path.resolve("src/pi-agent-ide.ts"),
+          "builtin:codemode",
+          path.resolve("benchmarks/tool-capabilities/semantic-write-fixture.ts"),
+        ],
+        tools: ["read", "codemode"],
+        conversation: [...conversation, assistantMessage([text("keep")])],
+      }).run(task.prompt ?? "Check provider error ownership");
+      for (const [file, expected] of Object.entries(task.expected))
+        expect(await readFile(path.join(cwd, file), "utf8")).toBe(expected);
+      const events = run.traceEvents.flatMap((entry) =>
+        "event" in entry && entry.event && typeof entry.event === "object"
+          ? [entry.event as RunEvent]
+          : [],
+      );
+      expect(validateRoute(task, events, mode)).toEqual({ passed: true, reasons: [] });
+      if (mode === "codemode")
+        expect(
+          getToolExecution(run, "read-errors").isError,
+          getToolResultText(run, "read-errors"),
+        ).toBe(false);
+    });
+  },
+);
 test("the capability validator checks Search facts and unchanged result provenance", async () => {
   await withTempWorkspace(async (cwd) => {
     const task = capabilityCases.find((candidate) => candidate.id === "search-script-facts");
