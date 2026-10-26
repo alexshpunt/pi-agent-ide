@@ -33,6 +33,7 @@ export const resultInputSchema = Type.Union([Type.String(), Type.Array(Type.Stri
 
 const prefix = "RESULT#";
 const event = "pi-agent-resource:result-targets";
+const liveResource = /^(?:shell|debug):/u;
 
 type ResultEntry = { readonly cwd: string } & (
   | (ResolvedResultTargets & { readonly state: "ready" })
@@ -259,7 +260,7 @@ export class ResultTargetStore {
     const resource = result.resources.length === 1 ? result.resources[0] : undefined;
     if (
       resource &&
-      (allowResource === true || (allowResource === "live" && /^(?:shell|debug):/u.test(resource)))
+      (allowResource === true || (allowResource === "live" && liveResource.test(resource)))
     )
       return resource;
     throw new Error("This result has no reusable text selection.");
@@ -291,7 +292,8 @@ export class ResultTargetStore {
    */
   public refresh(source: string, cwd: string, changed = false): void {
     const identity = sourcePath(source, cwd);
-    if (changed) this.invalidate(identity);
+    // Live session results stay current by design, so input sent to them never retires the result.
+    if (changed && !liveResource.test(source)) this.invalidate(identity);
     const key = JSON.stringify([path.resolve(cwd), identity]);
     const stamp = fileStamp(source, cwd);
     const previous = this.#snapshots.get(key);

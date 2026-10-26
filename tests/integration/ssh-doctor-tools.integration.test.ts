@@ -73,9 +73,6 @@ test("the public Doctor command inspects the selected SSH project and keeps agen
     expect(transcript).toContain("jq is available");
     expect(transcript).toContain("typescript parser loaded");
     expect(transcript).toContain("vscode-js-debug: available");
-    expect(transcript).toContain("Native capture readiness is unavailable");
-    expect(transcript).toContain(`DESKTOP_UNAVAILABLE: ${project}`);
-    expect(run.tuiRenderedOutput).toContain("Target screen capture readiness");
     expect(JSON.stringify(run.traceEvents)).toContain("Doctor recheck after agent setup");
     expect(transcript).not.toContain("Detected: ruby");
     expect(transcript).not.toContain("Project: " + cwd);

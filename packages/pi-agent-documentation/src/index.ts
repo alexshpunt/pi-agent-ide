@@ -25,18 +25,34 @@ export interface AgentDocumentation {
   readonly triggers: readonly AgentDocumentationTrigger[];
 }
 
-/** Loads one Markdown guide shipped with the documentation protocol package. */
-export async function loadPackagedAgentGuide(
-  definition: Omit<AgentDocumentation, "markdown">,
-): Promise<AgentDocumentation> {
-  return {
-    ...definition,
-    markdown: await readFile(
-      path.join(await findHostPackageRoot(), "docs", "agent-guides", `${definition.id}.md`),
-      "utf8",
-    ),
+/**
+ * Create a guide loader that reads each guide once.
+ *
+ * Pi reuses a loaded extension factory when it replaces the session (resume, fork, switch). The
+ * reused code must get the guides it was written with: re-reading them from disk can fail when the
+ * package files changed meanwhile, as in a live checkout, and that failure drops every IDE tool.
+ * A reload imports a new module instance, which reads the guides again.
+ */
+export function createPackagedAgentGuideLoader(
+  readGuide: (id: string) => Promise<string>,
+): (definition: Omit<AgentDocumentation, "markdown">) => Promise<AgentDocumentation> {
+  const loaded = new Map<string, Promise<string>>();
+  return async (definition) => {
+    let markdown = loaded.get(definition.id);
+    if (markdown === undefined) {
+      markdown = readGuide(definition.id);
+      loaded.set(definition.id, markdown);
+      // A failed read is not kept, so the next registration tries again.
+      markdown.catch(() => loaded.delete(definition.id));
+    }
+    return { ...definition, markdown: await markdown };
   };
 }
+
+/** Loads one Markdown guide shipped with the documentation protocol package. */
+export const loadPackagedAgentGuide = createPackagedAgentGuideLoader(async (id) =>
+  readFile(path.join(await findHostPackageRoot(), "docs", "agent-guides", `${id}.md`), "utf8"),
+);
 
 async function findHostPackageRoot(): Promise<string> {
   let current = import.meta.dirname;

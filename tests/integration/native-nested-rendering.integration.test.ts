@@ -492,7 +492,7 @@ test("nested terminal and debugger calls retain their custom panels and a child 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'const background = await tools.bash({command:"sleep 0.2; printf nested-background",background:true}); await tools.bash({command:"sleep 0.3; printf nested-terminal"}); await tools.read({path:background}); await tools.debug({adapter:"debugpy",program:"example.py"}); try { await tools.read({path:"missing.txt"}); throw Error("Missing Read succeeded"); } catch (error) { if (!String(error).includes("Source not found.") || !String(error).includes("missing.txt")) throw error; }',
+                code: 'const background = await tools.bash({command:"sleep 0.2; printf nested-background",background:true}); await tools.bash({command:"sleep 0.3; printf nested-terminal"}); await tools.read({path:background}); await tools.debug({adapter:"debugpy",program:"example.py"}); const missing = await tools.read({path:"missing.txt"}); if (missing?.status !== "error" || !missing.errors.some((error) => error.source.endsWith("missing.txt"))) throw Error("Missing Read succeeded: " + JSON.stringify(missing));',
               },
             }),
           ],

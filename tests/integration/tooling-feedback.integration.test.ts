@@ -466,7 +466,7 @@ test("direct Search evaluates Boolean colon terms inside issued windows", async 
     const result = await run(cwd, "direct-issued-literal-colon", [
       call("window", "read", { path: "note.txt", offset: 2, limit: 1 }),
       call("inside", "search", { path: "$issued-uuid:window", query: feature }),
-      call("unsupported", "search", { path: "$issued-uuid:window", query: "process:anything" }),
+      call("former-protocol", "search", { path: "$issued-uuid:window", query: "process:anything" }),
     ]);
     expect(getToolExecution(result, "inside").isError, getToolResultText(result, "inside")).toBe(
       false,
@@ -474,7 +474,9 @@ test("direct Search evaluates Boolean colon terms inside issued windows", async 
     expect(getToolResultText(result, "inside")).toContain("1 match in 1 file");
     expect(getToolResultText(result, "inside")).toContain("legacy​Checkout");
     expect(getToolResultText(result, "inside")).not.toContain("note.txt:4:");
-    expect(getToolExecution(result, "unsupported").isError).toBe(true);
+    // Search no longer owns a process: protocol, so the term is ordinary text inside the window.
+    expect(getToolExecution(result, "former-protocol").isError).toBe(false);
+    expect(getToolResultText(result, "former-protocol")).toContain("No matches found");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(original);
   });
 });

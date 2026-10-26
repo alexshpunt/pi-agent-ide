@@ -117,6 +117,20 @@ describe("source result targets", () => {
     expect(store.resolve(sibling, "/workspace").targets[0]?.source).toBe("memory://other/note");
   });
 
+  test("input sent to a live session keeps its results resolvable", () => {
+    const store = new ResultTargetStore();
+    const shell = store.publish({ status: "success" }, "Shell output", "/workspace", [
+      "shell:abc123",
+    ]);
+    const debug = store.publish({ status: "success" }, "Debugger state", "/workspace", [
+      "debug:node-1",
+    ]);
+    store.refresh("shell:abc123", "/workspace", true);
+    store.refresh("debug:node-1", "/workspace", true);
+    expect(store.source(shell, "/workspace", "live")).toBe("shell:abc123");
+    expect(store.source(debug, "/workspace", "live")).toBe("debug:node-1");
+  });
+
   test("a known edit preserves pending output handles and their resulting spans", async () => {
     const store = new ResultTargetStore();
     const owned = {
