@@ -24,6 +24,10 @@ const model: Model<"openai-completions"> = {
   maxTokens: 128,
 };
 
+function staleContext(): never {
+  throw new Error("This extension ctx is stale after session replacement or reload.");
+}
+
 function fixture() {
   const handlers = new Map<string, ((event: never, context: ExtensionContext) => unknown)[]>();
   const original: Provider = {
@@ -94,7 +98,12 @@ function fixture() {
     Object.create(null) as ExtensionContext["modelRegistry"],
     registryMethods,
   );
-  const context = Object.assign(Object.create(null) as ExtensionContext, { model, modelRegistry });
+  let stale = false;
+  // Like Pi, every context field throws once the session that issued the context is disposed.
+  const context = Object.create(null, {
+    model: { get: () => (stale ? staleContext() : model) },
+    modelRegistry: { get: () => (stale ? staleContext() : modelRegistry) },
+  }) as ExtensionContext;
   const install = () =>
     registerStreamingInterceptorProvider(
       api,
@@ -105,7 +114,17 @@ function fixture() {
   const emit = (event: string) => {
     for (const handler of handlers.get(event) ?? []) handler({ model } as never, context);
   };
-  return { original, install, emit, current: () => current, registerProvider, unregisterProvider };
+  return {
+    original,
+    install,
+    emit,
+    current: () => current,
+    registerProvider,
+    unregisterProvider,
+    dispose: () => {
+      stale = true;
+    },
+  };
 }
 
 test("a native stream guard retains OAuth, model discovery and non-enumerable provider properties", () => {
@@ -170,4 +189,15 @@ test("shutdown does not replace a later native transport that is not our wrapper
   run.emit("session_shutdown");
   expect(run.current()).toBe(replacement);
   expect(run.unregisterProvider).not.toHaveBeenCalled();
+});
+
+test("a provider request that arrives after its session shut down leaves the transport alone", () => {
+  // Pi can still run an in-flight request's payload hook after it disposed the session.
+  const run = fixture();
+  run.install();
+  run.emit("session_start");
+  run.emit("session_shutdown");
+  run.dispose();
+  expect(() => run.emit("before_provider_request")).not.toThrow();
+  expect(run.current()?.streamSimple).toBe(run.original.streamSimple);
 });

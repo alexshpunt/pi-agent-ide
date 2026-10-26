@@ -113,31 +113,26 @@ export function registerStreamingInterceptorProvider(
     installed.set(model.provider, state);
   };
 
-  pi.on("before_provider_request", (_event, context) => {
+  // Pi can still run an in-flight request's hooks after it disposed the session that issued them.
+  // Their context is stale then, and the shut-down session must not join the shared stream again.
+  let shutDown = false;
+  const attach = (context: ExtensionContext, model?: Model<Api>): void => {
+    if (shutDown) return;
     subscriber.context = context;
-    install(context.model, context);
-  });
+    install(model ?? context.model, context);
+  };
 
-  pi.on("turn_start", (_event, context) => {
-    subscriber.context = context;
-    install(context.model, context);
-  });
-
-  pi.on("agent_start", (_event, context) => {
-    subscriber.context = context;
-    install(context.model, context);
-  });
+  pi.on("before_provider_request", (_event, context) => attach(context));
+  pi.on("turn_start", (_event, context) => attach(context));
+  pi.on("agent_start", (_event, context) => attach(context));
   pi.on("session_start", (_event, context) => {
-    subscriber.context = context;
-    install(context.model, context);
+    shutDown = false;
+    attach(context);
   });
-
-  pi.on("model_select", (event, context) => {
-    subscriber.context = context;
-    install(event.model, context);
-  });
+  pi.on("model_select", (event, context) => attach(context, event.model));
 
   pi.on("session_shutdown", () => {
+    shutDown = true;
     for (const [provider, state] of installed) {
       state.subscribers.delete(subscriber);
 
