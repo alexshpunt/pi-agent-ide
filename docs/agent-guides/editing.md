@@ -4,7 +4,7 @@
 
 - `LINE#HASH` from `read` with `views: ["anchors"]` selects a line. `scope-begin-HASH` / `scope-end-HASH` from the `ast` view select a syntax block. `SEARCH#…:line` selects a search match's line, `SEARCH#…:match` the match itself. `begin` and `end` select the first and last line.
 - Without an anchor, use the shortest unique exact text.
-- With `start` and `end`, the selection runs from the start of `start` to the end of `end`. Exact text keeps character boundaries; line anchors take whole lines.
+- With `start` and `end`, the selection runs from the start of `start` to the end of `end`. Exact text keeps character boundaries; line anchors take whole lines. When both `start` and `end` match complete lines, such as BEGIN/END marker lines, the selection takes those lines whole.
 - After an exact-text selector fails, exact text is blocked for that file until an anchor-based edit succeeds. Use one of the anchors the error returns; don't guess another string.
 - Anchors and results go stale when their file changes. Read or search again before reusing them.
 
