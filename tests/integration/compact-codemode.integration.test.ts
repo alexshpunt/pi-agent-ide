@@ -86,9 +86,10 @@ test.each([
 
 test.each([false, true])("hidden IDE panels keep errors with caught=%s", async (caught) => {
   await withTempWorkspace(async (cwd) => {
+    // A completed Read failure resolves to { status: "error", errors }; the uncaught variant fails the script on it.
     const script = caught
-      ? 'try { await tools.read({path:"missing.txt"}); } catch {}'
-      : 'await tools.read({path:"missing.txt"});';
+      ? 'const failure = await tools.read({path:"missing.txt"}); text(failure.status);'
+      : 'const failure = await tools.read({path:"missing.txt"}); if (failure.status === "error") throw Error(failure.errors[0].message);';
     const run = await new PiIntegrationTest({
       testName: `codemode-tool-results-error-${caught}`,
       artifactsDir: testArtifactsDir(import.meta.filename),

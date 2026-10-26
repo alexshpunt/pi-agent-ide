@@ -35,8 +35,9 @@ test("Read errors provide executable recovery without exposing resolvers or gran
               arguments: {
                 code: String.raw`
 async function rejected(request) {
-  try { await tools.read(request); } catch(error) { return error.message; }
-  throw Error("Read unexpectedly succeeded");
+  const failure = await tools.read(request);
+  if(failure?.status !== "error" || failure.errors.length !== 1) throw Error("Read did not return one failure: "+JSON.stringify(failure));
+  return failure.errors[0].message;
 }
 const absent = await rejected({path:"notes.txt#not-in-the-file"});
 const action = absent.match(/("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*views=\["anchors"\])/u);
@@ -75,7 +76,9 @@ try { await tools.replace({path:load("failedRead"),text:"WRONG"}); } catch { rej
 if(!rejected) throw Error("A failed Read granted edit authority");
 const control = await tools.read({path:"notes.txt"});
 if(!control.endsWith("alpha\nbeta\ngamma\n")) throw Error(control);
-try { await tools.read({path:"notes.txt#not-in-the-file"}); } catch(error) { text(error.message); }
+const again = await tools.read({path:"notes.txt#not-in-the-file"});
+if(again?.status !== "error") throw Error("A failed Read stopped returning its failure value");
+text(again.errors[0].message);
 `,
               },
             }),
@@ -118,9 +121,9 @@ test("non-text line-range recovery preserves native image delivery", async () =>
               name: "codemode",
               arguments: {
                 code: String.raw`
-let message;
-try { await tools.read({path:"pixel.png",offset:1,limit:1}); } catch(error) { message=error.message; }
-if(!message || !message.includes("offset") || !message.includes("limit")) throw Error(message ?? "Expected failure");
+const failure = await tools.read({path:"pixel.png",offset:1,limit:1});
+const message = failure?.status === "error" ? failure.errors[0]?.message : undefined;
+if(!message || !message.includes("offset") || !message.includes("limit")) throw Error(message ?? "Expected failure: "+JSON.stringify(failure));
 text(message);
 const image = await tools.read({path:"pixel.png"});
 if(image.type !== "image" || typeof image.note !== "string") throw Error("Read must return an image block");

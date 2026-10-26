@@ -92,7 +92,9 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
               {
                 id: "script",
                 name: "codemode",
-                arguments: { code: `text(await tools.read({path:${JSON.stringify(secret)}}));` },
+                arguments: {
+                  code: `const failure = await tools.read({path:${JSON.stringify(secret)}}); if (failure?.status !== "error") throw Error("Guarded Read returned content"); text(failure.errors.map((error) => error.message).join("\\n"));`,
+                },
               },
               { id: "throw", name: "read", arguments: { path: `${root}/throw.txt` } },
               { id: "local", name: "read", arguments: { path: "secret.json" } },
@@ -155,7 +157,10 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
           expect(getToolResultText(run, id)).toContain("Owned remote content is blocked");
           expect(getToolResultText(run, id)).not.toContain("PRIVATE_OWNED_READ_CONTENT");
         }
-        expect(getToolExecution(run, "script").isError).toBe(true);
+        // A guard denial is a completed Read failure: Codemode receives it as a value.
+        expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(
+          false,
+        );
         expect(getToolResultText(run, "script")).toContain("Owned remote content is blocked");
         expect(getToolResultText(run, "script")).not.toContain("PRIVATE_OWNED_READ_CONTENT");
         expect(getToolExecution(run, "throw").isError).toBe(true);
