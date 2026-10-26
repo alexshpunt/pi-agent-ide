@@ -11,8 +11,7 @@ export function createIdeSettingsDocumentation(
 ): AgentDocumentation {
   return {
     id: "ide-settings",
-    description:
-      "Registered IDE settings, choices, defaults, configuration scopes and inheritance.",
+    description: "IDE settings and their scopes",
     triggers: [{ tool: "read", resourcePrefixes: ["docs:ide-settings"] }],
     get markdown() {
       const catalog = {

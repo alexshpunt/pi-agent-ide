@@ -173,10 +173,7 @@ export function createReadTool(
       promptSnippet: "Read supported sources as text or bytes, with optional views",
       description: "Use read to inspect files and other supported resources.",
       get promptGuidelines(): string[] {
-        return [
-          "Use read to inspect supported sources and search to locate workspace content.",
-          ...(pluginPromptGuidelines?.() ?? []),
-        ];
+        return [...(pluginPromptGuidelines?.() ?? [])];
       },
       get parameters() {
         return describeReadParameters(parameterDescriptions?.() ?? {});
