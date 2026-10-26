@@ -123,6 +123,8 @@ Optional provider error metadata changes the shared result schema, including too
 
 The `read-jq` case includes a transformed output window. `read-jq-bounded-input` requires refusal when a jq query is given an issued selection, followed by a permitted query of the explicit source. These cases cover the shared filesystem calling contract. Provider-registered structured JSON and the public jq handler are covered by focused SDK and consumer tests, not by a paid Linear route. Those direct and Codemode provider routes remain unverified; no inference is required for the free gate.
 
+The `read-error-direct` and `read-error-codemode` cases also check a declared failure for a complete fragmented provider address. They require the safe error value and exactly one full-address acquisition, even though its bare source is readable. The independent missing-file error and successful file read remain controls. These direct and Codemode routes remain unverified until paid execution.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
