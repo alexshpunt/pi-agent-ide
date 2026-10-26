@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.9.0 — 2026-10-26
+
+### Search split into focused tools
+
+- `select` is removed. Narrow a `read`, `search` or edit result by searching inside it: a regex for a span between markers or part of a line, `ast_search` captures for construct parts, and `SEARCH#…:line` references for whole lines.
+- New `ast_search` finds code by syntax with ast-grep, in files or inside a `read`, `search` or edit result, for every language ast-grep supports. Pass a `pattern` with `$NAME` and `$$$ARGS` captures, or an ast-grep `rule` with a `language` for relations such as `inside`, `has`, `not`, `follows` and `precedes`. With a result as `path`, `relation: "enclosing"` returns the function, class or call that contains each range, for example the function around a text match.
+- New `lsp_search` asks language servers for symbols and references (`query`, with `references: true` to follow them outside the scope), one declaration as an editable selection (`declaration: "file#selector"`), and references with incoming and outgoing calls (`calls`). It replaces the `symbols:` query and `navigation` in `search` and the `symbol:` and `graph:` sources in `read`. Editing through `symbol:<file>#<selector>` paths and native rename are unchanged.
+- New `file_search` finds files by glob or partial name, locally or over SSH. It replaces the `files:` query in `search`.
+- `include` and `exclude` in `file_search`, `ast_search` and `lsp_search` keep brace alternatives such as `**/*.{cmake,txt,h}` as one glob. Before, the commas inside the braces split it into broken parts.
+- `file_search` on a very large tree no longer crashes Pi with `Invalid string length`. It returns the first matches and reports that the list is incomplete.
+- `search` now covers text in files, web pages, guides and terminal output. The `ast:`, `symbols:` and `files:` prefixes are searched as plain text.
+- In Codemode, `ast_search`, `lsp_search` and `file_search` return `{ result, hasMatches, complete }`, like `search`.
+
+### Smaller prompt
+
+- Tool descriptions, IDE rules and agent guides are shorter: with only Pi Agent IDE loaded, tool declarations shrink from about 36,000 to 23,000 characters and the attached guides from about 40,000 to 13,000. Enabled plugins add their details to individual tool fields, so a disabled plugin adds nothing.
+
+### `search`
+
+- `multiline: true` lets a text or `regex:` query match across lines, in files and inside a result's ranges. A match never crosses a range boundary. Matches show their end line and the matched lines.
+- A search with a small `limit` now always shows a matching line and its reference for each compacted file, instead of only a count.
+
+### Editing
+
+- `write` can save images that `read` returned, such as a screenshot or an image file. Several frames are written as numbered files.
+- Paired `start`/`end` selectors keep character boundaries when an endpoint is part of a line, so an edit inside a sentence changes only that span. When both endpoints are whole lines, such as BEGIN/END marker lines, the selection still takes those lines. A literal start that begins with blank lines no longer deletes the preceding paragraph.
+- An empty optional anchor, such as `end: ""`, behaves like an omitted one instead of failing the edit.
+- `copy` or `move` of a whole-line literal over an exact character range no longer adds an extra line break.
+- Failed edits keep the provider's retry timing, such as a rate-limit cooldown.
+
+### `read`
+
+- The `jq:` view also works on JSON that a provider returns, not only on files. A jq result is read-only: to edit, read the source normally.
+- Text files that mention a PDF header or start like a BMP or GIF signature, such as source code, read as text instead of failing. Files declared as PDF or image still fail clearly when they are invalid.
+- In Codemode, a failed `read` returns `{ status: "error", errors }` with the provider's retry timing, instead of a plain string. Each error message keeps the recovery steps a direct call shows, such as close path matches.
+- When a resource provider reports its own failure for `source#fragment`, `read` shows that failure instead of retrying the fragment as a text anchor.
+
+### Processes
+
+- In fullscreen mode, click a process in the panel below the editor to open its details. The command and keyboard navigation work as before.
+
+### Sessions
+
+- IDE tools no longer disappear when Pi switches sessions, for example on resume or fork, after the installed package files changed while Pi was running.
+- A provider request that finishes after Pi replaced its session, such as a cache-warming refresh, no longer reports `This extension ctx is stale` errors from Pi Agent IDE.
+
+### Removed
+
+- Window and display capture, website screenshots and sequences, and process discovery (`process:` resources and search) are removed. Desktop observation moves to Pi Agent Computer Use (to be released). Terminal images and sequences, web page text and ordinary image and PDF reading stay.
+
+### Claude subscription connectors
+
+- IDE tools appear once in the system prompt and the Codemode catalogue when a Claude subscription connector also registers aliases for them. The aliases still work.
+
+### For extension authors
+
+- `pi-agent-ide/api/standalone` hosts resource tools with namespaced, deferred declarations without loading the full IDE.
+- Semantic `write` and `insert` actions can return images to the model alongside their text summary.
+
 ## 0.8.4 — 2026-10-22
 
 ### Editing
