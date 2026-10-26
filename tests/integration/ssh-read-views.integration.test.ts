@@ -161,7 +161,8 @@ for (const request of [
   {path:root+"/records.jsonl",views:["jq:.id","anchors"]},
   {path:"raw:"+root+"/bytes.bin",views:["anchors"]}
 ]) {
-  await rejected(()=>tools.read(request),"Rejected Read");
+  const failure = await tools.read(request);
+  check(failure?.status === "error" && failure.errors.length > 0, "Rejected Read unexpectedly succeeded");
 }
 text({note,raw,next,last,picture,pdf,readonly:true});
 `;

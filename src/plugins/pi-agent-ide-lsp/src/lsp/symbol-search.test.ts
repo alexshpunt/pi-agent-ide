@@ -81,6 +81,21 @@ test("an explicitly excluded file is an empty scope, not an unavailable provider
   expect(manager.prepareWorkspaceSymbols).not.toHaveBeenCalled();
 });
 
+test("include globs keep comma-separated brace alternatives", async () => {
+  const { cwd, manager } = await fixture();
+  const all = await searchSymbols("same", cwd, 20, undefined, { path: "." }, manager);
+  const braces = await searchSymbols(
+    "same",
+    cwd,
+    20,
+    undefined,
+    { path: ".", include: "*.{ts,md}" },
+    manager,
+  );
+  expect(all.hits.length).toBeGreaterThan(0);
+  expect(braces.hits).toEqual(all.hits);
+});
+
 test("keeps strict exact ranges while explicit navigation retains the originating symbol", async () => {
   const { cwd, manager, resultScope } = await fixture();
   const strict = await searchSymbols("same", cwd, 100, undefined, { resultScope }, manager);

@@ -41,3 +41,32 @@ test("file globs find an existing file below an ignored parent directory", async
     await rm(parent, { recursive: true, force: true });
   }
 });
+
+test("include and exclude globs keep comma-separated brace alternatives", async () => {
+  const root = path.resolve(".agents/tmp/file-search");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "braces-"));
+  try {
+    await mkdir(path.join(cwd, "stage"), { recursive: true });
+    for (const file of ["CMakeLists.txt", "build.cmake", "api.h", "api.cpp"])
+      await writeFile(path.join(cwd, "stage", file), "");
+    const include = await searchFiles(
+      "*",
+      { query: "*", path: ".", include: "**/*.{cmake,txt,h}" },
+      cwd,
+    );
+    expect(include.files.toSorted()).toEqual([
+      "stage/CMakeLists.txt",
+      "stage/api.h",
+      "stage/build.cmake",
+    ]);
+    const exclude = await searchFiles(
+      "*",
+      { query: "*", path: ".", exclude: "*.{cmake,h}, *.txt" },
+      cwd,
+    );
+    expect(exclude.files).toEqual(["stage/api.cpp"]);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

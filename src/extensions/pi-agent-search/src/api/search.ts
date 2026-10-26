@@ -223,6 +223,7 @@ export interface SearchToolDetails {
 export { searchSchema } from "#src/api/search-parameters.js";
 export { renderSearchMatches } from "./presentation.js";
 export { containsSearchMatch } from "./search-scope.js";
+export { splitGlobList } from "./glob-list.js";
 export {
   fuzzyLimits,
   isFuzzyResultData,

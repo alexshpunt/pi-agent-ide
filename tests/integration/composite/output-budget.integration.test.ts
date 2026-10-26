@@ -247,15 +247,19 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
     const cwd = await workspace();
     const cases: Record<string, unknown>[] = [];
     const toolFor = (args: Record<string, unknown>) =>
-      "pattern" in args ? "file_search" : "search";
-    for (const query of [
-      "needle",
-      "regex:needle",
-      "needle AND item",
-      "ast:const $NAME = $VALUE;",
-    ]) {
+      "pattern" in args
+        ? String(args.pattern).includes("$")
+          ? "ast_search"
+          : "file_search"
+        : "search";
+    for (const query of ["needle", "regex:needle", "needle AND item"]) {
       cases.push({ query, path: "matrix", ...(limit === undefined ? {} : { limit }) });
     }
+    cases.push({
+      pattern: "const $NAME = $VALUE;",
+      path: "matrix",
+      ...(limit === undefined ? {} : { limit }),
+    });
     cases.push({ pattern: "*.txt", path: "matrix", ...(limit === undefined ? {} : { limit }) });
     for (const caseSensitive of [false, true])
       for (const wholeWord of [false, true]) {
@@ -311,7 +315,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
           cwd,
           extensions: [extension, "builtin:codemode"],
           transport: "rpc",
-          tools: ["search", "file_search", "read", "codemode"],
+          tools: ["search", "file_search", "ast_search", "read", "codemode"],
           isolateUserResources: true,
         },
         [
@@ -350,9 +354,8 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
               ? "10114 matches in 1725 files"
               : "2048 matches in 256 files",
           );
-          const items =
-            (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length +
-            (output.match(/\(compacted\)/gu) ?? []).length;
+          // Every displayed item carries a reference, including each compacted file's first line.
+          const items = (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length;
           expect(items).toBeLessThanOrEqual(Number(args.limit ?? 50));
           expect(items).toBeGreaterThan(0);
         }

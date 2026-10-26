@@ -54,7 +54,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
               id: "read-script-secret",
               name: "codemode",
               arguments: {
-                code: 'let blocked=""; try { await tools.read({path:"secret.txt"}); } catch(error) { blocked=String(error); } if(!blocked.includes("fixture secret")) throw Error("Blocked read must reject"); text(blocked);',
+                code: 'const failure = await tools.read({path:"secret.txt"}); const blocked = failure?.status === "error" ? failure.errors.map((error) => error.message).join("\\n") : ""; if(!blocked.includes("fixture secret") || JSON.stringify(failure).includes("do not expose")) throw Error("Blocked read must return its denial without content"); text(blocked);',
               },
             }),
           ],
@@ -120,7 +120,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
     expect(getToolResultText(run, "read-script-secret")).toContain("fixture secret");
     expect(getToolExecution(run, "read-throw").isError).toBe(true);
     expect(getToolResultText(run, "read-throw")).toContain("read hook exploded");
-    // A caught Read rejection can continue; a blocked batch commit fails the parent script.
+    // A denied Read resolves to its failure value and can continue; a blocked batch commit fails the parent script.
     expect(getToolExecution(run, "edit-locked").isError).toBe(true);
     expect(getToolResultText(run, "edit-locked")).toContain("fixture lock");
     expect(await readFile(path.join(cwd, "locked.txt"), "utf8")).toBe("unchanged");

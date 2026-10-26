@@ -6,7 +6,7 @@ import { requiredValue } from "pi-agent-invariant";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { SearchEnvironment, SearchRequest, SearchResolver } from "pi-agent-search/api/search";
-import { selectionData, containsSearchMatch } from "pi-agent-search/api/search";
+import { selectionData, containsSearchMatch, splitGlobList } from "pi-agent-search/api/search";
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
 
@@ -406,11 +406,11 @@ function runAstGrep(
           "parent",
         ];
 
-  for (const include of splitGlobs(request.include)) {
+  for (const include of splitGlobList(request.include)) {
     arguments_.push("--globs", include);
   }
 
-  for (const exclude of splitGlobs(request.exclude)) {
+  for (const exclude of splitGlobList(request.exclude)) {
     arguments_.push("--globs", `!${exclude}`);
   }
 
@@ -493,12 +493,4 @@ async function runOwnedAstGrep(
     ...match,
     file: environment.resolve(executionCwd, match.file),
   }));
-}
-function splitGlobs(value: string | undefined): string[] {
-  return (
-    value
-      ?.split(",")
-      .map((item) => item.trim())
-      .filter(Boolean) ?? []
-  );
 }
