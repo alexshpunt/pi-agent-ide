@@ -34,8 +34,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "pattern": {
             "minLength": 1,
@@ -416,8 +415,7 @@
                 },
                 "type": "array"
               }
-            ],
-            "~optional": true
+            ]
           },
           "query": {
             "minLength": 1,

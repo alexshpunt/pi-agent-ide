@@ -40,11 +40,12 @@ export const astSearchSchema = Type.Object(
         description: "ast-grep language for a rule, such as typescript, python or go.",
       }),
     ),
-    path: Type.Optional({
-      ...resultInputSchema,
-      description:
-        "File, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
-    }),
+    path: Type.Optional(
+      Type.Union(resultInputSchema.anyOf, {
+        description:
+          "File, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
+      }),
+    ),
     relation: Type.Optional(
       Type.Union([Type.Literal("inside"), Type.Literal("enclosing")], {
         description:
