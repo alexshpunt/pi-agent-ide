@@ -18,7 +18,7 @@ export function sourceRangeProperties(descriptions: Partial<Record<"start" | "en
       Type.String({
         description:
           descriptions.start ??
-          "Anchor or unique exact text where the selection begins. Exact text cuts at its characters; a line anchor takes its whole line. Without end, selects just that fragment. Omit when path is a result that already selects text.",
+          "Anchor or unique exact text where the selection begins. Without end, selects only this text, or only this one line for a line anchor; add end to select several lines. Omit when path is a result that already selects text.",
       }),
     ),
     end: Type.Optional(
