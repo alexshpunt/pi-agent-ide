@@ -439,7 +439,12 @@ async function executeRead(
     );
     if (targeted !== undefined) return targeted;
   }
-  let pipeline: ReadPipelineContext = { request: { ...request }, resolverContext, audience };
+  let pipeline: ReadPipelineContext = {
+    inputScope: "source",
+    request: { ...request },
+    resolverContext,
+    audience,
+  };
 
   if (!pipeline.request.path?.startsWith("temp:")) {
     const preRead = await runPreReadHandlers(pipeline, handlerSnapshot);
@@ -479,7 +484,11 @@ async function executeRead(
 
     if (split !== undefined) {
       const wholeSource = { result: resolved, pipeline };
-      const barePipeline = { ...pipeline, request: { ...pipeline.request, path: split.source } };
+      const barePipeline: ReadPipelineContext = {
+        ...pipeline,
+        inputScope: "selection",
+        request: { ...pipeline.request, path: split.source },
+      };
       const retried = await resolveSource(
         barePipeline,
         resolverSnapshot,
@@ -651,6 +660,7 @@ async function resolveTextTargets(
             (sourceTarget !== undefined && range.end.column > 0 ? 1 : 0),
         );
         let rangePipeline: ReadPipelineContext = {
+          inputScope: "selection",
           sourceTarget,
           request: {
             ...request,

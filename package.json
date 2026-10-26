@@ -234,6 +234,7 @@
     "node-pty": "^1.1.0",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-documentation": "workspace:^",
+    "pi-agent-filesystem-jq": "workspace:^",
     "pi-agent-image": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-pdf": "workspace:^",
