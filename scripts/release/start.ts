@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import { insertReleaseNotes } from "./changelog.ts";
 import { activeReleaseBranches } from "./merge-policy.ts";
 
 const version = process.env.RELEASE_VERSION;
@@ -26,10 +27,7 @@ writeFileSync("package.json", JSON.stringify(manifest, null, 2) + "\n");
 const changelog = readFileSync("CHANGELOG.md", "utf8");
 const heading = `## ${version} — ${new Date().toISOString().slice(0, 10)}`;
 if (changelog.includes(`## ${version} —`)) throw new Error("Changelog already has this version");
-writeFileSync(
-  "CHANGELOG.md",
-  changelog.replace("# Changelog\n", `# Changelog\n\n${heading}\n\n${notes}\n`),
-);
+writeFileSync("CHANGELOG.md", insertReleaseNotes(changelog, heading, notes));
 execFileSync("pnpm", ["install", "--lockfile-only"], { stdio: "inherit" });
 execFileSync("git", ["add", "package.json", "pnpm-lock.yaml", "CHANGELOG.md"], {
   stdio: "inherit",

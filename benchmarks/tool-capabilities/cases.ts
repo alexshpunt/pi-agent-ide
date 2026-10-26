@@ -1847,7 +1847,11 @@ add(
   [
     { tool: "read", args: { path: "ast:task.ts" }, contains: "first" },
     // A pattern or a rule with a pattern can both capture NAME.
-    { tool: "ast_search", args: { path: "task.ts" }, contains: "capture NAME" },
+    {
+      tool: "ast_search",
+      argsAny: [{ path: "task.ts" }, { path: ["task.ts"] }],
+      contains: "capture NAME",
+    },
     { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
   ],
   {
@@ -2153,7 +2157,12 @@ add(
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
   "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search for the declaration of count and for its calls. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
   [
-    { tool: "lsp_search", args: { path: "task.ts", query: "count" }, contains: "count" },
+    {
+      tool: "lsp_search",
+      args: { query: "count" },
+      argsAny: [{ path: "task.ts" }, { path: ["task.ts"] }],
+      contains: "count",
+    },
     {
       tool: "lsp_search",
       args: { query: "count", references: true },
