@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
-import type { ResourceResolver } from "pi-agent-resource";
+import { ResourceError, type ResourceResolver } from "pi-agent-resource";
 import { expect, test } from "vitest";
 
 import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
@@ -242,6 +242,66 @@ test("rejects out-of-range origins from fragment resolvers", async () => {
   expect(result.details.failure).toBeDefined();
   expect(result.details.failure?.code).toBe("INVALID_RESOLVER_RESULT");
 });
+
+test.each(["resolve", "throw", "read"] as const)(
+  "keeps a declared provider error for a complete fragmented resource (%s)",
+  async (phase) => {
+    const read = createReadTool();
+    const source = "fixture://owner/note.txt#metadata";
+    const calls: string[] = [];
+    let fragmentCalls = 0;
+    const privateValue = "fixture-private-provider-diagnostic";
+    const cause = new ResourceError("FIXTURE_FIELD_UNAVAILABLE", source, "not-applied");
+    cause.message = privateValue;
+    read.registerContributions("fixture-provider", {
+      resolvers: [
+        {
+          resolver: {
+            id: "fixture-provider",
+            async tryResolve(candidate) {
+              calls.push(candidate);
+              if (candidate === source) {
+                if (phase === "throw") throw cause;
+                if (phase === "resolve") return { kind: "failed", error: cause };
+                return {
+                  kind: "resolved",
+                  resource: {
+                    source,
+                    async read() {
+                      throw cause;
+                    },
+                  },
+                };
+              }
+              return textResolver(TEN_LINES).tryResolve(candidate, { cwd: "/workspace" });
+            },
+          },
+        },
+      ],
+      fragments: [
+        fragmentResolver({
+          resolve() {
+            fragmentCalls += 1;
+            return { kind: "resolved", originLine: 3 };
+          },
+        }),
+      ],
+    });
+    try {
+      const result = await executeRead(read, source);
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        status: "error",
+        errors: [{ code: "FIXTURE_FIELD_UNAVAILABLE", source }],
+      });
+      expect(calls).toEqual([source]);
+      expect(fragmentCalls).toBe(0);
+      expect(JSON.stringify(result)).not.toContain(privateValue);
+    } finally {
+      await read.dispose();
+    }
+  },
+);
 
 function executeRead(
   read: ReadTool,
