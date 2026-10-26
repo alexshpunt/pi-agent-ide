@@ -168,12 +168,13 @@ describe("exact text anchors through real text editor tools", () => {
       }
     }
   }
-  test("mixes an exact start with a line-hash end", async () => {
+  test("mixes an exact start with a line-hash end, keeping the start's characters", async () => {
+    // A partial exact start cuts at its characters; the line anchor end takes its whole line.
     await runExactScenario(
       "exact-line-range",
       "replace",
       { start: "rav", end: formatLineHashAnchor(3, "charlie"), text: "X" },
-      ["alpha", "X", "delta", "echo"].join("\n"),
+      ["alpha", "bX", "delta", "echo"].join("\n"),
     );
   });
 

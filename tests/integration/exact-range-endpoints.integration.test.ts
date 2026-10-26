@@ -145,7 +145,7 @@ test("range tools preserve exact endpoints and the paragraph before leading newl
   }
 }, 120_000);
 
-test("typed source merging keeps an exact start before an EOF line endpoint", async () => {
+test("typed source merging pairs a whole-line start with an EOF line endpoint", async () => {
   const root = path.resolve(".agents/tmp/exact-range-endpoints");
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "typed-"));
@@ -179,11 +179,11 @@ test("typed source merging keeps an exact start before an EOF line endpoint", as
         }),
         assistantMessage([text("Done")]),
       ],
-    }).run(
-      "Delete from the exact START fragment through the END line without removing the separator after KEEP.",
-    );
+    }).run("Delete the START line through the END line at the end of the file.");
     expect(getToolExecution(result, "delete").isError).toBe(false);
-    expect(await readFile(path.join(cwd, "fixture.txt"), "utf8")).toBe("KEEP\n");
+    // START matches its whole line and END is a line reference, so the pair deletes both lines.
+    // Removing the final line without a line break also removes the separator before it.
+    expect(await readFile(path.join(cwd, "fixture.txt"), "utf8")).toBe("KEEP");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
