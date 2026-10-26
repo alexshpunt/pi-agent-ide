@@ -48,16 +48,18 @@ test("structural search keeps its executor, snapshots and presentation on the re
       };
     },
   };
+  const request = {
+    query: "console.log($VALUE)",
+    path: source,
+    options: { ast: { pattern: "console.log($VALUE)" } },
+  };
   let selection: SearchSelectionRegistration | undefined;
   const resolver = createAstSearchResolver(async (value) => {
     selection = value;
     return { id: "AST1", matches: value.matches, complete: value.complete };
   });
   const context = { cwd: "/unused-local-workspace", environment };
-  const result = await resolver.tryResolve(
-    { query: "ast:console.log($VALUE)", path: source },
-    context,
-  );
+  const result = await resolver.tryResolve(request, context);
   expect(result.kind).toBe("resolved");
   if (result.kind !== "resolved") throw new Error("Expected structural matches");
   expect(selection?.matches).toMatchObject([
@@ -79,12 +81,9 @@ test("structural search keeps its executor, snapshots and presentation on the re
   await expect(selection?.refresh()).rejects.toThrow("AST range does not match");
   const { execute: _execute, ...withoutExecution } = environment;
   await expect(
-    resolver.tryResolve(
-      { query: "ast:console.log($VALUE)", path: source },
-      { ...context, environment: withoutExecution },
-    ),
+    resolver.tryResolve(request, { ...context, environment: withoutExecution }),
   ).rejects.toThrow("does not support structural search execution");
-  await expect(
-    resolver.tryResolve({ query: "ast:console.log($VALUE)", path: source }, { cwd: context.cwd }),
-  ).rejects.toThrow("No structural search owner");
+  await expect(resolver.tryResolve(request, { cwd: context.cwd })).rejects.toThrow(
+    "No structural search owner",
+  );
 });

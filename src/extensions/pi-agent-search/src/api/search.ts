@@ -8,9 +8,11 @@ export interface SearchRequest {
   readonly exclude?: string;
   readonly caseSensitive?: boolean;
   readonly wholeWord?: boolean;
+  /** Let one match span line breaks; only resolvers declaring support accept it. */
+  readonly multiline?: boolean;
   readonly limit?: number;
-  /** Explicitly follow scoped LSP symbols to references outside the input scope. */
-  readonly navigation?: "references";
+  /** Options from a focused tool for its own resolver; not part of the public search schema. */
+  readonly options?: Readonly<Record<string, unknown>>;
 }
 
 /** Public calls accept registered result objects; resolvers receive normalized string paths. */
@@ -69,6 +71,8 @@ export type SearchResolutionAttempt =
 export interface SearchResolver {
   /** Handle exact source ranges instead of widening a structured input to a path. */
   readonly supportsResultScope?: boolean;
+  /** Accept `multiline: true`; other resolvers fail such requests instead of matching per line. */
+  readonly supportsMultiline?: boolean;
   /** Complete read scope for resolving and formatting. Empty means no resource reads;
    * undefined means unknown scope, compatible with reads but conflicting with every write.
    * Declaring a scope must not read resource contents.
@@ -190,6 +194,13 @@ export interface SearchPluginApi {
     context: SearchContext,
     audience?: "agent" | "script",
   ): Promise<SearchToolResult>;
+  /** Run one resolver that is not registered with `search`, reusing scopes, owners and selections. */
+  searchWith(
+    resolver: SearchResolver,
+    request: SearchInput,
+    context: SearchContext,
+    audience?: "agent" | "script",
+  ): Promise<SearchToolResult>;
   runAction(request: SearchActionRequest, context: SearchContext): Promise<unknown>;
 }
 
@@ -212,6 +223,7 @@ export interface SearchToolDetails {
 export { searchSchema } from "#src/api/search-parameters.js";
 export { renderSearchMatches } from "./presentation.js";
 export { containsSearchMatch } from "./search-scope.js";
+export { splitGlobList } from "./glob-list.js";
 export {
   fuzzyLimits,
   isFuzzyResultData,

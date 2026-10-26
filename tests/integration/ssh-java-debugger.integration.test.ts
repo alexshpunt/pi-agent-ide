@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 
 const enabled = process.platform === "linux" && process.env.PI_DEBUGGER_JVM_LANGUAGE === "java";

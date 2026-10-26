@@ -36,7 +36,6 @@ test("real Pi reload retains completed local and SSH terminals and their running
           "ide.changes",
           "ide.diagnostics",
           "ide.debugger",
-          "ide.vision",
         ],
       }),
     );

@@ -2,9 +2,19 @@ import type { Capability } from "./validation.ts";
 
 // This declared inventory is reviewed separately from executable cases.
 const groups: [string[], string[]][] = [
+  [
+    ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
+    ["standalone-resource-host"],
+  ],
   [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
-  [["read.jq"], ["read-jq"]],
+  [
+    ["read.failure", "read.provider-failure-ownership"],
+    ["read-error-direct", "read-error-codemode"],
+  ],
+  [["compose.read-error-value"], ["read-error-codemode"]],
+  [["read.jq", "read.jq-paging"], ["read-jq"]],
+  [["read.jq-bounded-input"], ["read-jq-bounded-input"]],
   [["read.ssh-guide"], ["ssh-guide"]],
   [["read.ide-settings", "search.ide-settings"], ["ide-settings-catalog"]],
   [
@@ -43,8 +53,8 @@ const groups: [string[], string[]][] = [
     [`edit.selection-batch-${operation}`],
     [`selection-batch-${operation}`],
   ]),
-  [["compose.select-delete"], ["select-result-delete"]],
-  [["compose.select-insert"], ["select-result-insert"]],
+  [["compose.read-window-delete"], ["read-window-delete"]],
+  [["compose.read-window-insert"], ["read-window-insert"]],
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [
@@ -53,11 +63,26 @@ const groups: [string[], string[]][] = [
   ],
   [["compose.overview-store-load"], ["read-overview-store"]],
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
-  [["search.boolean", "search.regex", "search.files", "search.flags"], ["search-query"]],
+  [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
+  [["search.multiline", "compose.search-multiline-replace"], ["search-multiline-between"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
+  [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
+  [["edit.delete-exact-range"], ["exact-range-delete"]],
+  [["edit.copy-exact-range", "edit.copy-exact-destination"], ["exact-range-copy"]],
+  [["edit.move-exact-range", "edit.move-exact-destination"], ["exact-range-move"]],
+  [["edit.mixed-range-endpoints"], ["mixed-range-replace"]],
+  [
+    ["compose.search-range-endpoints"],
+    ["exact-range-delete", "exact-range-copy", "exact-range-move"],
+  ],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
   [["edit.semantic-write-receipt"], ["semantic-write-receipts"]],
+  // Optional safe error metadata does not change provider receipt effects or their data fields.
+  // Rate-limit metadata transport has deterministic ResourceError/Read/Write coverage, not a paid route.
   [["compose.provider-structured-receipt"], ["semantic-script-receipts"]],
+  // Local forwarding aliases may be deferred and absent from the initial catalogue. The alias
+  // receipt case asks for discovery and requires the real native child; prompt deduplication is
+  // checked separately by deterministic real-Pi loadout tests.
   [["compose.local-alias-structured-receipt"], ["semantic-local-alias-receipts"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [
@@ -127,7 +152,12 @@ const groups: [string[], string[]][] = [
     ["move-temporary-directories"],
   ],
   [
-    ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
+    [
+      "edit.copy-selection",
+      "edit.move-selection",
+      "compose.read-window-copy",
+      "compose.read-window-move",
+    ],
     ["selection-copy-move"],
   ],
   [
@@ -161,22 +191,10 @@ const groups: [string[], string[]][] = [
     ],
     ["git-stage-unstage-undo"],
   ],
-  [
-    ["compose.read-select", "compose.select-replace"],
-    [
-      "select-range",
-      "select-lines",
-      "select-between",
-      "select-sliceText",
-      "select-trim",
-      "select-split",
-      "select-columns",
-    ],
-  ],
-  [["select.object", "select.part", "read.ast", "search.ast"], ["select-object-part"]],
+  [["compose.search-narrow-result"], ["read-search-narrow"]],
+  [["read.ast", "search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
+  [["ast_search.rule", "compose.ast-search-enclosing"], ["ast-search-enclosing"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
-  [["select.navigate"], ["select-navigate"]],
-  [["select.elementExtent"], ["select-elementExtent"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
   [["compose.result-selector-rejection"], ["result-selector-rejection"]],
@@ -194,8 +212,6 @@ const groups: [string[], string[]][] = [
       "compose.shell-reference-after-input",
       "shell.file-authority-refusal",
       "shell.delete",
-      "process.discovery",
-      "process.read",
     ],
     ["shell-roundtrip"],
   ],
@@ -240,25 +256,9 @@ const groups: [string[], string[]][] = [
   ],
   [["read.image", "read.pdf"], ["read-media"]],
   [["compose.codemode-image-value"], ["codemode-image-value"]],
-  [["web.read", "web.search", "web.image", "web.sequence"], ["web-read-search"]],
-  [["vision.display", "vision.window", "vision.sequence"], ["vision-display-window"]],
+  [["compose.read-image-write"], ["read-image-write"]],
+  [["web.read", "web.search"], ["web-read-search"]],
 ];
-for (const kind of [
-  "range",
-  "lines",
-  "between",
-  "sliceText",
-  "trim",
-  "split",
-  "columns",
-  "linesOf",
-  "position",
-  "within",
-  "intersection",
-  "difference",
-  "merge",
-])
-  groups.push([[`select.${kind}`], [`select-${kind}`]]);
 
 /** Intended contracts and the cases that can establish them, not every tool permutation. */
 export const capabilityMatrix: Capability[] = groups.flatMap(([ids, cases]) =>

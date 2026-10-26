@@ -26,15 +26,15 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
-      node-screenshots:
-        specifier: 0.2.8
-        version: 0.2.8
       pi-agent-doctor:
         specifier: workspace:^
         version: link:packages/pi-agent-doctor
       pi-agent-documentation:
         specifier: workspace:^
         version: link:packages/pi-agent-documentation
+      pi-agent-filesystem-jq:
+        specifier: workspace:^
+        version: link:src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-jq
       pi-agent-image:
         specifier: workspace:^
         version: link:packages/pi-agent-image
@@ -550,9 +550,15 @@ importers:
       pi-agent-text-editor:
         specifier: workspace:^
         version: link:../../../pi-agent-text-editor
+      pi-agent-tool-call-interception:
+        specifier: workspace:^
+        version: link:../../../../../packages/pi-agent-tool-call-interception
       pi-agent-tool-ui:
         specifier: workspace:^
         version: link:../../../../../packages/pi-agent-tool-ui
+      typebox:
+        specifier: ^1.1.38
+        version: 1.3.27
 
   src/extensions/pi-agent-text-editor:
     dependencies:
@@ -574,6 +580,9 @@ importers:
       '@lezer/javascript':
         specifier: ^1.5.4
         version: 1.5.4
+      '@types/fs-extra':
+        specifier: ^11.0.4
+        version: 11.0.4
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -617,9 +626,6 @@ importers:
         specifier: npm:typebox@^1.1.38
         version: typebox@1.3.13
     devDependencies:
-      '@types/fs-extra':
-        specifier: ^11.0.4
-        version: 11.0.4
       pi-coding-agent-test:
         specifier: ^0.1.1
         version: 0.1.1(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.21.3)
@@ -972,6 +978,9 @@ importers:
       pi-agent-doctor:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-doctor
+      pi-agent-documentation:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-documentation
       pi-agent-ide:
         specifier: workspace:^
         version: link:../../..
@@ -993,6 +1002,15 @@ importers:
       pi-agent-text-editor:
         specifier: workspace:^
         version: link:../../extensions/pi-agent-text-editor
+      pi-agent-tool-call-interception:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-tool-call-interception
+      pi-agent-tool-ui:
+        specifier: workspace:^
+        version: link:../../../packages/pi-agent-tool-ui
+      typebox:
+        specifier: ^1.1.38
+        version: 1.3.27
       vscode-jsonrpc:
         specifier: ^9.0.0
         version: 9.0.1
@@ -1308,6 +1326,11 @@ packages:
     engines: {node: '>=22.19.0'}
     hasBin: true
 
+  '@earendil-works/pi-ai@1.4.0':
+    resolution: {integrity: sha512-hQM/C4+1w8rHYACzDDf+0vQMnEnpzIop1tptIERVgR3ZeT/hHSzBNG8PaWPgxWQjqSeKCyBZSyp8uTT6eKK1pQ==}
+    engines: {node: '>=22.19.0'}
+    hasBin: true
+
   '@earendil-works/pi-codemode@1.3.0':
     resolution: {integrity: sha512-2G9tmbsPhgzwfz7cmzJpbLSLqOx3eu22Gbzm+Wc3HqeZMjLQS4F3KfAabozVhv7uEjq3k2O1dZTHmhhWr2xbfQ==}
     engines: {node: '>=22.19.0'}
@@ -1323,6 +1346,10 @@ packages:
 
   '@earendil-works/pi-telemetry@1.3.0':
     resolution: {integrity: sha512-ERGZr+aXjNJzoUbB7ZzHVH3g5otzMHjHLs2Fyizm12By5X+gBEhod9cJXFOk13S7M8a29Am+Mq21zm73mRJFLg==}
+    engines: {node: '>=22.19.0'}
+
+  '@earendil-works/pi-telemetry@1.4.0':
+    resolution: {integrity: sha512-MLIfowwUYIY65jSjMX82paZOrX/NTvLk6D08h+3Jq42a99RzUOewzuCR0zOlPul3D6UBfddat76VT6LvsHEs1w==}
     engines: {node: '>=22.19.0'}
 
   '@earendil-works/pi-tui@1.3.0':
@@ -3089,68 +3116,6 @@ packages:
   node-pty@1.1.0:
     resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
 
-  node-screenshots-darwin-arm64@0.2.8:
-    resolution: {integrity: sha512-CEJE47gG2ceTc1fQRE3T/8lBwCGFJ+0iJiP+CQgCUAll4kKd32DQ7lCANqUseo96/xi6HuDOlrjLkAp7x2TzFw==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [arm64]
-    os: [darwin]
-
-  node-screenshots-darwin-x64@0.2.8:
-    resolution: {integrity: sha512-3WIw4QaEP3pIUtSYh2NThwmzQl00H1bTPwPS7sYRLihAzB3NA/FOnIqRmvtadI0KEnnRGX4apdZgIhfXtgbNZA==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [x64]
-    os: [darwin]
-
-  node-screenshots-linux-arm64-gnu@0.2.8:
-    resolution: {integrity: sha512-aXJKtekSzQLJX6hh/VT5gilyloiN3DE4oE5xu9z7nLcTPyfC089dqVoERXJxnT+aqSQzx0KkI2te8BZNkjaMtQ==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [arm64]
-    os: [linux]
-    libc: [glibc]
-
-  node-screenshots-linux-loong64-gnu@0.2.8:
-    resolution: {integrity: sha512-+982Yn7L7XID/FhYR6W6S2IVTLiueOBcHs/BP1Te5W6MtwlIIRg593zFh5HPQp7G+IaHqEXQzQj6D7kjJhXzsQ==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [loong64]
-    os: [linux]
-    libc: [glibc]
-
-  node-screenshots-linux-x64-gnu@0.2.8:
-    resolution: {integrity: sha512-xF0hLfPMm9NEF4WtiQnbCyCUxU15M25lFkBzK4WS1CGOcxM7e30tvvwyYfmrMp3OtW/hESQFtiTb4cjKcOdaSA==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [x64]
-    os: [linux]
-    libc: [glibc]
-
-  node-screenshots-linux-x64-musl@0.2.8:
-    resolution: {integrity: sha512-mu/sVwDMt2yQM5ql2rtyQm+mq6Im2ycQLzQxXFXVJOB+k5A+Hk9h65J+G+Iy3rn1uNrYVDjgUQGvIkgpkIonCg==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [x64]
-    os: [linux]
-    libc: [musl]
-
-  node-screenshots-win32-arm64-msvc@0.2.8:
-    resolution: {integrity: sha512-g7nnuoJO2yjO8Ovr+Uz9e+LYJMlYc5eqoGPQq7U7NK1LVc2DpyCJ18VT8WdP2f098lfHvE12D3X7Es8NLFjiPg==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [arm64]
-    os: [win32]
-
-  node-screenshots-win32-ia32-msvc@0.2.8:
-    resolution: {integrity: sha512-Qsh4Ggs7MzO2XuDPFMRcRxRuiUGxxtHEFuqAfLFL1DiOfBIhLpukZ8JUHlEBdzjPxMFFRJw/4nOm0tnyHP/fiQ==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [ia32]
-    os: [win32]
-
-  node-screenshots-win32-x64-msvc@0.2.8:
-    resolution: {integrity: sha512-DdFORB74FghM1L6UtE1TltIR2H0CCCmfQEa8gp2CTSdtBr2b0TKL7ZlbEV6x/wVKRFT59w7Kd6BULdeMmp0X2w==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-    cpu: [x64]
-    os: [win32]
-
-  node-screenshots@0.2.8:
-    resolution: {integrity: sha512-7O2ab89hkUgiXkrYj9iYCbJjY1iFJqIyZt0vuVtHFKlnajeFoyW+hur4CPxwwrnCUK0ahr0WLWQ5A6rCzF8rWQ==}
-    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
-
   nth-check@3.0.1:
     resolution: {integrity: sha512-GX0gsdbGVCgnRgbeGaubfjpBXyYRWOOCVeYh08bSQvDZqxz5ndXs1OTfAt/h36G1xvI94YIspsI0sVFqAV9+RQ==}
     engines: {node: '>=20.19.0'}
@@ -4016,6 +3981,31 @@ snapshots:
       - ws
       - zod
 
+  '@earendil-works/pi-ai@1.4.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.21.3)':
+    dependencies:
+      '@anthropic-ai/sdk': 0.129.0
+      '@aws-sdk/client-bedrock-runtime': 3.1127.0
+      '@earendil-works/pi-telemetry': 1.4.0
+      '@google/genai': 2.21.0
+      '@smithy/node-http-handler': 4.12.1
+      http-proxy-agent: 9.1.0
+      https-proxy-agent: 9.1.0
+      openai: 7.19.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.21.3)
+      partial-json: 0.1.7
+      typebox: 1.3.27
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@modelcontextprotocol/sdk'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - bufferutil
+      - kerberos
+      - supports-color
+      - undici
+      - utf-8-validate
+      - ws
+      - zod
+
   '@earendil-works/pi-codemode@1.3.0':
     dependencies:
       quickjs-wasi: 3.6.2
@@ -4061,6 +4051,8 @@ snapshots:
       cross-spawn: 7.0.6
 
   '@earendil-works/pi-telemetry@1.3.0': {}
+
+  '@earendil-works/pi-telemetry@1.4.0': {}
 
   '@earendil-works/pi-tui@1.3.0':
     dependencies:
@@ -5464,45 +5456,6 @@ snapshots:
     dependencies:
       node-addon-api: 7.1.1
 
-  node-screenshots-darwin-arm64@0.2.8:
-    optional: true
-
-  node-screenshots-darwin-x64@0.2.8:
-    optional: true
-
-  node-screenshots-linux-arm64-gnu@0.2.8:
-    optional: true
-
-  node-screenshots-linux-loong64-gnu@0.2.8:
-    optional: true
-
-  node-screenshots-linux-x64-gnu@0.2.8:
-    optional: true
-
-  node-screenshots-linux-x64-musl@0.2.8:
-    optional: true
-
-  node-screenshots-win32-arm64-msvc@0.2.8:
-    optional: true
-
-  node-screenshots-win32-ia32-msvc@0.2.8:
-    optional: true
-
-  node-screenshots-win32-x64-msvc@0.2.8:
-    optional: true
-
-  node-screenshots@0.2.8:
-    optionalDependencies:
-      node-screenshots-darwin-arm64: 0.2.8
-      node-screenshots-darwin-x64: 0.2.8
-      node-screenshots-linux-arm64-gnu: 0.2.8
-      node-screenshots-linux-loong64-gnu: 0.2.8
-      node-screenshots-linux-x64-gnu: 0.2.8
-      node-screenshots-linux-x64-musl: 0.2.8
-      node-screenshots-win32-arm64-msvc: 0.2.8
-      node-screenshots-win32-ia32-msvc: 0.2.8
-      node-screenshots-win32-x64-msvc: 0.2.8
-
   nth-check@3.0.1:
     dependencies:
       boolbase: 2.0.0
@@ -5618,7 +5571,7 @@ snapshots:
 
   pi-coding-agent-test@0.1.1(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.21.3):
     dependencies:
-      '@earendil-works/pi-ai': 1.3.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.21.3)
+      '@earendil-works/pi-ai': 1.4.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.10.2)(ws@8.21.3)
       '@xterm/headless': 6.0.0
       cross-spawn: 7.0.6
       node-pty: 1.1.0

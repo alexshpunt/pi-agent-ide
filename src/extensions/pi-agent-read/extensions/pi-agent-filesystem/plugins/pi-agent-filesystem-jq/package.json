@@ -5,6 +5,12 @@
   "imports": {
     "#src/*": "./src/*"
   },
+  "exports": {
+    "./api/jq": {
+      "types": "./src/api/jq.ts",
+      "default": "./src/api/jq.ts"
+    }
+  },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.3.0",
     "cross-spawn": "^7.0.6",

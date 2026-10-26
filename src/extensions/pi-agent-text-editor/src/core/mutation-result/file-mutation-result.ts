@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import type { ResourceErrorMetadata } from "pi-agent-resource";
 import type { TextAnchorRecoveryCandidateRange, TextDocument } from "pi-agent-text";
 
 export interface MutationAnchor {
@@ -74,6 +75,8 @@ export interface FileError {
   reason?: string | undefined;
   /** Editor failure code of the step that failed when `code` is a provider's own code. */
   stage?: string | undefined;
+  /** Closed provider retry metadata, without private transport diagnostics. */
+  readonly metadata?: ResourceErrorMetadata;
 }
 
 export interface Warning {

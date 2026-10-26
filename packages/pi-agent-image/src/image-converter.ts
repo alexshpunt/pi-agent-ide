@@ -19,7 +19,7 @@ const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
 export function createImageContentConverter(): ContentConverter {
   return {
     id: "image",
-    description: "Image paths and URLs return image content.",
+    description: "Image — the image.",
     async tryConvert(input, context) {
       const initialCancellation = cancellationError(context.signal);
 
@@ -33,7 +33,13 @@ export function createImageContentConverter(): ContentConverter {
         return inspection;
       }
 
+      // ASCII signatures such as "BM" and "GIF89a" also start ordinary text. Leave undeclared
+      // readable text to the text converter when the bytes are not a usable image.
+      const leaveToText = () =>
+        !declaresImage(input.source, input.mediaType) && isUtf8Text(input.bytes);
+
       if (inspection.kind === "invalid") {
+        if (leaveToText()) return { kind: "not-handled" };
         return {
           kind: "failed",
           error: new TypeError(`${input.source}: ${inspection.message}`),
@@ -51,6 +57,7 @@ export function createImageContentConverter(): ContentConverter {
         return { kind: "converted", content };
       } catch (error) {
         const cancellation = cancellationError(context.signal);
+        if (cancellation === undefined && leaveToText()) return { kind: "not-handled" };
         return {
           kind: "failed",
           error:
@@ -60,6 +67,22 @@ export function createImageContentConverter(): ContentConverter {
       }
     },
   };
+}
+
+const imageExtensions = /\.(?:bmp|gif|jpe?g|png|webp)$/iu;
+
+function declaresImage(source: string, mediaType: string | undefined): boolean {
+  const type = mediaType?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return type.startsWith("image/") || imageExtensions.test(source.split(/[?#]/u, 1)[0] ?? "");
+}
+
+function isUtf8Text(bytes: Uint8Array): boolean {
+  try {
+    new TextDecoder("utf8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function detectSupportedImageMimeType(bytes: Uint8Array): SupportedImageMimeType | null {

@@ -252,8 +252,7 @@ export async function registerDebuggerWithOwner(
       api.addView({ view: "breakpoints", presenter: breakpointPresenter });
       api.describe({
         path: "debug:<session> — debugger state.",
-        views:
-          "breakpoints — current debugger breakpoints beside source lines. Normal files include every current session; debug sources are session-scoped.",
+        views: "breakpoints — breakpoints beside the lines.",
       });
     },
   } satisfies ReadPlugin;
@@ -265,9 +264,17 @@ export async function registerDebuggerWithOwner(
       api.addResolver({ resolver: editorResolver });
       api
         .tool("insert")
-        .describe(
-          'For debug:<session>, omit anchor and put start, continue, step over, step into, step out, or evaluate <expression> in text. Evaluate requires a stopped frame. For debug:<session>/source, use a fresh Read/Search line anchor and text "breakpoint"; the result reports pending or verified readiness. These actions do not edit source text.',
+        .describeField(
+          "path",
+          "debug:<session> controls the debugger; debug:<session>/source with a line anchor sets a breakpoint.",
         );
+      api
+        .tool("insert")
+        .describeField(
+          "text",
+          "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
+        );
+      api.tool("insert").describeField("anchor", "Omit for debug:<session>.");
       api.tool("insert").addSemanticHandler({
         matches: (input) => matchesDebugInsert(input, manager),
         execute: async (context, input) => {
@@ -336,6 +343,12 @@ export async function registerDebuggerWithOwner(
           };
         },
       });
+      api
+        .tool("delete")
+        .describeField(
+          "path",
+          "debug:<session> ends it; debug:<session>/breakpoint/<id> removes a breakpoint.",
+        );
       api.tool("delete").addSemanticHandler({
         matches: (input) => matchesDebugDelete(input, manager),
         execute: async (context, input) => {

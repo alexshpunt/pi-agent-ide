@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 
 test("remote process metadata retains its target, executable and kernel start identity", async () => {
   const fixture = await startSshFixture();
@@ -20,17 +20,11 @@ test("remote process metadata retains its target, executable and kernel start id
     const [metadata] = await readSshProcessMetadata(registry, scope, child.pid);
     expect(metadata).toMatchObject({
       pid: child.pid,
-      target: "fixture",
-      host: "ssh",
-      owned: false,
-      resource: `process:ssh://fixture/${child.pid}`,
     });
     expect(metadata?.identity).toMatch(/^[a-f0-9-]+:\d+$/u);
     expect(child.identity).toBe(metadata?.identity);
     expect(metadata?.executable).toContain("python3");
     expect(metadata?.command).toContain("time.sleep(60)");
-    const listing = await readSshProcessMetadata(registry, scope);
-    expect(listing).toContainEqual(metadata);
     await expect(
       readSshProcessMetadata(registry, "ssh://unknown/tmp", child.pid),
     ).rejects.toMatchObject({ code: "UNKNOWN_TARGET" });

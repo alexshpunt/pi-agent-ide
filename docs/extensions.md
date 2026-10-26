@@ -21,6 +21,7 @@ A connector still owns authentication and model transport. Keeping Pi tools work
 | You want to add                                          | Umbrella API                                                                                         |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | A readable source or read presentation                   | `pi-agent-ide/api/read`, `pi-agent-ide/api/resource`                                                 |
+| Isolated resource tools without the full IDE             | `pi-agent-ide/api/standalone`                                                                        |
 | A search backend                                         | `pi-agent-ide/api/search`                                                                            |
 | A writable source, anchor, mutation, guard, or renderer  | `pi-agent-ide/api/text-editor`, `pi-agent-ide/api/text`                                              |
 | A formatter, compiler, or linter                         | `pi-agent-ide/api/connect-plugin`, `pi-agent-ide/api/toolchain`                                      |
@@ -49,6 +50,85 @@ A typical Pi package manifest starts like this:
 ```
 
 Use a `pi-agent-ide` range compatible with the release you target.
+
+## Standalone resource tools
+
+Use `createStandaloneResourceHost` from `pi-agent-ide/api/standalone` when your extension needs its own resource tools without loading the full IDE. Declare `pi-agent-ide` as a package dependency, but do not add it to Pi's package list unless you also want the full IDE extension. Keep Pi's host packages and `typebox` as peers.
+
+Create the host during extension registration. Connect your Read, Search, editor and documentation plugins to `host.api`, not the original `pi`. The host reuses those kernels on its own protocol bus and result store.
+
+This complete example holds one writable note in memory:
+
+```ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createStandaloneResourceHost } from "pi-agent-ide/api/standalone";
+import { connectReadPlugin, READ_PROTOCOL, READ_API_VERSION } from "pi-agent-ide/api/read";
+import {
+  connectTextEditorPlugin,
+  TEXT_EDITOR_PROTOCOL,
+  TEXT_EDITOR_API_VERSION,
+} from "pi-agent-ide/api/text-editor";
+import type { ResourceResolver } from "pi-agent-ide/api/resource";
+
+export default async function notes(pi: ExtensionAPI): Promise<void> {
+  let text = "alpha\nomega\n";
+  const source = "memory://notes/note";
+  const host = await createStandaloneResourceHost(pi, {
+    namespace: { name: "notes", description: "Read and edit the note." },
+    ownsSource: (value) => value === source,
+  });
+  const resolver: ResourceResolver = {
+    id: "note",
+    async tryResolve(value) {
+      if (value !== source) return { kind: "not-handled" };
+      let snapshot = text;
+      return {
+        kind: "resolved",
+        resource: {
+          source,
+          sourceBytes: Buffer.from(snapshot),
+          skipPostEdit: true,
+          read: async () => [{ type: "text", text: snapshot }],
+          async write(blocks) {
+            if (text !== snapshot) throw new Error("The note changed; read it again.");
+            if (blocks.length !== 1 || blocks[0].type !== "text")
+              throw new Error("The note accepts text only.");
+            text = snapshot = blocks[0].text;
+          },
+        },
+      };
+    },
+  };
+  await connectReadPlugin(host.api, {
+    protocol: READ_PROTOCOL,
+    apiVersion: READ_API_VERSION,
+    id: "note",
+    setup(api) {
+      api.addResolver({ resolver });
+    },
+  });
+  await connectTextEditorPlugin(host.api, {
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "note",
+    setup(api) {
+      api.addResolver({ resolver });
+    },
+  });
+}
+```
+
+Discover `notes` through `tool_search`. The deferred tools are `notes_read`, `notes_search`, `notes_write`, `notes_replace`, `notes_insert`, `notes_delete`, `notes_copy`, `notes_move` and `notes_diff`. Set `tools`, such as `["read", "search", "replace"]`, to expose a smaller subset. A namespace must be a unique lowercase identifier starting with a letter; digits and underscores are allowed after it.
+
+Read a text window, pass its unchanged result to Search to narrow it, then pass the Search result to an editor. Native Codemode uses the same contracts: Search returns `{ result, hasMatches, complete }`, and `result` is the reusable source string. Result scopes and provenance stay private to the host; another host or the full IDE cannot reuse them. Changed snapshots and reloads retire references. Known host edits retire old URI snapshots even when later edits restore the same text. Your provider still owns concurrency checks and evidence for changes made outside the host.
+
+The built-in text and regex Search resolvers search issued scopes only. Register a Search resolver on `host.api` for provider discovery or searches by URI. Package guides with `connectAgentDocumentation(host.api, documents)` to expose them through `notes_read` and `notes_search` on `docs:` sources.
+
+`ownsSource` limits provider URI ownership. Local paths, `file:` resources, foreign references and filesystem image writes are refused. The host installs no filesystem, process, web or Git backends, and a provider's refusal does not enable them. This is a tool boundary, not an operating-system sandbox: your extension still runs with Pi's permissions. Existing Pi or IDE tools remain separate and keep their own capabilities.
+
+The host installs the shared operation approval service once per session bus and preserves an existing policy. It does not automatically gate every mutation or install the full settings menu. Use `confirmOperation(host.api.events, context, request)` for operations your provider classifies as gated, passing the operation's actual signal. Use the public `registerOperationApproval(pi, { isAllowed })` installer if your extension supplies host policy. Keep authorization, exact-target checks and dispatch in the provider. See [Operation approval](#operation-approval) for refusals, session grants and policy rules.
+
+Session shutdown and reload dispose the host automatically. To retire it earlier, call `await host.dispose(context)` from a callback with a current extension context. Disposal aborts and drains active tool executions, hides its tools and releases its runtime state without shutting down sibling hosts. Providers must honor cancellation and release their own network clients or other resources.
 
 ## Settings
 
@@ -236,6 +316,8 @@ export default function register(pi: ExtensionAPI): void | Promise<void> {
   return connectReadPlugin(pi, plugin);
 }
 ```
+
+Use `ResourceError` for provider failures with a public code and source. Its optional bounded rate-limit metadata survives Read sanitization; see [safe provider error metadata](./structured-results.md#safe-provider-error-metadata).
 
 A read Resource does not become writable automatically. Register a matching resolver with the text-editor protocol only when writes are safe and well defined.
 

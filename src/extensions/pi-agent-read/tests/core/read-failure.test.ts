@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import type { ReadFailure } from "#src/api/tools/read.js";
-import { failureResult } from "#src/core/tools/read/read-result.js";
+import { failureResult, readFailureRecovery } from "#src/core/tools/read/read-result.js";
+import { structuredRead } from "#src/core/tools/read/structured-result.js";
 import { createReadTool } from "#src/core/tools/tool-read.js";
 
 function resultText(failure: ReadFailure): string {
@@ -95,4 +96,34 @@ test("unknown backend errors keep their actual reason without fabricated recover
   expect(text).toContain(reason);
   expect(text).not.toContain("Retry");
   expect(text).not.toContain("Search");
+});
+
+test.each<ReadFailure>([
+  { code: "FRAGMENT_FAILED", source: "notes.txt", message: "exact text anchor was not found" },
+  {
+    code: "READ_FAILED",
+    source: "absent.txt",
+    message: "Unable to read absent.txt",
+    cause: Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" }),
+  },
+  {
+    code: "READ_FAILED",
+    source: "src/read-render.ts",
+    message: "Unable to read src/read-render.ts",
+    cause: Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+    candidates: [{ path: "src/read-renderer.ts" }],
+  },
+  { code: "INVALID_REQUEST", message: "No source was provided" },
+])("the Codemode failure value keeps the recovery a direct $code call shows", (failure) => {
+  const value = structuredRead(failureResult(failure)).structuredContent;
+  if (!value || typeof value !== "object" || !("errors" in value) || !Array.isArray(value.errors))
+    throw new Error("Expected a structured failure");
+  const message = (value.errors as { message: string }[])[0]?.message ?? "";
+  const direct = resultText(failure);
+  const steps = readFailureRecovery(failure);
+  expect(steps.length).toBeGreaterThan(0);
+  for (const step of steps) {
+    expect(direct).toContain(step);
+    expect(message).toContain(step);
+  }
 });

@@ -60,11 +60,6 @@ export interface DoctorWorkspace {
   readonly probeBrowser?: (
     signal?: AbortSignal,
   ) => Promise<{ readonly ok: boolean; readonly detail: string }>;
-  /** Check the native graphics connection and libraries without pixels or changing capture opt-in. */
-  readonly probeCapture?: (signal?: AbortSignal) => Promise<{
-    readonly display: { readonly ok: boolean; readonly detail: string };
-    readonly window: { readonly ok: boolean; readonly detail: string };
-  }>;
   readonly source: string;
   readonly platform: NodeJS.Platform;
   files(signal?: AbortSignal): Promise<readonly string[]>;

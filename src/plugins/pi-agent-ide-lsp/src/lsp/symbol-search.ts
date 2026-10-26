@@ -4,7 +4,11 @@ import { URI } from "vscode-uri";
 import { documentUri } from "./document-uri.js";
 import { createTextDocument } from "pi-agent-text";
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
-import { containsSearchMatch, type SearchSelectionMatch } from "pi-agent-search/api/search";
+import {
+  containsSearchMatch,
+  splitGlobList,
+  type SearchSelectionMatch,
+} from "pi-agent-search/api/search";
 
 import { LspManager } from "./manager.js";
 import { requestReferences, type LspLocation } from "./navigation.js";
@@ -60,16 +64,12 @@ function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boole
     return false;
   const candidate = filesystem.relative(native(cwd), native(file)).split(filesystem.sep).join("/");
   const matches = (patterns: string) =>
-    patterns.split(",").some((value) => {
-      const glob = value.trim();
-      return (
-        glob.length > 0 &&
-        filesystem.matchesGlob(
-          glob.includes("/") ? candidate : filesystem.basename(native(file)),
-          glob,
-        )
-      );
-    });
+    splitGlobList(patterns).some((glob) =>
+      filesystem.matchesGlob(
+        glob.includes("/") ? candidate : filesystem.basename(native(file)),
+        glob,
+      ),
+    );
   return (
     (scope.include === undefined || matches(scope.include)) &&
     (scope.exclude === undefined || !matches(scope.exclude))

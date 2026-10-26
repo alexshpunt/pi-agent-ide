@@ -14,7 +14,7 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
 const coverageCode = `
 function check(value, message) { if (!value) throw Error(message); }
-const seed = await tools.search({path:"sample.ts",query:"ast:probe($ARG)",limit:1});
+const seed = await tools.ast_search({path:"sample.ts",pattern:"probe($ARG)",limit:1});
 check(seed.hasMatches === true && seed.complete === false,"Limited search claimed complete coverage");
 const zero = await tools.search({path:seed.result,query:"regex:absent"});
 const some = await tools.search({path:seed.result,query:"regex:probe"});
@@ -26,7 +26,7 @@ check(blocked,"Incomplete scope authorized an edit");
 const clipped = await tools.search({path:"large.txt",query:"regex:entry",limit:1000});
 check(clipped.hasMatches === true && clipped.complete === true,"Presentation clipping changed coverage");
 check(clipped.result.length < 80000,"Large Search did not exercise bounded presentation");
-const files = await tools.search({path:".",query:"files:note.txt"});
+const files = await tools.file_search({path:".",pattern:"note.txt"});
 check(files.hasMatches === true && files.complete === true,"File search lost facts");
 const custom = await tools.search({query:"facts:custom"});
 check(custom.hasMatches === null && custom.complete === null,"Custom payload was interpreted as match facts");
@@ -63,7 +63,7 @@ test("Search separates incomplete coverage, clipped presentation, unknown facts 
         path.resolve("tests/integration/fixtures/search-facts-provider.ts"),
         "builtin:codemode",
       ],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "file_search", "ast_search", "replace", "codemode"],
       conversation: [
         assistantMessage(
           [
@@ -114,7 +114,7 @@ text("Search facts verified");`;
       rawMode: false,
       environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "file_search", "ast_search", "replace", "codemode"],
       conversation: [
         assistantMessage(
           [

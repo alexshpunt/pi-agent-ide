@@ -4,7 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export default function sshSearchFixture(pi: ExtensionAPI): void {
   let selection: string | undefined;
   pi.on("tool_result", (event) => {
-    if (event.toolName !== "search" || selection !== undefined) return;
+    if (!["search", "ast_search"].includes(event.toolName) || selection !== undefined) return;
     selection = /SEARCH#[0-9A-F]{4,64}:all:match/u.exec(JSON.stringify(event.content))?.[0];
   });
   pi.on("tool_call", (event) => {

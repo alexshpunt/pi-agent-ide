@@ -246,15 +246,21 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
   async (limit) => {
     const cwd = await workspace();
     const cases: Record<string, unknown>[] = [];
-    for (const query of [
-      "needle",
-      "regex:needle",
-      "needle AND item",
-      "files:*.txt",
-      "ast:const $NAME = $VALUE;",
-    ]) {
+    const toolFor = (args: Record<string, unknown>) =>
+      "pattern" in args
+        ? String(args.pattern).includes("$")
+          ? "ast_search"
+          : "file_search"
+        : "search";
+    for (const query of ["needle", "regex:needle", "needle AND item"]) {
       cases.push({ query, path: "matrix", ...(limit === undefined ? {} : { limit }) });
     }
+    cases.push({
+      pattern: "const $NAME = $VALUE;",
+      path: "matrix",
+      ...(limit === undefined ? {} : { limit }),
+    });
+    cases.push({ pattern: "*.txt", path: "matrix", ...(limit === undefined ? {} : { limit }) });
     for (const caseSensitive of [false, true])
       for (const wholeWord of [false, true]) {
         cases.push({
@@ -309,13 +315,13 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
           cwd,
           extensions: [extension, "builtin:codemode"],
           transport: "rpc",
-          tools: ["search", "read", "select", "codemode"],
+          tools: ["search", "file_search", "ast_search", "read", "codemode"],
           isolateUserResources: true,
         },
         [
           ...cases.map((args, index) =>
             assistantMessage(
-              [toolCall({ id: `search-${index}`, name: "search", arguments: args })],
+              [toolCall({ id: `search-${index}`, name: toolFor(args), arguments: args })],
               {
                 stopReason: "toolUse",
               },
@@ -327,7 +333,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
                 id: "scoped-search",
                 name: "codemode",
                 arguments: {
-                  code: 'const result = await tools.search({ query: "needle", path: "regression", limit: 1 }).then(value => value.result); const tail = await tools.select({path:result,operation:{kind:"within",scopes:"regression/1724-"+ "long-path-".repeat(8)+".txt"}}); text(await tools.search({ query: "needle", path: tail, limit: 1 }).then(value => value.result));',
+                  code: 'const tail = await tools.read({path:"regression/1724-"+ "long-path-".repeat(8)+".txt"}); text(await tools.search({ query: "needle", path: tail, limit: 1 }).then(value => value.result));',
                 },
               }),
             ],
@@ -348,9 +354,8 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
               ? "10114 matches in 1725 files"
               : "2048 matches in 256 files",
           );
-          const items =
-            (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length +
-            (output.match(/\(compacted\)/gu) ?? []).length;
+          // Every displayed item carries a reference, including each compacted file's first line.
+          const items = (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length;
           expect(items).toBeLessThanOrEqual(Number(args.limit ?? 50));
           expect(items).toBeGreaterThan(0);
         }
@@ -366,7 +371,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
   },
   210000,
 );
-test("stresses array scopes, verified anchors and annotation views without widening limits", async () => {
+test("stresses write-result scopes, verified anchors and annotation views without widening limits", async () => {
   const cwd = await workspace();
   try {
     for (const name of ["a", "b"])
@@ -382,7 +387,6 @@ test("stresses array scopes, verified anchors and annotation views without widen
       const a = await tools.write({path:"a.ts",content:source("a")});
       const b = await tools.write({path:"b.ts",content:source("b")});
       if (source("a").length <= 51200) throw new Error("Scope fixture is too small");
-      const combined = await tools.select({path:[a,b],operation:{kind:"merge"}});
       let checked = 0;
       const verify = (value, limit, resources) => {
         const body = value.replace(/^<system-result[^\\n]*>\\n/u,"").split("\\n\\n[Output truncated:")[0];
@@ -393,7 +397,7 @@ test("stresses array scopes, verified anchors and annotation views without widen
       };
       for (const offset of [-1,1,2]) for (const limit of [0,1,1000000]) {
         for (const views of [["anchors"],["ast"],["anchors","ast"],["diagnostics"],["breakpoints"]]) {
-          verify(await tools.read({path:combined,offset,limit,views}),limit,2);
+          for (const source of [a,b]) verify(await tools.read({path:source,offset,limit,views}),limit,1);
         }
       }
       const selected = await tools.read({path:"a.ts",offset:299,limit:1,views:["anchors"]});
@@ -411,7 +415,7 @@ test("stresses array scopes, verified anchors and annotation views without widen
       extensions: [extension, "builtin:codemode"],
       transport: "rpc",
       isolateUserResources: true,
-      tools: ["read", "write", "select", "codemode"],
+      tools: ["read", "write", "codemode"],
       systemPrompt: "Execute the tool checks.",
       conversation: [
         assistantMessage([toolCall({ id: "scope-views", name: "codemode", arguments: { code } })], {
@@ -423,7 +427,7 @@ test("stresses array scopes, verified anchors and annotation views without widen
     }).run("Stress exact source scopes and view combinations");
     await expectProviderBudgets(result);
     expect(getToolResultMessage(result, "scope-views").isError).toBe(false);
-    expect(getToolResultText(result, "scope-views")).toMatch(/"checked"\s*:\s*57/u);
+    expect(getToolResultText(result, "scope-views")).toMatch(/"checked"\s*:\s*102/u);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -550,7 +554,7 @@ test("keeps full mutation effects and selections behind bounded useful previews"
   ).join("\n");
   const scripts = [
     'const value = await tools.write({path:"large.txt",content:Array.from({length:4000}, (_,index)=>`row_${index}: ${"content ".repeat(12)}`).join("\\n")}); store("written",value); text(value);',
-    'const selected = await tools.select({path:load("written"), operation:{kind:"lines",first:4000,last:4000}}); text(await tools.read({path:selected}));',
+    'text(await tools.read({path:load("written"), offset:4000, limit:1}));',
     'text(await tools.copy({path:"large.txt",target:"copy.txt"})); text(await tools.move({path:"copy.txt",target:"moved.txt"}));',
     'const replaced=await tools.replace({path:"moved.txt",start:"row_3999:",text:"last_row:"}); text(await tools.read({path:replaced,limit:1})); text(await tools.insert({path:"moved.txt",anchor:"last_row:",text:"inserted"}));',
     'text(await tools.undo({file:"moved.txt",change:"last"})); text(await tools.diff({before:"large.txt",after:"moved.txt"})); text(await tools.delete({path:"moved.txt"}));',
@@ -567,7 +571,6 @@ test("keeps full mutation effects and selections behind bounded useful previews"
       tools: [
         "read",
         "write",
-        "select",
         "copy",
         "move",
         "replace",
@@ -608,7 +611,6 @@ test("keeps full mutation effects and selections behind bounded useful previews"
     expect(getToolCallNames(result)).toEqual(
       expect.arrayContaining([
         "write",
-        "select",
         "read",
         "copy",
         "move",
@@ -725,8 +727,8 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
       Array.from({ length: 400 }, (_, index) => `const use_${index} = ${exact}();`).join("\n"),
     );
     const cases = [1, 80, 1000].flatMap((limit) => [
-      { query: `symbols:${prefix}`, path: source, limit },
-      { query: `symbols:${exact}`, path: source, limit, navigation: "references" as const },
+      { query: prefix, path: source, limit },
+      { query: exact, path: source, limit, references: true as const },
     ]);
     const resultFor = await runBatches(
       {
@@ -736,13 +738,16 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
         extensions: [extension],
         transport: "rpc",
         isolateUserResources: true,
-        tools: ["search"],
+        tools: ["lsp_search"],
         timeoutMs: 60000,
       },
       cases.map((args, index) =>
-        assistantMessage([toolCall({ id: `symbol-${index}`, name: "search", arguments: args })], {
-          stopReason: "toolUse",
-        }),
+        assistantMessage(
+          [toolCall({ id: `symbol-${index}`, name: "lsp_search", arguments: args })],
+          {
+            stopReason: "toolUse",
+          },
+        ),
       ),
       3,
     );
@@ -755,13 +760,13 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
       expect((output.match(/SEARCH#[^\n]*:\d+:match /gu) ?? []).length).toBeLessThanOrEqual(
         args.limit,
       );
-      if (args.navigation === "references" && args.limit > 1) expect(output).toContain("uses.ts");
+      if ("references" in args && args.limit > 1) expect(output).toContain("uses.ts");
     }
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 }, 150000);
-test("stresses limits on HTTP text, process lists and terminal search", async () => {
+test("stresses limits on HTTP text and terminal search", async () => {
   const cwd = await workspace();
   const body = Array.from(
     { length: 4000 },
@@ -785,7 +790,6 @@ test("stresses limits on HTTP text, process lists and terminal search", async ()
           arguments: { query, path: url, limit, wholeWord, caseSensitive: true },
         })),
       ),
-      { name: "search", arguments: { query: "process:node", limit } },
     ]);
     const resultFor = await runBatches(
       {
@@ -809,9 +813,7 @@ test("stresses limits on HTTP text, process lists and terminal search", async ()
       expect(getToolResultMessage(result, `resource-${index}`).isError, output).toBe(false);
       expectBounded(output);
       if (entry.name === "search") {
-        const count = entry.arguments.query?.startsWith("process:")
-          ? (output.match(/^PID: /gmu) ?? []).length
-          : Number(/^(\d+)\+? matches/mu.exec(usefulText(output))?.[1]);
+        const count = Number(/^(\d+)\+? matches/mu.exec(usefulText(output))?.[1]);
         expect(count, output).toBeGreaterThan(0);
         expect(count, output).toBeLessThanOrEqual(entry.arguments.limit);
       }
@@ -874,7 +876,6 @@ test("bounds malformed argument failures before they enter provider context", as
     copy: { path: [payload], target: "unused.txt" },
     move: { path: [payload], target: "unused.txt" },
     diff: { before: { path: [payload] }, after: "unused.txt" },
-    select: { path: "unused.txt", operation: { kind: payload } },
     undo: { file: "unused.txt", change: payload },
     stage: { file: "unused.txt", change: payload },
     unstage: { file: "unused.txt", change: payload },
@@ -923,6 +924,9 @@ for (const nested of [false, true]) {
     const cases: Record<string, Record<string, unknown>> = {
       read: { path: hugePath },
       search: { query: "needle", path: hugePath },
+      file_search: { pattern: "needle", path: hugePath },
+      ast_search: { pattern: "needle($A)", path: hugePath },
+      lsp_search: { declaration: `${hugePath}#needle` },
       write: { path: hugePath, content: "new" },
       replace: { path: hugePath, start: "needle", text: "new" },
       insert: { path: hugePath, anchor: "needle", text: "new" },
@@ -930,7 +934,6 @@ for (const nested of [false, true]) {
       copy: { path: hugePath, target: "copy.txt" },
       move: { path: hugePath, target: "moved.txt" },
       diff: { before: hugePath, after: "small.txt" },
-      select: { path: hugePath, operation: { kind: "lines", first: 1, last: 1 } },
       undo: { file: hugePath, change: "last" },
       stage: { file: hugePath, change: "CHANGE#ABCD" },
       unstage: { file: hugePath, change: "CHANGE#ABCD" },

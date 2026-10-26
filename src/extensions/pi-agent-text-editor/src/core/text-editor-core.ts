@@ -1,4 +1,4 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import type {
   FileOperation,
   FileOperationInput,
@@ -10,7 +10,11 @@ import {
   isUriSource,
   type FileOperationContext,
 } from "#src/core/file-operations.js";
-import { guardFileOperation, type FileGuardSnapshot } from "#src/core/file-operation-guards.js";
+import {
+  guardFileChanges,
+  guardFileOperation,
+  type FileGuardSnapshot,
+} from "#src/core/file-operation-guards.js";
 import path from "node:path";
 import { deferPostEdit, collectPostEditNotifications } from "#src/core/post-edit-scope.js";
 import { requiredValue } from "pi-agent-invariant";
@@ -211,6 +215,8 @@ interface PromptContribution {
   readonly description: string;
   readonly pluginId: string;
   readonly tool: TextEditorToolId;
+  /** Schema field this text describes; absent for the tool description. */
+  readonly field?: string;
 }
 
 interface WritablePromptContribution {
@@ -386,6 +392,14 @@ export interface TextEditorCore {
     signal?: AbortSignal,
     deletion?: FileOperationContext,
   ): Promise<FileOperationResult>;
+  /**
+   * Replace whole local files with bytes after the mutation guards accept them; callers
+   * serialize it with enqueueFileOperation. A failure while writing has an unknown effect.
+   */
+  writeFiles(
+    files: readonly { readonly source: string; readonly bytes: Uint8Array }[],
+    context: ResourceResolverContext,
+  ): Promise<void>;
   inspectTextAnchors(request: TextAnchorInspectionRequest): Promise<TextAnchorInspectionOutcome>;
   addAnchorResolver(registration: TextAnchorResolverRegistration): void;
   resolveTextAnchorResources(
@@ -442,6 +456,8 @@ export interface TextEditorCore {
   /** Returns the configured number of lines around recovery candidates. */
   recoveryContextLines(): number;
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
+  /** Plugin text for one schema field of a tool, from active plugins only. */
+  renderToolFieldDescription(tool: TextEditorToolId, field: string): string | undefined;
 }
 
 /** Share issued-result authority with streamed anchor inspection, before tool-call normalization. */
@@ -746,6 +762,36 @@ export function createTextEditorCore(
         [...fileOperationResolvers],
         (kind, args) => guardOwnedFiles(kind, args, { cwd, signal }),
       ),
+    async writeFiles(files, context) {
+      const read = (source: string) =>
+        readFileGuardSnapshot(
+          source,
+          context,
+          [...resolvers].sort(
+            (left, right) => left.priority - right.priority || left.order - right.order,
+          ),
+        );
+      const changes = await Promise.all(
+        files.map(async (file) => ({ before: await read(file.source), after: file.bytes })),
+      );
+      await guardFileChanges(
+        changes,
+        changes.map((change) => change.before),
+        { ...context, intent: "edit" },
+        read,
+        [...mutationGuards],
+      );
+      try {
+        for (const file of files) {
+          await mkdir(path.dirname(file.source), { recursive: true });
+          await writeFile(file.source, file.bytes, { signal: context.signal });
+        }
+      } catch (error) {
+        throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+          effect: "unknown",
+        });
+      }
+    },
     addAnchorResolver(registration): void {
       if (!isTextAnchorResolverRegistration(registration)) {
         throw new TypeError("Invalid text anchor resolver");
@@ -1088,7 +1134,9 @@ export function createTextEditorCore(
 
         const contribution = promptContributions.find(
           (candidate) =>
-            candidate.pluginId === registeredPlugin.plugin.id && candidate.tool === tool,
+            candidate.pluginId === registeredPlugin.plugin.id &&
+            candidate.tool === tool &&
+            candidate.field === undefined,
         );
 
         if (contribution !== undefined) {
@@ -1097,6 +1145,28 @@ export function createTextEditorCore(
       }
 
       return entries.length === 0 ? undefined : entries.join("\n");
+    },
+    renderToolFieldDescription(tool, field): string | undefined {
+      const entries: string[] = [];
+
+      for (const registeredPlugin of plugins.values()) {
+        if (registeredPlugin.lifecycle.status !== "active") {
+          continue;
+        }
+
+        const contribution = promptContributions.find(
+          (candidate) =>
+            candidate.pluginId === registeredPlugin.plugin.id &&
+            candidate.tool === tool &&
+            candidate.field === field,
+        );
+
+        if (contribution !== undefined) {
+          entries.push(contribution.description);
+        }
+      }
+
+      return entries.length === 0 ? undefined : entries.join(" ");
     },
     async waitForPendingPlugins(): Promise<void> {
       await Promise.all(pendingPlugins);
@@ -2350,6 +2420,22 @@ function createPluginContributionController(
       throw new Error(`Plugin ${pluginId} API is closed`);
     }
   };
+  const addPromptContribution = (contribution: PromptContribution): void => {
+    if (state === "setup") {
+      assertNoDraftDescription(setupDraft.promptContributions, contribution);
+      setupDraft.promptContributions.push(contribution);
+      return;
+    }
+
+    registerContributions({
+      resolvers: [],
+      anchorResolvers: [],
+      handlers: [],
+      promptContributions: [contribution],
+      writablePromptContributions: [],
+      tools: [],
+    });
+  };
   const createToolApi = (tool: TextEditorToolId): TextEditorToolPluginApi => ({
     addSemanticHandler(handler): void {
       assertAvailable();
@@ -2401,25 +2487,22 @@ function createPluginContributionController(
     },
     describe(description): void {
       assertAvailable();
-      const contribution: PromptContribution = {
+      addPromptContribution({
         description: normalizeDescription(`Plugin prompt description for ${tool}`, description),
         pluginId,
         tool,
-      };
-
-      if (state === "setup") {
-        assertNoDraftDescription(setupDraft.promptContributions, contribution);
-        setupDraft.promptContributions.push(contribution);
-        return;
-      }
-
-      registerContributions({
-        resolvers: [],
-        anchorResolvers: [],
-        handlers: [],
-        promptContributions: [contribution],
-        writablePromptContributions: [],
-        tools: [],
+      });
+    },
+    describeField(field, description): void {
+      assertAvailable();
+      addPromptContribution({
+        description: normalizeDescription(
+          `Plugin prompt description for ${tool}.${field}`,
+          description,
+        ),
+        pluginId,
+        tool,
+        field,
       });
     },
   });
@@ -2845,7 +2928,7 @@ function handlerKey(handler: RegisteredHandler): string {
 }
 
 function descriptionKey(contribution: PromptContribution): string {
-  return `${contribution.pluginId}\0${contribution.tool}`;
+  return `${contribution.pluginId}\0${contribution.tool}\0${contribution.field ?? ""}`;
 }
 
 function normalizeDescriptionSource(value: unknown): PromptDescriptionSource {

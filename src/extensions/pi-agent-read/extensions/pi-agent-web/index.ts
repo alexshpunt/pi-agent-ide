@@ -47,6 +47,33 @@ export async function registerWebWithOwner(
     apiVersion: READ_API_VERSION,
     id: "web",
     setup(api) {
+      api.addHandler({
+        stage: "pre-read",
+        handler(context) {
+          const source = context.request.path;
+          if (
+            source === undefined ||
+            !/^(?:https?:\/\/|web:ssh:\/\/)/iu.test(source) ||
+            !context.request.views?.some((view) => /^(?:image|sequence)(?::|$)/u.test(view))
+          )
+            return { kind: "continue", context };
+          // Do not silently substitute page text for an explicitly requested screenshot.
+          const message =
+            "Website image and sequence views are not supported. Omit these views to read website content.";
+          return {
+            kind: "return",
+            result: {
+              content: [{ type: "text", text: message }],
+              details: {
+                source,
+                resolvedBy: "web",
+                failure: { code: "UNSUPPORTED_CAPABILITY", source, resolverId: "web", message },
+              },
+              isError: true,
+            },
+          };
+        },
+      });
       api.addResolver({
         resolver: webResolver,
         renderResult: renderWebResult,
@@ -56,7 +83,7 @@ export async function registerWebWithOwner(
         path: () =>
           renderContentDescription(
             owner
-              ? "HTTP(S) URLs use local HTTP/browser execution; web:ssh://target/https://… explicitly uses the configured target. Web content is read-only. Target browser fallback requires target-installed Node, playwright-core and Chrome/Chromium. Browser reads enable page JavaScript and disable the Chromium sandbox, using a fresh temporary profile."
+              ? "HTTP(S) URL — fetched locally; web:ssh://<target>/https://… — fetched on that SSH target."
               : "HTTP(S) URL — remote content.",
             readHost.listDescriptions(),
           ),
@@ -73,11 +100,6 @@ export async function registerWebWithOwner(
       api.addResolver({ resolver: createWebSearchResolver(webResolver), priority: -100 });
       api.describe(
         "HTTP(S) Search reuses converted page text for zero-result identifier spelling suggestions. Candidate groups carry the URL and line ranges, never editable SEARCH references.",
-      );
-      api.addPromptGuideline(
-        owner
-          ? "Use search with an HTTP(S) path for local web execution or web:ssh://target/https://… for explicit target execution; no prior read is required."
-          : "Use search with an HTTP(S) path to find text on a web page; no prior read is required.",
       );
     },
   } satisfies SearchPlugin;

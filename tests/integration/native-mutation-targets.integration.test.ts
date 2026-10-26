@@ -18,14 +18,7 @@ test("pending native results gain exact authority only after their original-snap
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
-        disabled: [
-          "ide.lsp",
-          "ide.lint",
-          "ide.formatter",
-          "ide.debugger",
-          "ide.terminal",
-          "ide.vision",
-        ],
+        disabled: ["ide.lsp", "ide.lint", "ide.formatter", "ide.debugger", "ide.terminal"],
       }),
     );
     await writeFile(path.join(cwd, "note.txt"), "alpha café beta\r\n");
@@ -78,14 +71,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
-        disabled: [
-          "ide.lsp",
-          "ide.lint",
-          "ide.formatter",
-          "ide.debugger",
-          "ide.terminal",
-          "ide.vision",
-        ],
+        disabled: ["ide.lsp", "ide.lint", "ide.formatter", "ide.debugger", "ide.terminal"],
       }),
     );
     await writeFile(path.join(cwd, "note.txt"), "alpha café\n");
@@ -117,7 +103,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
             id: "rejected",
             name: "codemode",
             arguments: {
-              code: 'const target = "owned-cancelled-target"; let rejected; try { await tools.read({path:target}); } catch(error) { rejected=String(error); } if(!rejected || !rejected.includes("interrupted before writing")) throw Error("Cancelled result gained authority or lost its rejection reason: "+rejected); text(rejected);',
+              code: 'const target = "owned-cancelled-target"; const failure = await tools.read({path:target}); const rejected = failure?.status === "error" ? failure.errors.map((error) => error.message).join("\\n") : undefined; if(!rejected || !rejected.includes("interrupted before writing")) throw Error("Cancelled result gained authority or lost its rejection reason: "+JSON.stringify(failure)); text(rejected);',
             },
           }),
         ]),

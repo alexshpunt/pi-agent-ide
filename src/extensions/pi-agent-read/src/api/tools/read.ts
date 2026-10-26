@@ -143,6 +143,8 @@ export interface ReadNativeState extends ReadStateBase {
 export type ReadState = ReadTextState | ReadNativeState;
 
 export interface ReadPipelineContext {
+  /** A selection/anchor acquires its source internally but does not expose the complete source to transformations. */
+  readonly inputScope?: "source" | "selection";
   /** Original UTF-8 file snapshot from this acquisition. Derived-view handlers clear it, even when their output matches the source. */
   readonly sourceText?: string;
   /** Original strict selection handle; surrounding Read lines do not widen its authority. */

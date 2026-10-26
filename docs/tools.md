@@ -37,7 +37,7 @@ A source field such as `path` or mutation `target` is therefore a resource field
 
 ## SSH resources
 
-Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, Select, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads and capture use explicit remote sources rather than changing where ordinary URLs execute.
+Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads use explicit remote sources rather than changing where ordinary URLs execute.
 
 Authentication stays in OpenSSH. Target programs require their dependencies on that machine; missing support does not fall back to local execution. See [SSH configuration](./configuration.md#ssh-targets) and the [SSH guide](./agent-guides/ssh.md) for setup, prerequisites and supported sources.
 
@@ -76,18 +76,6 @@ LSP reads prefer standard pull reports. Servers that advertise a supported compl
 
 Other push-only servers return a `snapshot`: the latest publication, with no promise that every check has finished. This also applies to versioned pushes. An empty snapshot is not a completed clean report. For example, clangd publications remain usable C++ snapshots without invoking TypeScript commands. Later pushes from pull-capable or adapter-backed servers trigger a fresh completed request rather than replacing it with a partial publication.
 
-### Agent vision
-
-Use `search({query: "process:<query>"})` to find running processes by PID or command, then read `process:<pid>` for metadata. Read `window:<pid>` to capture a process window. Agent IDE-owned terminal PIDs are allowed by default. Other windows fail closed unless **Capture arbitrary windows** is enabled or their exact executable file name appears in **Vision allowed executables** in Agent IDE settings.
-
-Read `display:` to capture display 0 or `display:#N` to capture another zero-based display index. Full-display capture fails closed unless **Capture full displays** is enabled in Agent IDE settings. It uses the same image, sequence, and grid-cell behavior as window and web capture.
-
-Capture views accept named parameters after a colon. For example, `sequence:duration=2,interval=0.5,scale=0.5` captures five frames over two seconds, while `image:scale=0.5,region=0.25,0.25,0.5,0.5` returns the central half at half size. Duration is capped at 10 seconds and each sequence at 20 frames. Region values are normalized `x,y,width,height`; the pipeline applies region, then scale, then the existing `offset`/`limit` grid selection.
-
-For an HTTP(S) URL, use `views: ["image"]` to return a rendered page screenshot or `views: ["sequence"]` for a sequence using the configured duration and interval defaults. The default settings are two seconds, 0.5 seconds between frames, and 0.5 image scale. With an image view, `limit` is the size in pixels of a square grid cell and `offset` selects one zero-based row-major cell. A limit without an offset selects cell 0. An offset without a limit is invalid. Omit both to return the bounded full image. Captures are limited to 20 MB of source pixels.
-
-Window and display capture use `node-screenshots` on Linux and macOS. Desktop or window-manager restrictions are reported as unsupported instead of falling back to whole-screen capture. Under WSL, Windows PowerShell helpers capture Windows host process windows and displays. Web screenshots use an isolated system Chrome or Chromium browser. Missing platform support, browser support, windows, or permissions are reported as read failures.
-
 ## Terminal sessions
 
 Codemode receives the same readable shell status and output as direct calls. The result includes its session source and a reference to the complete log when output is shortened. A wait timeout leaves a running session, not a failed command. Inspect the reported exit status and effects; failed tools can reject.
@@ -105,14 +93,15 @@ The UI tab in `/agent-ide-settings` controls persistent active-terminal presenta
 
 Use `read` on the returned source for status and bounded output. Compact cards show the latest 12 output rows and count omitted earlier rows; expanded cards show all retained rows. Add `views: ["image"]` to receive a PNG of the ANSI-aware virtual terminal screen. Use `write` to send exact text without Enter. Use `insert` for named keys and chords such as `Enter`, `Ctrl+C`, `Ctrl+Shift+Left`, or Unix caret controls such as `^U`; separate multiple keys with spaces or commas. A native Codemode script can send several terminal inputs without file formatting or diagnostics. Use `search` with the `shell:<session>` path to search retained output, including rows outside the current screen. `delete` terminates the owned process tree when needed, disposes the virtual screen, and removes the session. `replace` does not apply to terminal sessions.
 
+For a bounded terminal sequence, use `views: ["sequence:duration=2,interval=0.5,scale=1"]`. This returns five PNG frames over two seconds. Duration is capped at 10 seconds and each sequence at 20 frames. Terminal images and sequences support scale from greater than 0 through 1; they do not support region or grid-cell selection.
+
 Deleting an active session first requests graceful termination, then forcefully terminates its process tree after the grace period. Deletion does not undo file or network effects. Sessions survive extension reloads in the current Pi process. Shutdown stops live processes; sessions are not reattached after restart.
 
 ## Search
 
 `search` gives the agent one discovery interface. Built-in resolvers cover:
 
-- file and text search;
-- language-aware and structural search;
+- file content search;
 
 A resolver decides whether it understands a query. The first successful resolver returns the result. Search plugins can add new query forms without adding another agent tool.
 
@@ -125,7 +114,7 @@ Local groups provide current Read selections; a complete candidate all-reference
 Boolean queries keep their conditions across literal and regex attempts. They support uppercase `AND`, `OR`, infix `NOT`, `||`, and space-separated `|`. Adjacent terms imply `AND`; `AND` and `NOT` bind more tightly than `OR`. Parentheses containing Boolean operators group conditions. Regex groups, classes, and escapes stay inside terms: `(?:foo|bar)\d+ AND "keep.me" NOT ignored`. An unspaced `foo|bar` is searched as literal text first, then as regex alternatives. Single or double quotes keep a term literal in every attempt. Quoted and Boolean queries never fall back to separate words. Invalid Boolean expressions report the source column and expected syntax.
 Boolean text searches also work with registered result scopes. Each selected range is searched on its own: terms outside it, in sparse gaps, or on another line cannot satisfy a condition.
 
-Empty protocol queries such as `symbols:` and unhandled prefixes such as `unknown:needle` search their original text, including the prefix. The tool reports this fallback. Nonempty installed protocols keep their specialized behavior; service errors, timeouts, and successful protocol searches with no results do not launch local text search. Plugins mark a local fallback resolver with `fallback: true`; these resolvers run after specialists regardless of numeric priority and receive empty protocol queries directly.
+Empty protocol queries such as `regex:` and unhandled prefixes such as `unknown:needle` search their original text, including the prefix. The tool reports this fallback. Nonempty installed protocols keep their specialized behavior; service errors, timeouts, and successful protocol searches with no results do not launch local text search. Plugins mark a local fallback resolver with `fallback: true`; these resolvers run after specialists regardless of numeric priority and receive empty protocol queries directly.
 
 A complete search call times out after 30 seconds by default, including resolver work and result formatting. The timeout cancels the active resolver and tells the agent to retry with a smaller `path` scope. Global and project `search.json` files can change or disable the timeout as described in [Configuration](./configuration.md#search-timeout).
 
@@ -144,11 +133,21 @@ A `:line` range includes its LF or CRLF line ending. A whole-line replacement pr
 
 Per-result forms keep the search-time snapshot and fail as stale after their matched file changes. Complete `:all` forms rerun the original search recipe when a matched file changes, then select the current complete result set. Limited or otherwise incomplete searches omit the `:all` forms. A forged `:all` value for an incomplete search is rejected.
 
-## Select
+## File search
 
-`select` derives source-backed ranges or positions without editing. Text operations include lines, slices, marker pairs, columns and insertion positions. Selection-set operations keep, intersect, subtract or merge ranges within each source. JavaScript and TypeScript AST operations can find enclosing constructs, their named parts and related nodes; JSX/TSX is not supported by these structural selections.
+`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored. Results are sorted, limited by `limit` (default 100), and mark an incomplete list when the limit is reached.
 
-Pass the returned result to Read, Search or an editing tool. Explicit boundary operations can expand a match to its containing line or construct, but displayed context alone does not expand its edit selection. See the [selection guide](./agent-guides/select-code.md).
+## Syntax search
+
+`ast_search` runs [ast-grep](https://ast-grep.github.io/) in files or inside a returned Read, Search or edit result, for every language ast-grep supports. It takes either a `pattern` in source-code syntax, with `$NAME` and `$$$ARGS` captures, or an ast-grep `rule` object with a `language`. Rules add relations such as `inside`, `has`, `not`, `follows` and `precedes`. With a result as `path`, `relation: "enclosing"` returns the innermost match that contains each range, for example the function around a text match. Matches and captures are guarded `SEARCH#` and `RESULT#` selections like text search results. The agent guide is `docs:ast-search`.
+
+## Language-server search
+
+`lsp_search` asks the project's language servers. `query` finds declarations and references by symbol name in the workspace, a path or a returned result; `references: true` follows symbols found inside that scope to references elsewhere in the workspace. `declaration: "file#selector"` returns one declaration as a guarded `SEARCH#` selection. `calls: "file"` or `calls: "file#selector"` lists references and incoming and outgoing calls. Editing tools keep accepting `symbol:<file>#<selector>` paths, and `symbol:<file>#<selector>#name` triggers a native rename.
+
+## Narrowing a result
+
+Search inside a returned Read, Search or edit result to narrow it before editing. A regex inside the result selects a span between markers, part of a line or an insertion point; `multiline: true` lets one match span several lines. `ast_search` on the same result selects construct parts such as a function body or an argument list through its captures, or the function that encloses a match, and `SEARCH#...:line` references select complete containing lines. Displayed context alone does not expand an edit selection.
 
 ## Editing
 
@@ -167,11 +166,13 @@ They share the same Resource and anchor contracts. A mutation can resolve one or
 
 Use an ordinary path without text selectors for whole-file Write or whole-object Delete, Copy, and Move. Copy and Move require an explicit destination path. They support regular files, directories and symlink objects, including local/SSH transfers. Directory merge/replace behavior, safety checks and uncertain effects are described in [directory operations](./directory-operations.md).
 
-For selected-text work, a path identifies the source and anchors identify the span. Pass an unchanged Read, Search, Select or mutation result when it already selects the wanted text. `replace` changes each selected range; `delete` removes those ranges while keeping the file; `insert` adds text around the selected lines. A directory listing or read-only view does not grant text-edit authority.
+To save an image a Read returned, such as a terminal screenshot or image file, pass that Read result as Write `content`: the image value itself in Codemode, or the result's UUID or `RESULT#` reference in a direct call. Write saves the exact image bytes, and the file extension must match the image type (`.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`). Several frames become numbered files: `<name>-01.png`, `<name>-02.png`… beside the path, or `frame-01.png`… inside a folder path. Any other text, including a UUID of a result without images, is not image content: plain text is written as before, and an image-less result reference is refused.
 
-Use Select to derive new boundaries rather than reconstructing them from previews. Copy and Move can pair source and destination selections, with equal counts. With ordinary file paths, text transfers use `targetStart` as the insertion anchor or `targetStart`/`targetEnd` as the replacement range. These selectors do not apply to whole-object transfers.
+For selected-text work, a path identifies the source and anchors identify the span. Pass an unchanged Read, Search or mutation result when it already selects the wanted text. `replace` changes each selected range; `delete` removes those ranges while keeping the file; `insert` adds text around the selected lines. A directory listing or read-only view does not grant text-edit authority.
 
-Use `start` alone for an exact fragment or one line anchor. With `end`, the range includes complete lines from the first containing line through the last. Snapshot-backed selectors reject changed files; missing or ambiguous exact text is rejected rather than guessed.
+Narrow a result with Search rather than reconstructing boundaries from previews. Copy and Move can pair source and destination selections, with equal counts. With ordinary file paths, text transfers use `targetStart` as the insertion anchor or `targetStart`/`targetEnd` as the replacement range. These selectors do not apply to whole-object transfers.
+
+Use `start` alone for an exact fragment or one line selection. Paired `start`/`end` and `targetStart`/`targetEnd` preserve each endpoint's extent: exact text and `SEARCH :match` keep character boundaries, while line anchors and `SEARCH :line` keep whole-line boundaries. A pair runs from the beginning of its first endpoint through the end of its last endpoint, including the ending match. Mixed types retain their independent extents. Snapshot-backed selectors reject changed files; missing or ambiguous exact text is rejected rather than guessed.
 
 Independent standalone edits in one tool-call batch use their original snapshots. Inside native Codemode, run dependent edits in order and independent resources concurrently. Dependent source-tool calls commit eligible pending edits before consuming their results; script completion saves the remaining batch. Write saves its file and finishes post-edit processing before returning. No Apply or Flush tool is needed.
 

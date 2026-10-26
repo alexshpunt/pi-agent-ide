@@ -21,7 +21,11 @@ function parsePresentation(value: string | undefined): "full" | "compact" | "dis
 }
 export default async function registerTextEditorRenderer(
   pi: ExtensionAPI,
-  context?: { readonly preferences: Readonly<Record<string, string>> },
+  context?: {
+    readonly preferences: Readonly<Record<string, string>>;
+    /** Adapt visible tool identity without replacing the stateful mutation renderer. */
+    readonly toolName?: (name: string) => string;
+  },
 ): Promise<void> {
   const diffPresentation = parsePresentation(context?.preferences["ui.diffs"]);
   const animationPressure = createMutationAnimationPressure(pi);
@@ -67,6 +71,7 @@ export default async function registerTextEditorRenderer(
         // Completed panels can be redrawn after Pi has invalidated the extension API.
         () => animationsEnabled,
         diffPresentation,
+        context?.toolName,
       );
       pi.on("tool_result", (event) => {
         if (

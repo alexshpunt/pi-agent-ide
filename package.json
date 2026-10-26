@@ -59,7 +59,6 @@
     "text-editor",
     "transactional-editing",
     "typescript",
-    "vision",
     "web-reader",
     "web-scraping",
     "windows",
@@ -107,6 +106,10 @@
     "#scripts/*": "./scripts/*"
   },
   "exports": {
+    "./api/standalone": {
+      "types": "./src/api/standalone.ts",
+      "default": "./src/api/standalone.ts"
+    },
     "./api/settings": {
       "types": "./src/api/settings.ts",
       "default": "./src/api/settings.ts"
@@ -229,9 +232,9 @@
     "diff": "^9.0.0",
     "fast-fuzzy": "1.12.0",
     "node-pty": "^1.1.0",
-    "node-screenshots": "0.2.8",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-documentation": "workspace:^",
+    "pi-agent-filesystem-jq": "workspace:^",
     "pi-agent-image": "workspace:^",
     "pi-agent-invariant": "workspace:^",
     "pi-agent-pdf": "workspace:^",

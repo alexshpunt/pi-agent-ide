@@ -1,5 +1,5 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectResultTargets } from "pi-agent-resource";
+import { connectResultImages, connectResultTargets } from "pi-agent-resource";
 import { setMutationSnapshotReader } from "./mutation-result-targets.js";
 import { registerTextEditOrigins } from "./text-edit-origin.js";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -51,6 +51,7 @@ export default async function registerTextEditorCore(
     interceptionRendering.clear();
   });
   const resultTargets = connectResultTargets(pi);
+  const resultImages = connectResultImages(pi);
   const mutationTools = new Set<string>();
   const core = createTextEditorCore((registration, editor) => {
     mutationTools.add(registration.name);
@@ -62,13 +63,20 @@ export default async function registerTextEditorCore(
         () => getLastResolvedResource(pi)?.source,
         resultTargets,
         pi.events,
+        resultImages,
       ),
     );
   }, resultTargets);
   registerTextEditOrigins(pi, core);
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
   core.onDidEdit((completion) => {
-    resultTargets.refresh(completion.resourceSource, completion.cwd);
+    // A final formatting pass must not retire fresh mutation spans when it left the text unchanged.
+    const before = completion.beforePostProcessing ?? completion.before;
+    resultTargets.refresh(
+      completion.resourceSource,
+      completion.cwd,
+      before.content !== completion.after.content,
+    );
   });
   await core.registerPlugin({
     protocol: TEXT_EDITOR_PROTOCOL,
@@ -98,11 +106,9 @@ export default async function registerTextEditorCore(
       api.addFragmentResolver(createReadFragmentResolver(core));
 
       api.describe({
-        path: "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# and RESULT# references go directly in path, without a file prefix. Returned Read/Search/Select/mutation targets select their verified source ranges.",
-        offset:
-          "For path#anchor, SEARCH# or RESULT# selections, count from each containing line: omitted, 0 or 1 starts there; 2 starts one line later; -1 starts one line earlier. Output keeps original line numbers.",
-        limit:
-          "For source selections, limit caps each selected context window separately. Without limit, each selection supplies its natural line count, with at least one line.",
+        path: "path#anchor — text around a returned anchor, e.g. notes.txt#12#A4F0; SEARCH#… and RESULT#… go in as they are.",
+        offset: "For an anchor or result selection, counts from its line.",
+        limit: "For a selection, per selected window.",
       });
     },
   });

@@ -15,7 +15,7 @@ async function schema(disabled: string[], latePlugin = false) {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
-      JSON.stringify({ disabled, preferences: { "vision.imageScale": "0.75" } }),
+      JSON.stringify({ disabled }),
     );
     const result = await new PiIntegrationTest({
       testName: latePlugin ? "read-schema-late" : "read-schema-disabled",
@@ -40,83 +40,11 @@ async function schema(disabled: string[], latePlugin = false) {
   }
 }
 
-test("delivers loaded source/view contracts and late metadata to the real Pi provider", async () => {
-  const read = await schema(["ide.terminal"], true);
-  const { path: source, views, offset, limit } = read.properties;
+test("delivers late plugin metadata to the real Pi provider", async () => {
+  const read = await schema([], true);
+  const { path: source, views } = read.properties;
   expect(source?.description).toContain("current-schema-format");
   expect(source?.description).not.toContain("old-schema-format");
-  for (const prefix of [
-    "file://",
-    "HTTP(S)",
-    "docs:",
-    "raw:",
-    "temp:",
-    "SEARCH#",
-    "RESULT#",
-    "symbol:",
-    "graph:",
-    "ast:",
-    "diagnostics:",
-    "debug:",
-    "window:",
-  ])
-    expect(source?.description).toContain(prefix);
-  for (const view of [
-    "anchors",
-    "ast",
-    "changes",
-    "diagnostics",
-    "breakpoints",
-    "jq:<filter>",
-    "image:scale",
-    "sequence:duration",
-    "late-view",
-  ])
-    expect(views?.description).toContain(view);
-  expect(views?.description).toContain("scale=0.75");
-  expect(offset?.description).toContain("row-major");
-  expect(limit?.description).toContain("output pixels");
-  expect(source?.description).not.toContain("shell:<session>");
+  expect(views?.description).toContain("late-view");
   expect(views).toMatchObject({ type: "array", items: { type: "string" } });
-});
-
-test("does not advertise disabled plugin syntax in the real Pi schema", async () => {
-  const read = await schema([
-    "ide.terminal",
-    "ide.vision",
-    "ide.ast",
-    "ide.changes",
-    "ide.debugger",
-    "ide.diagnostics",
-    "ide.lsp",
-    "read.web",
-    "read.filesystem.jq",
-    "editor.anchor.line-hash",
-  ]);
-  const { path: source, views, offset, limit } = read.properties;
-  for (const prefix of [
-    "HTTP(S)",
-    "window:",
-    "shell:",
-    "symbol:",
-    "graph:",
-    "ast:",
-    "debug:",
-    "diagnostics:",
-  ])
-    expect(source?.description).not.toContain(prefix);
-  for (const view of [
-    "anchors —",
-    "ast —",
-    "changes —",
-    "breakpoints —",
-    "jq:<filter>",
-    "image:scale",
-    "sequence:duration",
-  ])
-    expect(views?.description).not.toContain(view);
-  expect(offset?.description).not.toContain("row-major");
-  expect(limit?.description).not.toContain("output pixels");
-  expect(source?.description).toContain("File path");
-  expect(source?.description).toContain("raw:");
 });

@@ -54,6 +54,8 @@ async function runComposition(
       "copy-execution-failure",
       "file-operation-binary-and-refusal",
     ].includes(name),
+    // Both parallel Copy cards finish in one frame; a taller viewport keeps the first one visible.
+    ...(name === "copy-rollback-standalone" && { tuiSize: { cols: 160, rows: 120 } }),
     cwd,
     extensions: [
       path.resolve("src/pi-agent-ide.ts"),
@@ -64,7 +66,6 @@ async function runComposition(
     tools: [
       "read",
       "search",
-      "select",
       "replace",
       "insert",
       "write",
@@ -155,7 +156,7 @@ test("insert treats a selected point as an insertion target", async () => {
     await writeFile(path.join(cwd, "point-insert.txt"), "keep\n");
     const run = await runComposition(cwd, "insert-point-selection", [
       `const source = await tools.read({path:"point-insert.txt"});
-const point = await tools.select({path:source,operation:{kind:"position",edge:"before"}});
+const point = (await tools.search({path:source,query:"regex:^"})).result;
 text(await tools.insert({path:point,text:"NEW"}));`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
@@ -469,8 +470,8 @@ test.each([false, true])(
         cwd,
         "move-zero-width-no-op",
         [
-          `const source=await tools.select({path:await tools.read({path:"source.txt"}),operation:{kind:"sliceText",from:0,to:0}});
-const destination=await tools.select({path:await tools.read({path:${JSON.stringify(destination)}}),operation:{kind:"sliceText",from:5,to:5}});
+          `const source=(await tools.search({path:await tools.read({path:"source.txt"}),query:"regex:^"})).result;
+const destination=(await tools.search({path:await tools.read({path:${JSON.stringify(destination)}}),query:"regex:(?<=left )"})).result;
 const paths=["source.txt","destination.txt"];
 const before=await tools.fixture_move_stat({paths});
 const moved=await tools.move({path:source,target:destination});
@@ -478,8 +479,8 @@ text(moved);
 const observed=JSON.parse(await tools.fixture_move_result({}));
 check(!observed.isError && observed.details.effect==="not-applied","Move did not report no-write success");
 check(before===await tools.fixture_move_stat({paths}),"Move wrote a fixture");
-const point=items(await tools.select({path:moved,operation:{kind:"trim",side:"both"}}));
-check(point.length===1 && point[0].startColumn===5 && point[0].endColumn===5 && point[0].source.endsWith(${JSON.stringify(destination)}),"Move lost destination-only point authority");
+const point=matchRows((await tools.search({path:moved,query:"regex:^"})).result);
+check(point.length===1 && point[0].column===5 && point[0].endColumn===5 && point[0].source.endsWith(${JSON.stringify(destination)}),"Move lost destination-only point authority");
 await rejects(()=>tools.move({path:source,target:source}),/overlap or touch/);
 check(before===await tools.fixture_move_stat({paths}),"Rejected Move wrote a fixture");
 text(await tools.replace({path:moved,text:"NEW "}));`,
@@ -528,8 +529,8 @@ test("unchanged Copy points remain reusable insertion positions", async () => {
     await writeFile(path.join(cwd, "source.txt"), "source\n");
     await writeFile(path.join(cwd, "destination.txt"), "left right\n");
     const run = await runComposition(cwd, "copy-identical-points", [
-      `const source=await tools.select({path:await tools.read({path:"source.txt"}),operation:{kind:"sliceText",from:0,to:0}});
-const destination=await tools.select({path:await tools.read({path:"destination.txt"}),operation:{kind:"sliceText",from:5,to:5}});
+      `const source=(await tools.search({path:await tools.read({path:"source.txt"}),query:"regex:^"})).result;
+const destination=(await tools.search({path:await tools.read({path:"destination.txt"}),query:"regex:(?<=left )"})).result;
 const copied=await tools.copy({path:source,target:destination});
 text(await tools.replace({path:copied,text:"NEW "}));`,
     ]);
@@ -801,8 +802,8 @@ await tools.replace({path:zero,text:"BAD"});
 const reference=/Read: (SEARCH#[A-F0-9]+:all:line)/.exec(zero)?.[1];
 check(reference,"Missing complete candidate reference");
 const candidate=await tools.search({path:await tools.read({path:reference}),query:"hintStrings"}).then(value => value.result);
-const selected=await tools.select({path:candidate,operation:{kind:"sliceText",from:0,to:11}});
-check(items(selected).length===5,"Candidate preview clipped scope");
+const selected=await tools.search({path:candidate,query:"hintStrings"}).then(value => value.result);
+check(matches(selected).length===5,"Candidate preview clipped scope");
 text(await tools.replace({path:selected,text:"UPDATED"}));
 await rejects(()=>tools.replace({path:candidate,text:"BAD"}),/expired|stale/);`,
     ]);
@@ -1337,7 +1338,7 @@ test("retains complete targets beyond both Read and Search previews", async () =
       `const read = await tools.read({path:"large.txt"});
 check(read.includes("Showing lines 1-2000 of 2101") && read.includes("offset=2001"),"Expected bounded Read preview");
 const found=await tools.search({path:read,query:"old",limit:1}).then(value => value.result);
-check(found.includes("2101 matches") && found.includes("(compacted)") && matches(found).length===0,"Expected compacted Search presentation");
+check(found.includes("2101 matches") && found.includes("(compacted)") && matches(found).length===1,"Expected compacted Search presentation with one example reference");
 store("completeSelection",found); text(found);`,
       `const changed = await tools.replace({path:load("completeSelection"),text:"NEW"});
 if (typeof changed !== "string") throw Error(JSON.stringify(changed)); text(changed);`,

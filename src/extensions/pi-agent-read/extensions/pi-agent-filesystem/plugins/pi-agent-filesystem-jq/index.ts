@@ -6,26 +6,15 @@ import {
   DOCTOR_PROTOCOL,
   type DoctorPlugin,
 } from "pi-agent-doctor/api/plugin-protocol";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
   READ_PROTOCOL,
   type ReadPlugin,
 } from "pi-agent-read/api/plugin-protocol";
-import type { ReadTextState } from "pi-agent-read/api/tools/read";
-import { createTextDocument } from "pi-agent-text";
-
-import { executeJq, parseJqView } from "#src/jq.js";
+import { createJqReadHandler } from "#src/api/jq.js";
 
 export default async function registerFilesystemJq(pi: ExtensionAPI): Promise<void> {
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "json-reading",
-      description: "Query and transform JSON resources with jq read views",
-      triggers: [{ tool: "read", viewPrefixes: ["jq:"] }],
-    }),
-  ]);
   await Promise.all([connectReadPlugin(pi, readPlugin), connectDoctorPlugin(pi, doctorPlugin)]);
 }
 
@@ -38,74 +27,31 @@ const readPlugin = {
       view: "jq",
       presenter: { id: "filesystem-jq", present: (document) => document },
     });
+    const jq = createJqReadHandler({
+      pluginId: "filesystem-jq",
+      input: (context) =>
+        context.state?.contentKind === "text" ? context.state.content[0].text : undefined,
+    });
     api.addHandler({
       stage: "read",
       when: { resolvedBy: "any", contentKind: "text" },
-      async handler(context) {
+      handler(context) {
         const state = context.state;
         if (
           state?.contentKind !== "text" ||
           (state.resolvedBy !== "filesystem" && state.resolvedBy !== "ssh")
         )
           return { kind: "continue", context };
-        let selected: ReturnType<typeof parseJqView>;
-        try {
-          selected = parseJqView(context.request.views);
-        } catch (error) {
-          return jqFailure(state, error instanceof Error ? error.message : String(error));
-        }
-        if (selected === undefined) return { kind: "continue", context };
-        let output: string;
-        try {
-          output = await executeJq(selected.filter, state.content[0].text, {
-            cwd: context.resolverContext.cwd,
-            ...(context.resolverContext.signal === undefined
-              ? {}
-              : { signal: context.resolverContext.signal }),
-          });
-        } catch (error) {
-          return jqFailure(state, error instanceof Error ? error.message : String(error));
-        }
-        const transformed: ReadTextState = {
-          ...state,
-          content: [{ type: "text", text: output }],
-          text: createTextDocument(state.source, output),
-          preserveTruncatedOutput: true,
-        };
-        return {
-          kind: "continue",
-          context: { ...context, sourceText: undefined, state: transformed },
-        };
+        return jq(context);
       },
     });
     api.describe({
       views:
-        'jq:<filter> — query local JSON text with the installed jq executable, e.g. ["jq:.scripts | keys"]. Exactly one non-empty jq filter is required; it cannot be combined with other views. offset/limit apply to the transformed output, not original source lines.',
+        "jq:<filter> — run jq on a JSON file or a resource whose provider supplies JSON (JSONL record by record); use alone; offset and limit apply to its output.",
     });
   },
 } satisfies ReadPlugin;
 
-function jqFailure(state: ReadTextState, message: string) {
-  return {
-    kind: "return" as const,
-    result: {
-      content: [{ type: "text" as const, text: `jq failed: ${message}` }],
-      details: {
-        source: state.source,
-        resolvedBy: state.resolvedBy,
-        failure: {
-          code: "READ_FAILED" as const,
-          source: state.source,
-          resolverId: state.resolvedBy,
-          pluginId: "filesystem-jq",
-          stage: "read" as const,
-          message,
-        },
-      },
-      isError: true,
-    },
-  };
-}
 const doctorPlugin = {
   protocol: DOCTOR_PROTOCOL,
   apiVersion: DOCTOR_API_VERSION,

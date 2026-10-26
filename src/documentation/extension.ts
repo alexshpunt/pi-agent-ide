@@ -18,9 +18,16 @@ interface RegistrationRequest {
 }
 
 const READ_RECORD = "agent-documentation-read";
+interface DocumentationHistory {
+  readonly recordType?: string;
+  readonly ownsTool?: (name: unknown) => boolean;
+}
 
 /** Exposes packaged guides and adds unread guides to results without blocking tools. */
-export default async function registerProgressiveDocumentation(pi: ExtensionAPI): Promise<void> {
+export default async function registerProgressiveDocumentation(
+  pi: ExtensionAPI,
+  history: DocumentationHistory = {},
+): Promise<void> {
   const registry = new AgentDocumentationRegistry();
   const claimed = new Set<string>();
   const parents = new Map<string, string>();
@@ -29,7 +36,7 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
     const unread = ids.filter((id) => !claimed.has(id));
     if (unread.length === 0) return;
     // Separate records survive bounded nested-call metadata and stay on their own branch.
-    pi.appendEntry(READ_RECORD, { ids: unread });
+    pi.appendEntry(history.recordType ?? READ_RECORD, { ids: unread });
     for (const id of unread) claimed.add(id);
   };
   const unsubscribe = pi.events.on(DOCUMENTATION_REGISTER_EVENT, (value) => {
@@ -72,7 +79,7 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
         path: () =>
           registry.list().length === 0
             ? undefined
-            : "docs: lists packaged agent guidance; docs:<id> reads a listed guide.",
+            : "docs: — list of guides; docs:<id> — one guide.",
       });
       api.addPromptGuideline(() => renderPromptGuideline(registry.list()));
     },
@@ -88,13 +95,13 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
     },
   });
   pi.on("session_start", (_event, context) => {
-    restoreClaims(context.sessionManager.getBranch(), registry, claimed);
+    restoreClaims(context.sessionManager.getBranch(), registry, claimed, history);
   });
   pi.on("session_tree", (_event, context) => {
-    restoreClaims(context.sessionManager.getBranch(), registry, claimed);
+    restoreClaims(context.sessionManager.getBranch(), registry, claimed, history);
   });
   pi.on("session_compact", (_event, context) => {
-    restoreClaims(context.sessionManager.getBranch(), registry, claimed);
+    restoreClaims(context.sessionManager.getBranch(), registry, claimed, history);
   });
 
   pi.on("tool_call", (event) => {
@@ -119,11 +126,14 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
         structuredContent: event.structuredContent,
         details: {
           ...(isRecord(event.details) ? event.details : {}),
-          documentation: known
-            ? id.length === 0
-              ? { kind: "list", ids: registry.list().map((document) => document.id) }
-              : { kind: "document", id }
-            : { kind: "error", code: "UNKNOWN_DOCUMENTATION", id },
+          documentation: {
+            owner: history.recordType ?? READ_RECORD,
+            ...(known
+              ? id.length === 0
+                ? { kind: "list", ids: registry.list().map((document) => document.id) }
+                : { kind: "document", id }
+              : { kind: "error", code: "UNKNOWN_DOCUMENTATION", id }),
+          },
         },
         isError: event.isError,
       };
@@ -152,7 +162,11 @@ export default async function registerProgressiveDocumentation(pi: ExtensionAPI)
       structuredContent: event.structuredContent,
       details: {
         ...(isRecord(event.details) ? event.details : {}),
-        documentation: { kind: "attachment", ids: documents.map((document) => document.id) },
+        documentation: {
+          owner: history.recordType ?? READ_RECORD,
+          kind: "attachment",
+          ids: documents.map((document) => document.id),
+        },
       },
       isError: event.isError,
     };
@@ -176,8 +190,7 @@ function renderListing(documents: readonly AgentDocumentation[]): string {
 function renderPromptGuideline(documents: readonly AgentDocumentation[]): string | undefined {
   if (documents.length === 0) return undefined;
   return [
-    "Read the matching docs:<id> before using any tool or feature with packaged guidance, including tools discovered later or called through Codemode. Read each guide once per branch. Tool descriptions and docs: listings do not replace the full guide.",
-    "If a result includes a Guide, read it before your next use. The call has already run: do not repeat it just to obtain documentation. Nested calls keep their guides on the parent result, even when the script does not print the child output.",
+    "Before using a tool or feature that has a guide below, read its docs:<id> once.",
     "Available documents:",
     ...documents.map((document) => `  - ${document.id} — ${document.description}`),
   ].join("\n");
@@ -187,19 +200,30 @@ function restoreClaims(
   branch: readonly unknown[],
   registry: AgentDocumentationRegistry,
   claimed: Set<string>,
+  history: DocumentationHistory,
 ): void {
   claimed.clear();
   for (const entry of branch) {
     if (!isRecord(entry)) continue;
-    if (entry.type === "custom" && entry.customType === READ_RECORD && isRecord(entry.data)) {
+    if (
+      entry.type === "custom" &&
+      entry.customType === (history.recordType ?? READ_RECORD) &&
+      isRecord(entry.data)
+    ) {
       addIds(entry.data.ids);
       continue;
     }
     if (entry.type !== "message" || !isRecord(entry.message)) continue;
     const message = entry.message;
+    if (history.ownsTool !== undefined && !history.ownsTool(message.toolName)) continue;
     if (message.role !== "toolResult" || !isRecord(message.details)) continue;
     const documentation = message.details.documentation;
     if (!isRecord(documentation)) continue;
+    if (
+      documentation.owner !== undefined &&
+      documentation.owner !== (history.recordType ?? READ_RECORD)
+    )
+      continue;
     if (documentation.kind === "attachment") addIds(documentation.ids);
     if (
       documentation.kind === "document" &&

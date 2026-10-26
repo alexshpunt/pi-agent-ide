@@ -48,6 +48,8 @@ export interface TextEditorToolPluginApi {
   addSemanticHandler(handler: TextSemanticMutationHandler): void;
   addHandler(registration: TextEditHandlerRegistration): void;
   describe(description: string): void;
+  /** Add this plugin's text to one schema field of the tool, such as `path` or `text`. */
+  describeField(field: string, description: string): void;
 }
 
 export interface TextEditPipelineFailure {

@@ -18,13 +18,12 @@ export const replaceSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "Source path, SEARCH# selector, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Omit start/end when the result selects the intended text. Changed or expired results are rejected without writing.",
+          "File path, SEARCH# reference, unchanged Read/Search/edit result or its UUID, or an array of them; a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
       }),
     ),
     ...sourceRangeProperties(),
     text: Type.String({
-      description:
-        "Replacement text for each selected range. Empty text removes the selection; a whole-line selection removes its lines without inserting a blank line. Adjacent unselected lines are kept.",
+      description: "Replacement for each selected range; empty text deletes it.",
     }),
   },
   { additionalProperties: false },
@@ -38,7 +37,7 @@ interface ReplaceParameters {
 
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
   name: "replace",
-  description: "Use replace to replace a text fragment or each selected range.",
+  description: "Use replace to change selected text.",
 
   promptSnippet: "Make precise file edits by replacing text using exact matches or anchors",
   parameters: replaceSchema,

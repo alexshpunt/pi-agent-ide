@@ -8,3 +8,5 @@ export * from "pi-agent-read/api/plugin-protocol";
 export * from "pi-agent-read/api/rendering";
 
 export * from "pi-agent-read/api/tools/read";
+
+export { createJqReadHandler, type JqReadHandlerOptions } from "pi-agent-filesystem-jq/api/jq";

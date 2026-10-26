@@ -96,7 +96,7 @@ A run freezes the checkout's current source and dependencies in a disposable clo
 
 Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Snapshot credentials are copied into private case state and removed with it. Explicit dedicated-auth files are mounted separately and survive cleanup with their refresh rotations. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
 
-Media, browser, display, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Window/display checks use a sandbox-owned Xvfb display, not host windows. Display and web setup use fixed local endpoints; do not run those cases concurrently.
+Media, browser, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Web setup uses a fixed local endpoint; do not run those cases concurrently.
 
 ## Evidence
 
@@ -118,6 +118,12 @@ Late diagnostic ownership is UI metadata, not a new model operation. The existin
 Advisory-review ownership is also display metadata. The matrix and write/read and parallel-edit cases retain their existing model-operation contracts; no new paid operation is introduced. Focused reviewer and real-Pi linked-review cases cover saved-version ownership, direct and nested calls, and unchanged full review delivery. Stereo Rows/Columns checks require `PI_AGENT_IDE_TEST_STEREO_EXTENSION` to point to an unchanged consumer extension; without it those cases are skipped, not verified.
 
 Delayed terminal ownership also changes presentation metadata, not a model operation. The existing `shell-roundtrip` direct and Codemode routes cover the unchanged Bash, input and inspection contract. Mixed-owner delivery, nested visible roots, reload gaps and stale notices belong to the focused terminal tests; `linked-terminal.integration.test.ts` checks real-Pi persistence and optionally unchanged Stereo panels/search. No new paid route is needed for card grouping. Unrun paid routes remain unverified.
+
+Optional provider error metadata changes the shared result schema, including tools that do not emit that metadata. The semantic receipt cases still require the original effect and attempted/delivered fields. Focused ResourceError, Read and Write tests exercise rate-limit metadata delivery and private-field removal. Write retains the closed metadata on each owning file diagnostic and revalidates it for the structured result without changing mutation effects. These paid cases do not establish rate-limit metadata coverage; unrun direct and Codemode routes remain unverified.
+
+The `read-jq` case includes a transformed output window. `read-jq-bounded-input` requires refusal when a jq query is given an issued selection, followed by a permitted query of the explicit source. These cases cover the shared filesystem calling contract. Provider-registered structured JSON and the public jq handler are covered by focused SDK and consumer tests, not by a paid Linear route. Those direct and Codemode provider routes remain unverified; no inference is required for the free gate.
+
+The `read-error-direct` and `read-error-codemode` cases also check a declared failure for a complete fragmented provider address. They require the safe error value and exactly one full-address acquisition, even though its bare source is readable. The independent missing-file error and successful file read remain controls. These direct and Codemode routes remain unverified until paid execution.
 
 ## Required maintenance
 

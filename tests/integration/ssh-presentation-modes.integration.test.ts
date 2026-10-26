@@ -140,7 +140,6 @@ test.each(["full", "compact", "disabled"] as const)(
             "ide.formatter",
             "ide.debugger",
             "ide.terminal",
-            "ide.vision",
             "ide.diagnostics",
           ],
           preferences: {

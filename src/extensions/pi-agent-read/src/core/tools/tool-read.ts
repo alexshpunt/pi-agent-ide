@@ -4,6 +4,7 @@ import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   isAgentContent,
   isResourceResolutionAttempt,
+  ResourceError,
   resourceScheduler,
   resourceAccesses,
   type ResourceResolver,
@@ -173,10 +174,7 @@ export function createReadTool(
       promptSnippet: "Read supported sources as text or bytes, with optional views",
       description: "Use read to inspect files and other supported resources.",
       get promptGuidelines(): string[] {
-        return [
-          "Use read to inspect supported sources and search to locate workspace content.",
-          ...(pluginPromptGuidelines?.() ?? []),
-        ];
+        return [...(pluginPromptGuidelines?.() ?? [])];
       },
       get parameters() {
         return describeReadParameters(parameterDescriptions?.() ?? {});
@@ -439,7 +437,12 @@ async function executeRead(
     );
     if (targeted !== undefined) return targeted;
   }
-  let pipeline: ReadPipelineContext = { request: { ...request }, resolverContext, audience };
+  let pipeline: ReadPipelineContext = {
+    inputScope: "source",
+    request: { ...request },
+    resolverContext,
+    audience,
+  };
 
   if (!pipeline.request.path?.startsWith("temp:")) {
     const preRead = await runPreReadHandlers(pipeline, handlerSnapshot);
@@ -479,7 +482,11 @@ async function executeRead(
 
     if (split !== undefined) {
       const wholeSource = { result: resolved, pipeline };
-      const barePipeline = { ...pipeline, request: { ...pipeline.request, path: split.source } };
+      const barePipeline: ReadPipelineContext = {
+        ...pipeline,
+        inputScope: "selection",
+        request: { ...pipeline.request, path: split.source },
+      };
       const retried = await resolveSource(
         barePipeline,
         resolverSnapshot,
@@ -569,8 +576,13 @@ const RETRYABLE_FAILURE_CODES: ReadonlySet<ReadFailure["code"]> = new Set([
 
 /** True when reading the whole source failed for a reason an anchor split might fix. */
 function isRetryableFailure(result: ReadToolResult): boolean {
-  const code = result.details.failure?.code;
-  return code !== undefined && RETRYABLE_FAILURE_CODES.has(code);
+  const failure = result.details.failure;
+  // A declared provider failure belongs to the complete source, not a text anchor.
+  return (
+    failure !== undefined &&
+    !(failure.cause instanceof ResourceError) &&
+    RETRYABLE_FAILURE_CODES.has(failure.code)
+  );
 }
 
 async function resolveTextTargets(
@@ -651,6 +663,7 @@ async function resolveTextTargets(
             (sourceTarget !== undefined && range.end.column > 0 ? 1 : 0),
         );
         let rangePipeline: ReadPipelineContext = {
+          inputScope: "selection",
           sourceTarget,
           request: {
             ...request,

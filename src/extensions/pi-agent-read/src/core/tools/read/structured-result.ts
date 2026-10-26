@@ -1,7 +1,13 @@
 import { Type } from "typebox";
-import { ResourceError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
+import {
+  ResourceError,
+  resourceErrorMetadataOf,
+  structuredResultSchema,
+  withStructuredResult,
+} from "pi-agent-resource";
 import type { ReadScriptData, ReadToolResult } from "#src/api/tools/read.js";
 import type { TextLine } from "pi-agent-text";
+import { readFailureRecovery } from "#src/core/tools/read/read-result.js";
 
 const reference = Type.Object(
   { value: Type.String(), kind: Type.String(), state: Type.Optional(Type.String()) },
@@ -175,6 +181,7 @@ function publicData(value: ReadScriptData): unknown {
 export function structuredRead(result: ReadToolResult): ReadToolResult {
   const failure = result.details.failure;
   const safe = failure?.cause instanceof ResourceError ? failure.cause : undefined;
+  const metadata = safe === undefined ? undefined : resourceErrorMetadataOf(safe);
   if (result.isError || failure !== undefined)
     return withStructuredResult(result, readDataSchema, {
       status: "error",
@@ -188,9 +195,14 @@ export function structuredRead(result: ReadToolResult): ReadToolResult {
           code: safe?.code ?? failure?.code ?? "READ_FAILED",
           message:
             safe === undefined
-              ? (failure?.message ?? "Read failed")
+              ? // Keep the recovery steps that direct calls show; scripts see only this value.
+                [
+                  failure?.message ?? "Read failed",
+                  ...(failure === undefined ? [] : readFailureRecovery(failure)),
+                ].join("\n")
               : `${safe.code}: ${failure?.source ?? safe.source}`,
           ...(failure?.source === undefined ? {} : { source: failure.source }),
+          ...(metadata === undefined ? {} : { metadata }),
         },
       ],
     });

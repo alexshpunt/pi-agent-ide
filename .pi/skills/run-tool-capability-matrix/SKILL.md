@@ -20,24 +20,27 @@ Read `benchmarks/tool-capabilities/models.json` and the requested cases in `benc
 
 Check Linux/WSL, Node 24, Git, Bubblewrap with user namespaces, installed Pi with native Codemode/tool discovery, and credentials. Check the selected cases' extra prerequisites. Never print or commit credentials. A successful free inventory does not prove that paid inference or every case's prerequisites are available.
 
-## Agree on the paid run
+## Plan the paid run
 
-Before inference, establish:
+Cost permission and credentials follow the user's `paid-model-runs` skill. Its routes (the OpenAI subscription and cheap OpenCode Go models) need no further approval; ask with `ask_user` only for other providers or models. If monetary cost is unknown, say so rather than inventing a price.
 
-- Profile IDs and their provider/model/thinking settings.
-- Case IDs, direct/Codemode routes, attempts per route, and timeout.
-- Where results will be kept and whether a development worktree will later be removed.
+Before inference, settle:
 
-Use `ask_user` for missing choices or cost permission. A model roster entry, a past task's permission, or a request to write this skill is not permission to spend. Use an explicit authorization already given for the current run; do not ask again without a new decision. If monetary cost is unknown, say so rather than inventing a price.
+- Profile IDs and their provider/model/thinking settings. Add a missing profile to `benchmarks/tool-capabilities/models.json`.
+- Case IDs, direct/Codemode routes, attempts per route, and timeout. Default to the affected cases and one attempt per route.
+- Where results will be kept and whether a development worktree will later be removed. Keep them outside a worktree that will be removed.
 
-Show the planned command and attempt count before starting. Count selected supported routes × attempts × selected profiles; a Codemode-only case has no direct route. Omitting `--case` selects all cases; omitting `--mode` selects their supported routes. Retries are new paid attempts and need permission within the agreed limit.
+Count selected supported routes × attempts × selected profiles; a Codemode-only case has no direct route. Omitting `--case` selects all cases; omitting `--mode` selects their supported routes. Retries are new paid attempts; inspect a failure before repeating it.
+
+The runner refuses the personal `~/.pi/agent/auth.json`. Pass `--auth-dir` with the private snapshot directory that `paid-model-runs` describes, without `--dedicated-auth`, so the runner uses the access token without refreshing it.
 
 ## Run the existing CLI
 
-Only after permission, adapt this bounded example to the agreed scope:
+Adapt this bounded example to the planned scope:
 
 ```sh
 pnpm validate:tools:models --run --model luna-6-low \
+  --auth-dir ~/.pi/paid-run-auth/openai-codex \
   --case read-search-replace --mode codemode --attempts 1 --timeout 120
 ```
 

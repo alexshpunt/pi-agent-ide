@@ -242,6 +242,7 @@ export async function prepareTrial(
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, contents);
     }
+    if (task.setup === "pixel") await writeFile(path.join(cwd, "pixel.png"), pixelPng);
     if (task.setup === "media") {
       await cp(path.join(source, "assets/banner.png"), path.join(cwd, "sample.png"));
       const stream = "BT /F1 18 Tf 72 720 Td (PDF-MARKER) Tj ET";
@@ -331,17 +332,22 @@ export async function fixtureFiles(root: string, prefix = ""): Promise<Record<st
   return entries;
 }
 
+/** A one-pixel PNG that Read returns unchanged, for the `pixel` setup. */
+export const pixelPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
 /** Validate final bytes, including files the task was not allowed to touch. */
 export async function validateFiles(
   cwd: string,
   initial: Record<string, Buffer>,
-  expected: Record<string, string | null> = {},
+  expected: Record<string, string | Buffer | null> = {},
 ): Promise<string[]> {
   const actual = await fixtureFiles(cwd);
   const wanted = { ...initial };
   for (const [file, text] of Object.entries(expected)) {
     if (text === null) delete wanted[file];
-    else wanted[file] = Buffer.from(text);
+    else wanted[file] = typeof text === "string" ? Buffer.from(text) : text;
   }
   const problems: string[] = [];
   for (const [file, text] of Object.entries(expected)) {

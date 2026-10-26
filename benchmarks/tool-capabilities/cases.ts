@@ -1,3 +1,4 @@
+import { pixelPng } from "./sandbox.ts";
 import type { CapabilityCase, RouteStep } from "./validation.ts";
 
 // Directory/symlink approval is a host UI policy, not an agent calling requirement.
@@ -10,6 +11,38 @@ const reuse = (from: number, field: string | string[] = "path", kind = "result")
 const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
+add(
+  "standalone-resource-host",
+  ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
+  "Only standalone resource hosts are loaded; the full IDE is not enabled. Discover the demo namespace through tool_search. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. Finally reread memory://demo/note. Use demo tools, not the sibling namespace or filesystem tools.",
+  [
+    { tool: "tool_search", args: { query: /demo/ } },
+    {
+      tool: "demo_read",
+      args: { path: "memory://demo/note", offset: 1, limit: 1 },
+      contains: "alpha",
+    },
+    { tool: "demo_search", args: { query: "alpha" }, reuse: reuse(1), contains: "alpha" },
+    { tool: "demo_replace", args: { text: "changed" }, reuse: reuse(2) },
+    { tool: "demo_read", args: { path: "local.txt" }, error: true },
+    { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
+    { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },
+    { tool: "demo_read", args: { path: "memory://demo/note" }, contains: "changed\nomega" },
+  ],
+  {
+    setup: "standalone-resource",
+    files: {
+      "resource.txt": "alpha\nomega\n",
+      "other.txt": "sibling\n",
+      "local.txt": "local sentinel\n",
+    },
+    expected: {
+      "resource.txt": "changed\nomega\n",
+      "other.txt": "sibling\n",
+      "local.txt": "local sentinel\n",
+    },
+  },
+);
 add(
   "semantic-write-receipts",
   ["edit.semantic-write-receipt"],
@@ -55,7 +88,7 @@ for (const viaLocalAlias of [false, true])
         : "compose.provider-structured-receipt",
     ],
     (viaLocalAlias
-      ? "In native Codemode, discover and use the registered local MCP forwarding alias for Insert. Do not substitute canonical Insert; report a missing prerequisite if no alias is registered. "
+      ? "In native Codemode, use searchTools to discover the registered local MCP forwarding alias for Insert even when it is absent from the initial catalogue, then use that alias. Do not substitute canonical Insert; report a missing prerequisite if no alias is registered. "
       : "In native Codemode, use Insert, preferring a matching local MCP forwarding alias when one is registered. ") +
       'Call it once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report unknown for the uncertain action.',
     ["applied", "not-applied", "unknown"].map((effect) => ({
@@ -64,6 +97,13 @@ for (const viaLocalAlias of [false, true])
       error: effect !== "applied",
       contains: `Semantic action ${effect}`,
       parentStructuredValue: true,
+      scriptResult: {
+        kind: "fixture-action",
+        ok: effect === "applied",
+        effect,
+        receipt: { attempted: 1, delivered: effect !== "not-applied" },
+        nonce: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
+      },
       ...(viaLocalAlias && { viaLocalAlias: true }),
     })),
     {
@@ -488,7 +528,7 @@ function add(
 add(
   "search-script-facts",
   ["search.script-facts", "compose.search-script-result"],
-  "Use native Codemode to Search task.txt for regex:^ABSENT$, Search scope.ts for ast:probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
+  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
   [
     {
       tool: "search",
@@ -496,8 +536,8 @@ add(
       scriptResult: { hasMatches: false, complete: true },
     },
     {
-      tool: "search",
-      args: { path: "scope.ts", query: "ast:probe($ARG)", limit: 1 },
+      tool: "ast_search",
+      args: { path: "scope.ts", pattern: "probe($ARG)", limit: 1 },
       scriptResult: { hasMatches: true, complete: false },
     },
     {
@@ -558,18 +598,79 @@ add(
   { answer: "OLD" },
 );
 
+for (const mode of both)
+  add(
+    `read-error-${mode}`,
+    mode === "codemode"
+      ? ["read.failure", "read.provider-failure-ownership", "compose.read-error-value"]
+      : ["read.failure", "read.provider-failure-ownership"],
+    "Read absent.txt once, then fixture:read-provider#metadata once, then read task.txt. The synthetic provider declares the fragmented resource unavailable; do not retry its bare source or interpret metadata as text. Keep existing files unchanged and report the first line of task.txt. In Codemode, inspect each failed Read's status and errors fields and pass each returned error object unchanged to text(); a completed Read failure resolves to an error value. Continue with the independent task.txt read. Do not parse readable error text.",
+    [
+      {
+        tool: "read",
+        args: { path: "absent.txt" },
+        error: true,
+        scriptResult: { status: "error" },
+        ...(mode === "codemode" ? { parentStructuredValue: true } : {}),
+      },
+      {
+        tool: "read",
+        args: { path: "fixture:read-provider#metadata" },
+        error: true,
+        scriptResult: {
+          status: "error",
+          errors: [{ code: "FIXTURE_FIELD_UNAVAILABLE", source: "fixture:read-provider#metadata" }],
+        },
+        ...(mode === "codemode" ? { parentStructuredValue: true } : {}),
+      },
+      { tool: "read", args: { path: "task.txt" }, contains: "keep" },
+    ],
+    {
+      modes: [mode],
+      setup: "semantic-write",
+      expected: {
+        ...textFile,
+        "provider-reads.jsonl": '"fixture:read-provider#metadata"\n',
+      },
+      answer: "keep",
+    },
+  );
 add(
   "read-jq",
-  ["read.jq"],
-  "Use read with a jq view to select only .status from config.json and report its value. Do not edit anything.",
-  [{ tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" }],
+  ["read.jq", "read.jq-paging"],
+  "Use read with a jq view to select .status from config.json. Then read with jq:.status, .untouched, offset=2 and limit=1 to select the second transformed value. Report that number. Do not edit anything.",
+  [
+    { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
+    {
+      tool: "read",
+      args: { path: "config.json", views: ["jq:.status, .untouched"], offset: 2, limit: 1 },
+      contains: "7",
+    },
+  ],
   {
     files: { "config.json": '{"status":"ready","untouched":7}\n' },
-    answer: "ready",
+    expected: { "config.json": '{"status":"ready","untouched":7}\n' },
+    answer: "7",
     prerequisite: "jq",
   },
 );
 
+add(
+  "read-jq-bounded-input",
+  ["read.jq-bounded-input"],
+  "Read the first line of config.json. Pass that unchanged Read result or its UUID to Read with views jq:.status; the bounded-input query must be refused. Then query jq:.status using the explicit config.json path and report its value. Do not edit or widen the issued selection.",
+  [
+    { tool: "read", args: { path: "config.json", offset: 1, limit: 1 } },
+    { tool: "read", args: { views: ["jq:.status"] }, reuse: reuse(0), error: true },
+    { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
+  ],
+  {
+    files: { "config.json": '{\n  "status": "ready"\n}\n' },
+    expected: { "config.json": '{\n  "status": "ready"\n}\n' },
+    answer: "ready",
+    prerequisite: "jq",
+  },
+);
 add(
   "read-search-replace",
   ["compose.read-search", "compose.search-replace", "compose.provider-reference-roundtrip"],
@@ -761,11 +862,11 @@ for (const operation of ["replace", "delete", "insert"] as const) {
       `edit.selection-batch-${operation}`,
       ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
     ],
-    `Select complete lines 2, 4 and 6 of task.txt separately before editing. In ONE assistant message issue three direct ${operation} calls, forwarding each corresponding selection result/UUID/RESULT# item without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset and limit 1) before editing. In ONE assistant message issue three direct ${operation} calls, forwarding each corresponding Read result or UUID without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
     [
       ...[2, 4, 6].map((line): RouteStep => ({
-        tool: "select",
-        args: { path: "task.txt", operation: { kind: "lines", first: line, last: line } },
+        tool: "read",
+        args: { path: "task.txt", offset: line, limit: 1 },
       })),
       ...[0, 1, 2].map((index): RouteStep => ({
         tool: operation,
@@ -810,14 +911,11 @@ for (const operation of ["replace", "delete", "insert"] as const) {
 }
 for (const operation of ["delete", "insert"] as const) {
   add(
-    `select-result-${operation}`,
-    [`compose.select-${operation}`],
-    `Select the second complete line of task.txt. Forward that selection result, its UUID or its full RESULT# item to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE before that line; keep every original byte."}`,
+    `read-window-${operation}`,
+    [`compose.read-window-${operation}`],
+    `Read only the second line of task.txt (offset 2, limit 1). Forward that Read result or its UUID to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE before that line; keep every original byte."}`,
     [
-      {
-        tool: "select",
-        args: { path: "task.txt", operation: { kind: "lines", first: 2, last: 2 } },
-      },
+      { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
       {
         tool: operation,
         ...(operation === "insert" && { args: { text: "BEFORE", before: true } }),
@@ -834,18 +932,12 @@ for (const operation of ["delete", "insert"] as const) {
 add(
   "grouped-replace-file-count",
   ["edit.grouped-file-count"],
-  "In one native Codemode script, sequentially select columns 0..3 of lines 1, 2, then 3 in task.txt and replace each issued selection with NEW. Await each replacement before selecting the next line so each gets a fresh snapshot. Keep the final newline. Inspect the final editor summary: it must report three replacements in one file, not three files.",
+  "In one native Codemode script, sequentially read lines 1, 2, then 3 of task.txt as one-line windows (offset and limit 1) and replace each issued Read result with NEW followed by a newline. Await each replacement before reading the next line so each gets a fresh snapshot. Inspect the final editor summary: it must report three replacements in one file, not three files.",
   [1, 2, 3].flatMap((line, index): RouteStep[] => [
-    {
-      tool: "select",
-      args: {
-        path: "task.txt",
-        operation: { kind: "range", startLine: line, startColumn: 0, endLine: line, endColumn: 3 },
-      },
-    },
+    { tool: "read", args: { path: "task.txt", offset: line, limit: 1 } },
     {
       tool: "replace",
-      args: { text: "NEW" },
+      args: { text: "NEW\n" },
       reuse: reuse(index * 2),
       ...(line === 3 && { parentContains: "Applied 3 replacements in 1 file." }),
     },
@@ -951,11 +1043,25 @@ add(
 );
 
 add(
-  "search-query",
-  ["search.boolean", "search.regex", "search.files", "search.flags"],
-  "Use search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Finally regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Report the matching line.",
+  "search-multiline-between",
+  ["search.multiline", "compose.search-multiline-replace"],
+  "Search task.txt with one multiline regex that selects only the lines between the BEGIN and END marker lines, without the markers. Replace that Search selection with NEW and a line break. Keep the marker lines and all other bytes.",
   [
-    { tool: "search", args: { query: "files:task*.txt" } },
+    { tool: "search", args: { path: "task.txt", query: /^regex:/, multiline: true } },
+    { tool: "replace", args: { text: /^NEW\r?\n$/ }, reuse: reuse(0) },
+  ],
+  {
+    files: { "task.txt": "keep\nBEGIN\nold one\nold two\nEND\nkeep\n" },
+    expected: { "task.txt": "keep\nBEGIN\nNEW\nEND\nkeep\n" },
+  },
+);
+
+add(
+  "search-query",
+  ["search.boolean", "search.regex", "file_search.glob", "search.flags"],
+  "Use file_search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Finally regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Report the matching line.",
+  [
+    { tool: "file_search", args: { pattern: /task\*?\.txt|task\*/ } },
     {
       tool: "search",
       args: {
@@ -995,6 +1101,159 @@ add(
     },
   ],
   { expected: { "task.txt": "READY\nlast\n" } },
+);
+
+add(
+  "exact-range-replace",
+  ["edit.replace-exact-range", "edit.leading-newline-range"],
+  "Use Replace with paired exact-text start/end on both files. In sentence.txt replace START through END, including both endpoint fragments, with NEW while preserving left and right on the same line. In credit.txt remove only the suffix beginning with the two newlines immediately before Based on and ending with the closing period of Based on [source](credit). Include those two leading newlines in start and use an empty replacement. Keep the entire preceding paragraph, including its text and punctuation. Do not rewrite either whole file or use line anchors.",
+  [
+    {
+      tool: "replace",
+      args: { path: "sentence.txt", start: "START", end: "END", text: "NEW" },
+    },
+    {
+      tool: "replace",
+      args: {
+        path: "credit.txt",
+        start: "\n\nBased on",
+        end: "[source](credit).",
+        text: "",
+      },
+    },
+  ],
+  {
+    files: {
+      "sentence.txt": "left START old words END right\n",
+      "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.\n\nBased on [source](credit).",
+    },
+    expected: {
+      "sentence.txt": "left NEW right\n",
+      "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.",
+    },
+  },
+);
+
+add(
+  "exact-range-delete",
+  ["edit.delete-exact-range", "compose.search-range-endpoints"],
+  "Search sentence.txt separately for DELETE_BEGIN and DELETE_END. Use the exact :match reference from each Search as Delete start and end, respectively. Delete the inclusive span between those endpoints, retaining left, right, both surrounding spaces and the line ending. Do not use :line references, a whole-file deletion, or one combined Search result as the source.",
+  [
+    { tool: "search", args: { path: "sentence.txt", query: "DELETE_BEGIN" } },
+    { tool: "search", args: { path: "sentence.txt", query: "DELETE_END" } },
+    {
+      tool: "delete",
+      args: {
+        path: "sentence.txt",
+        start: /^SEARCH#[A-F0-9]+:1:match$/u,
+        end: /^SEARCH#[A-F0-9]+:1:match$/u,
+      },
+      reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
+    },
+  ],
+  {
+    files: { "sentence.txt": "left DELETE_BEGIN old words DELETE_END right\n" },
+    expected: { "sentence.txt": "left  right\n" },
+  },
+);
+
+add(
+  "exact-range-copy",
+  ["edit.copy-exact-range", "edit.copy-exact-destination", "compose.search-range-endpoints"],
+  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references as targetStart and targetEnd. Replace only that inclusive destination span. Preserve both files' surrounding sentence text and line endings, and leave the source unchanged. Do not use an unpaired insertion or whole-file copy.",
+  [
+    { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
+    { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
+    {
+      tool: "copy",
+      args: {
+        path: "source.txt",
+        start: "COPY_BEGIN",
+        end: "COPY_END",
+        target: "target.txt",
+        targetStart: /^SEARCH#[A-F0-9]+:1:match$/u,
+        targetEnd: /^SEARCH#[A-F0-9]+:1:match$/u,
+      },
+      reuse: [reuse(0, "targetStart", "anchor"), reuse(1, "targetEnd", "anchor")],
+    },
+  ],
+  {
+    files: {
+      "source.txt": "source prefix COPY_BEGIN body COPY_END source suffix\n",
+      "target.txt": "target prefix TARGET_BEGIN old TARGET_END target suffix\n",
+    },
+    expected: {
+      "source.txt": "source prefix COPY_BEGIN body COPY_END source suffix\n",
+      "target.txt": "target prefix COPY_BEGIN body COPY_END target suffix\n",
+    },
+  },
+);
+
+add(
+  "exact-range-move",
+  ["edit.move-exact-range", "edit.move-exact-destination", "compose.search-range-endpoints"],
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references as Move start/end. Move that inline inclusive span into target.txt using the exact strings TARGET_BEGIN and TARGET_END as targetStart/targetEnd. Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Do not use an unpaired insertion or whole-file move.",
+  [
+    { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
+    { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
+    {
+      tool: "move",
+      args: {
+        path: "source.txt",
+        start: /^SEARCH#[A-F0-9]+:1:match$/u,
+        end: /^SEARCH#[A-F0-9]+:1:match$/u,
+        target: "target.txt",
+        targetStart: "TARGET_BEGIN",
+        targetEnd: "TARGET_END",
+      },
+      reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
+    },
+  ],
+  {
+    files: {
+      "source.txt": "source prefix MOVE_BEGIN body MOVE_END source suffix\r\n",
+      "target.txt": "target prefix TARGET_BEGIN old TARGET_END target suffix\r\n",
+    },
+    expected: {
+      "source.txt": "source prefix  source suffix\r\n",
+      "target.txt": "target prefix MOVE_BEGIN body MOVE_END target suffix\r\n",
+    },
+  },
+);
+
+add(
+  "mixed-range-replace",
+  ["edit.mixed-range-endpoints"],
+  "Read line-start.txt with anchors. Replace from its returned first-line anchor through the exact END fragment on line 2 with NEW, preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference with NEW followed by a newline. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
+  [
+    { tool: "read", args: { path: "line-start.txt", views: ["anchors"] } },
+    {
+      tool: "replace",
+      args: { path: "line-start.txt", start: /^1#/u, end: "END", text: "NEW" },
+      reuse: reuse(0, "start", "anchor"),
+    },
+    { tool: "search", args: { path: "line-end.txt", query: "END" } },
+    {
+      tool: "replace",
+      args: {
+        path: "line-end.txt",
+        start: "START",
+        end: /^SEARCH#[A-F0-9]+:1:line$/u,
+        text: "NEW\n",
+      },
+      reuse: reuse(2, "end", "anchor"),
+    },
+  ],
+  {
+    files: {
+      "line-start.txt": "KEEP prefix START selected\nEND suffix KEEP\nlast\n",
+      "line-end.txt": "KEEP prefix START selected\nEND suffix KEEP\nlast\n",
+    },
+    expected: {
+      "line-start.txt": "NEW suffix KEEP\nlast\n",
+      "line-end.txt": "KEEP prefix NEW\nlast\n",
+    },
+  },
 );
 
 add(
@@ -1116,9 +1375,9 @@ const deletedDeclaration = {
 add(
   "delete-symbol",
   ["edit.delete-declaration"],
-  "Read symbol:task.ts#doomed to confirm the declaration. Then delete that same direct symbol path without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not use the Read result as the Delete input for this route.",
+  "Use lsp_search with declaration task.ts#doomed to confirm the declaration. Then delete the direct symbol path symbol:task.ts#doomed without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not use the lsp_search result as the Delete input for this route.",
   [
-    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
     {
       tool: "delete",
       args: { path: "symbol:task.ts#doomed", start: undefined, end: undefined },
@@ -1135,9 +1394,9 @@ add(
 add(
   "read-symbol-delete",
   ["compose.symbol-read-delete"],
-  "Read symbol:task.ts#doomed, then pass its unchanged Read result or UUID to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
+  "Use lsp_search with declaration task.ts#doomed, then pass its unchanged result or UUID to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
   [
-    { tool: "read", args: { path: "symbol:task.ts#doomed" }, contains: "function doomed" },
+    { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
     { tool: "delete", args: { start: undefined, end: undefined }, reuse: reuse(0) },
   ],
   {
@@ -1243,6 +1502,8 @@ add(
     answer: "saved",
   },
 );
+// Optional closed provider metadata does not change this effect/readback route.
+// Write metadata projection is checked by deterministic resource-failure and structured-result tests.
 add(
   "write-unknown-effects",
   ["edit.write-failure-recovery", "compose.uncertain-write-read"],
@@ -1330,15 +1591,18 @@ add(
 );
 add(
   "selection-copy-move",
-  ["edit.copy-selection", "edit.move-selection", "compose.select-copy", "compose.select-move"],
-  "Read task.txt and select its second complete line. Copy that selection after the first line of dest.txt. Read task.txt again, select the original second line, and move it after the last line of dest.txt. Use Read results for select and selection results as copy/move sources. Use dest.txt as target with targetStart identifying DEST for copy and TAIL for move; do not replace a destination selection.",
   [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "lines", first: 2, last: 2 } }, reuse: reuse(0) },
-    { tool: "copy", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(1) },
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "lines", first: 2, last: 2 } }, reuse: reuse(3) },
-    { tool: "move", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(4) },
+    "edit.copy-selection",
+    "edit.move-selection",
+    "compose.read-window-copy",
+    "compose.read-window-move",
+  ],
+  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result after the first line of dest.txt. Read the second line of task.txt again the same way and move it after the last line of dest.txt. Use the Read results as copy/move sources. Use dest.txt as target with targetStart identifying DEST for copy and TAIL for move; do not replace a destination selection.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    { tool: "copy", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(0) },
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    { tool: "move", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(2) },
   ],
   {
     files: { ...textFile, "dest.txt": "DEST\nTAIL\n" },
@@ -1417,18 +1681,16 @@ add(
 add(
   "move-zero-width",
   ["edit.move-zero-width", "compose.move-point-replace"],
-  "Read task.txt and select its point at offset 0 using sliceText from=0,to=0. Read dest.txt and select its point at offset 5 using sliceText from=5,to=5. Move the source point to the destination point using both unchanged Select results as path and target. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.",
+  'Search task.txt with a zero-width regex for the point at its start. Search dest.txt with a zero-width regex for the point directly after "left " (offset 5). Move the source point to the destination point using both unchanged Search results as path and target. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.',
   [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "sliceText", from: 0, to: 0 } }, reuse: reuse(0) },
-    { tool: "read", args: { path: "dest.txt" } },
-    { tool: "select", args: { operation: { kind: "sliceText", from: 5, to: 5 } }, reuse: reuse(2) },
+    { tool: "search", args: { path: "task.txt", query: /^regex:/ } },
+    { tool: "search", args: { path: "dest.txt", query: /^regex:/ } },
     {
       tool: "move",
-      reuse: [reuse(1), reuse(3, "target")],
+      reuse: [reuse(0), reuse(1, "target")],
       contains: "No changes: zero-width selections.",
     },
-    { tool: "replace", args: { text: "NEW " }, reuse: reuse(4) },
+    { tool: "replace", args: { text: "NEW " }, reuse: reuse(2) },
   ],
   {
     files: { "task.txt": "source\n", "dest.txt": "left right\n" },
@@ -1562,125 +1824,55 @@ add(
   { git: true },
 );
 
-const geometric = [
-  [
-    "range",
-    { kind: "range", startLine: 2, startColumn: 0, endLine: 2, endColumn: 3 },
-    textFile,
-    "keep\nNEW\nlast\n",
-  ],
-  ["lines", { kind: "lines", first: 2, last: 2 }, textFile, "keep\nNEW\nlast\n"],
-  [
-    "between",
-    { kind: "between", start: "[", end: "]", extent: "inside" },
-    { "task.txt": "[OLD]\n" },
-    "[NEW]\n",
-  ],
-  ["sliceText", { kind: "sliceText", from: 5, to: 8 }, textFile, "keep\nNEW\nlast\n"],
-  ["trim", { kind: "trim", side: "both" }, { "task.txt": "  OLD \n" }, "  NEW \n"],
-  ["split", { kind: "split", delimiter: "|" }, { "task.txt": "OLD|OLD" }, "NEW|NEW"],
-  [
-    "columns",
-    { kind: "columns", from: 2, to: 5 },
-    { "task.txt": "aaOLDzz\naaOLDzz\n" },
-    "aaNEWzz\naaNEWzz\n",
-  ],
-] as const;
-for (const [kind, operation, files, expected] of geometric) {
-  add(
-    `select-${kind}`,
-    [`select.${kind}`, "compose.read-select", "compose.select-replace"],
-    `Read task.txt. Use select with the ${kind} operation to choose ${kind === "split" ? "the two delimiter-separated values" : kind === "trim" ? "the non-whitespace text" : "only the OLD text or line"}, then pass its result into replace to change the selection to NEW. Keep all other bytes. ${kind === "range" ? "Use line 2, columns 0 through 3 (exclusive)." : kind === "lines" ? "Choose line 2 including its line ending, and replace it with NEW plus that same line ending." : kind === "sliceText" ? "Use offsets 5 through 8 (exclusive)." : kind === "columns" ? "Use columns 2 through 5 (exclusive) on each line." : kind === "between" ? "Choose inside the square brackets." : kind === "split" ? "Split on the vertical bar." : "Trim both sides."}`,
-    [
-      { tool: "read", args: { path: "task.txt" } },
-      { tool: "select", args: { operation }, reuse: reuse(0) },
-      { tool: "replace", args: { text: kind === "lines" ? "NEW\n" : "NEW" }, reuse: reuse(1) },
-    ],
-    { files, expected: { "task.txt": expected } },
-  );
-}
-
 add(
-  "select-linesOf",
-  ["select.linesOf"],
-  "Search task.txt for OLD, expand the exact match into whole containing lines with select linesOf, then replace the entire selected line with only NEW plus its original line ending. Remove prefix and suffix, not just OLD. Keep the other lines unchanged.",
+  "read-search-narrow",
+  ["compose.search-narrow-result"],
+  "Read only line 1 of task.txt (offset 1, limit 1). Search inside that unchanged Read result with a regex that matches only the text between the square brackets, without the brackets. Replace that Search selection with NEW. Keep all other bytes, including the bracketed text on line 2.",
   [
-    { tool: "search", args: { path: "task.txt", query: "OLD" } },
-    { tool: "select", args: { operation: { kind: "linesOf" } }, reuse: reuse(0) },
-    { tool: "replace", args: { text: "NEW\n" }, reuse: reuse(1) },
-  ],
-  {
-    files: { "task.txt": "keep\nprefix OLD suffix\nlast\n" },
-    expected: { "task.txt": "keep\nNEW\nlast\n" },
-  },
-);
-
-add(
-  "select-position",
-  ["select.position"],
-  "Read task.txt. Select its zero-width after position and use replace to append NEW there, without replacing the existing file.",
-  [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "position", edge: "after" } }, reuse: reuse(0) },
+    { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
+    { tool: "search", args: { query: /^regex:/ }, reuse: reuse(0) },
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
-  { expected: { "task.txt": "keep\nOLD\nlast\nNEW" } },
-);
-
-for (const kind of ["within", "intersection", "difference"]) {
-  add(
-    `select-${kind}`,
-    [`select.${kind}`],
-    `Read only line 1 of task.txt to get a comparison scope. Search the entire task.txt for OLD. Use select ${kind} with the Read result as scopes and the Search result as path. Replace the resulting selection with NEW.`,
-    [
-      { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
-      { tool: "search", args: { path: "task.txt", query: "OLD" } },
-      {
-        tool: "select",
-        args: { operation: { kind } },
-        reuse: [reuse(1), reuse(0, "operation.scopes")],
-      },
-      { tool: "replace", args: { text: "NEW" }, reuse: reuse(2) },
-    ],
-    {
-      files: { "task.txt": "OLD first\nOLD second\n" },
-      expected: {
-        "task.txt": kind === "difference" ? "OLD first\nNEW second\n" : "NEW first\nOLD second\n",
-      },
-    },
-  );
-}
-add(
-  "select-merge",
-  ["select.merge"],
-  "Read task.txt, pass an array containing that same result twice to select merge, then replace the merged whole-file selection with READY plus a newline. There must be just one resulting copy.",
-  [
-    { tool: "read", args: { path: "task.txt" } },
-    { tool: "select", args: { operation: { kind: "merge" } }, reuse: reuse(0) },
-    { tool: "replace", args: { text: "READY\n" }, reuse: reuse(1) },
-  ],
-  { expected: { "task.txt": "READY\n" } },
+  {
+    files: { "task.txt": "keep [OLD] keep\n[KEEP]\n" },
+    expected: { "task.txt": "keep [NEW] keep\n[KEEP]\n" },
+  },
 );
 
 const syntax = { "task.ts": "function first() { return 7; }\nfunction second() { return 9; }\n" };
 add(
-  "select-object-part",
-  ["select.object", "select.part", "read.ast", "search.ast"],
-  "Read ast:task.ts. AST-search for return 7, take its match selection, select the enclosing function, then select the function's name part and replace it with renamed. Use the actual source references.",
+  "ast-capture-rename",
+  ["read.ast", "search.ast", "compose.ast-capture-edit"],
+  "Read ast:task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the displayed NAME capture reference with renamed. Use the actual capture reference, not a file path or anchor.",
   [
     { tool: "read", args: { path: "ast:task.ts" }, contains: "first" },
-    { tool: "search", args: { path: "task.ts", query: "ast:return 7" } },
-    {
-      tool: "select",
-      args: { operation: { kind: "object", object: "function" } },
-      reuse: reuse(1),
-    },
-    { tool: "select", args: { operation: { kind: "part", part: "name" } }, reuse: reuse(2) },
-    { tool: "replace", args: { text: "renamed" }, reuse: reuse(3) },
+    // A pattern or a rule with a pattern can both capture NAME.
+    { tool: "ast_search", args: { path: "task.ts" }, contains: "capture NAME" },
+    { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
   ],
   {
     files: syntax,
     expected: { "task.ts": "function renamed() { return 7; }\nfunction second() { return 9; }\n" },
+  },
+);
+
+add(
+  "ast-search-enclosing",
+  ["ast_search.rule", "compose.ast-search-enclosing"],
+  'Search task.ts for the text "return 9". Then use ast_search with that unchanged Search result as path, relation "enclosing", language typescript and an ast-grep rule for function declarations, to select the function that contains it. Replace that whole function with function second() { return 10; }. Keep the first function unchanged.',
+  [
+    { tool: "search", args: { path: "task.ts" }, contains: "return 9" },
+    {
+      tool: "ast_search",
+      args: { relation: "enclosing", language: /^typescript$/i },
+      reuse: reuse(0),
+      contains: "function second",
+    },
+    { tool: "replace", args: { text: /^function second\(\) \{ return 10; \}$/ }, reuse: reuse(1) },
+  ],
+  {
+    files: syntax,
+    expected: { "task.ts": "function first() { return 7; }\nfunction second() { return 10; }\n" },
   },
 );
 
@@ -1707,42 +1899,6 @@ add(
     },
     expected: { "task.ts": "function renamed() { return 8; }\nfunction second() { return 9; }\n" },
   },
-);
-
-add(
-  "select-navigate",
-  ["select.navigate"],
-  "AST-search task.ts for the whole declaration named first, using a wildcard body. Take its exact Search match selection and use select navigate to its next function sibling directly, without an intermediate enclosing selection. Read that returned selection and report the sibling name.",
-  [
-    { tool: "search", args: { path: "task.ts", query: /ast:/ } },
-    {
-      tool: "select",
-      args: { operation: { kind: "navigate", relation: "siblings", direction: "next" } },
-      reuse: reuse(0),
-    },
-    { tool: "read", reuse: reuse(1), contains: "second" },
-  ],
-  { files: syntax, answer: "second" },
-);
-
-add(
-  "select-elementExtent",
-  ["select.elementExtent"],
-  "Search task.js for the exact digit 2. Select that call argument with elementExtent around, then delete its selection so the call becomes sum(1, 3).",
-  [
-    {
-      tool: "search",
-      args: { query: "2" },
-      argsAny: [{ path: "task.js" }, { include: "task.js" }],
-    },
-    {
-      tool: "select",
-      args: { operation: { kind: "elementExtent", extent: "around" } },
-      reuse: reuse(0),
-    },
-    { tool: "delete", reuse: reuse(1) },
-  ],
-  { files: { "task.js": "sum(1, 2, 3);\n" }, expected: { "task.js": "sum(1, 3);\n" } },
 );
 
 add(
@@ -1830,10 +1986,8 @@ add(
     "compose.shell-reference-after-input",
     "shell.file-authority-refusal",
     "shell.delete",
-    "process.discovery",
-    "process.read",
   ],
-  "Start a background Bash command that waits for one input line, prints that line and exits. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello. Then discover this Pi process using process: and read its PID resource. Finally delete the shell session. Do not edit files.",
+  "Start a background Bash command that waits for one input line, prints that line and exits. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -1855,8 +2009,6 @@ add(
       reuse: reuse(0, "path", "shell"),
       contains: "hello",
     },
-    { tool: "search", args: { query: /process:/ } },
-    { tool: "read", args: { path: /process:\d+/ } },
     { tool: "delete", reuse: reuse(0, "path", "shell") },
   ],
   { expected: textFile, answer: "hello" },
@@ -1999,17 +2151,17 @@ add(
 add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
-  "Use symbol search on task.ts to find count, then search that returned result with navigation references to find its usage. Read the symbol declaration and call graph. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
+  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search for the declaration of count and for its calls. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
   [
-    { tool: "search", args: { path: "task.ts", query: /symbols:count/ }, contains: "count" },
+    { tool: "lsp_search", args: { path: "task.ts", query: "count" }, contains: "count" },
     {
-      tool: "search",
-      args: { query: /symbols:count/, navigation: "references" },
+      tool: "lsp_search",
+      args: { query: "count", references: true },
       reuse: reuse(0),
       contains: "count",
     },
-    { tool: "read", args: { path: /symbol:task.ts#.*count/ }, contains: "3" },
-    { tool: "read", args: { path: /^graph:task.ts(?:#.*)?$/ }, contains: "References" },
+    { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "3" },
+    { tool: "lsp_search", args: { calls: /^task.ts(?:#.*)?$/ }, contains: "References" },
     {
       tool: "read",
       args: { path: "diagnostics:problem.ts" },
@@ -2041,9 +2193,9 @@ add(
     "lsp.rename-keeps-unrelated-names",
     "compose.symbol-read-rename",
   ],
-  "First read the symbol declaration for count in task.ts and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
+  "First get the declaration of count in task.ts with lsp_search and wait until it resolves. Then use replace on its symbol name resource to rename it to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
   [
-    { tool: "read", args: { path: /symbol:task.ts#.*count/ }, contains: "count" },
+    { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
     {
       tool: "replace",
       args: { path: /symbol:task.ts#.*count#name/, text: "total" },
@@ -2094,9 +2246,20 @@ add(
 );
 
 add(
+  "read-image-write",
+  ["compose.read-image-write"],
+  "Read pixel.png, then save the image that Read returned to copy.png with Write: pass that Read result as Write content (its UUID in a direct call, the returned image value in Codemode). Do not use Copy and do not change other files. Report the written path.",
+  [
+    { tool: "read", args: { path: "pixel.png" }, image: true },
+    { tool: "write", args: { path: "copy.png" }, reuse: reuse(0, ["content", "content.note"]) },
+  ],
+  { files: {}, setup: "pixel", expected: { "copy.png": pixelPng } },
+);
+
+add(
   "web-read-search",
-  ["web.read", "web.search", "web.image", "web.sequence"],
-  "The local fixture server is at http://127.0.0.1:8765. Read its page, search that URL for WEB-MARKER, then read the page as an image and as a short sequence. Report the page marker. Do not change files.",
+  ["web.read", "web.search"],
+  "The local fixture server is at http://127.0.0.1:8765. Read its page as text, then search that URL for WEB-MARKER. Report the page marker. Do not change files.",
   [
     { tool: "read", args: { path: "http://127.0.0.1:8765" }, contains: "WEB-MARKER" },
     {
@@ -2104,32 +2267,11 @@ add(
       args: { path: "http://127.0.0.1:8765", query: "WEB-MARKER" },
       contains: "WEB-MARKER",
     },
-    { tool: "read", args: { path: "http://127.0.0.1:8765", views: ["image"] }, image: true },
-    { tool: "read", args: { path: "http://127.0.0.1:8765", views: [/sequence/] }, image: true },
   ],
   {
     files: {},
     answer: "WEB-MARKER",
     setup: "web",
-    prerequisite: "command -v google-chrome || command -v chromium",
-  },
-);
-
-add(
-  "vision-display-window",
-  ["vision.display", "vision.window", "vision.sequence"],
-  "A sandbox-only display and a window titled CAPABILITY-WINDOW are running. Discover the window process with process: search, read its window:PID capture, then capture display: as an image and short sequence. Report the visible window title. Do not inspect host windows or change files.",
-  [
-    { tool: "search", args: { query: /process:/ } },
-    { tool: "read", args: { path: /window:\d+/ }, image: true },
-    { tool: "read", args: { path: "display:", views: ["image"] }, image: true },
-    { tool: "read", args: { path: "display:", views: [/sequence/] }, image: true },
-  ],
-  {
-    files: {},
-    answer: "CAPABILITY-WINDOW",
-    setup: "display",
-    prerequisite: "command -v Xvfb && command -v xmessage",
   },
 );
 

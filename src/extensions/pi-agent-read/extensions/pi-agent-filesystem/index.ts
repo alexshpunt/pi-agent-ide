@@ -39,7 +39,7 @@ export default async function registerFilesystemPlugin(pi: ExtensionAPI): Promis
       api.describe({
         path: () =>
           renderContentDescription(
-            "File path — file content; directory path — entry listing. Relative, absolute and file:// paths accepted.",
+            "File — content; directory — listing.",
             readHost.listDescriptions(),
           ),
       });

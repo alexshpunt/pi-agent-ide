@@ -28,7 +28,6 @@ async function runText(cwd: string, name: string, scripts: string[]) {
     tools: [
       "read",
       "search",
-      "select",
       "replace",
       "write",
       "insert",
@@ -80,9 +79,9 @@ if(unknown.type !== "image" || !unknown.note.includes("ghost")) throw new Error(
 text("Unknown image view preserved");
 `,
       String.raw`
-const valid = await tools.read({path:"pixel.png",views:["image"]});
+const valid = await tools.read({path:"pixel.png"});
 if(valid.type !== "image" || valid.note.includes("View not applied") || valid.note.includes("Unknown view")) throw new Error(JSON.stringify(valid).slice(0, 300));
-text("Native image view remains valid");
+text("Native image read stays free of view warnings");
 `,
       `await tools.read({path:"note.txt",views:["ghost"]});
 await tools.read({path:"pixel.png",views:["anchors"]});`,
@@ -179,7 +178,7 @@ for (const old of [oldCopy,oldMove]) {
     await expect(readFile(path.join(cwd, "copied.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
-test("Codemode prints file text and composes Read, Search, Select and pending mutations", async () => {
+test("Codemode prints file text and composes Read, Search and pending mutations", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runText(cwd, "text-result-chain", [
@@ -188,8 +187,7 @@ const shown = await tools.read({path:"note.txt"});
 if (typeof shown !== "string" || !shown.endsWith("alpha\\nbeta\\ngamma\\n")) throw Error("Read did not return file text");
 text(shown);
 const found = await tools.search({path:shown, query:"beta"}).then(value => value.result);
-const selected = await tools.select({path:found, operation:{kind:"trim",side:"both"}});
-const accepted = await tools.replace({path:selected, text:"BETA"});
+const accepted = await tools.replace({path:found, text:"BETA"});
 const after = await tools.read({path:accepted});
 if (!after.includes("BETA")) throw Error("Pending mutation did not compose");
 return after;
@@ -232,12 +230,10 @@ store("emptyWindow",pastEnd);
 const saved = load("emptyWindow");
 const found = await tools.search({path:saved,query:"alpha"}).then(value => value.result);
 if (!found.includes("No matches found")) throw Error("Stored empty selection widened to the source");
-let emptyReadRejected = false;
-try { await tools.read({path:saved}); } catch (error) { emptyReadRejected = String(error).includes("Empty result target set"); }
-if (!emptyReadRejected) throw Error("Read widened an empty target set");
-let failed = false;
-try { await tools.read({path:"missing.txt"}); } catch { failed = true; }
-if (!failed) throw Error("Missing source became an empty success");
+const emptyRead = await tools.read({path:saved});
+if (emptyRead.status !== "error" || !emptyRead.errors.length) throw Error("Read widened an empty target set");
+const failed = await tools.read({path:"missing.txt"});
+if (failed.status !== "error" || !failed.errors.length) throw Error("Missing source became an empty success");
 text(found);
 `,
     ]);
@@ -296,59 +292,7 @@ text(found);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\ngamma\n");
   });
 });
-test("unmapped Read caps keep both sources available for a smaller retry", async () => {
-  await withTempWorkspace(async (cwd) => {
-    const fixtures = [
-      { prefix: "line", rows: 1100, width: 0 },
-      { prefix: "byte", rows: 35, width: 1000 },
-    ].flatMap(({ prefix, rows, width }) =>
-      ["left", "right"].map((side) => ({
-        name: `${prefix}-${side}.txt`,
-        content: Array.from(
-          { length: rows },
-          (_, index) => `${side} ${index + 1} ${"x".repeat(width)}\n`,
-        ).join(""),
-      })),
-    );
-    await Promise.all(
-      fixtures.map(({ name, content }) => writeFile(path.join(cwd, name), content)),
-    );
-    const run = await runText(cwd, "unmapped-read-cap-recovery", [
-      String.raw`
-for (const prefix of ["line", "byte"]) {
-  const originals = await Promise.all(["left", "right"].map(side => tools.read({path:prefix+"-"+side+".txt"})));
-  const selection = await tools.select({path:originals,operation:{kind:"merge"}});
-  const capped = await tools.read({path:selection,views:["anchors"]});
-  if (typeof capped !== "string") throw Error("Read did not return text");
-  const notice = capped.split("\n").find(line => line.startsWith("[Output truncated:"));
-  if (!notice) throw Error("Missing unmapped-cap notice: "+capped);
-  if (/offset=\d+/.test(notice)) throw Error("Invented a source continuation offset");
-  text(notice);
-  const retry = await tools.read({path:capped,limit:10,views:["anchors"]});
-  for (const side of ["left","right"])
-    if (!retry.includes("|"+side+" 10 ")) throw Error("Recovery lost source or anchor view: "+side);
-  if (retry.includes("Output truncated:")) throw Error("Smaller retry remained capped");
-  const outside = await tools.search({path:retry,query:"regex:left 11|right 11|Output truncated"}).then(value => value.result);
-  if (!outside.includes("No matches found")) throw Error("Recovery widened its ten-line windows");
-  store(prefix+"-cap", capped);
-}
-`,
-      String.raw`
-for (const prefix of ["line", "byte"]) {
-  const capped = load(prefix+"-cap");
-  const retry = await tools.read({path:capped,limit:10,views:["anchors"]});
-  if (!retry.includes("|left 10 ") || !retry.includes("|right 10 "))
-    throw Error("Stored cap result lost a source or requested view");
-}
-text("Stored results keep both source windows for recovery.");
-`,
-    ]);
-    for (const id of ["script-0", "script-1"])
-      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
-    for (const { name, content } of fixtures)
-      expect(await readFile(path.join(cwd, name), "utf8")).toBe(content);
-  });
-});
+
 test("automatic Read caps give executable text, view and byte continuations", async () => {
   await withTempWorkspace(async (cwd) => {
     const lines = Array.from({ length: 2105 }, (_, i) => `row ${i + 1}`).join("\n") + "\n";

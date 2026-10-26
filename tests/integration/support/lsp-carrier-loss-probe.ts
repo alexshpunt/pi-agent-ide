@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { startSshCarrierFixture } from "./ssh-carrier-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { findSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { findSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.js";
 import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
 import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";

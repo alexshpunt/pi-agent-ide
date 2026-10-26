@@ -22,12 +22,7 @@ export type { LspWorkspaceSymbol } from "./symbols.js";
 
 export { requestCallHierarchy, requestReferences } from "./navigation.js";
 
-export {
-  readLspFileGraph,
-  readLspSymbolBody,
-  readLspSymbolGraph,
-  resolveLspCodeSymbol,
-} from "./code-views.js";
+export { readLspFileGraph, readLspSymbolGraph, resolveLspCodeSymbol } from "./code-views.js";
 
 export type { LspCodeSymbol } from "./code-views.js";
 

@@ -79,7 +79,6 @@ subprocess.run(['git','-C',str(p),'add',sys.argv[2]],check=True)
               "ide.changes",
               "ide.debugger",
               "ide.terminal",
-              "ide.vision",
               "ide.formatting",
             ],
           }),

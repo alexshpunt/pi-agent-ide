@@ -9,16 +9,28 @@ import type {
   AgentToolResult,
 } from "@earendil-works/pi-coding-agent";
 import type { JsonValue } from "@earendil-works/pi-ai";
-import { connectResultTargets, TempResourceStore } from "pi-agent-resource";
+import {
+  connectResultImages,
+  connectResultTargets,
+  resultErrorSchema,
+  TempResourceStore,
+} from "pi-agent-resource";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
 import { limitIdeOutput } from "./output-limits.js";
 import { searchFacts, searchFactsSchema } from "./search-facts.js";
 
+/** Tools whose Codemode value is `{ result, hasMatches, complete }`. */
+const searchTools = new Set(["search", "ast_search", "lsp_search", "file_search"]);
+
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
   search: ["path"],
-  select: ["path"],
+  ast_search: ["path"],
+  lsp_search: ["path"],
+  file_search: ["path"],
   replace: ["path"],
   insert: ["path"],
   delete: ["path"],
@@ -52,12 +64,20 @@ const imageBlockSchema = {
   },
   required: ["type", "data", "mimeType", "note"],
 };
+const readFailureSchema = Type.Object(
+  {
+    status: Type.Literal("error"),
+    errors: Type.Array(resultErrorSchema, { minItems: 1 }),
+  },
+  { additionalProperties: false },
+);
 /**
- * Codemode Read resolves to the composition text, or to native image blocks that image() and
- * models.classify() accept. The note carries the same readable, composable result text.
+ * Read resolves to text, native image blocks or the public failure envelope.
+ * Successful image notes carry the same readable, composable result text.
  */
 const readValueSchema = {
   anyOf: [
+    readFailureSchema,
     { type: "string" },
     imageBlockSchema,
     {
@@ -102,12 +122,23 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
 }
 
+/** Project only validated public errors; discard private Read data and renderer details. */
+function readFailure(outcome: unknown): JsonValue | undefined {
+  if (!record(outcome) || outcome.status !== "error") return undefined;
+  const failure = { status: "error", errors: outcome.errors };
+  return Value.Check(readFailureSchema, failure) ? failure : undefined;
+}
 /** Keep tool records private while strings carry registered composition references. */
-export function createIdeTextResults(pi: ExtensionAPI) {
+export function createIdeTextResults(
+  pi: ExtensionAPI,
+  options: { readonly resourceOutput?: boolean; readonly promptSection?: string } = {},
+) {
   const store = connectResultTargets(pi);
+  const resultImages = connectResultImages(pi);
   const names = new Set<string>();
   const outputs = new TempResourceStore();
-  const saveFullOutput = (text: string) => outputs.saveFile(text);
+  const saveFullOutput = (text: string) =>
+    options.resourceOutput ? outputs.save(text) : outputs.saveFile(text);
   const contextErrors = new Map<
     string,
     { source: string; content: Promise<AgentToolResult<unknown>["content"]> }
@@ -136,6 +167,17 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     id: "ide-output-retention",
     setup(api) {
       api.setOutputSaver(saveFullOutput);
+      if (options.resourceOutput)
+        api.addResolver({
+          priority: -1000,
+          resolver: {
+            id: "ide-output-retention",
+            async tryResolve(source, context) {
+              const result = await outputs.resolver.tryResolve(source, context);
+              return result.kind === "failed" ? { kind: "not-handled" } : result;
+            },
+          },
+        });
     },
   });
   pi.on("session_shutdown", () => outputs.dispose());
@@ -187,8 +229,8 @@ export function createIdeTextResults(pi: ExtensionAPI) {
   pi.on("session_start", clear);
   pi.on("session_shutdown", clear);
   pi.on("before_agent_start", (event) => {
-    event.systemPromptOptions.sections.ide_results =
-      "Direct IDE calls return readable text. In Codemode, Search returns { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Other text results remain strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
+    event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
+      'Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. A completed Read failure returns { status: "error", errors }; inspect errors before using its value. Successful text Reads and other text tools return strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.';
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -224,17 +266,6 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           } else input[field] = source;
         }
       }
-      if (
-        event.toolName === "select" &&
-        input.operation &&
-        typeof input.operation === "object" &&
-        "scopes" in input.operation
-      ) {
-        input.operation = {
-          ...input.operation,
-          scopes: store.source(input.operation.scopes, context.cwd),
-        };
-      }
       for (const field of ["text", "content"]) {
         const value = input[field];
         if (
@@ -259,7 +290,7 @@ export function createIdeTextResults(pi: ExtensionAPI) {
     const descriptors = Object.getOwnPropertyDescriptors(definition);
     // Keep readable composition strings except for explicitly declared public script values.
     delete descriptors.outputSchema;
-    if (definition.name === "search")
+    if (searchTools.has(definition.name))
       descriptors.outputSchema = {
         value: searchFactsSchema,
         enumerable: true,
@@ -429,15 +460,22 @@ export function createIdeTextResults(pi: ExtensionAPI) {
           ? original
           : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
-      const shown = store.publish(outcome, readable, context.cwd, resources);
       const succeeded = !event.isError && outcome.status !== "error";
+      const shown = store.publish(outcome, readable, context.cwd, resources);
+      resultImages.keep(
+        shown,
+        context.cwd,
+        event.toolName === "read" && succeeded
+          ? event.content.filter((block): block is ImageBlock => block.type === "image")
+          : [],
+      );
       const value =
-        event.toolName === "search" && succeeded
+        searchTools.has(event.toolName) && succeeded
           ? searchFacts(outcome, shown)
           : event.toolName === "read"
             ? succeeded
               ? readValue(event.content, shown)
-              : undefined
+              : readFailure(record)
             : providerValue(event.details);
       const parent = parents.get(event.toolCallId);
       parents.delete(event.toolCallId);

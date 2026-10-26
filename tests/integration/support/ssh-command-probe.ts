@@ -3,7 +3,7 @@ import { startSshFixture } from "#integration/support/ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { createSshConfiguredProcessAccess } from "#src/backend/configured-process.js";
 import { runConfiguredProcess } from "#src/api/tool-config.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { SshBackendError } from "#src/backend/ssh.js";
 import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
 

@@ -83,7 +83,7 @@ export function createSearchToolDetails(
           link: pathToFileURL(file.source).href,
           matchCount: file.matchCount,
           uniqueLineCount: file.uniqueLineCount,
-          groups: file.groups,
+          groups: file.groups.map(({ text, matchCount }) => ({ text, matchCount })),
           lines: [],
         },
   );
@@ -207,7 +207,11 @@ function createSearchResultFile(
     }
 
     const line = current ?? { lineNumber: match.lineNumber, text: match.lineText, ranges: [] };
-    line.ranges.push({ from: match.startColumn, to: match.endColumn });
+    // A match that continues on later lines is highlighted to the end of its first line.
+    line.ranges.push({
+      from: match.startColumn,
+      to: match.endLineNumber === undefined ? match.endColumn : match.lineText.length,
+    });
     lines.set(match.lineNumber, line);
   }
 

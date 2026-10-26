@@ -16,12 +16,12 @@ export const undoSchema = Type.Object(
     file: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "File path or one whole-file source result. Partial and multi-file selections are rejected. Omit file to use the supplied CHANGE anchor's file or the last resolved source.",
+          "File path or an unchanged whole-file result. Omit to use the file of the CHANGE# anchor or the last file read.",
       }),
     ),
     change: Type.String({
       description:
-        'Use a complete current CHANGE#HASH anchor from read with views: ["changes"] to restore that change to HEAD in both worktree and index. Use last to restore the file\'s latest saved text-editor transaction.',
+        'A CHANGE#HASH anchor from read with views: ["changes"] reverts that change to HEAD in the worktree and index; last reverts the file\'s last tool edit.',
       pattern: "^(?:CHANGE#[0-9A-F]{4,64}|last)$",
     }),
   },
@@ -41,7 +41,7 @@ export function createUndoMutationTool(
   return {
     name: "undo",
     description:
-      "Use undo to restore one selected uncommitted Git change or a file's latest text-editor transaction.",
+      "Use undo to revert one uncommitted Git change or the last edit a tool made to a file.",
 
     promptSnippet: "Restore a Git change or latest text edit",
     parameters: undoSchema,

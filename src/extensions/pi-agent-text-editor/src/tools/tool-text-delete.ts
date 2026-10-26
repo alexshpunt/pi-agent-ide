@@ -18,13 +18,9 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 export const deleteSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Filesystem path, shell:<session>, debug:<session>, debug:<session>/breakpoint/<id>, unchanged source result or its UUID, or an array of results. An ordinary filesystem path without start/end deletes the object: directories recursively, symlinks only as links. A text result input removes only selected text and keeps the file, even for a whole-file selection. For Read results from symbol:<file>#<selector>, deletion removes only the declaration text; imports and references are unchanged. Omit start/end for result inputs. Omit path when a supplied text anchor identifies the file.",
+      "Path, unchanged Read/Search result or its UUID, or an array of them. A path without start deletes the file or directory (a symlink only as a link); a result removes only its selected text. Omit to use the file of the start anchor.",
     ),
-    ...sourceRangeProperties({
-      start:
-        "Anchor or unique exact text locating the text to remove. Without end, exact text selects only that fragment; a line anchor selects its whole line. Omit when path already selects text.",
-      end: "Anchor or unique exact text locating the last line to remove. With start, removes whole lines including both boundary lines, even for SEARCH :match anchors. Both boundaries must be unique, in one file, and in forward order. Mixed anchor types are allowed. Omit when start alone selects the intended text.",
-    }),
+    ...sourceRangeProperties(),
   },
   { additionalProperties: false },
 );
@@ -38,7 +34,7 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
   name: "delete",
   wholeFileOperation: "delete",
   description:
-    "Use delete to remove selected text, permanently delete a file or directory, unlink a symlink, terminate a terminal or debugger session, or remove a debugger breakpoint.",
+    "Use delete to remove text, delete a file or directory, or end a terminal or debugger session.",
 
   promptSnippet:
     "Delete files or selected text, terminate terminal or debugger sessions, or remove debugger breakpoints",

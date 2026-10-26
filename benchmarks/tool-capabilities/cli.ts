@@ -325,7 +325,6 @@ async function attempt(
         "write",
         "bash",
         "search",
-        "select",
         "replace",
         "insert",
         "delete",
@@ -353,7 +352,9 @@ async function attempt(
       "--no-themes",
       "--no-mcp",
       "-e",
-      "/source/src/pi-agent-ide.ts",
+      task.setup === "standalone-resource"
+        ? "/source/tests/integration/fixtures/standalone-resource-provider.ts"
+        : "/source/src/pi-agent-ide.ts",
       "-e",
       "builtin:codemode",
       "-e",
@@ -364,8 +365,9 @@ async function attempt(
       profile.thinking,
       "--exclude-tools",
       `edit,grep,find,ls${mode === "direct" ? ",codemode" : ""}`,
-      "--pi-agent-ide-no-post-processing",
-      "true",
+      ...(task.setup === "standalone-resource"
+        ? []
+        : ["--pi-agent-ide-no-post-processing", "true"]),
     ];
     for (const extension of connector?.extensions ?? []) piArgs.push("-e", extension);
     if (connector) piArgs.push("--provider", connector.definition.provider);
@@ -382,13 +384,6 @@ async function attempt(
         "-e",
         "/source/src/extensions/pi-agent-text-editor/test/fixtures/move-effects-probe.ts",
       );
-    if (task.setup === "display")
-      piArgs.push(
-        "--pi-agent-ide-vision-displays",
-        "true",
-        "--pi-agent-ide-vision-arbitrary-windows",
-        "true",
-      );
     piArgs.push("-e", "/source/benchmarks/tool-capabilities/observer.ts");
     piArgs.push("-e", "/source/benchmarks/tool-capabilities/auth-guard.ts");
     let launch = "";
@@ -399,9 +394,6 @@ async function attempt(
           'require("http").createServer((req,res)=>{res.setHeader("Content-Type","text/html");res.end("<title>WEB-MARKER</title><main>WEB-MARKER</main>")}).listen(8765,"127.0.0.1")',
         ) +
         " &\nsleep 0.5\n";
-    if (task.setup === "display")
-      launch +=
-        "export DISPLAY=:127\nXvfb :127 -screen 0 800x600x24 >/state/xvfb.log 2>&1 &\nsleep 0.5\nxmessage -name CAPABILITY-WINDOW CAPABILITY-WINDOW >/state/window.log 2>&1 &\nsleep 0.5\n";
     launch += ["node", cli.cli, ...piArgs, "--", taskPrompt].map(shellQuote).join(" ");
     const execution = await runProcess("bwrap", [...bwrap, "/bin/bash", "-c", launch], {
       env,

@@ -44,35 +44,54 @@ interface FilePayload {
 }
 
 /** Search unhandled requests with literal-first hybrid matching. */
-export function createTextResolver(sessions: SearchSessionStore): SearchResolver {
-  return createMatchResolver("text", sessions, createSearchRecipe);
+export function createTextResolver(
+  sessions: SearchSessionStore,
+  resultScopeOnly = false,
+): SearchResolver {
+  return createMatchResolver("text", sessions, createSearchRecipe, resultScopeOnly);
 }
 
 /** Search an explicit regex without broadening or swallowing syntax errors. */
-export function createRegexResolver(sessions: SearchSessionStore): SearchResolver {
-  return createMatchResolver("regex", sessions, (request) =>
-    request.query.startsWith("regex:")
-      ? { ...request, query: request.query.slice("regex:".length), regex: true }
-      : undefined,
+export function createRegexResolver(
+  sessions: SearchSessionStore,
+  resultScopeOnly = false,
+): SearchResolver {
+  return createMatchResolver(
+    "regex",
+    sessions,
+    (request) =>
+      request.query.startsWith("regex:")
+        ? { ...request, query: request.query.slice("regex:".length), regex: true }
+        : undefined,
+    resultScopeOnly,
   );
 }
 
-/** Resolve file-pattern queries through the local file search backend. */
+/** Options the `file_search` tool passes in `SearchRequest.options.files`; their presence selects this resolver. */
+export interface FileSearchOptions {
+  readonly pattern: string;
+}
+
+function fileOptions(request: SearchRequest): FileSearchOptions | undefined {
+  const value = request.options?.files as FileSearchOptions | undefined;
+  return typeof value?.pattern === "string" ? value : undefined;
+}
+
+/** Resolve file-path patterns through the local or owned file search backend. */
 export function createFileResolver(): SearchResolver {
   return {
     id: "files",
     readResources: (request, context) =>
-      request.query.startsWith("files:") ? [request.path ?? context.cwd] : [],
+      fileOptions(request) === undefined ? [] : [request.path ?? context.cwd],
     toScriptData(payload) {
       const result = payload as FilePayload;
       return { kind: "files", files: [...result.files], complete: result.complete };
     },
     async tryResolve(request, context) {
-      if (!request.query.startsWith("files:")) {
-        return { kind: "not-handled" };
-      }
+      const options = fileOptions(request);
+      if (options === undefined) return { kind: "not-handled" };
 
-      const query = request.query.slice("files:".length).trim();
+      const query = options.pattern.trim();
       const result = await searchFiles(
         query,
         request,
@@ -123,14 +142,16 @@ function createMatchResolver(
   id: "text" | "regex",
   sessions: SearchSessionStore,
   queryBody: (request: SearchRequest) => SearchRecipe | undefined,
+  resultScopeOnly = false,
 ): SearchResolver {
   return {
     readResources: (request, context) =>
-      queryBody(request) === undefined
+      queryBody(request) === undefined || (resultScopeOnly && context.scope === undefined)
         ? []
         : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
     id,
     supportsResultScope: true,
+    supportsMultiline: true,
     toScriptData(payload, details) {
       const result = payload as TextPayload;
       const formatted = details as SearchToolDetails & {
@@ -145,6 +166,7 @@ function createMatchResolver(
       };
     },
     async tryResolve(request, context) {
+      if (resultScopeOnly && context.scope === undefined) return { kind: "not-handled" };
       const recipe = queryBody(request);
       if (recipe === undefined) return { kind: "not-handled" };
       const result =
@@ -154,6 +176,7 @@ function createMatchResolver(
       const fuzzy =
         context.scope === undefined &&
         id === "text" &&
+        request.multiline !== true &&
         result.complete &&
         result.matches.length === 0 &&
         isFuzzyQuery(request.query)
@@ -330,7 +353,14 @@ function formatSearchSession(
         `${source}: ${String(file.matchCount)} matches across ${String(file.uniqueLineCount)} unique line texts (compacted)`,
       );
       for (const group of file.groups) {
-        lines.push(`  ×${String(group.matchCount)} ${previewLine(group.text)}`);
+        const index = indices.get(group.first);
+        const first = group.first;
+        lines.push(
+          anchorsRegistered && index !== undefined
+            ? `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
+            : `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)}`,
+          `    ${previewLine(group.text)}`,
+        );
       }
       if (file.groups.length < file.uniqueLineCount) {
         lines.push(
@@ -346,7 +376,11 @@ function formatSearchSession(
     for (const match of file.matches) {
       const index = indices.get(match);
       if (index === undefined) continue;
-      const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${String(match.endColumn + 1)}`;
+      const end =
+        match.endLineNumber === undefined
+          ? String(match.endColumn + 1)
+          : `${String(match.endLineNumber)}:${String(match.endColumn + 1)}`;
+      const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${end}`;
       lines.push(
         anchorsRegistered
           ? `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
@@ -371,6 +405,17 @@ function formatSearchSession(
 
 function previewMatch(match: TextSearchMatch): string {
   const context = 64;
+  if (match.endLineNumber !== undefined) {
+    // Show the matched lines themselves, bounded; continuation lines keep the preview indent.
+    const maximumLines = 8;
+    const from = Math.max(0, match.startColumn - context);
+    const matched = match.matchedText.replace(/\r\n/gu, "\n").split("\n");
+    const shown = matched.slice(0, maximumLines);
+    const more = matched.length - shown.length;
+    return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${shown.join("\n  ")}${
+      more > 0 ? `\n  … ${String(more)} more lines` : ""
+    }⟧`;
+  }
   const from = Math.max(0, match.startColumn - context);
   const to = Math.min(match.lineText.length, match.endColumn + context);
   return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${match.lineText.slice(

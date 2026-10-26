@@ -3,7 +3,7 @@ import { requiredValue } from "pi-agent-invariant";
 import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { SshBackendError } from "#src/backend/ssh.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { startSshFixture } from "./ssh-fixture.js";
 
 async function absent(use: () => Promise<unknown>): Promise<void> {

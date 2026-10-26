@@ -57,13 +57,11 @@ export function searchCallModel(
             truncate: "start" as const,
           },
         ]),
-    ...(arguments_.navigation === undefined
-      ? []
-      : [{ text: "reference navigation", color: "warning" as const }]),
     ...(arguments_.include === undefined ? [] : [{ text: `include ${arguments_.include}` }]),
     ...(arguments_.exclude === undefined ? [] : [{ text: `exclude ${arguments_.exclude}` }]),
     ...(arguments_.caseSensitive === true ? [{ text: "case sensitive" }] : []),
     ...(arguments_.wholeWord === true ? [{ text: "whole word" }] : []),
+    ...(arguments_.multiline === true ? [{ text: "multiline" }] : []),
     ...(arguments_.limit === undefined ? [] : [{ text: `limit ${String(arguments_.limit)}` }]),
   ];
   return {
@@ -89,12 +87,9 @@ export default async function registerSearchCore(
   const presentation = parsePresentation(context?.preferences["ui.search"]);
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
-      id: "search-code",
-      description: "Text search, AST patterns, symbols, graphs, and semantic rename",
-      triggers: [
-        { tool: "search" },
-        { tool: "read", resourcePrefixes: ["ast:", "symbol:", "symbols:", "graph:"] },
-      ],
+      id: "search",
+      description: "Text and regex search in files, guides, web pages and terminal output",
+      triggers: [{ tool: "search" }],
     }),
   ]);
   const targets = connectResultTargets(pi);
@@ -124,15 +119,10 @@ export default async function registerSearchCore(
           openWorldHint: false,
         },
         label: "search",
-        description:
-          "Use search to find text, file paths, syntax patterns, language symbols, web-page text, and running processes.",
-        promptSnippet:
-          "Search files and text with literals or regular expressions, plus syntax trees and language symbols",
+        description: "Use search to find text in files, web pages, guides and terminal output.",
+        promptSnippet: "Search file contents with literals or regular expressions",
         get promptGuidelines(): string[] {
-          return [
-            "Use the narrowest useful search query and scope; broaden when needed.",
-            ...core.renderPromptGuidelines(),
-          ];
+          return [...core.renderPromptGuidelines()];
         },
         parameters: searchSchema,
         outputSchema: searchOutputSchema,
@@ -185,8 +175,6 @@ export default async function registerSearchCore(
               const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
               if (scope !== undefined) {
                 await targets.verify(scope, operationSignal);
-                if (/^(?:files|symbol|graph|process):/u.test(parameters.query))
-                  throw new Error("This query provider does not support result scopes yet.");
               }
               return core.execute(
                 {
@@ -240,7 +228,6 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
           ? arguments_.path
           : "result scope",
     ),
-    ...optionalDetail("navigation", arguments_.navigation),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),
     ...optionalDetail(
@@ -250,6 +237,10 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
     ...optionalDetail(
       "wholeWord",
       arguments_.wholeWord === undefined ? undefined : String(arguments_.wholeWord),
+    ),
+    ...optionalDetail(
+      "multiline",
+      arguments_.multiline === undefined ? undefined : String(arguments_.multiline),
     ),
     ...optionalDetail(
       "limit",

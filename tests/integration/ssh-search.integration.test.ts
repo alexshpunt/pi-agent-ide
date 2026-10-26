@@ -61,7 +61,6 @@ test("ordinary search retains SSH identities, recipes, selections and file scope
           "ide.diagnostics",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
         ],
       }),
     );
@@ -76,7 +75,7 @@ test("ordinary search retains SSH identities, recipes, selections and file scope
         path.resolve("tests/integration/fixtures/ssh-search.ts"),
         "builtin:codemode",
       ],
-      tools: ["search", "replace", "read", "codemode"],
+      tools: ["search", "file_search", "replace", "read", "codemode"],
       timeoutMs: 60000,
       conversation: [
         assistantMessage([
@@ -111,8 +110,8 @@ test("ordinary search retains SSH identities, recipes, selections and file scope
         assistantMessage([
           toolCall({
             id: "files",
-            name: "search",
-            arguments: { query: "files:*.txt", path: scope, exclude: "excluded.txt" },
+            name: "file_search",
+            arguments: { pattern: "*.txt", path: scope, exclude: "excluded.txt" },
           }),
         ]),
         assistantMessage([

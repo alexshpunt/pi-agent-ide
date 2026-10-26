@@ -1,7 +1,7 @@
 import path from "node:path";
 import { startSshFixture } from "./ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
 
 /** Check native cleanup before unlocking a real filesystem operation or tearing down its fixture. */

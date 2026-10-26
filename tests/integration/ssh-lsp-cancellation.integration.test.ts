@@ -9,7 +9,7 @@ import {
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.js";
 import { createSshLspTransport } from "#src/backend/lsp-transport.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
 import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
 
@@ -99,6 +99,7 @@ test.each([false, true])(
       const retained = shared ? manager.getOrStart(".ts", root, "symbols") : undefined;
       await started;
       expect(serverPid).toBeTypeOf("number");
+      if (serverPid === undefined) throw new Error("Missing owned server PID");
       const failure = new Error("Cancel my startup wait");
       controller.abort(failure);
       expect(await outcome).toBe(failure);

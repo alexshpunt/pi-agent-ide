@@ -51,6 +51,7 @@ export function singleAnchorSpan(
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
   wholeLines = false,
+  rangeEndpoint = false,
 ): TextAnchorSpan {
   if (anchors.size !== 1) {
     throw new Error(`Anchor ${field} must resolve in one resource.`);
@@ -61,7 +62,9 @@ export function singleAnchorSpan(
     if (anchor.ranges.length !== 1) {
       throw new Error(`Anchor ${field} must select one match for this operation.`);
     }
-    const selectedRange = requiredValue(anchor.ranges[0]);
+    const selectedRange = requiredValue(
+      (rangeEndpoint ? (anchor.endpointRanges ?? anchor.ranges) : anchor.ranges)[0],
+    );
     const document = context.documentFor(source);
     const exactRange = selectionRange(context, source, selectedRange);
     const endLine = wholeLines
@@ -92,7 +95,36 @@ export function singleAnchorSpan(
   };
 }
 
-/** A single anchor keeps its own extent; two ordered anchors select inclusive whole lines. */
+/**
+ * Text to transfer into a destination. A whole-line literal source selects its line, but an
+ * exact character destination receives the literal itself, so no extra line break is added.
+ */
+export function transferText(
+  context: TextMutationContext,
+  starts: ReadonlyMap<string, TextAnchor>,
+  ends: ReadonlyMap<string, TextAnchor> | undefined,
+  sourceSpan: TextAnchorSpan,
+  targetSpan: TextAnchorSpan | undefined,
+): string {
+  const span =
+    ends === undefined && targetSpan?.selection === true && !sourceSpan.selection
+      ? singleAnchorSpan(context, starts, "start", false, true)
+      : sourceSpan;
+  return context.documentFor(span.source).text(span);
+}
+
+/** Whether an endpoint selects complete lines: a line anchor or text matching a whole line. */
+function selectsWholeLines(anchors: ReadonlyMap<string, TextAnchor>): boolean {
+  const anchor = anchors.values().next().value;
+  if (anchor === undefined) return false;
+  if (!TextSelectionAnchor.is(anchor)) return true;
+  return anchor.ranges.length === 1 && anchor.ranges[0]?.linewise === true;
+}
+
+/**
+ * Join ordered endpoints. Two whole-line endpoints, such as BEGIN/END marker lines, select their
+ * complete lines; otherwise exact text and :match keep character boundaries.
+ */
 export function anchorSpanRange(
   context: TextMutationContext,
   starts: ReadonlyMap<string, TextAnchor>,
@@ -100,23 +132,22 @@ export function anchorSpanRange(
   startField: string,
   endField: string,
 ): TextAnchorSpan {
-  const start = singleAnchorSpan(context, starts, startField);
-  const end = ends === undefined ? start : singleAnchorSpan(context, ends, endField);
+  if (ends === undefined) return singleAnchorSpan(context, starts, startField);
+  const exactEndpoints = !(selectsWholeLines(starts) && selectsWholeLines(ends));
+  const start = singleAnchorSpan(context, starts, startField, false, exactEndpoints);
+  const end = singleAnchorSpan(context, ends, endField, false, exactEndpoints);
   if (start.source !== end.source) {
     throw new Error(`Anchors ${startField} and ${endField} must resolve in one resource.`);
   }
   if (start.from > end.from) {
     throw new Error(`Anchor ${startField} must not come after ${endField}.`);
   }
-  if (ends === undefined) return start;
-  const first = singleAnchorSpan(context, starts, startField, true);
-  const last = singleAnchorSpan(context, ends, endField, true);
   return {
-    source: first.source,
-    from: first.from,
-    to: last.to,
-    selection: false,
-    preservesTrailingLineBreak: true,
+    source: start.source,
+    from: start.from,
+    to: end.to,
+    selection: start.selection || end.selection,
+    preservesTrailingLineBreak: end.preservesTrailingLineBreak,
   };
 }
 

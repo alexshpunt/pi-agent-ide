@@ -83,7 +83,6 @@ async function capturePreflightChild(): Promise<void> {
       "write",
       "bash",
       "search",
-      "select",
       "replace",
       "insert",
       "delete",

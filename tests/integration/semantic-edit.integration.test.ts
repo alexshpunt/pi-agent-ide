@@ -34,7 +34,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -43,7 +43,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
               id: "semantic-edit",
               name: "codemode",
               arguments: {
-                code: 'const declaration=await tools.read({path:"symbol:source.ts#Example"}); if(typeof declaration!=="string") throw Error("Expected readable declaration"); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
+                code: 'const declaration=await tools.lsp_search({declaration:"source.ts#Example"}).then(value => value.result); if(typeof declaration!=="string") throw Error("Expected readable declaration"); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
               },
             }),
           ],
@@ -233,7 +233,7 @@ test("native symbol search honors its file scope before the result limit", async
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -244,7 +244,7 @@ test("native symbol search honors its file scope before the result limit", async
               arguments: {
                 code:
                   textResultChecks +
-                  'const hit=await tools.search({query:"symbols:ScopedExample",path:"second.ts",limit:1}).then(value => value.result); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.search({query:"symbols:ScopedExample",path:"second.ts",exclude:"second.ts"}).then(value => value.result); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
+                  'const hit=await tools.lsp_search({query:"ScopedExample",path:"second.ts",limit:1}).then(value => value.result); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.lsp_search({query:"ScopedExample",path:"second.ts",exclude:"second.ts"}).then(value => value.result); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
               },
             }),
           ],
@@ -270,7 +270,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -281,7 +281,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
               arguments: {
                 code:
                   textResultChecks +
-                  'const found=await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}).then(value => value.result); check(matches(found).length===2,"Duplicate AST nodes lost"); const edited=await tools.replace({path:matches(found)[1],text:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
+                  'const found=await tools.ast_search({pattern:"console.log($ARG)",path:"nodes.ts"}).then(value => value.result); check(matches(found).length===2,"Duplicate AST nodes lost"); const edited=await tools.replace({path:matches(found)[1],text:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
               },
             }),
           ],
@@ -307,7 +307,7 @@ test("native AST edits use fresh selections after automatic commits", async () =
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "read", "search", "select", "replace", "move"],
+      tools: ["codemode", "read", "search", "ast_search", "lsp_search", "replace", "move"],
       timeoutMs: 120_000,
       conversation: [
         assistantMessage(
@@ -318,10 +318,10 @@ test("native AST edits use fresh selections after automatic commits", async () =
               arguments: {
                 code: `
 const check=result=>{if(typeof result!=="string")throw Error("Expected readable result");return result;};
-const firstSearch=check(await tools.search({query:"ast:console.log($ARG)",path:"nodes.ts"}).then(value => value.result));
+const firstSearch=check(await tools.ast_search({pattern:"console.log($ARG)",path:"nodes.ts"}).then(value => value.result));
 check(await tools.replace({path:firstSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:'logger.info("same")'}));
 check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
-const secondSearch=check(await tools.search({query:"ast:logger.info($ARG)",path:"nodes.ts"}).then(value => value.result));
+const secondSearch=check(await tools.ast_search({pattern:"logger.info($ARG)",path:"nodes.ts"}).then(value => value.result));
 check(await tools.replace({path:secondSearch.match(/SEARCH#[A-F0-9]+:1:match/)[0],text:"done()"}));
 `,
               },

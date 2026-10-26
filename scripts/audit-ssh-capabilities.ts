@@ -37,7 +37,6 @@ const builtinRows: Readonly<Record<string, string>> = {
   "ide.changes": "M12 M13",
   "ide.lsp": "M15 M16 M24",
   "ide.processes": "M19 M20 M21 M25",
-  "ide.vision": "M20 M22 M23",
   "ide.debugger": "M21 M24",
   "ide.terminal": "M19 M20 M25",
   "ide.diagnostics": "M16 M25",
@@ -47,7 +46,6 @@ const tools: readonly (readonly [string, string, string])[] = [
   ["read", "M02 M03 M04 M05 M06 M18 M25", "src/extensions/pi-agent-read/src/core/extension.ts"],
   ["search", "M07 M08 M14 M15 M19 M20 M23", "src/extensions/pi-agent-search/src/core/extension.ts"],
   ["diff", "M06", `${editor}/diff-tool.ts`],
-  ["select", "M06 M08 M14 M25", "src/plugins/pi-agent-ide-ast/src/extension.ts"],
   [
     "write / replace / insert / delete / copy / move",
     "M06 M08 M09 M10 M18",
@@ -120,10 +118,8 @@ const surfaces: readonly (readonly [string, string, string])[] = [
   ],
   ["HTTP(S), web:ssh://target/URL", "M23", "src/backend/web-registration.ts"],
   ["docs: / docs:id and lazy guides", "M25", "src/documentation/extension.ts"],
-  ["ast:, scopes, symbol:, graph:, symbols:", "M06 M08 M14 M15", "src/backend/lsp-registration.ts"],
+  ["ast:, scopes, ast_search, lsp_search", "M06 M08 M14 M15", "src/backend/lsp-registration.ts"],
   ["diagnostics: and diagnostics view", "M16", "src/plugins/pi-agent-ide-diagnostics/index.ts"],
-  ["process: / process:ssh://target/PID", "M20", "src/backend/vision-registration.ts"],
-  ["window: / display: with target ownership", "M22", "src/backend/vision-registration.ts"],
   [
     "shell: (Read/Search/input/keys/delete/image/sequence)",
     "M19 M20",
@@ -163,9 +159,9 @@ const surfaces: readonly (readonly [string, string, string])[] = [
   ],
   ["anchors, ast, breakpoints views", "M06 M14 M21", "src/composite/builtin-extensions.ts"],
   [
-    "image/sequence: region, scale, duration, interval, grids",
-    "M04 M19 M22 M23",
-    "src/backend/vision-registration.ts",
+    "shell image/sequence: scale, duration and interval",
+    "M19",
+    "src/plugins/pi-agent-ide-terminal/src/resources.ts",
   ],
   ["BeforeRead, BeforeEdit, AfterEdit", "M18", "src/api/hooks.ts"],
   [
@@ -289,9 +285,7 @@ for (const [name, rows, source] of surfaces) {
 }
 lines.push(
   "",
-  "## Select and composed source results",
-  "",
-  "This checkout registers Select through the AST Read plugin. Strict text boundaries, source-local geometry, AST constructs/parts/navigation and argument/parameter extents map to M06/M08/M14/M25. tests/integration/ssh-select.integration.test.ts and ssh-lsp-select.integration.test.ts exercise ordinary and native composition. The continuation workpad records the current live SSH proof with installed TypeScript language server 5.3.0, canonical source labels, strict scopes and actionable boundary refusal. Those results are separate from this mechanical map.",
+  "## Composed source results",
   "",
   "tests/integration/ssh-result-mutations.integration.test.ts, native-mutation-targets.integration.test.ts and ssh-restored-targets.integration.test.ts cover saved output authority, pending publication, cancellation and restored absence. The live workpad also records a retained pre-upgrade undo owner that restored bytes but did not report confirmed source states; that result correctly returned no editable target. Do not treat that mixed-version observation as a fresh-owner state verification.",
   "",

@@ -37,7 +37,7 @@ test("compacts the noisiest files and preserves complete smaller files", () => {
       source: "/repo/noisy.ts",
       matchCount: 100,
       uniqueLineCount: 1,
-      groups: [],
+      groups: [{ text: "needle", matchCount: 100, first: input[0] }],
     },
     {
       kind: "detailed",
@@ -48,7 +48,7 @@ test("compacts the noisiest files and preserves complete smaller files", () => {
 });
 
 test("groups repeated lines in one noisy file without consuming one row per match", () => {
-  const input = [
+  const input: TextSearchMatch[] = [
     ...matches("/repo/large.txt", 80, "same needle"),
     ...matches("/repo/large.txt", 20, "other needle"),
   ];
@@ -60,11 +60,33 @@ test("groups repeated lines in one noisy file without consuming one row per matc
       matchCount: 100,
       uniqueLineCount: 2,
       groups: [
-        { text: "same needle", matchCount: 80 },
-        { text: "other needle", matchCount: 20 },
+        { text: "same needle", matchCount: 80, first: input[0] },
+        { text: "other needle", matchCount: 20, first: input[80] },
       ],
     },
   ]);
+});
+
+test("shows a matching line with a reference even when the budget allows one item", () => {
+  const input = [
+    ...matches("/repo/a.txt", 1, "alpha beta"),
+    ...matches("/repo/a.txt", 2, "beta alpha beta"),
+  ];
+
+  const [file] = planSearchPresentation(input, 1).files;
+
+  expect(file?.kind === "compacted" ? file.groups : []).toEqual([
+    { text: "beta alpha beta", matchCount: 2, first: input[1] },
+  ]);
+});
+
+test("shows the most frequent line of every compacted file", () => {
+  const input = Array.from({ length: 18 }, (_, index) => matches(`/repo/${index}.ts`, 4)).flat();
+
+  const plan = planSearchPresentation(input, 5);
+
+  expect(plan.files.length).toBeGreaterThan(0);
+  for (const file of plan.files) expect(file.kind === "compacted" ? file.groups.length : 1).toBe(1);
 });
 
 test("counts compact summaries and details against the same item budget", () => {
@@ -81,7 +103,8 @@ test("bounds the reported 10114-match search across 1725 generated files", () =>
   const plan = planSearchPresentation(input, 80);
   const items = plan.files.reduce(
     (count, file) =>
-      count + (file.kind === "detailed" ? file.matches.length : 1 + file.groups.length),
+      // A summary item includes its first group.
+      count + (file.kind === "detailed" ? file.matches.length : Math.max(1, file.groups.length)),
     0,
   );
   expect(items).toBeLessThanOrEqual(80);
@@ -94,6 +117,6 @@ test("caps unique groups by the presentation budget", () => {
   const [file] = planSearchPresentation(input, 50).files;
 
   expect(file?.kind).toBe("compacted");
-  expect(file?.kind === "compacted" ? file.groups : []).toHaveLength(49);
+  expect(file?.kind === "compacted" ? file.groups : []).toHaveLength(50);
   expect(file?.kind === "compacted" ? file.uniqueLineCount : 0).toBe(60);
 });

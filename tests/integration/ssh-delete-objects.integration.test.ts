@@ -70,7 +70,6 @@ subprocess.run(['git','-C',str(p),'add','direct-tracked-no','direct-tracked-yes'
               "ide.changes",
               "ide.debugger",
               "ide.terminal",
-              "ide.vision",
             ],
           }),
         );

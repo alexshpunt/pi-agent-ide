@@ -670,7 +670,8 @@ test("accepts search anchors in both replace span endpoints", async () => {
     }).run("Search both needles, then replace the span between their anchors");
 
     expect(getToolExecution(result, "replace-span").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("before\nmerged\nafter\n");
+    // A :match end keeps its exact extent; it does not widen to the rest of its line.
+    await expect(readFile(source, "utf8")).resolves.toBe("before\nmerged second\nafter\n");
   });
 }, 180_000);
 

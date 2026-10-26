@@ -17,6 +17,8 @@ const generatedExtensions = await generateReadExtensions([
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.ts",
   "src/plugins/pi-agent-ide-ast/index.ts",
+  "src/extensions/pi-agent-search/index.ts",
+  "src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.ts",
   "src/plugins/pi-agent-ide-lsp/index.ts",
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/index.ts",
 ]);
@@ -32,7 +34,7 @@ afterAll(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
-test("shows every read code-view protocol on a production TypeScript file", async () => {
+test("shows the AST outline and lsp_search declaration and call views on a production TypeScript file", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "reference.ts";
     await writeTypeScriptProject(directory, fileName, await readFile(productionSource, "utf8"));
@@ -42,7 +44,7 @@ test("shows every read code-view protocol on a production TypeScript file", asyn
       testName: "interactive-demo-read-code-views",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read"],
+      tools: ["read", "lsp_search"],
       rawMode: false,
       timeoutMs: 180_000,
       conversation: [
@@ -61,8 +63,8 @@ test("shows every read code-view protocol on a production TypeScript file", asyn
           [
             toolCall({
               id: "demo-read-symbol",
-              name: "read",
-              arguments: { path: `symbol:${fileName}#parseCodeViewReference`, views: ["anchors"] },
+              name: "lsp_search",
+              arguments: { declaration: `${fileName}#parseCodeViewReference` },
               ...interactivePacing,
             }),
           ],
@@ -72,8 +74,8 @@ test("shows every read code-view protocol on a production TypeScript file", asyn
           [
             toolCall({
               id: "demo-read-symbol-graph",
-              name: "read",
-              arguments: { path: `graph:${fileName}#parseCodeViewReference` },
+              name: "lsp_search",
+              arguments: { calls: `${fileName}#parseCodeViewReference` },
               ...interactivePacing,
             }),
           ],
@@ -83,8 +85,8 @@ test("shows every read code-view protocol on a production TypeScript file", asyn
           [
             toolCall({
               id: "demo-read-file-graph",
-              name: "read",
-              arguments: { path: `graph:${fileName}` },
+              name: "lsp_search",
+              arguments: { calls: fileName },
               ...interactivePacing,
             }),
           ],
@@ -100,9 +102,8 @@ test("shows every read code-view protocol on a production TypeScript file", asyn
     expect(ast).not.toContain("const value = source.slice");
 
     const symbol = getToolResultText(result, "demo-read-symbol");
-    expect(symbol).toContain("## symbol: parseCodeViewReference");
+    expect(symbol).toMatch(/SEARCH#[A-F0-9]+:1:match reference\.ts:\d+-\d+ declaration/u);
     expect(symbol).toContain("const value = source.slice");
-    expect(symbol).toMatch(/\d+#[A-F0-9]{4}\|\s*const value = source\.slice/u);
 
     const symbolGraph = getToolResultText(result, "demo-read-symbol-graph");
     expect(symbolGraph).toContain("## graph: parseCodeViewReference");

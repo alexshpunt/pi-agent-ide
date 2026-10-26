@@ -149,7 +149,7 @@ export interface CapabilityCase {
   steps: RouteStep[];
   prompt?: string;
   files?: Record<string, string>;
-  expected?: Record<string, string | null>;
+  expected?: Record<string, string | Buffer | null>;
   answer?: string;
   prerequisite?: string;
   setup?: string;

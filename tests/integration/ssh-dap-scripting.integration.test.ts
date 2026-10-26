@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { startSshFixture } from "#integration/support/ssh-fixture.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import { remoteLocation } from "#src/backend/identity.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";
 import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
 

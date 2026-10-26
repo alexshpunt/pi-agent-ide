@@ -36,28 +36,29 @@ To configure it yourself, read the [short settings guide](./docs/settings-help.m
 
 Pi Agent IDE gives the [Pi coding agent](https://pi.dev/) a small set of development tools for understanding, changing, running, debugging, and observing software. The same tools work with local resources and configured Linux SSH targets.
 
-| Work                                 | Interfaces                                                    |
-| ------------------------------------ | ------------------------------------------------------------- |
-| Inspect content and state            | `read` with source-specific views                             |
-| Find text, paths, code and processes | `search`                                                      |
-| Derive exact text and AST selections | `select`                                                      |
-| Change text and filesystem objects   | `write`, `replace`, `insert`, `delete`, `copy`, `move`        |
-| Compare, stage and restore changes   | `diff`, `stage`, `unstage`, `undo`                            |
-| Run and interact with commands       | `bash` or `powershell`, then `shell:` resources               |
-| Debug programs                       | `debug`, then `debug:` resources                              |
-| Work remotely                        | The same supported tools with `ssh://` paths and remote `cwd` |
+| Work                               | Interfaces                                                    |
+| ---------------------------------- | ------------------------------------------------------------- |
+| Inspect content and state          | `read` with source-specific views                             |
+| Find text and terminal output      | `search`                                                      |
+| Find files by path                 | `file_search`                                                 |
+| Find code by syntax structure      | `ast_search`                                                  |
+| Find symbols, references and calls | `lsp_search`                                                  |
+| Change text and filesystem objects | `write`, `replace`, `insert`, `delete`, `copy`, `move`        |
+| Compare, stage and restore changes | `diff`, `stage`, `unstage`, `undo`                            |
+| Run and interact with commands     | `bash` or `powershell`, then `shell:` resources               |
+| Debug programs                     | `debug`, then `debug:` resources                              |
+| Work remotely                      | The same supported tools with `ssh://` paths and remote `cwd` |
 
 ### Combine tools through direct calls or native Codemode
 
 All IDE tools support direct calls and Pi's built-in Codemode. The agent can combine reading, search, selection and editing into one workflow, with the same source checks in both modes.
 
-For example, this script finds a checklist item, selects its complete line, and marks it done:
+For example, this script reads a section, finds a checklist item inside it, and marks it done:
 
 ```js
-const source = await tools.read({ path: "notes.md" });
-const matches = await tools.search({ path: source, query: "- [ ] Update docs" });
-const lines = await tools.select({ path: matches, operation: { kind: "linesOf" } });
-text(await tools.replace({ path: lines, text: "- [x] Update docs\n" }));
+const section = await tools.read({ path: "notes.md", offset: 10, limit: 20 });
+const item = await tools.search({ path: section, query: "- [ ] Update docs" });
+text(await tools.replace({ path: item.result, text: "- [x] Update docs" }));
 ```
 
 ### Read anything through `read`
@@ -66,10 +67,9 @@ text(await tools.replace({ path: lines, text: "- [x] Update docs\n" }));
 
 - files, directories, source code, and raw bytes;
 - JSON transformed through real `jq` filters;
-- web pages, PDFs, images, and image sequences;
+- web pages, PDFs, and images;
 - diagnostics and Git changes;
-- terminal and debugger sessions;
-- running processes, application windows, and full displays.
+- terminal and debugger sessions.
 
 Views change how the same resource is presented. The agent can request source structure, editable anchors, diagnostics, an image, a sequence, or another supported projection without learning a separate tool for every source.
 
@@ -81,7 +81,7 @@ Views change how the same resource is presented. The agent can request source st
 
 ### Find anything through `search`
 
-`search` provides one interface for paths, exact text, regular expressions, AST patterns, symbols, references, code relationships, process discovery, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
+`search` provides one interface for exact text, regular expressions, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
 
 <div align="center">
 
@@ -89,11 +89,11 @@ Views change how the same resource is presented. The agent can request source st
 
 </div>
 
-### Select and change exactly what you mean
+### Narrow and change exactly what you mean
 
-`select` helps the agent change the intended part of a file: a line, a function body, a parameter list, or the overlap between selections. JavaScript and TypeScript structure is supported without JSX/TSX, so the agent can work with code boundaries rather than guessing line numbers.
+The agent narrows a Read or Search result by searching inside it: a regex for a span between markers or part of a line, or an `ast_search` pattern whose captures select a function body or an argument list. Edits then change only those exact ranges, so the agent works with real code boundaries rather than guessing line numbers.
 
-Language-server support adds declarations, references, call graphs, diagnostics, and semantic rename across references. Available features depend on the project's language server. See [selection](docs/agent-guides/select-code.md) and [code navigation](docs/agent-guides/search-code.md).
+Language-server support adds `lsp_search` for declarations, references and call graphs, plus diagnostics and semantic rename across references. Available features depend on the project's language server.
 
 ### Review edits against your own rules
 
@@ -152,15 +152,11 @@ When the project is open in VS Code with the [DebugMCP](https://github.com/micro
 
 </div>
 
-### See the environment
-
-The agent can render websites as images, observe changing interfaces over time, and inspect windows opened by its own processes. Arbitrary windows and full displays require separate explicit opt-in settings. Images can be downscaled, limited to normalized regions, or divided into grid cells so the model receives the useful area instead of every source pixel.
-
 ### Use the same tools over SSH
 
 Ask the agent to work on a remote Linux environment. It can read, search and edit files, copy between your machine and the server, work with Git, and run interactive commands through the same IDE tools. Language servers, linters, formatters and debugger adapters use the remote machine's tools and project settings.
 
-Remote process inspection, supported window/display capture and remote web reads are available too. Missing remote dependencies are reported rather than silently replaced by local tools.
+Remote web text reads are available too. Missing remote dependencies are reported rather than silently replaced by local tools.
 
 SSH uses your existing OpenSSH authentication and host-key trust. The remote machine needs Python 3; no permanent agent is installed there. Operations have the permissions of the SSH account. The agent sets up project-local access by default unless you ask for global settings. See [SSH configuration](docs/configuration.md#ssh-targets).
 
@@ -246,7 +242,7 @@ Run `/pi-agent-ide-doctor` again after installing or changing project tools. For
 
 Pi Agent IDE follows Pi's permissive, YOLO-style default: the agent can use the tools without asking for approval at every step. You can make it as strict as your work requires.
 
-- [Settings](./docs/configuration.md) control built-in tools, project mappings, search, vision, and presentation.
+- [Settings](./docs/configuration.md) control built-in tools, project mappings, search, and presentation.
 - [File hooks](./docs/user-hooks.md) can inspect, change, or deny reads and edits.
 - [Extensions](./docs/extensions.md) can add or replace protocols, resolvers, views, anchors, search backends, and other behavior.
 
@@ -268,7 +264,6 @@ If something breaks, behaves badly, or does not fit your workflow, please [open 
 | ------------------------------------------------------ | ------------------------------------------------------------------------ |
 | [Tools and workflow](./docs/tools.md)                  | Reading, search, selections, editing, terminals, and feedback            |
 | [Result composition](./docs/structured-results.md)     | Passing results between tools, reference lifetime, and commit boundaries |
-| [Selection](./docs/agent-guides/select-code.md)        | Text ranges, AST parts, and combining selections                         |
 | [Directory operations](./docs/directory-operations.md) | Copy, Move, Delete, symlinks, guards, and partial failures               |
 | [Settings guide](./docs/settings-help.md)              | Choosing settings, scope, saving and output presentation                 |
 | [Configuration](./docs/configuration.md)               | Project tools, SSH targets, Doctor, and presentation settings            |

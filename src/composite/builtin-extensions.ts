@@ -13,7 +13,14 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     "ide.doctor",
   ]),
   builtin("read.core", () => import("#src/extensions/pi-agent-read/index.js")),
-  builtin("ide.documentation", () => import("#src/documentation/extension.js"), ["read.core"]),
+  builtin(
+    "ide.documentation",
+    async () => {
+      const { default: register } = await import("#src/documentation/extension.js");
+      return { default: (pi) => register(pi) };
+    },
+    ["read.core"],
+  ),
   builtin(
     "read.filesystem",
     () => import("#src/extensions/pi-agent-read/extensions/pi-agent-filesystem/index.js"),
@@ -125,11 +132,6 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     "search.core",
   ]),
   builtin("ide.processes", () => import("#src/plugins/pi-agent-ide-processes/index.js")),
-  builtin("ide.vision", () => import("#src/backend/vision-registration.js"), [
-    "ide.processes",
-    "read.core",
-    "search.core",
-  ]),
   builtin("ide.debugger", () => import("#src/backend/debugger-registration.js"), [
     "ide.processes",
     "read.core",

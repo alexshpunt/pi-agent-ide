@@ -9,6 +9,7 @@ import {
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import {
   anchorSpanRange,
+  transferText,
   deleteAnchorSpan,
   insertionAfterAnchor,
   replaceAnchorSpan,
@@ -20,12 +21,10 @@ import type { TextChange } from "#src/core/text-change-engine.js";
 export const moveSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Filesystem source path, unchanged source result or its UUID; omit start/end for result inputs. Use ordinary paths without selectors to move whole files, directory trees, or symlink objects without following their targets. Use one whole-file result when the destination is a file path without text selectors. Source/destination selections pair in declared order, with equal counts and duplicate ranges removed. Destinations must not overlap or touch source ranges.",
+      "Source: a path, an unchanged Read/Search result or its UUID, or an array of them. A path without start moves the whole file, directory or symlink. Omit to use the file of the start anchor.",
     ),
     ...sourceRangeProperties(),
-    ...targetProperties(
-      "Directory Move replaces the exact target directory, removing destination-only entries.",
-    ),
+    ...targetProperties("Moving a directory replaces the target directory."),
   },
   { additionalProperties: false },
 );
@@ -42,7 +41,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
   name: "move",
   wholeFileOperation: "move",
   description:
-    "Use move to move or rename a file, directory tree, or symlink object, or to relocate selected text within or between files.",
+    "Use move to move or rename a file or directory, or to cut text from one place and put it in another.",
 
   promptSnippet: "Move filesystem objects or selected text",
   parameters: moveSchema,
@@ -94,7 +93,11 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
         "targetEnd",
       );
       target = targetSpan.source;
-      targetChange = replaceAnchorSpan(context, targetSpan, copied);
+      targetChange = replaceAnchorSpan(
+        context,
+        targetSpan,
+        transferText(context, starts, ends, sourceSpan, targetSpan),
+      );
     }
 
     if (sourceSpan.source === target && rangesTouch(deletion, targetChange)) {

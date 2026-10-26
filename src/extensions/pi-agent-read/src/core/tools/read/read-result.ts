@@ -11,6 +11,7 @@ import type {
 } from "#src/api/tools/read.js";
 import {
   ResourceError,
+  resourceErrorMetadataOf,
   type AgentContent,
   type ImageContent,
   type TextContent,
@@ -141,7 +142,7 @@ function renderFinalTextLines(
     .join("");
 }
 
-function readFailureMessage(failure: ReadFailure): string {
+function deepestCause(failure: ReadFailure): Error | undefined {
   let cause = failure.cause;
   let error: Error | undefined;
   const visited = new Set<Error>();
@@ -150,6 +151,45 @@ function readFailureMessage(failure: ReadFailure): string {
     error = cause;
     cause = cause.cause;
   }
+  return error;
+}
+
+const requestRecovery = "Supply path with a source or an unchanged result reference.";
+const fragmentRecovery = (source: string) =>
+  `Read ${JSON.stringify(source)} with views=["anchors"] and choose a current anchor.`;
+
+function candidateLines(failure: ReadFailure): string[] {
+  return failure.candidates?.length
+    ? [
+        "Possible matches:",
+        ...failure.candidates.map((candidate) => `- ${JSON.stringify(candidate.path)}`),
+        "",
+        "Retry read with an exact candidate path.",
+      ]
+    : [];
+}
+
+/**
+ * Public recovery steps for a failed Read, built only from its code, source and path
+ * candidates, never from provider messages. Codemode receives them with the failure value.
+ */
+export function readFailureRecovery(failure: ReadFailure): string[] {
+  const error = deepestCause(failure);
+  const code = error !== undefined && "code" in error ? error.code : undefined;
+  const steps: string[] = [];
+  if (code === "ENOENT" && !failure.candidates?.length) steps.push("Search for the correct path.");
+  if (failure.code === "INVALID_REQUEST") steps.push(requestRecovery);
+  else if (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined)
+    steps.push(fragmentRecovery(failure.source));
+  else if (failure.code === "NO_RESOLVER")
+    steps.push("Choose a supported source from the path parameter.");
+  else if (failure.code === "NO_FRAGMENT_RESOLVER")
+    steps.push("Read the source without the anchor.");
+  return [...steps, ...candidateLines(failure)];
+}
+
+function readFailureMessage(failure: ReadFailure): string {
+  const error = deepestCause(failure);
   const code = error !== undefined && "code" in error ? error.code : undefined;
   let reason = error?.message || failure.message;
   if (code === "ENOENT")
@@ -167,10 +207,9 @@ function readFailureMessage(failure: ReadFailure): string {
     reason = "This source is not supported. Choose a supported source from the path parameter.";
   else if (failure.code === "NO_FRAGMENT_RESOLVER")
     reason = "This anchor is not supported. Read the source without the anchor.";
-  if (failure.code === "INVALID_REQUEST")
-    reason += ". Supply path with a source or an unchanged result reference.";
+  if (failure.code === "INVALID_REQUEST") reason += `. ${requestRecovery}`;
   else if (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined)
-    reason += `\nRead ${JSON.stringify(failure.source)} with views=["anchors"] and choose a current anchor.`;
+    reason += `\n${fragmentRecovery(failure.source)}`;
   const source = failure.source === undefined ? "" : ` for ${JSON.stringify(failure.source)}`;
   return `Read failed${source}: ${reason}`;
 }
@@ -202,7 +241,9 @@ export function failureResult(failure: ReadFailure): ReadToolResult {
       ...failure,
       source: failure.source ?? safe.source,
       message: `${safe.code}: ${failure.source ?? safe.source}`,
-      cause: new ResourceError(safe.code, safe.source, safe.effect),
+      cause: new ResourceError(safe.code, safe.source, safe.effect, {
+        metadata: resourceErrorMetadataOf(safe),
+      }),
     };
   } else if (
     failure.cause instanceof Error &&
@@ -221,15 +262,7 @@ export function failureResult(failure: ReadFailure): ReadToolResult {
         type: "text",
         text: [
           readFailureMessage(failure),
-          ...(failure.candidates?.length
-            ? [
-                "",
-                "Possible matches:",
-                ...failure.candidates.map((candidate) => `- ${JSON.stringify(candidate.path)}`),
-                "",
-                "Retry read with an exact candidate path.",
-              ]
-            : []),
+          ...(failure.candidates?.length ? ["", ...candidateLines(failure)] : []),
         ].join("\n"),
       },
     ],

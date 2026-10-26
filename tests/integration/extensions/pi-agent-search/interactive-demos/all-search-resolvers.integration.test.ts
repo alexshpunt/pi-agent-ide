@@ -10,7 +10,6 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { afterAll, describe, expect, test } from "vitest";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
@@ -33,24 +32,6 @@ const calls = [
     query: "regex:Resolver(?:Atlas|Summary)",
     resolverId: "regex",
     arguments: { path: "src", include: "**/*.ts" },
-  },
-  {
-    id: "search-files",
-    query: "files:search-demo",
-    resolverId: "files",
-    arguments: { path: "src", include: "**/*.ts" },
-  },
-  {
-    id: "search-lsp",
-    query: "symbols:createResolverAtlas",
-    resolverId: "symbols",
-    arguments: { limit: 5 },
-  },
-  {
-    id: "search-ast",
-    query: "ast:createResolverAtlas()",
-    resolverId: "ast",
-    arguments: { path: "src" },
   },
 ] as const;
 
@@ -84,7 +65,7 @@ describe("interactive Search resolver demos", () => {
           ...conversation,
           assistantMessage([text("All installed Search resolvers completed", { delayMs: 0 })]),
         ],
-      }).run("Demonstrate text, regex, file, LSP, and AST search through one tool");
+      }).run("Demonstrate text and regex search through one tool");
 
       for (const call of calls) {
         const execution = getToolExecution(result, call.id);
@@ -96,9 +77,6 @@ describe("interactive Search resolver demos", () => {
         expect(getToolResultText(result, call.id).length, call.id).toBeGreaterThan(0);
         expect(result.tuiRenderedOutput).toContain(`search "${call.query}"`);
       }
-
-      expect(getToolResultText(result, "search-lsp")).toContain("createResolverAtlas");
-      expect(getToolResultText(result, "search-ast")).toContain("createResolverAtlas()");
     });
   }, 240_000);
 });
@@ -263,7 +241,8 @@ test("wraps a long structured search line in the real native renderer", async ()
       ],
     }).run("Search the long source line");
 
-    const rendered = stripTerminalSequences(result.terminalOutput);
+    // The raw stream moves the cursor between rows; the rendered screen keeps one row per line.
+    const rendered = result.tuiRenderedOutput;
     const panel = rendered.slice(rendered.indexOf("╭─ 1 match"));
     const panelRows = panel.split("\n").filter((row) => row.includes("│"));
 

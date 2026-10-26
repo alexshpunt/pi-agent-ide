@@ -43,7 +43,10 @@ test("AST matches and captures stay inside one exact scope with their source aut
     ],
   };
   const result = await resolver.tryResolve(
-    { query: "ast:function $NAME($$$ARGS) { $$$BODY }" },
+    {
+      query: "function $NAME($$$ARGS) { $$$BODY }",
+      options: { ast: { pattern: "function $NAME($$$ARGS) { $$$BODY }" } },
+    },
     { cwd, scope },
   );
   if (result.kind !== "resolved") throw new Error("AST discovery failed");
@@ -62,4 +65,39 @@ test("AST matches and captures stay inside one exact scope with their source aut
   await targets.verify(named);
   await writeFile(source, content.replace("greet", "later"));
   await expect(targets.verify(named)).rejects.toThrow("stale");
+});
+
+test("include globs keep comma-separated brace alternatives", async () => {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "braces-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(path.join(cwd, "note.ts"), "const kept = 1;\n");
+  const targets = new ResultTargetStore();
+  const sessions = new SearchSessionStore(undefined, targets, (file) => readFile(file, "utf8"));
+  const resolver = createAstSearchResolver((selection, context) =>
+    sessions.register(
+      selection.request.query,
+      selection.matches,
+      selection.complete,
+      context.cwd,
+      context.signal,
+      selection.request,
+      selection.refresh,
+      undefined,
+      context.environment,
+    ),
+  );
+  const result = await resolver.tryResolve(
+    {
+      query: "const $NAME = $VALUE;",
+      path: ".",
+      include: "**/*.{ts,md}",
+      options: { ast: { pattern: "const $NAME = $VALUE;", language: "typescript" } },
+    },
+    { cwd },
+  );
+  if (result.kind !== "resolved") throw new Error("AST discovery failed");
+  const data = resolver.toScriptData?.(result.payload, {}) as { matches: unknown[] };
+  expect(data.matches).toHaveLength(1);
 });

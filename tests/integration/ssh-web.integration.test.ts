@@ -1,5 +1,4 @@
 import { once } from "node:events";
-import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { createServer } from "node:http";
 import { expect, test, vi } from "vitest";
 import { createSshWebResolver } from "#src/backend/web-owner.js";
@@ -8,14 +7,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import * as processChannels from "#src/backend/ssh-channel.js";
 import { fetchSshWebResponse } from "#src/backend/web-http.js";
-import { readSshProcessMetadata } from "#src/backend/process-metadata.js";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
 import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.js";
 import { createWebSearchResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/search.js";
 import { SshBackendRegistry } from "#src/backend/registry.js";
 import type { ContentHost } from "pi-agent-resource";
 import { startSshFixture } from "./support/ssh-fixture.js";
 import { startSshWebFixture } from "./support/ssh-web-fixture.js";
-import { captureSshBrowserImage, readSshBrowserPage } from "#src/backend/web-browser.js";
+import { readSshBrowserPage } from "#src/backend/web-browser.js";
 
 test("explicit target HTTP uses its native proxy environment and preserves read-only URL identity", async () => {
   const requests: string[] = [];
@@ -194,54 +193,10 @@ test("target browser fallback runs page JavaScript and reuses readable HTML conv
       );
     }
   }
-}, 20_000);
-test("target browser captures native page pixels and refuses oversized documents", async () => {
-  const proxy = createServer((request, response) => {
-    const route = new URL(request.url ?? "/", "http://lpt149-owned.invalid").pathname;
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end(
-      route === "/oversized"
-        ? '<html><body style="margin:0;width:20000px;height:20000px;background:red"></body></html>'
-        : '<html><body style="margin:0;background:rgb(255,0,0)"></body></html>',
-    );
-  });
-  proxy.listen(0, "127.0.0.1");
-  await once(proxy, "listening");
-  const address = proxy.address();
-  if (!address || typeof address === "string") throw new Error("No private proxy address");
-  const fixture = await startSshWebFixture(`http://127.0.0.1:${address.port}`);
-  const target = {
-    id: "fixture",
-    host: "fixture",
-    workspace: fixture.workspace,
-    configFile: fixture.config,
-  };
-  try {
-    const url = new URL("http://lpt149-owned.invalid/red");
-    const bytes = await captureSshBrowserImage(target, url, `web:ssh://fixture/${url.href}`);
-    const image = await loadImage(Buffer.from(bytes));
-    expect([image.width, image.height]).toEqual([1280, 720]);
-    const canvas = createCanvas(image.width, image.height);
-    const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0);
-    expect([...context.getImageData(640, 360, 1, 1).data]).toEqual([255, 0, 0, 255]);
-    const large = new URL("http://lpt149-owned.invalid/oversized");
-    await expect(
-      captureSshBrowserImage(target, large, `web:ssh://fixture/${large.href}`),
-    ).rejects.toMatchObject({ code: "BYTE_LIMIT" });
-  } finally {
-    try {
-      await fixture.stop();
-    } finally {
-      proxy.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        proxy.close((error) => (error ? reject(error) : resolve())),
-      );
-    }
-  }
-}, 20_000);
+  // The target browser has its own 30 s deadline; the test budget adds SSH fixture startup on top.
+}, 60_000);
 test.each(["playwright", "chromium"] as const)(
-  "missing target %s refuses HTML and image reads without controller browser fallback",
+  "missing target %s refuses HTML reads without controller browser fallback",
   async (missing) => {
     const fixture = await startSshWebFixture("http://127.0.0.1:1", {
       [missing === "playwright" ? "PI_AGENT_IDE_PLAYWRIGHT_PATH" : "PI_AGENT_IDE_BROWSER_PATH"]:
@@ -259,10 +214,6 @@ test.each(["playwright", "chromium"] as const)(
       await expect(
         readSshBrowserPage(target, url, source, { timeoutMs: 5000 }),
       ).rejects.toMatchObject({
-        code: "CAPABILITY_UNAVAILABLE",
-        source,
-      });
-      await expect(captureSshBrowserImage(target, url, source)).rejects.toMatchObject({
         code: "CAPABILITY_UNAVAILABLE",
         source,
       });

@@ -85,7 +85,6 @@ test("ordinary and structured writes keep a committed SSH write unknown after re
           "ide.diagnostics",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
         ],
       }),
     );

@@ -19,6 +19,7 @@ import type {
   SearchRequest,
   SearchInput,
   SearchResolutionAttempt,
+  SearchResolver,
   SearchResolverRegistration,
   SearchToolDetails,
   SearchToolResult,
@@ -38,6 +39,7 @@ export interface SearchCore {
     request: SearchInput,
     context: SearchContext,
     audience?: "agent" | "script",
+    resolver?: SearchResolver,
   ): Promise<SearchToolResult>;
   runAction(
     reference: string,
@@ -121,6 +123,8 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
             draftPromptGuidelines.push(normalizeDescriptionSource(guideline));
           },
           search: (request, context, audience) => core.execute(request, context, audience),
+          searchWith: (resolver, request, context, audience) =>
+            core.execute(request, context, audience, resolver),
           runAction(request, context): Promise<unknown> {
             return core.runAction(
               request.reference,
@@ -185,7 +189,12 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
     async waitForPendingPlugins(): Promise<void> {
       await Promise.all(plugins.values());
     },
-    async execute(input, context, audience = "agent"): Promise<SearchToolResult> {
+    async execute(
+      input,
+      context,
+      audience = "agent",
+      only?: SearchResolver,
+    ): Promise<SearchToolResult> {
       let request: SearchRequest = {
         ...input,
         path: typeof input.path === "string" ? input.path : undefined,
@@ -194,11 +203,6 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
 
-      if (input.navigation !== undefined && !input.query.startsWith("symbols:"))
-        return failure(
-          "INVALID_REQUEST",
-          "Reference navigation is supported only for symbols: queries.",
-        );
       try {
         if (typeof input.path === "string") {
           for (const provider of scopeProviders) {
@@ -251,7 +255,18 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
           error,
         );
       }
-      const snapshot = [...resolvers].sort(
+      // A focused tool runs its own resolver with the shared scope, owner and selection rules.
+      const snapshot = (
+        only === undefined
+          ? [...resolvers]
+          : [
+              {
+                pluginId: "",
+                registration: { resolver: only } as SearchResolverRegistration,
+                order: 0,
+              },
+            ]
+      ).sort(
         (left, right) =>
           Number(left.registration.fallback === true) -
             Number(right.registration.fallback === true) ||
@@ -263,9 +278,6 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
       const protocolLike = /^[a-z][\w-]*:/iu.test(request.query);
       for (const entry of snapshot) {
         if (context.scope !== undefined && entry.registration.resolver.supportsResultScope !== true)
-          continue;
-        const structuralProtocol = /^(?:ast|symbols):/u.test(request.query);
-        if (entry.registration.fallback && structuralProtocol && context.scope !== undefined)
           continue;
         if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;
@@ -318,6 +330,14 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
 
               if (attempt.kind === "not-handled") {
                 return undefined;
+              }
+
+              if (request.multiline === true && resolver.supportsMultiline !== true) {
+                return failure(
+                  "INVALID_REQUEST",
+                  "multiline applies only to text and regex search in local or SSH files and result scopes. Remove multiline for this query.",
+                  resolver.id,
+                );
               }
 
               if (attempt.kind === "failed") {

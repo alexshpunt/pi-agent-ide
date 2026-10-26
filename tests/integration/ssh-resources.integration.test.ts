@@ -50,7 +50,6 @@ test("real Pi reads and edits SSH resources without a separate tool workflow", a
           "ide.diagnostics",
           "ide.debugger",
           "ide.terminal",
-          "ide.vision",
         ],
       }),
     );

@@ -1,5 +1,9 @@
 import { requiredValue } from "pi-agent-invariant";
-import { ResourceError } from "pi-agent-resource";
+import {
+  ResourceError,
+  resourceErrorMetadataOf,
+  type ResourceErrorMetadata,
+} from "pi-agent-resource";
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { TextEditCompletion } from "#src/api/edit-completion.js";
@@ -32,6 +36,8 @@ import {
   type TextMutationContext,
   type TextMutationEdit,
   type TextMutationToolRegistration,
+  type TextSemanticMutationResult,
+  withoutEmptyOptionalAnchors,
 } from "#src/api/mutation-tool.js";
 import {
   isFormattingContribution,
@@ -43,6 +49,7 @@ import {
   type StaleAnchorMessageDetails,
 } from "#src/api/stale-anchor-message.js";
 import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
+import { imageWriteResult, planImageWrite } from "#src/core/image-write.js";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.js";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
@@ -93,7 +100,7 @@ import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-oper
 import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
 import { writeAgentResult } from "./write-agent-result.js";
 import { mutationResultSchema, structuredMutation } from "./structured-result.js";
-import type { ResultTargetStore } from "pi-agent-resource";
+import type { ResultImageStore, ResultTargetStore } from "pi-agent-resource";
 
 /** Build a mutation tool; host events report terminal filesystem approvals to Herdr. */
 export function createTextTool<TParameters extends TSchema>(
@@ -103,6 +110,7 @@ export function createTextTool<TParameters extends TSchema>(
   getLastResolvedSource: () => string | undefined,
   resultTargets?: ResultTargetStore,
   events?: Pick<ExtensionAPI["events"], "emit">,
+  resultImages?: ResultImageStore,
 ): ToolDefinition<TParameters, FileMutationBatchResult> {
   const renderer = core.getToolRenderer(definition.name);
   const initialRenderCall = renderer?.renderCall;
@@ -160,6 +168,16 @@ export function createTextTool<TParameters extends TSchema>(
             captureScriptMutation(core, async () => {
               const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
                 let input = asMutationParameters<TParameters>(parameters);
+                if (definition.name === "write") {
+                  const written = await writeImageContent(
+                    core,
+                    resultImages,
+                    input,
+                    context.cwd,
+                    signal,
+                  );
+                  if (written !== undefined) return written;
+                }
                 if (
                   ["replace", "write", "delete", "undo", "insert"].includes(definition.name) &&
                   isResultInput(input[definition.source.field])
@@ -300,19 +318,7 @@ export function createTextTool<TParameters extends TSchema>(
                       { cwd: context.cwd, ...(signal !== undefined && { signal }) },
                       input,
                     );
-                    return {
-                      content: [{ type: "text", text: action.summary }],
-                      details: {
-                        results: [],
-                        metadata: {
-                          semanticAction: {
-                            ...action.data,
-                            source: action.source,
-                            ...(action.script !== undefined && { script: action.script }),
-                          },
-                        },
-                      },
-                    };
+                    return semanticActionResult(action);
                   } catch (error) {
                     const code =
                       error !== null && typeof error === "object" && "code" in error
@@ -449,37 +455,41 @@ export function createTextTool<TParameters extends TSchema>(
     }),
     annotations,
   );
+  let fieldDescriptionsKey = "";
+  let describedParameters = definition.parameters;
+  Object.defineProperty(tool, "parameters", {
+    enumerable: true,
+    get(): TParameters {
+      const properties = (definition.parameters as { properties?: Record<string, TSchema> })
+        .properties;
+      if (properties === undefined) return definition.parameters;
+      const additions = Object.keys(properties).map(
+        (field) => [field, core.renderToolFieldDescription(definition.name, field)] as const,
+      );
+      const key = JSON.stringify(additions);
+      if (key === fieldDescriptionsKey) return describedParameters;
+      fieldDescriptionsKey = key;
+      const described = { ...properties };
+      for (const [field, addition] of additions) {
+        if (addition === undefined) continue;
+        const base = described[field] as TSchema & { description?: string };
+        described[field] = {
+          ...base,
+          description: [base.description, addition].filter(Boolean).join(" "),
+        };
+      }
+      describedParameters = { ...definition.parameters, properties: described };
+      return describedParameters;
+    },
+  });
   Object.defineProperty(tool, "description", {
     enumerable: true,
     get(): string {
       return [
         definition.description,
         core.renderToolPromptGuideline(definition.name) ?? "",
-        (
-          {
-            replace:
-              "This result selects the resulting text; empty replacement selects the resulting position, not the removed text.",
-            insert:
-              "For text edits, this result selects the inserted text, including supplied line separators. Specialized resources return their own action result.",
-            write:
-              "For file writes, this result selects the whole file and returns a compact write receipt, not file content.",
-            copy: "This result selects only the copied destination text; a whole-file copy selects the whole destination. Copy edits only the destination.",
-            move: "Use the Move result to work with the inserted destination text, including any added line separators. Valid empty arrays and paired zero-width selections succeed without writes; paired points select only the unchanged destination points. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
-            delete: "Delete returns no reusable text selection.",
-            undo: "The result selects the whole restored text file, not only the reversed span.",
-          } as Record<string, string>
-        )[definition.name] ?? "",
-        definition.name === "replace"
-          ? "Pass the unchanged result to another source tool to use its selection. If it has no text selection, read the file again."
-          : definition.name === "write"
-            ? "For file writes, pass this unchanged result to another source tool for dependent work. If the result reports no verified text selection, inspect the file instead."
-            : definition.name === "undo"
-              ? "Pass the unchanged result to another source tool for dependent work. If no verified text selection is returned, read the file again."
-              : ["insert", "copy", "move"].includes(definition.name)
-                ? "Pass this unchanged result to another source tool for dependent work." +
-                  " If the result reports no verified text selection, inspect the file instead."
-                : "",
-        definition.source.inherited && !["delete", "undo"].includes(definition.name)
+        definition.source.inherited &&
+        !["delete", "undo", "insert", "move", "copy", "replace"].includes(definition.name)
           ? definition.wholeFileOperation === undefined
             ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
             : `When ${definition.source.field} is omitted, the tool can reuse the file identified by a supplied text anchor.`
@@ -502,10 +512,12 @@ function prepareGuardedArguments<TParameters extends TSchema>(
 ): ReturnType<
   NonNullable<ToolDefinition<TParameters, FileMutationBatchResult>["prepareArguments"]>
 > {
-  const prepared =
+  const prepared = withoutEmptyOptionalAnchors(
+    anchorFields,
     arguments_ !== null && typeof arguments_ === "object" && !Array.isArray(arguments_)
       ? { ...(arguments_ as Record<string, unknown>) }
-      : {};
+      : {},
+  );
   const required = (schema as { required?: unknown }).required;
   const properties = (schema as { properties?: Record<string, { type?: unknown }> }).properties;
 
@@ -748,10 +760,14 @@ function mergeTargets(left: readonly TextTarget[], right: readonly TextTarget[])
   return [...merged.values()];
 }
 
+function selectionRangeKey(range: TextSelectionRange): string {
+  return JSON.stringify({ start: range.start, end: range.end });
+}
+
 function deduplicateRanges(ranges: readonly TextSelectionRange[]): readonly TextSelectionRange[] {
   const merged = new Map<string, TextSelectionRange>();
   for (const range of ranges) {
-    const key = JSON.stringify({ start: range.start, end: range.end });
+    const key = selectionRangeKey(range);
     const previous = merged.get(key);
     merged.set(key, {
       ...range,
@@ -812,7 +828,29 @@ function mergeResolvedAnchors(
           throw new Error(`Anchor ${field} selections overlap or are ambiguous.`);
         }
       }
-      return [source, new TextSelectionAnchor(field, source, unique)] as const;
+      // A typed source can duplicate an explicit literal's linewise selection.
+      // Keep the explicit endpoint extent when deduplicating that selection.
+      const explicitEndpoints = explicitSelection.endpointRanges;
+      const endpoints =
+        explicitEndpoints === undefined
+          ? undefined
+          : new Map(
+              explicitSelection.ranges.map((range, index) => [
+                selectionRangeKey(range),
+                requiredValue(explicitEndpoints[index]),
+              ]),
+            );
+      return [
+        source,
+        new TextSelectionAnchor(
+          field,
+          source,
+          unique,
+          endpoints === undefined
+            ? undefined
+            : unique.map((range) => endpoints.get(selectionRangeKey(range)) ?? range),
+        ),
+      ] as const;
     }),
   );
 }
@@ -1510,27 +1548,13 @@ async function buildToolResult(
           effect,
           outcome.failure.rollback,
           outcome.failure.code,
+          false,
+          resourceErrorMetadataOf(safe),
         );
   }
 
   const mutation = outcome.result as ExecutedTextMutation;
-  if (mutation.semanticAction !== undefined) {
-    return {
-      content: [{ type: "text", text: mutation.semanticAction.summary }],
-      details: {
-        results: [],
-        metadata: {
-          semanticAction: {
-            ...mutation.semanticAction.data,
-            source: mutation.semanticAction.source,
-            ...(mutation.semanticAction.script !== undefined && {
-              script: mutation.semanticAction.script,
-            }),
-          },
-        },
-      },
-    };
-  }
+  if (mutation.semanticAction !== undefined) return semanticActionResult(mutation.semanticAction);
   if (operation === "write" && outcome.resources.length === 0 && mutation.unchangedWrite) {
     const { source: unchangedSource, content } = mutation.unchangedWrite;
     return {
@@ -1855,6 +1879,57 @@ function declaredMutationEffect(error: unknown): "applied" | "not-applied" | "un
     return error.effect;
   return "unknown";
 }
+/**
+ * The tool result of a semantic or direct action: its summary, then any images it returned for the model.
+ * Image data stays out of details, which carry only the receipt and the script value.
+ */
+function semanticActionResult(
+  action: TextSemanticMutationResult,
+): AgentToolResult<FileMutationBatchResult> {
+  return {
+    content: [{ type: "text", text: action.summary }, ...(action.images ?? [])],
+    details: {
+      results: [],
+      metadata: {
+        semanticAction: {
+          ...action.data,
+          source: action.source,
+          ...(action.script !== undefined && { script: action.script }),
+        },
+      },
+    },
+  };
+}
+/** Write images named by Write content; returns undefined when the content is ordinary text. */
+async function writeImageContent(
+  core: TextEditorCore,
+  store: ResultImageStore | undefined,
+  input: Readonly<Record<string, unknown>>,
+  cwd: string,
+  signal: AbortSignal | undefined,
+): Promise<AgentToolResult<FileMutationBatchResult> | undefined> {
+  const target = typeof input.path === "string" ? input.path : "";
+  try {
+    const files = await planImageWrite(input.path, input.content, store, cwd);
+    if (files === undefined) return undefined;
+    await core.enqueueFileOperation(
+      () => core.writeFiles(files, { cwd, ...(signal !== undefined && { signal }) }),
+      signal,
+      { cwd, sources: files.map((file) => file.source) },
+    );
+    return imageWriteResult(files);
+  } catch (error) {
+    signal?.throwIfAborted();
+    const declared = error !== null && typeof error === "object";
+    return failureToolResult(
+      target,
+      declared && "code" in error ? String(error.code) : "IMAGE_WRITE_FAILED",
+      errorMessage(error),
+      // Only the write step marks its effect; earlier failures changed nothing.
+      declared && "effect" in error ? declaredMutationEffect(error) : "not-applied",
+    );
+  }
+}
 function failureToolResult(
   source: string,
   code: string,
@@ -1863,6 +1938,7 @@ function failureToolResult(
   rollback?: TextResourceEditFailure["rollback"],
   stage?: string,
   copyExecutionFailure = false,
+  metadata?: ResourceErrorMetadata,
 ): { content: [{ type: "text"; text: string }]; details: FileMutationBatchResult } {
   const uncertain =
     effect === "unknown" ||
@@ -1889,7 +1965,15 @@ function failureToolResult(
   const result = new FileMutationResult({
     ok: false,
     path: source,
-    errors: [{ path: source, code, reason, ...(stage === undefined ? {} : { stage }) }],
+    errors: [
+      {
+        path: source,
+        code,
+        reason,
+        ...(stage === undefined ? {} : { stage }),
+        ...(metadata === undefined ? {} : { metadata }),
+      },
+    ],
     ...(fileChangedStatement === undefined
       ? {}
       : {

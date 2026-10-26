@@ -7,18 +7,12 @@ export const searchSchema = Type.Object(
     query: Type.String({
       minLength: 1,
       description:
-        "Text to find or a Boolean expression. Quote text to keep it literal. Use regex:<pattern> for regular expressions, files:<pattern> for file paths, ast:<pattern> for syntax patterns, symbols:<query> for language symbols, or process:<query> for running processes.",
+        "Text to find or a Boolean expression. Quote text to keep it literal. Use regex:<pattern> for regular expressions.",
     }),
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "File, directory, URL, docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/Select/edit result, its UUID, or an array of such results. Use literal text or regex: for docs: sources. Results select only their registered ranges unless symbols: navigation follows external references.",
-      }),
-    ),
-    navigation: Type.Optional(
-      Type.Literal("references", {
-        description:
-          "Only for symbols: queries. Explicitly follow symbols represented inside path to their references outside that scope. Without navigation, all returned ranges stay inside path.",
+          "File, directory, URL (no read needed first), docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/edit result, its UUID, or an array of such results. Use literal text or regex: for docs: sources. Results select only their registered ranges.",
       }),
     ),
     include: Type.Optional(
@@ -29,6 +23,12 @@ export const searchSchema = Type.Object(
     ),
     caseSensitive: Type.Optional(Type.Boolean({ description: "Match letter case" })),
     wholeWord: Type.Optional(Type.Boolean({ description: "Match complete words" })),
+    multiline: Type.Optional(
+      Type.Boolean({
+        description:
+          "Let text or regex:<pattern> match across lines; . also matches line breaks. Local or SSH files and result scopes only.",
+      }),
+    ),
     limit: Type.Optional(
       Type.Integer({
         minimum: 1,
