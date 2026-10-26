@@ -84,7 +84,11 @@ test.each(["on", "only"] as const)(
         getToolExecution(run, "nested-alias").isError,
         getToolResultText(run, "nested-alias"),
       ).toBe(false);
-      expect(getToolResultText(run, "nested-alias")).toContain("# Precise text editing");
+      const guide = await readFile(
+        path.join(process.cwd(), "docs", "agent-guides", "editing.md"),
+        "utf8",
+      );
+      expect(getToolResultText(run, "nested-alias")).toContain(guide.split("\n")[0]);
       expect(getToolResultText(run, "nested-alias")).toContain("NEW");
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("NEW\n");
       expect(run.tuiRenderedOutput).not.toContain("GENERIC_ALIAS_");

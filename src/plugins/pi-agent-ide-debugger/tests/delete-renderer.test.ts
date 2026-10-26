@@ -34,6 +34,7 @@ test("breakpoint removal keeps its call label after deletion and later session c
       describe: () => {},
       tool: (name) => ({
         describe: () => {},
+        describeField: () => {},
         addHandler: () => {},
         addSemanticHandler: (registration) => {
           if (name === "delete") handler = registration;
