@@ -6,7 +6,6 @@ import {
   DOCTOR_PROTOCOL,
   type DoctorPlugin,
 } from "pi-agent-doctor/api/plugin-protocol";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -16,13 +15,6 @@ import {
 import { createJqReadHandler } from "#src/api/jq.js";
 
 export default async function registerFilesystemJq(pi: ExtensionAPI): Promise<void> {
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "json-reading",
-      description: "Query and transform JSON resources with jq read views",
-      triggers: [{ tool: "read", viewPrefixes: ["jq:"] }],
-    }),
-  ]);
   await Promise.all([connectReadPlugin(pi, readPlugin), connectDoctorPlugin(pi, doctorPlugin)]);
 }
 
@@ -55,7 +47,7 @@ const readPlugin = {
     });
     api.describe({
       views:
-        'jq:<filter> — query local JSON text with the installed jq executable, e.g. ["jq:.scripts | keys"]. Exactly one non-empty jq filter is required; it cannot be combined with other views. offset/limit apply to the transformed output, not original source lines.',
+        "jq:<filter> — run jq on a JSON file or a resource whose provider supplies JSON (JSONL record by record); use alone; offset and limit apply to its output.",
     });
   },
 } satisfies ReadPlugin;

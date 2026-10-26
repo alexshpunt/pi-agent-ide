@@ -186,9 +186,9 @@ export async function registerTerminalResources(
         },
       });
       api.describe({
-        path: "shell:<session> — terminal status and a bounded output tail with a full-log path when truncated.",
+        path: "shell:<session> — status and output tail.",
         views:
-          "On shell:<session>, image[:scale=S] returns the virtual terminal screen; sequence[:duration=D,interval=I,scale=S] returns ordered PNG frames. Defaults: D=2 seconds, I=0.5 seconds, S=1. Scale satisfies 0 < S <= 1; sequences require 0 < D <= 10, I > 0, and at most 20 frames (floor(D/I)+1). Terminal captures do not support region or image grid selection; offset/limit do not crop their frames.",
+          "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time, up to 10 s and 20 frames.",
       });
     },
   } satisfies ReadPlugin;
@@ -241,15 +241,18 @@ export async function registerTerminalResources(
       api.describe(
         "For shell:<session> resources, write sends exact terminal input, insert sends named keys at end, and delete terminates and removes the session. replace is unsupported.",
       );
+      api.tool("write").describeField("path", "shell:<session> types into that terminal.");
+      api.tool("delete").describeField("path", "shell:<session> ends that session.");
       api
         .tool("write")
-        .describe(
-          "When path is shell:<session>, send content exactly as terminal input without adding Enter.",
-        );
+        .describeField("content", "For shell:<session>, exact input; Enter is not added.");
+      api.tool("insert").describeField("path", "shell:<session> sends keys to that terminal.");
+      api.tool("insert").describeField("anchor", "Omit for shell:<session>.");
       api
         .tool("insert")
-        .describe(
-          "When path is shell:<session>, omit anchor or use end, keep before false, and put whitespace- or comma-separated named keys and chords such as Enter, Ctrl+C, Ctrl+Left, Ctrl+Shift+Left, Up, or Backspace in text. Use Unix caret forms such as ^C and ^U for control characters.",
+        .describeField(
+          "text",
+          "For shell:<session>: named keys and chords such as Enter, Ctrl+C, Up, or caret forms such as ^C, separated by spaces or commas.",
         );
     },
   } satisfies TextEditorPlugin;

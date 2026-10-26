@@ -1,5 +1,4 @@
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
 import {
   searchDataSchema,
@@ -70,13 +69,6 @@ export async function registerLspSearchTool(
 ): Promise<void> {
   let resolved: LspSearchRuntime | undefined;
   void runtime.then((value) => (resolved = value));
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "lsp-search",
-      description: "Language-server symbols, references, declarations and call graphs",
-      triggers: [{ tool: "lsp_search" }],
-    }),
-  ]);
   pi.registerTool(
     withToolCallInterceptionRendering(
       {

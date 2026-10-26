@@ -6,7 +6,7 @@ const maximumHeaderOffset = 1_024;
 export function createPdfContentConverter(): ContentConverter {
   return {
     id: "pdf",
-    description: "PDF paths and URLs return the document's readable content.",
+    description: "PDF — readable text.",
     async tryConvert(input, context) {
       const cancellation = cancellationError(context.signal);
 

@@ -455,37 +455,41 @@ export function createTextTool<TParameters extends TSchema>(
     }),
     annotations,
   );
+  let fieldDescriptionsKey = "";
+  let describedParameters = definition.parameters;
+  Object.defineProperty(tool, "parameters", {
+    enumerable: true,
+    get(): TParameters {
+      const properties = (definition.parameters as { properties?: Record<string, TSchema> })
+        .properties;
+      if (properties === undefined) return definition.parameters;
+      const additions = Object.keys(properties).map(
+        (field) => [field, core.renderToolFieldDescription(definition.name, field)] as const,
+      );
+      const key = JSON.stringify(additions);
+      if (key === fieldDescriptionsKey) return describedParameters;
+      fieldDescriptionsKey = key;
+      const described = { ...properties };
+      for (const [field, addition] of additions) {
+        if (addition === undefined) continue;
+        const base = described[field] as TSchema & { description?: string };
+        described[field] = {
+          ...base,
+          description: [base.description, addition].filter(Boolean).join(" "),
+        };
+      }
+      describedParameters = { ...definition.parameters, properties: described };
+      return describedParameters;
+    },
+  });
   Object.defineProperty(tool, "description", {
     enumerable: true,
     get(): string {
       return [
         definition.description,
         core.renderToolPromptGuideline(definition.name) ?? "",
-        (
-          {
-            replace:
-              "This result selects the resulting text; empty replacement selects the resulting position, not the removed text.",
-            insert:
-              "For text edits, this result selects the inserted text, including supplied line separators. Specialized resources return their own action result.",
-            write:
-              "For file writes, this result selects the whole file and returns a compact write receipt, not file content.",
-            copy: "This result selects only the copied destination text; a whole-file copy selects the whole destination. Copy edits only the destination.",
-            move: "Use the Move result to work with the inserted destination text, including any added line separators. Valid empty arrays and paired zero-width selections succeed without writes; paired points select only the unchanged destination points. Source removals are not selected. A whole-file move selects the whole destination when a reusable text result is available.",
-            delete: "Delete returns no reusable text selection.",
-            undo: "The result selects the whole restored text file, not only the reversed span.",
-          } as Record<string, string>
-        )[definition.name] ?? "",
-        definition.name === "replace"
-          ? "Pass the unchanged result to another source tool to use its selection. If it has no text selection, read the file again."
-          : definition.name === "write"
-            ? "For file writes, pass this unchanged result to another source tool for dependent work. If the result reports no verified text selection, inspect the file instead."
-            : definition.name === "undo"
-              ? "Pass the unchanged result to another source tool for dependent work. If no verified text selection is returned, read the file again."
-              : ["insert", "copy", "move"].includes(definition.name)
-                ? "Pass this unchanged result to another source tool for dependent work." +
-                  " If the result reports no verified text selection, inspect the file instead."
-                : "",
-        definition.source.inherited && !["delete", "undo"].includes(definition.name)
+        definition.source.inherited &&
+        !["delete", "undo", "insert", "move", "copy", "replace"].includes(definition.name)
           ? definition.wholeFileOperation === undefined
             ? `When ${definition.source.field} is omitted, the tool can reuse the file identified by the supplied anchor, the last read, or the preceding edit in the same batch.`
             : `When ${definition.source.field} is omitted, the tool can reuse the file identified by a supplied text anchor.`

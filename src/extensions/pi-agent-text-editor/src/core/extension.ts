@@ -106,11 +106,9 @@ export default async function registerTextEditorCore(
       api.addFragmentResolver(createReadFragmentResolver(core));
 
       api.describe({
-        path: "path#anchor — source around a returned line or scope anchor, e.g. notes.txt#12#A4F0. SEARCH# and RESULT# references go directly in path, without a file prefix. Returned Read/Search/mutation targets select their verified source ranges.",
-        offset:
-          "For path#anchor, SEARCH# or RESULT# selections, count from each containing line: omitted, 0 or 1 starts there; 2 starts one line later; -1 starts one line earlier. Output keeps original line numbers.",
-        limit:
-          "For source selections, limit caps each selected context window separately. Without limit, each selection supplies its natural line count, with at least one line.",
+        path: "path#anchor — text around a returned anchor, e.g. notes.txt#12#A4F0; SEARCH#… and RESULT#… go in as they are.",
+        offset: "For an anchor or result selection, counts from its line.",
+        limit: "For a selection, per selected window.",
       });
     },
   });

@@ -208,12 +208,19 @@ export async function registerLspWithOwner(
         for (const operation of ["copy", "move", "delete", "replace"]) {
           api
             .tool(operation)
-            .describe(
-              "Use symbol:<file>#<selector> as path to select one exact declaration without start/end. Use parent/child for ambiguous names. For declaration-text Copy/Move, supply an explicit target and destination anchor. This text fallback leaves imports and references unchanged; it is not semantic rename." +
+            .describeField(
+              "path",
+              "symbol:<file>#<selector> selects one declaration without start; imports and references are not updated." +
                 (operation === "replace"
-                  ? " Use symbol:<file>#<selector>#name with text containing the new name for native LSP rename across references. Omit start/end. A failed server rename never falls back to identifier text replacement."
+                  ? " symbol:<file>#<selector>#name renames it, with the new name in text."
                   : ""),
             );
+          if (operation === "replace")
+            api
+              .tool(operation)
+              .describe(
+                "Use replace with a symbol:…#name path to rename a symbol across the project.",
+              );
           api.tool(operation).addHandler({
             stage: "text-pre-edit",
             async handler(state) {
@@ -255,11 +262,7 @@ export async function registerLspWithOwner(
             },
           });
         }
-        api
-          .tool("insert")
-          .describe(
-            "Symbol targets are unsupported for insert. Get the declaration with lsp_search and select an ordinary text line anchor instead.",
-          );
+        api.tool("insert").describeField("anchor", "Symbol targets are not supported.");
         api.tool("insert").addHandler({
           stage: "text-pre-edit",
           handler(state) {

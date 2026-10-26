@@ -99,9 +99,7 @@ export function registerTerminalTools(
       },
       label: profile.displayName,
       promptSnippet: `Execute ${profile.displayName} commands in synchronous or background terminal sessions`,
-      promptGuidelines: [
-        `Do not use ${toolName} commands or scripts to edit files. Use the standalone editing tools instead. Commands that inherently generate files, such as formatters and code generators, are allowed.`,
-      ],
+      promptGuidelines: [`Edit files with the edit tools, not ${toolName}.`],
       description: `Use ${toolName} to execute a command in the user's configured shell. Each call creates a new terminal session and returns its shell: source for inspection and interaction.`,
       parameters: runParameters,
       outputSchema: shellOutputSchema,

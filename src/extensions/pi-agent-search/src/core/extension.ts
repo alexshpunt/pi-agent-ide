@@ -87,8 +87,8 @@ export default async function registerSearchCore(
   const presentation = parsePresentation(context?.preferences["ui.search"]);
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
-      id: "search-code",
-      description: "Text, regex and path search",
+      id: "search",
+      description: "Text and regex search in files, guides, web pages and terminal output",
       triggers: [{ tool: "search" }],
     }),
   ]);
@@ -122,10 +122,7 @@ export default async function registerSearchCore(
         description: "Use search to find text in files, web pages, guides and terminal output.",
         promptSnippet: "Search file contents with literals or regular expressions",
         get promptGuidelines(): string[] {
-          return [
-            "Use the narrowest useful search query and scope; broaden when needed.",
-            ...core.renderPromptGuidelines(),
-          ];
+          return [...core.renderPromptGuidelines()];
         },
         parameters: searchSchema,
         outputSchema: searchOutputSchema,

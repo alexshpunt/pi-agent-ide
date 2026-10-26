@@ -26,7 +26,6 @@ import {
 import { createReadResultRenderer } from "pi-agent-read/api/rendering";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import type { ResourceResolutionAttempt, ResourceResolver } from "pi-agent-resource";
 import type { TextDocument, TextLinePresenter } from "pi-agent-text";
 import type { ReadRequest, ReadResultDetails } from "pi-agent-read/api/tools/read";
@@ -37,13 +36,6 @@ const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "D
 type ReadDiagnostics = IdePluginApi["readDiagnostics"];
 
 export default async function registerDiagnostics(pi: ExtensionAPI): Promise<void> {
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "diagnostics",
-      description: "Diagnostic resources, readiness, and verification",
-      triggers: [{ tool: "read", resourcePrefixes: ["diagnostics:"] }],
-    }),
-  ]);
   let readDiagnostics: ReadDiagnostics | undefined;
   const collect: CollectDiagnostics = (filePath, cwd, options) => {
     if (readDiagnostics === undefined) {
@@ -137,9 +129,8 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
         },
       });
       api.describe({
-        path: "diagnostics:<path> — lint and language-server diagnostics with reporting tool and readiness.",
-        views:
-          "diagnostics — diagnostics alongside source text, with reporting tool and readiness.",
+        path: "diagnostics:<path> — lint and language-server diagnostics.",
+        views: "diagnostics — diagnostics beside the text.",
       });
     },
   } satisfies ReadPlugin;

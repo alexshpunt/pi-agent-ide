@@ -98,9 +98,6 @@ export async function registerAstSearchTool(
         description:
           "Use ast_search to find code by syntax with ast-grep patterns or rules, in files or inside a Read, Search or edit result, and to get the function, class or call that encloses a match. Matches and captures are editable selections.",
         promptSnippet: "Find code by syntax with ast-grep patterns and relational rules",
-        promptGuidelines: [
-          "Use ast_search when a match depends on code structure, such as a call inside a given function or the function that contains a text match.",
-        ],
         parameters: astSearchSchema,
         outputSchema: searchOutputSchema,
         renderCall(parameters, theme, context) {

@@ -51,8 +51,7 @@ export async function registerGitChangesWithExecutor(
     setup(api) {
       api.addView({ view: "changes", presenter });
       api.describe({
-        views:
-          "changes — uncommitted edits in tracked files, staged/unstaged state, and CHANGE# anchors for stage, unstage and undo.",
+        views: "changes — uncommitted Git edits with CHANGE# anchors.",
       });
     },
   } satisfies ReadPlugin;
