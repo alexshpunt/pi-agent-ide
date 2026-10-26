@@ -7,6 +7,7 @@ import {
   Container,
   Key,
   matchesKey,
+  MouseRegion,
   SelectList,
   Text,
   truncateToWidth,
@@ -22,6 +23,7 @@ export type ProcessActivityMode = "detailed" | "compact" | "off";
 export class AgentIdeProcessesUi {
   #context: ExtensionContext | undefined;
   #closed = false;
+  #overlay: Promise<void> | undefined;
   #elapsedTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -38,7 +40,7 @@ export class AgentIdeProcessesUi {
           context.ui.notify("The Agent IDE process overlay requires the TUI.", "info");
           return;
         }
-        await this.#showOverlay(context);
+        await this.#openOverlay(context);
       },
     });
   }
@@ -81,16 +83,25 @@ export class AgentIdeProcessesUi {
     context.ui.setStatus("agent-ide-processes", undefined);
     context.ui.setWidget(
       "agent-ide-processes",
-      (_tui, theme) => ({
-        invalidate() {},
-        render: (width: number) => renderProcessWidget(active, width, theme),
-      }),
+      (_tui, theme) =>
+        createProcessWidget(active, theme, (source) => {
+          void this.#openOverlay(context, source).catch((error: unknown) => {
+            context.ui.notify(`Could not open process details: ${String(error)}`, "error");
+          });
+        }),
       { placement: "belowEditor" },
     );
     this.#elapsedTimer ??= setInterval(() => this.#render(), 1_000);
   }
 
-  async #showOverlay(context: ExtensionContext): Promise<void> {
+  #openOverlay(context: ExtensionContext, source?: string): Promise<void> {
+    this.#overlay ??= this.#showOverlay(context, source).finally(() => {
+      this.#overlay = undefined;
+    });
+    return this.#overlay;
+  }
+
+  async #showOverlay(context: ExtensionContext, initialSource?: string): Promise<void> {
     for (;;) {
       if (this.#active().length === 0) {
         context.ui.notify("No active Agent IDE processes.", "info");
@@ -104,8 +115,9 @@ export class AgentIdeProcessesUi {
         action = await context.ui.custom<{ readonly source: string } | null>(
           (tui, theme, _keys, done) => {
             let active = this.#active();
-            let page: "list" | "detail" | "input" | "confirm" = "list";
-            let selected: AgentIdeProcess | undefined;
+            let selected = active.find((process) => process.source === initialSource);
+            let page: "list" | "detail" | "input" | "confirm" = selected ? "detail" : "list";
+            initialSource = undefined;
             const createList = (selectedSource?: string): SelectList => {
               const items: SelectItem[] = active.map((process) => ({
                 value: process.source,
@@ -129,7 +141,7 @@ export class AgentIdeProcessesUi {
               next.onCancel = () => done(null);
               return next;
             };
-            let list = createList();
+            let list = createList(selected?.source);
             const refresh = (): void => {
               const selectedSource = selected?.source ?? list.getSelectedItem()?.value;
               active = this.#active();
@@ -233,16 +245,49 @@ export function renderProcessWidget(
   width: number,
   theme: Theme,
 ): string[] {
-  if (processes.length === 0) return [];
+  return createProcessWidget(processes, theme).render(width);
+}
+
+function createProcessWidget(
+  processes: readonly AgentIdeProcess[],
+  theme: Theme,
+  onSelect?: (source: string) => void,
+): Container {
+  const container = new Container();
+  if (processes.length === 0) return container;
   const accent = (text: string) => theme.fg("accent", text);
-  const lines = [borderTop("Agent IDE Processes", `${processes.length} active`, width, accent)];
+  container.addChild({
+    invalidate() {},
+    render: (width) => [
+      borderTop("Agent IDE Processes", `${processes.length} active`, width, accent),
+    ],
+  });
   for (const [index, process] of processes.entries()) {
-    for (const line of process.renderSummary(theme))
-      lines.push(borderLine(` ${line} `, width, accent));
-    if (index < processes.length - 1) lines.push(borderLine("", width, accent));
+    container.addChild(
+      new MouseRegion(
+        {
+          invalidate() {},
+          render: (width) =>
+            process.renderSummary(theme).map((line) => borderLine(` ${line} `, width, accent)),
+        },
+        (event) => {
+          if (onSelect === undefined || event.type !== "click" || event.button !== "left") return;
+          onSelect(process.source);
+          return { handled: true };
+        },
+      ),
+    );
+    if (index < processes.length - 1)
+      container.addChild({
+        invalidate() {},
+        render: (width) => [borderLine("", width, accent)],
+      });
   }
-  lines.push(borderBottom(width, accent));
-  return lines;
+  container.addChild({
+    invalidate() {},
+    render: (width) => [borderBottom(width, accent)],
+  });
+  return container;
 }
 
 function borderTop(
