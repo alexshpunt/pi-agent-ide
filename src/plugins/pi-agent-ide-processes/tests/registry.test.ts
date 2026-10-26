@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { Text } from "@earendil-works/pi-tui";
+import { type Component, type TuiMouseEvent, Text } from "@earendil-works/pi-tui";
 
 import { AgentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
 import {
@@ -145,6 +145,78 @@ describe("Agent IDE process registry", () => {
     expect(requestRender).not.toHaveBeenCalled();
     ui.dispose();
     vi.useRealTimers();
+  });
+  test.each([
+    [1, "shell:first"],
+    [2, "shell:first"],
+    [4, "shell:second"],
+    [5, "shell:second"],
+  ])("opens the clicked process directly from summary row %i", async (row, source) => {
+    let widget: Component | undefined;
+    let overlay: Component | undefined;
+    let close: (() => void) | undefined;
+    const registry = new AgentIdeProcessRegistry();
+    registry.add({
+      id: "terminal",
+      list: () =>
+        ["shell:first", "shell:second"].map((id) => ({
+          ...processWithDetail(id, `detail ${id}`),
+          renderSummary: () => [id, `output ${id}`],
+        })),
+      onDidChange: () => () => undefined,
+    });
+    const custom = vi.fn(
+      (factory: (tui: unknown, theme: unknown, keys: unknown, done: () => void) => Component) =>
+        new Promise<null>((resolve) => {
+          close = () => resolve(null);
+          overlay = factory({ requestRender() {} }, theme(), undefined, close);
+        }),
+    );
+    const ui = new AgentIdeProcessesUi(registry, "detailed", { registerCommand() {} } as never);
+    const click: TuiMouseEvent = {
+      type: "click",
+      button: "left",
+      x: 5,
+      y: row,
+      screenX: 5,
+      screenY: row,
+      width: 80,
+      height: 7,
+      shift: false,
+      alt: false,
+      ctrl: false,
+    };
+    try {
+      ui.bind({
+        mode: "tui",
+        hasUI: true,
+        ui: {
+          setStatus() {},
+          notify() {},
+          custom,
+          setWidget(_key: string, factory?: (tui: unknown, theme: unknown) => Component) {
+            widget = factory?.({}, theme());
+          },
+        },
+      } as never);
+      widget?.render(80);
+      for (const y of [0, 3, 6]) widget?.handleMouse?.({ ...click, y });
+      for (const type of ["press", "release", "drag", "wheel"] as const)
+        widget?.handleMouse?.({ ...click, type });
+      widget?.handleMouse?.({ ...click, button: "right" });
+      expect(custom).not.toHaveBeenCalled();
+      expect(widget?.handleMouse?.(click)?.handled).toBe(true);
+      expect(overlay?.render(80).join("\n")).toContain(`detail ${source}`);
+      widget?.handleMouse?.(click);
+      expect(custom).toHaveBeenCalledTimes(1);
+      overlay?.handleInput?.("\u001b");
+      overlay?.handleInput?.("\r");
+      expect(overlay?.render(80).join("\n")).toContain(`detail ${source}`);
+    } finally {
+      close?.();
+      await Promise.resolve();
+      ui.dispose();
+    }
   });
   test("renders different process kinds inside one Agent IDE Processes block", () => {
     const lines = renderProcessWidget(
