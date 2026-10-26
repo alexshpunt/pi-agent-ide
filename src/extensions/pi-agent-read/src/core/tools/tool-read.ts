@@ -4,6 +4,7 @@ import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   isAgentContent,
   isResourceResolutionAttempt,
+  ResourceError,
   resourceScheduler,
   resourceAccesses,
   type ResourceResolver,
@@ -575,8 +576,13 @@ const RETRYABLE_FAILURE_CODES: ReadonlySet<ReadFailure["code"]> = new Set([
 
 /** True when reading the whole source failed for a reason an anchor split might fix. */
 function isRetryableFailure(result: ReadToolResult): boolean {
-  const code = result.details.failure?.code;
-  return code !== undefined && RETRYABLE_FAILURE_CODES.has(code);
+  const failure = result.details.failure;
+  // A declared provider failure belongs to the complete source, not a text anchor.
+  return (
+    failure !== undefined &&
+    !(failure.cause instanceof ResourceError) &&
+    RETRYABLE_FAILURE_CODES.has(failure.code)
+  );
 }
 
 async function resolveTextTargets(
