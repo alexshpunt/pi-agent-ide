@@ -93,7 +93,7 @@ Views change how the same resource is presented. The agent can request source st
 
 The agent narrows a Read or Search result by searching inside it: a regex for a span between markers or part of a line, or an `ast_search` pattern whose captures select a function body or an argument list. Edits then change only those exact ranges, so the agent works with real code boundaries rather than guessing line numbers.
 
-Language-server support adds `lsp_search` for declarations, references and call graphs, plus diagnostics and semantic rename across references. Available features depend on the project's language server. See [code navigation](docs/agent-guides/lsp-search.md).
+Language-server support adds `lsp_search` for declarations, references and call graphs, plus diagnostics and semantic rename across references. Available features depend on the project's language server.
 
 ### Review edits against your own rules
 
