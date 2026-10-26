@@ -193,7 +193,8 @@ test("target browser fallback runs page JavaScript and reuses readable HTML conv
       );
     }
   }
-}, 20_000);
+  // The target browser has its own 30 s deadline; the test budget adds SSH fixture startup on top.
+}, 60_000);
 test.each(["playwright", "chromium"] as const)(
   "missing target %s refuses HTML reads without controller browser fallback",
   async (missing) => {

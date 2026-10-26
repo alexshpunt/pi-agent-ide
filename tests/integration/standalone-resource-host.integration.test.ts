@@ -138,7 +138,9 @@ test.each(["alone", "before", "after"] as const)(
         'await refused(() => tools.other_replace({path: original, text: "wrong"}));',
         'await refused(() => tools.demo_replace({path: sibling, text: "wrong"}));',
         'await refused(() => tools.demo_read({path: "memory://other/note"}));',
-        'await refused(() => tools.demo_read({path: "memory://demo/missing"}));',
+        // A completed Read failure resolves to its public error value instead of throwing.
+        'const missing = await tools.demo_read({path: "memory://demo/missing"});',
+        'if (missing?.status !== "error" || !missing.errors.length) throw new Error("Missing resource looked readable");',
         'await refused(() => tools.demo_move({path: original, target: "local.txt"}));',
         'await tools.demo_write({path: "memory://demo/note", content: "temporary\\nomega\\n"});',
         'await tools.demo_write({path: "memory://demo/note", content: "alpha\\nomega\\n"});',

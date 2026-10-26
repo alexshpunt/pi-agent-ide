@@ -113,8 +113,13 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
     }
     expect(getToolResultText(run, "regex")).toContain("Native value 42");
     expect(getToolResultText(run, "browser")).toContain("Native value 43");
+    expect(getToolExecution(run, "image").isError).toBe(true);
+    // Codemode receives the completed Read failure as its public error value instead of a throw.
+    expect(getToolExecution(run, "sequence").isError).toBe(false);
+    expect(getToolResultText(run, "sequence")).toContain(
+      '{"status":"error","errors":[{"code":"UNSUPPORTED_CAPABILITY"',
+    );
     for (const id of ["image", "sequence"]) {
-      expect(getToolExecution(run, id).isError).toBe(true);
       expect(getToolResultMessage(run, id).content.some((block) => block.type === "image")).toBe(
         false,
       );
