@@ -72,7 +72,7 @@ describe("pi-agent-text-editor insert", () => {
     });
   });
 
-  test("inserts text before the line containing an exact span", async () => {
+  test("inserts text at the beginning of an exact span", async () => {
     await withTempWorkspace(async (directory) => {
       const file = await createFixture(
         directory,
@@ -97,9 +97,9 @@ describe("pi-agent-text-editor insert", () => {
         scenario,
         relativeFile,
         "before anchor after\n",
-        "inserted\nbefore anchor after\n",
+        "before insertedanchor after\n",
       );
-      await expect(readFile(file, "utf8")).resolves.toBe("inserted\nbefore anchor after\n");
+      await expect(readFile(file, "utf8")).resolves.toBe("before insertedanchor after\n");
     });
   });
 });

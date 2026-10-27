@@ -1159,8 +1159,13 @@ add(
 
 add(
   "exact-range-copy",
-  ["edit.copy-exact-range", "edit.copy-exact-destination", "compose.search-range-endpoints"],
-  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references as targetStart and targetEnd. Replace only that inclusive destination span. Preserve both files' surrounding sentence text and line endings, and leave the source unchanged. Do not use an unpaired insertion or whole-file copy.",
+  [
+    "edit.copy-exact-range",
+    "edit.copy-exact-destination",
+    "edit.copy-source-range",
+    "compose.search-range-endpoints",
+  ],
+  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references as targetStart and targetEnd. Replace only that inclusive destination span. Then select the whole line 段🙂 in whole.txt with a single start and no end. Copy that same source once over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd, and once after the whole ANCHOR line in inserted.txt, without targetEnd. Preserve the selected source's CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
   [
     { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
     { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
@@ -1176,23 +1181,56 @@ add(
       },
       reuse: [reuse(0, "targetStart", "anchor"), reuse(1, "targetEnd", "anchor")],
     },
+    {
+      tool: "copy",
+      args: {
+        path: "whole.txt",
+        start: "段🙂",
+        end: undefined,
+        target: "inline.txt",
+        targetStart: "SLOT",
+        targetEnd: "SLOT",
+      },
+    },
+    {
+      tool: "copy",
+      args: {
+        path: "whole.txt",
+        start: "段🙂",
+        end: undefined,
+        target: "inserted.txt",
+        targetStart: "ANCHOR",
+        targetEnd: undefined,
+      },
+    },
   ],
   {
     files: {
       "source.txt": "source prefix COPY_BEGIN body COPY_END source suffix\n",
       "target.txt": "target prefix TARGET_BEGIN old TARGET_END target suffix\n",
+      "whole.txt": "before\r\n段🙂\r\nafter\r\n",
+      "inline.txt": "left SLOT right\n",
+      "inserted.txt": "ANCHOR\nAFTER\n",
     },
     expected: {
       "source.txt": "source prefix COPY_BEGIN body COPY_END source suffix\n",
       "target.txt": "target prefix COPY_BEGIN body COPY_END target suffix\n",
+      "whole.txt": "before\r\n段🙂\r\nafter\r\n",
+      "inline.txt": "left 段🙂\r\n right\n",
+      "inserted.txt": "ANCHOR\n段🙂\r\nAFTER\n",
     },
   },
 );
 
 add(
   "exact-range-move",
-  ["edit.move-exact-range", "edit.move-exact-destination", "compose.search-range-endpoints"],
-  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references as Move start/end. Move that inline inclusive span into target.txt using the exact strings TARGET_BEGIN and TARGET_END as targetStart/targetEnd. Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Do not use an unpaired insertion or whole-file move.",
+  [
+    "edit.move-exact-range",
+    "edit.move-exact-destination",
+    "edit.move-source-range",
+    "compose.search-range-endpoints",
+  ],
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references as Move start/end. Move that inline inclusive span into target.txt using the exact strings TARGET_BEGIN and TARGET_END as targetStart/targetEnd. Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Then move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt. Use that complete block as a single start with no end, and SLOT as both targetStart and targetEnd. Preserve the block's internal CRLF when inserting into the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
   [
     { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
     { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
@@ -1208,15 +1246,30 @@ add(
       },
       reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
     },
+    {
+      tool: "move",
+      args: {
+        path: "eof.txt",
+        end: undefined,
+        target: "inline.txt",
+        targetStart: "SLOT",
+        targetEnd: "SLOT",
+      },
+      argsAny: [{ start: "段🙂\n尾界" }, { start: "段🙂\r\n尾界" }],
+    },
   ],
   {
     files: {
       "source.txt": "source prefix MOVE_BEGIN body MOVE_END source suffix\r\n",
       "target.txt": "target prefix TARGET_BEGIN old TARGET_END target suffix\r\n",
+      "eof.txt": "KEEP\r\n段🙂\r\n尾界",
+      "inline.txt": "left SLOT right\n",
     },
     expected: {
       "source.txt": "source prefix  source suffix\r\n",
       "target.txt": "target prefix MOVE_BEGIN body MOVE_END target suffix\r\n",
+      "eof.txt": "KEEP\r\n",
+      "inline.txt": "left 段🙂\r\n尾界 right\n",
     },
   },
 );
@@ -1334,8 +1387,8 @@ add(
 
 add(
   "insert-before",
-  ["edit.insert-before", "edit.insert-spacing"],
-  "Use insert before the exact OLD line to add a separate paragraph NOTE with blank-line separation.",
+  ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
+  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Finally Search search.txt for MATCH and use its actual :match reference as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
   [
     {
       tool: "insert",
@@ -1345,8 +1398,60 @@ add(
         separation: "blank-line",
       },
     },
+    {
+      tool: "insert",
+      args: { path: "literal.txt", anchor: "α🙂", text: "[", before: true },
+    },
+    {
+      tool: "insert",
+      args: { path: "literal.txt", anchor: "α🙂", text: "]" },
+    },
+    {
+      tool: "insert",
+      args: { path: "block.txt", text: "[", before: true },
+      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }],
+    },
+    {
+      tool: "insert",
+      args: { path: "block.txt", text: "]" },
+      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }],
+    },
+    { tool: "search", args: { path: "search.txt", query: "MATCH" } },
+    {
+      tool: "insert",
+      args: {
+        path: "search.txt",
+        anchor: /^SEARCH#[A-F0-9]+:1:match$/u,
+        text: "[",
+        before: true,
+      },
+      reuse: reuse(5, "anchor", "anchor"),
+    },
+    { tool: "search", args: { path: "search.txt", query: "MATCH" } },
+    {
+      tool: "insert",
+      args: {
+        path: "search.txt",
+        anchor: /^SEARCH#[A-F0-9]+:1:match$/u,
+        text: "]",
+      },
+      reuse: reuse(7, "anchor", "anchor"),
+    },
   ],
-  { expected: { "task.txt": "keep\n\nNOTE\n\nOLD\nlast\n" } },
+  {
+    files: {
+      ...textFile,
+      "literal.txt": "left α🙂 right\n",
+      "block.txt": "left α\r\nβ right\r\n",
+      "search.txt": "left MATCH right\n",
+    },
+    expected: {
+      "task.txt": "keep\n\nNOTE\n\nOLD\nlast\n",
+      "literal.txt": "left [α🙂] right\n",
+      "block.txt": "left [α\r\nβ] right\r\n",
+      "search.txt": "left [MATCH] right\n",
+    },
+  },
 );
 
 add(
@@ -1594,19 +1699,80 @@ add(
   [
     "edit.copy-selection",
     "edit.move-selection",
+    "edit.copy-source-range",
+    "edit.move-source-range",
     "compose.read-window-copy",
     "compose.read-window-move",
   ],
-  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result after the first line of dest.txt. Read the second line of task.txt again the same way and move it after the last line of dest.txt. Use the Read results as copy/move sources. Use dest.txt as target with targetStart identifying DEST for copy and TAIL for move; do not replace a destination selection.",
+  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result after DEST in dest.txt. Read the second line of task.txt again and move that result after TAIL in dest.txt. Then Read only the second line of copy-source.txt (offset 2, limit 1). Copy that returned window over only COPY_SLOT in copy-replaced.txt using paired targetStart/targetEnd, then copy the same window after the exact fragment COPY_POINT in copy-inserted.txt with targetStart and no targetEnd. Read two lines from move-replace-source.txt (offset 2, limit 2) and move that window over only MOVE_SLOT in move-replaced.txt using paired targetStart/targetEnd. Read two lines from move-insert-source.txt the same way and move that window after the exact fragment MOVE_POINT in move-inserted.txt with no targetEnd. Pass each returned Read result or its UUID unchanged as the source. Preserve the selected Unicode and CRLF bytes in these LF destinations, the surrounding destination text, and each Move source's preceding CRLF.",
   [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     { tool: "copy", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(0) },
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     { tool: "move", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(2) },
+    { tool: "read", args: { path: "copy-source.txt", offset: 2, limit: 1 } },
+    {
+      tool: "copy",
+      args: {
+        target: "copy-replaced.txt",
+        targetStart: "COPY_SLOT",
+        targetEnd: "COPY_SLOT",
+      },
+      reuse: reuse(4),
+    },
+    {
+      tool: "copy",
+      args: {
+        target: "copy-inserted.txt",
+        targetStart: "COPY_POINT",
+        targetEnd: undefined,
+      },
+      reuse: reuse(4),
+    },
+    { tool: "read", args: { path: "move-replace-source.txt", offset: 2, limit: 2 } },
+    {
+      tool: "move",
+      args: {
+        target: "move-replaced.txt",
+        targetStart: "MOVE_SLOT",
+        targetEnd: "MOVE_SLOT",
+      },
+      reuse: reuse(7),
+    },
+    { tool: "read", args: { path: "move-insert-source.txt", offset: 2, limit: 2 } },
+    {
+      tool: "move",
+      args: {
+        target: "move-inserted.txt",
+        targetStart: "MOVE_POINT",
+        targetEnd: undefined,
+      },
+      reuse: reuse(9),
+    },
   ],
   {
-    files: { ...textFile, "dest.txt": "DEST\nTAIL\n" },
-    expected: { "task.txt": "keep\nlast\n", "dest.txt": "DEST\nOLD\nTAIL\nOLD\n" },
+    files: {
+      ...textFile,
+      "dest.txt": "DEST\nTAIL\n",
+      "copy-source.txt": "keep\r\n段🙂\r\nafter\r\n",
+      "copy-replaced.txt": "left COPY_SLOT right\n",
+      "copy-inserted.txt": "left COPY_POINT right\n",
+      "move-replace-source.txt": "keep\r\n段🙂\r\n尾🙂",
+      "move-replaced.txt": "left MOVE_SLOT right\n",
+      "move-insert-source.txt": "keep\r\n段🙂\r\n尾🙂",
+      "move-inserted.txt": "left MOVE_POINT right\n",
+    },
+    expected: {
+      "task.txt": "keep\nlast\n",
+      "dest.txt": "DEST\nOLD\nTAIL\nOLD\n",
+      "copy-source.txt": "keep\r\n段🙂\r\nafter\r\n",
+      "copy-replaced.txt": "left 段🙂\r\n right\n",
+      "copy-inserted.txt": "left COPY_POINT段🙂\r\n right\n",
+      "move-replace-source.txt": "keep\r\n",
+      "move-replaced.txt": "left 段🙂\r\n尾🙂 right\n",
+      "move-insert-source.txt": "keep\r\n",
+      "move-inserted.txt": "left MOVE_POINT段🙂\r\n尾🙂 right\n",
+    },
   },
 );
 
@@ -1732,18 +1898,40 @@ for (const [name, eol, ending] of [
 ] as const) {
   add(
     `exact-eof-${name}`,
-    ["edit.exact-eof"],
-    "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Do not use an end anchor. Preserve unrelated bytes and each file's existing newline style.",
+    ["edit.exact-eof", "edit.delete-empty-replace"],
+    "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. Do not use an end anchor for these blocks. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.",
     [
       { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
-      { tool: "delete", args: { path: "block.txt", start: "Last\nBlock" } },
+      {
+        tool: "delete",
+        args: { path: "block.txt" },
+        argsAny: [{ start: "Last\nBlock" }, { start: "Last\r\nBlock" }],
+      },
+      {
+        tool: "replace",
+        args: { path: "empty.txt", text: "" },
+        argsAny: [{ start: "Last\nBlock" }, { start: "Last\r\nBlock" }],
+      },
+      { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
+      {
+        tool: "delete",
+        args: { path: "line.txt", start: /^2#/u },
+        reuse: reuse(3, "start", "anchor"),
+      },
     ],
     {
       files: {
         "last.txt": `First${eol}Last${ending}`,
         "block.txt": `First${eol}Last${eol}Block${ending}`,
+        "empty.txt": `First${eol}Last${eol}Block${ending}`,
+        "line.txt": `First${eol}Last${ending}`,
       },
-      expected: { "last.txt": `First${eol}Final${ending}`, "block.txt": `First${ending}` },
+      expected: {
+        "last.txt": `First${eol}Final${ending}`,
+        "block.txt": `First${eol}`,
+        "empty.txt": `First${eol}`,
+        "line.txt": `First${eol}`,
+      },
     },
   );
 }

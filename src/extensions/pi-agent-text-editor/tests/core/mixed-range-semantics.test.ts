@@ -50,11 +50,15 @@ test.each(["\n", "\r\n"])(
       for (const end of [undefined, anchors]) {
         const span = anchorSpanRange(ctx, anchors, end, "start", "end");
         const replacement = replaceAnchorSpan(ctx, span, "");
-        expect(replacement).toEqual(deleteAnchorSpan(ctx, span));
+        expect(replacement).toEqual(deleteAnchorSpan(span));
         const actual =
           content.slice(0, replacement.from) + replacement.insert + content.slice(replacement.to);
         expect(actual).toBe(
-          content.startsWith("A") ? (content.endsWith("BLOCK") ? "A" : `A${eol}${eol}B${eol}`) : "",
+          content.startsWith("A")
+            ? content.endsWith("BLOCK")
+              ? `A${eol}`
+              : `A${eol}${eol}B${eol}`
+            : "",
         );
       }
     }
@@ -83,8 +87,8 @@ test("mixed endpoints keep the whole-line start and exact end", () => {
 });
 
 test("multiline match ending at column zero does not include the next line", () => {
-  const span = singleAnchorSpan(context, map(match(1, 5, 3, 0)), "start", true);
-  expect(document.text(span)).toBe("left START right\r\nmiddle\r\n");
+  const span = singleAnchorSpan(context, map(match(1, 5, 3, 0)), "start");
+  expect(document.text(span)).toBe("START right\r\nmiddle\r\n");
 });
 
 test("reversed, cross-resource and plural endpoints are rejected", () => {
@@ -103,7 +107,7 @@ test("reversed, cross-resource and plural endpoints are rejected", () => {
   expect(() => anchorSpanRange(context, map(plural), first, "start", "end")).toThrow("one match");
 });
 
-test("all-match insertions are deduplicated by containing line", () => {
+test("all-match insertions keep each distinct selection boundary", () => {
   const plural = new TextSelectionAnchor("many", source, [
     { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 4 } },
     { start: { lineNumber: 1, column: 5 }, end: { lineNumber: 1, column: 10 } },
@@ -112,7 +116,7 @@ test("all-match insertions are deduplicated by containing line", () => {
     const changes = insertionChanges(context, new Map([[source, plural]]), "NEW\n", before).get(
       source,
     );
-    expect(changes).toHaveLength(1);
-    expect(changes?.[0]?.insert).toBe("NEW\r\n");
+    expect(changes?.map((change) => change.from)).toEqual(before ? [0, 5] : [4, 10]);
+    expect(changes?.map((change) => change.insert)).toEqual(["NEW\r\n", "NEW\r\n"]);
   }
 });

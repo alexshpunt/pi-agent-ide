@@ -40,7 +40,7 @@ export function targetProperties(directorySemantics: string) {
     targetStart: Type.Optional(
       Type.String({
         description:
-          "Anchor or unique exact text in the destination file; the text goes after its line. Required when the text goes into a file path.",
+          "Anchor or unique exact text in the destination file; the text goes after its selected extent. Required when the text goes into a file path.",
       }),
     ),
     targetEnd: Type.Optional(

@@ -9,10 +9,8 @@ import {
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
 import {
   anchorSpanRange,
-  transferText,
   deleteAnchorSpan,
   insertionAfterAnchor,
-  replaceAnchorSpan,
 } from "#src/tools/text-selection.js";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
@@ -76,7 +74,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const sourceSpan = anchorSpanRange(context, starts, ends, "start", "end");
     const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
-    const deletion = deleteAnchorSpan(context, sourceSpan);
+    const deletion = deleteAnchorSpan(sourceSpan);
 
     const targetStarts = await context.resolveAnchors("targetStart");
     let target: string;
@@ -93,11 +91,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
         "targetEnd",
       );
       target = targetSpan.source;
-      targetChange = replaceAnchorSpan(
-        context,
-        targetSpan,
-        transferText(context, starts, ends, sourceSpan, targetSpan),
-      );
+      targetChange = { from: targetSpan.from, to: targetSpan.to, insert: copied };
     }
 
     if (sourceSpan.source === target && rangesTouch(deletion, targetChange)) {

@@ -7,12 +7,7 @@ import {
 } from "#src/tools/text-tool-schema-properties.js";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
-import {
-  anchorSpanRange,
-  transferText,
-  insertionAfterAnchor,
-  replaceAnchorSpan,
-} from "#src/tools/text-selection.js";
+import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.js";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
 
@@ -74,10 +69,10 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
     const starts = await context.resolveAnchors("start");
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const sourceSpan = anchorSpanRange(context, starts, ends, "start", "end");
+    const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
 
     const targetStarts = await context.resolveAnchors("targetStart");
     if (parameters.targetEnd === undefined) {
-      const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
       const [target, change] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
       return {
         edits: new Map([
@@ -94,13 +89,14 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
       "targetStart",
       "targetEnd",
     );
-    const copied = transferText(context, starts, ends, sourceSpan, targetSpan);
     return {
       edits: new Map([
         [
           targetSpan.source,
           {
-            changes: [{ ...replaceAnchorSpan(context, targetSpan, copied), allowUnchanged: true }],
+            changes: [
+              { from: targetSpan.from, to: targetSpan.to, insert: copied, allowUnchanged: true },
+            ],
             action: "edited",
           },
         ],

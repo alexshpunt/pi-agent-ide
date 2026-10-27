@@ -46,6 +46,72 @@ const events = [
 const task = { steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }] };
 
 describe("capability route evidence", () => {
+  test.each([
+    {
+      id: "exact-range-move",
+      index: 3,
+      field: "start",
+      selector: "段🙂\n尾界",
+      args: {
+        path: "eof.txt",
+        target: "inline.txt",
+        targetStart: "SLOT",
+        targetEnd: "SLOT",
+      },
+    },
+    {
+      id: "exact-eof-crlf",
+      index: 1,
+      field: "start",
+      selector: "Last\nBlock",
+      args: { path: "block.txt" },
+    },
+    {
+      id: "exact-eof-crlf",
+      index: 2,
+      field: "start",
+      selector: "Last\nBlock",
+      args: { path: "empty.txt", text: "" },
+    },
+    {
+      id: "insert-before",
+      index: 3,
+      field: "anchor",
+      selector: "α\nβ",
+      args: { path: "block.txt", text: "[", before: true },
+    },
+    {
+      id: "insert-before",
+      index: 4,
+      field: "anchor",
+      selector: "α\nβ",
+      args: { path: "block.txt", text: "]" },
+    },
+  ])("$id step $index accepts exact LF and CRLF selectors without widening", (fixture) => {
+    const step = capabilityCases.find((candidate) => candidate.id === fixture.id)?.steps[
+      fixture.index
+    ];
+    if (!step) throw new Error("Missing multiline selector capability step");
+    const route = { steps: [step] };
+    const check = (selector: string) =>
+      validateRoute(
+        route,
+        [
+          {
+            type: "tool_execution_start",
+            toolCallId: "multiline",
+            toolName: step.tool,
+            args: { ...fixture.args, [fixture.field]: selector },
+          },
+          { type: "tool_execution_end", toolCallId: "multiline", isError: false },
+        ],
+        "direct",
+      ).passed;
+    expect(check(fixture.selector)).toBe(true);
+    expect(check(fixture.selector.replace("\n", "\r\n"))).toBe(true);
+    expect(check(`${fixture.selector}\n`)).toBe(false);
+    expect(check(fixture.selector.replace("\n", "\r\r\n"))).toBe(false);
+  });
   test("direct batch evidence requires both call ids in one completed assistant message", () => {
     const route = { steps: [{ tool: "read" }, { tool: "search", sameAssistantWith: 0 }] };
     const message = (ids: string[]) => ({

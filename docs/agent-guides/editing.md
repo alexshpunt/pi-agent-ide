@@ -4,6 +4,9 @@
 
 - `LINE#HASH` from `read` with `views: ["anchors"]` selects a line. `scope-begin-HASH` / `scope-end-HASH` from the `ast` view select a syntax block. `SEARCH#…:line` selects a search match's line, `SEARCH#…:match` the match itself. `begin` and `end` select the first and last line.
 - Without an anchor, use the shortest unique exact text.
+- A whole line includes its own LF or CRLF, when present. An unterminated final line never includes the preceding separator. Empty Replace removes the same range as Delete.
+- Copy and Move transfer the selected source text unchanged, including its line endings. Select the source independently of the destination.
+- Insert adds text at the start or end of a selection. Whole-line selections add needed line breaks; exact selections keep their character boundaries. New Replace/Insert payloads follow the target's line-ending style.
 - With `start` and `end`, the selection runs from the start of `start` to the end of `end`. Exact text keeps character boundaries; line anchors take whole lines. When both `start` and `end` match complete lines, such as BEGIN/END marker lines, the selection takes those lines whole.
 - After an exact-text selector fails, exact text is blocked for that file until an anchor-based edit succeeds. Use one of the anchors the error returns; don't guess another string.
 - Anchors and results go stale when their file changes. Read or search again before reusing them.
