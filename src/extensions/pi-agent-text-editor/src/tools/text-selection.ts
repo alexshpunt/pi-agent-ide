@@ -39,10 +39,6 @@ export interface TextAnchorSpan {
   readonly to: number;
   readonly selection: boolean;
   readonly preservesTrailingLineBreak: boolean;
-  /** First selected line when this span represents whole lines. */
-  readonly linewiseStartLine?: number;
-  /** Last selected line when this span represents whole lines. */
-  readonly linewiseEndLine?: number;
 }
 
 /** Resolves one anchor to one character span, converting line anchors to whole-line spans. */
@@ -50,7 +46,6 @@ export function singleAnchorSpan(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
-  wholeLines = false,
   rangeEndpoint = false,
 ): TextAnchorSpan {
   if (anchors.size !== 1) {
@@ -67,9 +62,7 @@ export function singleAnchorSpan(
     );
     const document = context.documentFor(source);
     const exactRange = selectionRange(context, source, selectedRange);
-    const endLine = wholeLines
-      ? containingEndLine(selectedRange)
-      : linewiseSelectionEndLine(selectedRange);
+    const endLine = linewiseSelectionEndLine(selectedRange);
     if (endLine !== undefined) {
       const range = document.lineRange(selectedRange.start.lineNumber, endLine);
       return {
@@ -77,8 +70,6 @@ export function singleAnchorSpan(
         ...range,
         selection: false,
         preservesTrailingLineBreak: true,
-        linewiseStartLine: selectedRange.start.lineNumber,
-        linewiseEndLine: endLine,
       };
     }
     return { source, ...exactRange, selection: true, preservesTrailingLineBreak: false };
@@ -90,27 +81,7 @@ export function singleAnchorSpan(
     ...range,
     selection: false,
     preservesTrailingLineBreak: true,
-    linewiseStartLine: anchor.lineNumber,
-    linewiseEndLine: anchor.lineNumber,
   };
-}
-
-/**
- * Text to transfer into a destination. A whole-line literal source selects its line, but an
- * exact character destination receives the literal itself, so no extra line break is added.
- */
-export function transferText(
-  context: TextMutationContext,
-  starts: ReadonlyMap<string, TextAnchor>,
-  ends: ReadonlyMap<string, TextAnchor> | undefined,
-  sourceSpan: TextAnchorSpan,
-  targetSpan: TextAnchorSpan | undefined,
-): string {
-  const span =
-    ends === undefined && targetSpan?.selection === true && !sourceSpan.selection
-      ? singleAnchorSpan(context, starts, "start", false, true)
-      : sourceSpan;
-  return context.documentFor(span.source).text(span);
 }
 
 /** Whether an endpoint selects complete lines: a line anchor or text matching a whole line. */
@@ -134,8 +105,8 @@ export function anchorSpanRange(
 ): TextAnchorSpan {
   if (ends === undefined) return singleAnchorSpan(context, starts, startField);
   const exactEndpoints = !(selectsWholeLines(starts) && selectsWholeLines(ends));
-  const start = singleAnchorSpan(context, starts, startField, false, exactEndpoints);
-  const end = singleAnchorSpan(context, ends, endField, false, exactEndpoints);
+  const start = singleAnchorSpan(context, starts, startField, exactEndpoints);
+  const end = singleAnchorSpan(context, ends, endField, exactEndpoints);
   if (start.source !== end.source) {
     throw new Error(`Anchors ${startField} and ${endField} must resolve in one resource.`);
   }
@@ -163,7 +134,7 @@ export function replaceAnchorSpan(
   span: TextAnchorSpan,
   text: string,
 ): { readonly from: number; readonly to: number; readonly insert: string } {
-  if (text === "") return deleteAnchorSpan(context, span);
+  if (text === "") return deleteAnchorSpan(span);
   const document = context.documentFor(span.source);
   let insert = targetText(context, span.source, text);
   const selected = document.text(span);
@@ -176,28 +147,32 @@ export function replaceAnchorSpan(
   return { from: span.from, to: span.to, insert };
 }
 
-/** Creates a deletion while keeping whole-line deletion behavior at EOF. */
-export function deleteAnchorSpan(
-  context: TextMutationContext,
-  span: TextAnchorSpan,
-): { readonly from: number; readonly to: number; readonly insert: "" } {
-  const content = context.documentFor(span.source).content;
-  if (
-    !span.selection &&
-    span.to === content.length &&
-    span.from > 0 &&
-    !/(?:\r\n|\r|\n)$/u.test(content)
-  ) {
-    const prefix = content.slice(0, span.from);
-    const match = /(?:\r\n|\r|\n)$/u.exec(prefix);
-    if (match !== null) {
-      return { from: span.from - match[0].length, to: span.to, insert: "" };
-    }
-  }
+/** Deletes exactly the resolved extent, including only its own line separator. */
+export function deleteAnchorSpan(span: TextAnchorSpan): {
+  readonly from: number;
+  readonly to: number;
+  readonly insert: "";
+} {
   return { from: span.from, to: span.to, insert: "" };
 }
 
-/** Inserts after the last containing line of one resolved anchor. */
+function insertionAtSpan(
+  context: TextMutationContext,
+  span: Pick<TextAnchorSpan, "source" | "from" | "to" | "selection">,
+  insert: string,
+  before: boolean,
+  separation: "line" | "blank-line",
+) {
+  return context
+    .documentFor(span.source)
+    .insertAt(
+      before ? span.from : span.to,
+      insert,
+      !span.selection || separation === "blank-line" ? separation : undefined,
+    );
+}
+
+/** Inserts transferred text after the resolved selection without normalizing its bytes. */
 export function insertionAfterAnchor(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
@@ -205,17 +180,11 @@ export function insertionAfterAnchor(
   insert: string,
   separation: "line" | "blank-line" = "line",
 ): readonly [string, { readonly from: number; readonly to: number; readonly insert: string }] {
-  const span = singleAnchorSpan(context, anchors, field, true);
-  const normalizedInsert = targetText(context, span.source, insert);
-
-  const lineNumber = span.linewiseEndLine ?? lineAnchor(anchors, field).lineNumber;
-  return [
-    span.source,
-    context.documentFor(span.source).insertAfterLine(lineNumber, normalizedInsert, separation),
-  ];
+  const span = singleAnchorSpan(context, anchors, field);
+  return [span.source, insertionAtSpan(context, span, insert, false, separation)];
 }
 
-/** Inserts before the first containing line of one resolved anchor. */
+/** Inserts transferred text before the resolved selection without normalizing its bytes. */
 export function insertionBeforeAnchor(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
@@ -223,14 +192,8 @@ export function insertionBeforeAnchor(
   insert: string,
   separation: "line" | "blank-line" = "line",
 ): readonly [string, { readonly from: number; readonly to: number; readonly insert: string }] {
-  const span = singleAnchorSpan(context, anchors, field, true);
-  const normalizedInsert = targetText(context, span.source, insert);
-
-  const lineNumber = span.linewiseStartLine ?? lineAnchor(anchors, field).lineNumber;
-  return [
-    span.source,
-    context.documentFor(span.source).insertBeforeLine(lineNumber, normalizedInsert, separation),
-  ];
+  const span = singleAnchorSpan(context, anchors, field);
+  return [span.source, insertionAtSpan(context, span, insert, true, separation)];
 }
 
 function coalesceAdjacentLinewiseRanges(
@@ -297,20 +260,15 @@ export function insertionChanges(
   return new Map(
     [...selections].map(([source, anchor]) => [
       source,
-      [
-        ...new Set(
-          anchor.ranges.map((range) => {
-            selectionRange(context, source, range);
-            return before ? range.start.lineNumber : containingEndLine(range);
-          }),
+      anchor.ranges.map((range) =>
+        insertionAtSpan(
+          context,
+          { source, ...selectionRange(context, source, range), selection: range.linewise !== true },
+          targetText(context, source, insert),
+          before,
+          separation,
         ),
-      ].map((line) => {
-        const document = context.documentFor(source);
-        const normalizedInsert = targetText(context, source, insert);
-        return before
-          ? document.insertBeforeLine(line, normalizedInsert, separation)
-          : document.insertAfterLine(line, normalizedInsert, separation);
-      }),
+      ),
     ]),
   );
 }

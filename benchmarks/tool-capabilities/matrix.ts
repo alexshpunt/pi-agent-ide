@@ -70,6 +70,8 @@ const groups: [string[], string[]][] = [
   [["edit.delete-exact-range"], ["exact-range-delete"]],
   [["edit.copy-exact-range", "edit.copy-exact-destination"], ["exact-range-copy"]],
   [["edit.move-exact-range", "edit.move-exact-destination"], ["exact-range-move"]],
+  [["edit.copy-source-range"], ["exact-range-copy", "selection-copy-move"]],
+  [["edit.move-source-range"], ["exact-range-move", "selection-copy-move"]],
   [["edit.mixed-range-endpoints"], ["mixed-range-replace"]],
   [
     ["compose.search-range-endpoints"],
@@ -96,7 +98,10 @@ const groups: [string[], string[]][] = [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
     ["replace-read-search"],
   ],
-  [["edit.insert-before", "edit.insert-spacing"], ["insert-before"]],
+  [
+    ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
+    ["insert-before"],
+  ],
   [["edit.delete-selection", "compose.search-delete"], ["delete-selection"]],
   [["edit.delete-declaration"], ["delete-symbol"]],
   [["compose.symbol-read-delete"], ["read-symbol-delete"]],
@@ -174,7 +179,10 @@ const groups: [string[], string[]][] = [
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
-  [["edit.exact-eof"], ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"]],
+  [
+    ["edit.exact-eof", "edit.delete-empty-replace"],
+    ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"],
+  ],
   [
     ["codemode.parallel-edit-effects"],
     ["parallel-edit-effects-all", "parallel-edit-effects-allSettled"],

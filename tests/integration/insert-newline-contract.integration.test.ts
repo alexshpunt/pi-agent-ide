@@ -47,12 +47,19 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
           conversation.push(
             call(`insert-${index}`, "insert", { path: file, anchor, before, text: payload }),
           );
-          const lines = original.split(separator);
-          const at = before ? 1 : kind === "multiline" ? 3 : 2;
-          const inserted = payload.split("\n");
-          if (inserted.at(-1) === "") inserted.pop();
-          lines.splice(at, 0, ...inserted);
-          expected.push(lines.join(separator));
+          if (kind === "exact" || kind === "search-match") {
+            const normalized = payload.replace(/\n/gu, separator);
+            expected.push(
+              original.replace("ANCHOR", before ? `${normalized}ANCHOR` : `ANCHOR${normalized}`),
+            );
+          } else {
+            const lines = original.split(separator);
+            const at = before ? 1 : kind === "multiline" ? 3 : 2;
+            const inserted = payload.split("\n");
+            if (inserted.at(-1) === "") inserted.pop();
+            lines.splice(at, 0, ...inserted);
+            expected.push(lines.join(separator));
+          }
         }
         conversation.push(assistantMessage([text("Done")]));
         const result = await new PiIntegrationTest({

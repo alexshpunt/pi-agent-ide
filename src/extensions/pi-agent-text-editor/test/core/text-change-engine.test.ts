@@ -72,7 +72,7 @@ describe("text change document", () => {
       "ONE\ntwo\nthree",
     );
     expect(applyTextChanges(document.content, [document.deleteLines(3, 3)]).content).toBe(
-      "one\ntwo",
+      "one\ntwo\n",
     );
   });
 

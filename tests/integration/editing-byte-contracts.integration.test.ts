@@ -93,7 +93,7 @@ test.each(["direct", "codemode"] as const)(
               file: `delete-${index}.txt`,
               before: `First${eol}Last${eol}Block${ending}`,
               start: "Last\nBlock",
-              after: `First${ending}`,
+              after: `First${eol}`,
             };
           }),
         ];
