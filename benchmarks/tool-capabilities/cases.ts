@@ -1250,12 +1250,12 @@ add(
       tool: "move",
       args: {
         path: "eof.txt",
-        start: "段🙂\n尾界",
         end: undefined,
         target: "inline.txt",
         targetStart: "SLOT",
         targetEnd: "SLOT",
       },
+      argsAny: [{ start: "段🙂\n尾界" }, { start: "段🙂\r\n尾界" }],
     },
   ],
   {
@@ -1408,11 +1408,13 @@ add(
     },
     {
       tool: "insert",
-      args: { path: "block.txt", anchor: "α\nβ", text: "[", before: true },
+      args: { path: "block.txt", text: "[", before: true },
+      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }],
     },
     {
       tool: "insert",
-      args: { path: "block.txt", anchor: "α\nβ", text: "]" },
+      args: { path: "block.txt", text: "]" },
+      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }],
     },
     { tool: "search", args: { path: "search.txt", query: "MATCH" } },
     {
