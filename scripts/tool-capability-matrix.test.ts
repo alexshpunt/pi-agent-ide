@@ -60,6 +60,20 @@ describe("capability route evidence", () => {
       },
     },
     {
+      id: "exact-eof-crlf",
+      index: 1,
+      field: "start",
+      selector: "Last\nBlock",
+      args: { path: "block.txt" },
+    },
+    {
+      id: "exact-eof-crlf",
+      index: 2,
+      field: "start",
+      selector: "Last\nBlock",
+      args: { path: "empty.txt", text: "" },
+    },
+    {
       id: "insert-before",
       index: 3,
       field: "anchor",

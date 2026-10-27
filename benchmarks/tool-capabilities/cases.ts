@@ -1902,8 +1902,16 @@ for (const [name, eol, ending] of [
     "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. Do not use an end anchor for these blocks. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.",
     [
       { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
-      { tool: "delete", args: { path: "block.txt", start: "Last\nBlock" } },
-      { tool: "replace", args: { path: "empty.txt", start: "Last\nBlock", text: "" } },
+      {
+        tool: "delete",
+        args: { path: "block.txt" },
+        argsAny: [{ start: "Last\nBlock" }, { start: "Last\r\nBlock" }],
+      },
+      {
+        tool: "replace",
+        args: { path: "empty.txt", text: "" },
+        argsAny: [{ start: "Last\nBlock" }, { start: "Last\r\nBlock" }],
+      },
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
         tool: "delete",
