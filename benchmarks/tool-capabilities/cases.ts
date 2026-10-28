@@ -1562,19 +1562,48 @@ add(
 
 add(
   "file-copy-move-delete",
-  ["edit.copy-file", "edit.move-file", "edit.delete-file"],
-  "First use move with task.txt as both path and target; it must report not-applied. Then use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, not result selections. The original must stay unchanged.",
+  ["edit.copy-file", "edit.move-file", "edit.delete-file", "edit.whole-file-omission"],
+  "First use move with task.txt as both path and target; it must report not-applied. Then use copy to duplicate task.txt into copied.txt, move copied.txt to moved.txt, then delete moved.txt. Use ordinary file paths for these whole-file operations, without start/end or destination selection arguments. The original must stay unchanged.",
   [
     {
       tool: "move",
-      args: { path: "task.txt", target: "task.txt" },
+      args: {
+        path: "task.txt",
+        target: "task.txt",
+        start: undefined,
+        end: undefined,
+        targetStart: undefined,
+        targetEnd: undefined,
+      },
       error: true,
       contains: "move: not-applied",
     },
-    { tool: "copy", args: { path: "task.txt", target: "copied.txt" } },
-    { tool: "move", args: { path: "copied.txt", target: "moved.txt" }, contains: "move: applied" },
-    { tool: "delete", args: { path: "moved.txt" } },
+    {
+      tool: "copy",
+      args: {
+        path: "task.txt",
+        target: "copied.txt",
+        start: undefined,
+        end: undefined,
+        targetStart: undefined,
+        targetEnd: undefined,
+      },
+    },
+    {
+      tool: "move",
+      args: {
+        path: "copied.txt",
+        target: "moved.txt",
+        start: undefined,
+        end: undefined,
+        targetStart: undefined,
+        targetEnd: undefined,
+      },
+      contains: "move: applied",
+    },
+    { tool: "delete", args: { path: "moved.txt", start: undefined, end: undefined } },
   ],
+  { expected: { "task.txt": textFile["task.txt"], "copied.txt": null, "moved.txt": null } },
 );
 
 add(
@@ -1876,6 +1905,34 @@ add(
   { files: { "a.txt": "OLD\n", "b.txt": "NEW\n" }, answer: "NEW" },
 );
 
+add(
+  "diff-omission",
+  ["read.diff-omission"],
+  "Compare a.txt and b.txt with diff using before/after objects that contain only path. Omit offset and limit to compare the complete files and report the added line. Then diff the same files again with explicit limit 0 on both objects; that comparison must expose no file lines. Do not edit either file.",
+  [
+    {
+      tool: "diff",
+      args: {
+        before: { path: "a.txt", offset: undefined, limit: undefined },
+        after: { path: "b.txt", offset: undefined, limit: undefined },
+      },
+      contains: "NEW",
+    },
+    {
+      tool: "diff",
+      args: {
+        before: { path: "a.txt", offset: undefined, limit: 0 },
+        after: { path: "b.txt", offset: undefined, limit: 0 },
+      },
+      excludes: "NEW",
+    },
+  ],
+  {
+    files: { "a.txt": "OLD\n", "b.txt": "NEW\n" },
+    expected: { "a.txt": "OLD\n", "b.txt": "NEW\n" },
+    answer: "NEW",
+  },
+);
 for (const [name, eol] of [
   ["lf", "\n"],
   ["crlf", "\r\n"],
