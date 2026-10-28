@@ -46,6 +46,69 @@ const events = [
 const task = { steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }] };
 
 describe("capability route evidence", () => {
+  test("whole-file routes reject filled-in selection arguments", () => {
+    const fixture = capabilityCases.find((candidate) => candidate.id === "file-copy-move-delete");
+    expect(fixture).toBeDefined();
+    for (const step of fixture?.steps ?? []) {
+      const check = (args: Record<string, unknown>) =>
+        validateRoute(
+          { steps: [{ tool: step.tool, args: step.args }] },
+          [
+            { type: "tool_execution_start", toolCallId: "call", toolName: step.tool, args },
+            {
+              type: "tool_execution_end",
+              toolCallId: "call",
+              toolName: step.tool,
+              isError: false,
+            },
+          ],
+          "direct",
+        );
+      expect(check({ ...step.args }).passed).toBe(true);
+      const selectors =
+        step.tool === "delete" ? ["start", "end"] : ["start", "end", "targetStart", "targetEnd"];
+      for (const selector of selectors)
+        for (const value of ["", null])
+          expect(
+            check({ ...step.args, [selector]: value }).passed,
+            `${step.tool} ${selector}`,
+          ).toBe(false);
+    }
+  });
+
+  test("diff routes distinguish omitted limits from explicit zero", () => {
+    const fixture = capabilityCases.find((candidate) => candidate.id === "diff-omission");
+    expect(fixture).toBeDefined();
+    const full = fixture?.steps[0];
+    const zero = fixture?.steps[1];
+    if (!full || !zero) throw new Error("Missing diff omission steps");
+    const check = (step: typeof full, limit?: number) =>
+      validateRoute(
+        { steps: [{ tool: step.tool, args: step.args }] },
+        [
+          {
+            type: "tool_execution_start",
+            toolCallId: "call",
+            toolName: "diff",
+            args: {
+              before: { path: "a.txt", ...(limit === undefined ? {} : { limit }) },
+              after: { path: "b.txt", ...(limit === undefined ? {} : { limit }) },
+            },
+          },
+          {
+            type: "tool_execution_end",
+            toolCallId: "call",
+            toolName: "diff",
+            isError: false,
+          },
+        ],
+        "direct",
+      );
+    expect(check(full).passed).toBe(true);
+    expect(check(full, 0).passed).toBe(false);
+    expect(check(zero, 0).passed).toBe(true);
+    expect(check(zero).passed).toBe(false);
+  });
   test.each([
     {
       id: "exact-range-move",
