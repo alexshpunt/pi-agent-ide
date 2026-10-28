@@ -84,7 +84,7 @@ async function snapshot(
 }
 
 function token(value: unknown): string {
-  if (typeof value !== "string" || !/^[A-Za-z0-9._~+/=:-]+$/.test(value))
+  if (typeof value !== "string" || !/^[A-Za-z0-9._~+/=:;-]+$/.test(value))
     throw new AuthenticationUnavailable(
       "The authentication snapshot has no usable literal access token",
     );
