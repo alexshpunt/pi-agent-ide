@@ -58,6 +58,44 @@ test("Pi snapshots retain OAuth classification but never grant refresh capabilit
   expect(auth.containsSecret(`output ${access}`)).toBe(true);
 });
 
+test("Copilot snapshots preserve and redact semicolon-delimited access tokens", async () => {
+  const { snapshot, state } = await fixture();
+  const copilotAccess =
+    "tid=SYNTHETIC;exp=2000000000;proxy-ep=proxy.individual.githubcopilot.com;sig=SAFE";
+  const expires = Date.now() + 3_600_000;
+  await writeFile(
+    path.join(snapshot, "auth.json"),
+    JSON.stringify({
+      "github-copilot": { type: "oauth", access: copilotAccess, refresh, expires },
+    }),
+  );
+  const auth = await stagePiAuthentication(state, "github-copilot", snapshot, 120_000);
+  expect(JSON.parse(await readFile(path.join(state, "agent/auth.json"), "utf8"))).toEqual({
+    "github-copilot": { type: "oauth", access: copilotAccess, refresh: "", expires },
+  });
+  expect(auth.containsSecret(copilotAccess)).toBe(true);
+  expect(auth.redact(copilotAccess)).not.toContain(copilotAccess);
+  expect(JSON.stringify(auth.policy)).not.toContain(copilotAccess);
+});
+
+test.each(["!command", "$TOKEN", "token\nheader", "token\rheader", "token with spaces"])(
+  "snapshots reject nonliteral or header-unsafe tokens: %j",
+  async (unsafeAccess) => {
+    const { snapshot, state } = await fixture();
+    await writeFile(
+      path.join(snapshot, "auth.json"),
+      JSON.stringify({
+        "github-copilot": { type: "oauth", access: unsafeAccess, expires: Date.now() + 3_600_000 },
+      }),
+    );
+    await expect(
+      stagePiAuthentication(state, "github-copilot", snapshot, 120_000),
+    ).rejects.toBeInstanceOf(Error);
+    await expect(readFile(path.join(state, "agent/auth.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  },
+);
 test("Claude receives only the access-token environment and no refresh-capable file", async () => {
   const { snapshot, state } = await fixture();
   const original = JSON.stringify({
