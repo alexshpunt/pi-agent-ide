@@ -44,6 +44,11 @@
       "thinking": "low"
     },
     {
+      "id": "copilot-luna-6-low",
+      "model": "github-copilot/gpt-6-luna",
+      "thinking": "low"
+    },
+    {
       "id": "luna-6-low",
       "model": "openai-codex/gpt-6-luna",
       "thinking": "low"

@@ -106,7 +106,10 @@ const groups: [string[], string[]][] = [
   [["edit.delete-declaration"], ["delete-symbol"]],
   [["compose.symbol-read-delete"], ["read-symbol-delete"]],
   [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
-  [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
+  [
+    ["edit.copy-file", "edit.move-file", "edit.delete-file", "edit.whole-file-omission"],
+    ["file-copy-move-delete"],
+  ],
   [["compose.file-delete-text-edit"], ["mixed-file-delete-text-edit"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
   [
@@ -178,6 +181,7 @@ const groups: [string[], string[]][] = [
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
+  [["read.diff-omission"], ["diff-omission"]],
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
   [
     ["edit.exact-eof", "edit.delete-empty-replace"],
