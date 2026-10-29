@@ -213,12 +213,13 @@ const groups: [string[], string[]][] = [
   [["compose.result-selector-rejection"], ["result-selector-rejection"]],
   [
     [
-      // Delayed-card ownership is presentation metadata, covered by linked-terminal integration.
-      // The model's shell/input/read route and result contracts remain unchanged.
+      // Fresh-session follow-up operations exercise metadata activated by the first Bash call.
+      // Schema publication and delayed-card ownership have deterministic integration coverage.
       "shell.execute",
       "shell.read",
       "shell.search",
       "shell.input",
+      "compose.shell-first-use-input",
       "compose.shell-input-read",
       "compose.shell-keys-read",
       "shell.keys",
@@ -232,6 +233,7 @@ const groups: [string[], string[]][] = [
   [
     [
       "debug.create",
+      "compose.debug-first-use-controls",
       "debug.read",
       "debug.breakpoints",
       "debug.start",

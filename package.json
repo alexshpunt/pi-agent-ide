@@ -110,6 +110,10 @@
       "types": "./src/api/standalone.ts",
       "default": "./src/api/standalone.ts"
     },
+    "./api/capabilities": {
+      "types": "./src/api/capabilities.ts",
+      "default": "./src/api/capabilities.ts"
+    },
     "./api/settings": {
       "types": "./src/api/settings.ts",
       "default": "./src/api/settings.ts"

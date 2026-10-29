@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { registerIdeCapability } from "#src/api/capabilities.js";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   forgetReloadResource,
@@ -59,6 +60,47 @@ export default async function registerTerminal(
     targets,
     registerTerminalOrigins(pi),
   );
+
+  const editingGuideline =
+    "For shell:<session> resources, write sends exact terminal input, insert sends named keys at end, and delete terminates and removes the session. replace is unsupported.";
+  registerIdeCapability(pi, {
+    version: 1,
+    id: "terminal",
+    tools: ["bash", "powershell"],
+    schemas: {
+      read: {
+        parameters: {
+          path: "shell:<session> — status and output tail.",
+          views:
+            "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time, up to 10 s and 20 frames.",
+        },
+      },
+      search: {
+        promptGuidelines: [
+          "path shell:<session> searches the retained text output of that terminal, including rows outside its current screen.",
+        ],
+      },
+      write: {
+        parameters: {
+          path: "shell:<session> types into that terminal.",
+          content: "For shell:<session>, exact input; Enter is not added.",
+        },
+        promptGuidelines: [editingGuideline],
+      },
+      insert: {
+        parameters: {
+          path: "shell:<session> sends keys to that terminal.",
+          anchor: "Omit for shell:<session>.",
+          text: "For shell:<session>: named keys and chords such as Enter, Ctrl+C, Up, or caret forms such as ^C, separated by spaces or commas.",
+        },
+        promptGuidelines: [editingGuideline],
+      },
+      delete: {
+        parameters: { path: "shell:<session> ends that session." },
+        promptGuidelines: [editingGuideline],
+      },
+    },
+  });
 
   let removeSteeringObserver = (): void => {};
   pi.on("session_start", (_event, context) => {

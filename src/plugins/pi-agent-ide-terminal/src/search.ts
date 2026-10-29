@@ -30,9 +30,6 @@ export async function registerTerminalSearch(
     id: "terminal",
     setup(api) {
       api.addResolver({ resolver: terminalSearchResolver(manager), priority: 100 });
-      api.describe(
-        "path shell:<session> searches the retained text output of that terminal, including rows outside its current screen.",
-      );
     },
   } satisfies SearchPlugin;
   await connectSearchPlugin(pi, plugin);
