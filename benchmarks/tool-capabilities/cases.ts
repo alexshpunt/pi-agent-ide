@@ -2221,14 +2221,15 @@ add(
 );
 
 add(
-  // This case keeps the model-facing roundtrip contract. Owner grouping and late delivery
-  // are exercised without inference in linked-terminal.integration.test.ts.
+  // The first Bash call activates terminal guidance before shared-tool follow-up operations.
+  // Schema publication and owner delivery are checked without inference in integration tests.
   "shell-roundtrip",
   [
     "shell.execute",
     "shell.read",
     "shell.search",
     "shell.input",
+    "compose.shell-first-use-input",
     "compose.shell-input-read",
     "compose.shell-keys-read",
     "shell.keys",
@@ -2236,7 +2237,7 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  "Start a background Bash command that waits for one input line, prints that line and exits. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
+  "Start a background Bash command that waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -2279,6 +2280,7 @@ add(
   "debug-roundtrip",
   [
     "debug.create",
+    "compose.debug-first-use-controls",
     "debug.read",
     "debug.breakpoints",
     "debug.start",
@@ -2286,14 +2288,15 @@ add(
     "debug.delete",
     "discovery.debug",
   ],
-  "Discover debug and create a debugpy session for task.py. Read its source with anchors, place a breakpoint on the print line using insert breakpoint, and start the debugger. When stopped, evaluate value with insert evaluate value. Read the stopped session, report value=42, then delete the debugger session. Source must stay unchanged.",
+  "Discover debug and create a debugpy session for task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and start the debugger. When stopped, evaluate value with insert evaluate value. Read the stopped session, report value=42, then delete the debugger session. Source must stay unchanged.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
+    { tool: "read", reuse: reuse(0, "path", "debug") },
     { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
     {
       tool: "insert",
       args: { path: /debug:.*\/source/, text: "breakpoint" },
-      reuse: reuse(1, "anchor", "anchor"),
+      reuse: reuse(2, "anchor", "anchor"),
     },
     { tool: "insert", args: { text: "start" }, reuse: reuse(0, "path", "debug") },
     {
@@ -2323,7 +2326,7 @@ add(
     "compose.debug-breakpoint-delete-read-session",
     "read.breakpoints",
   ],
-  "Discover debug and create a debugpy session for task.py. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start, then step into the twice function, step over its first assignment, and evaluate result while stopped. Step out, read the stopped session, delete the returned breakpoint resource, read the session to confirm it is still stopped, continue to completion, read the completed session, and delete the session. Read stopped state before each next control action. Report the evaluated result. Do not change source files.",
+  "Discover debug and create a debugpy session for task.py. Wait for the debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start, then step into the twice function, step over its first assignment, and evaluate result while stopped. Step out, read the stopped session, delete the returned breakpoint resource, read the session to confirm it is still stopped, continue to completion, read the completed session, and delete the session. Read stopped state before each next control action. Report the evaluated result. Do not change source files.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
@@ -2366,7 +2369,7 @@ add(
 add(
   "debug-backend-fallback",
   ["debug.backend-vscode-refusal", "debug.backend-native"],
-  "Discover debug and create a session for task.py with backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value. Do not change source files.",
+  "Discover debug and create a session for task.py with backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value. Do not change source files.",
   [
     {
       tool: "debug",

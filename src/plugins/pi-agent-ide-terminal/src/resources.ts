@@ -185,11 +185,6 @@ export async function registerTerminalResources(
           }
         },
       });
-      api.describe({
-        path: "shell:<session> — status and output tail.",
-        views:
-          "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time, up to 10 s and 20 frames.",
-      });
     },
   } satisfies ReadPlugin;
 
@@ -238,22 +233,6 @@ export async function registerTerminalResources(
           },
         });
       }
-      api.describe(
-        "For shell:<session> resources, write sends exact terminal input, insert sends named keys at end, and delete terminates and removes the session. replace is unsupported.",
-      );
-      api.tool("write").describeField("path", "shell:<session> types into that terminal.");
-      api.tool("delete").describeField("path", "shell:<session> ends that session.");
-      api
-        .tool("write")
-        .describeField("content", "For shell:<session>, exact input; Enter is not added.");
-      api.tool("insert").describeField("path", "shell:<session> sends keys to that terminal.");
-      api.tool("insert").describeField("anchor", "Omit for shell:<session>.");
-      api
-        .tool("insert")
-        .describeField(
-          "text",
-          "For shell:<session>: named keys and chords such as Enter, Ctrl+C, Up, or caret forms such as ^C, separated by spaces or commas.",
-        );
     },
   } satisfies TextEditorPlugin;
 

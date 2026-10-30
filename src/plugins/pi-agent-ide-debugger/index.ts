@@ -1,4 +1,5 @@
 import path from "node:path";
+import { registerIdeCapability } from "#src/api/capabilities.js";
 import { access } from "node:fs/promises";
 
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -250,10 +251,6 @@ export async function registerDebuggerWithOwner(
         },
       });
       api.addView({ view: "breakpoints", presenter: breakpointPresenter });
-      api.describe({
-        path: "debug:<session> — debugger state.",
-        views: "breakpoints — breakpoints beside the lines.",
-      });
     },
   } satisfies ReadPlugin;
   const editorPlugin = {
@@ -262,19 +259,6 @@ export async function registerDebuggerWithOwner(
     id: "debugger",
     setup(api) {
       api.addResolver({ resolver: editorResolver });
-      api
-        .tool("insert")
-        .describeField(
-          "path",
-          "debug:<session> controls the debugger; debug:<session>/source with a line anchor sets a breakpoint.",
-        );
-      api
-        .tool("insert")
-        .describeField(
-          "text",
-          "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
-        );
-      api.tool("insert").describeField("anchor", "Omit for debug:<session>.");
       api.tool("insert").addSemanticHandler({
         matches: (input) => matchesDebugInsert(input, manager),
         execute: async (context, input) => {
@@ -343,12 +327,6 @@ export async function registerDebuggerWithOwner(
           };
         },
       });
-      api
-        .tool("delete")
-        .describeField(
-          "path",
-          "debug:<session> ends it; debug:<session>/breakpoint/<id> removes a breakpoint.",
-        );
       api.tool("delete").addSemanticHandler({
         matches: (input) => matchesDebugDelete(input, manager),
         execute: async (context, input) => {
@@ -372,9 +350,6 @@ export async function registerDebuggerWithOwner(
           };
         },
       });
-      api.describe(
-        'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" at an anchor. On the session, insert start, continue, step over, step into, step out, or evaluate <expression>. Delete removes a breakpoint or terminates the session.',
-      );
       for (const tool of ["insert", "delete"] as const) {
         api.addToolRenderer({
           tool,
@@ -590,6 +565,36 @@ export async function registerDebuggerWithOwner(
       },
     }),
   );
+
+  const editingGuideline =
+    'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" at an anchor. On the session, insert start, continue, step over, step into, step out, or evaluate <expression>. Delete removes a breakpoint or terminates the session.';
+  registerIdeCapability(pi, {
+    version: 1,
+    id: "debugger",
+    tools: ["debug"],
+    schemas: {
+      read: {
+        parameters: {
+          path: "debug:<session> — debugger state.",
+          views: "breakpoints — breakpoints beside the lines.",
+        },
+      },
+      insert: {
+        parameters: {
+          path: "debug:<session> controls the debugger; debug:<session>/source with a line anchor sets a breakpoint.",
+          text: "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
+          anchor: "Omit for debug:<session>.",
+        },
+        promptGuidelines: [editingGuideline],
+      },
+      delete: {
+        parameters: {
+          path: "debug:<session> ends it; debug:<session>/breakpoint/<id> removes a breakpoint.",
+        },
+        promptGuidelines: [editingGuideline],
+      },
+    },
+  });
 
   pi.on("session_shutdown", async (event) => {
     removeProcessProvider();
