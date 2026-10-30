@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { Text } from "@earendil-works/pi-tui";
 import {
   IDE_CAPABILITIES_REGISTER,
   IDE_CAPABILITIES_READY,
@@ -151,6 +152,13 @@ export function createIdeCapabilities(pi: ExtensionAPI) {
       exposure: "deferred",
       namespace: discovery.namespace,
       parameters: Type.Object({}),
+      renderResult(result) {
+        return new Text(
+          result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n"),
+          0,
+          0,
+        );
+      },
       async execute() {
         activate([discovery.name]);
         return {
