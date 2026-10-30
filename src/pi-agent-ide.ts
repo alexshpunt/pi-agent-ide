@@ -12,6 +12,7 @@ import { createFeatureFlags } from "#src/composite/feature-flags.js";
 import { connectAgentDocumentation } from "#src/api/documentation.js";
 import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.js";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
+import { createIdeCapabilities } from "#src/composite/capabilities.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
@@ -34,6 +35,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   const nestedRendering = createNestedIdeRendering(pi, hideCodemodeToolResults);
   const textResults = createIdeTextResults(nestedRendering.api);
   const availability = createIdeToolAvailability(textResults.api);
+  const capabilities = createIdeCapabilities(availability.api);
   // Pi can still run an in-flight request's payload hook after it disposed the session that
   // issued it. Its context is stale then, and the request is being cancelled anyway.
   let shutDown = false;
@@ -197,8 +199,9 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     config.enabled,
   );
   for (const extension of enabled) {
-    await extension.register(availability.api, { preferences: config.preferences ?? {} });
+    await extension.register(capabilities.api, { preferences: config.preferences ?? {} });
   }
+  capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();
   textResults.finalize();
 }

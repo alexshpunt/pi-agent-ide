@@ -179,7 +179,7 @@ test("deletes a final no-LF line through a path resource", async () => {
     }).run("Delete the final line through a search path resource");
 
     expect(getToolExecution(result, "delete-final").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header");
+    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
   });
 }, 180_000);
 
@@ -335,7 +335,7 @@ test("deletes only the final line while preserving preceding content", async () 
     }).run("Delete only the final matching line through its per-result line path");
 
     expect(getToolExecution(result, "delete-final-line-only").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\nneedle");
+    await expect(readFile(source, "utf8")).resolves.toBe("header\nneedle\n");
   });
 }, 180_000);
 
@@ -446,7 +446,7 @@ test("deletes a final no-LF line from a position-anchor union", async () => {
     }).run("Delete a final line using a path and end anchor");
 
     expect(getToolExecution(result, "delete-union-final").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header");
+    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
   });
 }, 180_000);
 
@@ -554,7 +554,7 @@ test("deletes a final no-LF line when exact and linewise endpoints merge", async
     }).run("Delete a final line by merging an exact anchor with a linewise search path");
 
     expect(getToolExecution(result, "delete-final-exact").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header");
+    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
   });
 }, 180_000);
 
@@ -632,8 +632,8 @@ test("inserts into every file selected by a complete search anchor", async () =>
     }).run("Search each needle, then insert punctuation after every exact match");
 
     expect(getToolExecution(result, "insert-search-all").isError).toBe(false);
-    await expect(readFile(first, "utf8")).resolves.toBe("needle first\n!");
-    await expect(readFile(second, "utf8")).resolves.toBe("needle second\n!");
+    await expect(readFile(first, "utf8")).resolves.toBe("needle! first\n");
+    await expect(readFile(second, "utf8")).resolves.toBe("needle! second\n");
   });
 }, 180_000);
 

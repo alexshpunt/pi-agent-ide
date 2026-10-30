@@ -5,11 +5,7 @@ import type {
   TextMutationEdit,
 } from "#src/api/mutation-tool.js";
 import { TextChangeDocument, type TextChange } from "./text-change-engine.js";
-import {
-  anchorSpanRange,
-  insertionAfterAnchor,
-  replaceAnchorSpan,
-} from "#src/tools/text-selection.js";
+import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.js";
 import { wholeFileResultSource } from "./result-input.js";
 
 /** Distinguish structured source authority from ordinary paths and legacy anchors. */
@@ -176,7 +172,7 @@ export async function prepareResultTransfer(
           );
           planned.push({
             target,
-            change: replaceAnchorSpan(context, target, copied),
+            change: { from: target.from, to: target.to, insert: copied },
           });
         }
       }

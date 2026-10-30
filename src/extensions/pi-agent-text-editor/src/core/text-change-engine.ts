@@ -80,13 +80,21 @@ export class TextChangeDocument {
   }
 
   public deleteLines(firstLine: number, lastLine: number): TextChange {
-    const range = this.lineRange(firstLine, lastLine);
+    return this.replaceLines(firstLine, lastLine, "");
+  }
 
-    if (range.to === this.content.length && range.from > 0 && !endsWithLineBreak(this.content)) {
-      return { from: previousLineBreakStart(this.content, range.from), to: range.to, insert: "" };
-    }
-
-    return { ...range, insert: "" };
+  /** Insert at a character boundary; separators are added only when requested. */
+  public insertAt(from: number, text: string, separation?: LineSeparation): TextChange {
+    this.#assertRange({ from, to: from });
+    if (text.length === 0) throw new Error("Insert text must not be empty.");
+    if (separation === undefined) return { from, to: from, insert: text };
+    const prefix =
+      from > 0 && !endsWithLineBreak(this.content.slice(0, from)) ? this.#separator : "";
+    return {
+      from,
+      to: from,
+      insert: this.#lineInsertion(from, text, separation, from < this.content.length, prefix),
+    };
   }
 
   public insertBeforeLine(
@@ -94,13 +102,7 @@ export class TextChangeDocument {
     text: string,
     separation: LineSeparation = "line",
   ): TextChange {
-    this.#assertLine(lineNumber);
-    const from = requiredValue(this.#lineStarts[lineNumber - 1]);
-    return {
-      from,
-      to: from,
-      insert: this.#lineInsertion(from, text, separation, from < this.content.length),
-    };
+    return this.insertAt(this.lineRange(lineNumber, lineNumber).from, text, separation);
   }
 
   public insertAfterLine(
@@ -108,24 +110,7 @@ export class TextChangeDocument {
     text: string,
     separation: LineSeparation = "line",
   ): TextChange {
-    this.#assertLine(lineNumber);
-    const nextLine = this.#lineStarts[lineNumber];
-
-    if (nextLine !== undefined) {
-      return {
-        from: nextLine,
-        to: nextLine,
-        insert: this.#lineInsertion(nextLine, text, separation, nextLine < this.content.length),
-      };
-    }
-
-    const prefix =
-      this.content.length > 0 && !endsWithLineBreak(this.content) ? this.#separator : "";
-    return {
-      from: this.content.length,
-      to: this.content.length,
-      insert: this.#lineInsertion(this.content.length, text, separation, false, prefix),
-    };
+    return this.insertAt(this.lineRange(lineNumber, lineNumber).to, text, separation);
   }
 
   public replaceAll(text: string): TextChange {
@@ -134,7 +119,7 @@ export class TextChangeDocument {
 
   #replacementText(range: TextRange, text: string): string {
     const selected = this.text(range);
-    return endsWithLineBreak(selected) && !endsWithLineBreak(text)
+    return text.length > 0 && endsWithLineBreak(selected) && !endsWithLineBreak(text)
       ? text + requiredValue(lineBreakOf(selected))
       : text;
   }
@@ -289,8 +274,4 @@ function endsWithLineBreak(text: string): boolean {
 
 function lineBreakOf(text: string): "\n" | "\r\n" | undefined {
   return text.endsWith("\r\n") ? "\r\n" : text.endsWith("\n") ? "\n" : undefined;
-}
-
-function previousLineBreakStart(text: string, offset: number): number {
-  return text[offset - 2] === "\r" && text[offset - 1] === "\n" ? offset - 2 : offset - 1;
 }

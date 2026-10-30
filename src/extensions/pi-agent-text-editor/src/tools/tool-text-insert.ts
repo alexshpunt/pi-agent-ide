@@ -6,6 +6,7 @@ import {
   insertionBeforeAnchor,
   insertionChanges,
   textSelections,
+  targetText,
 } from "#src/tools/text-selection.js";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
@@ -21,12 +22,13 @@ export const insertSchema = Type.Object(
     anchor: Type.Optional(
       Type.String({
         description:
-          "Line anchor or unique exact text; insertion is always whole-line. Omit when path already selects the lines.",
+          "Line anchor or unique exact text. Insert at the selection boundary: whole lines include their own separator; partial or multiline exact matches keep character boundaries. Omit when path already selects text.",
       }),
     ),
     text: Type.String({
       minLength: 1,
-      description: "Non-empty text to insert; line breaks around it are added for you.",
+      description:
+        "Non-empty text to insert, using the target line-ending style. Whole-line selections add needed separators; exact fragments do not.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
@@ -36,7 +38,7 @@ export const insertSchema = Type.Object(
     before: Type.Optional(
       Type.Boolean({
         description:
-          "true inserts before the first selected line; default false inserts after the last.",
+          "true inserts at the start of the selection; default false inserts at its end.",
       }),
     ),
   },
@@ -54,7 +56,7 @@ interface InsertParameters {
 export const insertMutationTool: TextMutationToolRegistration<typeof insertSchema> = {
   name: "insert",
   description:
-    "Use insert to add text before or after lines without changing them, to send keys to a terminal session, or to control a debugger.",
+    "Use insert to add text at a selection boundary without changing selected text, to send keys to a terminal session, or to control a debugger.",
 
   promptSnippet: "Insert file text, send terminal keys, or perform debugger actions",
   parameters: insertSchema,
@@ -94,7 +96,7 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
       context,
       anchors,
       "anchor",
-      parameters.text,
+      targetText(context, context.sourceFor("path"), parameters.text),
       parameters.separation,
     );
     return {

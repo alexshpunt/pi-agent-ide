@@ -10,12 +10,29 @@ type AvailabilityApi = Pick<
   "registerTool" | "getSettings" | "getAllTools" | "getActiveTools" | "setActiveTools"
 >;
 
+function resolveToolSelection(entries: readonly string[]) {
+  const excluded = new Set<string>();
+  const requested = new Set<string>();
+  for (const entry of entries) {
+    if (entry.startsWith("-")) {
+      excluded.add(entry.slice(1));
+      requested.delete(entry.slice(1));
+    } else {
+      const name = entry.startsWith("+") ? entry.slice(1) : entry;
+      excluded.delete(name);
+      requested.add(name);
+    }
+  }
+  return { excluded, requested };
+}
+
 /** Keep explicit settings exclusions out of every native IDE execution path. */
 export function createIdeToolAvailability<TApi extends AvailabilityApi>(pi: TApi) {
   const definitions = new Map<string, ToolAvailability>();
   const hidden = new Set<string>();
   const registerTool: ExtensionAPI["registerTool"] = (definition) => {
-    if (definition.namespace?.name.startsWith("ide_") === true) {
+    const capabilityLoader = definition.name.startsWith("ide_capability_");
+    if (definition.namespace?.name.startsWith("ide_") === true || capabilityLoader) {
       definitions.set(definition.name, {
         hide: () =>
           pi.registerTool({
@@ -26,10 +43,19 @@ export function createIdeToolAvailability<TApi extends AvailabilityApi>(pi: TApi
             get promptGuidelines() {
               return definition.promptGuidelines;
             },
+            get parameters() {
+              return definition.parameters;
+            },
             exposure: "hidden",
           }),
         restore: () => pi.registerTool(definition),
       });
+    }
+    // Capability loaders register after startup; enforce their settings before exposing them.
+    if (capabilityLoader) {
+      if (resolveToolSelection(pi.getSettings().defaultTools ?? []).excluded.has(definition.name))
+        hidden.add(definition.name);
+      else hidden.delete(definition.name);
     }
     if (hidden.has(definition.name)) definitions.get(definition.name)?.hide();
     else pi.registerTool(definition);
@@ -47,18 +73,7 @@ export function createIdeToolAvailability<TApi extends AvailabilityApi>(pi: TApi
       restoredTools: readonly string[] = [],
       hostLoadout = false,
     ): void {
-      const excluded = new Set<string>();
-      const requested = new Set<string>();
-      for (const entry of pi.getSettings().defaultTools ?? []) {
-        if (entry.startsWith("-")) {
-          excluded.add(entry.slice(1));
-          requested.delete(entry.slice(1));
-        } else {
-          const name = entry.startsWith("+") ? entry.slice(1) : entry;
-          excluded.delete(name);
-          requested.add(name);
-        }
-      }
+      const { excluded, requested } = resolveToolSelection(pi.getSettings().defaultTools ?? []);
       for (const [name, definition] of definitions) {
         if (excluded.has(name) === hidden.has(name)) continue;
         if (excluded.has(name)) {

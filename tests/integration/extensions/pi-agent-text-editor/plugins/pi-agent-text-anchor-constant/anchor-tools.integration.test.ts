@@ -40,7 +40,7 @@ describe("constant anchors through text editor tools", () => {
       "constant-delete",
       "delete",
       { start: "end", end: "end" },
-      ["alpha", "bravo", "charlie", "delta"].join("\n"),
+      ["alpha", "bravo", "charlie", "delta", ""].join("\n"),
     );
   });
 

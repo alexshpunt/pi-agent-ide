@@ -1,6 +1,8 @@
 import type { Capability } from "./validation.ts";
 
 // This declared inventory is reviewed separately from executable cases.
+// SDK capability-loader rendering retains model results and adds no paid operation.
+// Native cards and receipt visibility have deterministic real-Pi coverage.
 const groups: [string[], string[]][] = [
   [
     ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
@@ -70,6 +72,8 @@ const groups: [string[], string[]][] = [
   [["edit.delete-exact-range"], ["exact-range-delete"]],
   [["edit.copy-exact-range", "edit.copy-exact-destination"], ["exact-range-copy"]],
   [["edit.move-exact-range", "edit.move-exact-destination"], ["exact-range-move"]],
+  [["edit.copy-source-range"], ["exact-range-copy", "selection-copy-move"]],
+  [["edit.move-source-range"], ["exact-range-move", "selection-copy-move"]],
   [["edit.mixed-range-endpoints"], ["mixed-range-replace"]],
   [
     ["compose.search-range-endpoints"],
@@ -96,12 +100,18 @@ const groups: [string[], string[]][] = [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
     ["replace-read-search"],
   ],
-  [["edit.insert-before", "edit.insert-spacing"], ["insert-before"]],
+  [
+    ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
+    ["insert-before"],
+  ],
   [["edit.delete-selection", "compose.search-delete"], ["delete-selection"]],
   [["edit.delete-declaration"], ["delete-symbol"]],
   [["compose.symbol-read-delete"], ["read-symbol-delete"]],
   [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
-  [["edit.copy-file", "edit.move-file", "edit.delete-file"], ["file-copy-move-delete"]],
+  [
+    ["edit.copy-file", "edit.move-file", "edit.delete-file", "edit.whole-file-omission"],
+    ["file-copy-move-delete"],
+  ],
   [["compose.file-delete-text-edit"], ["mixed-file-delete-text-edit"]],
   [["edit.move-effects"], ["move-unknown-effects"]],
   [
@@ -173,8 +183,12 @@ const groups: [string[], string[]][] = [
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
+  [["read.diff-omission"], ["diff-omission"]],
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
-  [["edit.exact-eof"], ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"]],
+  [
+    ["edit.exact-eof", "edit.delete-empty-replace"],
+    ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"],
+  ],
   [
     ["codemode.parallel-edit-effects"],
     ["parallel-edit-effects-all", "parallel-edit-effects-allSettled"],
@@ -201,12 +215,13 @@ const groups: [string[], string[]][] = [
   [["compose.result-selector-rejection"], ["result-selector-rejection"]],
   [
     [
-      // Delayed-card ownership is presentation metadata, covered by linked-terminal integration.
-      // The model's shell/input/read route and result contracts remain unchanged.
+      // Fresh-session follow-up operations exercise metadata activated by the first Bash call.
+      // Schema publication and delayed-card ownership have deterministic integration coverage.
       "shell.execute",
       "shell.read",
       "shell.search",
       "shell.input",
+      "compose.shell-first-use-input",
       "compose.shell-input-read",
       "compose.shell-keys-read",
       "shell.keys",
@@ -220,6 +235,7 @@ const groups: [string[], string[]][] = [
   [
     [
       "debug.create",
+      "compose.debug-first-use-controls",
       "debug.read",
       "debug.breakpoints",
       "debug.start",

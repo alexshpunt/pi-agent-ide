@@ -22,7 +22,7 @@ test("empty replacements remove lines and keep unselected separators in real Pi"
       end: "END",
       expected: "A\r\n\r\nB\r\n",
     },
-    { content: "A\nBLOCK", start: "end", expected: "A" },
+    { content: "A\nBLOCK", start: "end", expected: "A\n" },
     { content: "BLOCK\n", start: "begin", expected: "" },
     { content: "A BLOCK B\n", start: "BLOCK", expected: "A  B\n" },
   ];

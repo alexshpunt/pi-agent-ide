@@ -162,7 +162,7 @@ text(await tools.insert({path:point,text:"NEW"}));`,
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(await readFile(path.join(cwd, "point-insert.txt"), "utf8")).toBe("keep\nNEW");
+    expect(await readFile(path.join(cwd, "point-insert.txt"), "utf8")).toBe("NEWkeep\n");
   });
 });
 test("copy result composes without exposing internal write stages", async () => {

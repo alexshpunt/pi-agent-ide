@@ -83,3 +83,73 @@ test("an excluded IDE tool stays hidden when registered again and keeps live met
   expect(tools.get("read")).toBe(read);
   expect(active).toContain("read");
 });
+
+test.each([undefined, { name: "external_fixture", description: "Fixture namespace" }])(
+  "capability loader exclusions apply before reconciliation regardless of namespace (%s)",
+  (namespace) => {
+    const name = "ide_capability_fixture";
+    let selection = [`+${name}`, `-${name}`];
+    let description = "fixture-initial";
+    let parameters = Type.Object({});
+    const tools = new Map<
+      string,
+      Pick<
+        ToolDefinition,
+        "exposure" | "parameters" | "description" | "promptGuidelines" | "namespace"
+      > & { execute: unknown }
+    >();
+    const registerTool: ExtensionAPI["registerTool"] = (tool) => {
+      tools.set(tool.name, defineTool(tool));
+    };
+    const availability = createIdeToolAvailability({
+      registerTool,
+      getSettings: () => ({ defaultTools: selection }),
+      getAllTools: () => [],
+      getActiveTools: () => [],
+      setActiveTools: () => {},
+    });
+    const loader = defineTool({
+      name,
+      label: name,
+      exposure: "deferred",
+      namespace,
+      get description() {
+        return description;
+      },
+      get promptGuidelines() {
+        return [description];
+      },
+      get parameters() {
+        return parameters;
+      },
+      async execute() {
+        return { content: [], details: undefined };
+      },
+    });
+    availability.api.registerTool(loader);
+    const hidden = tools.get(name);
+    expect(hidden?.exposure).toBe("hidden");
+    expect(hidden?.execute).toBe(loader.execute);
+    expect(hidden?.namespace).toBe(namespace);
+    description = "fixture-updated";
+    parameters = Type.Object({});
+    expect(hidden?.description).toBe(description);
+    expect(hidden?.promptGuidelines).toEqual([description]);
+    expect(hidden?.parameters).toBe(parameters);
+    selection = [`-${name}`, `+${name}`];
+    availability.api.registerTool(loader);
+    expect(tools.get(name)).toBe(loader);
+    selection = [`-${name}`];
+    availability.reconcile();
+    expect(tools.get(name)?.exposure).toBe("hidden");
+    selection = [`-${name}`, name];
+    availability.api.registerTool(loader);
+    expect(tools.get(name)).toBe(loader);
+    selection = [`-${name}`];
+    availability.api.registerTool(loader);
+    expect(tools.get(name)?.exposure).toBe("hidden");
+    selection = [];
+    availability.reconcile();
+    expect(tools.get(name)).toBe(loader);
+  },
+);
