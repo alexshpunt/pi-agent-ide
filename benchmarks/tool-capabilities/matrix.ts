@@ -1,6 +1,8 @@
 import type { Capability } from "./validation.ts";
 
 // This declared inventory is reviewed separately from executable cases.
+// SDK capability-loader rendering retains model results and adds no paid operation.
+// Native cards and receipt visibility have deterministic real-Pi coverage.
 const groups: [string[], string[]][] = [
   [
     ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
