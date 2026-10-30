@@ -3,10 +3,29 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { expect, test } from "vitest";
+import { requiredValue } from "pi-agent-invariant";
 import { testArtifactsDir } from "pi-coding-agent-test";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 import { piRuntime } from "#capabilities/inventory.ts";
 import { runProcess } from "#capabilities/sandbox.ts";
+
+interface WireTool {
+  name: string;
+  strict?: boolean;
+}
+interface WireRequest {
+  tools?: WireTool[];
+  input: { type?: string; tools?: WireTool[] }[];
+}
+
+function declarations(request: WireRequest): WireTool[] {
+  return [
+    ...(request.tools ?? []),
+    ...request.input
+      .filter((item) => item.type === "additional_tools")
+      .flatMap((item) => item.tools ?? []),
+  ];
+}
 
 // Only the external service is replaced: Pi serializes and sends the actual Responses request.
 test("Responses additional_tools keep IDE arguments optional through the real request hook", async () => {
@@ -14,8 +33,7 @@ test("Responses additional_tools keep IDE arguments optional through the real re
     const agentDir = path.join(cwd, "agent");
     await mkdir(agentDir);
     await writeFile(path.join(cwd, "unwanted.txt"), "remove\n");
-    const requests: { input: { type?: string; tools?: { name: string; strict?: boolean }[] }[] }[] =
-      [];
+    const requests: WireRequest[] = [];
     const server = createServer((request, response) => {
       void (async () => {
         const chunks: string[] = [];
@@ -25,17 +43,36 @@ test("Responses additional_tools keep IDE arguments optional through the real re
           chunks.push(chunk);
         }
         requests.push(JSON.parse(chunks.join("")) as (typeof requests)[number]);
-        const item = {
-          type: "function_call",
-          id: "fc_delete",
-          call_id: "delete-file",
-          name: "delete",
-          arguments: JSON.stringify({ path: "unwanted.txt" }),
-        };
-        const events: Record<string, unknown>[] =
+        const call =
           requests.length === 1
-            ? [{ type: "response.output_item.done", output_index: 0, item }]
-            : [];
+            ? {
+                id: "fc_search",
+                call_id: "discover-stage",
+                name: "tool_search",
+                arguments: { query: "stage", limit: 1 },
+              }
+            : requests.length === 2
+              ? {
+                  id: "fc_delete",
+                  call_id: "delete-file",
+                  name: "delete",
+                  arguments: { path: "unwanted.txt" },
+                }
+              : undefined;
+        const events: Record<string, unknown>[] =
+          call === undefined
+            ? []
+            : [
+                {
+                  type: "response.output_item.done",
+                  output_index: 0,
+                  item: {
+                    ...call,
+                    type: "function_call",
+                    arguments: JSON.stringify(call.arguments),
+                  },
+                },
+              ];
         events.push({
           type: "response.completed",
           response: { id: `response-${requests.length}`, status: "completed", output: [] },
@@ -92,13 +129,15 @@ test("Responses additional_tools keep IDE arguments optional through the real re
         "copy",
         "move",
         "undo",
-        "stage",
         "unstage",
         "debug",
       ];
       await writeFile(
         path.join(agentDir, "settings.json"),
-        JSON.stringify({ defaultTools: names, retry: { enabled: false, maxRetries: 0 } }),
+        JSON.stringify({
+          defaultTools: [...names, "tool_search"],
+          retry: { enabled: false, maxRetries: 0 },
+        }),
       );
       const runtime = await piRuntime();
       const result = await runProcess(
@@ -118,6 +157,8 @@ test("Responses additional_tools keep IDE arguments optional through the real re
           "--no-mcp",
           "-e",
           path.resolve("src/pi-agent-ide.ts"),
+          "-e",
+          "builtin:tool-search",
           "--model",
           "responses-fixture/fixture",
           "--thinking",
@@ -125,7 +166,7 @@ test("Responses additional_tools keep IDE arguments optional through the real re
           "--pi-agent-ide-no-post-processing",
           "true",
           "--",
-          "Delete unwanted.txt.",
+          "Discover Stage, then delete unwanted.txt.",
         ],
         {
           cwd,
@@ -148,21 +189,33 @@ test("Responses additional_tools keep IDE arguments optional through the real re
       ]);
       expect(result.timedOut).toBe(false);
       expect(result.code, result.stderr || result.stdout).toBe(0);
-      expect(requests).toHaveLength(2);
-      for (const request of requests) {
-        const declarations = request.input
-          .filter((item) => item.type === "additional_tools")
-          .flatMap((item) => item.tools ?? []);
-        for (const name of names)
+      expect(requests).toHaveLength(3);
+      const first = requiredValue(requests[0]);
+      const second = requiredValue(requests[1]);
+      expect(declarations(first).find((tool) => tool.name === "stage")).toBeUndefined();
+      const discovered = second.input
+        .filter((item) => item.type === "additional_tools")
+        .flatMap((item) => item.tools ?? []);
+      expect(discovered.find((tool) => tool.name === "stage")).toMatchObject({ strict: false });
+      for (const [index, request] of requests.entries()) {
+        const effective = declarations(request);
+        for (const name of [...names, ...(index > 0 ? ["stage"] : [])])
           expect(
-            declarations.find((tool) => tool.name === name),
+            effective.findLast((tool) => tool.name === name),
             name,
-          ).toMatchObject({ strict: false });
+          ).toMatchObject({
+            strict: false,
+          });
       }
       const events = result.stdout
         .split("\n")
         .filter((line) => line.startsWith("{"))
         .map((line) => JSON.parse(line) as { type?: string; toolName?: string; isError?: boolean });
+      expect(
+        events.find(
+          (event) => event.type === "tool_execution_end" && event.toolName === "tool_search",
+        ),
+      ).toMatchObject({ isError: false });
       expect(
         events.find((event) => event.type === "tool_execution_end" && event.toolName === "delete"),
       ).toMatchObject({ isError: false });
