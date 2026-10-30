@@ -46,6 +46,7 @@ async function run(
   before: boolean,
   conversation: ReturnType<typeof assistantMessage>[],
   disabled: readonly string[] = [],
+  excludedTools: readonly string[] = [],
 ) {
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "case-"));
@@ -60,7 +61,7 @@ async function run(
     await writeFile(
       path.join(agentDir, "settings.json"),
       JSON.stringify({
-        defaultTools: ["+codemode", "+tool_search"],
+        defaultTools: ["+codemode", "+tool_search", ...excludedTools.map((name) => `-${name}`)],
         codemode: { mode, inlineBudget: 0 },
       }),
     );
@@ -126,6 +127,91 @@ test.each([true, false])(
     expect(activated?.description).toContain(alpha);
   },
 );
+
+test("a capability registered inside its first execution activates before the next request", async () => {
+  const result = await run("capabilities-late", "only", false, [
+    call("first", "codemode", { code: "text(await tools.capability_late({}));" }),
+    call("after", "capability_snapshot"),
+  ]);
+  expect(getToolExecution(result, "first").isError).toBe(false);
+  expect(read(result, "after").parameters.properties.path.description).toContain(
+    "fixture-capability-late",
+  );
+});
+
+test("resource-only loaders respect exclusions with a foreign namespace", async () => {
+  const result = await run(
+    "capabilities-excluded-loader",
+    "on",
+    false,
+    [
+      call("discover", "tool_search", { query: "ide_capability_alpha", limit: 1 }),
+      call("after", "capability_snapshot"),
+    ],
+    [],
+    ["ide_capability_alpha"],
+  );
+  expect(read(result, "after").parameters.properties.path.description).not.toContain(alpha);
+});
+
+test("startup loader collisions are rejected without replacing or activating the foreign tool", async () => {
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "collision-"));
+  const agentDir = path.join(cwd, "agent");
+  const previousCwd = process.cwd();
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  let session: AgentSession | undefined;
+  try {
+    await mkdir(agentDir);
+    process.chdir(cwd);
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    const settingsManager = SettingsManager.create(cwd, agentDir);
+    const loader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager,
+      noExtensions: true,
+      noSkills: true,
+      noContextFiles: true,
+      additionalExtensionPaths: [
+        path.resolve(previousCwd, "tests/integration/fixtures/capability-loader-collision.ts"),
+        fixture,
+        entry,
+      ],
+    });
+    await loader.reload();
+    session = (
+      await createAgentSession({
+        cwd,
+        agentDir,
+        settingsManager,
+        resourceLoader: loader,
+        sessionManager: SessionManager.create(cwd, cwd),
+      })
+    ).session;
+    const errors: string[] = [];
+    await session.bindExtensions({
+      onError: (error) => {
+        errors.push(error.error);
+      },
+    });
+    expect(errors).toHaveLength(1);
+    const foreign = requiredValue(
+      session.agent.state.tools.find((tool) => tool.name === "ide_capability_alpha"),
+    );
+    const output = await foreign.execute("collision", {}, undefined);
+    expect(output.content).toMatchObject([{ type: "text", text: "fixture-foreign-result" }]);
+    expect(
+      JSON.stringify(session.getAllTools().find((tool) => tool.name === "read")),
+    ).not.toContain(alpha);
+  } finally {
+    session?.dispose();
+    process.chdir(previousCwd);
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
 
 test("disabled debugger modules cannot activate contributed schemas", async () => {
   const result = await run(

@@ -12,6 +12,17 @@ export default function register(pi: ExtensionAPI): void {
     parameters: Type.Object({}),
     async execute() { return { content: [{ type: "text", text: beta }], details: undefined }; },
   });
+  let lateRegistered = false;
+  pi.registerTool({
+    name: "capability_late", label: "Late capability", description: "Fixture late registration", exposure: "deferred", parameters: Type.Object({}),
+    async execute() {
+      if (!lateRegistered) {
+        registerIdeCapability(pi, { version: 1, id: "fixture.late", tools: ["capability_late"], schemas: { read: { parameters: { path: "fixture-capability-late" } } } });
+        lateRegistered = true;
+      }
+      return { content: [{ type: "text", text: "fixture-capability-late" }], details: undefined };
+    },
+  });
   registerIdeCapability(pi, {
     version: 1, id: "fixture.alpha", tools: [],
     discovery: { name: "ide_capability_alpha", description: "Fixture alpha resources", namespace: { name: "fixture_capabilities", description: "Capability fixtures" } },
