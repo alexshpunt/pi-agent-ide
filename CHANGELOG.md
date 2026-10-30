@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.1 — 2026-10-30
+
+### On-demand tool guidance
+
+- Terminal and debugger instructions now load on demand, reducing always-on tool metadata.
+- Extension authors can register additive tool descriptions, parameter help and guidelines through `pi-agent-ide/api/capabilities`, with optional discovery loaders. Tool execution and permissions stay unchanged.
+- Capability discovery results render without internal protocol markup in the terminal UI.
+
+### Consistent text selections
+
+- Insert now adds text at an exact selection's start or end instead of expanding it to whole lines. Whole-line selections still add needed line breaks.
+- Copy and Move preserve selected text and line endings, independent of the destination. A whole-line source includes its own LF or CRLF even when the destination is a character selection.
+- Deleting an unterminated final line no longer consumes the preceding line separator. Empty Replace removes the same range as Delete.
+
+### Model compatibility
+
+- OpenAI Responses keeps optional IDE arguments optional, including tools discovered during a conversation.
+
 ## 0.9.0 — 2026-10-26
 
 ### Search split into focused tools
