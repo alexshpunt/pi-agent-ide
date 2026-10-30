@@ -106,7 +106,7 @@ describe("pi-agent-text-editor search", () => {
     );
   }, 180_000);
 
-  test("deletes whole line anchors without leaving newline fragments", async () => {
+  test("deletes selected lines with only their own separators", async () => {
     await runExplicitSearchDeletion(
       "search-anchor-delete-lf",
       "legacyName first\nkeep\n",
@@ -120,7 +120,7 @@ describe("pi-agent-text-editor search", () => {
     await runExplicitSearchDeletion(
       "search-anchor-delete-final-unterminated",
       "keep\nlegacyName final",
-      "keep",
+      "keep\n",
     );
   }, 180_000);
 

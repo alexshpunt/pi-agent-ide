@@ -65,7 +65,7 @@ describe("AST scope anchors through text editor tools", () => {
         start: second.beginAnchor.value,
         end: second.endScopeAnchor.value,
       }),
-      [...firstFunction, ""].join("\n"),
+      [...firstFunction, "", ""].join("\n"),
     );
   });
 

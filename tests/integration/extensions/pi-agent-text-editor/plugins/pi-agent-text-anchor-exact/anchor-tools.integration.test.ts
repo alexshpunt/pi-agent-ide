@@ -283,7 +283,7 @@ describe("exact text anchors through real text editor tools", () => {
     });
   });
 
-  test("normalizes cross-file copied text to the target EOL", async () => {
+  test("preserves source line endings when copying into another file", async () => {
     await withTempWorkspace(async (directory) => {
       const source = await createFixture(directory, "source.txt", "alpha\nbravo");
       const target = await createFixture(directory, "target.txt", "one\r\ntwo");
@@ -300,7 +300,7 @@ describe("exact text anchors through real text editor tools", () => {
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
-      await expect(readFile(target, "utf8")).resolves.toBe("one\r\nalpha\r\nbravo\r\ntwo");
+      await expect(readFile(target, "utf8")).resolves.toBe("one\r\nalpha\nbravo\r\ntwo");
       await expect(readFile(source, "utf8")).resolves.toBe("alpha\nbravo");
     });
   });

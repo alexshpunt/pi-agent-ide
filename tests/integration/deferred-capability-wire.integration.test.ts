@@ -19,7 +19,18 @@ interface WireItem {
   tools?: WireTool[];
 }
 interface WireRequest {
+  tools?: WireTool[];
   input: WireItem[];
+}
+
+function additionalTools(input: readonly WireItem[]): WireTool[] {
+  return input
+    .filter((item) => item.type === "additional_tools")
+    .flatMap((item) => item.tools ?? []);
+}
+
+function declarations(request: WireRequest): WireTool[] {
+  return [...(request.tools ?? []), ...additionalTools(request.input)];
 }
 interface ExecutionEvent {
   type?: string;
@@ -29,7 +40,7 @@ interface ExecutionEvent {
 }
 
 // Only the external service is replaced; the actual Pi/Responses serializer sends these requests.
-test("Responses append capability parameter redefinitions without changing the earlier request prefix", async () => {
+test("Responses update capability parameters without changing the earlier input prefix", async () => {
   await withTempWorkspace(async (cwd) => {
     const marker = "fixture-capability-alpha";
     const fileContent = "wire-capability-resource-content";
@@ -175,21 +186,30 @@ test("Responses append capability parameter redefinitions without changing the e
       const first = requiredValue(requests[0]);
       const second = requiredValue(requests[1]);
       const initialRead = requiredValue(
-        first.input
-          .filter((item) => item.type === "additional_tools")
-          .flatMap((item) => item.tools ?? [])
-          .find((tool) => tool.name === "read"),
+        declarations(first).findLast((tool) => tool.name === "read"),
       );
       expect(initialRead.description).not.toContain(marker);
       expect(initialRead.parameters?.properties?.path?.description).not.toContain(marker);
       expect(second.input.slice(0, first.input.length)).toEqual(first.input);
-      const newDeclarations = second.input
-        .slice(first.input.length)
-        .filter((item) => item.type === "additional_tools")
-        .flatMap((item) => item.tools ?? []);
-      const revisedRead = requiredValue(newDeclarations.find((tool) => tool.name === "read"));
+      const revisedRead = requiredValue(
+        declarations(second).findLast((tool) => tool.name === "read"),
+      );
       expect(revisedRead.description).toContain(marker);
       expect(revisedRead.parameters?.properties?.path?.description).toContain(marker);
+      if (additionalTools(first.input).some((tool) => tool.name === "read")) {
+        const appendedRead = additionalTools(second.input.slice(first.input.length)).findLast(
+          (tool) => tool.name === "read",
+        );
+        expect(requiredValue(appendedRead)).toEqual(revisedRead);
+      } else {
+        // Addition-only transports send same-name redefinitions as the current tool list.
+        expect(requiredValue(first.tools?.findLast((tool) => tool.name === "read"))).toEqual(
+          initialRead,
+        );
+        expect(requiredValue(second.tools?.findLast((tool) => tool.name === "read"))).toEqual(
+          revisedRead,
+        );
+      }
       const third = requiredValue(requests[2]);
       expect(third.input.slice(0, second.input.length)).toEqual(second.input);
       const events = result.stdout
