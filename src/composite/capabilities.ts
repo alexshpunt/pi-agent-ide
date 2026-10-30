@@ -68,6 +68,7 @@ export function createIdeCapabilities(pi: ExtensionAPI) {
     string,
     (contributions: readonly IdeCapabilitySchema[]) => () => void
   >();
+  const installedLoaders = new Set<string>();
   let active = new Set<string>();
   let runtimeReady = false;
   const visibleTools = () =>
@@ -138,6 +139,28 @@ export function createIdeCapabilities(pi: ExtensionAPI) {
       refresh();
     }
   };
+  const installLoader = (capability: IdeCapability) => {
+    const discovery = capability.discovery;
+    if (discovery === undefined || installedLoaders.has(discovery.name)) return;
+    if (pi.getAllTools().some((tool) => tool.name === discovery.name))
+      throw new Error(`Capability loader name is already registered: ${discovery.name}`);
+    pi.registerTool({
+      name: discovery.name,
+      label: discovery.name,
+      description: discovery.description,
+      exposure: "deferred",
+      namespace: discovery.namespace,
+      parameters: Type.Object({}),
+      async execute() {
+        activate([discovery.name]);
+        return {
+          content: [{ type: "text", text: `Enabled capability ${capability.id}.` }],
+          details: { capability: capability.id },
+        };
+      },
+    });
+    installedLoaders.add(discovery.name);
+  };
   const restore = (context: ExtensionContext) => {
     active = new Set();
     for (const entry of context.sessionManager.getBranch()) {
@@ -171,25 +194,8 @@ export function createIdeCapabilities(pi: ExtensionAPI) {
       for (const [name, schema] of Object.entries(capability.schemas))
         publishers.get(name)?.([schema]);
       const snapshot = structuredClone(capability);
+      if (runtimeReady) installLoader(snapshot);
       capabilities.set(snapshot.id, snapshot);
-      if (snapshot.discovery) {
-        const discovery = snapshot.discovery;
-        pi.registerTool({
-          name: discovery.name,
-          label: discovery.name,
-          description: discovery.description,
-          exposure: "deferred",
-          namespace: discovery.namespace,
-          parameters: Type.Object({}),
-          async execute() {
-            activate([discovery.name]);
-            return {
-              content: [{ type: "text", text: `Enabled capability ${snapshot.id}.` }],
-              details: { capability: snapshot.id },
-            };
-          },
-        });
-      }
       refresh();
       request.accept();
     } catch (error) {
@@ -199,6 +205,8 @@ export function createIdeCapabilities(pi: ExtensionAPI) {
   pi.on("session_shutdown", unsubscribe);
   pi.on("tool_call", (event) => activate([event.toolName]));
   pi.on("tool_result", (event) => {
+    // A tool can register its capability inside execute(), after its first tool_call hook.
+    activate([event.toolName]);
     if (
       event.toolName !== "tool_search" ||
       event.isError ||
@@ -211,10 +219,21 @@ export function createIdeCapabilities(pi: ExtensionAPI) {
   pi.events.emit(IDE_CAPABILITIES_READY, { version: IDE_CAPABILITIES_VERSION });
   return {
     api: { ...pi, registerTool },
-    finalize() {
+    finalize(afterLoaders: () => void) {
       pi.on("session_start", (_event, context) => {
         runtimeReady = true;
+        const failures: string[] = [];
+        for (const capability of capabilities.values()) {
+          try {
+            installLoader(capability);
+          } catch (error) {
+            capabilities.delete(capability.id);
+            failures.push(error instanceof Error ? error.message : String(error));
+          }
+        }
+        afterLoaders();
         restore(context);
+        if (failures.length > 0) throw new Error(failures.join("\n"));
       });
       pi.on("session_tree", (_event, context) => restore(context));
       pi.on("session_compact", (_event, context) => restore(context));

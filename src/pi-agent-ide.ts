@@ -201,7 +201,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   for (const extension of enabled) {
     await extension.register(capabilities.api, { preferences: config.preferences ?? {} });
   }
-  capabilities.finalize();
+  capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();
   textResults.finalize();
 }
