@@ -83,7 +83,7 @@ Views change how the same resource is presented. The agent can request source st
 
 `search` provides one interface for exact text, regular expressions, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
 
-For optional code search by meaning, run `/semantic-index` in the project. This installs ColGREP if needed and downloads its model; the first index can take several minutes and substantial memory and disk space. Each project has its own local index, which ColGREP updates when searched. Once the index is usable, the agent can use `semantic_search`; it returns ranked paths, line ranges and names rather than source code or editable selections. Ordinary search does not depend on the index.
+For optional code search by meaning, run `/semantic-index` in the project. This installs ColGREP if needed and downloads its model; the first index can take several minutes and substantial memory and disk space. Each project has its own local index, which ColGREP updates when searched. Once the index is usable, the agent can use `semantic_search` to find ranked files and see how many distinct candidates were retrieved for each. These counts are not occurrence counts. Set `path` to a local project directory to narrow the search, or to a file to see bounded, approximate match ranges. The `include` and `exclude` glob lists filter files before ranking. Read the source before editing: ranges are hints, not editable selections. Ordinary search does not depend on the index.
 
 <div align="center">
 
