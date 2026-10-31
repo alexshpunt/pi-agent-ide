@@ -9,11 +9,13 @@ import {
   mkdir,
   mkdtemp,
   rm,
+  realpath,
   stat,
   writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { splitGlobList } from "pi-agent-search/api/search";
 
 const VERSION = "1.8.5";
 const RELEASE = `https://github.com/lightonai/next-plaid/releases/download/v${VERSION}`;
@@ -226,7 +228,12 @@ export async function indexProject(
 export async function searchProject(
   cwd: string,
   query: string,
-  options: BackendOptions & { readonly limit?: number } = {},
+  options: BackendOptions & {
+    readonly limit?: number;
+    readonly path?: string;
+    readonly include?: string;
+    readonly exclude?: string;
+  } = {},
 ): Promise<string> {
   const project = localProject(cwd);
   if (!query.trim()) throw new Error("A semantic search query is required");
@@ -235,15 +242,46 @@ export async function searchProject(
     throw new Error("No usable semantic index for this project");
   const limit = options.limit ?? 15;
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid result limit");
-  const output = await run(
-    status.executable,
-    ["search", "--json", "--yes", "--color", "never", "-k", String(limit), "--", query],
-    project,
-    options,
-  );
+  let scope: string | undefined;
+  let singleFile = false;
+  if (options.path !== undefined) {
+    if (!options.path.trim() || /^[a-z][a-z\d+.-]*:\/\//iu.test(options.path))
+      throw new Error("Invalid semantic search scope");
+    const target = resolve(project, options.path);
+    const root = await realpath(project);
+    let actual: string;
+    try {
+      actual = await realpath(target);
+    } catch {
+      throw new Error("Invalid semantic search scope: path does not exist");
+    }
+    const inside = (base: string, path: string) => {
+      const normalizedBase = process.platform === "win32" ? base.toLowerCase() : base;
+      const normalizedPath = process.platform === "win32" ? path.toLowerCase() : path;
+      return (
+        normalizedPath === normalizedBase ||
+        normalizedPath.startsWith(
+          normalizedBase.endsWith(sep) ? normalizedBase : normalizedBase + sep,
+        )
+      );
+    };
+    if (!inside(project, target) || !inside(root, actual))
+      throw new Error("Invalid semantic search scope: outside project");
+    const info = await stat(actual);
+    if (!info.isFile() && !info.isDirectory())
+      throw new Error("Invalid semantic search scope: not a file or directory");
+    singleFile = info.isFile();
+    scope = relative(project, target) || ".";
+  }
+  const args = ["search", "--json", "--yes", "--color", "never", "-k", String(limit)];
+  for (const pattern of splitGlobList(options.include)) args.push("--include", pattern);
+  for (const pattern of splitGlobList(options.exclude)) args.push("--exclude", pattern);
+  args.push("--", query);
+  if (scope !== undefined) args.push(scope);
+  const output = await run(status.executable, args, project, options);
   const parsed: unknown = JSON.parse(output);
   if (!Array.isArray(parsed)) throw new Error("Invalid ColGREP search output");
-  const lines: string[] = [];
+  const files = new Map<string, Set<string>>();
   for (const group of parsed as unknown[]) {
     if (!group || typeof group !== "object" || !("unit" in group))
       throw new Error("Invalid ColGREP search output");
@@ -275,9 +313,23 @@ export async function searchProject(
         typeof match.name !== "string"
       )
         throw new Error("Invalid ColGREP search output");
-      const name = match.name ? `  ${match.name}` : "";
-      lines.push(`${file}:${match.line}-${match.end_line}${name}`);
+      const ranges = files.get(file) ?? new Set<string>();
+      ranges.add(`${match.line}-${match.end_line}`);
+      files.set(file, ranges);
     }
   }
-  return lines.length ? lines.join("\n") : "No semantic search results.";
+  if (!files.size) return "No semantic search results.";
+  if (singleFile) {
+    const lines: string[] = [];
+    for (const [file, ranges] of files) {
+      const selected = [...ranges];
+      lines.push(...selected.slice(0, 15).map((range) => `${file}:${range}`));
+      if (selected.length > 15)
+        lines.push(`${selected.length - 15} additional retrieved ranges omitted`);
+    }
+    return `Approximate ranges (read before editing):\n${lines.join("\n")}`;
+  }
+  return [...files]
+    .map(([file, ranges]) => `${file}  (${ranges.size} retrieved candidates)`)
+    .join("\n");
 }
