@@ -81,7 +81,7 @@ test("the full IDE uses an existing index without rebuilding it", async () => {
     const executable = path.join(bin, "colgrep");
     await writeFile(
       executable,
-      `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === '--version') console.log('colgrep 1.8.5');\nelse if (args[0] === 'status') console.log('Index: ' + process.cwd());\nelse if (args[0] === 'search') console.log(JSON.stringify([{unit:{file:'example.ts',start_line:1,end_line:2}}]));\nelse process.exit(1);\n`,
+      `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === '--version') console.log('colgrep 1.8.5');\nelse if (args[0] === 'status') console.log('Index: ' + process.cwd());\nelse if (args[0] === 'search') console.log(JSON.stringify([{unit:{file:'example.ts',line:1,end_line:99,name:'broad',code:'SOURCE_PAYLOAD'},matches:[{line:4,end_line:5,name:'first'},{line:7,end_line:8,name:'second'},{line:10,end_line:11,name:'third'},{line:13,end_line:14,name:'fourth'}]}]));\nelse process.exit(1);\n`,
     );
     await chmod(executable, 0o755);
     const result = await new PiIntegrationTest({
@@ -100,7 +100,11 @@ test("the full IDE uses an existing index without rebuilding it", async () => {
       ],
     }).run("Find project code");
     expect(getToolExecution(result, "semantic").isError).toBe(false);
-    expect(getToolResultText(result, "semantic")).toContain("example.ts");
+    const output = getToolResultText(result, "semantic");
+    expect(output).toContain("example.ts:4-5  first");
+    expect(output).toContain("example.ts:13-14  fourth");
+    expect(output).not.toContain("SOURCE_PAYLOAD");
+    expect(output).not.toContain("example.ts:1-99");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
