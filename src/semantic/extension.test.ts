@@ -1,5 +1,9 @@
 import { expect, test, vi } from "vitest";
-import { createSemanticExtension, type SemanticBackend } from "./extension.js";
+import {
+  createConfiguredSemanticExtension,
+  createSemanticExtension,
+  type SemanticBackend,
+} from "./extension.js";
 
 type Context = ReturnType<typeof context>;
 type Tool = {
@@ -39,6 +43,58 @@ function host() {
 
 const context = (cwd: string) => ({ cwd, mode: "tui", hasUI: true, ui: { notify: vi.fn() } });
 
+test("an invalid engine setting does not prevent the IDE from loading or use another backend", async () => {
+  const h = host();
+  const backend: SemanticBackend = {
+    available: vi.fn(async () => true),
+    index: vi.fn(async () => {}),
+    search: vi.fn(async () => "result"),
+  };
+  await createConfiguredSemanticExtension({ colgrep: backend, vera: backend }, "invalid")(h.pi);
+  const project = context("/project");
+  await h.handlers.get("session_start")?.({}, project);
+  expect(h.tools.get("semantic_search")?.exposure).toBe("hidden");
+  await h.commands.get("semantic-index")?.handler("", project);
+  expect(project.ui.notify.mock.calls.some((call) => call[1] === "error")).toBe(true);
+  expect(backend.available).not.toHaveBeenCalled();
+  expect(backend.index).not.toHaveBeenCalled();
+});
+test("the selected engine owns availability, indexing and search", async () => {
+  const h = host();
+  let veraIndexed = false;
+  const colgrep: SemanticBackend = {
+    available: vi.fn(async () => true),
+    index: vi.fn(async () => {}),
+    search: vi.fn(async () => "wrong"),
+  };
+  const vera: SemanticBackend = {
+    available: vi.fn(async () => veraIndexed),
+    index: vi.fn(async () => {
+      veraIndexed = true;
+    }),
+    search: vi.fn(async () => "selected result"),
+  };
+  await createConfiguredSemanticExtension({ colgrep, vera }, "vera")(h.pi);
+  await h.handlers.get("session_start")?.({}, context("/project"));
+  expect(h.tools.get("semantic_search")?.exposure).toBe("hidden");
+  await h.commands.get("semantic-index")?.handler("", context("/project"));
+  const tool = h.tools.get("semantic_search");
+  expect(tool?.exposure).toBe("direct");
+  if (!tool) throw new Error("Tool not registered");
+  const result = await tool.execute(
+    "id",
+    { query: "example" },
+    undefined,
+    undefined,
+    context("/project"),
+  );
+  expect(result.content[0]?.text).toBe("selected result");
+  expect(vera.index).toHaveBeenCalledOnce();
+  expect(vera.search).toHaveBeenCalledOnce();
+  expect(colgrep.available).not.toHaveBeenCalled();
+  expect(colgrep.index).not.toHaveBeenCalled();
+  expect(colgrep.search).not.toHaveBeenCalled();
+});
 test("only exposes semantic search while the current project has a usable index", async () => {
   const h = host();
   const indexed = new Set(["/indexed"]);
@@ -69,6 +125,24 @@ test("only exposes semantic search while the current project has a usable index"
   expect(h.active()).not.toContain("semantic_search");
 });
 
+test("index progress from the selected backend reaches the user", async () => {
+  const h = host();
+  let indexed = false;
+  const backend: SemanticBackend = {
+    available: async () => indexed,
+    index: async (_cwd, _signal, progress) => {
+      progress?.("fixture engine progress");
+      indexed = true;
+    },
+    search: vi.fn(async () => "result"),
+  };
+  await createSemanticExtension(backend)(h.pi);
+  const project = context("/project");
+  await h.commands.get("semantic-index")?.handler("", project);
+  expect(project.ui.notify.mock.calls.some((call) => call[0] === "fixture engine progress")).toBe(
+    true,
+  );
+});
 test("a failed index does not enable semantic search", async () => {
   const h = host();
   const backend: SemanticBackend = {

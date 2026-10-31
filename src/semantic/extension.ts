@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { connectTipProvider, TIP_API_VERSION, TIP_PROTOCOL } from "#src/api/tips.js";
+import { semanticEngine, type SemanticEngine } from "./engine.js";
 
 /** Backend operations are project scoped; searches update the existing index. */
 export interface SemanticBackend {
@@ -14,7 +15,30 @@ export interface SemanticBackend {
   ): Promise<string>;
 }
 
-export function createSemanticExtension(backend: SemanticBackend) {
+export function createConfiguredSemanticExtension(
+  backends: Record<SemanticEngine, SemanticBackend>,
+  preference?: string,
+) {
+  try {
+    const selected = semanticEngine(preference);
+    return createSemanticExtension(backends[selected], selected === "vera" ? "Vera" : "ColGREP");
+  } catch (error) {
+    const invalid: SemanticBackend = {
+      available: async () => false,
+      index: async () => {
+        throw error;
+      },
+      search: async () => {
+        throw error;
+      },
+    };
+    return createSemanticExtension(invalid, "configured");
+  }
+}
+export function createSemanticExtension(
+  backend: SemanticBackend,
+  engine: "ColGREP" | "Vera" | "configured" = "ColGREP",
+) {
   return async function registerSemanticSearch(pi: ExtensionAPI): Promise<void> {
     let exposure: "direct" | "hidden" | undefined;
     const publish = (next: "direct" | "hidden") => {
@@ -25,8 +49,7 @@ export function createSemanticExtension(backend: SemanticBackend) {
         label: "semantic_search",
         exposure: next,
         namespace: { name: "ide_semantic_search", description: "Find project code by meaning." },
-        description:
-          "Find code in the indexed local project by meaning. Results group ranked files with counts of retrieved distinct candidate ranges, not occurrence counts. Search again with path set to one file for approximate ranked ranges. Ranges are hints, not editable selections; read before editing. Scope and include/exclude globs filter before ranking.",
+        description: `Use semantic_search to find indexed local project code by meaning. Results group ranked files with counts of retrieved distinct candidate ranges, not occurrence counts. Search again with path set to one file for approximate ranked ranges. Ranges are hints, not editable selections; read before editing.${engine === "Vera" ? " Scoped or filtered searches may omit relevant results because Vera can filter a limited candidate pool." : ""}`,
         promptSnippet: "Find indexed project code by meaning",
         parameters: Type.Object(
           {
@@ -95,26 +118,22 @@ export function createSemanticExtension(backend: SemanticBackend) {
       },
     });
     pi.registerCommand("semantic-index", {
-      description: "Install ColGREP if needed and index this project for semantic code search",
+      description: `Prepare ${engine} and index this project for semantic code search`,
       async handler(args, context) {
         if (args.trim()) {
           context.ui.notify("Usage: /semantic-index", "warning");
           return;
         }
         context.ui.notify(
-          "Preparing the semantic search index. This can take several minutes.",
+          `Preparing the ${engine} semantic search index. This can take several minutes.`,
           "info",
         );
         try {
           await backend.index(context.cwd, context.signal, (message) => {
-            if (
-              message.startsWith("Downloading ColGREP") ||
-              message.startsWith("Indexing project with ColGREP")
-            )
-              context.ui.notify(message.trim(), "info");
+            context.ui.notify(message.trim(), "info");
           });
           if (!(await refresh(context.cwd))) throw new Error("The completed index is not usable.");
-          context.ui.notify("Semantic search index is ready.", "info");
+          context.ui.notify(`${engine} semantic search index is ready.`, "info");
         } catch (error) {
           await refresh(context.cwd);
           context.ui.notify(

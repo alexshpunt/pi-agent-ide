@@ -2119,6 +2119,73 @@ add(
   },
 );
 
+add(
+  "semantic-code-search-vera",
+  ["search.semantic-vera", "search.semantic-vera-scope-filters", "compose.semantic-vera-read"],
+  "Use semantic_search to locate the function responsible for expiring a user session. First search the project. Then search the directory 'src with spaces' for TypeScript files while excluding test files using include '*.ts' and exclude '*.test.ts'. Search the relevant file again by setting path to that file, then read it and report the function name.",
+  [
+    {
+      tool: "semantic_search",
+      args: { query: /session/i },
+      contains: "src with spaces/session.ts",
+    },
+    {
+      tool: "semantic_search",
+      args: { query: /session/i, path: "src with spaces", include: "*.ts", exclude: "*.test.ts" },
+      contains: "src with spaces/session.ts",
+      excludes: "src with spaces/noise.test.ts",
+    },
+    {
+      tool: "semantic_search",
+      args: { query: /session/i, path: "src with spaces/session.ts" },
+      contains: "src with spaces/session.ts:1-1",
+    },
+    { tool: "read", args: { path: "src with spaces/session.ts" }, contains: "expireSession" },
+  ],
+  {
+    prerequisite:
+      'command -v vera && export VERA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/pi-agent-ide/vera" VERA_NO_UPDATE_CHECK=1 && vera setup --potion-code --yes && vera index . --json',
+    setup: "semantic-vera",
+    files: {
+      ".pi/pi-agent-ide/extensions.json": '{"preferences":{"search.semantic.engine":"vera"}}\n',
+      "src with spaces/session.ts":
+        "export function expireSession(session: { expiresAt: number }) { return Date.now() >= session.expiresAt; }\n",
+      "src with spaces/noise.test.ts":
+        "export function testSession() { return 'session expiry'; }\n",
+    },
+    answer: "expireSession",
+  },
+);
+add(
+  "semantic-vera-refresh",
+  ["search.semantic-vera-refresh"],
+  "Write fresh.ts with exactly `export function nebulaOtterRefreshSentinel() { return 73; }` followed by a newline. Then use semantic_search to find nebulaOtterRefreshSentinel in the newly written file, without running a separate index or update command. Report the returned path.",
+  [
+    {
+      tool: "write",
+      args: {
+        path: "fresh.ts",
+        content: "export function nebulaOtterRefreshSentinel() { return 73; }\n",
+      },
+    },
+    {
+      tool: "semantic_search",
+      args: { query: /nebulaOtterRefreshSentinel/i },
+      contains: "fresh.ts",
+    },
+  ],
+  {
+    prerequisite:
+      'command -v vera && export VERA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/pi-agent-ide/vera" VERA_NO_UPDATE_CHECK=1 && vera setup --potion-code --yes && vera index . --json',
+    setup: "semantic-vera",
+    files: {
+      ".pi/pi-agent-ide/extensions.json": '{"preferences":{"search.semantic.engine":"vera"}}\n',
+      "initial.ts": "export function existing() { return 12; }\n",
+    },
+    expected: { "fresh.ts": "export function nebulaOtterRefreshSentinel() { return 73; }\n" },
+    answer: "fresh.ts",
+  },
+);
 const syntax = { "task.ts": "function first() { return 7; }\nfunction second() { return 9; }\n" };
 add(
   "ast-capture-rename",

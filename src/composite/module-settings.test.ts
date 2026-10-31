@@ -95,6 +95,59 @@ test.each([
   },
 );
 
+test.each(["Project", "Global"] as const)(
+  "semantic engine can be selected in %s settings",
+  async (scope) => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-semantic-menu-"));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    const agentDirectory = path.join(cwd, "agent");
+    vi.stubEnv("PI_CODING_AGENT_DIR", agentDirectory);
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    const file =
+      scope === "Project"
+        ? path.join(cwd, ".pi/pi-agent-ide/extensions.json")
+        : path.join(agentDirectory, "pi-agent-ide/extensions.json");
+    let handler: ((args: string, ctx: ExtensionCommandContext) => Promise<void>) | undefined;
+    registerModuleSettings(
+      {
+        registerCommand: (_name, command) => {
+          handler = command.handler;
+        },
+      },
+      [],
+      AGENT_IDE_PREFERENCES,
+    );
+    const custom: ExtensionCommandContext["ui"]["custom"] = async (factory) =>
+      new Promise((resolve, reject) => {
+        const invoke = async () => {
+          const panel = await factory(
+            { requestRender() {} } as Parameters<typeof factory>[0],
+            {} as Parameters<typeof factory>[1],
+            {} as Parameters<typeof factory>[2],
+            resolve,
+          );
+          panel.handleInput?.("\t");
+          panel.handleInput?.("\x1b[B");
+          panel.handleInput?.("\r");
+          panel.handleInput?.("\r");
+          panel.handleInput?.("\x13");
+        };
+        void invoke().catch(reject);
+      });
+    const ui: Partial<ExtensionCommandContext["ui"]> = {
+      select: vi.fn().mockResolvedValue(scope),
+      confirm: vi.fn().mockResolvedValue(false),
+      notify: vi.fn(),
+      custom,
+    };
+    await handler?.("", { cwd, hasUI: true, ui } as ExtensionCommandContext);
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+      preferences: { "search.semantic.engine": "vera" },
+    });
+  },
+);
 function customDialog(save: boolean): ExtensionCommandContext["ui"]["custom"] {
   return async (factory) => {
     return new Promise((resolve, reject) => {

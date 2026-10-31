@@ -334,7 +334,9 @@ async function attempt(
         "undo",
         "codemode",
         "tool_search",
-        ...(task.id === "semantic-code-search" ? ["semantic_search"] : []),
+        ...(task.id === "semantic-code-search" || task.setup === "semantic-vera"
+          ? ["semantic_search"]
+          : []),
       ],
       retry: { enabled: false, maxRetries: 0 },
     });
@@ -482,7 +484,9 @@ async function attempt(
       );
     await json(path.join(artifacts, "files.json"), {
       initial: encode(prepared.initial),
-      final: encode(await fixtureFiles(prepared.cwd)),
+      final: encode(
+        await fixtureFiles(prepared.cwd, "", task.setup === "semantic-vera" ? "" : undefined),
+      ),
     });
     try {
       const runtimeText = await readFile(path.join(prepared.state, "runtime.json"), "utf8");
@@ -575,8 +579,16 @@ async function attempt(
       mode,
       connector?.definition.aliases ? runtime.aliases : undefined,
     );
-    const outcomes = await validateFiles(prepared.cwd, prepared.initial, task.expected);
-    for (const file of Object.keys(await fixtureFiles(path.dirname(prepared.cwd))))
+    const veraIndex = task.setup === "semantic-vera";
+    const outcomes = await validateFiles(
+      prepared.cwd,
+      prepared.initial,
+      task.expected,
+      veraIndex ? "" : undefined,
+    );
+    for (const file of Object.keys(
+      await fixtureFiles(path.dirname(prepared.cwd), "", veraIndex ? "fixture" : undefined),
+    ))
       if (!file.startsWith("fixture" + path.sep))
         outcomes.push(`Unexpected file outside the fixture: ${file}`);
     if (task.answer && !finalText(events).includes(task.answer))

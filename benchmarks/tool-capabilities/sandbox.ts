@@ -309,7 +309,7 @@ export async function prepareTrial(
       await symlink("sentinel.txt", path.join(cwd, "link"));
       await symlink("missing", path.join(cwd, "broken-link"));
     }
-    const initial = await fixtureFiles(cwd);
+    const initial = await fixtureFiles(cwd, "", task.setup === "semantic-vera" ? "" : undefined);
     return { root, cwd, state, initial };
   } catch (error) {
     await cleanupTrial(parent, root);
@@ -318,12 +318,18 @@ export async function prepareTrial(
 }
 
 /** Read fixture bytes, ignoring only case-owned tool state and Git metadata. */
-export async function fixtureFiles(root: string, prefix = ""): Promise<Record<string, Buffer>> {
+export async function fixtureFiles(
+  root: string,
+  prefix = "",
+  veraIndexPrefix?: string,
+): Promise<Record<string, Buffer>> {
   const entries: Record<string, Buffer> = {};
   for (const entry of await readdir(path.join(root, prefix), { withFileTypes: true })) {
     if ([".git", ".pi", "node_modules"].includes(entry.name)) continue;
+    if (veraIndexPrefix === prefix && entry.name === ".vera") continue;
     const file = path.join(prefix, entry.name);
-    if (entry.isDirectory()) Object.assign(entries, await fixtureFiles(root, file));
+    if (entry.isDirectory())
+      Object.assign(entries, await fixtureFiles(root, file, veraIndexPrefix));
     else
       entries[file] = entry.isSymbolicLink()
         ? Buffer.from(`symlink:${await readlink(path.join(root, file))}`)
@@ -342,8 +348,9 @@ export async function validateFiles(
   cwd: string,
   initial: Record<string, Buffer>,
   expected: Record<string, string | Buffer | null> = {},
+  veraIndexPrefix?: string,
 ): Promise<string[]> {
-  const actual = await fixtureFiles(cwd);
+  const actual = await fixtureFiles(cwd, "", veraIndexPrefix);
   const wanted = { ...initial };
   for (const [file, text] of Object.entries(expected)) {
     if (text === null) delete wanted[file];
