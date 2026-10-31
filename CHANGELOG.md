@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2 — 2026-10-31
+
+### Security
+
+- The bundled `oxfmt` dependency is updated from 0.64.0 to 0.75.0. Installing Pi Agent IDE no longer pulls `tinypool` 2.1.0, so `npm audit` no longer reports its critical advisory.
+
 ## 0.9.1 — 2026-10-30
 
 ### On-demand tool guidance
