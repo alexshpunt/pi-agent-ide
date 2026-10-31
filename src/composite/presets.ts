@@ -29,6 +29,7 @@ const TEXT_EDITOR_EXTENSION_IDS = new Set([
   "read.filesystem.text",
   "search.core",
   "search.text",
+  "search.semantic",
   "editor.core",
   "editor.renderer",
   "editor.anchor.constant",

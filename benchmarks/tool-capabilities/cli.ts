@@ -334,6 +334,7 @@ async function attempt(
         "undo",
         "codemode",
         "tool_search",
+        ...(task.id === "semantic-code-search" ? ["semantic_search"] : []),
       ],
       retry: { enabled: false, maxRetries: 0 },
     });

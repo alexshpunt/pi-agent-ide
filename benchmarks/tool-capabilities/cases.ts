@@ -2084,6 +2084,24 @@ add(
   },
 );
 
+add(
+  "semantic-code-search",
+  ["search.semantic", "compose.semantic-read"],
+  "Use semantic_search to locate the function responsible for expiring a user session. Read the returned source file and report its function name.",
+  [
+    { tool: "semantic_search", args: { query: /session/i }, contains: "session.ts" },
+    { tool: "read", args: { path: "session.ts" }, contains: "expireSession" },
+  ],
+  {
+    prerequisite: "command -v colgrep && colgrep init --yes --color never",
+    files: {
+      "session.ts":
+        "export function expireSession(session: { expiresAt: number }) { return Date.now() >= session.expiresAt; }\n",
+    },
+    answer: "expireSession",
+  },
+);
+
 const syntax = { "task.ts": "function first() { return 7; }\nfunction second() { return 9; }\n" };
 add(
   "ast-capture-rename",
