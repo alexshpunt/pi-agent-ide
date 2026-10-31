@@ -39,7 +39,7 @@ export const moduleLabels = {
   "search.text": ["Text search", "Find text and files and register reusable search selections."],
   "search.semantic": [
     "Optional semantic search",
-    "Search indexed project code by meaning using ColGREP.",
+    "Search indexed project code by meaning using the selected engine.",
   ],
   "editor.core": [
     "Editing tools",

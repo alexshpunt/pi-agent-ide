@@ -34,6 +34,18 @@ function presentationPreference(id: string, name: string, description: string): 
 export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
   {
     kind: "choice",
+    id: "search.semantic.engine",
+    name: "Semantic search engine",
+    description: "Choose the engine used by /semantic-index and semantic_search. Reload to apply.",
+    default: "colgrep",
+    group: "features",
+    values: [
+      { value: "colgrep", label: "ColGREP" },
+      { value: "vera", label: "Vera" },
+    ],
+  },
+  {
+    kind: "choice",
     id: "ui.codemode",
     name: "Show tool results from Codemode",
     description:
