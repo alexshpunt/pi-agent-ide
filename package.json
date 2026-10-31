@@ -262,7 +262,7 @@
     "esbuild": "0.25.12",
     "eslint-plugin-test-signal": "^1.2.14",
     "husky": "^8.0.3",
-    "oxfmt": "^0.64.0",
+    "oxfmt": "^0.75.0",
     "oxlint": "^1.87.0",
     "oxlint-tsgolint": "^7.0.2003",
     "oxnode": "^0.0.34",

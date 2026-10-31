@@ -83,7 +83,7 @@
     "@types/fs-extra": "^11.0.4",
     "diff": "^9.0.0",
     "fs-extra": "^11.4.0",
-    "oxfmt": "0.64.0",
+    "oxfmt": "0.75.0",
     "partial-json": "^0.1.7",
     "pi-agent-documentation": "workspace:^",
     "pi-agent-invariant": "workspace:^",
