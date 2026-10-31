@@ -13,7 +13,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const VERSION = "1.8.5";
 const RELEASE = `https://github.com/lightonai/next-plaid/releases/download/v${VERSION}`;
@@ -243,5 +243,41 @@ export async function searchProject(
   );
   const parsed: unknown = JSON.parse(output);
   if (!Array.isArray(parsed)) throw new Error("Invalid ColGREP search output");
-  return output;
+  const lines: string[] = [];
+  for (const group of parsed as unknown[]) {
+    if (!group || typeof group !== "object" || !("unit" in group))
+      throw new Error("Invalid ColGREP search output");
+    const { unit } = group;
+    if (!unit || typeof unit !== "object" || !("file" in unit) || typeof unit.file !== "string")
+      throw new Error("Invalid ColGREP search output");
+    const projectPrefix = project.endsWith(sep) ? project : project + sep;
+    const file =
+      isAbsolute(unit.file) && unit.file.startsWith(projectPrefix)
+        ? relative(project, unit.file)
+        : unit.file;
+    const matches = "matches" in group ? group.matches : undefined;
+    if (matches !== undefined && !Array.isArray(matches))
+      throw new Error("Invalid ColGREP search output");
+    const candidates: unknown[] = matches?.length ? matches : [unit];
+    for (const match of candidates) {
+      if (
+        !match ||
+        typeof match !== "object" ||
+        !("line" in match) ||
+        typeof match.line !== "number" ||
+        !("end_line" in match) ||
+        typeof match.end_line !== "number" ||
+        !("name" in match) ||
+        !Number.isInteger(match.line) ||
+        !Number.isInteger(match.end_line) ||
+        match.line < 1 ||
+        match.end_line < match.line ||
+        typeof match.name !== "string"
+      )
+        throw new Error("Invalid ColGREP search output");
+      const name = match.name ? `  ${match.name}` : "";
+      lines.push(`${file}:${match.line}-${match.end_line}${name}`);
+    }
+  }
+  return lines.length ? lines.join("\n") : "No semantic search results.";
 }

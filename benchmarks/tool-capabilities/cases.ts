@@ -2089,7 +2089,11 @@ add(
   ["search.semantic", "compose.semantic-read"],
   "Use semantic_search to locate the function responsible for expiring a user session. Read the returned source file and report its function name.",
   [
-    { tool: "semantic_search", args: { query: /session/i }, contains: "session.ts" },
+    {
+      tool: "semantic_search",
+      args: { query: /session/i },
+      contains: "session.ts:1-1  expireSession",
+    },
     { tool: "read", args: { path: "session.ts" }, contains: "expireSession" },
   ],
   {
