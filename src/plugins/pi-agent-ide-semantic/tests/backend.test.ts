@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "vitest";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   inspectProject,
@@ -66,7 +66,7 @@ test.skipIf(process.platform === "win32")(
 );
 
 test.skipIf(process.platform === "win32")(
-  "search keeps every precise match without returning bulky metadata",
+  "search groups retrieved candidates by file without returning source",
   async () => {
     const f = await fixture();
     await indexProject(f.root, { env: f.env });
@@ -87,17 +87,16 @@ test.skipIf(process.platform === "win32")(
         ],
       },
       { unit: { file: "fallback.ts", line: 30, end_line: 31, name: "fallback" } },
+      { unit: { file: "src/with spaces.ts", line: 5, end_line: 8, name: "first" } },
     ];
     const result = await searchProject(f.root, "query", {
       env: { ...f.env, TEST_OUTPUT: JSON.stringify(output) },
     });
-    expect(result.split("\n")).toEqual([
-      "src/with spaces.ts:5-8  first",
-      "src/with spaces.ts:10-12  second",
-      "src/with spaces.ts:15-16  third",
-      "src/with spaces.ts:20-22  fourth",
-      "fallback.ts:30-31  fallback",
-    ]);
+    const lines = result.split("\n");
+    expect(lines.filter((line) => line.includes("src/with spaces.ts"))).toHaveLength(1);
+    expect(lines.find((line) => line.includes("src/with spaces.ts"))).toMatch(/\b4\b/u);
+    expect(lines.filter((line) => line.includes("fallback.ts"))).toHaveLength(1);
+    expect(result).not.toContain("src/with spaces.ts:5-8");
     expect(result).not.toContain("LARGE SOURCE");
   },
 );
@@ -115,6 +114,52 @@ test.skipIf(process.platform === "win32")(
     await expect(search([{ unit: { file: "broken.ts" }, matches: [{ line: 0 }] }])).rejects.toThrow(
       Error,
     );
+  },
+);
+test.skipIf(process.platform === "win32")(
+  "file scope returns deduplicated bounded ranges and passes filters to ColGREP",
+  async () => {
+    const f = await fixture();
+    await indexProject(f.root, { env: f.env });
+    await mkdir(join(f.root, "src with spaces"));
+    const file = "src with spaces/example.ts";
+    await writeFile(join(f.root, file), "content");
+    const matches = Array.from({ length: 20 }, (_, i) => ({
+      line: i + 1,
+      end_line: i + 1,
+      name: `item${i}`,
+    }));
+    matches.push({ line: 1, end_line: 1, name: "item0" });
+    const result = await searchProject(f.root, "query", {
+      env: {
+        ...f.env,
+        TEST_OUTPUT: JSON.stringify([
+          { unit: { file, line: 1, end_line: 20, name: "unit" }, matches },
+        ]),
+      },
+      path: file,
+      include: "*.ts",
+      exclude: "*.test.ts, *.spec.ts",
+    });
+    expect(result).toContain("1-1");
+    expect(result).not.toContain("20-20");
+    expect(result).toMatch(/\b5\b/u);
+    const search = (await calls(f.log)).find((call) => call.args[0] === "search");
+    expect(search?.args).toEqual(
+      expect.arrayContaining(["--include", "*.ts", "--exclude", "*.test.ts", "*.spec.ts", file]),
+    );
+  },
+);
+
+test.skipIf(process.platform === "win32")(
+  "rejects missing, remote, and outside-project scopes",
+  async () => {
+    const f = await fixture();
+    await indexProject(f.root, { env: f.env });
+    await symlink(dirname(f.root), join(f.root, "outside"));
+    for (const path of ["missing.ts", "ssh://host/file", dirname(f.root), "outside"]) {
+      await expect(searchProject(f.root, "query", { env: f.env, path })).rejects.toThrow(Error);
+    }
   },
 );
 test("rejects remote project paths", async () => {

@@ -2086,21 +2086,34 @@ add(
 
 add(
   "semantic-code-search",
-  ["search.semantic", "compose.semantic-read"],
-  "Use semantic_search to locate the function responsible for expiring a user session. Read the returned source file and report its function name.",
+  ["search.semantic", "search.semantic-scope-filters", "compose.semantic-read"],
+  "Use semantic_search to locate the function responsible for expiring a user session. First search the project. Then search the directory 'src with spaces' for TypeScript files while excluding test files using include '*.ts' and exclude '*.test.ts'. Search the relevant file again by setting path to that file, then read it and report the function name.",
   [
     {
       tool: "semantic_search",
       args: { query: /session/i },
-      contains: "session.ts:1-1  expireSession",
+      contains: "src with spaces/session.ts",
     },
-    { tool: "read", args: { path: "session.ts" }, contains: "expireSession" },
+    {
+      tool: "semantic_search",
+      args: { query: /session/i, path: "src with spaces", include: "*.ts", exclude: "*.test.ts" },
+      contains: "src with spaces/session.ts",
+      excludes: "src with spaces/noise.test.ts",
+    },
+    {
+      tool: "semantic_search",
+      args: { query: /session/i, path: "src with spaces/session.ts" },
+      contains: "src with spaces/session.ts:1-1",
+    },
+    { tool: "read", args: { path: "src with spaces/session.ts" }, contains: "expireSession" },
   ],
   {
     prerequisite: "command -v colgrep && colgrep init --yes --color never",
     files: {
-      "session.ts":
+      "src with spaces/session.ts":
         "export function expireSession(session: { expiresAt: number }) { return Date.now() >= session.expiresAt; }\n",
+      "src with spaces/noise.test.ts":
+        "export function testSession() { return 'session expiry'; }\n",
     },
     answer: "expireSession",
   },

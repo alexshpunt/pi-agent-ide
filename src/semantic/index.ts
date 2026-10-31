@@ -12,7 +12,7 @@ export default createSemanticExtension({
   async index(cwd, signal, onProgress) {
     await indexProject(cwd, { signal, onProgress });
   },
-  async search(cwd, query, signal) {
-    return searchProject(cwd, query, { signal });
+  async search(cwd, query, options, signal) {
+    return searchProject(cwd, query, { ...options, signal });
   },
 });

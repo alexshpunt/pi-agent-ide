@@ -6,7 +6,12 @@ import { connectTipProvider, TIP_API_VERSION, TIP_PROTOCOL } from "#src/api/tips
 export interface SemanticBackend {
   available(cwd: string): Promise<boolean>;
   index(cwd: string, signal?: AbortSignal, onProgress?: (message: string) => void): Promise<void>;
-  search(cwd: string, query: string, signal?: AbortSignal): Promise<string>;
+  search(
+    cwd: string,
+    query: string,
+    options: { path?: string; include?: string; exclude?: string },
+    signal?: AbortSignal,
+  ): Promise<string>;
 }
 
 export function createSemanticExtension(backend: SemanticBackend) {
@@ -21,7 +26,7 @@ export function createSemanticExtension(backend: SemanticBackend) {
         exposure: next,
         namespace: { name: "ide_semantic_search", description: "Find project code by meaning." },
         description:
-          "Find code in the indexed local project by meaning. Results are paths and line ranges, not editable selections. Read a result before editing.",
+          "Find code in the indexed local project by meaning. Results group ranked files with counts of retrieved distinct candidate ranges, not occurrence counts. Search again with path set to one file for approximate ranked ranges. Ranges are hints, not editable selections; read before editing. Scope and include/exclude globs filter before ranking.",
         promptSnippet: "Find indexed project code by meaning",
         parameters: Type.Object(
           {
@@ -29,6 +34,18 @@ export function createSemanticExtension(backend: SemanticBackend) {
               minLength: 1,
               description: "Describe the code or behavior to find.",
             }),
+            path: Type.Optional(
+              Type.String({
+                description:
+                  "Local indexed file or directory within the project. A file returns approximate ranges.",
+              }),
+            ),
+            include: Type.Optional(
+              Type.String({ description: "Include glob list for local files." }),
+            ),
+            exclude: Type.Optional(
+              Type.String({ description: "Exclude glob list for local files." }),
+            ),
           },
           { additionalProperties: false },
         ),
@@ -37,7 +54,12 @@ export function createSemanticExtension(backend: SemanticBackend) {
             throw new Error(
               "Semantic search is unavailable for this project. Run /semantic-index first.",
             );
-          const result = await backend.search(context.cwd, params.query, signal);
+          const result = await backend.search(
+            context.cwd,
+            params.query,
+            { path: params.path, include: params.include, exclude: params.exclude },
+            signal,
+          );
           return { content: [{ type: "text", text: result }], details: {} };
         },
       });

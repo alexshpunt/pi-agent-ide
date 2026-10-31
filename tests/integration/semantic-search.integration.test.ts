@@ -84,6 +84,7 @@ test("the full IDE uses an existing index without rebuilding it", async () => {
       `#!${process.execPath}\nconst args = process.argv.slice(2);\nif (args[0] === '--version') console.log('colgrep 1.8.5');\nelse if (args[0] === 'status') console.log('Index: ' + process.cwd());\nelse if (args[0] === 'search') console.log(JSON.stringify([{unit:{file:'example.ts',line:1,end_line:99,name:'broad',code:'SOURCE_PAYLOAD'},matches:[{line:4,end_line:5,name:'first'},{line:7,end_line:8,name:'second'},{line:10,end_line:11,name:'third'},{line:13,end_line:14,name:'fourth'}]}]));\nelse process.exit(1);\n`,
     );
     await chmod(executable, 0o755);
+    await writeFile(path.join(cwd, "example.ts"), "example source");
     const result = await new PiIntegrationTest({
       testName: "semantic-full-ide",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -96,15 +97,32 @@ test("the full IDE uses an existing index without rebuilding it", async () => {
           [toolCall({ id: "semantic", name: "semantic_search", arguments: { query: "example" } })],
           { stopReason: "toolUse" },
         ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "scoped",
+              name: "semantic_search",
+              arguments: {
+                query: "example",
+                path: "example.ts",
+                include: "*.ts",
+                exclude: "*.test.ts",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
         assistantMessage([text("Done")]),
       ],
     }).run("Find project code");
     expect(getToolExecution(result, "semantic").isError).toBe(false);
     const output = getToolResultText(result, "semantic");
-    expect(output).toContain("example.ts:4-5  first");
-    expect(output).toContain("example.ts:13-14  fourth");
+    expect(output.split("\n").filter((line) => line.includes("example.ts"))).toHaveLength(1);
+    expect(output).toMatch(/\b4\b/u);
     expect(output).not.toContain("SOURCE_PAYLOAD");
-    expect(output).not.toContain("example.ts:1-99");
+    expect(getToolExecution(result, "scoped").isError).toBe(false);
+    expect(getToolResultText(result, "scoped")).toContain("example.ts:4-5");
+    expect(getToolResultText(result, "scoped")).toContain("example.ts:13-14");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
