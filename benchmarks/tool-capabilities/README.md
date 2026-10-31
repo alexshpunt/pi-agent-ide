@@ -32,6 +32,7 @@ No inference happens without both `--run` and an explicit model profile. The com
 Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 low was added by explicit task approval. New models belong in `models.json`, not in case definitions. Use the same tasks and validators for each model.
 
 Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
+The `semantic-code-search` case requires ColGREP and its model in the sandbox, and initializes a small project index as its prerequisite. If setup cannot complete within the prerequisite timeout, the route is unavailable rather than passed. Neither route has been verified without a paid run.
 Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases; these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
 
 Temporary Delete and Move cases check exact nested names, roots themselves, replacement settings, and Copy merge behavior locally. Target-native account/config resolution is checked by transport tests, not a paid SSH case. Paid SSH temporary-removal routes remain unverified.

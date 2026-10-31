@@ -37,6 +37,10 @@ export const moduleLabels = {
   "read.web.text": ["Web text", "Read remote plain-text sources."],
   "search.core": ["Search tools", "Run searches through the configured search providers."],
   "search.text": ["Text search", "Find text and files and register reusable search selections."],
+  "search.semantic": [
+    "Optional semantic search",
+    "Search indexed project code by meaning using ColGREP.",
+  ],
   "editor.core": [
     "Editing tools",
     "Make guarded text and whole-file changes, directly or through native Codemode.",
