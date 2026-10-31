@@ -63,8 +63,8 @@ function collectFiles(directories: readonly string[], suffix: string): string[] 
 }
 
 function relativeSpecifiers(source: string): string[] {
-  return [...source.matchAll(/(?:from\s*|import\s*\()(["'])(\.\.?\/[^"']+)\1/gu)].flatMap(
-    (match) => (match[2] === undefined ? [] : [match[2]]),
+  return [...source.matchAll(/(?:from\s*|import\s*\()(["'])(\.\.?\/[^"']+)\1/gu)].flatMap((match) =>
+    match[2] === undefined ? [] : [match[2]],
   );
 }
 
