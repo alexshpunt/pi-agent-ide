@@ -42,6 +42,31 @@ test("saved flags apply immediately and reset to their default", () => {
   expect(read()).toBe(false);
 });
 
+test("command-line flags resolved after registration apply when the session starts", () => {
+  let flag = false;
+  const handlers = vi.fn();
+  const events = new EventEmitter();
+  const pi: Pick<ExtensionAPI, "events" | "on" | "getFlag"> = {
+    getFlag: () => flag,
+    on: handlers,
+    events: {
+      on(name, handler) {
+        events.on(name, handler);
+        return () => {
+          events.off(name, handler);
+        };
+      },
+      emit(name, data) {
+        events.emit(name, data);
+      },
+    },
+  };
+  const read = createLiveFeatureFlag(pi, "flag", false, ["--flag"]);
+  flag = true;
+  expect(read()).toBe(true);
+  events.emit(IDE_FEATURE_FLAGS_CHANGED, { flags: { flag: false } });
+  expect(read()).toBe(true);
+});
 test("explicit command line flags override saved settings", () => {
   const { bus, read } = fixture(true, ["--flag"]);
   bus.emit(IDE_FEATURE_FLAGS_CHANGED, { flags: { flag: false } });

@@ -21,5 +21,5 @@ export function createLiveFeatureFlag(
     else if (typeof setting === "boolean") value = setting;
   });
   pi.on("session_shutdown", unsubscribe);
-  return () => value;
+  return () => (cliOverride ? pi.getFlag(id) === true : value);
 }

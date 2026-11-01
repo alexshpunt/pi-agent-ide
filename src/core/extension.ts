@@ -65,11 +65,7 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
     id: "ide-diagnostics",
     setup(api) {
       api.onDidEdit((completion) => {
-        if (
-          skipPostProcessing() ||
-          completion.postProcessing === "deferred"
-        )
-          return;
+        if (skipPostProcessing() || completion.postProcessing === "deferred") return;
         if (path.isAbsolute(completion.resourceSource)) {
           afterPostEditScope(() =>
             core.diagnostics.schedule(completion.resourceSource, completion.after.content, {
