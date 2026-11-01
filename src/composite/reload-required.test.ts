@@ -13,8 +13,26 @@ const flags = [
   { id: "pi-agent-ide-yolo", name: "YOLO", description: "x", default: false },
 ];
 const preferences = [
-  { id: "search.semantic.engine", name: "Engine", description: "x", kind: "choice" as const, group: "features" as const, default: "colgrep", values: [{ value: "colgrep", label: "C" }, { value: "vera", label: "V" }] },
-  { id: "external.mode", name: "External", description: "x", kind: "text" as const, group: "ui" as const, default: "a" },
+  {
+    id: "search.semantic.engine",
+    name: "Engine",
+    description: "x",
+    kind: "choice" as const,
+    group: "features" as const,
+    default: "colgrep",
+    values: [
+      { value: "colgrep", label: "C" },
+      { value: "vera", label: "V" },
+    ],
+  },
+  {
+    id: "external.mode",
+    name: "External",
+    description: "x",
+    kind: "text" as const,
+    group: "ui" as const,
+    default: "a",
+  },
 ];
 const pending = (current: PiAgentIdeExtensionsConfig, cliFlags: ReadonlySet<string> = new Set()) =>
   pendingReloadChanges(base, current, modules, flags, preferences, cliFlags);
@@ -25,10 +43,18 @@ describe("reload tracking", () => {
     expect(pending(base)).toEqual([]);
   });
   test("ignores live changes and startup changes masked by the command line", () => {
-    expect(pending({ ...base, flags: { "pi-agent-ide-yolo": true }, preferences: { "search.semantic.engine": "vera" } })).toEqual([]);
+    expect(
+      pending({
+        ...base,
+        flags: { "pi-agent-ide-yolo": true },
+        preferences: { "search.semantic.engine": "vera" },
+      }),
+    ).toEqual([]);
     expect(pending({ ...base, flags: { startup: true } }, new Set(["startup"]))).toEqual([]);
   });
   test("reports startup flags and unknown external settings without claiming they applied", () => {
-    expect(pending({ ...base, flags: { startup: true }, preferences: { "external.mode": "b" } })).toEqual(["Startup", "External"]);
+    expect(
+      pending({ ...base, flags: { startup: true }, preferences: { "external.mode": "b" } }),
+    ).toEqual(["Startup", "External"]);
   });
 });

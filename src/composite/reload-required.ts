@@ -60,14 +60,16 @@ export function pendingReloadChanges(
       flagRequiresReload(flag.id) &&
       !cliFlags.has(flag.id) &&
       (oldFlags[flag.id] ?? flag.default) !== (newFlags[flag.id] ?? flag.default)
-    ) pending.push(flag.name);
+    )
+      pending.push(flag.name);
   }
   for (const preference of preferences) {
     if (
       preferenceRequiresReload(preference.id) &&
       (running.preferences?.[preference.id] ?? preference.default) !==
         (configured.preferences?.[preference.id] ?? preference.default)
-    ) pending.push(preference.name);
+    )
+      pending.push(preference.name);
   }
   return pending;
 }

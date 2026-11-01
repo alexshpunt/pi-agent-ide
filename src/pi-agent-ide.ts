@@ -211,7 +211,10 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   );
   const staticEditPreviews = createLiveFeatureFlag(pi, "pi-agent-ide-no-animations");
   for (const extension of enabled) {
-    await extension.register(capabilities.api, { preferences: livePreferences, animationsEnabled: () => !staticEditPreviews() });
+    await extension.register(capabilities.api, {
+      preferences: livePreferences,
+      animationsEnabled: () => !staticEditPreviews(),
+    });
   }
   capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();

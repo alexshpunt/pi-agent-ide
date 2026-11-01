@@ -1,6 +1,11 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { assistantMessage, PiIntegrationTest, testArtifactsDir, text } from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+import {
+  assistantMessage,
+  PiIntegrationTest,
+  testArtifactsDir,
+  text,
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 

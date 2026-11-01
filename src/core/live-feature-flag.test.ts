@@ -13,8 +13,15 @@ function fixture(initial: boolean, argv: string[]) {
     getFlag: () => initial,
     on: handlers,
     events: {
-      on(name, handler) { bus.on(name, handler); return () => { bus.off(name, handler); }; },
-      emit(name, data) { bus.emit(name, data); },
+      on(name, handler) {
+        bus.on(name, handler);
+        return () => {
+          bus.off(name, handler);
+        };
+      },
+      emit(name, data) {
+        bus.emit(name, data);
+      },
     },
   };
   const read = createLiveFeatureFlag(pi, "flag", false, argv);

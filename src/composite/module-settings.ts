@@ -14,10 +14,17 @@ import { AGENT_IDE_PRESET_OPTIONS, disabledByPreset, type AgentIdePreset } from 
 import { saveModuleChoices, type ModuleChoice } from "./module-settings-store.js";
 import { createSettingsPanel } from "./settings-panel.js";
 import { selectBuiltinExtensions } from "./selection.js";
-import { flagRequiresReload, pendingReloadChanges, preferenceRequiresReload } from "./reload-required.js";
+import {
+  flagRequiresReload,
+  pendingReloadChanges,
+  preferenceRequiresReload,
+} from "./reload-required.js";
 import { IDE_PRESENTATION_CHANGED } from "./live-presentation.js";
 import { IDE_FEATURE_FLAGS_CHANGED } from "#src/core/live-feature-flag.js";
-import { SEMANTIC_SETTINGS_CHANGED_EVENT, type SemanticSettingsChanged } from "#src/semantic/extension.js";
+import {
+  SEMANTIC_SETTINGS_CHANGED_EVENT,
+  type SemanticSettingsChanged,
+} from "#src/semantic/extension.js";
 
 /** Keep settings available even when every optional module is disabled. */
 export function registerModuleSettings(
@@ -37,10 +44,23 @@ export function registerModuleSettings(
         const paths = resolvePiAgentIdeExtensionsConfigPaths(process.env, undefined, ctx.cwd);
         const before = await readPiAgentIdeExtensionsConfig(paths);
         runningConfig ??= before;
-        const cliFlags = new Set(flags.filter((flag) =>
-          process.argv.some((arg) => arg === `--${flag.id}` || arg.startsWith(`--${flag.id}=`)),
-        ).map((flag) => flag.id));
-        const pendingNames = new Set(pendingReloadChanges(runningConfig, before, BUILTIN_EXTENSIONS, flags, preferences, cliFlags));
+        const cliFlags = new Set(
+          flags
+            .filter((flag) =>
+              process.argv.some((arg) => arg === `--${flag.id}` || arg.startsWith(`--${flag.id}=`)),
+            )
+            .map((flag) => flag.id),
+        );
+        const pendingNames = new Set(
+          pendingReloadChanges(
+            runningConfig,
+            before,
+            BUILTIN_EXTENSIONS,
+            flags,
+            preferences,
+            cliFlags,
+          ),
+        );
         const selectedPath = scope === "Project" ? paths.projectPath : paths.globalPath;
         const current = await readExtensionSettingsScope(selectedPath);
         const other = await readExtensionSettingsScope(
@@ -68,8 +88,12 @@ export function registerModuleSettings(
                   ...disabledByPreset(
                     BUILTIN_EXTENSIONS,
                     scope === "Project"
-                      ? ((presetChoice === undefined ? current.preset : presetChoice) ?? other.preset ?? "full")
-                      : (other.preset ?? (presetChoice === undefined ? current.preset : presetChoice) ?? "full"),
+                      ? ((presetChoice === undefined ? current.preset : presetChoice) ??
+                          other.preset ??
+                          "full")
+                      : (other.preset ??
+                          (presetChoice === undefined ? current.preset : presetChoice) ??
+                          "full"),
                   ),
                   ...disabled,
                   ...other.disabled,
@@ -100,7 +124,8 @@ export function registerModuleSettings(
                   label: "Preset",
                   description: "Choose the built-in Agent IDE capability set. Reload required.",
                   currentValue:
-                    AGENT_IDE_PRESET_OPTIONS.find((item) => item.value === value)?.label ?? "default",
+                    AGENT_IDE_PRESET_OPTIONS.find((item) => item.value === value)?.label ??
+                    "default",
                   values: ["default", ...AGENT_IDE_PRESET_OPTIONS.map((item) => item.label)],
                 };
               }
@@ -168,7 +193,8 @@ export function registerModuleSettings(
             (tab, id, value) => {
               if (tab === "modules") choices.set(id, value as ModuleChoice);
               else if (id === "preset") {
-                presetChoice = AGENT_IDE_PRESET_OPTIONS.find((item) => item.label === value)?.value ?? null;
+                presetChoice =
+                  AGENT_IDE_PRESET_OPTIONS.find((item) => item.label === value)?.value ?? null;
               } else if (preferences.some((item) => item.id === id)) {
                 const preference = preferences.find((item) => item.id === id);
                 preferenceChoices.set(
@@ -219,7 +245,11 @@ export function registerModuleSettings(
         const effective = await readPiAgentIdeExtensionsConfig(paths);
         for (const preference of preferences) {
           const value = effective.preferences?.[preference.id];
-          if (value !== undefined && preference.kind === "choice" && !preference.values.some((item) => item.value === value))
+          if (
+            value !== undefined &&
+            preference.kind === "choice" &&
+            !preference.values.some((item) => item.value === value)
+          )
             throw new Error(`Saved settings contain an invalid choice: ${preference.id}`);
         }
         pi.events?.emit(IDE_PRESENTATION_CHANGED, { preferences: effective.preferences ?? {} });
@@ -230,14 +260,32 @@ export function registerModuleSettings(
           waitUntil: (promise) => refreshes.push(promise),
         } satisfies SemanticSettingsChanged);
         await Promise.all(refreshes);
-        const pending = pendingReloadChanges(runningConfig, effective, BUILTIN_EXTENSIONS, flags, preferences, cliFlags);
-        ctx.ui.setStatus("pi-agent-ide-reload", pending.length ? `Reload required (${pending.length}; see settings)` : undefined);
+        const pending = pendingReloadChanges(
+          runningConfig,
+          effective,
+          BUILTIN_EXTENSIONS,
+          flags,
+          preferences,
+          cliFlags,
+        );
+        ctx.ui.setStatus(
+          "pi-agent-ide-reload",
+          pending.length ? `Reload required (${pending.length}; see settings)` : undefined,
+        );
         if (pending.length === 0) {
           ctx.ui.notify(`Saved ${scope.toLowerCase()} Agent IDE settings.`, "info");
           return;
         }
-        ctx.ui.notify(`Saved ${scope.toLowerCase()} Agent IDE settings. Reload required: ${pending.join(", ")}.`, "info");
-        if (await ctx.ui.confirm("Reload Pi?", "Reload extensions to apply pending settings. In-memory extension state may reset.")) {
+        ctx.ui.notify(
+          `Saved ${scope.toLowerCase()} Agent IDE settings. Reload required: ${pending.join(", ")}.`,
+          "info",
+        );
+        if (
+          await ctx.ui.confirm(
+            "Reload Pi?",
+            "Reload extensions to apply pending settings. In-memory extension state may reset.",
+          )
+        ) {
           await ctx.reload();
         }
       } catch (error) {

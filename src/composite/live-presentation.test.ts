@@ -14,9 +14,13 @@ test("presentation listeners receive effective values and stop after shutdown", 
     events: {
       on(name: string, handler: (data: unknown) => void) {
         events.on(name, handler);
-        return () => { events.off(name, handler); };
+        return () => {
+          events.off(name, handler);
+        };
       },
-      emit(name: string, data: unknown) { events.emit(name, data); },
+      emit(name: string, data: unknown) {
+        events.emit(name, data);
+      },
     },
     on,
   };
