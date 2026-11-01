@@ -33,7 +33,7 @@ test.each([
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({
-        disabled: ["ide.doctor"],
+        disabled: ["ide.doctor", "search.semantic"],
         flags: project === undefined ? {} : { [flag]: project },
       }),
     );

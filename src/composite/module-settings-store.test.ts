@@ -130,7 +130,9 @@ test("saves preset without losing unrelated settings", async () => {
   });
   await saveModuleChoices(file, new Map(), new Map(), new Map(), null);
   expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
-    disabled: ["ide.vision"], enabled: [], custom: { keep: 1 },
+    disabled: ["ide.vision"],
+    enabled: [],
+    custom: { keep: 1 },
   });
 });
 test("saves string preferences and preserves unrelated values", async () => {
