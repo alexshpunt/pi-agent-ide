@@ -4,6 +4,7 @@ import {
   readPiAgentIdeExtensionsConfig,
   resolvePiAgentIdeExtensionsConfigPaths,
 } from "#src/composite/extensions-config.js";
+import { listenPresentationPreference } from "#src/composite/live-presentation.js";
 import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
 import {
   AgentIdeProcessesUi,
@@ -18,6 +19,9 @@ export default async function registerAgentIdeProcesses(pi: ExtensionAPI): Promi
     registry,
     activityMode(config.preferences?.["processes.activity"]),
     pi,
+  );
+  listenPresentationPreference(pi, "processes.activity", (value) =>
+    ui.setActivityMode(activityMode(value)),
   );
   pi.on("session_start", (_event, context) => ui.bind(context));
   pi.on("session_shutdown", () => ui.dispose());

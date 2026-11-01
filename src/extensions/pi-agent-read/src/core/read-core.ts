@@ -51,7 +51,11 @@ export interface ReadCore {
 }
 
 export function createReadCore(
-  presentation: "full" | "compact" | "disabled" = "compact",
+  presentation:
+    | "full"
+    | "compact"
+    | "disabled"
+    | (() => "full" | "compact" | "disabled") = "compact",
 ): ReadCore {
   const outputReducers: ReadOutputReducer[] = [];
   const pendingPlugins = new Set<Promise<void>>();

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readAgentIdeSetting } from "#src/api/settings.js";
 import {
   inspectProject,
   indexProject,
@@ -54,13 +55,11 @@ const vera: SemanticBackend = {
   },
 };
 
-export default async function registerSemanticSearch(
-  pi: ExtensionAPI,
-  context?: { readonly preferences: Readonly<Record<string, string>> },
-): Promise<void> {
-  const extension = createConfiguredSemanticExtension(
-    { colgrep, vera },
-    context?.preferences["search.semantic.engine"],
-  );
+export default async function registerSemanticSearch(pi: ExtensionAPI): Promise<void> {
+  const extension = createConfiguredSemanticExtension({ colgrep, vera }, async (cwd) => {
+    const value = (await readAgentIdeSetting(pi.events, "search.semantic.engine", cwd)).value;
+    if (typeof value !== "string") throw new Error("Invalid semantic search engine setting");
+    return value;
+  });
   await extension(pi);
 }

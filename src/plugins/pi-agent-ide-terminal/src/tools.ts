@@ -75,7 +75,11 @@ export function registerTerminalTools(
   manager: TerminalSessionManager,
   profile: ShellProfile,
   ui: Pick<TerminalUi, "bind" | "notifyWaitTransition">,
-  presentation: "full" | "compact" | "disabled" = "compact",
+  presentation:
+    | "full"
+    | "compact"
+    | "disabled"
+    | (() => "full" | "compact" | "disabled") = "compact",
   targets: SshBackendRegistry = new SshBackendRegistry([]),
   executionOrigin?: (toolCallId: string, context: ExtensionContext) => TerminalExecutionOrigin,
 ): () => void {
@@ -152,7 +156,11 @@ export function registerTerminalTools(
         return terminalResult(manager.snapshot(outcome.session));
       },
       renderCall(args, theme, context) {
-        const mode = context.expanded ? "full" : presentation;
+        const mode = context.expanded
+          ? "full"
+          : typeof presentation === "function"
+            ? presentation()
+            : presentation;
         if (mode === "disabled") return new Text(theme.fg("toolTitle", toolName), 0, 0);
         const command = typeof args.command === "string" ? args.command : "";
         const remote = typeof args.cwd === "string" && args.cwd.startsWith("ssh:");
@@ -173,7 +181,11 @@ export function registerTerminalTools(
       renderResult(result, options, theme) {
         return renderRunResult(
           result.details as Partial<TerminalSessionSnapshot>,
-          options.expanded ? "full" : presentation,
+          options.expanded
+            ? "full"
+            : typeof presentation === "function"
+              ? presentation()
+              : presentation,
           theme,
         );
       },

@@ -36,7 +36,7 @@ export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
     kind: "choice",
     id: "search.semantic.engine",
     name: "Semantic search engine",
-    description: "Choose the engine used by /semantic-index and semantic_search. Reload to apply.",
+    description: "Choose the engine used by /semantic-index and semantic_search.",
     default: "colgrep",
     group: "features",
     values: [

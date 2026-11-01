@@ -96,7 +96,10 @@ export function formatToolDuration(ms: number): string {
 }
 
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
-export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResults = false) {
+export function createNestedIdeRendering(
+  pi: ExtensionAPI,
+  hideCodemodeToolResults: boolean | (() => boolean) = false,
+) {
   const definitions = new Map<string, ToolDefinition>();
   const aliasSource = registerIdeAliasCompatibility(pi, definitions);
   const aliasRoots = new Map<string, string>();
@@ -303,7 +306,11 @@ export function createNestedIdeRendering(pi: ExtensionAPI, hideCodemodeToolResul
     function renderEntry(entry, options, theme) {
       if (!Array.isArray(entry.data?.calls)) return undefined;
       const compact =
-        hideCodemodeToolResults && entry.data.parentToolName === "codemode" && !options.expanded;
+        (typeof hideCodemodeToolResults === "function"
+          ? hideCodemodeToolResults()
+          : hideCodemodeToolResults) &&
+        entry.data.parentToolName === "codemode" &&
+        !options.expanded;
       const calls = compact
         ? entry.data.calls.filter((call) => call.result?.isError)
         : entry.data.calls;

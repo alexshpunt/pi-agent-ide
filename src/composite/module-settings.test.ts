@@ -72,6 +72,7 @@ test.each([
       select: vi.fn().mockResolvedValue(scope),
       confirm,
       notify: vi.fn(),
+      setStatus: vi.fn(),
       custom,
     };
     const context: Partial<ExtensionCommandContext> = {
@@ -90,7 +91,7 @@ test.each([
           }
         : original,
     );
-    expect(confirm).toHaveBeenCalledTimes(save ? 1 : 0);
+    expect(confirm).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
   },
 );
@@ -140,6 +141,7 @@ test.each(["Project", "Global"] as const)(
       select: vi.fn().mockResolvedValue(scope),
       confirm: vi.fn().mockResolvedValue(false),
       notify: vi.fn(),
+      setStatus: vi.fn(),
       custom,
     };
     await handler?.("", { cwd, hasUI: true, ui } as ExtensionCommandContext);
@@ -228,6 +230,7 @@ test.each([false, true])(
       select,
       confirm,
       notify: vi.fn(),
+      setStatus: vi.fn(),
       custom: customDialog(true),
     };
     const context: Partial<ExtensionCommandContext> = {
@@ -306,6 +309,7 @@ test("external settings registered after command creation save through the exist
     custom,
     confirm: async () => false,
     notify() {},
+    setStatus: vi.fn(),
   };
   const context: Partial<ExtensionCommandContext> = {
     cwd,

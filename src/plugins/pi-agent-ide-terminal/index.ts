@@ -51,12 +51,13 @@ export default async function registerTerminal(
   const removeProcessProvider = agentIdeProcessRegistry(pi).add(terminalProcessProvider(manager));
 
   await Promise.all([registerTerminalResources(pi, manager), registerTerminalSearch(pi, manager)]);
+  const presentation = () => toolPresentation(context?.preferences["ui.terminal"]);
   const releaseForegroundWaits = registerTerminalTools(
     pi,
     manager,
     profile,
     ui,
-    toolPresentation(context?.preferences["ui.terminal"]),
+    presentation,
     targets,
     registerTerminalOrigins(pi),
   );

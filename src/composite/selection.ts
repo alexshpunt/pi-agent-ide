@@ -5,6 +5,7 @@ One independently usable built-in extension composed into Pi Agent IDE.
 */
 export interface BuiltinExtensionContext {
   readonly preferences: Readonly<Record<string, string>>;
+  readonly animationsEnabled?: () => boolean;
 }
 
 export interface BuiltinExtension {

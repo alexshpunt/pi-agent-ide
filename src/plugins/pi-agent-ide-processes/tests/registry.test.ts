@@ -29,6 +29,35 @@ describe("Agent IDE process registry", () => {
     expect(listener).toHaveBeenCalledTimes(3);
   });
 
+  test("changes the active-process display without restarting sessions", () => {
+    vi.useFakeTimers();
+    try {
+      const registry = new AgentIdeProcessRegistry();
+      registry.add({
+        id: "terminal",
+        list: () => [process("shell:one", "terminal")],
+        onDidChange: () => () => undefined,
+      });
+      const ui = new AgentIdeProcessesUi(registry, "detailed", { registerCommand() {} } as never);
+      const setWidget = vi.fn();
+      const setStatus = vi.fn();
+      ui.bind({ hasUI: true, ui: { setWidget, setStatus } } as never);
+      expect(vi.getTimerCount()).toBe(1);
+      ui.setActivityMode("compact");
+      expect(setWidget).toHaveBeenLastCalledWith("agent-ide-processes", undefined);
+      expect(setStatus).toHaveBeenLastCalledWith(
+        "agent-ide-processes",
+        expect.stringContaining("1"),
+      );
+      expect(vi.getTimerCount()).toBe(0);
+      ui.setActivityMode("off");
+      expect(setStatus).toHaveBeenLastCalledWith("agent-ide-processes", undefined);
+      expect(registry.list()).toHaveLength(1);
+      ui.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   test("registers only the namespaced process command", () => {
     const registerCommand = vi.fn();
     const registry = new AgentIdeProcessRegistry();

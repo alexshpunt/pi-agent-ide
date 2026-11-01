@@ -25,9 +25,10 @@ export default async function registerTextEditorRenderer(
     readonly preferences: Readonly<Record<string, string>>;
     /** Adapt visible tool identity without replacing the stateful mutation renderer. */
     readonly toolName?: (name: string) => string;
+    readonly animationsEnabled?: () => boolean;
   },
 ): Promise<void> {
-  const diffPresentation = parsePresentation(context?.preferences["ui.diffs"]);
+  const diffPresentation = () => parsePresentation(context?.preferences["ui.diffs"]);
   const animationPressure = createMutationAnimationPressure(pi);
   let animationsEnabled = pi.getFlag("pi-agent-ide-no-animations") !== true;
   const refreshAnimations = () => {
@@ -55,7 +56,7 @@ export default async function registerTextEditorRenderer(
             );
           const panel = new MutationPanel(theme);
           panel.setBackground("toolSuccessBg");
-          const mode = options.expanded ? "full" : diffPresentation;
+          const mode = options.expanded ? "full" : diffPresentation();
           panel.setExpanded(mode === "full");
           panel.setDiffsVisible(mode !== "disabled");
           panel.setResourceLabelsVisible(true);
@@ -69,7 +70,7 @@ export default async function registerTextEditorRenderer(
         api,
         animationPressure,
         // Completed panels can be redrawn after Pi has invalidated the extension API.
-        () => animationsEnabled,
+        () => context?.animationsEnabled?.() ?? animationsEnabled,
         diffPresentation,
         context?.toolName,
       );
