@@ -35,4 +35,4 @@ Read the saved file afterward and compare it with the intended change. If a writ
 
 ## Report what changed
 
-State the scope, file, setting and saved value, or explain that nothing needed changing. Name any blocker or remaining override. Saved configuration is not proof that the running session changed: offer reload or restart, and verify the effective behavior after an authorized reload before saying it is active.
+State the scope, file, setting and saved value, or explain that nothing needed changing. Name any blocker or remaining override. Saved configuration is not proof that the running session changed. The settings menu applies live settings on save; direct file edits do not send its update event, although per-operation settings are read again. Module and other reload-only changes need reload. Explain the distinction and verify effective behavior before saying a change is active; ask before reloading because in-memory state can reset.
