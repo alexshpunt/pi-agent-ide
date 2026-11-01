@@ -76,7 +76,7 @@ export function createSettingsPanel(
         )
         .join(" ");
       const body = list.render(innerWidth).map((line) => row(` ${line} `, panelWidth));
-      const help = theme.fg("dim", " Tab switch  ·  Enter change  ·  Ctrl+S save  ·  Esc cancel ");
+      const help = theme.fg("dim", " Tab switch  ·  Enter change  ·  Ctrl+S save  ·  Esc exit ");
       return [
         top,
         row(` ${tabLine} `, panelWidth),

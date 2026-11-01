@@ -91,7 +91,7 @@ test.each([
           }
         : original,
     );
-    expect(confirm).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledTimes(save ? 0 : 1);
     expect(reload).not.toHaveBeenCalled();
   },
 );
@@ -190,6 +190,7 @@ test("canceling staged module choices leaves project settings absent", async () 
   const ui: Partial<ExtensionCommandContext["ui"]> = {
     select,
     notify,
+    confirm: vi.fn().mockResolvedValue(false),
     custom: customDialog(false),
   };
   const context: Partial<ExtensionCommandContext> = {
@@ -207,6 +208,85 @@ test("canceling staged module choices leaves project settings absent", async () 
   });
 });
 
+test.each([0, 3])(
+  "closing unchanged settings does not ask to save: %i changes",
+  async (presses) => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-unchanged-"));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    vi.stubEnv("PI_CODING_AGENT_DIR", path.join(cwd, "agent"));
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    let handler: ((args: string, ctx: ExtensionCommandContext) => Promise<void>) | undefined;
+    registerModuleSettings({
+      registerCommand(_name, command) {
+        handler = command.handler;
+      },
+    });
+    const confirm = vi.fn();
+    const custom: ExtensionCommandContext["ui"]["custom"] = async (factory) =>
+      new Promise((resolve, reject) => {
+        void Promise.resolve(
+          factory(
+            { requestRender() {} } as Parameters<typeof factory>[0],
+            {} as Parameters<typeof factory>[1],
+            {} as Parameters<typeof factory>[2],
+            resolve,
+          ),
+        )
+          .then((panel) => {
+            for (let i = 0; i < presses; i++) panel.handleInput?.("\r");
+            panel.handleInput?.("\x1b");
+          })
+          .catch(reject);
+      });
+    const ui: Partial<ExtensionCommandContext["ui"]> = {
+      select: vi.fn().mockResolvedValue("Project"),
+      confirm,
+      notify: vi.fn(),
+      custom,
+    };
+    await handler?.("", { cwd, hasUI: true, ui } as ExtensionCommandContext);
+    expect(confirm).not.toHaveBeenCalled();
+    await expect(
+      readFile(path.join(cwd, ".pi/pi-agent-ide/extensions.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  },
+);
+test.each([false, true])(
+  "closing changed settings saves only when confirmed: %s",
+  async (accept) => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-unsaved-"));
+    onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+    vi.stubEnv("PI_CODING_AGENT_DIR", path.join(cwd, "agent"));
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    let handler: ((args: string, ctx: ExtensionCommandContext) => Promise<void>) | undefined;
+    registerModuleSettings({
+      registerCommand(_name, command) {
+        handler = command.handler;
+      },
+    });
+    const confirm = vi.fn().mockResolvedValueOnce(accept).mockResolvedValue(false);
+    const ui: Partial<ExtensionCommandContext["ui"]> = {
+      select: vi.fn().mockResolvedValue("Project"),
+      confirm,
+      notify: vi.fn(),
+      setStatus: vi.fn(),
+      custom: customDialog(false),
+    };
+    await handler?.("", { cwd, hasUI: true, ui } as ExtensionCommandContext);
+    const file = path.join(cwd, ".pi/pi-agent-ide/extensions.json");
+    if (accept) {
+      expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ disabled: ["ide.core"] });
+      expect(confirm).toHaveBeenCalledTimes(2);
+    } else {
+      await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(confirm).toHaveBeenCalledTimes(1);
+    }
+  },
+);
 test.each([false, true])(
   "saving a project override reloads only after confirmation: %s",
   async (confirmed) => {

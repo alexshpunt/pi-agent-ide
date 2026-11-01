@@ -31,7 +31,7 @@ export default async function liveSettingsProbe(pi: ExtensionAPI): Promise<void>
             timers.push(setTimeout(() => process.stdin.emit("data", value), ms));
           };
           try {
-            for (iteration = 0; iteration < 6; iteration++) {
+            for (iteration = 0; iteration < 8; iteration++) {
               await command.handler(args, {
                 ...ctx,
                 ui: {
@@ -41,7 +41,10 @@ export default async function liveSettingsProbe(pi: ExtensionAPI): Promise<void>
                     return ctx.ui.select(title, options);
                   },
                   async confirm(title, message) {
-                    key("\x1b", 150);
+                    if (iteration === 6) {
+                      key("\x1b[B", 150);
+                      key("\r", 300);
+                    } else key(iteration === 7 ? "\r" : "\x1b", 150);
                     const result = await ctx.ui.confirm(title, message);
                     confirms.push(result);
                     return result;
@@ -68,7 +71,8 @@ export default async function liveSettingsProbe(pi: ExtensionAPI): Promise<void>
                               : iteration === 2 ? ["\r", "\x13"]
                               : iteration === 3 ? ["\r", "\r", "\t", "\t", "\x1b[B", "\x1b[B", "\r", "\r", "\x13"]
                               : iteration === 4 ? ["\r", "\x13"]
-                              : ["\t", ...Array<string>(7).fill("\x1b[B"), "\r", "\r", "\x13"];
+                              : iteration === 5 ? ["\t", ...Array<string>(7).fill("\x1b[B"), "\r", "\r", "\x13"]
+                              : ["\t", "\t", "\x1b[B", "\x1b[B", "\r", "\x1b"];
                             inputs.forEach((input, index) => key(input, 120 * (index + 1)));
                           }
                           return rows;

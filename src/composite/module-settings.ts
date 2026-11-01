@@ -191,27 +191,35 @@ export function registerModuleSettings(
               }
             },
             (tab, id, value) => {
-              if (tab === "modules") choices.set(id, value as ModuleChoice);
-              else if (id === "preset") {
-                presetChoice =
+              if (tab === "modules") {
+                const original = current.disabled.includes(id)
+                  ? "disabled"
+                  : current.enabled.includes(id)
+                    ? "enabled"
+                    : "default";
+                if (value === original) choices.delete(id);
+                else choices.set(id, value as ModuleChoice);
+              } else if (id === "preset") {
+                const next =
                   AGENT_IDE_PRESET_OPTIONS.find((item) => item.label === value)?.value ?? null;
+                presetChoice = next === (current.preset ?? null) ? undefined : next;
               } else if (preferences.some((item) => item.id === id)) {
                 const preference = preferences.find((item) => item.id === id);
-                preferenceChoices.set(
-                  id,
+                const next =
                   value === "default" || value.length === 0
                     ? undefined
                     : preference?.kind === "choice"
                       ? preference.values.find((item) => item.label === value)?.value
-                      : value,
-                );
+                      : value;
+                if (next === current.preferences?.[id]) preferenceChoices.delete(id);
+                else preferenceChoices.set(id, next);
               } else {
-                featureChoices.set(
-                  id,
+                const next =
                   value === "default"
                     ? undefined
-                    : value === (flags.find((flag) => flag.id === id)?.labels?.on ?? "enabled"),
-                );
+                    : value === (flags.find((flag) => flag.id === id)?.labels?.on ?? "enabled");
+                if (next === configuredFeatureFlags(current)[id]) featureChoices.delete(id);
+                else featureChoices.set(id, next);
               }
             },
             done,
@@ -227,14 +235,14 @@ export function registerModuleSettings(
           };
         });
         if (
-          !saved ||
           choices.size +
             featureChoices.size +
             preferenceChoices.size +
             (presetChoice === undefined ? 0 : 1) ===
-            0
+          0
         )
           return;
+        if (!saved && !(await ctx.ui.confirm("Unsaved changes", "Save changes?"))) return;
         await saveModuleChoices(
           selectedPath,
           choices,
