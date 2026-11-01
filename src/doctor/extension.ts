@@ -22,7 +22,7 @@ import { registerDoctorTipProvider } from "./tip-provider.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**
-Registers the modular doctor core and `/pi-agent-ide-doctor`.
+Registers the modular doctor core and `/agent-ide-doctor`.
 */
 export default async function registerDoctor(pi: ExtensionAPI): Promise<void> {
   await registerDoctorWithOwner(pi);
@@ -48,7 +48,7 @@ export async function registerDoctorWithOwner(
   });
   pi.on("session_shutdown", unsubscribe);
 
-  pi.registerCommand("pi-agent-ide-doctor", {
+  pi.registerCommand("agent-ide-doctor", {
     description: "Check and configure this project or an explicit ssh://target/path",
     handler: async (arguments_, context) => {
       const { cwd, flags } = parseDoctorArguments(arguments_, context.cwd);
@@ -130,7 +130,7 @@ export async function registerDoctorWithOwner(
 
 function sendReport(pi: ExtensionAPI, content: string): void {
   pi.sendMessage(
-    { customType: "pi-agent-ide-doctor", content, display: true },
+    { customType: "agent-ide-doctor", content, display: true },
     { triggerTurn: false },
   );
 }

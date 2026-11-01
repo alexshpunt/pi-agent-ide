@@ -142,12 +142,12 @@ test("names an actionable setup problem and fingerprints changed state", async (
 
   expect(first.tuiRenderedOutput).toContain("PI AGENT IDE");
   expect(first.tuiRenderedOutput).toContain("missing-eslint");
-  expect(first.tuiRenderedOutput).toContain("/pi-agent-ide-doctor");
+  expect(first.tuiRenderedOutput).toContain("/agent-ide-doctor");
   expect(first.providerRequests).toHaveLength(1);
   expect(JSON.stringify(first.providerRequests)).not.toContain("missing-eslint");
-  expect(repeated.tuiRenderedOutput).not.toContain("/pi-agent-ide-doctor");
+  expect(repeated.tuiRenderedOutput).not.toContain("/agent-ide-doctor");
   expect(changed.tuiRenderedOutput).toContain("missing-oxlint");
-  expect(changed.tuiRenderedOutput).toContain("/pi-agent-ide-doctor");
+  expect(changed.tuiRenderedOutput).toContain("/agent-ide-doctor");
 });
 
 test("does not render the doctor tip when its core or provider extension is disabled", async () => {

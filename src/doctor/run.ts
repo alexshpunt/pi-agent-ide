@@ -162,7 +162,7 @@ export async function runDoctor(
 Renders a redacted doctor report for the transcript and agent.
 */
 export function formatDoctorReport(run: DoctorRun): string {
-  const lines = ["Pi Agent IDE doctor", ""];
+  const lines = ["Agent IDE doctor", ""];
 
   for (const section of run.sections) {
     lines.push(`${section.title} (${section.pluginId})`);
