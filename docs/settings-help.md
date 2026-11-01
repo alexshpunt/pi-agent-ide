@@ -16,7 +16,7 @@ Choose **Project** for this repository or **Global** for your usual defaults acr
 
 Modules have stricter rules: a module disabled in either scope stays off. Enabling it in Project does not undo a Global disable. Disabled dependencies and the selected preset can also restrict capabilities; check the effective state shown in the menu.
 
-Press **Ctrl+S** to save or **Esc** to cancel. Saving offers a reload. If you decline, the saved choices apply on the next reload or startup. Reload can reset in-memory extension state, so finish any work that depends on it first.
+Press **Ctrl+S** to save. On **Esc**, if there are unsaved changes, choose **Yes** to save them or **No** to discard them. Settings that support live updates take effect on save. The menu offers a reload only for effective changes that need one. Reload can reset in-memory extension state.
 
 ## Reduce noise or inspect details
 
