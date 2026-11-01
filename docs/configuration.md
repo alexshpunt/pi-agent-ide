@@ -121,7 +121,7 @@ The terminal module reads the same targets. Set `bash`'s `cwd` to `ssh://sandbox
 
 Use `raw:ssh://sandbox/path/file.bin` for original bytes. Offsets and limits count bytes; raw reads do not use text converters or accept views. Byte ranges can cross the text snapshot limit.
 
-Remote resources also support Search, selections, text undo, Git changes and index operations, local/remote transfers, language servers, diagnostics, formatters, linters, and debugger sessions. These providers use the selected Linux target's tools and configuration. Run `/pi-agent-ide-doctor ssh://sandbox/srv/work --no-apply` to inspect an explicitly selected remote project without suggested writes.
+Remote resources also support Search, selections, text undo, Git changes and index operations, local/remote transfers, language servers, diagnostics, formatters, linters, and debugger sessions. These providers use the selected Linux target's tools and configuration. Run `/agent-ide-doctor ssh://sandbox/srv/work --no-apply` to inspect an explicitly selected remote project without suggested writes.
 
 For target-native web text access, use `web:ssh://sandbox/https://example.com`; ordinary HTTP(S) URLs execute locally. Browser rendering requires Node, `playwright-core`, and Chrome or Chromium on the target. Missing dependencies fail without a local fallback.
 
@@ -261,9 +261,9 @@ Create the session with `adapter: "java"` and the fully qualified `mainClass`. U
 
 ## Doctor
 
-Run `/pi-agent-ide-doctor` to check the effective tools for the current project. Doctor uses the same layered entries as runtime. For each applicable entry it shows the stable ID, source layer, command, and real probe result. A missing or failing command is reported instead of falling back to a lower layer.
+Run `/agent-ide-doctor` to check the effective tools for the current project. Doctor uses the same layered entries as runtime. For each applicable entry it shows the stable ID, source layer, command, and real probe result. A missing or failing command is reported instead of falling back to a lower layer.
 
-Use `/pi-agent-ide-doctor ssh://target/path` for an explicitly configured Linux SSH project. Its inventory, project/user-global config and target-sensitive probes belong to that target. Native managed debugger path overrides are read from the target, not the controller. Pure-content adapters, such as jq and fetched-source parsers, stay local. Without a source, the command and passive startup tips keep their local scope. An unused target is not probed.
+Use `/agent-ide-doctor ssh://target/path` for an explicitly configured Linux SSH project. Its inventory, project/user-global config and target-sensitive probes belong to that target. Native managed debugger path overrides are read from the target, not the controller. Pure-content adapters, such as jq and fetched-source parsers, stay local. Without a source, the command and passive startup tips keep their local scope. An unused target is not probed.
 
 Doctor can still suggest a project override when project evidence points to a better installed tool. It shows the report before changing anything. `--apply` writes only to `<project>/.pi/pi-agent-ide/`; it never changes the global directory or built-in files. `--agent` delegates remaining setup work, and `--no-apply` skips suggested writes.
 
@@ -281,7 +281,7 @@ The project directory may also contain extension and editor settings:
 
 Doctor can send a redacted report and the relevant contributed recipes to the agent when setup still needs work. It runs the checks again after that agent turn.
 
-For automation and tests, `/pi-agent-ide-doctor --apply` accepts suggested mappings without the dialog, `--agent` delegates the remaining work, and `--no-apply` skips deterministic config writes.
+For automation and tests, `/agent-ide-doctor --apply` accepts suggested mappings without the dialog, `--agent` delegates the remaining work, and `--no-apply` skips deterministic config writes.
 
 ### Browser web reads
 
@@ -297,7 +297,7 @@ Doctor reports browser support as an optional warning. Direct HTTP(S) reads keep
 
 At TUI startup, doctor performs a lightweight setup inspection. It uses project languages, native project configuration, installed executables, and the effective project → global → built-in tool selection. It does not start formatters, linters, language servers, or browsers merely to decide whether to show a tip.
 
-No tip appears when built-in mappings already cover the project. Empty projects, unknown languages, and missing optional tools also stay quiet. A tip appears only for a concrete problem, such as an explicitly configured command that is unavailable, or for a supported installed tool that project evidence identifies as a useful change to the active selection. The tip names the detected items and points to `/pi-agent-ide-doctor` for the full report.
+No tip appears when built-in mappings already cover the project. Empty projects, unknown languages, and missing optional tools also stay quiet. A tip appears only for a concrete problem, such as an explicitly configured command that is unavailable, or for a supported installed tool that project evidence identifies as a useful change to the active selection. The tip names the detected items and points to `/agent-ide-doctor` for the full report.
 
 Each actionable state has its own stable fingerprint. The same state is shown once per project, while a materially different later problem can produce a new tip. Like other startup tips, it never enters model context. See [Startup tip provider](./extensions.md#startup-tip-provider) for the provider contract and persistence behavior.
 
@@ -367,16 +367,16 @@ Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, 
 
 ### Core tools
 
-| ID                | Contribution                                     |
-| ----------------- | ------------------------------------------------ |
-| `ide.core`        | IDE toolchain protocol                           |
-| `ide.tips`        | Passive startup-tip provider core                |
-| `ide.doctor`      | `/pi-agent-ide-doctor` and contribution protocol |
-| `ide.languages`   | Project language definitions for doctor          |
-| `read.core`       | `read` tool and read plugin protocol             |
-| `search.core`     | `search` tool and search plugin protocol         |
-| `editor.core`     | Text mutation tools and editor protocol          |
-| `editor.renderer` | Standard mutation and diff rendering             |
+| ID                | Contribution                                  |
+| ----------------- | --------------------------------------------- |
+| `ide.core`        | IDE toolchain protocol                        |
+| `ide.tips`        | Passive startup-tip provider core             |
+| `ide.doctor`      | `/agent-ide-doctor` and contribution protocol |
+| `ide.languages`   | Project language definitions for doctor       |
+| `read.core`       | `read` tool and read plugin protocol          |
+| `search.core`     | `search` tool and search plugin protocol      |
+| `editor.core`     | Text mutation tools and editor protocol       |
+| `editor.renderer` | Standard mutation and diff rendering          |
 
 ### Read
 

@@ -192,7 +192,7 @@ Built-in debugger recipes cover C, C++, C#, Dart, Elixir, Go, Java, JavaScript, 
 
 Known issue: the Kotlin adapter (`fwcd/kotlin-debug-adapter` 0.4.4) can run past verified breakpoints. This was reproduced with JDK 17 and 21 both locally and over SSH. Its recipe remains available, but a verified breakpoint is not proof that execution will stop there. Java uses `java-debug / JDT LS`, not this adapter.
 
-Windows and WSL are first-class supported environments alongside Linux. Run `/pi-agent-ide-doctor` to see the exact capabilities available on the current machine.
+Windows and WSL are first-class supported environments alongside Linux. Run `/agent-ide-doctor` to see the exact capabilities available on the current machine.
 
 ### Built through data-driven development
 
@@ -231,16 +231,16 @@ Pi Agent IDE includes formatter, linter, LSP, and debugger mappings. It discover
 Start Pi in your project directory, then run:
 
 ```text
-/pi-agent-ide-doctor
+/agent-ide-doctor
 ```
 
 Doctor reports the effective project, global, and built-in mappings, their source layers and commands, and the real probe results. It also checks AST support, search, Git, and optional Chrome or Chromium support for browser-rendered web reads.
 
 Doctor shows its report before changing anything. If project evidence points to a different installed tool, it can write a project-only override under `.pi/pi-agent-ide/`. It never changes global or built-in configuration. Native files such as `eslint.config.js`, `.clang-format`, and `pyproject.toml` remain unchanged.
 
-For a configured remote project, use `/pi-agent-ide-doctor ssh://target/path`. Target checks use that machine's tools and settings; suggested overrides stay in that remote project.
+For a configured remote project, use `/agent-ide-doctor ssh://target/path`. Target checks use that machine's tools and settings; suggested overrides stay in that remote project.
 
-Run `/pi-agent-ide-doctor` again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
+Run `/agent-ide-doctor` again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
 
 ## Customization
 
