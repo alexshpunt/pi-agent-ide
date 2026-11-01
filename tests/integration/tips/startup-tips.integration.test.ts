@@ -26,6 +26,7 @@ test("renders an eligible startup tip in the real Pi TUI without adding it to mo
   const project = path.join(root, "project");
   const agentDirectory = path.join(root, "agent");
   await mkdir(project, { recursive: true });
+  await disableSemanticTip(agentDirectory);
 
   const result = await runPi({
     agentDirectory,
@@ -52,6 +53,7 @@ test("suppresses a displayed tip only for its project", async () => {
   const agentDirectory = path.join(root, "agent");
   await mkdir(firstProject, { recursive: true });
   await mkdir(secondProject, { recursive: true });
+  await disableSemanticTip(agentDirectory);
 
   const first = await runPi({
     agentDirectory,
@@ -142,12 +144,12 @@ test("names an actionable setup problem and fingerprints changed state", async (
 
   expect(first.tuiRenderedOutput).toContain("PI AGENT IDE");
   expect(first.tuiRenderedOutput).toContain("missing-eslint");
-  expect(first.tuiRenderedOutput).toContain("/pi-agent-ide-doctor");
+  expect(first.tuiRenderedOutput).toContain("/agent-ide-doctor");
   expect(first.providerRequests).toHaveLength(1);
   expect(JSON.stringify(first.providerRequests)).not.toContain("missing-eslint");
-  expect(repeated.tuiRenderedOutput).not.toContain("/pi-agent-ide-doctor");
+  expect(repeated.tuiRenderedOutput).not.toContain("/agent-ide-doctor");
   expect(changed.tuiRenderedOutput).toContain("missing-oxlint");
-  expect(changed.tuiRenderedOutput).toContain("/pi-agent-ide-doctor");
+  expect(changed.tuiRenderedOutput).toContain("/agent-ide-doctor");
 });
 
 test("does not render the doctor tip when its core or provider extension is disabled", async () => {
@@ -198,6 +200,15 @@ test("does not render the doctor tip when its core or provider extension is disa
     expect(disabled.tuiRenderedOutput).not.toContain("Project setup");
   }
 });
+
+async function disableSemanticTip(agentDirectory: string): Promise<void> {
+  const directory = path.join(agentDirectory, "pi-agent-ide");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, "extensions.json"),
+    JSON.stringify({ disabled: ["search.semantic"] }),
+  );
+}
 
 async function installExecutable(root: string, name: string, directory = "bin"): Promise<void> {
   const file = path.join(root, directory, name);

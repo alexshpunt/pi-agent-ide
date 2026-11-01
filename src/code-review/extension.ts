@@ -10,16 +10,19 @@ import {
 import { afterPostEditScope } from "pi-agent-text-editor/api/post-edit";
 import { readReviewRules, REVIEW_RULES_PATH } from "./config.js";
 import { createCodeReview } from "./reviewer.js";
+import { createLiveFeatureFlag } from "#src/core/live-feature-flag.js";
 
 /** Connect optional background review and independently gated rule-capture guidance. */
 export default async function registerCodeReview(pi: ExtensionAPI): Promise<void> {
+  const reviewEnabled = createLiveFeatureFlag(pi, "pi-agent-ide-code-review");
+  const captureEnabled = createLiveFeatureFlag(pi, "pi-agent-ide-code-review-capture");
   let review: ReturnType<typeof createCodeReview> | undefined;
   const deferredBefore = new Map<string, string>();
   const reset = (ctx: ExtensionContext) => {
     review?.dispose();
     deferredBefore.clear();
     review = createCodeReview({
-      enabled: () => pi.getFlag("pi-agent-ide-code-review") === true,
+      enabled: reviewEnabled,
       runtime: () => ({
         available: (signal) =>
           ctx.modelRegistry.getAvailableOfType("classifier", undefined, { signal }),
@@ -51,7 +54,7 @@ export default async function registerCodeReview(pi: ExtensionAPI): Promise<void
     deferredBefore.clear();
   });
   pi.on("before_agent_start", (event) => {
-    if (pi.getFlag("pi-agent-ide-code-review-capture") !== true) return;
+    if (!captureEnabled()) return;
     event.systemPromptOptions.sections.ide_rule_capture = `Jev rule capture: enabled. Use the capture-code-review-rule skill when the user gives a reusable code-review requirement. Propose the rule and wait for confirmation before saving it to ${REVIEW_RULES_PATH}.`;
   });
   pi.registerMessageRenderer("ide-code-review", (message, options, theme) => {

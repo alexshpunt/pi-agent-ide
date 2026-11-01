@@ -83,6 +83,10 @@ Views change how the same resource is presented. The agent can request source st
 
 `search` provides one interface for exact text, regular expressions, and retained terminal output. File matches are reusable guarded references, so the agent can pass a selection directly to `read` or an editing tool. Search packaged guides through `docs:all` or one `docs:<id>`; guide matches are read-only and do not authorize edits.
 
+Use `/agent-ide-settings` to enable or disable optional semantic search and choose ColGREP (the default) or Vera. Global and Project settings follow the usual scope rules. Engine selection takes effect when saved in the settings menu; enabling or disabling the semantic search module requires a reload. Run `/semantic-index` in the project to prepare the selected engine and create its local index. The first setup may download tools and a model. Each engine has a separate index, and switching engines does not delete the other index. Searches refresh the selected index; an update failure is reported instead of returning stale results.
+
+Once the selected index is usable, `semantic_search` returns ranked files with counts of retrieved candidates, not occurrence counts. Set `path` to a local project directory to narrow the search or to a file for bounded, approximate ranges. Use `include` and `exclude` globs to filter files. ColGREP filters before ranking; Vera's scoped and filtered search can omit relevant results because it may filter a limited candidate pool. Read the source before editing: ranges are hints, not editable selections. Ordinary search does not depend on the index.
+
 <div align="center">
 
 [![Pi Agent IDE search examples](assets/summary/thumbs/search.png)](assets/summary/search.png)
@@ -188,7 +192,7 @@ Built-in debugger recipes cover C, C++, C#, Dart, Elixir, Go, Java, JavaScript, 
 
 Known issue: the Kotlin adapter (`fwcd/kotlin-debug-adapter` 0.4.4) can run past verified breakpoints. This was reproduced with JDK 17 and 21 both locally and over SSH. Its recipe remains available, but a verified breakpoint is not proof that execution will stop there. Java uses `java-debug / JDT LS`, not this adapter.
 
-Windows and WSL are first-class supported environments alongside Linux. Run `/pi-agent-ide-doctor` to see the exact capabilities available on the current machine.
+Windows and WSL are first-class supported environments alongside Linux. Run `/agent-ide-doctor` to see the exact capabilities available on the current machine.
 
 ### Built through data-driven development
 
@@ -227,16 +231,16 @@ Pi Agent IDE includes formatter, linter, LSP, and debugger mappings. It discover
 Start Pi in your project directory, then run:
 
 ```text
-/pi-agent-ide-doctor
+/agent-ide-doctor
 ```
 
 Doctor reports the effective project, global, and built-in mappings, their source layers and commands, and the real probe results. It also checks AST support, search, Git, and optional Chrome or Chromium support for browser-rendered web reads.
 
 Doctor shows its report before changing anything. If project evidence points to a different installed tool, it can write a project-only override under `.pi/pi-agent-ide/`. It never changes global or built-in configuration. Native files such as `eslint.config.js`, `.clang-format`, and `pyproject.toml` remain unchanged.
 
-For a configured remote project, use `/pi-agent-ide-doctor ssh://target/path`. Target checks use that machine's tools and settings; suggested overrides stay in that remote project.
+For a configured remote project, use `/agent-ide-doctor ssh://target/path`. Target checks use that machine's tools and settings; suggested overrides stay in that remote project.
 
-Run `/pi-agent-ide-doctor` again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
+Run `/agent-ide-doctor` again after installing or changing project tools. For configuration paths, precedence, and command flags, see [Configuration](./docs/configuration.md#doctor).
 
 ## Customization
 

@@ -13,7 +13,7 @@ export async function saveModuleChoices(
   choices: ReadonlyMap<string, ModuleChoice>,
   featureChoices: ReadonlyMap<string, boolean | undefined> = new Map(),
   preferenceChoices: ReadonlyMap<string, string | undefined> = new Map(),
-  presetChoice?: AgentIdePreset,
+  presetChoice?: AgentIdePreset | null,
 ): Promise<void> {
   await withFileMutationQueue(configPath, async () => {
     const settings = await readExtensionSettingsScope(configPath);
@@ -43,6 +43,7 @@ export async function saveModuleChoices(
       if (value === undefined) delete flags[id];
       else flags[id] = value;
     }
+    if (presetChoice === null) delete original.preset;
     await mkdir(path.dirname(configPath), { recursive: true });
     await writeFile(
       configPath,
@@ -51,7 +52,7 @@ export async function saveModuleChoices(
           ...original,
           disabled: [...disabled],
           enabled: [...enabled],
-          ...(presetChoice === undefined ? {} : { preset: presetChoice }),
+          ...(presetChoice == null ? {} : { preset: presetChoice }),
           ...(featureChoices.size > 0 ? { flags } : {}),
           ...(preferenceChoices.size > 0 ? { preferences } : {}),
         },

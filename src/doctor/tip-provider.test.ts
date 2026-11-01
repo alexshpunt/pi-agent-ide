@@ -56,7 +56,7 @@ describe("doctor startup tip provider", () => {
     const tip = await provider.getTip(context);
     expect(tip?.id).toMatch(/^doctor-setup-[a-f0-9]{12}$/u);
     expect(tip?.body).toContain("Configured linter eslint is unavailable");
-    expect(tip?.body).toContain("/pi-agent-ide-doctor");
+    expect(tip?.body).toContain("/agent-ide-doctor");
   });
 
   test("names a detected tool opportunity", async () => {
@@ -92,7 +92,7 @@ describe("doctor startup tip provider", () => {
     expect(tip?.body).toContain("biome");
     expect(tip?.body).toContain("typescript");
     expect(tip?.body).toContain("formatting");
-    expect(tip?.body).toContain("/pi-agent-ide-doctor");
+    expect(tip?.body).toContain("/agent-ide-doctor");
   });
 
   test("changes identity when the actionable setup state changes", async () => {

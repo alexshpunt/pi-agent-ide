@@ -28,7 +28,7 @@ export default async function registerReadCore(
   pi: ExtensionAPI,
   context?: { readonly preferences: Readonly<Record<string, string>> },
 ): Promise<void> {
-  const core = createReadCore(parsePresentation(context?.preferences["ui.read"]));
+  const core = createReadCore(() => parsePresentation(context?.preferences["ui.read"]));
   const targets = connectResultTargets(pi);
   await core.registerPlugin({
     protocol: READ_PROTOCOL,

@@ -64,7 +64,7 @@ test("the public Doctor command inspects the selected SSH project and keeps agen
       tools: [],
       rawMode: false,
       conversation: [assistantMessage([text("Reviewed the selected project")])],
-    }).run(`/pi-agent-ide-doctor ${project} --no-apply --agent`);
+    }).run(`/agent-ide-doctor ${project} --no-apply --agent`);
     const transcript = JSON.stringify(run.messages);
     expect(run.exitCode).toBe(0);
     expect(transcript).toContain(`Project: ${project}`);
@@ -149,7 +149,7 @@ test("the public Doctor apply flag writes only its native project config and rec
       tools: [],
       rawMode: false,
       conversation: [assistantMessage([text("Reviewed the native configuration")])],
-    }).run(`/pi-agent-ide-doctor ${project} --apply --agent`);
+    }).run(`/agent-ide-doctor ${project} --apply --agent`);
     expect(run.exitCode).toBe(0);
     const saved: unknown = JSON.parse(
       (await backend.read(`${fixture.workspace}/.pi/pi-agent-ide/formatters.json`)).bytes.toString(

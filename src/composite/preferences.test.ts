@@ -4,6 +4,12 @@ import { effectiveToolPresentation, toolPresentation } from "./presentation.js";
 
 const presentationIds = ["ui.diffs", "ui.read", "ui.search", "ui.terminal"];
 
+test("semantic engine setting offers ColGREP and Vera with the existing engine as default", () => {
+  const preference = AGENT_IDE_PREFERENCES.find((item) => item.id === "search.semantic.engine");
+  expect(preference).toMatchObject({ kind: "choice", group: "features", default: "colgrep" });
+  if (preference?.kind !== "choice") throw new Error("Missing semantic engine choice");
+  expect(preference.values.map(({ value }) => value)).toEqual(["colgrep", "vera"]);
+});
 test("Codemode tool results are opt-in with off and on UI choices", () => {
   const preference = AGENT_IDE_PREFERENCES.find((item) => item.id === "ui.codemode");
   expect(preference).toMatchObject({ kind: "choice", group: "ui", default: "off" });

@@ -34,7 +34,7 @@ test("the real doctor probes the effective project and global entries with prove
       PATH: `${path.join(project, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     conversation: [assistantMessage([text("Layered setup reviewed")])],
-  }).run("/pi-agent-ide-doctor --no-apply --agent");
+  }).run("/agent-ide-doctor --no-apply --agent");
 
   expect(result.exitCode).toBe(0);
   const transcript = JSON.stringify(result.messages);
@@ -62,7 +62,7 @@ test("an invalid formatter layer does not hide valid linter and LSP checks", asy
       PATH: `${path.join(project, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     conversation: [assistantMessage([text("Category failure reviewed")])],
-  }).run("/pi-agent-ide-doctor --no-apply --agent");
+  }).run("/agent-ide-doctor --no-apply --agent");
 
   const transcript = JSON.stringify(result.messages);
   expect(transcript).toMatch(/Formatter[\s\S]*FAIL[\s\S]*shared-formatter/);
@@ -84,7 +84,7 @@ test("malformed linter output is reported without breaking the rest of doctor", 
       PATH: `${path.join(project, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     conversation: [assistantMessage([text("Malformed linter output reviewed")])],
-  }).run("/pi-agent-ide-doctor --no-apply --agent");
+  }).run("/agent-ide-doctor --no-apply --agent");
 
   expect(result.exitCode).toBe(0);
   const transcript = JSON.stringify(result.messages);

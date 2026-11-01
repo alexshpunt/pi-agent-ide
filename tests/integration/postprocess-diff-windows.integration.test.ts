@@ -79,7 +79,7 @@ test.each([false, true])(
           mutationRender: { model: Model }[];
         };
         const model = details.mutationRender[0]?.model;
-        expect(model).toBeDefined();
+        if (!model) throw new Error("Missing mutation render model");
         expect(model.omittedChanges).toEqual({ outside: 1, ambiguous: 0 });
         const changed = model.rows
           .filter((row) => row.changed)
@@ -118,7 +118,7 @@ test.each([false, true])(
 
       const bodyRows = resumed.tuiRenderedOutput
         .split("\n")
-        .filter((row) => row.trimStart().startsWith("│"));
+        .filter((row) => row.trimStart().startsWith("│") && row.trimEnd().endsWith("│"));
       if (expanded) expect(bodyRows.length).toBeGreaterThan(24);
       else expect(bodyRows).toHaveLength(24);
     } finally {

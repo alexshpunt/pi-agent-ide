@@ -36,7 +36,7 @@ export function createIdeSettingsDocumentation(
         .join(",\n");
       return `# IDE settings
 
-This catalog describes supported settings, not current saved values or live runtime state. It is generated from the registrations used by /agent-ide-settings. Read both configuration scopes to inspect overrides. Reload or restart applies module and startup-only changes; built-in CLI flags may override their saved defaults for an invocation.
+This catalog describes supported settings, not current saved values or live runtime state. It is generated from the registrations used by /agent-ide-settings. Read both configuration scopes to inspect overrides. The settings menu applies live settings on save and marks pending reload-only settings with an asterisk. Module selection, diagnostic buffering, developer mode and unknown external settings require reload; effective changes masked by other scopes, dependencies or CLI flags do not. Reverting pending changes clears the indicator. Built-in CLI flags can override saved defaults for an invocation.
 
 ## Configuration scopes
 

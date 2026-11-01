@@ -6,6 +6,7 @@ import {
   isIdePluginRegistrationRequest,
 } from "#src/api/plugin-protocol.js";
 import { createIdeCore } from "#src/core/ide-core.js";
+import { createLiveFeatureFlag } from "#src/core/live-feature-flag.js";
 import { createDiagnosticDelivery } from "#src/core/diagnostic-delivery.js";
 import {
   diagnosticEntryGroups,
@@ -32,6 +33,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void> {
   resetRegistry();
   const core = createIdeCore();
+  const skipPostProcessing = createLiveFeatureFlag(pi, "pi-agent-ide-no-post-processing");
   registerDiagnosticEntryRenderer(pi);
   const unsubscribePlugins = pi.events.on(IDE_PLUGIN_REGISTER_EVENT, (request) => {
     if (!isIdePluginRegistrationRequest(request)) {
@@ -48,7 +50,7 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
   connectTextEditorPostEditHandler(pi, {
     id: "pi-agent-ide",
     handler: (transaction) =>
-      pi.getFlag("pi-agent-ide-no-post-processing") === true
+      skipPostProcessing()
         ? Promise.resolve({ formatting: { status: "disabled" } })
         : runIdePostEditGate(transaction),
   });
@@ -63,11 +65,7 @@ export default async function registerPiAgentIde(pi: ExtensionAPI): Promise<void
     id: "ide-diagnostics",
     setup(api) {
       api.onDidEdit((completion) => {
-        if (
-          pi.getFlag("pi-agent-ide-no-post-processing") === true ||
-          completion.postProcessing === "deferred"
-        )
-          return;
+        if (skipPostProcessing() || completion.postProcessing === "deferred") return;
         if (path.isAbsolute(completion.resourceSource)) {
           afterPostEditScope(() =>
             core.diagnostics.schedule(completion.resourceSource, completion.after.content, {

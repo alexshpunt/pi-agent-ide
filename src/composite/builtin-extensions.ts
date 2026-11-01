@@ -77,6 +77,7 @@ export const BUILTIN_EXTENSIONS: readonly BuiltinExtension[] = [
     ["read.web"],
   ),
   builtin("search.core", () => import("#src/extensions/pi-agent-search/index.js")),
+  builtin("search.semantic", () => import("#src/semantic/index.js"), ["search.core"]),
   builtin(
     "search.text",
     () => import("#src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.js"),

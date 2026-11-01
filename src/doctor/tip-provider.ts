@@ -51,7 +51,7 @@ export function createDoctorTipProvider(
           items.length === 1
             ? "Project setup needs attention"
             : `${items.length} project setup items`,
-        body: [...visible, "Run /pi-agent-ide-doctor"].join("\n"),
+        body: [...visible, "Run /agent-ide-doctor"].join("\n"),
       };
     },
   };

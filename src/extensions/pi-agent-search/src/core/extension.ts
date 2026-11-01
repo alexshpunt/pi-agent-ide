@@ -84,7 +84,7 @@ export default async function registerSearchCore(
   pi: ExtensionAPI,
   context?: { readonly preferences: Readonly<Record<string, string>> },
 ): Promise<void> {
-  const presentation = parsePresentation(context?.preferences["ui.search"]);
+  const presentation = () => parsePresentation(context?.preferences["ui.search"]);
   connectAgentDocumentation(pi, [
     await loadPackagedAgentGuide({
       id: "search",
@@ -127,7 +127,7 @@ export default async function registerSearchCore(
         parameters: searchSchema,
         outputSchema: searchOutputSchema,
         renderCall(arguments_, theme, renderContext): Component {
-          const mode = renderContext.expanded ? "full" : presentation;
+          const mode = renderContext.expanded ? "full" : presentation();
           if (mode === "disabled") return new Text(theme.fg("toolTitle", "search"), 0, 0);
           return toolCallHeader(
             renderContext.lastComponent,
@@ -136,7 +136,7 @@ export default async function registerSearchCore(
           );
         },
         renderResult(result, options, theme, context): Component {
-          const mode = options.expanded ? "full" : presentation;
+          const mode = options.expanded ? "full" : presentation();
           if (mode === "disabled" && !context.isError && !options.isPartial)
             return new Text(theme.fg("success", "✓ search"), 0, 0);
           options = { ...options, expanded: mode === "full" };
