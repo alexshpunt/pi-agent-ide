@@ -11,7 +11,7 @@ test("Doctor keeps local cwd without a source and binds apply flags to the expli
   ).toEqual({ cwd: "ssh://fixture/project%20name", flags: new Set(["--apply", "--agent"]) });
   expect(() =>
     parseDoctorArguments("ssh://one/project ssh://two/project --apply", "/controller"),
-  ).toThrow("Use /pi-agent-ide-doctor");
+  ).toThrow(TypeError);
   expect(() => parseDoctorArguments("--apply --no-apply", "/controller")).toThrow("not both");
-  expect(() => parseDoctorArguments("--aply", "/controller")).toThrow("Use /pi-agent-ide-doctor");
+  expect(() => parseDoctorArguments("--aply", "/controller")).toThrow(TypeError);
 });

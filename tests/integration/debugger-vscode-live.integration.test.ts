@@ -40,7 +40,7 @@ test.skipIf(liveWorkspace === "")(
         environment,
         conversation: [assistantMessage([text("Reviewed")])],
         timeoutMs: 120_000,
-      }).run("/pi-agent-ide-doctor --no-apply --agent");
+      }).run("/agent-ide-doctor --no-apply --agent");
     const open = await doctor("doctor-vscode-open", liveWorkspace);
     expect(JSON.stringify(open.messages)).toContain("VS Code backend: available in");
 

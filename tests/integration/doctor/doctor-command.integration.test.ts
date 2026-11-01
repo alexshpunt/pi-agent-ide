@@ -50,10 +50,11 @@ test("the real Pi command detects C++ and applies plugin-owned recipes", async (
       PATH: `${path.join(cwd, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     conversation: [assistantMessage([text("Setup reviewed")])],
-  }).run("/pi-agent-ide-doctor --apply --agent");
+  }).run("/agent-ide-doctor --apply --agent");
 
   expect(result.exitCode).toBe(0);
   const transcript = JSON.stringify(result.messages);
+  expect(JSON.stringify(result.traceEvents)).toContain('"customType":"agent-ide-doctor"');
   expect(transcript).toContain("Detected: cpp");
   expect(transcript).toContain("clang-format [built-in]");
   expect(transcript).toContain("clangd [built-in]");
@@ -101,7 +102,7 @@ test("disabling plugins removes their doctor checks and catalog knowledge", asyn
       PATH: `${path.join(cwd, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
     },
     conversation: [assistantMessage([text("Setup reviewed")])],
-  }).run("/pi-agent-ide-doctor --no-apply --agent");
+  }).run("/agent-ide-doctor --no-apply --agent");
 
   const transcript = JSON.stringify(result.messages);
   expect(transcript).not.toContain("Formatter (formatter)");

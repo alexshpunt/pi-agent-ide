@@ -10,7 +10,7 @@ export function parseDoctorArguments(
     else if (token.startsWith("ssh://") && source === undefined) source = token;
     else
       throw new TypeError(
-        "Use /pi-agent-ide-doctor [ssh://target/path] [--apply | --no-apply] [--agent]",
+        "Use /agent-ide-doctor [ssh://target/path] [--apply | --no-apply] [--agent]",
       );
   }
   if (flags.has("--apply") && flags.has("--no-apply"))

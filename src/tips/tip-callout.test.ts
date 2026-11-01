@@ -16,7 +16,7 @@ test("renders a tip with an accent rail and clear content hierarchy", () => {
   const callout = new TipCallout(
     {
       title: "Project setup",
-      body: "Configure formatting, linting, LSP, search, and Git.\nRun /pi-agent-ide-doctor",
+      body: "Configure formatting, linting, LSP, search, and Git.\nRun /agent-ide-doctor",
     },
     theme,
   );
@@ -25,10 +25,10 @@ test("renders a tip with an accent rail and clear content hierarchy", () => {
   expect(rendered.map(stripTerminalSequences)).toEqual([
     "│ PI AGENT IDE · Project setup",
     "│ Configure formatting, linting, LSP, search, and Git.",
-    "│ Run /pi-agent-ide-doctor",
+    "│ Run /agent-ide-doctor",
   ]);
   expect(rendered.every((line) => line.includes("\u001B[36m│\u001B[39m"))).toBe(true);
-  expect(rendered[2]).toContain("\u001B[36m\u001B[1m/pi-agent-ide-doctor");
+  expect(rendered[2]).toContain("\u001B[36m\u001B[1m/agent-ide-doctor");
 });
 
 test("keeps rendering safe when no content column is available", () => {
