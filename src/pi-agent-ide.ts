@@ -19,6 +19,8 @@ import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js
 import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
 import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.js";
 import { readAgentIdeSetting } from "#src/api/settings.js";
+import { listenPresentationPreference } from "#src/composite/live-presentation.js";
+import { createLiveFeatureFlag } from "#src/core/live-feature-flag.js";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
@@ -31,8 +33,17 @@ Registers the configured built-ins as one Pi Agent IDE extension.
 export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
   const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
-  const hideCodemodeToolResults = config.preferences?.["ui.codemode"] !== "on";
-  const nestedRendering = createNestedIdeRendering(pi, hideCodemodeToolResults);
+  const livePreferences: Record<string, string> = { ...config.preferences };
+  for (const id of ["ui.codemode", "ui.read", "ui.search", "ui.diffs", "ui.terminal"]) {
+    listenPresentationPreference(pi, id, (value) => {
+      if (value === undefined) delete livePreferences[id];
+      else livePreferences[id] = value;
+    });
+  }
+  const nestedRendering = createNestedIdeRendering(
+    pi,
+    () => livePreferences["ui.codemode"] !== "on",
+  );
   const textResults = createIdeTextResults(nestedRendering.api);
   const availability = createIdeToolAvailability(textResults.api);
   const capabilities = createIdeCapabilities(availability.api);
@@ -187,7 +198,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
       );
     },
   });
-  registerModuleSettings(pi, settings.flags, settings.preferences);
+  registerModuleSettings(pi, settings.flags, settings.preferences, config);
   registerSettingsHelp(pi);
   connectAgentDocumentation(pi, [
     createIdeSettingsDocumentation(settings.flags, settings.preferences),
@@ -198,8 +209,9 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     [...presetDisabled, ...config.disabled],
     config.enabled,
   );
+  const staticEditPreviews = createLiveFeatureFlag(pi, "pi-agent-ide-no-animations");
   for (const extension of enabled) {
-    await extension.register(capabilities.api, { preferences: config.preferences ?? {} });
+    await extension.register(capabilities.api, { preferences: livePreferences, animationsEnabled: () => !staticEditPreviews() });
   }
   capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();

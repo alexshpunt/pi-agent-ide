@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
 import {
   createConfiguredSemanticExtension,
+  SEMANTIC_SETTINGS_CHANGED_EVENT,
   createSemanticExtension,
   type SemanticBackend,
 } from "./extension.js";
@@ -24,9 +25,20 @@ function host() {
   const handlers = new Map<string, Handler>();
   const commands = new Map<string, Command>();
   const tools = new Map<string, Tool>();
+  const listeners = new Map<string, Set<(data: unknown) => void>>();
   let active: string[] = [];
   const pi = {
-    events: { on: () => () => {}, emit: () => {} },
+    events: {
+      on: (event: string, listener: (data: unknown) => void) => {
+        const set = listeners.get(event) ?? new Set();
+        listeners.set(event, set);
+        set.add(listener);
+        return () => set.delete(listener);
+      },
+      emit: (event: string, data: unknown) => {
+        for (const listener of listeners.get(event) ?? []) listener(data);
+      },
+    },
     on: (event: string, handler: Handler) => handlers.set(event, handler),
     registerCommand: (name: string, command: Command) => commands.set(name, command),
     registerTool: (tool: Tool) => {
@@ -38,7 +50,21 @@ function host() {
     },
     getSettings: () => ({}),
   };
-  return { pi: pi as never, handlers, commands, tools, active: () => active };
+  return {
+    pi: pi as never,
+    handlers,
+    commands,
+    tools,
+    active: () => active,
+    async settingsChanged(cwd: string) {
+      const pending: Promise<void>[] = [];
+      pi.events.emit(SEMANTIC_SETTINGS_CHANGED_EVENT, {
+        cwd,
+        waitUntil: (promise: Promise<void>) => pending.push(promise),
+      });
+      await Promise.all(pending);
+    },
+  };
 }
 
 const context = (cwd: string) => ({ cwd, mode: "tui", hasUI: true, ui: { notify: vi.fn() } });
@@ -59,6 +85,107 @@ test("an invalid engine setting does not prevent the IDE from loading or use ano
   expect(backend.available).not.toHaveBeenCalled();
   expect(backend.index).not.toHaveBeenCalled();
 });
+
+test("switching engines applies to search and indexing without reloading", async () => {
+  const h = host();
+  let selected = "colgrep";
+  const colgrep: SemanticBackend = {
+    available: vi.fn(async () => true),
+    index: vi.fn(async () => {}),
+    search: vi.fn(async () => "colgrep result"),
+  };
+  let veraIndexed = false;
+  const vera: SemanticBackend = {
+    available: vi.fn(async () => veraIndexed),
+    index: vi.fn(async () => {
+      veraIndexed = true;
+    }),
+    search: vi.fn(async () => "vera result"),
+  };
+  await createConfiguredSemanticExtension({ colgrep, vera }, async () => selected)(h.pi);
+  const project = context("/project");
+  await h.handlers.get("session_start")?.({}, project);
+  expect(h.tools.get("semantic_search")?.exposure).toBe("direct");
+  selected = "vera";
+  await h.settingsChanged(project.cwd);
+  expect(h.tools.get("semantic_search")?.exposure).toBe("hidden");
+  await h.commands.get("semantic-index")?.handler("", project);
+  expect(h.tools.get("semantic_search")?.exposure).toBe("direct");
+  const tool = h.tools.get("semantic_search");
+  if (!tool) throw new Error("Tool not registered");
+  const result = await tool.execute("id", { query: "example" }, undefined, undefined, project);
+  expect(result.content[0]?.text).toBe("vera result");
+  expect(vera.index).toHaveBeenCalledOnce();
+  expect(vera.search).toHaveBeenCalledOnce();
+  expect(colgrep.index).not.toHaveBeenCalled();
+  expect(colgrep.search).not.toHaveBeenCalled();
+});
+
+test("an in-flight index stays with its original engine when selection changes", async () => {
+  const h = host();
+  let selected = "colgrep";
+  let release!: () => void;
+  const indexing = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let indexed = false;
+  const colgrep: SemanticBackend = {
+    available: vi.fn(async () => indexed),
+    index: vi.fn(async () => {
+      await indexing;
+      indexed = true;
+    }),
+    search: vi.fn(async () => "colgrep"),
+  };
+  const vera: SemanticBackend = {
+    available: vi.fn(async () => false),
+    index: vi.fn(async () => {}),
+    search: vi.fn(async () => "vera"),
+  };
+  await createConfiguredSemanticExtension({ colgrep, vera }, async () => selected)(h.pi);
+  const project = context("/project");
+  await h.handlers.get("session_start")?.({}, project);
+  const command = h.commands.get("semantic-index");
+  if (!command) throw new Error("Command not registered");
+  const running = command.handler("", project);
+  await Promise.resolve();
+  selected = "vera";
+  await h.settingsChanged(project.cwd);
+  release();
+  await running;
+  expect(colgrep.index).toHaveBeenCalledOnce();
+  expect(vera.index).not.toHaveBeenCalled();
+  expect(h.tools.get("semantic_search")?.exposure).toBe("hidden");
+});
+
+test("an older availability check cannot override a newer engine selection", async () => {
+  const h = host();
+  let selected = "colgrep";
+  let release!: (value: boolean) => void;
+  const delayed = new Promise<boolean>((resolve) => {
+    release = resolve;
+  });
+  const colgrep: SemanticBackend = {
+    available: vi.fn(async () => delayed),
+    index: vi.fn(async () => {}),
+    search: vi.fn(async () => "colgrep"),
+  };
+  const vera: SemanticBackend = {
+    available: vi.fn(async () => false),
+    index: vi.fn(async () => {}),
+    search: vi.fn(async () => "vera"),
+  };
+  await createConfiguredSemanticExtension({ colgrep, vera }, async () => selected)(h.pi);
+  const project = context("/project");
+  const oldCheck = h.handlers.get("session_start")?.({}, project);
+  await Promise.resolve();
+  selected = "vera";
+  await h.settingsChanged(project.cwd);
+  release(true);
+  await oldCheck;
+  expect(h.tools.get("semantic_search")?.exposure).toBe("hidden");
+});
+
 test("the selected engine owns availability, indexing and search", async () => {
   const h = host();
   let veraIndexed = false;

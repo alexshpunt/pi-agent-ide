@@ -2085,6 +2085,7 @@ add(
 );
 
 add(
+  // This route starts with one prepared index; live engine switching is verified separately.
   "semantic-code-search",
   ["search.semantic", "search.semantic-scope-filters", "compose.semantic-read"],
   "Use semantic_search to locate the function responsible for expiring a user session. First search the project. Then search the directory 'src with spaces' for TypeScript files while excluding test files using include '*.ts' and exclude '*.test.ts'. Search the relevant file again by setting path to that file, then read it and report the function name.",

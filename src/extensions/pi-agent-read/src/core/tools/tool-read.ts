@@ -129,7 +129,11 @@ export interface ReadTool {
 /** Creates a read pipeline whose prompt contributions reflect the currently installed plugins. */
 export function createReadTool(
   pluginPromptGuidelines?: () => readonly string[],
-  presentation: "full" | "compact" | "disabled" = "compact",
+  presentation:
+    | "full"
+    | "compact"
+    | "disabled"
+    | (() => "full" | "compact" | "disabled") = "compact",
   parameterDescriptions?: () => ReadParameterText,
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
@@ -186,7 +190,11 @@ export function createReadTool(
           source === undefined
             ? undefined
             : resolvers.find(({ matchesCall }) => matchesCall?.(source) === true)?.renderCall;
-        const mode = context.expanded ? "full" : presentation;
+        const mode = context.expanded
+          ? "full"
+          : typeof presentation === "function"
+            ? presentation()
+            : presentation;
         if (mode === "disabled") return new Text(theme.fg("toolTitle", "read"), 0, 0);
         return (renderer ?? renderReadCall)(arguments_, theme, {
           ...context,
@@ -199,7 +207,11 @@ export function createReadTool(
           resolvedBy === undefined
             ? undefined
             : resolvers.find(({ resolver }) => resolver.id === resolvedBy)?.renderResult;
-        const mode = options.expanded ? "full" : presentation;
+        const mode = options.expanded
+          ? "full"
+          : typeof presentation === "function"
+            ? presentation()
+            : presentation;
         if (mode === "disabled" && !context.isError && !options.isPartial)
           return new Text(theme.fg("success", "✓ read"), 0, 0);
         return (renderer ?? fallbackReadRenderer)(

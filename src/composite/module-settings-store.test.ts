@@ -128,6 +128,10 @@ test("saves preset without losing unrelated settings", async () => {
     preset: "text-editor",
     custom: { keep: 1 },
   });
+  await saveModuleChoices(file, new Map(), new Map(), new Map(), null);
+  expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+    disabled: ["ide.vision"], enabled: [], custom: { keep: 1 },
+  });
 });
 test("saves string preferences and preserves unrelated values", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-preferences-"));

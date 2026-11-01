@@ -15,35 +15,46 @@ export interface SemanticBackend {
   ): Promise<string>;
 }
 
+type EnginePreference = string | ((cwd: string) => Promise<string | undefined>);
+
+/** The settings menu emits this after saving and waits for registered refreshes. */
+export const SEMANTIC_SETTINGS_CHANGED_EVENT = "pi-agent-ide/semantic/settings-changed/v1";
+export type SemanticSettingsChanged = {
+  cwd: string;
+  waitUntil(promise: Promise<void>): void;
+};
+
 export function createConfiguredSemanticExtension(
   backends: Record<SemanticEngine, SemanticBackend>,
-  preference?: string,
+  preference?: EnginePreference,
 ) {
-  try {
-    const selected = semanticEngine(preference);
-    return createSemanticExtension(backends[selected], selected === "vera" ? "Vera" : "ColGREP");
-  } catch (error) {
-    const invalid: SemanticBackend = {
-      available: async () => false,
-      index: async () => {
-        throw error;
-      },
-      search: async () => {
-        throw error;
-      },
-    };
-    return createSemanticExtension(invalid, "configured");
-  }
+  return registerWithSelection(async (cwd) => {
+    const value = typeof preference === "function" ? await preference(cwd) : preference;
+    const selected = semanticEngine(value);
+    return { backend: backends[selected], engine: selected === "vera" ? "Vera" : "ColGREP" };
+  });
 }
+
 export function createSemanticExtension(
   backend: SemanticBackend,
   engine: "ColGREP" | "Vera" | "configured" = "ColGREP",
 ) {
+  return registerWithSelection(async () => ({ backend, engine }));
+}
+
+function registerWithSelection(
+  select: (
+    cwd: string,
+  ) => Promise<{ backend: SemanticBackend; engine: "ColGREP" | "Vera" | "configured" }>,
+) {
   return async function registerSemanticSearch(pi: ExtensionAPI): Promise<void> {
     let exposure: "direct" | "hidden" | undefined;
-    const publish = (next: "direct" | "hidden") => {
-      if (next === exposure) return;
+    let publishedEngine: "ColGREP" | "Vera" | "configured" | undefined;
+    let refreshVersion = 0;
+    const publish = (next: "direct" | "hidden", engine: "ColGREP" | "Vera" | "configured") => {
+      if (next === exposure && engine === publishedEngine) return;
       exposure = next;
+      publishedEngine = engine;
       pi.registerTool({
         name: "semantic_search",
         label: "semantic_search",
@@ -73,6 +84,7 @@ export function createSemanticExtension(
           { additionalProperties: false },
         ),
         async execute(_id, params, signal, _onUpdate, context) {
+          const { backend } = await select(context.cwd);
           if (!(await backend.available(context.cwd)))
             throw new Error(
               "Semantic search is unavailable for this project. Run /semantic-index first.",
@@ -93,22 +105,40 @@ export function createSemanticExtension(
       }
     };
     const refresh = async (cwd: string) => {
+      const version = ++refreshVersion;
       let usable = false;
+      let engine: "ColGREP" | "Vera" | "configured" = "configured";
       try {
-        usable = await backend.available(cwd);
+        const selected = await select(cwd);
+        engine = selected.engine;
+        usable = await selected.backend.available(cwd);
       } catch {
         /* An optional backend must not block the IDE. */
       }
-      publish(usable ? "direct" : "hidden");
+      if (version === refreshVersion) publish(usable ? "direct" : "hidden", engine);
       return usable;
     };
+    const unsubscribeSettings = pi.events.on(SEMANTIC_SETTINGS_CHANGED_EVENT, (data) => {
+      const change = data as SemanticSettingsChanged;
+      change.waitUntil(refresh(change.cwd).then(() => {}));
+    });
+    pi.on("session_shutdown", () => {
+      refreshVersion++;
+      unsubscribeSettings();
+    });
     await connectTipProvider(pi, {
       protocol: TIP_PROTOCOL,
       apiVersion: TIP_API_VERSION,
       id: "semantic-search",
       async getTip(context) {
-        if (context.mode !== "tui" || !context.hasUI || (await backend.available(context.cwd)))
+        if (context.mode !== "tui" || !context.hasUI) return undefined;
+        let backend: SemanticBackend;
+        try {
+          ({ backend } = await select(context.cwd));
+          if (await backend.available(context.cwd)) return undefined;
+        } catch {
           return undefined;
+        }
         return {
           id: "semantic-search-v1",
           scope: "project",
@@ -118,21 +148,24 @@ export function createSemanticExtension(
       },
     });
     pi.registerCommand("semantic-index", {
-      description: `Prepare ${engine} and index this project for semantic code search`,
+      description: "Prepare the selected engine and index this project for semantic code search",
       async handler(args, context) {
         if (args.trim()) {
           context.ui.notify("Usage: /semantic-index", "warning");
           return;
         }
-        context.ui.notify(
-          `Preparing the ${engine} semantic search index. This can take several minutes.`,
-          "info",
-        );
         try {
+          const { backend, engine } = await select(context.cwd);
+          context.ui.notify(
+            `Preparing the ${engine} semantic search index. This can take several minutes.`,
+            "info",
+          );
           await backend.index(context.cwd, context.signal, (message) => {
             context.ui.notify(message.trim(), "info");
           });
-          if (!(await refresh(context.cwd))) throw new Error("The completed index is not usable.");
+          if (!(await backend.available(context.cwd)))
+            throw new Error("The completed index is not usable.");
+          await refresh(context.cwd);
           context.ui.notify(`${engine} semantic search index is ready.`, "info");
         } catch (error) {
           await refresh(context.cwd);

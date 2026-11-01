@@ -96,7 +96,7 @@ export function registerMutationRenderers(
   api: TextEditorPluginApi,
   animationPressure?: MutationAnimationPressure,
   animationsEnabled: () => boolean = () => true,
-  presentation: ToolPresentation = "compact",
+  presentation: ToolPresentation | (() => ToolPresentation) = "compact",
   displayName?: (name: string) => string,
 ): void {
   api.onMutationTool((registration) => {
@@ -119,8 +119,10 @@ function createRenderer(
   registration: RenderRegistration,
   animationPressure: MutationAnimationPressure | undefined,
   animationsEnabled: () => boolean,
-  presentation: ToolPresentation,
+  presentationSource: ToolPresentation | (() => ToolPresentation),
 ): TextEditorToolRendererRegistration {
+  const getPresentation = () =>
+    typeof presentationSource === "function" ? presentationSource() : presentationSource;
   const tool = registration.name;
 
   return {
@@ -138,6 +140,7 @@ function createRenderer(
       state.invalidate = context.invalidate;
       // renderCall runs on every frame, so reapply the project's viewport policy each time.
       state.cwd = context.cwd;
+      const presentation = getPresentation();
       const mode = context.expanded ? "full" : presentation;
       state.presentation = presentation;
       component.setExpanded(mode === "full");
@@ -230,6 +233,7 @@ function createRenderer(
       state.invalidate = context.invalidate;
 
       state.expanded = options.expanded;
+      const presentation = getPresentation();
       state.presentation = presentation;
       const mode = options.expanded ? "full" : presentation;
       state.panel?.setExpanded(mode === "full");

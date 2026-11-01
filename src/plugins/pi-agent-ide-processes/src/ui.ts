@@ -28,7 +28,7 @@ export class AgentIdeProcessesUi {
 
   constructor(
     private readonly registry: AgentIdeProcessRegistry,
-    private readonly activityMode: ProcessActivityMode,
+    private activityMode: ProcessActivityMode,
     pi: ExtensionAPI,
   ) {
     registry.onDidChange(() => this.#render());
@@ -43,6 +43,12 @@ export class AgentIdeProcessesUi {
         await this.#openOverlay(context);
       },
     });
+  }
+
+  setActivityMode(mode: ProcessActivityMode): void {
+    if (mode === this.activityMode) return;
+    this.activityMode = mode;
+    this.#render();
   }
 
   bind(context: ExtensionContext): void {
@@ -76,6 +82,8 @@ export class AgentIdeProcessesUi {
       return;
     }
     if (this.activityMode === "compact") {
+      if (this.#elapsedTimer !== undefined) clearInterval(this.#elapsedTimer);
+      this.#elapsedTimer = undefined;
       context.ui.setWidget("agent-ide-processes", undefined);
       context.ui.setStatus("agent-ide-processes", `Agent IDE processes: ${active.length}`);
       return;
