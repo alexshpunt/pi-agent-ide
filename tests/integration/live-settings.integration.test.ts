@@ -37,7 +37,7 @@ test("live settings apply without reload and pending module changes clear when r
       frames: string[][];
       snapshots: { disabled: string[]; preferences?: Record<string, string> }[];
     };
-    expect(result.snapshots).toHaveLength(6);
+    expect(result.snapshots).toHaveLength(8);
     expect(result.snapshots[0]?.preferences?.["ui.codemode"]).toBe("on");
     expect(result.snapshots[1]?.disabled).toContain("ide.core");
     expect(result.snapshots[2]?.disabled).not.toContain("ide.core");
@@ -53,7 +53,9 @@ test("live settings apply without reload and pending module changes clear when r
     expect(result.statuses[4]).toBeNull();
     expect(result.statuses[5]).toBeNull();
     expect(result.events[3]?.preferences["ui.codemode"]).toBe("off");
-    expect(result.confirms).toEqual([false, false]);
+    expect(result.snapshots[6]?.preferences?.["ui.codemode"]).toBe("off");
+    expect(result.snapshots[7]?.preferences?.["ui.codemode"]).toBe("on");
+    expect(result.confirms).toEqual([false, false, false, true]);
     expect(result.frames.length).toBeGreaterThan(3);
     expect(run.providerRequests).toHaveLength(1);
   });
