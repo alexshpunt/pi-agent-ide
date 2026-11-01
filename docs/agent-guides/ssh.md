@@ -23,4 +23,4 @@ Keep machine-specific targets out of shared Git history unless the user asks.
 - The workspace is only the base for relative paths, not a sandbox.
 - The target needs its own tools: Git for `changes` and `undo`, `ast-grep` for ast_search, the language servers for lsp_search, and Node, `playwright-core` and Chromium for rendered web pages. Nothing is installed automatically.
 - Operations across two machines are not atomic. After a failure, check both sides before retrying; don't replay a write whose effect is unknown.
-- `/pi-agent-ide-doctor ssh://<target>/<path>` checks that project's setup on the target.
+- `/agent-ide-doctor ssh://<target>/<path>` checks that project's setup on the target.

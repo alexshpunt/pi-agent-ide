@@ -70,7 +70,7 @@ Doctor is an independent protocol, not a central list of tool knowledge. Each ex
 - browser reads contribute an optional full runtime check, not a startup setup action;
 - external extensions can contribute through `pi-agent-doctor`.
 
-The doctor core only aggregates contributions, runs them, and presents the result. It never imports concrete plugins or assumes their IDs. Lightweight setup inspections decide whether actionable startup guidance exists without launching project tools. Full checks remain behind `/pi-agent-ide-doctor`. Disabling a plugin removes its checks, setup inspections, and recipes. Human-facing catalog pages are generated from the same plugin-owned data.
+The doctor core only aggregates contributions, runs them, and presents the result. It never imports concrete plugins or assumes their IDs. Lightweight setup inspections decide whether actionable startup guidance exists without launching project tools. Full checks remain behind `/agent-ide-doctor`. Disabling a plugin removes its checks, setup inspections, and recipes. Human-facing catalog pages are generated from the same plugin-owned data.
 
 ## Anchors
 
