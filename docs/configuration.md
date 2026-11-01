@@ -2,7 +2,7 @@
 
 ## Agent IDE settings
 
-Open `/agent-ide-settings` inside Pi and choose Project or Global. The Features tab lists human-readable module names and descriptions. The Behavior tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc cancels.
+Open `/agent-ide-settings` inside Pi and choose Project or Global. The Features tab lists human-readable module names and descriptions. The Behavior tab lists registered behavior options, including boolean switches and editable text values. Tab switches tabs; typing filters the current list. Enter changes an override, Ctrl+S saves, and Esc asks whether to save any unsaved changes.
 
 Default removes the selected scope’s override. Module descriptions show effective state and dependency restrictions. Feature values in project settings override global values. Saving offers a reload for startup-only settings. YOLO policy reads saved values for each request, so its changes affect following operations without reload. The command stays available even when every optional module is disabled.
 
@@ -28,7 +28,7 @@ Open `/agent-ide-settings`, choose Project or Global, and find the YOLO controls
 - **YOLO: filesystem operations** (`pi-agent-ide-filesystem-yolo`) controls filesystem dialogs separately.
 - Loaded extensions can register their own controls, including GitHub and Linear YOLO.
 
-These YOLO settings default to Off. Project overrides Global for each key. An explicit extension On or Off wins over the common setting. Default removes only the selected scope's override: it inherits an extension value from the lower scope, if present, then the common YOLO setting. Set the filesystem override to Off to disable its persistent permission even when common YOLO is On; a remembered session grant still applies. Save with Ctrl+S; the menu offers a reload.
+These YOLO settings default to Off. Project overrides Global for each key. An explicit extension On or Off wins over the common setting. Default removes only the selected scope's override: it inherits an extension value from the lower scope, if present, then the common YOLO setting. Set the filesystem override to Off to disable its persistent permission even when common YOLO is On; a remembered session grant still applies. Save with Ctrl+S; YOLO changes apply to following operations without a reload.
 
 A required operation dialog offers **Deny**, **Allow once**, and **Allow for session**, and points to `/agent-ide-settings`. Deny or dismissal leaves the operation unapplied. Allow once covers only the current request. Allow for session covers later requests with the same extension owner and dialog category, including other targets. It is available when the host can store session entries.
 
