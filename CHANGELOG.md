@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.3 — 2026-11-01
+
+### Semantic code search
+
+- `semantic_search` finds project code by meaning. `/semantic-index` prepares the selected engine and indexes the project. The tool stays hidden until the selected index is usable; ordinary search works independently.
+- ColGREP is the default engine; Vera is also available in `/agent-ide-settings` and uses a local CPU model. Each engine keeps a separate index; switching engines does not create or delete an index. Searches refresh the selected index and report update failures.
+- Project searches return ranked files once each with counts of distinct retrieved candidates, not occurrences. Searches support directory and file scopes, plus include and exclude globs. A file search returns bounded, approximate line ranges. Vera's scoped or filtered searches may omit relevant results.
+
+### Settings
+
+- Supported settings, including semantic engine selection and display preferences, apply on save without a reload. The menu marks effective changes that still require a reload; reverting them clears the indicator.
+- Exiting settings with unsaved changes asks whether to save or discard them. No prompt appears if nothing changed.
+
+### Doctor command
+
+- The doctor command is now `/agent-ide-doctor`; `/pi-agent-ide-doctor` is no longer available.
+
 ## 0.9.2 — 2026-10-31
 
 ### Security
