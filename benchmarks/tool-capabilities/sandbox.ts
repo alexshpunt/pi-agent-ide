@@ -267,6 +267,11 @@ export async function prepareTrial(
           "",
         )}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
       await writeFile(path.join(cwd, "sample.pdf"), pdf);
+      // PDF.js repairs this cross-reference offset; extraction must still succeed.
+      await writeFile(
+        path.join(cwd, "recovered.pdf"),
+        pdf.replace(`startxref\n${xref}`, "startxref\n0"),
+      );
     }
     if (task.git) {
       git(cwd, ["init", "--quiet"]);
