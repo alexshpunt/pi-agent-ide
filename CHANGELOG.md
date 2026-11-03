@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.4 — 2026-11-03
+
+### Fixed
+
+- Reading PDFs no longer prints PDF.js warnings over the Pi input. PDF reading errors are still reported.
+
 ## 0.9.3 — 2026-11-01
 
 ### Semantic code search
