@@ -64,13 +64,14 @@ export async function createPdfContent(
 ): Promise<AgentContent> {
   throwIfAborted(signal);
 
-  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const { getDocument, VerbosityLevel } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   throwIfAborted(signal);
 
   // PDF.js may transfer ownership of its input to a worker. Preserve the caller's bytes.
   const loadingTask = getDocument({
     data: new Uint8Array(bytes),
     useSystemFonts: true,
+    verbosity: VerbosityLevel.ERRORS,
   });
   let destruction: Promise<void> | undefined;
   const destroy = (): Promise<void> => (destruction ??= loadingTask.destroy());
