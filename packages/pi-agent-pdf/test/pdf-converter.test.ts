@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { createPdfContentConverter, isPdf } from "pi-agent-pdf";
 
@@ -31,6 +31,29 @@ test("extracts readable text grouped by page", async () => {
       },
     ],
   });
+});
+
+test("extracts text without printing PDF.js warnings", async () => {
+  // An incorrect cross-reference offset makes PDF.js recover the document with a warning.
+  const damaged = new TextEncoder().encode(
+    new TextDecoder().decode(pdf).replace(/startxref\n\d+/u, "startxref\n0"),
+  );
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const outcome = await createPdfContentConverter().tryConvert(
+      { source: "recovered.pdf", bytes: damaged },
+      {},
+    );
+    expect(outcome.kind).toBe("converted");
+    if (outcome.kind === "converted") {
+      const first = outcome.content[0];
+      expect(first.type).toBe("text");
+      if (first.type === "text") expect(first.text).toContain("Hello from PDF");
+    }
+    expect(warning).not.toHaveBeenCalled();
+  } finally {
+    warning.mockRestore();
+  }
 });
 
 test("accepts Node.js Buffer input from filesystem reads", async () => {

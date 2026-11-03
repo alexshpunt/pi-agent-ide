@@ -2583,10 +2583,11 @@ add(
 add(
   "read-media",
   ["read.image", "read.pdf"],
-  "Use read to inspect sample.png and sample.pdf. Report the text marker inside the PDF. Do not change files.",
+  "Use read to inspect sample.png, sample.pdf and recovered.pdf. Report the text marker inside the PDFs. Do not change files.",
   [
     { tool: "read", args: { path: "sample.png" }, image: true },
     { tool: "read", args: { path: "sample.pdf" }, contains: "PDF-MARKER" },
+    { tool: "read", args: { path: "recovered.pdf" }, contains: "PDF-MARKER" },
   ],
   { files: {}, answer: "PDF-MARKER", setup: "media" },
 );
