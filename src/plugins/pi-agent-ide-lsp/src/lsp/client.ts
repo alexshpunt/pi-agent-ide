@@ -12,6 +12,7 @@ import {
   createMessageConnection,
   CancellationTokenSource,
   type MessageConnection,
+  ResponseError,
   StreamMessageReader,
 } from "vscode-jsonrpc/node";
 import { URI } from "vscode-uri";
@@ -28,7 +29,7 @@ import {
 
 import { TransportWriter } from "./transport-writer.js";
 import { documentUri } from "./document-uri.js";
-import { waitWithSignal } from "./abort.js";
+import { delayWithSignal, waitWithSignal } from "./abort.js";
 import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.js";
 
 /** Latest push observation for an open document, without a completion guarantee. */
@@ -641,7 +642,17 @@ export class LspClient {
     this._pendingRequests++;
     this.touch();
     try {
-      return await this._sendRequest<T>(method, parameters, signal);
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await this._sendRequest<T>(method, parameters, signal);
+        } catch (error) {
+          const delay = REQUEST_RETRY_DELAYS_MS[attempt];
+          if (delay === undefined || !isRetryableCancellation(error)) throw error;
+          // The server dropped a stale result; ask again once it has applied the latest text.
+          await delayWithSignal(delay, signal);
+          this._assertReady();
+        }
+      }
     } finally {
       this._pendingRequests--;
       this.touch();
@@ -909,6 +920,30 @@ export class LspClient {
       throw new Error(`[lsp] ${this.serverId}: connection lost`);
     }
   }
+}
+
+/** Waits before each retry of a request the server cancelled; about 1.5 s in total. */
+const REQUEST_RETRY_DELAYS_MS = [50, 100, 200, 400, 800];
+/** LSP error codes from the specification; vscode-jsonrpc defines only JSON-RPC ones. */
+const CONTENT_MODIFIED = -32_801;
+const SERVER_CANCELLED = -32_802;
+
+/**
+ * ContentModified (-32801): the document changed while the server computed the result.
+ * ServerCancelled (-32802): the server dropped the request, for example while it reloads the
+ * project; a diagnostic request is not retried when the server says retriggering will not help.
+ */
+function isRetryableCancellation(error: unknown): boolean {
+  if (!(error instanceof ResponseError)) return false;
+  if (error.code === CONTENT_MODIFIED) return true;
+  if (error.code !== SERVER_CANCELLED) return false;
+  const data: unknown = error.data;
+  return !(
+    data !== null &&
+    typeof data === "object" &&
+    "retriggerRequest" in data &&
+    data.retriggerRequest === false
+  );
 }
 
 function waitForSpawn(childProcess: ChildProcess): Promise<void> {

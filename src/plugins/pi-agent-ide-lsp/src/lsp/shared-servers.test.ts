@@ -208,6 +208,31 @@ test("requests see the requesting session's text and versions", async () => {
   expect(await text(first)).toBe("alpha\n");
 });
 
+test("requests the server cancels as stale are retried through the shared host", async () => {
+  const { cwd, sharing } = await workspace();
+  const client = await session(cwd, sharing);
+  const flaky = (key: string, code: number, failures: number, data?: unknown) =>
+    client.sendRequest<number>("lifecycle/flaky", { key, code, failures, data });
+
+  await expect(flaky("modified", -32_801, 2)).resolves.toBe(3);
+  await expect(flaky("cancelled", -32_802, 1, { retriggerRequest: true })).resolves.toBe(2);
+  await expect(flaky("final", -32_802, 1, { retriggerRequest: false })).rejects.toMatchObject({
+    code: -32_802,
+  });
+  await expect(flaky("persistent", -32_801, 100)).rejects.toMatchObject({ code: -32_801 });
+  await expect(flaky("persistent", -32_801, 0)).resolves.toBe(7);
+  await expect(flaky("other", -32_603, 1)).rejects.toMatchObject({ code: -32_603 });
+
+  const controller = new AbortController();
+  const aborted = client.sendRequest(
+    "lifecycle/flaky",
+    { key: "aborted", code: -32_801, failures: 100 },
+    controller.signal,
+  );
+  setTimeout(() => controller.abort(new Error("caller stopped")), 120);
+  await expect(aborted).rejects.toThrow("caller stopped");
+});
+
 test("the shared host answers server requests for settings and file watching", async () => {
   const { cwd, sharing } = await workspace();
   const client = await session(cwd, sharing);
