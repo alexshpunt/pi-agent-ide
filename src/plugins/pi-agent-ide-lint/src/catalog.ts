@@ -124,6 +124,10 @@ export const LINTER_RECIPES: readonly ToolRecipe[] = [
     ["cargo", "clippy", "--message-format", "short"],
     "gcc",
     "https://doc.rust-lang.org/clippy/",
+    undefined,
+    undefined,
+    // Cargo exits with 101 when rustc reports an error; the report is still complete.
+    [0, 1, 101],
   ),
   recipe(
     "dotnet-format",
