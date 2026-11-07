@@ -6,7 +6,7 @@ import {
   probeProjectExecutable,
 } from "pi-agent-doctor/api/project-probes";
 
-import { parseDocument } from "./ast/manager.js";
+import { withParsedDocument } from "./ast/manager.js";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
 
@@ -108,13 +108,14 @@ export const astDoctorPlugin: DoctorPlugin = {
               : await readFile(file, { encoding: "utf8", signal: context.signal });
             if (source === undefined) throw new Error(`Source disappeared: ${file}`);
             context.signal?.throwIfAborted();
-            const tree = await parseDocument(
+            const parsed = await withParsedDocument(
               file,
               context.cwd,
               source.replaceAll("\r\n", "\n").split("\n"),
+              (tree) => tree !== undefined,
             );
             findings.push(
-              tree === undefined
+              !parsed
                 ? { status: "fail" as const, message: `${language} parser did not return a tree` }
                 : { status: "pass" as const, message: `${language} parser loaded`, detail: file },
             );
