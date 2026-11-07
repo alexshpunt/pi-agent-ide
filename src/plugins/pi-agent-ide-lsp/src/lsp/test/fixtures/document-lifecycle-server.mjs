@@ -6,7 +6,13 @@ const open = new Map();
 const texts = new Map();
 const events = [];
 const watched = [];
+// Like clangd, a delayed analysis publishes nothing when a newer version replaced its text.
+const delayMs = Number(process.env.LIFECYCLE_PUBLISH_DELAY_MS ?? 0);
 const publish = (uri, version) =>
+  version !== undefined && delayMs > 0
+    ? setTimeout(() => open.get(uri) === version && send(uri, version), delayMs)
+    : send(uri, version);
+const send = (uri, version) =>
   connection.sendNotification("textDocument/publishDiagnostics", {
     uri,
     ...(version === undefined ? {} : { version }),

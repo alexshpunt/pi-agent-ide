@@ -36,6 +36,7 @@ import {
  * @typedef {object} SessionDocument
  * @property {number} version Version the session uses for this document.
  * @property {string} text Text the session last synchronized.
+ * @property {boolean} published Whether the session received diagnostics for this version.
  */
 
 /**
@@ -358,6 +359,7 @@ function openSession(socket, started) {
       session.documents.set(textDocument.uri, {
         version: textDocument.version,
         text: textDocument.text,
+        published: false,
       });
       documents.get(textDocument.uri)?.holders.add(session);
       align(session, textDocument.uri);
@@ -377,6 +379,7 @@ function openSession(socket, started) {
       if (!owned || text === undefined || contentChanges.some((change) => change.range)) return;
       owned.version = textDocument.version;
       owned.text = text;
+      owned.published = false;
       align(session, textDocument.uri);
     },
   );
@@ -426,12 +429,31 @@ function align(session, uri) {
     return;
   }
   const publication = document.publication;
-  if (publication?.current === document.version)
-    notifySession(session, DIAGNOSTICS, {
-      uri,
-      ...(publication.version !== undefined && { version: owned.version }),
-      diagnostics: publication.diagnostics,
-    });
+  if (publication?.current !== document.version) return;
+  owned.published = true;
+  notifySession(session, DIAGNOSTICS, {
+    uri,
+    ...(publication.version !== undefined && { version: owned.version }),
+    diagnostics: publication.diagnostics,
+  });
+}
+
+/**
+ * After the server published for its current text, give it the text of another session that
+ * still waits for diagnostics. Servers such as clangd publish nothing for a text that a newer
+ * one replaced, so without this an earlier session would wait in vain.
+ * @param {string} uri
+ */
+function serveWaitingSession(uri) {
+  const document = documents.get(uri);
+  if (!document) return;
+  for (const session of document.holders) {
+    const owned = session.documents.get(uri);
+    if (owned && !owned.published && owned.text !== document.text) {
+      align(session, uri);
+      return;
+    }
+  }
 }
 
 /**
@@ -462,11 +484,13 @@ function publishToSessions(method, parameters) {
   for (const session of document.holders) {
     const owned = session.documents.get(/** @type {string} */ (publication.uri));
     if (owned?.text !== document.text) continue;
+    owned.published = true;
     notifySession(session, DIAGNOSTICS, {
       ...publication,
       ...(version !== undefined && { version: owned.version }),
     });
   }
+  serveWaitingSession(/** @type {string} */ (publication.uri));
 }
 
 /**

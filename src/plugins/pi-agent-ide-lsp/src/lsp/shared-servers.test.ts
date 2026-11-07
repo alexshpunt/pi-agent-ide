@@ -49,11 +49,13 @@ async function session(
   sharing: LspSharedServers,
   settings: Record<string, unknown> = { fixture: { mode: "strict" } },
   lingerMs = LINGER_MS,
+  env: Record<string, string> = {},
 ): Promise<LspClient> {
   const client = new LspClient({
     serverId: "fixture",
     rootUri: URI.file(cwd).toString(),
     command: [process.execPath, SERVER],
+    env,
     settings,
     sharedServers: sharing,
     idleTimeoutMs: lingerMs,
@@ -116,6 +118,24 @@ test("each session gets diagnostics under its own document versions", async () =
   expect((await status(second)).open).toEqual([uri]);
   second.closeDocument(uri);
   expect((await status(second)).open).toEqual([]);
+});
+
+test("sessions with different text each get diagnostics for their own version", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_PUBLISH_DELAY_MS: "150" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+
+  // The second text replaces the first before the server publishes for it.
+  first.syncDocument(uri, "alpha\n", "fixture");
+  second.syncDocument(uri, "beta\n", "fixture");
+
+  await until(
+    () =>
+      first.diagnosticPublication(uri)?.version === first.documentVersion(uri) &&
+      second.diagnosticPublication(uri)?.version === second.documentVersion(uri),
+  );
 });
 
 test("requests see the requesting session's text and versions", async () => {
