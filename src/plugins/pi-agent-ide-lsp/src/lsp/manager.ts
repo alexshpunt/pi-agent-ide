@@ -5,6 +5,7 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 
 import { LspClient } from "./client.js";
+import type { LspSharedServers } from "./shared-servers.js";
 import { SharedStartup, waitWithSignal } from "./abort.js";
 import { documentUri } from "./document-uri.js";
 import type { LspWorkspaceOwner } from "./workspace-owner.js";
@@ -32,6 +33,8 @@ type PushHandler = (event: LspPushDiagnosticsEvent) => void;
 export interface LspManagerOptions {
   /** Stop a server after this long without requests or open operations. Omitted: never. */
   readonly idleTimeoutMs?: number;
+  /** Share local servers with other Pi sessions on this machine. Omitted: every server is own. */
+  readonly sharedServers?: LspSharedServers;
 }
 
 /**
@@ -214,6 +217,8 @@ export class LspManager {
           this._owner && {
             ownerTransport: this._owner.transport(rootUri),
           }),
+        ...(!rootUri.startsWith("ssh://") &&
+          this._options.sharedServers && { sharedServers: this._options.sharedServers }),
         ...(match.config.env && { env: match.config.env }),
         ...(match.config.initializationOptions && {
           initOptions: resolveInitializationOptions(

@@ -36,6 +36,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 /** Backend-neutral language server transport for root registration bridges. */
 import type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.js";
 import { SharedStartup, waitWithSignal } from "./src/lsp/abort.js";
+import { LspSharedServers } from "./src/lsp/shared-servers.js";
 export type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.js";
 export type {
   LspFileWatcherSubscriptions,
@@ -71,6 +72,7 @@ export async function registerLspWithOwner(
     (resolve) => (resolveSearchRuntime = resolve),
   );
   const managers = new Map<string, SharedStartup<LspManager>>();
+  const sharedServers = new LspSharedServers();
   let disposed = false;
   const managerFor = async (
     cwd: string,
@@ -97,7 +99,10 @@ export async function registerLspWithOwner(
         const idleTimeoutMs = await readIdleTimeoutMs(pi, cwd);
         startupSignal.throwIfAborted();
         if (disposed) throw new Error("LSP session has ended");
-        return LspManager.init(registry, owner?.workspace(cwd), { idleTimeoutMs });
+        return LspManager.init(registry, owner?.workspace(cwd), {
+          idleTimeoutMs,
+          sharedServers,
+        });
       });
       const pending = ready;
       managers.set(key, pending);
