@@ -184,12 +184,14 @@ export function createAstSearchResolver(
             : eligible;
         const kept = candidates.slice(0, request.limit ?? 100);
         if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
-        return {
+        // The search session keeps this result and its refresh closure for as long as its anchors
+        // live. A copy keeps only the matched text, not each file the text was cut from.
+        return structuredClone({
           raw: kept.map((item) => item.raw),
           matches: kept.map((item) => item.selection),
           complete:
             (context.scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
-        };
+        });
       };
       const selected = await collect(context.signal);
       const session = await registerSelection(

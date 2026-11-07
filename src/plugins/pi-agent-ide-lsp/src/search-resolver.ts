@@ -133,7 +133,8 @@ export function createLspSearchResolver(
               context.cwd,
               signal,
             );
-            return declarationMatch(found.source, found.content, found.range);
+            // Keep only the declaration text, not the whole file it was cut from.
+            return structuredClone(declarationMatch(found.source, found.content, found.range));
           };
           const match = await resolve(context.signal);
           const session = await registerSelection(
@@ -203,7 +204,12 @@ export function createLspSearchResolver(
             complete = complete && found.complete;
           }
           if (scope !== undefined) await verifyResultTargets(scope, signal);
-          return { hits: hits.slice(0, limit), complete: complete && hits.length <= limit };
+          // The search session keeps these hits and its refresh closure for as long as its anchors
+          // live. A copy keeps only the matched text, not each file the text was cut from.
+          return structuredClone({
+            hits: hits.slice(0, limit),
+            complete: complete && hits.length <= limit,
+          });
         };
         const found = await collect(context.signal);
         const session = await registerSelection(

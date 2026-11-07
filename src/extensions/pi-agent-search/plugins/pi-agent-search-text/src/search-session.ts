@@ -196,7 +196,9 @@ export class SearchSessionStore {
     snapshotByteBudget?: number,
     environment?: SearchEnvironment,
   ): Promise<TextSearchSession> {
-    const matches = sourceMatches
+    // Sessions live as long as their anchors. A copied match keeps only its own text, not the
+    // whole file that its line or match text was cut from.
+    const matches = structuredClone(sourceMatches)
       .map((match) => ({ ...match, source: canonicalSource(match.source) }))
       .sort(compareMatches);
     const readSource = this.readSource;
