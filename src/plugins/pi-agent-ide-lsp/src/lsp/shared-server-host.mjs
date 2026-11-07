@@ -71,6 +71,7 @@ const STALE_SOCKET_MS = 60_000;
 /** Logs of failed hosts are kept this long for diagnosis. */
 const FAILURE_LOG_MS = 24 * 60 * 60_000;
 const DIAGNOSTICS = "textDocument/publishDiagnostics";
+const SERVER_STATUS = "experimental/serverStatus";
 /**
  * Keep a document open on the server this long after its last session closed it, never longer
  * than the server lingers. Sessions close a document after each operation and often reopen it at
@@ -101,6 +102,11 @@ let fileWatchers;
 let nextVersion = 0;
 /** Set once the server versions its diagnostics; its unversioned pushes then describe closed documents. */
 let versionedDiagnostics = false;
+/**
+ * Latest `experimental/serverStatus`; sessions that attach later receive it at once.
+ * @type {unknown}
+ */
+let serverStatus;
 let lingerMs = 10 * 60_000;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let stopTimer = setTimeout(() => void stop(), NO_SESSION_TIMEOUT_MS);
@@ -211,6 +217,7 @@ async function accept(socket) {
   const session = openSession(socket, started);
   socket.write(`${JSON.stringify({ pid: started.process.pid })}\n`);
   session.connection.listen();
+  if (serverStatus !== undefined) notifySession(session, SERVER_STATUS, serverStatus);
   // readLine paused the socket; a new data listener does not resume an explicitly paused stream.
   socket.resume();
 }
@@ -541,6 +548,7 @@ function publishToSessions(method, parameters) {
     method === DIAGNOSTICS && typeof publication.uri === "string"
       ? documents.get(publication.uri)
       : undefined;
+  if (method === SERVER_STATUS) serverStatus = parameters;
   const version = typeof publication.version === "number" ? publication.version : undefined;
   if (method === DIAGNOSTICS && version !== undefined) versionedDiagnostics = true;
   if (!document || !Array.isArray(publication.diagnostics)) {
