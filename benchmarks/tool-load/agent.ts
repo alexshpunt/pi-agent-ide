@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { assistantMessage, PiIntegrationTest, text, toolCall } from "pi-coding-agent-test/base";
 import {
   DETACHED_COUNT,
@@ -92,7 +93,7 @@ async function runAgent(config: AgentConfig): Promise<AgentResult> {
       extensions: [
         path.join(config.repositoryRoot, "src/pi-agent-ide.ts"),
         "builtin:codemode",
-        path.join(config.repositoryRoot, "benchmarks/tool-load/probe-extension.ts"),
+        fileURLToPath(new URL("./probe-extension.ts", import.meta.url)),
       ],
       tools: TOOLS,
       environment: {
