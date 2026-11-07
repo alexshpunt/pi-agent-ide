@@ -18,7 +18,9 @@ Pass exactly one mode:
 
 ## Server lifecycle
 
-A language server starts on the first request for a file it handles, such as post-edit diagnostics or `lsp_search`. Documents opened for a request close when it finishes, unless another request still uses them. A server with no requests for 10 minutes stops, and the next request starts it again. Change the timeout with the `lsp.idle-timeout` IDE setting, in minutes. Session shutdown stops every server.
+A language server starts on the first request for a file it handles, such as post-edit diagnostics or `lsp_search`. Documents opened for a request close when it finishes, unless another request still uses them. A session that sends no requests for 10 minutes releases its server, and the next request starts or reconnects it. Change the timeout with the `lsp.idle-timeout` IDE setting, in minutes.
+
+Pi sessions on one machine share a local server when they use the same server, command, configured environment, project root, initialization options and settings. The first session starts a background host process that runs the server; later sessions connect to it. Each session still sees its own document text, versions and diagnostics. The host stops the server `lsp.idle-timeout` minutes after the last session disconnects, so a new session in that window gets a server that has already indexed the project. If a session cannot reach a shared server, it starts its own. Servers on SSH hosts are not shared; each session runs its own.
 
 ## Failures
 
