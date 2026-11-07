@@ -13,6 +13,7 @@ import path from "node:path";
 import { readLspFileGraph, readLspSymbolGraph, resolveLspDeclaration } from "./lsp/code-views.js";
 import type { LspManager } from "./lsp/manager.js";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.js";
+import { withLspDocuments } from "./lsp/document-leases.js";
 
 /** Options the `lsp_search` tool passes in `SearchRequest.options.lsp`; their presence selects this resolver. */
 export interface LspSearchOptions {
@@ -83,153 +84,161 @@ export function createLspSearchResolver(
         ? { kind: "custom", resolverId: "lsp", value: { calls: result.text } }
         : result.data;
     },
-    async tryResolve(request, context) {
-      const options = lspOptions(request);
-      if (options === undefined) return { kind: "not-handled" };
-      const modes = [options.query, options.declaration, options.calls].filter(
-        (value) => value !== undefined,
-      );
-      if (modes.length !== 1)
-        return {
-          kind: "failed",
-          error: new Error("Pass exactly one of query, declaration or calls."),
-        };
+    tryResolve(request, context) {
+      // Documents opened for this request close when it finishes.
+      return withLspDocuments(async () => {
+        const options = lspOptions(request);
+        if (options === undefined) return { kind: "not-handled" };
+        const modes = [options.query, options.declaration, options.calls].filter(
+          (value) => value !== undefined,
+        );
+        if (modes.length !== 1)
+          return {
+            kind: "failed",
+            error: new Error("Pass exactly one of query, declaration or calls."),
+          };
 
-      if (options.calls !== undefined) {
-        const reference = parseCodeViewReference(`graph:${options.calls}`, "graph");
-        if (reference === undefined) throw new Error("calls requires a file path.");
-        const filePath = resolveCodeViewPath(reference.path, context.cwd);
-        const manager = await managerFor(context.cwd, filePath, context.signal);
-        const text =
-          reference.selector === undefined
-            ? await backend.readLspFileGraph(manager, filePath, context.cwd, context.signal)
-            : await backend.readLspSymbolGraph(
-                manager,
-                filePath,
-                reference.selector,
-                context.cwd,
-                context.signal,
-              );
-        return { kind: "resolved", payload: { mode: "calls", text } satisfies Payload };
-      }
+        if (options.calls !== undefined) {
+          const reference = parseCodeViewReference(`graph:${options.calls}`, "graph");
+          if (reference === undefined) throw new Error("calls requires a file path.");
+          const filePath = resolveCodeViewPath(reference.path, context.cwd);
+          const manager = await managerFor(context.cwd, filePath, context.signal);
+          const text =
+            reference.selector === undefined
+              ? await backend.readLspFileGraph(manager, filePath, context.cwd, context.signal)
+              : await backend.readLspSymbolGraph(
+                  manager,
+                  filePath,
+                  reference.selector,
+                  context.cwd,
+                  context.signal,
+                );
+          return { kind: "resolved", payload: { mode: "calls", text } satisfies Payload };
+        }
 
-      if (options.declaration !== undefined) {
-        const reference = options.declaration.includes("#")
-          ? parseCodeViewReference(`symbol:${options.declaration}`, "symbol")
-          : undefined;
-        if (reference?.selector === undefined)
-          throw new Error("declaration requires file#selector, such as src/app.ts#App/start.");
-        const filePath = resolveCodeViewPath(reference.path, context.cwd);
-        const selector = reference.selector;
-        const resolve = async (signal?: AbortSignal) => {
-          const manager = await managerFor(context.cwd, filePath, signal);
-          const found = await backend.resolveLspDeclaration(
-            manager,
-            filePath,
-            selector,
-            context.cwd,
-            signal,
+        if (options.declaration !== undefined) {
+          const reference = options.declaration.includes("#")
+            ? parseCodeViewReference(`symbol:${options.declaration}`, "symbol")
+            : undefined;
+          if (reference?.selector === undefined)
+            throw new Error("declaration requires file#selector, such as src/app.ts#App/start.");
+          const filePath = resolveCodeViewPath(reference.path, context.cwd);
+          const selector = reference.selector;
+          const resolve = async (signal?: AbortSignal) => {
+            const manager = await managerFor(context.cwd, filePath, signal);
+            const found = await backend.resolveLspDeclaration(
+              manager,
+              filePath,
+              selector,
+              context.cwd,
+              signal,
+            );
+            return declarationMatch(found.source, found.content, found.range);
+          };
+          const match = await resolve(context.signal);
+          const session = await registerSelection(
+            {
+              request,
+              matches: [match],
+              complete: true,
+              refresh: (signal) =>
+                withLspDocuments(async () => ({
+                  matches: [await resolve(signal)],
+                  complete: true,
+                })),
+            },
+            context,
           );
-          return declarationMatch(found.source, found.content, found.range);
+          return {
+            kind: "resolved",
+            payload: {
+              mode: "declaration",
+              sessionId: session.id,
+              selector: options.declaration,
+              match,
+              data: selectionData([match], true, session.id, session),
+            } satisfies Payload,
+          };
+        }
+
+        const query = (options.query ?? "").trim();
+        if (query.length === 0)
+          return { kind: "failed", error: new Error("query must not be empty") };
+        const references = options.references === true;
+        const scope = context.scope;
+        const groups = new Map<LspManager, ResolvedResultTargets["targets"][number][]>();
+        if (scope !== undefined) {
+          await verifyResultTargets(scope, context.signal);
+          for (const target of scope.targets) {
+            const manager = await managerFor(context.cwd, target.source, context.signal);
+            const group = groups.get(manager) ?? [];
+            group.push(target);
+            groups.set(manager, group);
+          }
+        } else {
+          groups.set(await managerFor(context.cwd, request.path, context.signal), []);
+        }
+        const limit = request.limit ?? 100;
+        const collect = async (signal?: AbortSignal) => {
+          const hits: SymbolHit[] = [];
+          let complete = scope?.complete ?? true;
+          for (const [manager, targets] of groups) {
+            const found = await backend.searchSymbols(
+              query,
+              manager.workspaceRoot,
+              limit,
+              signal,
+              {
+                ...(request.path === undefined ? {} : { path: request.path }),
+                ...(request.include === undefined ? {} : { include: request.include }),
+                ...(request.exclude === undefined ? {} : { exclude: request.exclude }),
+                ...(references ? { navigation: "references" as const } : {}),
+                ...(scope === undefined
+                  ? {}
+                  : { resultScope: { targets, complete: scope.complete } }),
+              },
+              manager,
+            );
+            hits.push(...found.hits);
+            complete = complete && found.complete;
+          }
+          if (scope !== undefined) await verifyResultTargets(scope, signal);
+          return { hits: hits.slice(0, limit), complete: complete && hits.length <= limit };
         };
-        const match = await resolve(context.signal);
+        const found = await collect(context.signal);
         const session = await registerSelection(
           {
             request,
-            matches: [match],
-            complete: true,
-            refresh: async (signal) => ({ matches: [await resolve(signal)], complete: true }),
+            matches: found.hits,
+            complete: found.complete,
+            refresh: (signal) =>
+              withLspDocuments(async () => {
+                const next = await collect(signal);
+                return { matches: next.hits, complete: next.complete };
+              }),
           },
           context,
         );
+        const data = selectionData(found.hits, found.complete, session.id, session);
         return {
           kind: "resolved",
           payload: {
-            mode: "declaration",
+            mode: "symbols",
             sessionId: session.id,
-            selector: options.declaration,
-            match,
-            data: selectionData([match], true, session.id, session),
+            hits: found.hits,
+            complete: found.complete,
+            references,
+            data: {
+              ...data,
+              matches: data.matches.map((match, index) => ({
+                ...match,
+                role: found.hits[index]?.role,
+                symbol: found.hits[index]?.symbol,
+              })),
+            },
           } satisfies Payload,
         };
-      }
-
-      const query = (options.query ?? "").trim();
-      if (query.length === 0)
-        return { kind: "failed", error: new Error("query must not be empty") };
-      const references = options.references === true;
-      const scope = context.scope;
-      const groups = new Map<LspManager, ResolvedResultTargets["targets"][number][]>();
-      if (scope !== undefined) {
-        await verifyResultTargets(scope, context.signal);
-        for (const target of scope.targets) {
-          const manager = await managerFor(context.cwd, target.source, context.signal);
-          const group = groups.get(manager) ?? [];
-          group.push(target);
-          groups.set(manager, group);
-        }
-      } else {
-        groups.set(await managerFor(context.cwd, request.path, context.signal), []);
-      }
-      const limit = request.limit ?? 100;
-      const collect = async (signal?: AbortSignal) => {
-        const hits: SymbolHit[] = [];
-        let complete = scope?.complete ?? true;
-        for (const [manager, targets] of groups) {
-          const found = await backend.searchSymbols(
-            query,
-            manager.workspaceRoot,
-            limit,
-            signal,
-            {
-              ...(request.path === undefined ? {} : { path: request.path }),
-              ...(request.include === undefined ? {} : { include: request.include }),
-              ...(request.exclude === undefined ? {} : { exclude: request.exclude }),
-              ...(references ? { navigation: "references" as const } : {}),
-              ...(scope === undefined
-                ? {}
-                : { resultScope: { targets, complete: scope.complete } }),
-            },
-            manager,
-          );
-          hits.push(...found.hits);
-          complete = complete && found.complete;
-        }
-        if (scope !== undefined) await verifyResultTargets(scope, signal);
-        return { hits: hits.slice(0, limit), complete: complete && hits.length <= limit };
-      };
-      const found = await collect(context.signal);
-      const session = await registerSelection(
-        {
-          request,
-          matches: found.hits,
-          complete: found.complete,
-          refresh: async (signal) => {
-            const next = await collect(signal);
-            return { matches: next.hits, complete: next.complete };
-          },
-        },
-        context,
-      );
-      const data = selectionData(found.hits, found.complete, session.id, session);
-      return {
-        kind: "resolved",
-        payload: {
-          mode: "symbols",
-          sessionId: session.id,
-          hits: found.hits,
-          complete: found.complete,
-          references,
-          data: {
-            ...data,
-            matches: data.matches.map((match, index) => ({
-              ...match,
-              role: found.hits[index]?.role,
-              symbol: found.hits[index]?.symbol,
-            })),
-          },
-        } satisfies Payload,
-      };
+      });
     },
     renderResult(result, options, theme) {
       const data = result.details as Payload & { cwd: string };

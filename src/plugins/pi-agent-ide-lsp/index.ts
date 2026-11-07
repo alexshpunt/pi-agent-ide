@@ -14,7 +14,9 @@ import {
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 
+import { readAgentIdeSetting, SETTINGS_UNAVAILABLE } from "pi-agent-ide/api/settings";
 import { LSP_RECIPES } from "./src/catalog.js";
+import { LSP_IDLE_TIMEOUT_SETTING, lspIdleTimeoutMs } from "./src/idle-timeout.js";
 import { createLspDiagnosticSource } from "./src/diagnostic-source.js";
 import { lspDoctorPlugin } from "./src/doctor-plugin.js";
 import { createLspCompiler, LspManager, LspServerRegistry } from "./src/lsp/index.js";
@@ -92,9 +94,10 @@ export async function registerLspWithOwner(
         const registry = owner
           ? await owner.loadRegistry(cwd, external, startupSignal)
           : await loadRegistry(cwd, external, startupSignal);
+        const idleTimeoutMs = await readIdleTimeoutMs(pi, cwd);
         startupSignal.throwIfAborted();
         if (disposed) throw new Error("LSP session has ended");
-        return LspManager.init(registry, owner?.workspace(cwd));
+        return LspManager.init(registry, owner?.workspace(cwd), { idleTimeoutMs });
       });
       const pending = ready;
       managers.set(key, pending);
@@ -296,6 +299,19 @@ export async function registerLspWithOwner(
     }),
     registerLspSearchTool(pi, searchRuntime),
   ]);
+}
+
+/** Read the idle timeout for this workspace; without an Agent IDE settings host use the default. */
+async function readIdleTimeoutMs(pi: ExtensionAPI, cwd: string): Promise<number> {
+  try {
+    const { value } = await readAgentIdeSetting(pi.events, LSP_IDLE_TIMEOUT_SETTING, cwd);
+    if (typeof value !== "string") throw new Error(`Invalid ${LSP_IDLE_TIMEOUT_SETTING} setting`);
+    return lspIdleTimeoutMs(value);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === SETTINGS_UNAVAILABLE)
+      return lspIdleTimeoutMs("");
+    throw error;
+  }
 }
 
 async function loadRegistry(

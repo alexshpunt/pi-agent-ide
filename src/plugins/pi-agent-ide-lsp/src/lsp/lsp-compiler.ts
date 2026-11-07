@@ -1,4 +1,5 @@
 import { requestDiagnostics } from "./diagnostics.js";
+import { withLspDocuments } from "./document-leases.js";
 
 import type { LspClient } from "./client.js";
 import type { LspManager } from "./manager.js";
@@ -28,7 +29,7 @@ export function createLspCompiler(
       context.signal?.throwIfAborted();
       const manager = await managerForFile(context.cwd, filePath, context.signal);
       context.signal?.throwIfAborted();
-      const result = await openAndDiagnose(filePath, context, manager);
+      const result = await withLspDocuments(() => openAndDiagnose(filePath, context, manager));
 
       if (!result) {
         throw new Error("No diagnostic language server for this source");

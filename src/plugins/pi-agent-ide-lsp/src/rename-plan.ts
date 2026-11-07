@@ -3,6 +3,7 @@ import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/co
 import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/edit-pipeline";
 import type { LspManagerProvider } from "./manager-provider.js";
 import { resolveLspRenameTarget } from "./lsp/code-views.js";
+import { withLspDocuments } from "./lsp/document-leases.js";
 import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.js";
 import type { LspClient } from "./lsp/client.js";
 import type { LspPosition } from "./lsp/types.js";
@@ -48,7 +49,14 @@ function offset(content: string, position: LspPosition): number {
 }
 
 /** Prepare server rename edits for the shared guarded editor, never a textual rename fallback. */
-export async function prepareSymbolRename(
+export function prepareSymbolRename(
+  state: TextPreEditState,
+  managerFor: LspManagerProvider,
+): Promise<TextPreEditState | undefined> {
+  return withLspDocuments(() => prepareRename(state, managerFor));
+}
+
+async function prepareRename(
   state: TextPreEditState,
   managerFor: LspManagerProvider,
 ): Promise<TextPreEditState | undefined> {
