@@ -19,6 +19,7 @@
     "scripts/**/*.ts",
     "src/**/*.ts",
     "src/backend/web-browser-worker.mjs",
+    "src/plugins/pi-agent-ide-lsp/src/lsp/*.mjs",
     "tests/**/*.ts"
   ],
   "exclude": [".worktrees/**", "**/dist/**", "**/node_modules/**"]

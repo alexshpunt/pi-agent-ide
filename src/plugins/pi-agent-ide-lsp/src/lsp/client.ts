@@ -19,6 +19,12 @@ import { URI } from "vscode-uri";
 import type { LspDiagnostic } from "./types.js";
 
 import { LspFileWatchers, type LspFileWatcherSubscriptions } from "./file-watchers.js";
+import { configurationItems } from "./server-request-handlers.mjs";
+import {
+  DEFAULT_SHARED_SERVER_LINGER_MS,
+  type LspSharedServer,
+  type LspSharedServers,
+} from "./shared-servers.js";
 
 import { TransportWriter } from "./transport-writer.js";
 import { documentUri } from "./document-uri.js";
@@ -42,6 +48,8 @@ export class LspClient {
   private _ownedProcess: LspOwnedProcess | null = null;
   private _ownedStartup: Promise<LspOwnedProcess> | undefined;
   private readonly _ownerTransport: LspOwnerTransport | undefined;
+  private readonly _sharedServers: LspSharedServers | undefined;
+  private _sharedServer: LspSharedServer | null = null;
   private _connection: MessageConnection | null = null;
   private _initialized = false;
   private _serverCapabilities: Record<string, unknown> | null = null;
@@ -87,6 +95,8 @@ export class LspClient {
     settings?: Record<string, unknown>;
     timeoutMs?: number;
     ownerTransport?: LspOwnerTransport;
+    /** Share a local server with other Pi sessions; if that fails, start an own process. */
+    sharedServers?: LspSharedServers;
     /** Without requests or open operations for this long, onIdle runs. Omitted: never idle. */
     idleTimeoutMs?: number;
     onIdle?: () => void;
@@ -100,6 +110,7 @@ export class LspClient {
     this._settings = parameters.settings;
     this._timeoutMs = parameters.timeoutMs ?? 30_000;
     this._ownerTransport = parameters.ownerTransport;
+    this._sharedServers = parameters.sharedServers;
     this._idleTimeoutMs = parameters.idleTimeoutMs;
     this._onIdle = parameters.onIdle;
   }
@@ -115,7 +126,12 @@ export class LspClient {
   }
 
   get pid(): number | null {
-    return this._process?.pid ?? null;
+    return this._process?.pid ?? this._sharedServer?.pid ?? null;
+  }
+
+  /** Whether this client reaches a server shared with other Pi sessions. */
+  get shared(): boolean {
+    return this._sharedServer !== null;
   }
 
   /** Remote process identity; pid remains null for these servers. */
@@ -235,6 +251,40 @@ export class LspClient {
       },
     ];
 
+    const watchFiles = this._ownerTransport
+      ? this._ownerTransport.fileWatchers !== undefined
+      : true;
+    const initializeParameters = {
+      processId: this._ownerTransport ? null : process.pid,
+      rootUri: this._ownerTransport?.toServerUri(this.rootUri) ?? this.rootUri,
+
+      workspaceFolders,
+      capabilities: {
+        workspace: {
+          applyEdit: false,
+
+          configuration: true,
+
+          workspaceFolders: true,
+
+          didChangeWatchedFiles: {
+            dynamicRegistration: watchFiles,
+            relativePatternSupport: watchFiles,
+          },
+          symbol: { dynamicRegistration: false },
+        },
+        textDocument: {
+          synchronization: { didOpen: true, didChange: true, didClose: true },
+          publishDiagnostics: { relatedInformation: true },
+
+          diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
+          documentSymbol: { hierarchicalDocumentSymbolSupport: true },
+          foldingRange: { lineFoldingOnly: true },
+        },
+      },
+      initializationOptions: this._initOptions,
+    };
+
     this._ownedStartup = this._ownerTransport?.start({
       rootUri: this.rootUri,
       command: this._command,
@@ -247,23 +297,36 @@ export class LspClient {
     // An owner can become ready while shutdown is waiting for it.
     // eslint-disable-next-line typescript/no-unnecessary-condition
     if (this._disposed) throw new Error(`[lsp] ${this.serverId}: disposed`);
-    const childProcess = ownedProcess
+    const sharedServer = ownedProcess
       ? undefined
-      : spawnProcess(bin, this._args, {
-          stdio: ["pipe", "pipe", "pipe"],
-          ...(signal && { signal }),
-          cwd: projectRoot,
-          env: createConfiguredProcessEnvironment(
-            { command: this._command, env: this._env },
-            projectRoot,
-            process.env,
-          ),
-        });
+      : await this._attachSharedServer(projectRoot, initializeParameters, signal);
+    // Shutdown that ran during the attach could not see this connection.
+    // eslint-disable-next-line typescript/no-unnecessary-condition
+    if (this._disposed) {
+      await sharedServer?.stop();
+      throw new Error(`[lsp] ${this.serverId}: disposed`);
+    }
+    this._sharedServer = sharedServer ?? null;
+    signal?.throwIfAborted();
+    const childProcess =
+      ownedProcess || sharedServer
+        ? undefined
+        : spawnProcess(bin, this._args, {
+            stdio: ["pipe", "pipe", "pipe"],
+            ...(signal && { signal }),
+            cwd: projectRoot,
+            env: createConfiguredProcessEnvironment(
+              { command: this._command, env: this._env },
+              projectRoot,
+              process.env,
+            ),
+          });
     this._process = childProcess ?? null;
     const spawnPromise = childProcess ? waitForSpawn(childProcess) : Promise.resolve();
-    const stdin = requiredValue(ownedProcess?.stdin ?? childProcess?.stdin);
-    const stdout = requiredValue(ownedProcess?.stdout ?? childProcess?.stdout);
-    const stderr = requiredValue(ownedProcess?.stderr ?? childProcess?.stderr);
+    const stream = ownedProcess ?? sharedServer;
+    const stdin = requiredValue(stream?.stdin ?? childProcess?.stdin);
+    const stdout = requiredValue(stream?.stdout ?? childProcess?.stdout);
+    const stderr = requiredValue(stream?.stderr ?? childProcess?.stderr);
 
     // Consume process stream errors so a failed optional server cannot
     // become an uncaught exception in the host process.
@@ -290,9 +353,14 @@ export class LspClient {
       this._process = null;
     });
 
+    const current = () =>
+      ownedProcess
+        ? this._ownedProcess === ownedProcess
+        : sharedServer
+          ? this._sharedServer === sharedServer
+          : this._process === childProcess;
     const onExit = (code: number | null) => {
-      if (ownedProcess ? this._ownedProcess !== ownedProcess : this._process !== childProcess)
-        return;
+      if (!current()) return;
       void this._closeFileWatchers();
       if (!this._disposed && code !== 0 && code !== null) {
         this._crashed = true;
@@ -307,10 +375,10 @@ export class LspClient {
       this._initialized = false;
     };
     childProcess?.on("exit", onExit);
-    void ownedProcess?.completion.then(
+    void stream?.completion.then(
       ({ exitCode }) => onExit(exitCode),
       () => {
-        if (this._ownedProcess !== ownedProcess) return;
+        if (!current()) return;
         this._crashed = true;
         onExit(null);
       },
@@ -339,9 +407,12 @@ export class LspClient {
     };
     const failed = (error: Error) =>
       console.error(`[lsp] ${this.serverId}: file watcher failed:`, error);
+    // A shared host watches files for its server itself.
     this._fileWatchers = this._ownerTransport
       ? this._ownerTransport.fileWatchers?.(this.rootUri, changed, failed)
-      : new LspFileWatchers(projectRoot, changed, failed);
+      : sharedServer
+        ? undefined
+        : new LspFileWatchers(projectRoot, changed, failed);
     this._connection.onRequest(
       "client/registerCapability",
       async (parameters: {
@@ -379,16 +450,7 @@ export class LspClient {
     this._connection.onRequest(
       "workspace/configuration",
       (parameters: { items: { section?: string }[] }) =>
-        parameters.items.map((item) => {
-          let value: unknown = this._settings ?? null;
-          for (const segment of item.section?.split(".").filter(Boolean) ?? []) {
-            value =
-              typeof value === "object" && value !== null
-                ? ((value as Record<string, unknown>)[segment] ?? null)
-                : null;
-          }
-          return value;
-        }),
+        configurationItems(this._settings, parameters.items),
     );
 
     this._connection.listen();
@@ -430,36 +492,7 @@ export class LspClient {
 
     const initResult = await waitWithSignal(
       withTimeout(
-        this._connection.sendRequest<InitResult>("initialize", {
-          processId: this._ownerTransport ? null : process.pid,
-          rootUri: this._ownerTransport?.toServerUri(this.rootUri) ?? this.rootUri,
-
-          workspaceFolders,
-          capabilities: {
-            workspace: {
-              applyEdit: false,
-
-              configuration: true,
-
-              workspaceFolders: true,
-
-              didChangeWatchedFiles: {
-                dynamicRegistration: this._fileWatchers !== undefined,
-                relativePatternSupport: this._fileWatchers !== undefined,
-              },
-              symbol: { dynamicRegistration: false },
-            },
-            textDocument: {
-              synchronization: { didOpen: true, didChange: true, didClose: true },
-              publishDiagnostics: { relatedInformation: true },
-
-              diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
-              documentSymbol: { hierarchicalDocumentSymbolSupport: true },
-              foldingRange: { lineFoldingOnly: true },
-            },
-          },
-          initializationOptions: this._initOptions,
-        }),
+        this._connection.sendRequest<InitResult>("initialize", initializeParameters),
         this._timeoutMs,
         `[lsp] ${this.serverId}: initialize timed out`,
       ),
@@ -489,6 +522,37 @@ export class LspClient {
 
     // Unadvertised methods may return null or internal errors rather than MethodNotFound.
     this._diagnosticMode = initResult.capabilities.diagnosticProvider ? "pull" : "push";
+  }
+
+  /** Reach a server shared with other Pi sessions; undefined means start an own process. */
+  private async _attachSharedServer(
+    projectRoot: string,
+    initialize: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+  ): Promise<LspSharedServer | undefined> {
+    if (!this._sharedServers) return undefined;
+    try {
+      return await this._sharedServers.attach({
+        serverId: this.serverId,
+        command: this._command,
+        cwd: projectRoot,
+        configuredEnv: this._env,
+        env: createConfiguredProcessEnvironment(
+          { command: this._command, env: this._env },
+          projectRoot,
+          process.env,
+        ),
+        settings: this._settings,
+        initialize,
+        lingerMs: this._idleTimeoutMs ?? DEFAULT_SHARED_SERVER_LINGER_MS,
+        timeoutMs: this._timeoutMs,
+        ...(signal && { signal }),
+      });
+    } catch {
+      signal?.throwIfAborted();
+      // The shared host is optional: an own process gives the same results.
+      return undefined;
+    }
   }
 
   /** Restart the idle period; requests and open operations keep the server busy. */
@@ -765,6 +829,9 @@ export class LspClient {
     this._ownedProcess = null;
     this._ownedStartup = undefined;
     const ownedCleanup = Promise.resolve().then(() => owned?.stop());
+    const shared = this._sharedServer;
+    this._sharedServer = null;
+    const sharedCleanup = Promise.resolve().then(() => shared?.stop());
     const child = this._process;
     this._process = null;
     if (child && !child.killed) {
@@ -781,7 +848,7 @@ export class LspClient {
     this._diagnosticMode = "unknown";
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
-    const results = await Promise.allSettled([ownedCleanup, watcherCleanup]);
+    const results = await Promise.allSettled([ownedCleanup, sharedCleanup, watcherCleanup]);
     const failures: unknown[] = [];
     for (const result of results) {
       if (result.status === "rejected") failures.push(result.reason);

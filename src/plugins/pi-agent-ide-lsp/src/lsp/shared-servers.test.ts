@@ -1,0 +1,230 @@
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { URI } from "vscode-uri";
+import { afterEach, expect, test } from "vitest";
+
+import { LspClient } from "./client.js";
+import { LspSharedServers } from "./shared-servers.js";
+
+const SERVER = path.resolve(
+  "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",
+);
+const LINGER_MS = 300;
+
+interface Status {
+  readonly open: readonly string[];
+  readonly events: readonly (readonly [string, string])[];
+  readonly watched: readonly { readonly uri: string; readonly type: number }[];
+  readonly pid: number;
+}
+
+const clients: LspClient[] = [];
+const servers = new Set<number>();
+const directories: string[] = [];
+
+afterEach(async () => {
+  await Promise.allSettled(clients.splice(0).map((client) => client.shutdown()));
+  // Shared servers outlive their sessions for the linger time.
+  await Promise.all([...servers].map((pid) => until(() => !alive(pid))));
+  servers.clear();
+  await Promise.all(
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
+
+async function workspace(): Promise<{ cwd: string; sharing: LspSharedServers; sockets: string }> {
+  const root = path.resolve(".agents/tmp/lsp-shared-servers");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "case-"));
+  // Socket paths have a short length limit, so they live in the system temporary directory.
+  const sockets = await mkdtemp(path.join(os.tmpdir(), "lsp-shared-"));
+  directories.push(cwd, sockets);
+  await writeFile(path.join(cwd, "first.fx"), "first\n");
+  return { cwd, sharing: new LspSharedServers({ directory: sockets }), sockets };
+}
+
+async function session(
+  cwd: string,
+  sharing: LspSharedServers,
+  settings: Record<string, unknown> = { fixture: { mode: "strict" } },
+  lingerMs = LINGER_MS,
+): Promise<LspClient> {
+  const client = new LspClient({
+    serverId: "fixture",
+    rootUri: URI.file(cwd).toString(),
+    command: [process.execPath, SERVER],
+    settings,
+    sharedServers: sharing,
+    idleTimeoutMs: lingerMs,
+  });
+  clients.push(client);
+  await client.start();
+  if (client.pid !== null) servers.add(client.pid);
+  return client;
+}
+
+const status = (client: LspClient) => client.sendRequest<Status>("lifecycle/status", {});
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function until(condition: () => boolean | Promise<boolean>, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await condition())) {
+    if (Date.now() > deadline) throw new Error("Condition not reached");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+test("sessions with the same configuration share one server; other settings get another", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const other = await session(cwd, sharing, { fixture: { mode: "loose" } });
+
+  expect(first.shared).toBe(true);
+  expect(second.pid).toBe(first.pid);
+  expect(other.pid).not.toBe(first.pid);
+  expect((await status(second)).pid).toBe(first.pid);
+  expect(first.diagnosticMode).toBe("push");
+  expect(second.diagnosticMode).toBe("push");
+});
+
+test("each session gets diagnostics under its own document versions", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+
+  first.openDocument(uri, "first\n", "fixture", 5);
+  await until(() => first.diagnosticPublication(uri)?.version === 5);
+  second.openDocument(uri, "first\n", "fixture", 7);
+  await until(() => second.diagnosticPublication(uri)?.version === 7);
+  expect(second.diagnosticPublication(uri)?.diagnostics).toEqual([
+    expect.objectContaining({ message: "fixture error" }),
+  ]);
+  expect((await status(first)).events).toEqual([["open", uri]]);
+
+  first.closeDocument(uri);
+  expect((await status(second)).open).toEqual([uri]);
+  second.closeDocument(uri);
+  expect((await status(second)).open).toEqual([]);
+});
+
+test("requests see the requesting session's text and versions", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  const text = (client: LspClient) =>
+    client.sendRequest<string>("lifecycle/text", { textDocument: { uri } });
+  const rename = (client: LspClient) =>
+    client.sendRequest<{ documentChanges: { textDocument: { version: number } }[] }>(
+      "textDocument/rename",
+      { textDocument: { uri }, position: { line: 0, character: 0 }, newName: "renamed" },
+    );
+
+  first.syncDocument(uri, "alpha\n", "fixture");
+  second.syncDocument(uri, "beta\n", "fixture");
+  second.syncDocument(uri, "gamma\n", "fixture");
+
+  expect(await text(first)).toBe("alpha\n");
+  expect(await text(second)).toBe("gamma\n");
+  expect((await rename(second)).documentChanges[0]?.textDocument.version).toBe(
+    second.documentVersion(uri),
+  );
+  expect((await rename(first)).documentChanges[0]?.textDocument.version).toBe(
+    first.documentVersion(uri),
+  );
+  expect(await text(first)).toBe("alpha\n");
+});
+
+test("the shared host answers server requests for settings and file watching", async () => {
+  const { cwd, sharing } = await workspace();
+  const client = await session(cwd, sharing);
+
+  expect(await client.sendRequest("lifecycle/configuration", { section: "fixture.mode" })).toBe(
+    "strict",
+  );
+  await client.sendRequest("lifecycle/watch", { pattern: "**/*.fx" });
+  await writeFile(path.join(cwd, "second.fx"), "second\n");
+  await until(async () =>
+    (await status(client)).watched.some((change) => change.uri.endsWith("/second.fx")),
+  );
+});
+
+test("a session leaving does not affect the others", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  first.syncDocument(uri, "first\n", "fixture");
+  second.syncDocument(uri, "first\n", "fixture");
+  const pid = first.pid;
+
+  await first.shutdown();
+
+  expect(second.ready).toBe(true);
+  expect(await status(second)).toMatchObject({ pid, open: [uri] });
+  second.syncDocument(uri, "changed\n", "fixture");
+  await until(() => second.diagnosticPublication(uri) !== undefined);
+});
+
+test(
+  "the server stops after its last session has been gone for the linger time",
+  { timeout: 15_000 },
+  async () => {
+    const { cwd, sharing, sockets } = await workspace();
+    const first = await session(cwd, sharing, undefined, 1000);
+    const pid = first.pid ?? 0;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(alive(pid)).toBe(true);
+
+    await first.shutdown();
+    const returning = await session(cwd, sharing, undefined, 1000);
+    expect(returning.pid).toBe(pid);
+    await returning.shutdown();
+    await until(() => !alive(pid));
+    await until(async () => (await readdir(sockets)).length === 0);
+
+    const next = await session(cwd, sharing);
+    expect(next.shared).toBe(true);
+    expect(next.pid).not.toBe(pid);
+    expect((await status(next)).pid).toBe(next.pid);
+  },
+);
+
+test("sessions see a crashed shared server and restart on a new one", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const pid = first.pid ?? 0;
+
+  process.kill(pid, "SIGKILL");
+  await until(() => first.crashed && second.crashed);
+
+  await first.restart();
+  await second.restart();
+  expect(first.shared).toBe(true);
+  expect(first.pid).not.toBe(pid);
+  expect(second.pid).toBe(first.pid);
+  if (first.pid !== null) servers.add(first.pid);
+  expect((await status(second)).pid).toBe(first.pid);
+});
+
+test("a session uses its own server when the shared host cannot be reached", async () => {
+  const { cwd, sockets } = await workspace();
+  await chmod(sockets, 0o755);
+  const client = await session(cwd, new LspSharedServers({ directory: sockets }));
+
+  expect(client.shared).toBe(false);
+  expect((await status(client)).pid).toBe(client.pid);
+  expect(await readdir(sockets)).toEqual([]);
+});
