@@ -43,7 +43,14 @@ export interface TextSearchSession {
 interface SearchSnapshot {
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
-  readonly contentBySource: ReadonlyMap<string, string>;
+  /** Digests, not text: a retained snapshot must not keep a copy of every searched file. */
+  readonly digestBySource: ReadonlyMap<string, string>;
+}
+
+/** A snapshot with the source text it was captured from, held only while one request runs. */
+interface CapturedSearchSnapshot {
+  readonly snapshot: SearchSnapshot;
+  readonly contents: ReadonlyMap<string, string>;
 }
 
 type SnapshotReader = (source: string, signal?: AbortSignal) => Promise<string>;
@@ -210,7 +217,7 @@ export class SearchSessionStore {
       query,
       matches,
       complete,
-      contentBySource,
+      digestBySource: digestContents(contentBySource),
       read,
       ...registerResultReferences(
         this.resultTargets,
@@ -390,42 +397,52 @@ export class SearchSessionStore {
   ): Promise<TextAnchorResolutionAttempt> {
     const parsed = parseSearchAnchor(value);
     if (parsed === undefined) return { kind: "not-handled" };
-    let session = this.#sessions.get(parsed.id);
+    const session = this.#sessions.get(parsed.id);
     if (session === undefined) return staleAnchor();
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     const source = canonicalSource(contextSource);
     let snapshot: SearchSnapshot = session;
+    let refreshedContents: ReadonlyMap<string, string> | undefined;
     if (parsed.selector === "all") {
       if (session.refreshedComplete?.complete === true) {
         snapshot = session.refreshedComplete;
       } else if (session.refreshedComplete !== undefined) {
-        snapshot = await this.#refresh(session, signal);
+        ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
         if (!snapshot.complete) return missingCompleteAnchor();
       }
     }
-    let selected = selectMatches(snapshot, parsed.selector, parsed.mode);
-    let sourceMatches = selected.filter((match) => match.source === source);
-    if (sourceMatches.length === 0) {
+    const firstMatch = selectMatches(snapshot, parsed.selector, "match").find(
+      (match) => match.source === source,
+    );
+    if (firstMatch === undefined) {
       return {
         kind: "rejected",
         rejection: { code: "missing", reason: "search anchor does not select this resource" },
       };
     }
     const current = await readCurrent(source, signal, session.environment, session.read);
-    if (current === undefined) return staleAnchor(requiredValue(sourceMatches[0]).lineNumber);
-    if (parsed.selector === "all" && current !== snapshot.contentBySource.get(source)) {
-      snapshot = await this.#refresh(session, signal);
+    if (current === undefined) return staleAnchor(firstMatch.lineNumber);
+    const currentDigest = digestContent(current);
+    if (parsed.selector === "all" && currentDigest !== snapshot.digestBySource.get(source)) {
+      ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
       if (!snapshot.complete) return missingCompleteAnchor();
-      selected = selectMatches(snapshot, parsed.selector, parsed.mode);
-      sourceMatches = selected.filter((match) => match.source === source);
     }
+    const contentOf = (candidate: string) =>
+      refreshedContents === undefined
+        ? candidate === source
+          ? current
+          : undefined
+        : refreshedContents.get(candidate);
+    const sourceMatches = selectMatches(snapshot, parsed.selector, parsed.mode, contentOf).filter(
+      (match) => match.source === source,
+    );
     if (sourceMatches.length === 0) {
       return {
         kind: "rejected",
         rejection: { code: "missing", reason: "search anchor does not select this resource" },
       };
     }
-    if (parsed.selector !== "all" && current !== session.contentBySource.get(source))
+    if (parsed.selector !== "all" && currentDigest !== session.digestBySource.get(source))
       return staleAnchor(requiredValue(sourceMatches[0]).lineNumber);
     const document = createTextDocument(source, current);
     return {
@@ -450,62 +467,76 @@ export class SearchSessionStore {
     if (session === undefined || session.cwd !== canonicalSource(cwd)) return staleAnchor();
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     let snapshot: SearchSnapshot = session;
+    // Text of every selected source, verified against the snapshot digest or freshly refreshed.
+    let contents = new Map<string, string>();
     if (parsed.selector === "all") {
       if (session.refreshedComplete?.complete === true) {
         snapshot = session.refreshedComplete;
       } else if (session.refreshedComplete !== undefined) {
-        snapshot = await this.#refresh(session, signal);
+        ({ snapshot } = await this.#refresh(session, signal));
         if (!snapshot.complete) return missingCompleteAnchor();
       }
       const sources = new Set(
-        selectMatches(snapshot, parsed.selector, parsed.mode).map((match) => match.source),
+        selectMatches(snapshot, parsed.selector, "match").map((match) => match.source),
       );
       for (const source of sources) {
         const current = await readCurrent(source, signal, session.environment, session.read);
-        if (current !== snapshot.contentBySource.get(source)) {
-          snapshot = await this.#refresh(session, signal);
+        if (
+          current === undefined ||
+          digestContent(current) !== snapshot.digestBySource.get(source)
+        ) {
+          const refreshed = await this.#refresh(session, signal);
+          snapshot = refreshed.snapshot;
+          contents = new Map(refreshed.contents);
           if (!snapshot.complete) return missingCompleteAnchor();
           break;
         }
+        contents.set(source, current);
+      }
+    } else {
+      const first = selectMatches(snapshot, parsed.selector, parsed.mode)[0];
+      if (first !== undefined) {
+        const current = await readCurrent(first.source, signal, session.environment, session.read);
+        if (
+          current === undefined ||
+          digestContent(current) !== snapshot.digestBySource.get(first.source)
+        )
+          return staleAnchor(first.lineNumber);
+        contents.set(first.source, current);
       }
     }
-    const selected = selectMatches(snapshot, parsed.selector, parsed.mode);
-    if (parsed.selector !== "all") {
-      const source = selected[0]?.source;
-      if (
-        source !== undefined &&
-        (await readCurrent(source, signal, session.environment, session.read)) !==
-          snapshot.contentBySource.get(source)
-      ) {
-        return staleAnchor(selected[0]?.lineNumber);
+    const selected = selectMatches(snapshot, parsed.selector, parsed.mode, (source) =>
+      contents.get(source),
+    );
+    const documents = new Map<string, ReturnType<typeof createTextDocument>>();
+    const documentOf = (match: TextSearchMatch) => {
+      let document = documents.get(match.source);
+      if (document === undefined) {
+        document = createTextDocument(match.source, contents.get(match.source) ?? match.lineText);
+        documents.set(match.source, document);
       }
-    }
+      return document;
+    };
     const grouped = new Map<string, TextSelectionRange[]>();
     for (const match of selected) {
       const ranges = grouped.get(match.source) ?? [];
-      ranges.push(
-        selectionRange(
-          createTextDocument(
-            match.source,
-            snapshot.contentBySource.get(match.source) ?? match.lineText,
-          ),
-          match,
-          parsed.mode,
-        ),
-      );
+      ranges.push(selectionRange(documentOf(match), match, parsed.mode));
       grouped.set(match.source, ranges);
     }
     const targets: TextTarget[] = [...grouped].map(([source, ranges]) => ({
       source,
       ranges,
-      expectedContent: snapshot.contentBySource.get(source),
+      expectedContent: contents.get(source),
     }));
     return targets.length === 0 && !(allowEmpty && parsed.selector === "all")
       ? { kind: "rejected", rejection: { code: "missing", reason: "search anchor has no matches" } }
       : { kind: "resolved", targets };
   }
 
-  async #refresh(session: StoredSearchSession, signal?: AbortSignal): Promise<SearchSnapshot> {
+  async #refresh(
+    session: StoredSearchSession,
+    signal?: AbortSignal,
+  ): Promise<CapturedSearchSnapshot> {
     const result =
       session.refresh === undefined
         ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
@@ -513,19 +544,20 @@ export class SearchSessionStore {
     const matches = result.matches
       .map((match) => ({ ...match, source: canonicalSource(match.source) }))
       .sort(compareMatches);
-    const refreshed: SearchSnapshot = {
+    const contents = await snapshotContents(
+      matches,
+      signal,
+      session.snapshotByteBudget,
+      session.environment,
+      session.read,
+    );
+    const snapshot: SearchSnapshot = {
       matches,
       complete: result.complete,
-      contentBySource: await snapshotContents(
-        matches,
-        signal,
-        session.snapshotByteBudget,
-        session.environment,
-        session.read,
-      ),
+      digestBySource: digestContents(contents),
     };
-    this.#sessions.set(session.id, { ...session, refreshedComplete: refreshed });
-    return refreshed;
+    this.#sessions.set(session.id, { ...session, refreshedComplete: snapshot });
+    return { snapshot, contents };
   }
 }
 
@@ -539,21 +571,29 @@ function registerResultReferences(
   read: SnapshotReader,
 ): Pick<TextSearchSession, "target" | "matchTargets"> {
   if (store === undefined) return {};
-  const documents = new Map(
-    [...contents].map(([source, content]) => [source, createTextDocument(source, content)]),
-  );
+  // Registered targets outlive this call. Their readers come from `sourceReader`, so no closure
+  // keeps these split-line documents alive.
+  const documents = new Map<string, ReturnType<typeof createTextDocument>>();
+  const documentOf = (source: string) => {
+    let document = documents.get(source);
+    if (document === undefined) {
+      document = createTextDocument(source, requiredValue(contents.get(source)));
+      documents.set(source, document);
+    }
+    return document;
+  };
   const targets = matches.map((match) => ({
     source: match.source,
     expectedContent: requiredValue(contents.get(match.source)),
-    ranges: [selectionRange(requiredValue(documents.get(match.source)), match, "match")],
-    readCurrent: (signal?: AbortSignal) => read(match.source, signal),
+    ranges: [matchRange(match)],
+    readCurrent: sourceReader(read, match.source),
   }));
   for (const [index, match] of matches.slice(0, 100).entries()) {
     const lineTarget = store.register(
       [
         {
           ...requiredValue(targets[index]),
-          ranges: [selectionRange(requiredValue(documents.get(match.source)), match, "line")],
+          ranges: [selectionRange(documentOf(match.source), match, "line")],
         },
       ],
       cwd,
@@ -579,10 +619,28 @@ function parseSearchAnchor(value: string): ParsedSearchAnchor | undefined {
   };
 }
 
+/** Kept outside the functions that build documents, so a retained reader holds only its source. */
+function sourceReader(
+  read: SnapshotReader,
+  source: string,
+): (signal?: AbortSignal) => Promise<string> {
+  return (signal) => read(source, signal);
+}
+
+function digestContent(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+function digestContents(contents: ReadonlyMap<string, string>): ReadonlyMap<string, string> {
+  return new Map([...contents].map(([source, content]) => [source, digestContent(content)]));
+}
+
+/** `contentOf` supplies verified source text; whole-line selections of every match need it. */
 function selectMatches(
   session: SearchSnapshot,
   selector: "all" | number,
   mode: "line" | "match",
+  contentOf: (source: string) => string | undefined = () => undefined,
 ): readonly TextSearchMatch[] {
   const selected =
     selector === "all" ? session.matches : [session.matches[selector - 1]].filter(isMatch);
@@ -591,11 +649,14 @@ function selectMatches(
   }
 
   const seenLines = new Set<string>();
+  const documents = new Map<string, ReturnType<typeof createTextDocument>>();
   return selected.flatMap((match) => {
-    const document = createTextDocument(
-      match.source,
-      session.contentBySource.get(match.source) ?? match.lineText,
-    );
+    const content = contentOf(match.source);
+    let document = content === undefined ? undefined : documents.get(match.source);
+    if (document === undefined) {
+      document = createTextDocument(match.source, content ?? match.lineText);
+      if (content !== undefined) documents.set(match.source, document);
+    }
     const last = lastContainingLine(match);
     return document.lines.slice(match.lineNumber - 1, last).flatMap((line) => {
       const key = `${match.source}\u0000${String(line.lineNumber)}`;
@@ -629,12 +690,7 @@ function selectionRange(
   match: TextSearchMatch,
   mode: "line" | "match",
 ): TextSelectionRange {
-  if (mode === "match") {
-    return {
-      start: { lineNumber: match.lineNumber, column: match.startColumn },
-      end: { lineNumber: match.endLineNumber ?? match.lineNumber, column: match.endColumn },
-    };
-  }
+  if (mode === "match") return matchRange(match);
 
   const lastLine = lastContainingLine(match);
   const line = requiredValue(document.lines[lastLine - 1]);
@@ -645,6 +701,13 @@ function selectionRange(
       column: line.lineEnding.length > 0 ? 0 : line.content.length,
     },
     linewise: true,
+  };
+}
+
+function matchRange(match: TextSearchMatch): TextSelectionRange {
+  return {
+    start: { lineNumber: match.lineNumber, column: match.startColumn },
+    end: { lineNumber: match.endLineNumber ?? match.lineNumber, column: match.endColumn },
   };
 }
 
