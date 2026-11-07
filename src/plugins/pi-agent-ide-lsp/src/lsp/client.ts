@@ -69,6 +69,8 @@ export class LspClient {
 
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
+  /** Set once the server versions its pushes; its unversioned pushes then describe closed documents. */
+  private _versionedDiagnostics = false;
   private readonly _activeDiagnosticRequests = new Set<string>();
   /** Operations that still use each open document; the last release closes it. */
   private readonly _documentLeases = new Map<string, number>();
@@ -275,7 +277,7 @@ export class LspClient {
         },
         textDocument: {
           synchronization: { didOpen: true, didChange: true, didClose: true },
-          publishDiagnostics: { relatedInformation: true },
+          publishDiagnostics: { relatedInformation: true, versionSupport: true },
 
           diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
@@ -371,6 +373,7 @@ export class LspClient {
       this._diagnosticPublications.clear();
       this._activeDiagnosticRequests.clear();
       this._diagnosticMode = "unknown";
+      this._versionedDiagnostics = false;
       this._process = null;
       this._initialized = false;
     };
@@ -465,6 +468,16 @@ export class LspClient {
         const publication = mapped as
           | { uri?: unknown; version?: unknown; diagnostics?: unknown }
           | undefined;
+        if (typeof publication?.version === "number") this._versionedDiagnostics = true;
+        else if (
+          this._versionedDiagnostics &&
+          typeof publication?.uri === "string" &&
+          this._documentVersions.has(publication.uri)
+        )
+          // A server that versions its reports omits the version only for a document it sees as
+          // closed. Such a push for a document open here was sent before the server processed
+          // the latest didOpen, for example the clear for a close that a quick reopen followed.
+          return;
         if (
           publication &&
           typeof publication.uri === "string" &&
@@ -609,6 +622,7 @@ export class LspClient {
     this._documentContents.clear();
     this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
+    this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
     await this.start(signal);
@@ -846,6 +860,7 @@ export class LspClient {
     this._documentContents.clear();
     this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
+    this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
     const results = await Promise.allSettled([ownedCleanup, sharedCleanup, watcherCleanup]);

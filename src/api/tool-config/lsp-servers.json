@@ -126,6 +126,17 @@
       },
       "capabilities": ["diagnostics"]
     },
+    "pyright": {
+      "command": ["pyright-langserver", "--stdio"],
+      "transport": "stdio",
+      "rootMarkers": ["pyproject.toml", "pyrightconfig.json"],
+      "languages": {
+        "python": {
+          "extensions": [".py", ".pyi"]
+        }
+      },
+      "capabilities": ["diagnostics"]
+    },
     "gopls": {
       "command": ["gopls"],
       "transport": "stdio",

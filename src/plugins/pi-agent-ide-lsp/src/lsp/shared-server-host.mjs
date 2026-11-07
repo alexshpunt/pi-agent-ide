@@ -55,6 +55,7 @@ import {
  * @property {Set<Session>} holders Sessions that have the document open.
  * @property {{ version: number | undefined; current: number; diagnostics: unknown[] } | undefined} publication
  *   Latest push diagnostics and the server version that was current when they arrived.
+ * @property {ReturnType<typeof setTimeout> | undefined} closeTimer Pending close after the last holder left.
  */
 
 /**
@@ -70,6 +71,13 @@ const STALE_SOCKET_MS = 60_000;
 /** Logs of failed hosts are kept this long for diagnosis. */
 const FAILURE_LOG_MS = 24 * 60 * 60_000;
 const DIAGNOSTICS = "textDocument/publishDiagnostics";
+/**
+ * Keep a document open on the server this long after its last session closed it, never longer
+ * than the server lingers. Sessions close a document after each operation and often reopen it at
+ * once; closing and reopening would make the server analyze it again, and the clear it publishes
+ * for the close could reach the reopened document before the new report.
+ */
+const DOCUMENT_CLOSE_DELAY_MS = 5_000;
 
 const socketPath = process.argv[2] ?? "";
 const key = process.argv[3] ?? "";
@@ -91,6 +99,8 @@ let running;
 /** @type {LspFileWatchers | undefined} */
 let fileWatchers;
 let nextVersion = 0;
+/** Set once the server versions its diagnostics; its unversioned pushes then describe closed documents. */
+let versionedDiagnostics = false;
 let lingerMs = 10 * 60_000;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let stopTimer = setTimeout(() => void stop(), NO_SESSION_TIMEOUT_MS);
@@ -376,13 +386,17 @@ function openSession(socket, started) {
         textDocument,
       },
     ) => {
-      if (!documents.has(textDocument.uri)) {
+      const existing = documents.get(textDocument.uri);
+      clearTimeout(existing?.closeTimer);
+      if (existing) existing.closeTimer = undefined;
+      else {
         const version = ++nextVersion;
         documents.set(textDocument.uri, {
           text: textDocument.text,
           version,
           holders: new Set(),
           publication: undefined,
+          closeTimer: undefined,
         });
         notifyServer("textDocument/didOpen", { textDocument: { ...textDocument, version } });
       }
@@ -500,11 +514,16 @@ function publishToSessions(method, parameters) {
     method === DIAGNOSTICS && typeof publication.uri === "string"
       ? documents.get(publication.uri)
       : undefined;
+  const version = typeof publication.version === "number" ? publication.version : undefined;
+  if (method === DIAGNOSTICS && version !== undefined) versionedDiagnostics = true;
   if (!document || !Array.isArray(publication.diagnostics)) {
     for (const session of sessions) notifySession(session, method, parameters);
     return;
   }
-  const version = typeof publication.version === "number" ? publication.version : undefined;
+  // Such a server omits the version only for a document it sees as closed, so an unversioned push
+  // for an open document predates its latest didOpen, such as the clear for a close that a quick
+  // reopen followed.
+  if (version === undefined && versionedDiagnostics) return;
   if (version !== undefined && version !== document.version) return;
   document.publication = {
     version,
@@ -565,8 +584,15 @@ function closeDocument(session, uri) {
   if (!document) return;
   document.holders.delete(session);
   if (document.holders.size > 0) return;
-  documents.delete(uri);
-  notifyServer("textDocument/didClose", { textDocument: { uri } });
+  clearTimeout(document.closeTimer);
+  document.closeTimer = setTimeout(
+    () => {
+      if (documents.get(uri) !== document || document.holders.size > 0) return;
+      documents.delete(uri);
+      notifyServer("textDocument/didClose", { textDocument: { uri } });
+    },
+    Math.min(lingerMs, DOCUMENT_CLOSE_DELAY_MS),
+  );
 }
 
 /** @param {Session} session */
