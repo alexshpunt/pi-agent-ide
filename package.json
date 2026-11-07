@@ -226,7 +226,8 @@
     "test:integration:report": "vitest run --config vitest.integration.config.mjs --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/integration.xml",
     "typecheck": "oxlint -A all --type-aware --type-check src packages scripts benchmarks",
     "format": "oxfmt --write .",
-    "format:check": "oxfmt --check ."
+    "format:check": "oxfmt --check .",
+    "bench:tool-load": "node benchmarks/tool-load/cli.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.9",
