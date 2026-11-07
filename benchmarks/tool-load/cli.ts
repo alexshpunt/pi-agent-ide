@@ -22,9 +22,10 @@ own large generated source file through the IDE tools and checks every result.
   --languages <list>    cpp,typescript,python,rust (default: all four)
   --cycles <n>          Repetitions of the step sequence per agent (default 4)
   --sizes <list>        Source sizes in KB, assigned round-robin per language (default 200,500,1100)
-  --pause-ms <n>        Delay before each scripted assistant message (default 0)
+  --pause-ms <n>        Model think time before each scripted assistant message (default 1000; 0 = stress)
   --step-timeout <s>    An agent without a finished tool call for this long counts as hung (default 180)
   --pi <command>        Pi executable (default: $PI_COMMAND or pi)
+  --profile             Write V8 CPU profiles of every Pi process to agents/<id>/profile/
   --out <dir>           Output directory (default .tmp/tool-load/<timestamp>)
   --thresholds <file>   Threshold file (default benchmarks/tool-load/thresholds.json)
   --help                Show this help`;
@@ -38,6 +39,7 @@ interface Options {
   readonly cycles: number;
   readonly sizesKb: readonly number[];
   readonly pauseMs: number;
+  readonly profile: boolean;
   readonly stepTimeoutMs: number;
   readonly piCommand: string;
   readonly out: string;
@@ -51,11 +53,12 @@ function parseOptions(): Options | undefined {
       languages: { type: "string", default: "cpp,typescript,python,rust" },
       cycles: { type: "string", default: "4" },
       sizes: { type: "string", default: "200,500,1100" },
-      "pause-ms": { type: "string", default: "0" },
+      "pause-ms": { type: "string", default: "1000" },
       "step-timeout": { type: "string", default: "180" },
       pi: { type: "string", default: process.env.PI_COMMAND ?? "pi" },
       out: { type: "string" },
       thresholds: { type: "string", default: path.join(benchmarkDir, "thresholds.json") },
+      profile: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
   });
@@ -72,6 +75,7 @@ function parseOptions(): Options | undefined {
     cycles: positive(values.cycles, "--cycles"),
     sizesKb: values.sizes.split(",").map((value) => positive(value, "--sizes")),
     pauseMs: Number(values["pause-ms"]),
+    profile: values.profile,
     stepTimeoutMs: positive(values["step-timeout"], "--step-timeout") * 1000,
     piCommand: values.pi,
     out: path.resolve(values.out ?? path.join(repositoryRoot, ".tmp", "tool-load", stamp)),
@@ -152,6 +156,7 @@ async function prepareProjects(options: Options): Promise<PlannedAgent[]> {
           file,
           scratch,
           unitCount: source.unitCount,
+          sizeBytes: Buffer.byteLength(source.content),
           unitLines: source.unitLines,
           projectDir,
           agentDir,
@@ -160,6 +165,7 @@ async function prepareProjects(options: Options): Promise<PlannedAgent[]> {
           piCommand: options.piCommand,
           timeoutMs: options.stepTimeoutMs * 4 + options.cycles * 600_000,
           pauseMs: options.pauseMs,
+          profile: options.profile,
         },
       });
     }
@@ -216,10 +222,17 @@ async function run(options: Options): Promise<number> {
     const configPath = path.join(agent.config.agentDir, "config.json");
     await writeFile(configPath, `${JSON.stringify(agent.config)}\n`);
     const log = createWriteStream(path.join(agent.config.agentDir, "agent.log"));
-    const child = spawn(process.execPath, [path.join(benchmarkDir, "agent.ts"), configPath], {
-      cwd: repositoryRoot,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const profileArguments = options.profile
+      ? ["--cpu-prof", `--cpu-prof-dir=${path.join(agent.config.agentDir, "harness-profile")}`]
+      : [];
+    const child = spawn(
+      process.execPath,
+      [...profileArguments, path.join(benchmarkDir, "agent.ts"), configPath],
+      {
+        cwd: repositoryRoot,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     child.stdout.pipe(log);
     child.stderr.pipe(log);
     const entry: LiveAgent = {

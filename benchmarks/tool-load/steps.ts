@@ -19,6 +19,8 @@ export interface Step {
   readonly cycle: number;
   readonly tool: string;
   readonly arguments: Readonly<Record<string, unknown>>;
+  /** The step expects the tool to refuse the call. */
+  readonly expectsError?: boolean;
   /** Returns a problem description, or undefined when the result is as expected. */
   check(result: string): string | undefined;
 }
@@ -30,9 +32,13 @@ export interface AgentFiles {
   /** Scratch file in the same project. */
   readonly scratch: string;
   readonly unitCount: number;
+  readonly sizeBytes: number;
   /** One-based line of each unit marker in the generated file. */
   readonly unitLines: readonly number[];
 }
+
+/** Pi Agent IDE refuses AST outlines of larger files with a clear message. */
+const AST_OUTLINE_LIMIT_BYTES = 262_144;
 
 /** Lines a unit may move by after earlier cycles; reads start this far before the marker. */
 const LINE_SLACK = 12;
@@ -57,7 +63,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
   const detached = (cycle + agentNumber) % DETACHED_COUNT;
   const copied = (detached + 1) % DETACHED_COUNT;
   const name = unitName(agent, unit);
-  const stepLine = unitStepLine(unit);
+  const stepLine = unitStepLine(agent, unit);
   const prefix = `c${cycle}`;
   const step = (
     label: string,
@@ -75,9 +81,14 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
         expectAll(result, [`|${unitMarker(spec, agent, unit)}`]) ??
         (/\d+#[0-9A-F]{4}\|/.test(result) ? undefined : "no LINE#HASH anchors"),
     ),
-    step("read-outline", "read", { path: `ast:${file}`, limit: 40 }, (result) =>
-      expectAll(result, [unitName(agent, 0), "scope-begin-"]),
-    ),
+    {
+      ...step("read-outline", "read", { path: `ast:${file}`, limit: 40 }, (result) =>
+        files.sizeBytes > AST_OUTLINE_LIMIT_BYTES
+          ? expectAll(result, ["AST outline limit"])
+          : expectAll(result, [unitName(agent, 0), "scope-begin-"]),
+      ),
+      expectsError: files.sizeBytes > AST_OUTLINE_LIMIT_BYTES,
+    },
     step("search-file", "search", { query: `"${name}"`, path: file }, (result) =>
       expectAll(result, ["2 matches in 1 file"]),
     ),
@@ -219,7 +230,7 @@ function codemodeBatch(
   index: number,
   cycle: number,
 ): string {
-  const stepLine = unitStepLine(index);
+  const stepLine = unitStepLine(files.agent, index);
   const name = unitName(files.agent, index);
   return `const file = ${JSON.stringify(files.file)};
 const stepLine = ${JSON.stringify(stepLine)};

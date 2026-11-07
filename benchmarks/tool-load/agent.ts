@@ -22,6 +22,8 @@ export interface AgentConfig extends AgentFiles {
   readonly piCommand: string;
   readonly timeoutMs: number;
   readonly pauseMs: number;
+  /** Write V8 CPU profiles of Pi (and Node processes it starts) to `<agentDir>/profile`. */
+  readonly profile: boolean;
 }
 
 export interface StepOutcome {
@@ -97,6 +99,9 @@ async function runAgent(config: AgentConfig): Promise<AgentResult> {
         PI_SKIP_VERSION_CHECK: "1",
         PI_AGENT_IDE_TEST_SKIP_GUIDE_GATE: "1",
         [PROBE_FILE_ENVIRONMENT]: path.join(config.agentDir, "probe.jsonl"),
+        ...(config.profile && {
+          NODE_OPTIONS: `--cpu-prof --cpu-prof-dir=${path.join(config.agentDir, "profile")}`,
+        }),
       },
       conversation: [
         ...steps.map((step) =>
@@ -133,7 +138,13 @@ async function runAgent(config: AgentConfig): Promise<AgentResult> {
       const found = results.get(step.id);
       if (found === undefined)
         return { id: step.id, tool: step.tool, isError: true, problem: "no tool result" };
-      const problem = found.isError ? "tool error" : step.check(found.text);
+      const expectsError = step.expectsError === true;
+      const problem =
+        found.isError === expectsError
+          ? step.check(found.text)
+          : found.isError
+            ? "tool error"
+            : "the tool accepted a call it should refuse";
       return {
         id: step.id,
         tool: step.tool,

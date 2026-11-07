@@ -60,13 +60,14 @@ export function extraEnd(spec: LanguageSpec, agent: string, cycle: number): stri
   return `${spec.comment} end ${agent} extra${cycle}`;
 }
 
-/** The body line that a step edits; unique in the file because it carries the unit index. */
-export function unitStepLine(index: number): string {
-  return `total += step * ${unitConstant(index)}`;
+/** The body line that a step edits; unique in the project because it carries the agent and unit. */
+export function unitStepLine(agent: string, index: number): string {
+  return `total += step * ${unitConstant(agent, index)}`;
 }
 
-function unitConstant(index: number): string {
-  return `1${pad(index)}`;
+/** Fixed-length digits, so no constant is a prefix of another. */
+function unitConstant(agent: string, index: number): string {
+  return `1${agent.replace(/\D/g, "").padStart(2, "0")}${pad(index)}`;
 }
 
 function pad(index: number): string {
@@ -103,7 +104,7 @@ const cpp: LanguageSpec = {
         `int ${unitName(agent, index)}(int value) {`,
         "  int total = value;",
         "  for (int step = 0; step < 4; ++step) {",
-        `    ${unitStepLine(index)};`,
+        `    ${unitStepLine(agent, index)};`,
         "  }",
         `  return total + ${variant} + ${callPrevious(agent, index)};`,
         "}",
@@ -157,7 +158,7 @@ const typescript: LanguageSpec = {
         `export function ${unitName(agent, index)}(value: number): number {`,
         "  let total = value;",
         "  for (let step = 0; step < 4; step++) {",
-        `    ${unitStepLine(index)};`,
+        `    ${unitStepLine(agent, index)};`,
         "  }",
         `  return total + ${variant} + ${callPrevious(agent, index)};`,
         "}",
@@ -198,7 +199,7 @@ const python: LanguageSpec = {
         `def ${unitName(agent, index)}(value: int) -> int:`,
         "    total = value",
         "    for step in range(4):",
-        `        ${unitStepLine(index)}`,
+        `        ${unitStepLine(agent, index)}`,
         `    return total + ${variant} + ${callPrevious(agent, index)}`,
       ].join("\n"),
       unitEnd(python, agent, index),
@@ -240,7 +241,7 @@ const rust: LanguageSpec = {
         `pub fn ${unitName(agent, index)}(value: i64) -> i64 {`,
         "    let mut total = value;",
         "    for step in 0..4 {",
-        `        ${unitStepLine(index)};`,
+        `        ${unitStepLine(agent, index)};`,
         "    }",
         `    total + ${variant} + ${callPrevious(agent, index)}`,
         "}",
