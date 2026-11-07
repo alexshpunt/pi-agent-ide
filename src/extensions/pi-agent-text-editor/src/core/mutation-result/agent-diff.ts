@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
-import { diffLines } from "diff";
 import { type PresentedTextRow, renderPresentedTextRows } from "pi-agent-text";
 
+import { diffTextLines } from "./diff.js";
 import { formatHint } from "./inline-hints.js";
 
 import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.js";
@@ -175,7 +175,7 @@ export function buildDiffLines(
   let beforeLine = 1;
   let afterLine = 1;
 
-  for (const part of diffLines(before, after)) {
+  for (const part of diffTextLines(before, after)) {
     for (const text of splitPartLines(part.value)) {
       if (part.added) {
         result.push({ kind: "added", text, afterLine, positionLine: afterLine });
@@ -320,7 +320,12 @@ export function isLineVisible(line: number, ranges: readonly LineRange[]): boole
 
 function lineAtOffset(content: string, offset: number): number {
   const boundedOffset = Math.max(0, Math.min(content.length, offset));
-  return content.slice(0, boundedOffset).split("\n").length;
+  let line = 1;
+  for (let index = content.indexOf("\n"); index !== -1 && index < boundedOffset;) {
+    line += 1;
+    index = content.indexOf("\n", index + 1);
+  }
+  return line;
 }
 
 export function splitLines(content: string): string[] {

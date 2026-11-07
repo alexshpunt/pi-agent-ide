@@ -147,6 +147,23 @@ function splitTextLines(content: string): TextLine[] {
   }
 
   const lines: TextLine[] = [];
+  if (!content.includes("\r")) {
+    // LF-only text, the common case: indexOf scans much faster than a line-ending regex.
+    let start = 0;
+    for (let end = content.indexOf("\n"); end !== -1; end = content.indexOf("\n", start)) {
+      lines.push({
+        lineNumber: lines.length + 1,
+        content: content.slice(start, end),
+        lineEnding: "\n",
+      });
+      start = end + 1;
+    }
+    if (start < content.length) {
+      lines.push({ lineNumber: lines.length + 1, content: content.slice(start), lineEnding: "" });
+    }
+    return lines;
+  }
+
   const endings = /\r\n|\r|\n/gu;
   let start = 0;
   let match: RegExpExecArray | null;
