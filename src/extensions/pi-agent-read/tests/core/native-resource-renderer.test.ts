@@ -4,6 +4,8 @@ import {
   createReadToolDefinition,
   getReadmePath,
   initTheme,
+  keyHint,
+  keyText,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
@@ -33,6 +35,8 @@ const context = (
   toolCallId: "read-test",
   durationMs: undefined,
   outputPad: 0,
+  keyText,
+  keyHint,
   invalidate() {},
   state: {},
   executionStarted: true,
