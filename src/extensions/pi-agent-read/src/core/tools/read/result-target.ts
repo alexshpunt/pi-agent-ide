@@ -78,23 +78,7 @@ export function createReadResultTargetHandler(
                       : retained.flatMap((target) =>
                           target.ranges.flatMap((seed) => intersectRange(seed, range)),
                         ),
-                  async readCurrent(signal) {
-                    const current = await read(
-                      { path: state.source },
-                      {
-                        cwd: context.resolverContext.cwd,
-                        ...(signal === undefined ? {} : { signal }),
-                      },
-                      "script",
-                    );
-                    if (
-                      current.isError ||
-                      current.script?.kind !== "text" ||
-                      current.script.source !== state.source
-                    )
-                      throw new Error("Could not verify the owning source; repeat Read/Search.");
-                    return current.script.content;
-                  },
+                  readCurrent: ownedReader(read, state.source, context.resolverContext.cwd),
                 },
               ],
           context.resolverContext.cwd,
@@ -103,6 +87,28 @@ export function createReadResultTargetHandler(
         return { ...result, script: { ...script, target } };
       },
     };
+  };
+}
+
+/**
+Reread the owning source for a registered target. Defined outside the Read handler: the target
+lives as long as its snapshot, and a closure there would keep the whole Read pipeline state,
+including split lines and result text, alive with it.
+*/
+function ownedReader(
+  read: ReadToolPluginApi["read"],
+  source: string,
+  cwd: string,
+): (signal?: AbortSignal) => Promise<string> {
+  return async (signal) => {
+    const current = await read(
+      { path: source },
+      { cwd, ...(signal === undefined ? {} : { signal }) },
+      "script",
+    );
+    if (current.isError || current.script?.kind !== "text" || current.script.source !== source)
+      throw new Error("Could not verify the owning source; repeat Read/Search.");
+    return current.script.content;
   };
 }
 
