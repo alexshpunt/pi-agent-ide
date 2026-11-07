@@ -91,11 +91,20 @@ export async function runConfiguredLinter(
   return {
     ok,
     diagnostics,
-    ...(!ok && {
-      failure:
-        result.stderr.trim().slice(0, 200) || `command exited with code ${String(result.exitCode)}`,
-    }),
+    ...(!ok && { failure: failureReason(config, result) }),
   };
+}
+
+function failureReason(config: LinterCommandConfig, result: ProcessResult): string {
+  if (result.timedOut === true) {
+    // The last line tells what the command waited for, such as Cargo's
+    // "Blocking waiting for file lock on build directory".
+    const last = result.stderr.trim().split(/\r?\n/u).at(-1)?.trim();
+    return `timed out after ${String(Math.round((config.check.timeoutMs ?? 30_000) / 1000))} s${last ? `; last output: ${last.slice(0, 200)}` : ""}`;
+  }
+  return (
+    result.stderr.trim().slice(0, 200) || `command exited with code ${String(result.exitCode)}`
+  );
 }
 
 /**

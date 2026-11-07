@@ -55,6 +55,7 @@ import {
  * @property {Set<Session>} holders Sessions that have the document open.
  * @property {{ version: number | undefined; current: number; diagnostics: unknown[] } | undefined} publication
  *   Latest push diagnostics and the server version that was current when they arrived.
+ * @property {ReturnType<typeof setTimeout> | undefined} closeTimer Pending close after the last holder left.
  */
 
 /**
@@ -70,6 +71,14 @@ const STALE_SOCKET_MS = 60_000;
 /** Logs of failed hosts are kept this long for diagnosis. */
 const FAILURE_LOG_MS = 24 * 60 * 60_000;
 const DIAGNOSTICS = "textDocument/publishDiagnostics";
+const SERVER_STATUS = "experimental/serverStatus";
+/**
+ * Keep a document open on the server this long after its last session closed it, never longer
+ * than the server lingers. Sessions close a document after each operation and often reopen it at
+ * once; closing and reopening would make the server analyze it again, and the clear it publishes
+ * for the close could reach the reopened document before the new report.
+ */
+const DOCUMENT_CLOSE_DELAY_MS = 5_000;
 
 const socketPath = process.argv[2] ?? "";
 const key = process.argv[3] ?? "";
@@ -91,6 +100,18 @@ let running;
 /** @type {LspFileWatchers | undefined} */
 let fileWatchers;
 let nextVersion = 0;
+/** Set once the server versions its diagnostics; its unversioned pushes then describe closed documents. */
+let versionedDiagnostics = false;
+/**
+ * Latest `experimental/serverStatus`; sessions that attach later receive it at once.
+ * @type {unknown}
+ */
+let serverStatus;
+/**
+ * The server's dynamic registration of pull diagnostics; sessions that attach later receive it.
+ * @type {{ id: string; method: string; registerOptions?: unknown } | undefined}
+ */
+let pullRegistration;
 let lingerMs = 10 * 60_000;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let stopTimer = setTimeout(() => void stop(), NO_SESSION_TIMEOUT_MS);
@@ -201,6 +222,8 @@ async function accept(socket) {
   const session = openSession(socket, started);
   socket.write(`${JSON.stringify({ pid: started.process.pid })}\n`);
   session.connection.listen();
+  if (serverStatus !== undefined) notifySession(session, SERVER_STATUS, serverStatus);
+  registerPull(session);
   // readLine paused the socket; a new data listener does not resume an explicitly paused stream.
   socket.resume();
 }
@@ -251,6 +274,19 @@ async function startServer(attach) {
     env: attach.env,
   });
   let stderr = "";
+  // A server can exit before its last stderr output arrives; startup errors wait for it.
+  const stderrEnded = new Promise((resolve) => {
+    child.stderr?.once("end", resolve);
+    child.stderr?.once("close", resolve);
+  });
+  /** @type {number | null | undefined} */
+  let exitCode;
+  const exited = new Promise((resolve) => {
+    child.once("exit", (code) => {
+      exitCode = code;
+      resolve(undefined);
+    });
+  });
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (/** @type {string} */ chunk) => {
     stderr = (stderr + chunk).slice(-4096);
@@ -260,7 +296,20 @@ async function startServer(attach) {
     child.once("spawn", resolve);
     child.once("error", reject);
   });
-  child.on("exit", () => void stop());
+  child.on("exit", (code, signal) => {
+    if (stopping) return;
+    // The server exited on its own. Record why and fail, so that the log stays for diagnosis; a
+    // clean stop deletes it.
+    void Promise.race([stderrEnded, new Promise((resolve) => setTimeout(resolve, 250))]).then(
+      () => {
+        const output = stderr.trim();
+        process.stderr.write(
+          `${new Date().toISOString()} ${command} exited with ${signal ? `signal ${signal}` : `code ${String(code)}`}${output ? `:\n${output}` : ""}\n`,
+        );
+        void stop(1);
+      },
+    );
+  });
 
   const connection = createMessageConnection(
     new StreamMessageReader(/** @type {import("node:stream").Readable} */ (child.stdout)),
@@ -283,6 +332,12 @@ async function startServer(attach) {
     ) => {
       for (const registration of parameters.registrations) {
         if (registration.method === "workspace/didChangeConfiguration") continue;
+        if (registration.method === "textDocument/diagnostic") {
+          // Each session reads diagnostics itself, so each learns that it can pull them.
+          pullRegistration = registration;
+          for (const session of sessions) registerPull(session);
+          continue;
+        }
         if (registration.method !== "workspace/didChangeWatchedFiles")
           throw new Error(`Unsupported dynamic capability: ${registration.method}`);
         await watchers.register(registration.id, registration.registerOptions?.watchers ?? []);
@@ -293,11 +348,26 @@ async function startServer(attach) {
   connection.onRequest(
     "client/unregisterCapability",
     (/** @type {{ unregisterations: { id: string }[] }} */ parameters) => {
-      for (const registration of parameters.unregisterations) watchers.unregister(registration.id);
+      for (const registration of parameters.unregisterations) {
+        if (registration.id === pullRegistration?.id) {
+          pullRegistration = undefined;
+          for (const session of sessions)
+            void session.connection
+              .sendRequest("client/unregisterCapability", { unregisterations: [registration] })
+              .catch(() => void 0);
+        } else watchers.unregister(registration.id);
+      }
       return null;
     },
   );
   connection.onRequest("window/workDoneProgress/create", () => null);
+  // A pull-diagnostic server asks for new pulls after results change; pyright exits when this
+  // request fails. Each session pulls its own documents.
+  connection.onRequest("workspace/diagnostic/refresh", () => {
+    for (const session of sessions)
+      void session.connection.sendRequest("workspace/diagnostic/refresh").catch(() => void 0);
+    return null;
+  });
   connection.onRequest(
     "workspace/configuration",
     (/** @type {{ items: { section?: string }[] }} */ parameters) =>
@@ -325,6 +395,10 @@ async function startServer(attach) {
           attach.timeoutMs,
         );
       }),
+      // A server that exits does not answer; its pending initialize would wait for the timeout.
+      exited.then(() => {
+        throw new Error("Shared language server exited during startup");
+      }),
     ]);
     await connection.sendNotification("initialized", {});
     if (attach.settings !== undefined)
@@ -333,8 +407,18 @@ async function startServer(attach) {
       });
     return { process: child, connection, initializeResult };
   } catch (error) {
+    // A failed initialize write can precede the exit event and the server's last stderr output.
+    await Promise.race([
+      Promise.all([stderrEnded, exited]),
+      new Promise((resolve) => setTimeout(resolve, 250)),
+    ]);
     const detail = stderr.trim();
-    throw detail ? new Error(detail, { cause: error }) : error;
+    const exit =
+      exitCode === undefined
+        ? ""
+        : `exited during startup${exitCode === null ? "" : ` with code ${exitCode}`}`;
+    if (!detail && !exit) throw error;
+    throw new Error([exit, detail].filter(Boolean).join(": "), { cause: error });
   } finally {
     clearTimeout(timeout);
   }
@@ -376,13 +460,17 @@ function openSession(socket, started) {
         textDocument,
       },
     ) => {
-      if (!documents.has(textDocument.uri)) {
+      const existing = documents.get(textDocument.uri);
+      clearTimeout(existing?.closeTimer);
+      if (existing) existing.closeTimer = undefined;
+      else {
         const version = ++nextVersion;
         documents.set(textDocument.uri, {
           text: textDocument.text,
           version,
           holders: new Set(),
           publication: undefined,
+          closeTimer: undefined,
         });
         notifyServer("textDocument/didOpen", { textDocument: { ...textDocument, version } });
       }
@@ -500,11 +588,17 @@ function publishToSessions(method, parameters) {
     method === DIAGNOSTICS && typeof publication.uri === "string"
       ? documents.get(publication.uri)
       : undefined;
+  if (method === SERVER_STATUS) serverStatus = parameters;
+  const version = typeof publication.version === "number" ? publication.version : undefined;
+  if (method === DIAGNOSTICS && version !== undefined) versionedDiagnostics = true;
   if (!document || !Array.isArray(publication.diagnostics)) {
     for (const session of sessions) notifySession(session, method, parameters);
     return;
   }
-  const version = typeof publication.version === "number" ? publication.version : undefined;
+  // Such a server omits the version only for a document it sees as closed, so an unversioned push
+  // for an open document predates its latest didOpen, such as the clear for a close that a quick
+  // reopen followed.
+  if (version === undefined && versionedDiagnostics) return;
   if (version !== undefined && version !== document.version) return;
   document.publication = {
     version,
@@ -565,8 +659,15 @@ function closeDocument(session, uri) {
   if (!document) return;
   document.holders.delete(session);
   if (document.holders.size > 0) return;
-  documents.delete(uri);
-  notifyServer("textDocument/didClose", { textDocument: { uri } });
+  clearTimeout(document.closeTimer);
+  document.closeTimer = setTimeout(
+    () => {
+      if (documents.get(uri) !== document || document.holders.size > 0) return;
+      documents.delete(uri);
+      notifyServer("textDocument/didClose", { textDocument: { uri } });
+    },
+    Math.min(lingerMs, DOCUMENT_CLOSE_DELAY_MS),
+  );
 }
 
 /** @param {Session} session */
@@ -592,6 +693,17 @@ function detach(session) {
  */
 function notifyServer(method, parameters) {
   void running?.connection.sendNotification(method, parameters).catch(() => void 0);
+}
+
+/**
+ * Tell a session that the server registered pull diagnostics.
+ * @param {Session} session
+ */
+function registerPull(session) {
+  if (pullRegistration === undefined) return;
+  void session.connection
+    .sendRequest("client/registerCapability", { registrations: [pullRegistration] })
+    .catch(() => void 0);
 }
 
 /**

@@ -240,7 +240,9 @@ export function createReadTool(
             "agent",
             outputSaver,
           );
-          return structuredRead(withReadCancellation(result, parameters.path, signal));
+          return withoutScriptData(
+            structuredRead(withReadCancellation(result, parameters.path, signal)),
+          );
         } catch (error) {
           if (signal?.aborted) throw error;
           return structuredRead(
@@ -762,6 +764,16 @@ async function resolveTextTargets(
     );
   }
   return undefined;
+}
+
+/**
+ * Pi keeps a returned result for the rest of the session, including fields it does not use. The
+ * script data has served as structured content by now, and its lines are cut from the whole
+ * source text, which they would keep in memory.
+ */
+function withoutScriptData(result: ReadToolResult): ReadToolResult {
+  const { script: _script, ...rest } = result;
+  return rest;
 }
 
 const ANCHOR_SEPARATOR = "#";

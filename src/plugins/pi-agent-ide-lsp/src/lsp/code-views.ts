@@ -14,6 +14,7 @@ import { requestDocumentSymbols, symbolKindName } from "./symbols.js";
 import type { LspClient } from "./client.js";
 import type { LspManager } from "./manager.js";
 import type {
+  LspCallDirection,
   LspCallHierarchyResult,
   LspIncomingCall,
   LspLocation,
@@ -274,9 +275,11 @@ async function formatSymbolGraph(
     "",
     ...(await formatReferences(relations.references, locations)),
     "",
-    ...(await formatIncomingCalls(relations.calls.incoming, locations)),
+    ...(unsupportedCalls(document, relations, "incoming") ??
+      (await formatIncomingCalls(relations.calls.incoming, locations))),
     "",
-    ...(await formatOutgoingCalls(relations.calls.outgoing, locations)),
+    ...(unsupportedCalls(document, relations, "outgoing") ??
+      (await formatOutgoingCalls(relations.calls.outgoing, locations))),
   ];
   return lines.join("\n");
 }
@@ -305,6 +308,17 @@ async function formatReferences(
   }
 
   return lines;
+}
+
+/** A calls section for a direction the server does not implement, or undefined when it does. */
+function unsupportedCalls(
+  document: LspCodeDocument,
+  relations: SymbolRelations,
+  direction: LspCallDirection,
+): string[] | undefined {
+  if (!relations.calls.unsupported.includes(direction)) return undefined;
+  const label = direction === "incoming" ? "Incoming calls" : "Outgoing calls";
+  return [`${label}: not supported by ${document.client.serverId}`];
 }
 
 async function formatIncomingCalls(
@@ -370,8 +384,12 @@ async function formatFileGraphSymbol(
     `Selector: ${formatSymbolSelector(symbol.selector)}`,
     `Definition: ${definitionAnchor}`,
     `Used by: ${summarize(referenceFiles)}`,
-    `Incoming calls: ${summarize(incoming)}`,
-    `Outgoing calls: ${summarize(outgoing)}`,
+    ...(unsupportedCalls(document, relations, "incoming") ?? [
+      `Incoming calls: ${summarize(incoming)}`,
+    ]),
+    ...(unsupportedCalls(document, relations, "outgoing") ?? [
+      `Outgoing calls: ${summarize(outgoing)}`,
+    ]),
   ];
 
   if (symbol.children.length > 0) {

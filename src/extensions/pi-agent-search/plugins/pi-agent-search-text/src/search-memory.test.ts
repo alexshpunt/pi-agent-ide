@@ -50,6 +50,39 @@ async function largeSource(): Promise<{ cwd: string; source: string }> {
   return { cwd, source };
 }
 
+test("stored matches do not keep the file text their lines were cut from", async () => {
+  const { cwd, source } = await largeSource();
+  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+  // A search engine cuts each match from the text it read; every search reads a new copy.
+  const search = (index: number) => {
+    const content = `${lines.join("\n")}\n// search ${index}\n`;
+    const lineStart = content.indexOf(lines[index] ?? "");
+    const lineText = content.slice(lineStart, lineStart + (lines[index] ?? "").length);
+    const startColumn = lineText.indexOf("compute");
+    return sessions.register(
+      `compute(${index}`,
+      [
+        {
+          source,
+          lineNumber: index + 1,
+          startColumn,
+          endColumn: startColumn + "compute".length,
+          matchedText: content.slice(lineStart + startColumn, lineStart + startColumn + 7),
+          lineText,
+        },
+      ],
+      true,
+      cwd,
+    );
+  };
+
+  await search(0);
+  const afterOneSearch = liveHeap();
+  for (let index = 1; index <= 30; index += 1) await search(index);
+
+  expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
+});
+
 test("repeated searches of an unchanged file keep one copy of its content", async () => {
   const { cwd, source } = await largeSource();
   const sessions = new SearchSessionStore(undefined, new ResultTargetStore());

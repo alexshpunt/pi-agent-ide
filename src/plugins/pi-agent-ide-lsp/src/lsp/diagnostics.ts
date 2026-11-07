@@ -4,6 +4,7 @@ import { DiagnosticSeverity, type LspDiagnostic } from "./types.js";
 import type { LspClient } from "./client.js";
 
 import { completedDiagnosticAdapter } from "./diagnostic-adapters.js";
+import { isMethodNotFound } from "./errors.js";
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
 
 /** LSP diagnostics do not reliably distinguish parser errors from type errors. */
@@ -156,8 +157,4 @@ function classify(
 ): LspDiagnosticResult {
   const diagnostics = items.map(toDiagnostic);
   return { diagnostics, syntaxErrors: [], otherDiagnostics: diagnostics, unversioned, complete };
-}
-
-function isMethodNotFound(error: unknown): boolean {
-  return error !== null && typeof error === "object" && "code" in error && error.code === -32601;
 }

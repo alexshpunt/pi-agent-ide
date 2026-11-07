@@ -111,9 +111,15 @@ function xmlAttributes(value: string): Record<string, string> {
 }
 
 function parseCompilerLines(output: string): Diagnostic[] {
+  // rustc and Cargo put the code after the severity: `src/lib.rs:3:5: error[E0308]: ...`.
   const pattern =
-    /^(?<file>.+?):(?<line>\d+):(?<column>\d+):\s*(?<severity>fatal error|error|warning|note|info|hint):\s*(?<message>.*?)(?:\s+\[(?<code>[^\]]+)\])?$/u;
-  return parseMatchingLines(output, pattern);
+    /^(?<file>.+?):(?<line>\d+):(?<column>\d+):\s*(?<severity>fatal error|error|warning|note|info|hint)(?:\[(?<severityCode>[^\]]+)\])?:\s*(?<message>.*?)(?:\s+\[(?<code>[^\]]+)\])?$/u;
+  return output.split(/\r?\n/u).flatMap((line) => {
+    const groups = line.match(pattern)?.groups;
+    if (groups === undefined) return [];
+    const { severityCode, ...diagnostic } = groups;
+    return normalizeDiagnostic({ ...diagnostic, code: diagnostic.code ?? severityCode });
+  });
 }
 
 function parseRegexLines(output: string, source: string, columnBase: 0 | 1): Diagnostic[] {
@@ -128,18 +134,6 @@ function parseRegexLines(output: string, source: string, columnBase: 0 | 1): Dia
       });
     },
   );
-}
-
-function parseMatchingLines(output: string, pattern: RegExp): Diagnostic[] {
-  return output.split(/\r?\n/u).flatMap((line) => {
-    const groups = line.match(pattern)?.groups;
-
-    if (groups === undefined) {
-      return [];
-    }
-
-    return normalizeDiagnostic(groups);
-  });
 }
 
 function normalizeDiagnostic(value: unknown): Diagnostic[] {

@@ -129,12 +129,23 @@ export const LSP_RECIPES: readonly ToolRecipe[] = [
   recipe(
     "basedpyright",
     ["python"],
-    ["basedpyright-langserver", "pyright-langserver"],
+    ["basedpyright-langserver"],
     ["pyproject.toml", "pyrightconfig.json"],
     { python: [".py", ".pyi"] },
     ["basedpyright-langserver", "--stdio"],
     "https://docs.basedpyright.com/",
     ["basedpyright"],
+  ),
+  // The shipped lsp-servers.json lists basedpyright first, so it wins when both are installed.
+  recipe(
+    "pyright",
+    ["python"],
+    ["pyright-langserver"],
+    ["pyproject.toml", "pyrightconfig.json"],
+    { python: [".py", ".pyi"] },
+    ["pyright-langserver", "--stdio"],
+    "https://microsoft.github.io/pyright/",
+    ["pyright"],
   ),
   recipe(
     "gopls",

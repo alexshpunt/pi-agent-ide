@@ -53,11 +53,14 @@ export function createLspDiagnosticSource(
       let version = client.documentVersion(uri);
       const refreshState = { active: true, queued: false };
       const current = () => !context.signal.aborted && client.documentVersion(uri) === version;
-      const request = () =>
-        requestDiagnostics(client, uri, languageId, {
+      const request = async () => {
+        // A server that is still loading the project reports no diagnostics yet.
+        await client.waitUntilLoaded(context.signal);
+        return requestDiagnostics(client, uri, languageId, {
           signal: context.signal,
           content: context.content,
         });
+      };
       const refresh = async () => {
         refreshState.queued = true;
         if (refreshState.active) return;
@@ -80,7 +83,11 @@ export function createLspDiagnosticSource(
           refreshState.active = false;
         }
       };
-      const unsubscribe = manager.onPushDiagnostics((event) => {
+      // A pull server asks for a new pull when results change, such as after other files changed.
+      const unsubscribeRefresh = client.onNotification("workspace/diagnostic/refresh", () => {
+        if (current() && client.diagnosticMode === "pull") void refresh();
+      });
+      const unsubscribePush = manager.onPushDiagnostics((event) => {
         if (
           !current() ||
           event.uri !== uri ||
@@ -101,6 +108,10 @@ export function createLspDiagnosticSource(
           });
         }
       });
+      const unsubscribe = () => {
+        unsubscribePush();
+        unsubscribeRefresh();
+      };
       context.signal.addEventListener("abort", unsubscribe, { once: true });
       try {
         const result = await request();

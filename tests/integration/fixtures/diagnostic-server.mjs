@@ -15,6 +15,10 @@ function handle(message) {
   if (method === "initialize") send({ id, result: { capabilities: mode.startsWith("pull") ? { diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false } } : {} } });
   else if (method === "shutdown") { if (mode !== "shutdown-stuck") send({ id, result: null }); }
   else if (method === "exit") process.exit(0);
+  else if (method === "textDocument/didClose" && mode === "close-clear") {
+    const { uri } = params.textDocument;
+    setTimeout(() => send({ method: "textDocument/publishDiagnostics", params: { uri, diagnostics: [] } }), 20);
+  }
   else if (method === "textDocument/diagnostic") {
     if (mode.startsWith("pull")) send({ id, result: { kind: "full", items: diagnostics(documents.get(params.textDocument.uri)?.text ?? "") } });
     else send({ id, error: { code: -32601, message: "Pull not supported" } });
@@ -22,7 +26,13 @@ function handle(message) {
     const { uri, version } = params.textDocument;
     const text = params.textDocument.text ?? params.contentChanges[0].text;
     documents.set(uri, { text, version });
-    if (mode !== "pull" && mode !== "silent") {
+    if (mode === "close-clear") {
+      // Like pyright: versioned reports for open documents, an unversioned clear on close. The
+      // delays let a quick reopen receive the clear for the previous open before its own report.
+      setTimeout(() => send({ method: "textDocument/publishDiagnostics", params: {
+        uri, version, diagnostics: diagnostics(text),
+      } }), 80);
+    } else if (mode !== "pull" && mode !== "silent") {
       const publish = (items, reportVersion = version) => send({ method: "textDocument/publishDiagnostics", params: {
         uri, ...(mode === "unversioned" ? {} : { version: reportVersion }), diagnostics: items,
       } });

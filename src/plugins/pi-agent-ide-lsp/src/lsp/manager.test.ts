@@ -1,9 +1,12 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { LspClient } from "./client.js";
 import { LspManager } from "./manager.js";
 import { LspServerRegistry } from "./registry.js";
+import { LspSharedServers } from "./shared-servers.js";
 import { searchSymbols } from "./symbol-search.js";
 
 const directories: string[] = [];
@@ -85,6 +88,123 @@ test("workspace symbols preserve errors from an advertised provider", async () =
     "eligible workspace request failed",
   );
 });
+
+test.each([false, true])(
+  "a server that exits during startup reports its error at once and starts on a later call (shared=%s)",
+  async (shared) => {
+    const root = path.resolve(".agents/tmp/lsp-startup-exit");
+    await mkdir(root, { recursive: true });
+    const cwd = await mkdtemp(path.join(root, "case-"));
+    // Socket paths have a short length limit, so they live in the system temporary directory.
+    const sockets = await mkdtemp(path.join(os.tmpdir(), "lsp-startup-"));
+    directories.push(cwd, sockets);
+    await writeFile(path.join(cwd, "main.fx"), "value\n");
+    const installed = path.join(cwd, "installed");
+    const server = path.resolve(
+      "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",
+    );
+    // Like the rustup proxy when the rust-analyzer component is missing.
+    const proxy = path.join(cwd, "proxy.mjs");
+    await writeFile(
+      proxy,
+      [
+        'import { existsSync } from "node:fs";',
+        `if (!existsSync(${JSON.stringify(installed)})) {`,
+        "  process.stderr.write(\"error: Unknown binary 'fixture-server' in official toolchain\\n\");",
+        "  process.exit(1);",
+        "}",
+        `await import(${JSON.stringify(pathToFileURL(server).href)});`,
+      ].join("\n"),
+    );
+    const manager = LspManager.init(
+      LspServerRegistry.fromConfig(
+        {
+          version: 1,
+          servers: {
+            fixture: {
+              command: [process.execPath, proxy],
+              rootMarkers: [],
+              languages: { fixture: { extensions: [".fx"] } },
+              capabilities: ["diagnostics"],
+            },
+          },
+        },
+        cwd,
+      ),
+      undefined,
+      shared ? { sharedServers: new LspSharedServers({ directory: sockets }) } : {},
+    );
+
+    const started = Date.now();
+    await expect(manager.getOrStart(".fx", cwd, "symbols")).rejects.toThrow(
+      "[lsp] fixture exited during startup with code 1: error: Unknown binary 'fixture-server' in official toolchain",
+    );
+    expect(Date.now() - started).toBeLessThan(1000);
+
+    await writeFile(installed, "");
+    const client = await manager.getOrStart(".fx", cwd, "symbols");
+    expect(client?.ready).toBe(true);
+  },
+);
+
+test.each([false, true])(
+  "requests wait while the server loads the project and fail if it takes too long (shared=%s)",
+  async (shared) => {
+    const root = path.resolve(".agents/tmp/lsp-loading");
+    await mkdir(root, { recursive: true });
+    const cwd = await mkdtemp(path.join(root, "case-"));
+    // Socket paths have a short length limit, so they live in the system temporary directory.
+    const sockets = await mkdtemp(path.join(os.tmpdir(), "lsp-loading-"));
+    directories.push(cwd, sockets);
+    await writeFile(path.join(cwd, "main.fx"), "value\n");
+    await writeFile(path.join(cwd, "main.slow"), "value\n");
+    const server = path.resolve(
+      "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",
+    );
+    const manager = LspManager.init(
+      LspServerRegistry.fromConfig(
+        {
+          version: 1,
+          servers: {
+            loading: {
+              command: [process.execPath, server],
+              env: { LIFECYCLE_LOADING_MS: "500" },
+              rootMarkers: [],
+              languages: { fixture: { extensions: [".fx"] } },
+              capabilities: ["diagnostics"],
+            },
+            stuck: {
+              command: [process.execPath, server],
+              env: { LIFECYCLE_LOADING_MS: "60000" },
+              // Also bounds initialize, so leave room for a slow start under a busy test run.
+              timeoutMs: 3000,
+              rootMarkers: [],
+              languages: { slow: { extensions: [".slow"] } },
+              capabilities: ["diagnostics"],
+            },
+          },
+        },
+        cwd,
+      ),
+      undefined,
+      shared ? { sharedServers: new LspSharedServers({ directory: sockets }) } : {},
+    );
+
+    const opened = await manager.openFile("main.fx", cwd, "symbols");
+    expect(opened?.client.loading).toBe(false);
+    expect(await opened?.client.sendRequest("lifecycle/loaded", {})).toBe(true);
+
+    // The first status can arrive after the file opens; then the request itself waits.
+    const stuck = manager
+      .openFile("main.slow", cwd, "symbols")
+      .then((slow) => slow?.client.sendRequest("lifecycle/loaded", {}));
+    await expect(stuck).rejects.toMatchObject({
+      code: "SERVER_LOADING",
+      message:
+        "[lsp] stuck is still loading the project (Loading); its results would be incomplete. Try again later.",
+    });
+  },
+);
 
 async function workspaceProviderFixture(
   supported: string,

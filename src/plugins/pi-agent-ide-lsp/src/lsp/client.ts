@@ -12,6 +12,7 @@ import {
   createMessageConnection,
   CancellationTokenSource,
   type MessageConnection,
+  ResponseError,
   StreamMessageReader,
 } from "vscode-jsonrpc/node";
 import { URI } from "vscode-uri";
@@ -28,7 +29,7 @@ import {
 
 import { TransportWriter } from "./transport-writer.js";
 import { documentUri } from "./document-uri.js";
-import { waitWithSignal } from "./abort.js";
+import { delayWithSignal, waitWithSignal } from "./abort.js";
 import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.js";
 
 /** Latest push observation for an open document, without a completion guarantee. */
@@ -69,7 +70,17 @@ export class LspClient {
 
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
+  /**
+   * ID under which the server registered pull diagnostics after initialization, as pyright does.
+   * Its pushes can then be incomplete reports from an analysis still in progress.
+   */
+  private _pullRegistration: string | undefined;
+  /** Set once the server versions its pushes; its unversioned pushes then describe closed documents. */
+  private _versionedDiagnostics = false;
   private readonly _activeDiagnosticRequests = new Set<string>();
+  /** Latest `experimental/serverStatus` (rust-analyzer); undefined until the server sends one. */
+  private _serverStatus: { quiescent: boolean; message?: string } | undefined;
+  private readonly _serverStatusListeners = new Set<() => void>();
   /** Operations that still use each open document; the last release closes it. */
   private readonly _documentLeases = new Map<string, number>();
   private _pendingRequests = 0;
@@ -162,6 +173,51 @@ export class LspClient {
       | { commands?: unknown }
       | undefined;
     return Array.isArray(provider?.commands) && provider.commands.includes(command);
+  }
+
+  /** Whether the server reports that it is still loading the project, so its results are incomplete. */
+  get loading(): boolean {
+    return this._serverStatus?.quiescent === false;
+  }
+
+  /**
+   * Wait until the server has loaded the project, so empty results mean that nothing was found.
+   * Fails when loading takes longer than the request timeout.
+   */
+  async waitUntilLoaded(signal?: AbortSignal): Promise<void> {
+    if (!this.loading) return;
+    let listener: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await waitWithSignal(
+        new Promise<void>((resolve, reject) => {
+          listener = () => {
+            if (!this.loading) resolve();
+          };
+          this._serverStatusListeners.add(listener);
+          timer = setTimeout(() => {
+            const message = this._serverStatus?.message;
+            reject(
+              Object.assign(
+                new Error(
+                  `[lsp] ${this.serverId} is still loading the project${message ? ` (${message})` : ""}; its results would be incomplete. Try again later.`,
+                ),
+                { code: "SERVER_LOADING" },
+              ),
+            );
+          }, this._timeoutMs);
+        }),
+        signal,
+      );
+    } finally {
+      clearTimeout(timer);
+      if (listener) this._serverStatusListeners.delete(listener);
+    }
+  }
+
+  private _setServerStatus(status: { quiescent: boolean; message?: string } | undefined): void {
+    this._serverStatus = status;
+    for (const listener of [...this._serverStatusListeners]) listener();
   }
 
   /** Whether initialization advertised support for workspace/symbol requests. */
@@ -273,11 +329,13 @@ export class LspClient {
           },
           symbol: { dynamicRegistration: false },
         },
+        // rust-analyzer reports while it loads the project; its results are incomplete until then.
+        experimental: { serverStatusNotification: true },
         textDocument: {
           synchronization: { didOpen: true, didChange: true, didClose: true },
-          publishDiagnostics: { relatedInformation: true },
+          publishDiagnostics: { relatedInformation: true, versionSupport: true },
 
-          diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
+          diagnostic: { dynamicRegistration: true, relatedDocumentSupport: false },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           foldingRange: { lineFoldingOnly: true },
         },
@@ -335,6 +393,16 @@ export class LspClient {
     stderr.on("error", () => void 0);
 
     this._stderr = "";
+    // A process can exit before its last stderr output arrives; startup errors wait for it.
+    const stderrEnded = new Promise<void>((resolve) => {
+      stderr.once("end", resolve);
+      stderr.once("close", resolve);
+    });
+    let exitCode: number | null | undefined;
+    let markExited = () => {};
+    const exited = new Promise<void>((resolve) => {
+      markExited = resolve;
+    });
     stderr.setEncoding("utf8");
     stderr.on("data", (chunk: string) => {
       this._stderr = (this._stderr + chunk).slice(-4096);
@@ -361,6 +429,8 @@ export class LspClient {
           : this._process === childProcess;
     const onExit = (code: number | null) => {
       if (!current()) return;
+      exitCode ??= code;
+      markExited();
       void this._closeFileWatchers();
       if (!this._disposed && code !== 0 && code !== null) {
         this._crashed = true;
@@ -371,6 +441,9 @@ export class LspClient {
       this._diagnosticPublications.clear();
       this._activeDiagnosticRequests.clear();
       this._diagnosticMode = "unknown";
+      this._pullRegistration = undefined;
+      this._versionedDiagnostics = false;
+      this._setServerStatus(undefined);
       this._process = null;
       this._initialized = false;
     };
@@ -425,6 +498,11 @@ export class LspClient {
         for (const registration of parameters.registrations) {
           // Settings are fixed for this client and already served by workspace/configuration.
           if (registration.method === "workspace/didChangeConfiguration") continue;
+          if (registration.method === "textDocument/diagnostic") {
+            this._pullRegistration = registration.id;
+            if (this._initialized) this._diagnosticMode = "pull";
+            continue;
+          }
           if (registration.method !== "workspace/didChangeWatchedFiles")
             throw new Error(`Unsupported dynamic capability: ${registration.method}`);
           if (!this._fileWatchers)
@@ -440,12 +518,23 @@ export class LspClient {
     this._connection.onRequest(
       "client/unregisterCapability",
       async (parameters: { unregisterations: { id: string }[] }) => {
-        for (const registration of parameters.unregisterations)
-          await this._fileWatchers?.unregister(registration.id);
+        for (const registration of parameters.unregisterations) {
+          if (registration.id === this._pullRegistration) {
+            this._pullRegistration = undefined;
+            if (this._initialized) this._diagnosticMode = "push";
+          } else await this._fileWatchers?.unregister(registration.id);
+        }
         return null;
       },
     );
     this._connection.onRequest("window/workDoneProgress/create", () => null);
+    // A pull-diagnostic server asks for new pulls after results change; pyright exits when this
+    // request fails. Handlers registered for the method see each refresh.
+    this._connection.onRequest("workspace/diagnostic/refresh", () => {
+      for (const handler of this._handlers.get("workspace/diagnostic/refresh") ?? [])
+        handler(undefined);
+      return null;
+    });
 
     this._connection.onRequest(
       "workspace/configuration",
@@ -465,6 +554,16 @@ export class LspClient {
         const publication = mapped as
           | { uri?: unknown; version?: unknown; diagnostics?: unknown }
           | undefined;
+        if (typeof publication?.version === "number") this._versionedDiagnostics = true;
+        else if (
+          this._versionedDiagnostics &&
+          typeof publication?.uri === "string" &&
+          this._documentVersions.has(publication.uri)
+        )
+          // A server that versions its reports omits the version only for a document it sees as
+          // closed. Such a push for a document open here was sent before the server processed
+          // the latest didOpen, for example the clear for a close that a quick reopen followed.
+          return;
         if (
           publication &&
           typeof publication.uri === "string" &&
@@ -478,6 +577,13 @@ export class LspClient {
             ...(typeof publication.version === "number" && { version: publication.version }),
           });
         }
+      }
+      if (method === "experimental/serverStatus") {
+        const status = mapped as { quiescent?: unknown; message?: unknown } | undefined;
+        this._setServerStatus({
+          quiescent: status?.quiescent !== false,
+          ...(typeof status?.message === "string" && { message: status.message }),
+        });
       }
       for (const handler of this._handlers.get(method) ?? []) {
         handler(mapped);
@@ -497,10 +603,23 @@ export class LspClient {
         `[lsp] ${this.serverId}: initialize timed out`,
       ),
       signal,
-    ).catch((error: unknown) => {
+    ).catch(async (error: unknown) => {
+      if (signal?.aborted) throw error;
+      // A failed initialize write can precede the exit event and the server's last stderr output.
+      await Promise.race([
+        Promise.all([stderrEnded, exited]),
+        delayWithSignal(STDERR_DRAIN_MS, signal),
+      ]).catch(() => undefined);
       const detail = this._stderr.trim();
-      if (!detail) throw error;
-      throw new Error(`[lsp] ${this.serverId}: ${detail}`, { cause: error });
+      const exit =
+        exitCode === undefined
+          ? undefined
+          : `exited during startup${exitCode === null ? "" : ` with code ${exitCode}`}`;
+      if (!detail && !exit) throw error;
+      const message = `[lsp] ${this.serverId}${exit ? ` ${exit}` : ""}${detail ? `: ${detail}` : ""}`;
+      // The exit is the root cause; the connection error it caused would hide it from callers
+      // that report the innermost cause.
+      throw exit ? new Error(message) : new Error(message, { cause: error });
     });
 
     await this._connection.sendNotification("initialized", {
@@ -521,7 +640,10 @@ export class LspClient {
     this._serverCapabilities = initResult.capabilities;
 
     // Unadvertised methods may return null or internal errors rather than MethodNotFound.
-    this._diagnosticMode = initResult.capabilities.diagnosticProvider ? "pull" : "push";
+    this._diagnosticMode =
+      initResult.capabilities.diagnosticProvider || this._pullRegistration !== undefined
+        ? "pull"
+        : "push";
   }
 
   /** Reach a server shared with other Pi sessions; undefined means start an own process. */
@@ -609,6 +731,7 @@ export class LspClient {
     this._documentContents.clear();
     this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
+    this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
     await this.start(signal);
@@ -627,7 +750,26 @@ export class LspClient {
     this._pendingRequests++;
     this.touch();
     try {
-      return await this._sendRequest<T>(method, parameters, signal);
+      let reloaded = false;
+      for (let attempt = 0; ; attempt++) {
+        let result: T;
+        try {
+          result = await this._sendRequest<T>(method, parameters, signal);
+        } catch (error) {
+          const delay = REQUEST_RETRY_DELAYS_MS[attempt];
+          if (delay === undefined || !isRetryableCancellation(error)) throw error;
+          // The server dropped a stale result; ask again once it has applied the latest text.
+          await delayWithSignal(delay, signal);
+          this._assertReady();
+          continue;
+        }
+        // A server that is still loading the project answers from the part it has seen, often
+        // with nothing. Ask once more after loading; commands may have effects and run once.
+        if (reloaded || !this.loading || method === "workspace/executeCommand") return result;
+        reloaded = true;
+        await this.waitUntilLoaded(signal);
+        this._assertReady();
+      }
     } finally {
       this._pendingRequests--;
       this.touch();
@@ -800,6 +942,7 @@ export class LspClient {
 
   private async _shutdown(): Promise<void> {
     this._disposed = true;
+    this._setServerStatus(undefined);
     clearTimeout(this._idleTimer);
     this._idleTimer = undefined;
 
@@ -846,6 +989,7 @@ export class LspClient {
     this._documentContents.clear();
     this._diagnosticPublications.clear();
     this._diagnosticMode = "unknown";
+    this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
     const results = await Promise.allSettled([ownedCleanup, sharedCleanup, watcherCleanup]);
@@ -894,6 +1038,33 @@ export class LspClient {
       throw new Error(`[lsp] ${this.serverId}: connection lost`);
     }
   }
+}
+
+/** How long a startup error waits for stderr output of a server that already exited. */
+const STDERR_DRAIN_MS = 250;
+
+/** Waits before each retry of a request the server cancelled; about 1.5 s in total. */
+const REQUEST_RETRY_DELAYS_MS = [50, 100, 200, 400, 800];
+/** LSP error codes from the specification; vscode-jsonrpc defines only JSON-RPC ones. */
+const CONTENT_MODIFIED = -32_801;
+const SERVER_CANCELLED = -32_802;
+
+/**
+ * ContentModified (-32801): the document changed while the server computed the result.
+ * ServerCancelled (-32802): the server dropped the request, for example while it reloads the
+ * project; a diagnostic request is not retried when the server says retriggering will not help.
+ */
+function isRetryableCancellation(error: unknown): boolean {
+  if (!(error instanceof ResponseError)) return false;
+  if (error.code === CONTENT_MODIFIED) return true;
+  if (error.code !== SERVER_CANCELLED) return false;
+  const data: unknown = error.data;
+  return !(
+    data !== null &&
+    typeof data === "object" &&
+    "retriggerRequest" in data &&
+    data.retriggerRequest === false
+  );
 }
 
 function waitForSpawn(childProcess: ChildProcess): Promise<void> {

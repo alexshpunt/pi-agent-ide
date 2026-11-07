@@ -5,6 +5,7 @@ import { URI } from "vscode-uri";
 import { afterEach, expect, test } from "vitest";
 
 import { LspClient } from "./client.js";
+import { requestDiagnostics } from "./diagnostics.js";
 import { LspSharedServers } from "./shared-servers.js";
 
 const SERVER = path.resolve(
@@ -117,7 +118,9 @@ test("each session gets diagnostics under its own document versions", async () =
   first.closeDocument(uri);
   expect((await status(second)).open).toEqual([uri]);
   second.closeDocument(uri);
-  expect((await status(second)).open).toEqual([]);
+  // The server copy stays open briefly for a quick reopen, then closes.
+  expect((await status(second)).open).toEqual([uri]);
+  await until(async () => (await status(second)).open.length === 0);
 });
 
 test("sessions with different text each get diagnostics for their own version", async () => {
@@ -136,6 +139,46 @@ test("sessions with different text each get diagnostics for their own version", 
       first.diagnosticPublication(uri)?.version === first.documentVersion(uri) &&
       second.diagnosticPublication(uri)?.version === second.documentVersion(uri),
   );
+});
+
+test("a document reopened at once stays open on the server", async () => {
+  const { cwd, sharing } = await workspace();
+  const client = await session(cwd, sharing);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  client.openDocument(uri, "first\n", "fixture", 1);
+  await until(() => client.diagnosticPublication(uri)?.version === 1);
+
+  client.closeDocument(uri);
+  client.openDocument(uri, "first\n", "fixture", 1);
+
+  // The report the server published for the same text answers the reopened document.
+  await until(() => client.diagnosticPublication(uri)?.version === 1);
+  expect((await status(client)).events).toEqual([["open", uri]]);
+});
+
+test("a late clear for a closed document does not reach the session that reopened it", async () => {
+  const { cwd, sharing } = await workspace();
+  // The clear arrives before the reopened document's report, so only the host can tell them apart.
+  const env = { LIFECYCLE_CLEAR_DELAY_MS: "600", LIFECYCLE_PUBLISH_DELAY_MS: "900" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  // The host learns that the server versions its reports.
+  first.openDocument(uri, "first\n", "fixture", 1);
+  await until(() => first.diagnosticPublication(uri)?.version === 1);
+  first.closeDocument(uri);
+  await until(async () => (await status(first)).open.length === 0);
+  const pushes: unknown[] = [];
+  second.onNotification("textDocument/publishDiagnostics", (parameters) => {
+    if ((parameters as { uri: string }).uri === uri) pushes.push(parameters);
+  });
+
+  // The server's clear for the close arrives after another session opened the document again.
+  second.openDocument(uri, "first\n", "fixture", 1);
+  await until(() => second.diagnosticPublication(uri)?.version === 1);
+  expect(pushes).toEqual([
+    { uri, version: 1, diagnostics: [expect.objectContaining({ message: "fixture error" })] },
+  ]);
 });
 
 test("requests see the requesting session's text and versions", async () => {
@@ -164,6 +207,96 @@ test("requests see the requesting session's text and versions", async () => {
     first.documentVersion(uri),
   );
   expect(await text(first)).toBe("alpha\n");
+});
+
+test("requests the server cancels as stale are retried through the shared host", async () => {
+  const { cwd, sharing } = await workspace();
+  const client = await session(cwd, sharing);
+  const flaky = (key: string, code: number, failures: number, data?: unknown) =>
+    client.sendRequest<number>("lifecycle/flaky", { key, code, failures, data });
+
+  await expect(flaky("modified", -32_801, 2)).resolves.toBe(3);
+  await expect(flaky("cancelled", -32_802, 1, { retriggerRequest: true })).resolves.toBe(2);
+  await expect(flaky("final", -32_802, 1, { retriggerRequest: false })).rejects.toMatchObject({
+    code: -32_802,
+  });
+  await expect(flaky("persistent", -32_801, 100)).rejects.toMatchObject({ code: -32_801 });
+  await expect(flaky("persistent", -32_801, 0)).resolves.toBe(7);
+  await expect(flaky("other", -32_603, 1)).rejects.toMatchObject({ code: -32_603 });
+
+  const controller = new AbortController();
+  const aborted = client.sendRequest(
+    "lifecycle/flaky",
+    { key: "aborted", code: -32_801, failures: 100 },
+    controller.signal,
+  );
+  setTimeout(() => controller.abort(new Error("caller stopped")), 120);
+  await expect(aborted).rejects.toThrow("caller stopped");
+});
+
+test("a session that attaches while the server loads the project waits for it too", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_LOADING_MS: "1500" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  await until(() => first.loading);
+  // The server reported loading before this session attached; the host repeats the status.
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  expect(second.pid).toBe(first.pid);
+  await until(() => second.loading);
+  await second.waitUntilLoaded();
+  expect(await second.sendRequest("lifecycle/loaded", {})).toBe(true);
+});
+
+test.each([false, true])(
+  "diagnostics are pulled from a server that registers pull after it starts (shared=%s)",
+  async (shared) => {
+    const { cwd, sharing } = await workspace();
+    // Like pyright: its pushes are interim reports, and only a pull returns the analysis result.
+    const env = { LIFECYCLE_PULL_DIAGNOSTICS: "1" };
+    const connect = async () => {
+      if (shared) return session(cwd, sharing, undefined, LINGER_MS, env);
+      const client = new LspClient({
+        serverId: "fixture",
+        rootUri: URI.file(cwd).toString(),
+        command: [process.execPath, SERVER],
+        env,
+      });
+      clients.push(client);
+      await client.start();
+      return client;
+    };
+    const first = await connect();
+    const uri = URI.file(path.join(cwd, "first.fx")).toString();
+    first.syncDocument(uri, "broken\n", "fixture");
+    await until(() => first.diagnosticMode === "pull");
+    expect((await requestDiagnostics(first, uri, "fixture")).diagnostics).toMatchObject([
+      { message: "fixture error" },
+    ]);
+    if (!shared) return;
+
+    // A session that attaches after the registration learns it from the host.
+    const second = await connect();
+    second.syncDocument(uri, "broken\n", "fixture");
+    await until(() => second.diagnosticMode === "pull");
+    expect((await requestDiagnostics(second, uri, "fixture")).diagnostics).toMatchObject([
+      { message: "fixture error" },
+    ]);
+  },
+);
+
+test("a server that crashes leaves its exit code and error output in the host log", async () => {
+  const { cwd, sharing, sockets } = await workspace();
+  const client = await session(cwd, sharing);
+
+  // The server exits without answering.
+  await expect(client.sendRequest("lifecycle/crash", {})).rejects.toThrow(/./u);
+  const log = async () => {
+    for (const name of await readdir(sockets))
+      if (name.endsWith(".log")) return readFile(path.join(sockets, name), "utf8");
+    return "";
+  };
+  await until(async () => (await log()).includes("exited with code 3"));
+  expect(await log()).toContain("fixture panic: index out of bounds");
 });
 
 test("the shared host answers server requests for settings and file watching", async () => {

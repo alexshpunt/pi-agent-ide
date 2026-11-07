@@ -6,6 +6,32 @@ import { LINTER_RECIPES } from "./catalog.js";
 import { requiredValue } from "pi-agent-invariant";
 
 describe("linter diagnostic adapters", () => {
+  it("parses rustc codes that Cargo prints after the severity", () => {
+    const output = [
+      "    Checking app v0.1.0 (/work/app)",
+      "src/lib.rs:12:29: error[E0308]: mismatched types: expected `i32`, found `&str`",
+      "src/lib.rs:9:5: warning: this operation has no effect",
+      "error: could not compile `app` (lib) due to 1 previous error",
+    ].join("\n");
+    expect(parseDiagnostics(output, { format: "gcc" })).toEqual([
+      {
+        file: "src/lib.rs",
+        code: "E0308",
+        message: "mismatched types: expected `i32`, found `&str`",
+        line: 12,
+        column: 29,
+        severity: "error",
+      },
+      {
+        file: "src/lib.rs",
+        code: "lint",
+        message: "this operation has no effect",
+        line: 9,
+        column: 5,
+        severity: "warning",
+      },
+    ]);
+  });
   it("parses JSONLint syntax errors and their columns", () => {
     const recipe = requiredValue(LINTER_RECIPES.find((item) => item.id === "jsonlint")?.linter);
     expect(

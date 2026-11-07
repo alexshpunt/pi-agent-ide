@@ -57,12 +57,15 @@ export function createDeclarationTargets(managerFor: LspManagerProvider): TextTa
           ],
         };
       } catch (error) {
+        if (context.signal?.aborted) return { kind: "failed", error };
+        // Edit tools hide the text of resolver failures; a rejection shows the agent why the
+        // declaration is unavailable, such as a language server that could not start.
         return {
-          kind: "failed",
-          error: new Error(
-            `${error instanceof Error ? error.message : String(error)} Read the physical file and use explicit text anchors if declaration resolution is unavailable.`,
-            { cause: error },
-          ),
+          kind: "rejected",
+          rejection: {
+            code: "invalid",
+            reason: `${error instanceof Error ? error.message : String(error)} Read the physical file and use explicit text anchors if declaration resolution is unavailable.`,
+          },
         };
       }
     },

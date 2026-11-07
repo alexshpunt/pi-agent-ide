@@ -20,6 +20,17 @@ export async function waitWithSignal<T>(request: Promise<T>, signal?: AbortSigna
   }
 }
 
+/** Wait `ms` milliseconds, or reject with the signal's reason when it aborts first. */
+export function delayWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return waitWithSignal(
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ms);
+    }),
+    signal,
+  ).finally(() => clearTimeout(timer));
+}
+
 /** One owned startup shared by callers. The last cancelled wait awaits physical cleanup. */
 export class SharedStartup<T> {
   readonly controller = new AbortController();
