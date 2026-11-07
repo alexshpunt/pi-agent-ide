@@ -103,6 +103,10 @@ connection.onRequest("lifecycle/flaky", ({ key, code, failures, data }) => {
   return attempt;
 });
 connection.onRequest("lifecycle/slow", ({ ms }) => new Promise((resolve) => setTimeout(() => resolve("slow done"), ms)));
+connection.onRequest("lifecycle/crash", () => {
+  process.stderr.write("fixture panic: index out of bounds\n");
+  process.exit(3);
+});
 connection.onRequest("shutdown", () => null);
 connection.onNotification("exit", () => process.exit(0));
 connection.listen();
