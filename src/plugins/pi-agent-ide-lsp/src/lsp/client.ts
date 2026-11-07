@@ -338,6 +338,16 @@ export class LspClient {
     stderr.on("error", () => void 0);
 
     this._stderr = "";
+    // A process can exit before its last stderr output arrives; startup errors wait for it.
+    const stderrEnded = new Promise<void>((resolve) => {
+      stderr.once("end", resolve);
+      stderr.once("close", resolve);
+    });
+    let exitCode: number | null | undefined;
+    let markExited = () => {};
+    const exited = new Promise<void>((resolve) => {
+      markExited = resolve;
+    });
     stderr.setEncoding("utf8");
     stderr.on("data", (chunk: string) => {
       this._stderr = (this._stderr + chunk).slice(-4096);
@@ -364,6 +374,8 @@ export class LspClient {
           : this._process === childProcess;
     const onExit = (code: number | null) => {
       if (!current()) return;
+      exitCode ??= code;
+      markExited();
       void this._closeFileWatchers();
       if (!this._disposed && code !== 0 && code !== null) {
         this._crashed = true;
@@ -511,10 +523,23 @@ export class LspClient {
         `[lsp] ${this.serverId}: initialize timed out`,
       ),
       signal,
-    ).catch((error: unknown) => {
+    ).catch(async (error: unknown) => {
+      if (signal?.aborted) throw error;
+      // A failed initialize write can precede the exit event and the server's last stderr output.
+      await Promise.race([
+        Promise.all([stderrEnded, exited]),
+        delayWithSignal(STDERR_DRAIN_MS, signal),
+      ]).catch(() => undefined);
       const detail = this._stderr.trim();
-      if (!detail) throw error;
-      throw new Error(`[lsp] ${this.serverId}: ${detail}`, { cause: error });
+      const exit =
+        exitCode === undefined
+          ? undefined
+          : `exited during startup${exitCode === null ? "" : ` with code ${exitCode}`}`;
+      if (!detail && !exit) throw error;
+      const message = `[lsp] ${this.serverId}${exit ? ` ${exit}` : ""}${detail ? `: ${detail}` : ""}`;
+      // The exit is the root cause; the connection error it caused would hide it from callers
+      // that report the innermost cause.
+      throw exit ? new Error(message) : new Error(message, { cause: error });
     });
 
     await this._connection.sendNotification("initialized", {
@@ -921,6 +946,9 @@ export class LspClient {
     }
   }
 }
+
+/** How long a startup error waits for stderr output of a server that already exited. */
+const STDERR_DRAIN_MS = 250;
 
 /** Waits before each retry of a request the server cancelled; about 1.5 s in total. */
 const REQUEST_RETRY_DELAYS_MS = [50, 100, 200, 400, 800];

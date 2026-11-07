@@ -261,6 +261,19 @@ async function startServer(attach) {
     env: attach.env,
   });
   let stderr = "";
+  // A server can exit before its last stderr output arrives; startup errors wait for it.
+  const stderrEnded = new Promise((resolve) => {
+    child.stderr?.once("end", resolve);
+    child.stderr?.once("close", resolve);
+  });
+  /** @type {number | null | undefined} */
+  let exitCode;
+  const exited = new Promise((resolve) => {
+    child.once("exit", (code) => {
+      exitCode = code;
+      resolve(undefined);
+    });
+  });
   child.stderr?.setEncoding("utf8");
   child.stderr?.on("data", (/** @type {string} */ chunk) => {
     stderr = (stderr + chunk).slice(-4096);
@@ -335,6 +348,10 @@ async function startServer(attach) {
           attach.timeoutMs,
         );
       }),
+      // A server that exits does not answer; its pending initialize would wait for the timeout.
+      exited.then(() => {
+        throw new Error("Shared language server exited during startup");
+      }),
     ]);
     await connection.sendNotification("initialized", {});
     if (attach.settings !== undefined)
@@ -343,8 +360,18 @@ async function startServer(attach) {
       });
     return { process: child, connection, initializeResult };
   } catch (error) {
+    // A failed initialize write can precede the exit event and the server's last stderr output.
+    await Promise.race([
+      Promise.all([stderrEnded, exited]),
+      new Promise((resolve) => setTimeout(resolve, 250)),
+    ]);
     const detail = stderr.trim();
-    throw detail ? new Error(detail, { cause: error }) : error;
+    const exit =
+      exitCode === undefined
+        ? ""
+        : `exited during startup${exitCode === null ? "" : ` with code ${exitCode}`}`;
+    if (!detail && !exit) throw error;
+    throw new Error([exit, detail].filter(Boolean).join(": "), { cause: error });
   } finally {
     clearTimeout(timeout);
   }
