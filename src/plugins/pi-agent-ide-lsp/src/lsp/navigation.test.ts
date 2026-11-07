@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { LspClient } from "./client.js";
 import { LspManager } from "./manager.js";
 import { LspServerRegistry } from "./registry.js";
-import { readLspSymbolGraph } from "./code-views.js";
+import { readLspFileGraph, readLspSymbolGraph } from "./code-views.js";
 import { requestCallHierarchy } from "./navigation.js";
 import { searchSymbols } from "./symbol-search.js";
 
@@ -121,14 +121,57 @@ test("a failed advertised project load cannot become a partial reference result"
   );
   expect(requests).toHaveBeenCalledTimes(1);
 });
-for (const code of [-32601, -32603]) {
-  test(`incoming call failure ${code} is reported instead of an empty graph`, async () => {
-    const connection = client();
-    vi.spyOn(connection, "sendRequest")
-      .mockResolvedValueOnce([item])
-      .mockRejectedValueOnce(Object.assign(new Error("Owned incoming failure"), { code }))
-      .mockResolvedValueOnce([]);
-    const result = requestCallHierarchy(connection, uri, range.start);
-    await expect(result).rejects.toMatchObject({ message: "Owned incoming failure", code });
+test("an incoming call failure is reported instead of an empty graph", async () => {
+  const connection = client();
+  vi.spyOn(connection, "sendRequest")
+    .mockResolvedValueOnce([item])
+    .mockRejectedValueOnce(Object.assign(new Error("Owned incoming failure"), { code: -32603 }))
+    .mockResolvedValueOnce([]);
+  const result = requestCallHierarchy(connection, uri, range.start);
+  await expect(result).rejects.toMatchObject({ message: "Owned incoming failure", code: -32603 });
+});
+
+test("a graph names the call directions the server does not implement", async () => {
+  // clangd 18 implements incoming calls but answers outgoing calls with MethodNotFound.
+  const caller = { ...item, name: "caller" };
+  const connection = client();
+  vi.spyOn(connection, "sendRequest").mockImplementation(async (method) => {
+    if (method === "callHierarchy/outgoingCalls")
+      throw Object.assign(new Error("method not found"), { code: -32601 });
+    if (method === "callHierarchy/incomingCalls") return [{ from: caller, fromRanges: [range] }];
+    if (method === "textDocument/references") return [{ uri, range }];
+    return [item];
   });
-}
+  const manager = LspManager.init(
+    LspServerRegistry.fromConfig({ version: 1, servers: {} }, "ssh://fixture/workspace"),
+  );
+  vi.spyOn(manager, "openFile").mockResolvedValue({
+    client: connection,
+    uri,
+    languageId: "typescript",
+  });
+
+  const graph = await readLspSymbolGraph(manager, uri, ["label"], "/controller");
+  expect(graph).toContain("References: 1 in 1 file(s)");
+  expect(graph).toContain("Incoming calls: 1");
+  expect(graph).toContain("caller");
+  expect(graph).toContain("Outgoing calls: not supported by fixture");
+  const fileGraph = await readLspFileGraph(manager, uri, "/controller");
+  expect(fileGraph).toContain("Outgoing calls: not supported by fixture");
+});
+
+test("a server without call hierarchy still returns references", async () => {
+  const connection = client();
+  vi.spyOn(connection, "sendRequest").mockImplementation(async (method) => {
+    if (method === "textDocument/prepareCallHierarchy")
+      throw Object.assign(new Error("method not found"), { code: -32601 });
+    if (method === "textDocument/references") return [{ uri, range }];
+    return [item];
+  });
+  expect(await requestCallHierarchy(connection, uri, range.start)).toEqual({
+    items: [],
+    incoming: [],
+    outgoing: [],
+    unsupported: ["incoming", "outgoing"],
+  });
+});
