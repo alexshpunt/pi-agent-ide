@@ -8,6 +8,7 @@ import {
   projectProcessEnvironment,
 } from "pi-agent-doctor/api/executable";
 import { requiredValue } from "pi-agent-invariant";
+import { spawnSync } from "node:child_process";
 import { access, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -461,14 +462,28 @@ export async function runConfiguredProcess(
     context.env ?? process.env,
   );
 
+  context.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(executable, arguments_, {
       cwd,
       env: environment,
-      signal: context.signal,
-      killSignal: "SIGKILL",
+      // A process group lets cancellation stop the processes the command starts, such as the
+      // cargo, clippy-driver and rustc processes behind the rustup `cargo` proxy.
+      detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const stop = () => killProcessTree(child.pid);
+    const onAbort = () => {
+      stop();
+      reject(context.signal?.reason ?? new Error("The operation was aborted"));
+    };
+    context.signal?.addEventListener("abort", onAbort, { once: true });
+    if (child.pid !== undefined) runningProcessTrees.add(child.pid);
+    const settle = () => {
+      clearTimeout(timeout);
+      context.signal?.removeEventListener("abort", onAbort);
+      if (child.pid !== undefined) runningProcessTrees.delete(child.pid);
+    };
     let stdout = "";
     let stderr = "";
     const childStdout = requiredValue(child.stdout);
@@ -476,7 +491,7 @@ export async function runConfiguredProcess(
     let isTimedOut = false;
     const timeout = setTimeout(() => {
       isTimedOut = true;
-      child.kill("SIGKILL");
+      stop();
     }, config.timeoutMs ?? 30_000);
     childStdout.setEncoding("utf8");
     childStderr.setEncoding("utf8");
@@ -487,11 +502,11 @@ export async function runConfiguredProcess(
       stderr += chunk;
     });
     child.on("error", (error) => {
-      clearTimeout(timeout);
+      settle();
       reject(error);
     });
     child.on("close", (exitCode) => {
-      clearTimeout(timeout);
+      settle();
       resolve({
         ok: !isTimedOut && exitCode !== null && accepted.includes(exitCode),
         exitCode,
@@ -501,6 +516,28 @@ export async function runConfiguredProcess(
       });
     });
   });
+}
+
+/** Process groups (POSIX) or root processes (Windows) of configured commands still running. */
+const runningProcessTrees = new Set<number>();
+// Detached commands do not receive the terminal's hangup, so stop them when Pi exits.
+process.once("exit", () => {
+  for (const pid of runningProcessTrees) killProcessTree(pid);
+});
+
+/** Stops a configured command together with the processes it started. */
+function killProcessTree(pid: number | undefined): void {
+  if (pid === undefined) return;
+  runningProcessTrees.delete(pid);
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // The whole group has already exited.
+  }
 }
 
 /**
