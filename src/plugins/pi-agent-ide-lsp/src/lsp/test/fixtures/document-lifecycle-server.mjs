@@ -1,5 +1,5 @@
 // Push-diagnostics server that records document lifecycle, like clangd.
-import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node";
+import { createMessageConnection, ResponseError, StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node";
 
 const connection = createMessageConnection(new StreamMessageReader(process.stdin), new StreamMessageWriter(process.stdout));
 const open = new Map();
@@ -59,6 +59,14 @@ connection.onRequest("lifecycle/watch", ({ pattern }) =>
   }),
 );
 connection.onNotification("workspace/didChangeWatchedFiles", ({ changes }) => watched.push(...changes));
+// Fails the first `failures` attempts for `key` with `code`, like rust-analyzer during edits.
+const attempts = new Map();
+connection.onRequest("lifecycle/flaky", ({ key, code, failures, data }) => {
+  const attempt = (attempts.get(key) ?? 0) + 1;
+  attempts.set(key, attempt);
+  if (attempt <= failures) throw new ResponseError(code, code === -32801 ? "content modified" : "server cancelled the request", data);
+  return attempt;
+});
 connection.onRequest("lifecycle/slow", ({ ms }) => new Promise((resolve) => setTimeout(() => resolve("slow done"), ms)));
 connection.onRequest("shutdown", () => null);
 connection.onNotification("exit", () => process.exit(0));
