@@ -62,6 +62,12 @@ export class LspClient {
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
   private readonly _activeDiagnosticRequests = new Set<string>();
+  /** Operations that still use each open document; the last release closes it. */
+  private readonly _documentLeases = new Map<string, number>();
+  private _pendingRequests = 0;
+  private _idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly _idleTimeoutMs: number | undefined;
+  private readonly _onIdle: (() => void) | undefined;
 
   readonly serverId: string;
   readonly rootUri: string;
@@ -81,6 +87,9 @@ export class LspClient {
     settings?: Record<string, unknown>;
     timeoutMs?: number;
     ownerTransport?: LspOwnerTransport;
+    /** Without requests or open operations for this long, onIdle runs. Omitted: never idle. */
+    idleTimeoutMs?: number;
+    onIdle?: () => void;
   }) {
     this.serverId = parameters.serverId;
     this.rootUri = parameters.rootUri;
@@ -91,6 +100,8 @@ export class LspClient {
     this._settings = parameters.settings;
     this._timeoutMs = parameters.timeoutMs ?? 30_000;
     this._ownerTransport = parameters.ownerTransport;
+    this._idleTimeoutMs = parameters.idleTimeoutMs;
+    this._onIdle = parameters.onIdle;
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────
@@ -480,8 +491,44 @@ export class LspClient {
     this._diagnosticMode = initResult.capabilities.diagnosticProvider ? "pull" : "push";
   }
 
+  /** Restart the idle period; requests and open operations keep the server busy. */
   touch(): void {
-    // LSP server lives for the session duration — no idle timeout
+    clearTimeout(this._idleTimer);
+    this._idleTimer = undefined;
+    if (this._idleTimeoutMs === undefined || this._disposed || this._busy) return;
+    const timer = setTimeout(() => {
+      if (this._idleTimer !== timer) return;
+      this._idleTimer = undefined;
+      if (this.ready && !this._busy) this._onIdle?.();
+    }, this._idleTimeoutMs);
+    timer.unref();
+    this._idleTimer = timer;
+  }
+
+  private get _busy(): boolean {
+    return this._pendingRequests > 0 || this._documentLeases.size > 0;
+  }
+
+  /**
+   * Keep a document open for one operation. The returned release is idempotent; the last
+   * release of a document closes it on the server.
+   */
+  retainDocument(uri: string): () => void {
+    this._documentLeases.set(uri, (this._documentLeases.get(uri) ?? 0) + 1);
+    this.touch();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (this._documentLeases.get(uri) ?? 1) - 1;
+      if (remaining > 0) {
+        this._documentLeases.set(uri, remaining);
+        return;
+      }
+      this._documentLeases.delete(uri);
+      if (this.ready && this._documentVersions.has(uri)) this.closeDocument(uri);
+      this.touch();
+    };
   }
 
   async restart(signal?: AbortSignal): Promise<void> {
@@ -513,6 +560,21 @@ export class LspClient {
   ): Promise<T> {
     this._assertReady();
     signal?.throwIfAborted();
+    this._pendingRequests++;
+    this.touch();
+    try {
+      return await this._sendRequest<T>(method, parameters, signal);
+    } finally {
+      this._pendingRequests--;
+      this.touch();
+    }
+  }
+
+  private async _sendRequest<T>(
+    method: string,
+    parameters: unknown,
+    signal: AbortSignal | undefined,
+  ): Promise<T> {
     const owner = this._ownerTransport;
     const requestParameters = owner
       ? mapLspUris(parameters, (uri) => owner.toServerUri(uri))
@@ -674,6 +736,8 @@ export class LspClient {
 
   private async _shutdown(): Promise<void> {
     this._disposed = true;
+    clearTimeout(this._idleTimer);
+    this._idleTimer = undefined;
 
     const watcherCleanup = this._closeFileWatchers();
 

@@ -87,4 +87,14 @@ export const AGENT_IDE_PREFERENCES: readonly AgentIdePreference[] = [
       { value: "off", label: "Off" },
     ],
   },
+  {
+    kind: "text",
+    id: "lsp.idle-timeout",
+    name: "Language server idle timeout",
+    description:
+      "Minutes without requests before a language server stops; the next request starts it again. Use a positive number.",
+    default: "10",
+    group: "features",
+    placeholder: "10",
+  },
 ];

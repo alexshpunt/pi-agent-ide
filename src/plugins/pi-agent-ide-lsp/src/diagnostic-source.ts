@@ -41,7 +41,15 @@ export function createLspDiagnosticSource(
         };
       const uri = client.toUri(filePath);
       const languageId = manager.languageId(filePath);
-      client.syncDocument(uri, context.content, languageId, true);
+      // Close the document after the report unless another operation uses it. Later pushes and
+      // refreshes apply only while the reported version stays open.
+      const release = client.retainDocument(uri);
+      try {
+        client.syncDocument(uri, context.content, languageId, true);
+      } catch (error) {
+        release();
+        throw error;
+      }
       let version = client.documentVersion(uri);
       const refreshState = { active: true, queued: false };
       const current = () => !context.signal.aborted && client.documentVersion(uri) === version;
@@ -104,6 +112,7 @@ export function createLspDiagnosticSource(
         context.signal.removeEventListener("abort", unsubscribe);
         throw error;
       } finally {
+        release();
         refreshState.active = false;
         if (refreshState.queued && current())
           queueMicrotask(() => {
