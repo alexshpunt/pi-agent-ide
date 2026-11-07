@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { URI } from "vscode-uri";
@@ -237,6 +237,31 @@ test("sessions see a crashed shared server and restart on a new one", async () =
   expect(second.pid).toBe(first.pid);
   if (first.pid !== null) servers.add(first.pid);
   expect((await status(second)).pid).toBe(first.pid);
+});
+
+test("the host takes no session variables and removes files of dead hosts", async () => {
+  const { cwd, sharing, sockets } = await workspace();
+  const old = new Date(Date.now() - 2 * 24 * 60 * 60_000);
+  for (const name of ["dead.sock", "dead.log", "fresh.sock"])
+    await writeFile(path.join(sockets, name), "");
+  await utimes(path.join(sockets, "dead.sock"), old, old);
+  await utimes(path.join(sockets, "dead.log"), old, old);
+  const options = process.env.NODE_OPTIONS;
+  process.env.NODE_OPTIONS = "--max-old-space-size=4321";
+  let client: LspClient;
+  try {
+    client = await session(cwd, sharing);
+  } finally {
+    if (options === undefined) delete process.env.NODE_OPTIONS;
+    else process.env.NODE_OPTIONS = options;
+  }
+
+  const stat = await readFile(`/proc/${client.pid}/stat`, "utf8");
+  const host = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1];
+  expect(await readFile(`/proc/${host}/environ`, "utf8")).not.toContain("NODE_OPTIONS");
+  await until(async () => !(await readdir(sockets)).includes("dead.sock"));
+  expect(await readdir(sockets)).not.toContain("dead.log");
+  expect(await readdir(sockets)).toContain("fresh.sock");
 });
 
 test("a session uses its own server when the shared host cannot be reached", async () => {

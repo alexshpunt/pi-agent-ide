@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { closeSync, openSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { lstat, mkdir } from "node:fs/promises";
 import net from "node:net";
@@ -109,9 +110,9 @@ export class LspSharedServers {
   }
 
   private async _socketPath(key: string): Promise<string> {
+    await mkdir(this._directory, { recursive: true, mode: 0o700 });
     if (process.platform === "win32")
       return `\\\\.\\pipe\\pi-agent-ide-lsp-${hash(os.userInfo().username)}-${key}`;
-    await mkdir(this._directory, { recursive: true, mode: 0o700 });
     const directory = await lstat(this._directory);
     if (
       !directory.isDirectory() ||
@@ -146,16 +147,50 @@ function hash(value: string): string {
 function startHost(socketPath: string, key: string, directory: string): ChildProcess {
   // A single-executable Pi cannot run scripts, so its host runs on the installed Node.js.
   const command = process.versions.bun || !singleExecutable() ? process.execPath : "node";
-  const host = spawn(command, [HOST_SCRIPT, socketPath, key], {
-    cwd: process.platform === "win32" ? os.tmpdir() : directory,
-    detached: true,
-    env: process.versions.bun ? { ...process.env, BUN_BE_BUN: "1" } : process.env,
-    stdio: "ignore",
-    windowsHide: true,
-  });
-  host.unref();
-  return host;
+  // Runtime failures such as heap exhaustion are written here; a clean stop removes the file.
+  const log = path.join(directory, `${key}.log`);
+  const output = openSync(log, "w", 0o600);
+  try {
+    const host = spawn(command, [HOST_SCRIPT, socketPath, key, log], {
+      cwd: directory,
+      detached: true,
+      env: hostEnvironment(),
+      stdio: ["ignore", "ignore", output],
+      windowsHide: true,
+    });
+    host.unref();
+    return host;
+  } finally {
+    closeSync(output);
+  }
 }
+
+/**
+ * The host outlives the session that starts it and runs only its own script, so it takes none
+ * of that session's variables. NODE_OPTIONS in particular could preload code, open an
+ * inspector port or change heap limits. Servers get each session's environment separately.
+ */
+function hostEnvironment(): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const name of HOST_ENVIRONMENT) {
+    const value = process.env[name];
+    if (value !== undefined) environment[name] = value;
+  }
+  if (process.versions.bun) environment.BUN_BE_BUN = "1";
+  return environment;
+}
+
+const HOST_ENVIRONMENT = [
+  "PATH",
+  "Path",
+  "HOME",
+  "USERPROFILE",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "SystemRoot",
+  "LANG",
+];
 
 function singleExecutable(): boolean {
   const sea = process.getBuiltinModule("node:sea") as { isSea?(): boolean } | undefined;

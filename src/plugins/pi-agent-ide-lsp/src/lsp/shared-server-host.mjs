@@ -2,7 +2,8 @@
 // A detached process that runs one language server for every Pi session on this machine that
 // attaches with the same configuration. shared-servers.ts starts it and describes the protocol.
 // Plain JavaScript so it runs outside Pi's TypeScript loader.
-import { rm } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
+import path from "node:path";
 import net from "node:net";
 
 import spawnProcess from "cross-spawn";
@@ -64,13 +65,18 @@ import {
  */
 
 const NO_SESSION_TIMEOUT_MS = 30_000;
+/** A socket that refuses connections this long after it was created belongs to a dead host. */
+const STALE_SOCKET_MS = 60_000;
+/** Logs of failed hosts are kept this long for diagnosis. */
+const FAILURE_LOG_MS = 24 * 60 * 60_000;
 const DIAGNOSTICS = "textDocument/publishDiagnostics";
 
 const socketPath = process.argv[2] ?? "";
 const key = process.argv[3] ?? "";
-if (!socketPath || !key) {
+const logPath = process.argv[4] ?? "";
+if (!socketPath || !key || !logPath) {
   process.exitCode = 2;
-  throw new Error("Usage: shared-server-host.mjs <socket> <key>");
+  throw new Error("Usage: shared-server-host.mjs <socket> <key> <log>");
 }
 
 /** @type {Set<Session>} */
@@ -92,6 +98,7 @@ let stopping = false;
 
 const listener = net.createServer((socket) => void accept(socket));
 await listen();
+void sweep();
 for (const signal of /** @type {const} */ (["SIGTERM", "SIGINT", "SIGHUP"]))
   process.on(signal, () => void stop());
 process.on("uncaughtException", () => void stop(1));
@@ -103,9 +110,29 @@ async function listen() {
     await bind();
   } catch (error) {
     if (/** @type {NodeJS.ErrnoException} */ (error).code !== "EADDRINUSE") throw error;
-    if (await reachable()) process.exit(0);
+    if (await reachable(socketPath)) process.exit(0);
     await rm(socketPath, { force: true });
     await bind();
+  }
+}
+
+/**
+ * Remove files of hosts that ended without cleanup, for example when they were killed. Only
+ * old sockets are probed: a new host creates its socket file just before it listens.
+ */
+async function sweep() {
+  const directory = path.dirname(logPath);
+  const now = Date.now();
+  for (const name of await readdir(directory).catch(() => [])) {
+    const file = path.join(directory, name);
+    if (file === socketPath || file === logPath) continue;
+    const changed = await stat(file).then(
+      (stats) => stats.mtimeMs,
+      () => now,
+    );
+    if (name.endsWith(".log") && now - changed > FAILURE_LOG_MS) await rm(file, { force: true });
+    if (name.endsWith(".sock") && now - changed > STALE_SOCKET_MS && !(await reachable(file)))
+      await rm(file, { force: true });
   }
 }
 
@@ -120,10 +147,13 @@ function bind() {
   });
 }
 
-/** @returns {Promise<boolean>} */
-function reachable() {
+/**
+ * @param {string} target
+ * @returns {Promise<boolean>}
+ */
+function reachable(target) {
   return new Promise((resolve) => {
-    const probe = net.connect(socketPath);
+    const probe = net.connect(target);
     probe.once("connect", () => {
       probe.destroy();
       resolve(true);
@@ -601,5 +631,6 @@ async function stop(exitCode = 0) {
     await exited;
     clearTimeout(killed);
   }
+  if (exitCode === 0) await rm(logPath, { force: true }).catch(() => void 0);
   process.exit(exitCode);
 }
