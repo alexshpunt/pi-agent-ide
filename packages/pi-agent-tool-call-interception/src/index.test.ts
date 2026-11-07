@@ -3,7 +3,13 @@ import { expect, test } from "vitest";
 
 import { ToolCallInterceptionRenderStore, withToolCallInterceptionRendering } from "./index.js";
 
-import type { AgentToolResult, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+  keyHint,
+  keyText,
+  type AgentToolResult,
+  type Theme,
+  type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
 type RenderContext = Parameters<NonNullable<ToolDefinition["renderCall"]>>[2];
@@ -111,6 +117,8 @@ function context(state: {
     toolCallId: "call-1",
     durationMs: undefined,
     outputPad: 0,
+    keyText,
+    keyHint,
     invalidate() {},
     lastComponent: undefined,
     state: {},
