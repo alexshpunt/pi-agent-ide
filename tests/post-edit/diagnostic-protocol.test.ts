@@ -65,16 +65,28 @@ test.each(["push", "pull"])(
   },
 );
 
-test.each(["push"])(
-  "later empty %s updates clear cached errors without another check",
-  async (mode) => {
-    const { cwd, file, store } = await fixture(mode, "broken clear-later");
+test("an empty push after the report closed the document keeps cached errors", async () => {
+  const { cwd, file, store, manager } = await fixture("push", "broken clear-later");
+  const client = await manager.getOrStart(".ts", cwd, "diagnostics");
+  if (!client) throw new Error("Missing fixture server");
+  const pushes = vi.fn();
+  const unsubscribe = client.onNotification("textDocument/publishDiagnostics", pushes);
+  try {
     expect((await store.read(file, { cwd })).results[0]?.diagnostics).toHaveLength(1);
-    await vi.waitFor(async () =>
-      expect((await store.read(file, { cwd })).results[0]?.diagnostics).toEqual([]),
+    // The source releases its document after the report, so the server's later push no longer
+    // describes an open version and cannot prove the file clean.
+    expect(client.documentVersion(client.toUri(file))).toBeUndefined();
+    await vi.waitFor(() =>
+      expect(pushes).toHaveBeenCalledWith(expect.objectContaining({ diagnostics: [] })),
     );
-  },
-);
+    expect((await store.read(file, { cwd })).results[0]).toMatchObject({
+      status: "snapshot",
+      diagnostics: [{ code: "type" }],
+    });
+  } finally {
+    unsubscribe();
+  }
+});
 
 test("an empty push cannot clear errors from a completed pull report", async () => {
   const { cwd, file, store, manager } = await fixture("pull-push", "broken clear-later");
@@ -108,8 +120,8 @@ test("an empty push cannot clear errors from a completed pull report", async () 
 test("push without a document version is explicitly unverified", async () => {
   const { cwd, file, store } = await fixture("unversioned", "broken");
   const result = (await store.read(file, { cwd })).results[0];
-  expect(result.status).toBe("snapshot");
-  expect(result.reason).toContain("omitted the document version");
+  expect(result?.status).toBe("snapshot");
+  expect(result?.reason).toContain("omitted the document version");
   expect((await store.takeNotifications(cwd))[0]?.results[0]).toEqual(result);
 });
 
