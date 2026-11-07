@@ -98,6 +98,36 @@ test("preserves Pi's pending, success, and error backgrounds around intercepted 
   expect(error?.render(80)).toEqual([`result\u001B[49m${BACKGROUNDS.toolErrorBg}after`]);
 });
 
+test("reuses unchanged rendered lines between frames", () => {
+  const lines = ["first\u001B[0mafter", "second\u001B[0mafter"];
+  const wrapped = withToolCallInterceptionRendering(
+    {
+      ...definition,
+      renderResult: () => ({
+        render: () => [...lines],
+        invalidate() {},
+      }),
+    },
+    new ToolCallInterceptionRenderStore(),
+  );
+  const component = wrapped.renderResult?.(
+    { content: [], details: undefined },
+    { expanded: false, isPartial: false },
+    theme,
+    context({ isPartial: false }),
+  );
+  const first = component?.render(80) ?? [];
+  const second = component?.render(80) ?? [];
+  lines[1] = "changed\u001B[0mafter";
+  const third = component?.render(80) ?? [];
+
+  expect(second).toBe(first);
+  expect(third).toEqual([
+    `first\u001B[0m${BACKGROUNDS.toolSuccessBg}after`,
+    `changed\u001B[0m${BACKGROUNDS.toolSuccessBg}after`,
+  ]);
+});
+
 test("leaves self-rendered tool backgrounds under the renderer's control", () => {
   const wrapped = withToolCallInterceptionRendering(
     { ...definition, renderShell: "self" },
