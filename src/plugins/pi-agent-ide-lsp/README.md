@@ -16,6 +16,10 @@ Pass exactly one mode:
 
 `symbol:<path>#<selector>` is a path for `replace`, `copy`, `move` and `delete` without start/end. It edits only the declaration text; imports and references stay unchanged. `replace` on `symbol:<path>#<selector>#name` performs a native rename across references.
 
+## Server lifecycle
+
+A language server starts on the first request for a file it handles, such as post-edit diagnostics or `lsp_search`. Documents opened for a request close when it finishes, unless another request still uses them. A server with no requests for 10 minutes stops, and the next request starts it again. Change the timeout with the `lsp.idle-timeout` IDE setting, in minutes. Session shutdown stops every server.
+
 ## Failures
 
 Malformed selectors, missing symbols, missing files and unavailable LSP servers return failed results. They never fall back to text search.
