@@ -104,6 +104,8 @@ Captured result from a configured process.
 export interface ProcessResult {
   readonly ok: boolean;
   readonly exitCode: number | null;
+  /** Set when the command was stopped because it ran longer than its timeout. */
+  readonly timedOut?: boolean;
   readonly stdout: string;
   readonly stderr: string;
 }
@@ -493,6 +495,7 @@ export async function runConfiguredProcess(
       resolve({
         ok: !isTimedOut && exitCode !== null && accepted.includes(exitCode),
         exitCode,
+        ...(isTimedOut && { timedOut: true }),
         stdout,
         stderr,
       });

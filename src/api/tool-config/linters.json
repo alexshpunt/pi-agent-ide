@@ -101,7 +101,7 @@
       "extensions": [".rs"],
       "check": {
         "command": ["cargo", "clippy", "--message-format", "short"],
-        "successExitCodes": [0, 1]
+        "successExitCodes": [0, 1, 101]
       },
       "diagnostics": {
         "format": "gcc"
