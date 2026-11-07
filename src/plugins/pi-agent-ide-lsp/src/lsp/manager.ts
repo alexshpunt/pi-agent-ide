@@ -513,6 +513,7 @@ export class LspManager {
       const text = await owner.readText(uri, signal);
       signal?.throwIfAborted();
       client.syncDocument(uri, text, languageId);
+      await client.waitUntilLoaded(signal);
       return { client, uri, languageId };
     }
     // Read file content for didOpen
@@ -527,6 +528,8 @@ export class LspManager {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
       // Files created later will be synchronized by the next change.
     }
+    // A server that is still loading the project answers with incomplete or empty results.
+    await client.waitUntilLoaded(signal);
 
     return { client, uri, languageId };
   }

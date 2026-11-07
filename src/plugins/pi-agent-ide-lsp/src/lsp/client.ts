@@ -73,6 +73,9 @@ export class LspClient {
   /** Set once the server versions its pushes; its unversioned pushes then describe closed documents. */
   private _versionedDiagnostics = false;
   private readonly _activeDiagnosticRequests = new Set<string>();
+  /** Latest `experimental/serverStatus` (rust-analyzer); undefined until the server sends one. */
+  private _serverStatus: { quiescent: boolean; message?: string } | undefined;
+  private readonly _serverStatusListeners = new Set<() => void>();
   /** Operations that still use each open document; the last release closes it. */
   private readonly _documentLeases = new Map<string, number>();
   private _pendingRequests = 0;
@@ -165,6 +168,51 @@ export class LspClient {
       | { commands?: unknown }
       | undefined;
     return Array.isArray(provider?.commands) && provider.commands.includes(command);
+  }
+
+  /** Whether the server reports that it is still loading the project, so its results are incomplete. */
+  get loading(): boolean {
+    return this._serverStatus?.quiescent === false;
+  }
+
+  /**
+   * Wait until the server has loaded the project, so empty results mean that nothing was found.
+   * Fails when loading takes longer than the request timeout.
+   */
+  async waitUntilLoaded(signal?: AbortSignal): Promise<void> {
+    if (!this.loading) return;
+    let listener: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await waitWithSignal(
+        new Promise<void>((resolve, reject) => {
+          listener = () => {
+            if (!this.loading) resolve();
+          };
+          this._serverStatusListeners.add(listener);
+          timer = setTimeout(() => {
+            const message = this._serverStatus?.message;
+            reject(
+              Object.assign(
+                new Error(
+                  `[lsp] ${this.serverId} is still loading the project${message ? ` (${message})` : ""}; its results would be incomplete. Try again later.`,
+                ),
+                { code: "SERVER_LOADING" },
+              ),
+            );
+          }, this._timeoutMs);
+        }),
+        signal,
+      );
+    } finally {
+      clearTimeout(timer);
+      if (listener) this._serverStatusListeners.delete(listener);
+    }
+  }
+
+  private _setServerStatus(status: { quiescent: boolean; message?: string } | undefined): void {
+    this._serverStatus = status;
+    for (const listener of [...this._serverStatusListeners]) listener();
   }
 
   /** Whether initialization advertised support for workspace/symbol requests. */
@@ -276,6 +324,8 @@ export class LspClient {
           },
           symbol: { dynamicRegistration: false },
         },
+        // rust-analyzer reports while it loads the project; its results are incomplete until then.
+        experimental: { serverStatusNotification: true },
         textDocument: {
           synchronization: { didOpen: true, didChange: true, didClose: true },
           publishDiagnostics: { relatedInformation: true, versionSupport: true },
@@ -387,6 +437,7 @@ export class LspClient {
       this._activeDiagnosticRequests.clear();
       this._diagnosticMode = "unknown";
       this._versionedDiagnostics = false;
+      this._setServerStatus(undefined);
       this._process = null;
       this._initialized = false;
     };
@@ -504,6 +555,13 @@ export class LspClient {
             ...(typeof publication.version === "number" && { version: publication.version }),
           });
         }
+      }
+      if (method === "experimental/serverStatus") {
+        const status = mapped as { quiescent?: unknown; message?: unknown } | undefined;
+        this._setServerStatus({
+          quiescent: status?.quiescent !== false,
+          ...(typeof status?.message === "string" && { message: status.message }),
+        });
       }
       for (const handler of this._handlers.get(method) ?? []) {
         handler(mapped);
@@ -667,16 +725,25 @@ export class LspClient {
     this._pendingRequests++;
     this.touch();
     try {
+      let reloaded = false;
       for (let attempt = 0; ; attempt++) {
+        let result: T;
         try {
-          return await this._sendRequest<T>(method, parameters, signal);
+          result = await this._sendRequest<T>(method, parameters, signal);
         } catch (error) {
           const delay = REQUEST_RETRY_DELAYS_MS[attempt];
           if (delay === undefined || !isRetryableCancellation(error)) throw error;
           // The server dropped a stale result; ask again once it has applied the latest text.
           await delayWithSignal(delay, signal);
           this._assertReady();
+          continue;
         }
+        // A server that is still loading the project answers from the part it has seen, often
+        // with nothing. Ask once more after loading; commands may have effects and run once.
+        if (reloaded || !this.loading || method === "workspace/executeCommand") return result;
+        reloaded = true;
+        await this.waitUntilLoaded(signal);
+        this._assertReady();
       }
     } finally {
       this._pendingRequests--;
@@ -850,6 +917,7 @@ export class LspClient {
 
   private async _shutdown(): Promise<void> {
     this._disposed = true;
+    this._setServerStatus(undefined);
     clearTimeout(this._idleTimer);
     this._idleTimer = undefined;
 

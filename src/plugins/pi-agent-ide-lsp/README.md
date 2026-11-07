@@ -28,6 +28,8 @@ File watches that servers request cover only the project: patterns based on a pa
 
 Malformed selectors, missing symbols, missing files and unavailable LSP servers return failed results. They never fall back to text search.
 
+A server that reports loading the project through `experimental/serverStatus`, as rust-analyzer does for several seconds after it starts, answers from the part it has seen so far, often with nothing. Symbol searches, declarations, call graphs and diagnostics wait until it reports that loading finished, and a request answered during loading is sent once more afterwards. `read diagnostics:` shows the language server as pending while it waits. If loading takes longer than the server's request timeout, the request fails with "still loading the project" instead of an empty result. Servers shared between Pi sessions repeat the latest status to sessions that attach later.
+
 A server that exits during startup, such as the rustup proxy when the `rust-analyzer` component is missing, fails the request at once with the exit code and the server's last error output. `lsp_search`, `symbol:` targets and `read diagnostics:` show that message. The failure is not remembered: the next request starts the server again, so installing it takes effect without restarting Pi.
 
 A server may cancel a request because a document changed while it worked (`ContentModified`) or because it dropped the request (`ServerCancelled`), as rust-analyzer does while several sessions edit. Such a request is sent again up to 5 times over about 1.5 seconds, unless the server says a retry will not help or the caller stops waiting. Only a request still cancelled after that fails with the server's message.

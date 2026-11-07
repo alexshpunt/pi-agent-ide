@@ -233,6 +233,19 @@ test("requests the server cancels as stale are retried through the shared host",
   await expect(aborted).rejects.toThrow("caller stopped");
 });
 
+test("a session that attaches while the server loads the project waits for it too", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_LOADING_MS: "1500" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  await until(() => first.loading);
+  // The server reported loading before this session attached; the host repeats the status.
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  expect(second.pid).toBe(first.pid);
+  await until(() => second.loading);
+  await second.waitUntilLoaded();
+  expect(await second.sendRequest("lifecycle/loaded", {})).toBe(true);
+});
+
 test("the shared host answers server requests for settings and file watching", async () => {
   const { cwd, sharing } = await workspace();
   const client = await session(cwd, sharing);

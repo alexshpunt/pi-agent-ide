@@ -23,9 +23,24 @@ const send = (uri, version) =>
         : [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, severity: 1, message: "fixture error" }],
   });
 
-connection.onRequest("initialize", () => ({
-  capabilities: { textDocumentSync: { openClose: true, change: 1 }, documentSymbolProvider: true },
-}));
+// Like rust-analyzer, report that the project is loading for this long after initialization.
+const loadingMs = Number(process.env.LIFECYCLE_LOADING_MS ?? 0);
+let serverStatus = false;
+connection.onRequest("initialize", ({ capabilities }) => {
+  serverStatus = capabilities.experimental?.serverStatusNotification === true;
+  return { capabilities: { textDocumentSync: { openClose: true, change: 1 }, documentSymbolProvider: true } };
+});
+const reportStatus = (quiescent) => serverStatus && connection.sendNotification("experimental/serverStatus", { health: "ok", quiescent, message: quiescent ? null : "Loading" });
+connection.onNotification("initialized", () => {
+  if (loadingMs <= 0) return;
+  reportStatus(false);
+  setTimeout(() => {
+    loaded = true;
+    reportStatus(true);
+  }, loadingMs);
+});
+let loaded = false;
+connection.onRequest("lifecycle/loaded", () => loaded);
 connection.onNotification("textDocument/didOpen", ({ textDocument }) => {
   open.set(textDocument.uri, textDocument.version);
   texts.set(textDocument.uri, textDocument.text);

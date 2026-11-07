@@ -147,6 +147,64 @@ test.each([false, true])(
   },
 );
 
+test.each([false, true])(
+  "requests wait while the server loads the project and fail if it takes too long (shared=%s)",
+  async (shared) => {
+    const root = path.resolve(".agents/tmp/lsp-loading");
+    await mkdir(root, { recursive: true });
+    const cwd = await mkdtemp(path.join(root, "case-"));
+    // Socket paths have a short length limit, so they live in the system temporary directory.
+    const sockets = await mkdtemp(path.join(os.tmpdir(), "lsp-loading-"));
+    directories.push(cwd, sockets);
+    await writeFile(path.join(cwd, "main.fx"), "value\n");
+    await writeFile(path.join(cwd, "main.slow"), "value\n");
+    const server = path.resolve(
+      "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",
+    );
+    const manager = LspManager.init(
+      LspServerRegistry.fromConfig(
+        {
+          version: 1,
+          servers: {
+            loading: {
+              command: [process.execPath, server],
+              env: { LIFECYCLE_LOADING_MS: "500" },
+              rootMarkers: [],
+              languages: { fixture: { extensions: [".fx"] } },
+              capabilities: ["diagnostics"],
+            },
+            stuck: {
+              command: [process.execPath, server],
+              env: { LIFECYCLE_LOADING_MS: "60000" },
+              timeoutMs: 300,
+              rootMarkers: [],
+              languages: { slow: { extensions: [".slow"] } },
+              capabilities: ["diagnostics"],
+            },
+          },
+        },
+        cwd,
+      ),
+      undefined,
+      shared ? { sharedServers: new LspSharedServers({ directory: sockets }) } : {},
+    );
+
+    const opened = await manager.openFile("main.fx", cwd, "symbols");
+    expect(opened?.client.loading).toBe(false);
+    expect(await opened?.client.sendRequest("lifecycle/loaded", {})).toBe(true);
+
+    // The first status can arrive after the file opens; then the request itself waits.
+    const stuck = manager
+      .openFile("main.slow", cwd, "symbols")
+      .then((slow) => slow?.client.sendRequest("lifecycle/loaded", {}));
+    await expect(stuck).rejects.toMatchObject({
+      code: "SERVER_LOADING",
+      message:
+        "[lsp] stuck is still loading the project (Loading); its results would be incomplete. Try again later.",
+    });
+  },
+);
+
 async function workspaceProviderFixture(
   supported: string,
   unsupported: string,

@@ -53,11 +53,14 @@ export function createLspDiagnosticSource(
       let version = client.documentVersion(uri);
       const refreshState = { active: true, queued: false };
       const current = () => !context.signal.aborted && client.documentVersion(uri) === version;
-      const request = () =>
-        requestDiagnostics(client, uri, languageId, {
+      const request = async () => {
+        // A server that is still loading the project reports no diagnostics yet.
+        await client.waitUntilLoaded(context.signal);
+        return requestDiagnostics(client, uri, languageId, {
           signal: context.signal,
           content: context.content,
         });
+      };
       const refresh = async () => {
         refreshState.queued = true;
         if (refreshState.active) return;
