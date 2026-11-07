@@ -72,6 +72,56 @@ describe("versioned tool config", () => {
     controller.abort();
     await rejected;
   });
+  it.runIf(process.platform !== "win32").each(["cancelled", "timed out"])(
+    "stops the processes a %s command started",
+    async (ending) => {
+      await mkdir(root, { recursive: true });
+      const directory = await mkdtemp(path.join(root, "process-tree-"));
+      directories.push(directory);
+      const pidFile = path.join(directory, "grandchild.pid");
+      // Like the rustup cargo proxy: the command starts the process that does the work.
+      const command = [
+        process.execPath,
+        "-e",
+        `const child = require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "inherit" });
+require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+setInterval(() => {}, 1000);`,
+      ];
+      const controller = new AbortController();
+      const running = runConfiguredProcess(
+        ending === "timed out" ? { command, timeoutMs: 1000 } : { command },
+        {
+          projectRoot: directory,
+          filePath: path.join(directory, "source.ts"),
+          signal: controller.signal,
+        },
+      );
+      const settled = running.then(
+        (result) => result,
+        (error: unknown) => error,
+      );
+      let grandchild = 0;
+      while (!(grandchild > 0)) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        grandchild = await readFile(pidFile, "utf8").then(Number, () => 0);
+      }
+      if (ending === "cancelled") controller.abort();
+      const result = await settled;
+      if (ending === "timed out") expect(result).toMatchObject({ ok: false, timedOut: true });
+      else expect(result).toBeInstanceOf(Error);
+      const alive = () => {
+        try {
+          process.kill(grandchild, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      for (let attempt = 0; attempt < 50 && alive(); attempt += 1)
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(alive()).toBe(false);
+    },
+  );
   it("resolves global overrides below the configured Pi agent directory", () => {
     expect(
       resolveToolConfigPaths("/project", "linters", {
