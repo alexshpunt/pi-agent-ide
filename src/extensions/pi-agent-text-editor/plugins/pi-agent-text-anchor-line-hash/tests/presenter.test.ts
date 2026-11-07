@@ -53,3 +53,22 @@ test("unrelated derived text does not gain physical line anchors", async () => {
   });
   expect(presented.lines.every((line) => line.anchors === undefined)).toBe(true);
 });
+test("edit presentation anchors only the shown lines, padded like the whole file", async () => {
+  const content = Array.from({ length: 120 }, (_, index) => `line ${index + 1}`).join("\n");
+  const document = createTextDocument("notes.txt", content);
+  const context = {
+    purpose: "edit-diff",
+    source: "notes.txt",
+    cwd: "/workspace",
+    resolvedBy: "filesystem",
+  } as const;
+  const presenter = createLineHashPresenter();
+  const whole = await presenter.present(document, context);
+  const shown = await presenter.present(document, { ...context, lineNumbers: new Set([8, 9]) });
+
+  expect(shown.lines.slice(7, 9)).toEqual(whole.lines.slice(7, 9));
+  expect(shown.lines[7]?.presentation?.prefix).toBe(
+    `  ${createLineHashAnchor(8, "line 8").value}|`,
+  );
+  expect(shown.lines.filter((line) => line.presentation !== undefined)).toHaveLength(2);
+});

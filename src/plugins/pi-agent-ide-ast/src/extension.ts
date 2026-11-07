@@ -91,7 +91,6 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         kind: TEXT_POSITION_ANCHOR_KIND,
         type: "auxiliary",
       });
-      api.addTextPresenter({ presenter });
     },
   } satisfies TextEditorPlugin;
 

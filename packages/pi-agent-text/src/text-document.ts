@@ -48,6 +48,8 @@ export interface TextPresentationContext {
   /** Script data enrichment differs from explicitly requested views. */
   readonly audience?: "agent" | "script";
   readonly requestedViews?: readonly string[];
+  /** Edit-diff only: after-document lines the edit result shows. Other lines may stay unpresented. */
+  readonly lineNumbers?: ReadonlySet<number>;
   readonly source: string;
   readonly cwd: string;
   readonly resolvedBy: string;

@@ -12,6 +12,40 @@ import {
 
 import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.js";
 
+/** Inputs that decide which final lines a successful mutation shows. */
+export interface FinalStateLineInput {
+  readonly before: string;
+  readonly after: string;
+  readonly rawChanges: NonNullable<FileMutationResult["data"]["rawChanges"]>;
+  readonly hints: readonly DiagnosticHint[];
+}
+
+/**
+ * Lists every final line the fragment can show for these inputs, including all compiler errors,
+ * so line presentation computed from it covers the rendered fragment.
+ */
+export function finalStateLineNumbers(input: FinalStateLineInput): number[] {
+  const lineCount = Math.max(1, splitLines(input.after).length);
+  const baseRanges = editRanges(
+    { data: { rawChanges: input.rawChanges } },
+    input.after,
+    lineCount,
+    input.rawChanges.length > 0 ? [] : buildDiffLines(input.before, input.after, lineCount),
+  );
+  const ranges = expandAndMerge(
+    [
+      ...baseRanges,
+      ...input.hints
+        .filter((hint) => hint.source === "compiler" && hint.severity === "error")
+        .map((hint) => ({ start: hint.line, end: hint.line })),
+    ],
+    lineCount,
+  );
+  return ranges.flatMap((range) =>
+    Array.from({ length: range.end - range.start + 1 }, (_, index) => range.start + index),
+  );
+}
+
 /** Renders the final file state around a successful mutation. */
 export function renderFinalStateFragment(fmr: FileMutationResult, path: string): string[] {
   const before = fmr.data.snapshot?.content ?? fmr.data.beforeContentMap?.[path];
