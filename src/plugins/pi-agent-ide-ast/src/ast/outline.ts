@@ -10,7 +10,7 @@ import {
 } from "pi-agent-ide/api/code-view";
 
 import { collectFiles } from "./collect-files.js";
-import { AstScopeManager, parseDocument, type ScopeEntry } from "./manager.js";
+import { AstScopeManager, withParsedDocument, type ScopeEntry } from "./manager.js";
 import { EXTENSION_LANGUAGES } from "./native-parser.js";
 import { readTextFile } from "./read-text.js";
 
@@ -172,33 +172,33 @@ export class AstOutlineManager {
     if (!isSupportedOutlinePath(absolutePath)) {
       throw new Error(`AST outline is not supported for ${displayPath}.`);
     }
-    const tree = await parseDocument(absolutePath, cwd, lines);
-
-    if (!tree) {
-      throw new Error(`No AST parser is available for ${displayPath}.`);
-    }
-    if (Number.isFinite(this.maxDepth) && tree.rootNode.hasError) {
-      throw new Error(`Cannot build an automatic outline from invalid syntax in ${displayPath}.`);
-    }
-
-    const content = lines.join("\n");
-    for (let depth = this.maxDepth; ; depth -= 1) {
-      const outline = await this.createSourceViewBlock(
-        tree.rootNode,
-        absolutePath,
-        displayPath,
-        cwd,
-        lines,
-        content,
-        path.extname(absolutePath).toLowerCase(),
-        undefined,
-        undefined,
-        depth,
-      );
-      if (fits === undefined || fits(outline) || depth <= 0 || !Number.isFinite(depth)) {
-        return outline;
+    return await withParsedDocument(absolutePath, cwd, lines, async (tree) => {
+      if (!tree) {
+        throw new Error(`No AST parser is available for ${displayPath}.`);
       }
-    }
+      if (Number.isFinite(this.maxDepth) && tree.rootNode.hasError) {
+        throw new Error(`Cannot build an automatic outline from invalid syntax in ${displayPath}.`);
+      }
+
+      const content = lines.join("\n");
+      for (let depth = this.maxDepth; ; depth -= 1) {
+        const outline = await this.createSourceViewBlock(
+          tree.rootNode,
+          absolutePath,
+          displayPath,
+          cwd,
+          lines,
+          content,
+          path.extname(absolutePath).toLowerCase(),
+          undefined,
+          undefined,
+          depth,
+        );
+        if (fits === undefined || fits(outline) || depth <= 0 || !Number.isFinite(depth)) {
+          return outline;
+        }
+      }
+    });
   }
 
   public async formatFile(filePath: string, cwd: string): Promise<SourceMappedTextContent> {
@@ -242,37 +242,42 @@ export class AstOutlineManager {
         continue;
       }
 
-      let tree;
+      let block: SourceViewBlock | undefined;
+      const progress = { parsed: false };
 
       try {
-        tree = await parseDocument(filePath, cwd, snapshot.lines);
-      } catch {
+        block = await withParsedDocument(filePath, cwd, snapshot.lines, async (tree) => {
+          progress.parsed = true;
+          const match = tree && findSymbol(tree.rootNode, symbol);
+
+          if (!match) {
+            return undefined;
+          }
+
+          const displayPath = path.relative(cwd, filePath) || filePath;
+          return await this.createSourceViewBlock(
+            match,
+            filePath,
+            displayPath,
+            cwd,
+            snapshot.lines,
+            snapshot.content,
+            path.extname(filePath).toLowerCase(),
+            symbol,
+            [`defined in: ${displayPath}:${match.startPosition.row + 1}`],
+          );
+        });
+      } catch (error) {
+        // Skip files that fail to parse; rendering errors still surface.
+        if (progress.parsed) {
+          throw error;
+        }
         continue;
       }
 
-      if (!tree) {
-        continue;
+      if (block) {
+        return formatSourceViewResults([block], PEEK_FORMAT_OPTIONS);
       }
-
-      const match = findSymbol(tree.rootNode, symbol);
-
-      if (!match) {
-        continue;
-      }
-
-      const displayPath = path.relative(cwd, filePath) || filePath;
-      const block = await this.createSourceViewBlock(
-        match,
-        filePath,
-        displayPath,
-        cwd,
-        snapshot.lines,
-        snapshot.content,
-        path.extname(filePath).toLowerCase(),
-        symbol,
-        [`defined in: ${displayPath}:${match.startPosition.row + 1}`],
-      );
-      return formatSourceViewResults([block], PEEK_FORMAT_OPTIONS);
     }
 
     return formatSourceViewResults(

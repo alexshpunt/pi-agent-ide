@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDocument } from "./manager.js";
-import { AstScopeManager } from "./manager.js";
+import { AstScopeManager, withParsedDocument } from "./manager.js";
 import { isSupportedOutlinePath } from "./outline.js";
 
 const languageSamples: Readonly<Record<string, string>> = {
@@ -26,8 +25,13 @@ const languageSamples: Readonly<Record<string, string>> = {
 describe("native AST language parity", () => {
   it.each(Object.entries(languageSamples))("parses %s", async (filePath, source) => {
     expect(isSupportedOutlinePath(filePath)).toBe(true);
-    const tree = await parseDocument(filePath, "/workspace", source.split("\n"));
-    expect(tree?.rootNode.namedChildren.length).toBeGreaterThan(0);
+    const childCount = await withParsedDocument(
+      filePath,
+      "/workspace",
+      source.split("\n"),
+      (tree) => tree?.rootNode.namedChildren.length,
+    );
+    expect(childCount).toBeGreaterThan(0);
   });
 
   it("creates scope anchors from a native parser", async () => {
