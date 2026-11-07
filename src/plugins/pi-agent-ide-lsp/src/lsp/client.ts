@@ -70,6 +70,11 @@ export class LspClient {
 
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
+  /**
+   * ID under which the server registered pull diagnostics after initialization, as pyright does.
+   * Its pushes can then be incomplete reports from an analysis still in progress.
+   */
+  private _pullRegistration: string | undefined;
   /** Set once the server versions its pushes; its unversioned pushes then describe closed documents. */
   private _versionedDiagnostics = false;
   private readonly _activeDiagnosticRequests = new Set<string>();
@@ -330,7 +335,7 @@ export class LspClient {
           synchronization: { didOpen: true, didChange: true, didClose: true },
           publishDiagnostics: { relatedInformation: true, versionSupport: true },
 
-          diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
+          diagnostic: { dynamicRegistration: true, relatedDocumentSupport: false },
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           foldingRange: { lineFoldingOnly: true },
         },
@@ -436,6 +441,7 @@ export class LspClient {
       this._diagnosticPublications.clear();
       this._activeDiagnosticRequests.clear();
       this._diagnosticMode = "unknown";
+      this._pullRegistration = undefined;
       this._versionedDiagnostics = false;
       this._setServerStatus(undefined);
       this._process = null;
@@ -492,6 +498,11 @@ export class LspClient {
         for (const registration of parameters.registrations) {
           // Settings are fixed for this client and already served by workspace/configuration.
           if (registration.method === "workspace/didChangeConfiguration") continue;
+          if (registration.method === "textDocument/diagnostic") {
+            this._pullRegistration = registration.id;
+            if (this._initialized) this._diagnosticMode = "pull";
+            continue;
+          }
           if (registration.method !== "workspace/didChangeWatchedFiles")
             throw new Error(`Unsupported dynamic capability: ${registration.method}`);
           if (!this._fileWatchers)
@@ -507,12 +518,23 @@ export class LspClient {
     this._connection.onRequest(
       "client/unregisterCapability",
       async (parameters: { unregisterations: { id: string }[] }) => {
-        for (const registration of parameters.unregisterations)
-          await this._fileWatchers?.unregister(registration.id);
+        for (const registration of parameters.unregisterations) {
+          if (registration.id === this._pullRegistration) {
+            this._pullRegistration = undefined;
+            if (this._initialized) this._diagnosticMode = "push";
+          } else await this._fileWatchers?.unregister(registration.id);
+        }
         return null;
       },
     );
     this._connection.onRequest("window/workDoneProgress/create", () => null);
+    // A pull-diagnostic server asks for new pulls after results change; pyright exits when this
+    // request fails. Handlers registered for the method see each refresh.
+    this._connection.onRequest("workspace/diagnostic/refresh", () => {
+      for (const handler of this._handlers.get("workspace/diagnostic/refresh") ?? [])
+        handler(undefined);
+      return null;
+    });
 
     this._connection.onRequest(
       "workspace/configuration",
@@ -618,7 +640,10 @@ export class LspClient {
     this._serverCapabilities = initResult.capabilities;
 
     // Unadvertised methods may return null or internal errors rather than MethodNotFound.
-    this._diagnosticMode = initResult.capabilities.diagnosticProvider ? "pull" : "push";
+    this._diagnosticMode =
+      initResult.capabilities.diagnosticProvider || this._pullRegistration !== undefined
+        ? "pull"
+        : "push";
   }
 
   /** Reach a server shared with other Pi sessions; undefined means start an own process. */
