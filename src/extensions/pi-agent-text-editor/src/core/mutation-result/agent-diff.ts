@@ -196,7 +196,7 @@ export function buildDiffLines(
 }
 
 export function editRanges(
-  fmr: FileMutationResult,
+  fmr: { readonly data: Pick<FileMutationResult["data"], "rawChanges"> },
   after: string,
   afterLineCount: number,
   diff: readonly AgentDiffLine[],

@@ -49,6 +49,7 @@ import {
   type StaleAnchorMessageDetails,
 } from "#src/api/stale-anchor-message.js";
 import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
+import { finalStateLineNumbers } from "#src/core/mutation-result/final-state-fragment.js";
 import { imageWriteResult, planImageWrite } from "#src/core/image-write.js";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.js";
@@ -90,6 +91,7 @@ import type {
   TextEditorCore,
   TextResourceEditFailure,
   TextResourceEditOutcome,
+  TextPresentedLines,
   TextResourcesEditOutcome,
 } from "#src/core/text-editor-core.js";
 import { renderTextAnchor, type TextAnchor } from "pi-agent-text";
@@ -1307,6 +1309,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
                 [...mutation.edits].map(([editSource, edit]) => [editSource, edit.changes]),
               ),
               result: executedMutation,
+              presentedLines: presentedFinalStateLines([executedMutation]),
             };
           },
         );
@@ -1390,6 +1393,53 @@ export function textMutationOperationReceipts(
       : edit.changes.length;
   return operation === "copy" && changes === 0 ? [] : [{ operation, changes }];
 }
+function textMutationRawChanges(before: string, changes: TextMutationEdit["changes"]) {
+  return applyTextChanges(before, changes, before.length === 0).changes.map(
+    (change, editIndex) => ({
+      editIndex,
+      fromA: change.fromBefore,
+      toA: change.toBefore,
+      fromB: change.fromAfter,
+      toB: change.toAfter,
+      removedText: change.removedText,
+      insertedText: change.insertedText,
+    }),
+  );
+}
+
+/**
+ * Selects the final lines that a successful result shows with presenter output. Only results of
+ * edits that used major anchors (LINE#HASH) show it, as fresh anchors for chaining edits.
+ */
+export function presentedFinalStateLines(
+  mutations: readonly {
+    readonly edits: ReadonlyMap<string, TextMutationEdit>;
+    readonly resultPresentations: ReadonlyMap<string, MutationResultPresentation>;
+  }[],
+): TextPresentedLines {
+  return ({ source, before, after, postEditContributions }) => {
+    if (
+      !mutations.some(
+        (mutation) =>
+          mutation.edits.has(source) && mutation.resultPresentations.get(source) === "major-anchor",
+      )
+    )
+      return [];
+    return finalStateLineNumbers({
+      before: before.content,
+      after: after.content,
+      rawChanges: textMutationRawChanges(
+        before.content,
+        mutations.flatMap((mutation) => mutation.edits.get(source)?.changes ?? []),
+      ),
+      hints:
+        postEditContributions
+          .map((contribution) => contribution.data)
+          .find(isTextMutationResultContributionData)?.hints ?? [],
+    });
+  };
+}
+
 /** Builds a mutation receipt; peer ranges are supplied only for per-call batch display results. */
 export function buildSuccessfulTextMutationResult(
   resource: CompletedTextResource,
@@ -1408,20 +1458,11 @@ export function buildSuccessfulTextMutationResult(
 ): FileMutationResult {
   const before = resource.before.content;
   const finalAfter = resource.after.content;
-  const applied = applyTextChanges(before, edit.changes, before.length === 0);
   const unified = createUnifiedDiff(resultSource, before, diffAfterContent);
   const mutationResultData = resource.postEditContributions
     .map((contribution) => contribution.data)
     .find(isTextMutationResultContributionData);
-  const rawChanges = applied.changes.map((change, editIndex) => ({
-    editIndex,
-    fromA: change.fromBefore,
-    toA: change.toBefore,
-    fromB: change.fromAfter,
-    toB: change.toAfter,
-    removedText: change.removedText,
-    insertedText: change.insertedText,
-  }));
+  const rawChanges = textMutationRawChanges(before, edit.changes);
 
   return new FileMutationResult({
     ...mutationResultData,

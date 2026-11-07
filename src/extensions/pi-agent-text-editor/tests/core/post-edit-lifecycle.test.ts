@@ -330,6 +330,7 @@ test("presents the content reread after post-edit work", async () => {
     core.editText("notes.md", { cwd: "/workspace" }, () => ({
       text: "requested",
       result: undefined,
+      presentedLines: () => [1],
     })),
   ).resolves.toMatchObject({
     kind: "completed",

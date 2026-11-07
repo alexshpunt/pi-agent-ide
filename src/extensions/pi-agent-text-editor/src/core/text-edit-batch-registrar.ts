@@ -49,6 +49,7 @@ import {
   buildSuccessfulTextMutationResult,
   mutationSources,
   preflightMutationAnchors,
+  presentedFinalStateLines,
   textMutationOperationReceipts,
 } from "#src/core/text-mutation.js";
 import { registerBlockedToolCallSink } from "#src/core/tool-call-interceptor/coordinator.js";
@@ -450,7 +451,13 @@ export async function executeRegisteredTextBatch(
             renderArguments,
           ));
         executionPlan = result;
-        return { changes: result.changes, result };
+        return {
+          changes: result.changes,
+          result,
+          presentedLines: presentedFinalStateLines(
+            result.mutations.map(({ mutation }) => mutation),
+          ),
+        };
       },
     );
   } catch (error) {
