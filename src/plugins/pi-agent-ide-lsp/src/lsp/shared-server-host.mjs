@@ -296,7 +296,20 @@ async function startServer(attach) {
     child.once("spawn", resolve);
     child.once("error", reject);
   });
-  child.on("exit", () => void stop());
+  child.on("exit", (code, signal) => {
+    if (stopping) return;
+    // The server exited on its own. Record why and fail, so that the log stays for diagnosis; a
+    // clean stop deletes it.
+    void Promise.race([stderrEnded, new Promise((resolve) => setTimeout(resolve, 250))]).then(
+      () => {
+        const output = stderr.trim();
+        process.stderr.write(
+          `${new Date().toISOString()} ${command} exited with ${signal ? `signal ${signal}` : `code ${String(code)}`}${output ? `:\n${output}` : ""}\n`,
+        );
+        void stop(1);
+      },
+    );
+  });
 
   const connection = createMessageConnection(
     new StreamMessageReader(/** @type {import("node:stream").Readable} */ (child.stdout)),

@@ -284,6 +284,21 @@ test.each([false, true])(
   },
 );
 
+test("a server that crashes leaves its exit code and error output in the host log", async () => {
+  const { cwd, sharing, sockets } = await workspace();
+  const client = await session(cwd, sharing);
+
+  // The server exits without answering.
+  await expect(client.sendRequest("lifecycle/crash", {})).rejects.toThrow(/./u);
+  const log = async () => {
+    for (const name of await readdir(sockets))
+      if (name.endsWith(".log")) return readFile(path.join(sockets, name), "utf8");
+    return "";
+  };
+  await until(async () => (await log()).includes("exited with code 3"));
+  expect(await log()).toContain("fixture panic: index out of bounds");
+});
+
 test("the shared host answers server requests for settings and file watching", async () => {
   const { cwd, sharing } = await workspace();
   const client = await session(cwd, sharing);
