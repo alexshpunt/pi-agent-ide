@@ -5,6 +5,7 @@ import { URI } from "vscode-uri";
 import { afterEach, expect, test } from "vitest";
 
 import { LspClient } from "./client.js";
+import { requestDiagnostics } from "./diagnostics.js";
 import { LspSharedServers } from "./shared-servers.js";
 
 const SERVER = path.resolve(
@@ -245,6 +246,43 @@ test("a session that attaches while the server loads the project waits for it to
   await second.waitUntilLoaded();
   expect(await second.sendRequest("lifecycle/loaded", {})).toBe(true);
 });
+
+test.each([false, true])(
+  "diagnostics are pulled from a server that registers pull after it starts (shared=%s)",
+  async (shared) => {
+    const { cwd, sharing } = await workspace();
+    // Like pyright: its pushes are interim reports, and only a pull returns the analysis result.
+    const env = { LIFECYCLE_PULL_DIAGNOSTICS: "1" };
+    const connect = async () => {
+      if (shared) return session(cwd, sharing, undefined, LINGER_MS, env);
+      const client = new LspClient({
+        serverId: "fixture",
+        rootUri: URI.file(cwd).toString(),
+        command: [process.execPath, SERVER],
+        env,
+      });
+      clients.push(client);
+      await client.start();
+      return client;
+    };
+    const first = await connect();
+    const uri = URI.file(path.join(cwd, "first.fx")).toString();
+    first.syncDocument(uri, "broken\n", "fixture");
+    await until(() => first.diagnosticMode === "pull");
+    expect((await requestDiagnostics(first, uri, "fixture")).diagnostics).toMatchObject([
+      { message: "fixture error" },
+    ]);
+    if (!shared) return;
+
+    // A session that attaches after the registration learns it from the host.
+    const second = await connect();
+    second.syncDocument(uri, "broken\n", "fixture");
+    await until(() => second.diagnosticMode === "pull");
+    expect((await requestDiagnostics(second, uri, "fixture")).diagnostics).toMatchObject([
+      { message: "fixture error" },
+    ]);
+  },
+);
 
 test("the shared host answers server requests for settings and file watching", async () => {
   const { cwd, sharing } = await workspace();

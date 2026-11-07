@@ -9,8 +9,19 @@ const watched = [];
 // Like clangd, a delayed analysis publishes nothing when a newer version replaced its text.
 const delayMs = Number(process.env.LIFECYCLE_PUBLISH_DELAY_MS ?? 0);
 const clearDelayMs = Number(process.env.LIFECYCLE_CLEAR_DELAY_MS ?? 0);
+// Like pyright, register pull diagnostics after initialization when the client allows it; its
+// pushes are then interim reports without the analysis result, and pulls return complete ones.
+const pullDiagnostics = process.env.LIFECYCLE_PULL_DIAGNOSTICS === "1";
+let pullRegistered = false;
+// Like pyright, ask for new pulls after an analysis and exit when the client refuses.
+const refreshAfter = (sent) =>
+  void sent.then(() =>
+    pullRegistered ? connection.sendRequest("workspace/diagnostic/refresh").catch(() => process.exit(1)) : undefined,
+  );
 const publish = (uri, version) =>
-  version !== undefined && delayMs > 0
+  pullDiagnostics && version !== undefined
+    ? refreshAfter(connection.sendNotification("textDocument/publishDiagnostics", { uri, version, diagnostics: [] }))
+    : version !== undefined && delayMs > 0
     ? setTimeout(() => open.get(uri) === version && send(uri, version), delayMs)
     : send(uri, version);
 const send = (uri, version) =>
@@ -28,10 +39,15 @@ const loadingMs = Number(process.env.LIFECYCLE_LOADING_MS ?? 0);
 let serverStatus = false;
 connection.onRequest("initialize", ({ capabilities }) => {
   serverStatus = capabilities.experimental?.serverStatusNotification === true;
+  pullRegistered = pullDiagnostics && capabilities.textDocument?.diagnostic?.dynamicRegistration === true;
   return { capabilities: { textDocumentSync: { openClose: true, change: 1 }, documentSymbolProvider: true } };
 });
 const reportStatus = (quiescent) => serverStatus && connection.sendNotification("experimental/serverStatus", { health: "ok", quiescent, message: quiescent ? null : "Loading" });
 connection.onNotification("initialized", () => {
+  if (pullRegistered)
+    void connection.sendRequest("client/registerCapability", {
+      registrations: [{ id: "pull-diagnostics", method: "textDocument/diagnostic", registerOptions: { interFileDependencies: true, workspaceDiagnostics: false, documentSelector: null } }],
+    });
   if (loadingMs <= 0) return;
   reportStatus(false);
   setTimeout(() => {
@@ -41,6 +57,10 @@ connection.onNotification("initialized", () => {
 });
 let loaded = false;
 connection.onRequest("lifecycle/loaded", () => loaded);
+connection.onRequest("textDocument/diagnostic", () => ({
+  kind: "full",
+  items: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } }, severity: 1, message: "fixture error" }],
+}));
 connection.onNotification("textDocument/didOpen", ({ textDocument }) => {
   open.set(textDocument.uri, textDocument.version);
   texts.set(textDocument.uri, textDocument.text);

@@ -83,7 +83,11 @@ export function createLspDiagnosticSource(
           refreshState.active = false;
         }
       };
-      const unsubscribe = manager.onPushDiagnostics((event) => {
+      // A pull server asks for a new pull when results change, such as after other files changed.
+      const unsubscribeRefresh = client.onNotification("workspace/diagnostic/refresh", () => {
+        if (current() && client.diagnosticMode === "pull") void refresh();
+      });
+      const unsubscribePush = manager.onPushDiagnostics((event) => {
         if (
           !current() ||
           event.uri !== uri ||
@@ -104,6 +108,10 @@ export function createLspDiagnosticSource(
           });
         }
       });
+      const unsubscribe = () => {
+        unsubscribePush();
+        unsubscribeRefresh();
+      };
       context.signal.addEventListener("abort", unsubscribe, { once: true });
       try {
         const result = await request();

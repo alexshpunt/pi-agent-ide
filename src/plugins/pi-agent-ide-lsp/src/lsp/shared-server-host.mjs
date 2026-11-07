@@ -107,6 +107,11 @@ let versionedDiagnostics = false;
  * @type {unknown}
  */
 let serverStatus;
+/**
+ * The server's dynamic registration of pull diagnostics; sessions that attach later receive it.
+ * @type {{ id: string; method: string; registerOptions?: unknown } | undefined}
+ */
+let pullRegistration;
 let lingerMs = 10 * 60_000;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let stopTimer = setTimeout(() => void stop(), NO_SESSION_TIMEOUT_MS);
@@ -218,6 +223,7 @@ async function accept(socket) {
   socket.write(`${JSON.stringify({ pid: started.process.pid })}\n`);
   session.connection.listen();
   if (serverStatus !== undefined) notifySession(session, SERVER_STATUS, serverStatus);
+  registerPull(session);
   // readLine paused the socket; a new data listener does not resume an explicitly paused stream.
   socket.resume();
 }
@@ -313,6 +319,12 @@ async function startServer(attach) {
     ) => {
       for (const registration of parameters.registrations) {
         if (registration.method === "workspace/didChangeConfiguration") continue;
+        if (registration.method === "textDocument/diagnostic") {
+          // Each session reads diagnostics itself, so each learns that it can pull them.
+          pullRegistration = registration;
+          for (const session of sessions) registerPull(session);
+          continue;
+        }
         if (registration.method !== "workspace/didChangeWatchedFiles")
           throw new Error(`Unsupported dynamic capability: ${registration.method}`);
         await watchers.register(registration.id, registration.registerOptions?.watchers ?? []);
@@ -323,11 +335,26 @@ async function startServer(attach) {
   connection.onRequest(
     "client/unregisterCapability",
     (/** @type {{ unregisterations: { id: string }[] }} */ parameters) => {
-      for (const registration of parameters.unregisterations) watchers.unregister(registration.id);
+      for (const registration of parameters.unregisterations) {
+        if (registration.id === pullRegistration?.id) {
+          pullRegistration = undefined;
+          for (const session of sessions)
+            void session.connection
+              .sendRequest("client/unregisterCapability", { unregisterations: [registration] })
+              .catch(() => void 0);
+        } else watchers.unregister(registration.id);
+      }
       return null;
     },
   );
   connection.onRequest("window/workDoneProgress/create", () => null);
+  // A pull-diagnostic server asks for new pulls after results change; pyright exits when this
+  // request fails. Each session pulls its own documents.
+  connection.onRequest("workspace/diagnostic/refresh", () => {
+    for (const session of sessions)
+      void session.connection.sendRequest("workspace/diagnostic/refresh").catch(() => void 0);
+    return null;
+  });
   connection.onRequest(
     "workspace/configuration",
     (/** @type {{ items: { section?: string }[] }} */ parameters) =>
@@ -653,6 +680,17 @@ function detach(session) {
  */
 function notifyServer(method, parameters) {
   void running?.connection.sendNotification(method, parameters).catch(() => void 0);
+}
+
+/**
+ * Tell a session that the server registered pull diagnostics.
+ * @param {Session} session
+ */
+function registerPull(session) {
+  if (pullRegistration === undefined) return;
+  void session.connection
+    .sendRequest("client/registerCapability", { registrations: [pullRegistration] })
+    .catch(() => void 0);
 }
 
 /**

@@ -7,7 +7,7 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 
 /** Version of the shared server host protocol; part of every shared server key. */
-export const SHARED_SERVER_PROTOCOL = 2;
+export const SHARED_SERVER_PROTOCOL = 3;
 
 /** @typedef {import("./file-watchers.js").WatchPattern} WatchPattern */
 /** @typedef {import("./file-watchers.js").WatchedFileChange} WatchedFileChange */
