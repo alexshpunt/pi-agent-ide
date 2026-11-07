@@ -57,7 +57,9 @@ export function renderFinalStateFragment(fmr: FileMutationResult, path: string):
 
   const lines = splitLines(after);
   const lineCount = Math.max(1, lines.length);
-  const diff = buildDiffLines(before, after, lineCount);
+  // Edit ranges come from the raw changes when they exist; only a mutation without them needs a diff.
+  const diff =
+    (fmr.data.rawChanges ?? []).length > 0 ? [] : buildDiffLines(before, after, lineCount);
   const baseRanges = editRanges(fmr, after, lineCount, diff);
   const visibleRanges = expandAndMerge(baseRanges, lineCount);
   const syntaxHints = fmr.hints.filter(

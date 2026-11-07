@@ -86,6 +86,16 @@ test("maps LF query boundaries back to CRLF source positions", () => {
   ]);
 });
 
+test("maps a partial match after mixed line breaks to source positions", () => {
+  const result = resolve("target yy\ne", "a\r\nb\rc\nd\r\nxx target yy\r\ne");
+  if (result.kind !== "resolved" || !TextSelectionAnchor.is(result.anchor)) {
+    throw new Error("Expected a text selection anchor");
+  }
+  expect(result.anchor.ranges).toEqual([
+    { start: { lineNumber: 5, column: 3 }, end: { lineNumber: 6, column: 1 } },
+  ]);
+});
+
 test("preserves an initial BOM outside the selected text", () => {
   const result = resolve("alpha", "\uFEFFalpha");
   expect(result.kind).toBe("resolved");
