@@ -117,6 +117,21 @@ test("an empty push cannot clear errors from a completed pull report", async () 
   }
 });
 
+test("a clear for the previous open cannot answer a quick reopen", async () => {
+  const { cwd, file, store, manager } = await fixture("close-clear", "broken");
+  const client = await manager.getOrStart(".ts", cwd, "diagnostics");
+  if (!client) throw new Error("Missing fixture server");
+  expect((await store.read(file, { cwd })).results[0]).toMatchObject({
+    diagnostics: [{ code: "type" }],
+  });
+  // The report closed the document; reopening it now races the server's unversioned clear for
+  // that close, which describes the closed document rather than the new open.
+  const reopened = await requestDiagnostics(client, client.toUri(file), "typescript", {
+    content: "broken",
+  });
+  expect(reopened).toMatchObject({ unversioned: false, diagnostics: [{ code: "type" }] });
+});
+
 test("push without a document version is explicitly unverified", async () => {
   const { cwd, file, store } = await fixture("unversioned", "broken");
   const result = (await store.read(file, { cwd })).results[0];

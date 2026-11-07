@@ -8,3 +8,4 @@ Detected extensions: `.py`, `.pyi`.
 | formatter | `black`        | `pyproject.toml: tool.black`                           | [Official docs](https://black.readthedocs.io/)          |
 | linter    | `ruff`         | `pyproject.toml`, `ruff.toml`, `.ruff.toml`            | [Official docs](https://docs.astral.sh/ruff/)           |
 | lsp       | `basedpyright` | `pyproject.toml`, `pyrightconfig.json`                 | [Official docs](https://docs.basedpyright.com/)         |
+| lsp       | `pyright`      | `pyproject.toml`, `pyrightconfig.json`                 | [Official docs](https://microsoft.github.io/pyright/)   |

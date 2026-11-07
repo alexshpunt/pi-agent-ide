@@ -8,6 +8,7 @@ const events = [];
 const watched = [];
 // Like clangd, a delayed analysis publishes nothing when a newer version replaced its text.
 const delayMs = Number(process.env.LIFECYCLE_PUBLISH_DELAY_MS ?? 0);
+const clearDelayMs = Number(process.env.LIFECYCLE_CLEAR_DELAY_MS ?? 0);
 const publish = (uri, version) =>
   version !== undefined && delayMs > 0
     ? setTimeout(() => open.get(uri) === version && send(uri, version), delayMs)
@@ -40,8 +41,10 @@ connection.onNotification("textDocument/didClose", ({ textDocument }) => {
   open.delete(textDocument.uri);
   texts.delete(textDocument.uri);
   events.push(["close", textDocument.uri]);
-  // clangd clears diagnostics of a closed document with an unversioned empty report.
-  publish(textDocument.uri, undefined);
+  // clangd clears diagnostics of a closed document with an unversioned empty report; a busy
+  // server can send it late.
+  if (clearDelayMs > 0) setTimeout(() => send(textDocument.uri, undefined), clearDelayMs);
+  else publish(textDocument.uri, undefined);
 });
 connection.onRequest("textDocument/documentSymbol", () => []);
 connection.onRequest("lifecycle/status", () => ({ open: [...open.keys()], events, watched, pid: process.pid }));
