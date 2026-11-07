@@ -15,6 +15,7 @@ import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
 import { createIdeCapabilities } from "#src/composite/capabilities.js";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
 import { createIdeTextResults } from "#src/composite/text-results.js";
+import { registerDetachedResults } from "#src/composite/detached-results.js";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
 import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
 import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.js";
@@ -219,4 +220,5 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();
   textResults.finalize();
+  registerDetachedResults(pi);
 }
