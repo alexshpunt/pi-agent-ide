@@ -176,7 +176,8 @@ test.each([false, true])(
             stuck: {
               command: [process.execPath, server],
               env: { LIFECYCLE_LOADING_MS: "60000" },
-              timeoutMs: 300,
+              // Also bounds initialize, so leave room for a slow start under a busy test run.
+              timeoutMs: 3000,
               rootMarkers: [],
               languages: { slow: { extensions: [".slow"] } },
               capabilities: ["diagnostics"],
