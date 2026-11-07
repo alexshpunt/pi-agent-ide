@@ -22,6 +22,8 @@ A language server starts on the first request for a file it handles, such as pos
 
 Pi sessions on one machine share a local server when they use the same server, command, configured environment, project root, initialization options and settings. The first session starts a background host process that runs the server; later sessions connect to it. Each session still sees its own document text, versions and diagnostics. The host stops the server `lsp.idle-timeout` minutes after the last session disconnects, so a new session in that window gets a server that has already indexed the project. If a session cannot reach a shared server, it starts its own. Servers on SSH hosts are not shared; each session runs its own.
 
+File watches that servers request cover only the project: patterns based on a parent directory see only files inside the project, and patterns based elsewhere are ignored. `.git` is not watched, and `node_modules` is watched only for packages added or removed.
+
 ## Failures
 
 Malformed selectors, missing symbols, missing files and unavailable LSP servers return failed results. They never fall back to text search.
