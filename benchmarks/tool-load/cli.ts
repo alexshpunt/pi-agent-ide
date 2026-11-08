@@ -18,7 +18,7 @@ const usage = `Usage: pnpm bench:tool-load [options]
 Runs real Pi processes in TUI mode with a scripted provider (no model calls). Each agent edits its
 own large generated source file through the IDE tools and checks every result.
 
-  --agents <n>          Pi processes, spread over the languages (default 20)
+  --agents <n>          Pi processes, spread over the languages (default 10)
   --languages <list>    cpp,typescript,python,rust (default: all four)
   --cycles <n>          Repetitions of the step sequence per agent (default 4)
   --sizes <list>        Source sizes in KB, assigned round-robin per language (default 200,500,1100)
@@ -52,7 +52,7 @@ interface Options {
 function parseOptions(): Options | undefined {
   const { values } = parseArgs({
     options: {
-      agents: { type: "string", default: "20" },
+      agents: { type: "string", default: "10" },
       languages: { type: "string", default: "cpp,typescript,python,rust" },
       cycles: { type: "string", default: "4" },
       sizes: { type: "string", default: "200,500,1100" },
