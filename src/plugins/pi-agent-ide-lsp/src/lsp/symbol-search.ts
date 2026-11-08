@@ -1,4 +1,5 @@
 import path from "node:path";
+import { LinePositionMap } from "./position-map.js";
 import { retryWhileSourceChanges, sourceChanged } from "./source-changes.js";
 import { requiredValue } from "pi-agent-invariant";
 import { URI } from "vscode-uri";
@@ -107,6 +108,12 @@ function declarationNames(
     ...declarationNames(symbol.children ?? [], name, range),
   ]);
 }
+function declarationsNamed(symbols: readonly LspDocumentSymbol[], name: string): LspRange[] {
+  return symbols.flatMap((symbol) => [
+    ...(symbol.name === name && symbol.selectionRange !== undefined ? [symbol.selectionRange] : []),
+    ...declarationsNamed(symbol.children ?? [], name),
+  ]);
+}
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
 export async function searchSymbols(
   query: string,
@@ -172,7 +179,12 @@ async function searchSymbolsOnce(
     string,
     { document: ReturnType<typeof createTextDocument>; version: string }
   >();
-  const toMatch = async (location: LspLocation): Promise<SearchSelectionMatch> => {
+  // A server answers for the text its client synced. Another Pi process may have written the
+  // file since; ranges then move with their unchanged lines to the file text read here.
+  const toMatch = async (
+    location: LspLocation,
+    client?: { documentContent(uri: string): string | undefined },
+  ): Promise<SearchSelectionMatch> => {
     signal?.throwIfAborted();
     const source = sourceOf(location.uri, cwd);
     let snapshot = contents.get(source);
@@ -182,7 +194,13 @@ async function searchSymbolsOnce(
       contents.set(source, snapshot);
     }
     const { document } = snapshot;
-    const { start, end } = location.range;
+    const served = client?.documentContent(location.uri);
+    const range =
+      served === undefined || served === document.content
+        ? location.range
+        : LinePositionMap.between(served, document.content).mapRange(location.range);
+    if (range === undefined) throw sourceChanged("LSP range does not match its source snapshot.");
+    const { start, end } = range;
     const positions = [start, end];
     for (const position of positions) {
       const line = document.lines[position.line];
@@ -229,21 +247,33 @@ async function searchSymbolsOnce(
     for (const definition of definitions) {
       signal?.throwIfAborted();
       if (!withinScope(sourceOf(definition.location.uri, cwd), cwd, {})) continue;
-      const workspaceMatch = await toMatch(definition.location);
-      const opened = await manager.openFile(workspaceMatch.source, cwd, "symbols", signal);
+      // The server's symbol index can lag behind edits; a stale position is looked up by name.
+      const workspaceMatch = await toMatch(definition.location, client).catch((error: unknown) => {
+        if ((error as { code?: unknown } | null)?.code === "SOURCE_CHANGED") return undefined;
+        throw error;
+      });
+      const opened = await manager.openFile(
+        sourceOf(definition.location.uri, cwd),
+        cwd,
+        "symbols",
+        signal,
+      );
       if (opened === null)
         throw new Error("LSP references are unavailable for a discovered declaration.");
       let location = definition.location;
-      if (workspaceMatch.matchedText !== definition.name) {
+      if (workspaceMatch?.matchedText !== definition.name) {
         const symbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
-        const names = declarationNames(symbols, definition.name, definition.location.range);
+        let names = declarationNames(symbols, definition.name, definition.location.range);
+        // The server's symbol index can lag behind edits, so its range may belong to an older
+        // text. A name declared once in the file still identifies the declaration.
+        if (names.length !== 1) names = declarationsNamed(symbols, definition.name);
         if (names.length !== 1)
           throw sourceChanged(
             "LSP declaration has no unique provider selectionRange; cannot search its references.",
           );
         location = { uri: opened.uri, range: requiredValue(names[0]) };
       }
-      const declared = await toMatch(location);
+      const declared = await toMatch(location, opened.client);
       const symbol: SearchSymbol = {
         id: JSON.stringify([client.serverId, declared.source, definition.location.range]),
         name: definition.name,
@@ -266,7 +296,7 @@ async function searchSymbolsOnce(
       const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
       for (const location of references) {
         if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
-        const reference = await toMatch(location);
+        const reference = await toMatch(location, opened.client);
         if (
           reference.source === declared.source &&
           reference.lineNumber === declared.lineNumber &&
@@ -297,10 +327,22 @@ async function searchSymbolsOnce(
     }
   }
   signal?.throwIfAborted();
+  // Files edited during the search keep the hits whose lines are unchanged, at their new lines.
+  const moved = new Map<string, LinePositionMap>();
   for (const [source, snapshot] of contents) {
     const current = await manager.readSourceSnapshot(source, signal);
-    if (current.version !== snapshot.version || current.content !== snapshot.document.content)
-      throw sourceChanged("LSP source changed during search.");
+    if (current.version !== snapshot.version && current.content !== snapshot.document.content)
+      moved.set(source, LinePositionMap.between(snapshot.document.content, current.content));
+  }
+  for (const [index, hit] of hits.entries()) {
+    const map = moved.get(hit.source);
+    if (map === undefined) continue;
+    const range = map.mapRange({
+      start: { line: hit.lineNumber - 1, character: hit.startColumn },
+      end: { line: (hit.endLineNumber ?? hit.lineNumber) - 1, character: hit.endColumn },
+    });
+    if (range === undefined) throw sourceChanged("LSP source changed during search.");
+    hits[index] = { ...hit, lineNumber: range.start.line + 1, endLineNumber: range.end.line + 1 };
   }
   if (resultScope !== undefined) await verifyResultTargets(resultScope, signal);
   hits.sort(

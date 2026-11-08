@@ -6,6 +6,7 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.5.0",
     "cross-spawn": "^7.0.6",
+    "diff": "^9.0.0",
     "pi-agent-doctor": "workspace:^",
     "pi-agent-documentation": "workspace:^",
     "pi-agent-ide": "workspace:^",
