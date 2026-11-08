@@ -6,13 +6,13 @@ import { inspectRecipeEvidence, type RecipeEvidence } from "pi-agent-doctor/api/
 import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 import { hasConfiguredExecutable, loadLayeredToolConfig } from "pi-agent-ide/api/tool-config";
 
-import { buildLanguageLookup, type LanguageLookup } from "./language-map.js";
+import { buildLanguageLookup, type LanguageLookup } from "./language-map.ts";
 
 import type {
   EffectiveToolConfigEntry,
   LayeredToolConfigOptions,
 } from "pi-agent-ide/api/tool-config";
-import type { LspServersConfig, ResolvedServer, ServerConfig } from "./types.js";
+import type { LspServersConfig, ResolvedServer, ServerConfig } from "./types.ts";
 
 /**
 LSP server configuration in project, global, and built-in priority order.

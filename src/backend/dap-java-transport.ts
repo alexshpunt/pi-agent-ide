@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
-import type { DebugSessionOptions } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
-import type { OwnedDebugAdapter } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { startSshDapTransport, type SshDapTransport } from "./dap-transport.js";
-import { SshBackendError } from "./ssh.js";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import type { DebugSessionOptions } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
+import type { OwnedDebugAdapter } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { startSshDapTransport, type SshDapTransport } from "./dap-transport.ts";
+import { SshBackendError } from "./ssh.ts";
 
 const readySchema = Type.Object(
   { port: Type.Integer({ minimum: 1, maximum: 65535 }), sourceRoot: Type.String() },

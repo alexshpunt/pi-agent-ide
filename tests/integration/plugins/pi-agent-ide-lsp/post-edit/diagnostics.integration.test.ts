@@ -10,7 +10,7 @@ import {
   expectTextToolDiff,
   getTextToolMutationData,
   runTextToolScenario,
-} from "#integration-tests/support/pi-runtime/scenario.js";
+} from "#integration-tests/support/pi-runtime/scenario.ts";
 
 const repoRoot = process.cwd();
 const generatedExtensions = await generateReadExtensions([

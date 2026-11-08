@@ -6,7 +6,7 @@ import {
 } from "pi-agent-resource";
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import type {
   TextAnchorRecoveryCandidateRange,
   TextAnchorRecoveryRange,
@@ -28,7 +28,7 @@ import {
   FileMutationResult,
   type MutationResultPresentation,
   type MutationOperationReceipt,
-} from "#src/api/mutation-result.js";
+} from "#src/api/mutation-result.ts";
 import {
   isMutationAnchorValue,
   mutationSource,
@@ -38,55 +38,55 @@ import {
   type TextMutationToolRegistration,
   type TextSemanticMutationResult,
   withoutEmptyOptionalAnchors,
-} from "#src/api/mutation-tool.js";
+} from "#src/api/mutation-tool.ts";
 import {
   isFormattingContribution,
   isDiffStatusContribution,
   isTextMutationResultContributionData,
-} from "#src/api/post-edit.js";
+} from "#src/api/post-edit.ts";
 import {
   formatStaleAnchorMessage,
   type StaleAnchorMessageDetails,
-} from "#src/api/stale-anchor-message.js";
-import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
-import { finalStateLineNumbers } from "#src/core/mutation-result/final-state-fragment.js";
-import { imageWriteResult, planImageWrite } from "#src/core/image-write.js";
-import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
-import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.js";
-import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
-import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.js";
-import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.js";
-import { retryWhenSourceChanged, SOURCE_CHANGED } from "#src/core/source-change-retry.js";
+} from "#src/api/stale-anchor-message.ts";
+import { createUnifiedDiff } from "#src/core/mutation-result/diff.ts";
+import { finalStateLineNumbers } from "#src/core/mutation-result/final-state-fragment.ts";
+import { imageWriteResult, planImageWrite } from "#src/core/image-write.ts";
+import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
+import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.ts";
+import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
+import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
+import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.ts";
+import { retryWhenSourceChanged, SOURCE_CHANGED } from "#src/core/source-change-retry.ts";
 import {
   executeNativeTextEditBatch,
   runNativePostEditScope,
   recordNativeTextMutation,
-} from "#src/core/native-text-edit-batch.js";
+} from "#src/core/native-text-edit-batch.ts";
 import {
   attachCommittedMutationTarget,
   attachWriteTarget,
   describeUnavailableCopyTarget,
   unchangedCopySources,
-} from "./mutation-result-targets.js";
-import { wholeFileResultSource } from "./result-input.js";
-import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
-import { isResultInput, prepareResultTransfer } from "./result-transfer.js";
+} from "./mutation-result-targets.ts";
+import { wholeFileResultSource } from "./result-input.ts";
+import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
+import { isResultInput, prepareResultTransfer } from "./result-transfer.ts";
 import {
   contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
   TextMutationAnchorResolutionError,
-} from "#src/core/text-mutation-anchor-error.js";
+} from "#src/core/text-mutation-anchor-error.ts";
 import {
   TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH,
   type ToolCallInterceptionRenderStore,
   withToolCallInterceptionRendering,
-} from "#src/core/tool-call-interceptor/rendering.js";
+} from "#src/core/tool-call-interceptor/rendering.ts";
 
-import type { TextEditExecutionOutcome, TextPreEditState } from "#src/api/edit-pipeline.js";
+import type { TextEditExecutionOutcome, TextPreEditState } from "#src/api/edit-pipeline.ts";
 import type {
   TextMutationPreviewOutcome,
   TextMutationPreviewRequest,
-} from "#src/api/mutation-preview.js";
+} from "#src/api/mutation-preview.ts";
 import type {
   ResolveResourceTextAnchor,
   TextEditorCore,
@@ -94,15 +94,15 @@ import type {
   TextResourceEditOutcome,
   TextPresentedLines,
   TextResourcesEditOutcome,
-} from "#src/core/text-editor-core.js";
+} from "#src/core/text-editor-core.ts";
 import { renderTextAnchor, type TextAnchor } from "pi-agent-text";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception";
 import type { Static, TSchema } from "typebox";
-import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.js";
-import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.js";
-import { writeAgentResult } from "./write-agent-result.js";
-import { mutationResultSchema, structuredMutation } from "./structured-result.js";
+import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.ts";
+import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.ts";
+import { writeAgentResult } from "./write-agent-result.ts";
+import { mutationResultSchema, structuredMutation } from "./structured-result.ts";
 import type { ResultImageStore, ResultTargetStore } from "pi-agent-resource";
 
 /** Build a mutation tool; host events report terminal filesystem approvals to Herdr. */

@@ -10,7 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("pending native results gain exact authority only after their original-snapshot batch commits", async () => {
   await withTempWorkspace(async (cwd) => {

@@ -1,10 +1,10 @@
 import { createTextDocument } from "pi-agent-text";
-import type { FileOperation, FileOperationInput } from "#src/api/file-operations.js";
+import type { FileOperation, FileOperationInput } from "#src/api/file-operations.ts";
 import type {
   TextMutationGuardContext,
   TextMutationGuardRegistration,
   TextMutationPlanResource,
-} from "#src/api/mutation-guard.js";
+} from "#src/api/mutation-guard.ts";
 
 /** A canonical, read-only whole-file snapshot. Missing bytes mean the file does not exist. */
 export interface FileGuardSnapshot {

@@ -1,13 +1,13 @@
-import { targetsEqual } from "./content-runner.js";
+import { targetsEqual } from "./content-runner.ts";
 import {
   CONTENT_CONVERTER_REGISTER_EVENT,
   CONTENT_HOST_READY_EVENT,
   type ContentConverterRegistrationRequest,
   isContentHostReady,
-} from "./plugin-protocol.js";
-import { isContentConverterRegistration } from "./validation.js";
+} from "./plugin-protocol.ts";
+import { isContentConverterRegistration } from "./validation.ts";
 
-import type { ContentConverterRegistration } from "./content-converter.js";
+import type { ContentConverterRegistration } from "./content-converter.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export function connectContentConverter(

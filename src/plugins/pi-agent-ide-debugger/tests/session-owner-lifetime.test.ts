@@ -1,7 +1,7 @@
 import { PassThrough } from "node:stream";
 import { expect, test, vi } from "vitest";
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 test("an early launch refusal is reported before waiting for initialized", async () => {
   const stop = vi.fn(async () => {});

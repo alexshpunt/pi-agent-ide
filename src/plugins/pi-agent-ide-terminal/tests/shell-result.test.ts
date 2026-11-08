@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { afterEach, expect, test } from "vitest";
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { structuredShellResult } from "#src/plugins/pi-agent-ide-terminal/src/shell-result.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { structuredShellResult } from "#src/plugins/pi-agent-ide-terminal/src/shell-result.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 
 const managers: TerminalSessionManager[] = [];
 afterEach(async () => {

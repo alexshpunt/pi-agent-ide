@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import { expect, test } from "vitest";
-import { LspClient } from "./client.js";
+import { LspClient } from "./client.ts";
 
 const remote = () =>
   new LspClient({

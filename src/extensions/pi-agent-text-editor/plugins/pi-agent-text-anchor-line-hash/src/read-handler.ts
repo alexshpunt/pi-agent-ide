@@ -1,6 +1,6 @@
 import { getTextSourceLine, type TextLine, type TextLinePresenter } from "pi-agent-text";
 
-import { createLineHashAnchor } from "./anchor.js";
+import { createLineHashAnchor } from "./anchor.ts";
 
 export function createLineHashPresenter(): TextLinePresenter {
   return {

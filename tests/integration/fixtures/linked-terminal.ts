@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text, type Component, type TUI } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 /** Real terminal jobs are released through their public shell resources, after unrelated work. */
 export default function linkedTerminal(pi: ExtensionAPI): void {

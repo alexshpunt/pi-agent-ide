@@ -14,7 +14,7 @@ import {
 import { ResultPanel, toolCallHeader } from "pi-agent-tool-ui";
 import { Type, type Static } from "typebox";
 
-import type { LspSearchOptions } from "./search-resolver.js";
+import type { LspSearchOptions } from "./search-resolver.ts";
 
 export const lspSearchSchema = Type.Object(
   {

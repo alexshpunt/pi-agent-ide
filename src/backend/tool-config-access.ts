@@ -1,8 +1,8 @@
 import path from "node:path";
-import type { ToolConfigLayerAccess } from "#src/api/tool-config.js";
-import { remoteLocation } from "./identity.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
+import type { ToolConfigLayerAccess } from "#src/api/tool-config.ts";
+import { remoteLocation } from "./identity.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
 
 /** Read project and user-global tool settings on the selected target; no startup connection. */
 export function createSshToolConfigAccess(

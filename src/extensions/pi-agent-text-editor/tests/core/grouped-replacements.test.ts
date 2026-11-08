@@ -2,11 +2,11 @@ import { expect, test } from "vitest";
 import {
   FileMutationResult,
   type MutationFormatting,
-} from "#src/core/mutation-result/file-mutation-result.js";
+} from "#src/core/mutation-result/file-mutation-result.ts";
 import {
   groupReplacements,
   renderGroupedReplacements,
-} from "#src/core/mutation-result/grouped-replacements.js";
+} from "#src/core/mutation-result/grouped-replacements.ts";
 
 function result(
   path: string,

@@ -12,7 +12,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("a failed debugger start shows the adapter's reason and keeps the session usable", async () => {
   await withTempWorkspace(async (cwd) => {

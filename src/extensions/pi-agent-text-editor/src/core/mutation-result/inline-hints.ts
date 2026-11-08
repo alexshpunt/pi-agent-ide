@@ -1,5 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
-import type { DiagnosticHint } from "./file-mutation-result.js";
+import type { DiagnosticHint } from "./file-mutation-result.ts";
 
 export interface InsertHintsOptions {
   readonly suppressContextHunksFor?: (hint: DiagnosticHint) => boolean;

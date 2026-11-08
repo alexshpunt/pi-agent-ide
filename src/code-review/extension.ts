@@ -8,9 +8,9 @@ import {
   TEXT_EDITOR_PROTOCOL,
 } from "pi-agent-text-editor/api/plugin-protocol";
 import { afterPostEditScope } from "pi-agent-text-editor/api/post-edit";
-import { readReviewRules, REVIEW_RULES_PATH } from "./config.js";
-import { createCodeReview } from "./reviewer.js";
-import { createLiveFeatureFlag } from "#src/core/live-feature-flag.js";
+import { readReviewRules, REVIEW_RULES_PATH } from "./config.ts";
+import { createCodeReview } from "./reviewer.ts";
+import { createLiveFeatureFlag } from "#src/core/live-feature-flag.ts";
 
 /** Connect optional background review and independently gated rule-capture guidance. */
 export default async function registerCodeReview(pi: ExtensionAPI): Promise<void> {

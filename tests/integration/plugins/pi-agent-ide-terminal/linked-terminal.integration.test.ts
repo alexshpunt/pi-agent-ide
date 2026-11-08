@@ -15,8 +15,8 @@ import { PiRun } from "pi-coding-agent-test/base";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const stereo = process.env.PI_TERMINAL_STEREO;
 const layouts = stereo ? ["columns", "rows"] : ["native"];

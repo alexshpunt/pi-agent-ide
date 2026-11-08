@@ -4,19 +4,19 @@ import type {
   FileOperationInput,
   FileOperationResolver,
   FileOperationResult,
-} from "#src/api/file-operations.js";
+} from "#src/api/file-operations.ts";
 import {
   executeFileOperation,
   isUriSource,
   type FileOperationContext,
-} from "#src/core/file-operations.js";
+} from "#src/core/file-operations.ts";
 import {
   guardFileChanges,
   guardFileOperation,
   type FileGuardSnapshot,
-} from "#src/core/file-operation-guards.js";
+} from "#src/core/file-operation-guards.ts";
 import path from "node:path";
-import { deferPostEdit, collectPostEditNotifications } from "#src/core/post-edit-scope.js";
+import { deferPostEdit, collectPostEditNotifications } from "#src/core/post-edit-scope.ts";
 import { requiredValue } from "pi-agent-invariant";
 import {
   isAgentContent,
@@ -52,13 +52,13 @@ import {
   type TextEditPipelineStage,
   type TextEditState,
   type TextPreEditState,
-} from "#src/api/edit-pipeline.js";
+} from "#src/api/edit-pipeline.ts";
 import {
   type AnyTextMutationToolRegistration,
   assertTextMutationToolRegistration,
   type TextMutationToolListener,
   type TextSemanticMutationHandler,
-} from "#src/api/mutation-tool.js";
+} from "#src/api/mutation-tool.ts";
 import {
   isResourceResolverRegistration,
   isTextAnchorResolverRegistration,
@@ -73,50 +73,50 @@ import {
   type TextEditorPluginApi,
   type TextEditorRecoveryConfigSection,
   type TextEditorToolId,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 import {
   isTextPostEditHandlerRegistration,
   type TextPostEditContribution,
   type TextPostEditHandlerRegistration,
   type TextPostEditTransaction,
-} from "#src/api/post-edit.js";
+} from "#src/api/post-edit.ts";
 import {
   isTextEditorToolRendererRegistration,
   type TextEditorToolRendererRegistration,
-} from "#src/api/tool-renderer.js";
+} from "#src/api/tool-renderer.ts";
 import {
   TextAnchorRegistry,
   type TextAnchorRegistrySnapshot,
-} from "#src/core/text-anchor-registry.js";
+} from "#src/core/text-anchor-registry.ts";
 import {
   applyTextChanges,
   type TextChange,
   type TextChangeResult,
-} from "#src/core/text-change-engine.js";
-import { previewTextMutation } from "#src/core/text-mutation.js";
-import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.js";
+} from "#src/core/text-change-engine.ts";
+import { previewTextMutation } from "#src/core/text-mutation.ts";
+import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.ts";
 
 import type {
   TextAnchorInspectionOutcome,
   TextAnchorInspectionRequest,
-} from "#src/api/anchor-inspection.js";
-import { currentTextEditOrigin } from "./text-edit-origin.js";
+} from "#src/api/anchor-inspection.ts";
+import { currentTextEditOrigin } from "./text-edit-origin.ts";
 import type {
   TextEditCompletion,
   TextEditCompletionListener,
   TextEditIntent,
-} from "#src/api/edit-completion.js";
+} from "#src/api/edit-completion.ts";
 import type {
   TextMutationGuardContext,
   TextMutationGuardRegistration,
   TextMutationPlan,
-} from "#src/api/mutation-guard.js";
+} from "#src/api/mutation-guard.ts";
 import type {
   TextMutationPreviewOutcome,
   TextMutationPreviewRequest,
-} from "#src/api/mutation-preview.js";
+} from "#src/api/mutation-preview.ts";
 
-import type { BeforeDeleteEvent, DeleteGuardRegistration } from "#src/api/delete-guard.js";
+import type { BeforeDeleteEvent, DeleteGuardRegistration } from "#src/api/delete-guard.ts";
 type PluginStatus = "active" | "pending";
 
 interface PluginLifecycle {

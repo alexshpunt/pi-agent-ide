@@ -17,7 +17,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "fs-extra";
 import { afterEach, expect, test, vi } from "vitest";
-import { executeFileOperation } from "#src/core/file-operations.js";
+import { executeFileOperation } from "#src/core/file-operations.ts";
 
 const roots: string[] = [];
 afterEach(async () => {

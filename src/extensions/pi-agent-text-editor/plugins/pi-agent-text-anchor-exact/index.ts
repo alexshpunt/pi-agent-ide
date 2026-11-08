@@ -6,8 +6,8 @@ import {
   TEXT_SEARCH_ANCHOR_KIND,
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
-import { createExactTextAnchorResolver } from "./src/anchor.js";
-import { parseExactTextRecoveryConfig } from "./src/config.js";
+import { createExactTextAnchorResolver } from "./src/anchor.ts";
+import { parseExactTextRecoveryConfig } from "./src/config.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 interface RecoveryDetails {

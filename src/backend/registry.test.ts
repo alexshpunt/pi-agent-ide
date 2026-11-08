@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { SshBackendRegistry } from "./registry.js";
+import { SshBackendRegistry } from "./registry.ts";
 
 test("only configured targets resolve, without contacting hosts", () => {
   const registry = new SshBackendRegistry([

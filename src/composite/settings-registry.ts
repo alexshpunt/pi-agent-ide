@@ -8,14 +8,14 @@ import {
   type AgentIdeSettingValue,
   type SettingsReadRequest,
   type SettingsRegistration,
-} from "#src/api/settings.js";
+} from "#src/api/settings.ts";
 import {
   configuredFeatureFlags,
   readExtensionSettingsScope,
   resolvePiAgentIdeExtensionsConfigPaths,
-} from "./extensions-config.js";
-import type { FeatureFlag } from "./feature-flags.js";
-import type { AgentIdePreference } from "./preferences.js";
+} from "./extensions-config.ts";
+import type { FeatureFlag } from "./feature-flags.ts";
+import type { AgentIdePreference } from "./preferences.ts";
 
 /** One host-owned registry supplies the menu, catalog and effective settings reads. */
 export function createAgentIdeSettingsRegistry(

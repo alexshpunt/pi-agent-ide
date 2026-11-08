@@ -12,7 +12,7 @@ import { expect, test } from "vitest";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 test.each([true, false])(
   "obsolete disabled IDs do not prevent native startup; LSP disabled=%s",

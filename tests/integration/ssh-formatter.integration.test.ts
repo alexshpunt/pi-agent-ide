@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createOwnedFormatterRuntime } from "#src/backend/formatter-registration.js";
-import { createFormatter } from "#src/plugins/pi-agent-ide-formatter/src/formatter.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createOwnedFormatterRuntime } from "#src/backend/formatter-registration.ts";
+import { createFormatter } from "#src/plugins/pi-agent-ide-formatter/src/formatter.ts";
 
 test("owner formatter selection publishes stdout with a revision guard and preserves conflicting writes", async () => {
   const fixture = await startSshFixture();

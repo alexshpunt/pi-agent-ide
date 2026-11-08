@@ -1,5 +1,5 @@
 import type { ResolvedResultTargets } from "pi-agent-resource";
-import { TextChangeDocument } from "./text-change-engine.js";
+import { TextChangeDocument } from "./text-change-engine.ts";
 
 const writePartialReason =
   "Write received a partial file selection. Use replace to edit that selection, or Read the whole file before deliberately replacing all its contents.";

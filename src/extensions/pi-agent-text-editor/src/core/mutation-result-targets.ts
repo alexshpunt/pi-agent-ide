@@ -3,14 +3,14 @@ import { fileURLToPath } from "node:url";
 import type { ResultRange, ResultSourceTarget } from "pi-agent-resource";
 import type { ResultTargetStore } from "pi-agent-resource";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
+import type { FileMutationBatchResult } from "#src/api/mutation-result.ts";
 import { createTextDocument } from "pi-agent-text";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import type { TextMutation, TextMutationEdit } from "#src/api/mutation-tool.js";
-import { applyTextChanges } from "./text-change-engine.js";
-import { attachFileMutationTargets } from "./file-result-targets.js";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
+import type { TextMutation, TextMutationEdit } from "#src/api/mutation-tool.ts";
+import { applyTextChanges } from "./text-change-engine.ts";
+import { attachFileMutationTargets } from "./file-result-targets.ts";
 
-import type { TextEditorCore } from "./text-editor-core.js";
+import type { TextEditorCore } from "./text-editor-core.ts";
 
 export type MutationSnapshotReader = (
   source: string,

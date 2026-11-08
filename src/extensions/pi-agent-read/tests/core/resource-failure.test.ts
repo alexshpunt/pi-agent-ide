@@ -1,8 +1,8 @@
 import { ResourceError } from "pi-agent-resource";
 import { expect, test } from "vitest";
-import { failureResult } from "#src/core/tools/read/read-result.js";
-import { structuredRead } from "#src/core/tools/read/structured-result.js";
-import { createReadTool } from "#src/core/tools/tool-read.js";
+import { failureResult } from "#src/core/tools/read/read-result.ts";
+import { structuredRead } from "#src/core/tools/read/structured-result.ts";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
 
 const source = "fixture://owner/note%20caf%C3%A9.txt";
 const rateLimit = {

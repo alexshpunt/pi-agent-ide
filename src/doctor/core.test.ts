@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
-import { DoctorCore, runContributedSetupChecks } from "./core.js";
+import { DoctorCore, runContributedSetupChecks } from "./core.ts";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
 

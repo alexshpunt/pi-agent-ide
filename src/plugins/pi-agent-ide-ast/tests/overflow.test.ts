@@ -2,8 +2,8 @@ import { expect, test } from "vitest";
 import { createTextDocument } from "pi-agent-text";
 import { truncateHead } from "@earendil-works/pi-coding-agent";
 import type { ReadPipelineContext, ReadToolResult } from "pi-agent-read/api/tools/read";
-import { createAstOverflowHandler } from "#src/overflow-handler.js";
-import { AstOutlineManager } from "#src/ast/outline.js";
+import { createAstOverflowHandler } from "#src/overflow-handler.ts";
+import { AstOutlineManager } from "#src/ast/outline.ts";
 
 const source = `test("checkout", () => {\n${"  check(value);\n".repeat(2100)}});\n`;
 function context(content = source, file = "sample.ts", displayed = content): ReadPipelineContext {

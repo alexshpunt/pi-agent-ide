@@ -5,9 +5,9 @@ import {
   doctorProcessAccess,
   withDoctorProbeCopy,
 } from "pi-agent-ide/api/doctor";
-import { LINTER_RECIPES } from "./catalog.js";
-import { runConfiguredLinter } from "./command-linter.js";
-import { LintCommandRegistry } from "./registry.js";
+import { LINTER_RECIPES } from "./catalog.ts";
+import { runConfiguredLinter } from "./command-linter.ts";
+import { LintCommandRegistry } from "./registry.ts";
 
 import type {
   DoctorContext,

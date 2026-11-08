@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshToolConfigAccess } from "#src/backend/tool-config-access.js";
-import { loadLayeredToolConfig, parseFormattersConfig } from "#src/api/tool-config.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshToolConfigAccess } from "#src/backend/tool-config-access.ts";
+import { loadLayeredToolConfig, parseFormattersConfig } from "#src/api/tool-config.ts";
 
 const entry = (command: string) => ({
   extensions: [".ts"],

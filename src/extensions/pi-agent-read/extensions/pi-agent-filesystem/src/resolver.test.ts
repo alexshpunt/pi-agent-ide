@@ -5,7 +5,7 @@ import path from "node:path";
 import { ResourceError } from "pi-agent-resource";
 import { afterEach, expect, test } from "vitest";
 
-import { createFilesystemWriteResolver } from "./resolver.js";
+import { createFilesystemWriteResolver } from "./resolver.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

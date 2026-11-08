@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createWebResolver } from "#src/resolver.js";
-import { createWebSearchResolver } from "#src/search.js";
+import { createWebResolver } from "#src/resolver.ts";
+import { createWebSearchResolver } from "#src/search.ts";
 
 const context = { cwd: process.cwd() };
 function resolver(text: string) {

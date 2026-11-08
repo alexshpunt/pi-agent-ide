@@ -7,9 +7,9 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import { ChangeService } from "#src/changes/change-service.js";
+import { ChangeService } from "#src/changes/change-service.ts";
 
-import type { GitCommandExecutor, GitCommandResult } from "#src/changes/git-changes-backend.js";
+import type { GitCommandExecutor, GitCommandResult } from "#src/changes/git-changes-backend.ts";
 
 const runFile = promisify(execFile);
 // Partial commits expose their temporary index to hooks. Test repositories must use their own index.

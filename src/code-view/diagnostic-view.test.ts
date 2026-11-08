@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import { createTextDocument, renderTextDocument } from "pi-agent-text";
-import { addDiagnosticAnnotations, createDiagnosticViewContent } from "./diagnostic-view.js";
+import { addDiagnosticAnnotations, createDiagnosticViewContent } from "./diagnostic-view.ts";
 
 test.each(["pending", "unavailable", "snapshot", "unversioned"] as const)(
   "%s diagnostic reports never look clean",

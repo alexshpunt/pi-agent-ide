@@ -8,8 +8,8 @@ import {
   type FuzzyCandidate,
   type SearchEnvironment,
 } from "pi-agent-search/api/search";
-import { ripgrepScope, searchText, type TextSearchRequest } from "#src/search-backend.js";
-import { resolveRipgrepExecutable } from "#src/ripgrep.js";
+import { ripgrepScope, searchText, type TextSearchRequest } from "#src/search-backend.ts";
+import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
 
 /** Scan fresh names, then capture only bounded exact alternatives in the same scope. */
 export async function searchFuzzy(

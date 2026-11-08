@@ -1,5 +1,5 @@
 import type { Readable, Writable } from "node:stream";
-import type { LspFileWatcherSubscriptions, WatchedFileChange } from "./file-watchers.js";
+import type { LspFileWatcherSubscriptions, WatchedFileChange } from "./file-watchers.ts";
 
 /** A language server process on one owner; its PID is never a local process identifier. */
 export interface LspOwnedProcess {

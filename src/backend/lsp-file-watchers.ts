@@ -8,11 +8,11 @@ import type {
   LspFileWatcherSubscriptions,
   WatchPattern,
   WatchedFileChange,
-} from "#src/plugins/pi-agent-ide-lsp/index.js";
-import type { SshProcessChannel } from "./ssh-channel.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { remoteLocation } from "./identity.js";
-import { SshBackendError } from "./ssh.js";
+} from "#src/plugins/pi-agent-ide-lsp/index.ts";
+import type { SshProcessChannel } from "./ssh-channel.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { remoteLocation } from "./identity.ts";
+import { SshBackendError } from "./ssh.ts";
 
 const messageSchema = Type.Union([
   Type.Object({ kind: Type.Literal("ready") }),

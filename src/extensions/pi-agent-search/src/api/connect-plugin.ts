@@ -4,7 +4,7 @@ import {
   SEARCH_PLUGIN_REGISTER_EVENT,
   type SearchPlugin,
   type SearchPluginRegistrationRequest,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

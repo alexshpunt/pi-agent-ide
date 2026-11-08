@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { compactSearchDetails, restoreSearchDetails } from "./persisted-result.js";
+import { compactSearchDetails, restoreSearchDetails } from "./persisted-result.ts";
 
 test("restores highlighted search geometry and literal delimiter characters exactly", () => {
   const line = "a long original line with the needle and 🍀";

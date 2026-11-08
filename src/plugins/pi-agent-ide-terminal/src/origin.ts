@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { TerminalExecutionOrigin } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+import type { TerminalExecutionOrigin } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 /** Capture native ancestry before a terminal defers work beyond its tool execution. */
 export function registerTerminalOrigins(

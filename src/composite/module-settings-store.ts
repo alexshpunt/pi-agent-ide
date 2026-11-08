@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { readExtensionSettingsScope } from "./extensions-config.js";
-import type { AgentIdePreset } from "./presets.js";
+import { readExtensionSettingsScope } from "./extensions-config.ts";
+import type { AgentIdePreset } from "./presets.ts";
 
 /** A scope override; default removes this scope's explicit choice. */
 export type ModuleChoice = "default" | "enabled" | "disabled";

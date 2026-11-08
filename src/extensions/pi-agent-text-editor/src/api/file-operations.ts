@@ -1,6 +1,6 @@
 import type { ResourceResolverContext } from "pi-agent-resource";
-import type { BeforeDeleteEvent, DeleteFileAccess } from "./delete-guard.js";
-import type { FileTransferEndpoint, FileTransferGuard } from "./file-transfers.js";
+import type { BeforeDeleteEvent, DeleteFileAccess } from "./delete-guard.ts";
+import type { FileTransferEndpoint, FileTransferGuard } from "./file-transfers.ts";
 
 /** Whole-file operations, distinct from text-selection transfers and removal. */
 export const fileOperations = ["delete", "move", "copy"] as const;

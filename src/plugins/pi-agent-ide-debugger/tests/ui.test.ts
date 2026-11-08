@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { debuggerEvaluationFromResult } from "#src/plugins/pi-agent-ide-debugger/src/ui.js";
+import { debuggerEvaluationFromResult } from "#src/plugins/pi-agent-ide-debugger/src/ui.ts";
 
 test("extracts an evaluation from semantic action metadata", () => {
   expect(

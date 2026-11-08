@@ -2,7 +2,7 @@ import net from "node:net";
 
 import { afterEach, expect, test } from "vitest";
 
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
 
 import { PassThrough, Writable } from "node:stream";
 

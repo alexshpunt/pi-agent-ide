@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import type { AgentContent, ContentHost } from "pi-agent-resource";
-import { createWebResolver } from "#src/resolver.js";
+import { createWebResolver } from "#src/resolver.ts";
 
 const source = "https://example.test/page";
 const rendered: AgentContent = [{ type: "text", text: "Rendered body" }];

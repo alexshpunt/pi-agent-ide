@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { preserveResponsesToolOmission } from "./responses-tools.js";
+import { preserveResponsesToolOmission } from "./responses-tools.ts";
 
 const ideNames = new Set(["delete", "diff", "search"]);
 

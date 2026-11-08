@@ -7,8 +7,8 @@ import type {
   DoctorSetupAction,
   DoctorSetupCheck,
   DoctorToolSelection,
-} from "#src/api/doctor.js";
-import type { LanguageDefinition, ToolRecipe } from "#src/api/tool-catalog.js";
+} from "#src/api/doctor.ts";
+import type { LanguageDefinition, ToolRecipe } from "#src/api/tool-catalog.ts";
 
 export interface OwnedContribution<T> {
   readonly pluginId: string;

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { createPackagedAgentGuideLoader } from "./index.js";
+import { createPackagedAgentGuideLoader } from "./index.ts";
 
 function guides(files: Map<string, string>) {
   return createPackagedAgentGuideLoader(async (id) => {

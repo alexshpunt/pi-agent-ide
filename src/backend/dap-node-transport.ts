@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
-import type { OwnedDebugAdapter } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
-import { startSshDapTransport, type SshDapTransport } from "./dap-transport.js";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import type { OwnedDebugAdapter } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
+import { startSshDapTransport, type SshDapTransport } from "./dap-transport.ts";
 
 /** Keep Node parent and reverse child connections on one exact target-owned Unix server. */
 export async function prepareSshNodeDebugger(

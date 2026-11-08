@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { createTextDocument } from "pi-agent-text";
 import { truncateHead } from "@earendil-works/pi-coding-agent";
-import { compactReadDetails, restoreReadDetails } from "#src/core/tools/read/persisted-result.js";
+import { compactReadDetails, restoreReadDetails } from "#src/core/tools/read/persisted-result.ts";
 
 test("restores read lines, annotations and truncation from saved output alone", () => {
   const content = "a long original source line with Unicode 🍀\r\nsecond line\r\n";

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { relativeGitSource, resolveGitSource } from "./git-paths.js";
+import { relativeGitSource, resolveGitSource } from "./git-paths.ts";
 
 export interface GitCommandResult {
   readonly code: number;

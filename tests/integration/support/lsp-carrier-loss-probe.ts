@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
-import { startSshCarrierFixture } from "./ssh-carrier-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { findSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.js";
-import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
-import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
+import { startSshCarrierFixture } from "./ssh-carrier-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { findSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.ts";
+import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.ts";
+import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.ts";
 
 /** Cut one real SSH carrier, inspect native absence independently, then restart the language server. */
 export async function probeSshLspCarrierLoss() {

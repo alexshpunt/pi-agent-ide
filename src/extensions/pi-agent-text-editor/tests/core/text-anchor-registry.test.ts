@@ -1,7 +1,7 @@
 import { TextAnchor, type TextAnchorResolver } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { TextAnchorRegistry, TextAnchorResolutionError } from "#src/core/text-anchor-registry.js";
+import { TextAnchorRegistry, TextAnchorResolutionError } from "#src/core/text-anchor-registry.ts";
 
 const POSITION_KIND = "fixture/position";
 const OPERATION_KIND = "fixture/operation";

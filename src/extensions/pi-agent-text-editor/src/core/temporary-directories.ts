@@ -1,6 +1,6 @@
 import path from "node:path";
-import type { DeleteFileAccess } from "#src/api/delete-guard.js";
-import { localFileTransferAccess as localFiles } from "#src/api/native-files.js";
+import type { DeleteFileAccess } from "#src/api/delete-guard.ts";
+import { localFileTransferAccess as localFiles } from "#src/api/native-files.ts";
 
 const temporaryNames = new Set(["tmp", ".tmp", "temp", ".temp"]);
 

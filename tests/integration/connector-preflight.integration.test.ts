@@ -4,7 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import { testArtifactsDir } from "pi-coding-agent-test";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { runConnectorPreflight } from "#capabilities/preflight.ts";
 
 test("free preflight binds actual Pi lifecycle with synthetic auth and network/host isolation", async () => {

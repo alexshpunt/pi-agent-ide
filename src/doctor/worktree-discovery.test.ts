@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import { DoctorCore } from "./core.js";
-import { inspectDoctorSetup } from "./run.js";
-import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.js";
-import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.js";
+import { DoctorCore } from "./core.ts";
+import { inspectDoctorSetup } from "./run.ts";
+import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.ts";
+import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.ts";
 
 // Real executable files test discovery, not formatter or linter output.
 test("rechecks executable availability after dependencies appear in a real worktree", async () => {

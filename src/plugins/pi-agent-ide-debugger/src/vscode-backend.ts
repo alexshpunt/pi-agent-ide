@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { DebugMcpClient } from "./debugmcp-client.js";
+import { DebugMcpClient } from "./debugmcp-client.ts";
 
 /** Marketplace identity of the DebugMCP VS Code extension. */
 export const DEBUGMCP_EXTENSION_ID = "ozzafar.debugmcpextension";

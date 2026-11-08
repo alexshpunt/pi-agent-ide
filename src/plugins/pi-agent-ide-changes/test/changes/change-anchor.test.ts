@@ -5,10 +5,10 @@ import {
   CHANGE_ANCHOR_KIND,
   ChangeTextAnchor,
   createChangeAnchorRegistration,
-} from "#src/change-anchor.js";
-import { createChangeGroups } from "#src/changes/change-groups.js";
+} from "#src/change-anchor.ts";
+import { createChangeGroups } from "#src/changes/change-groups.ts";
 
-import type { GitCommandExecutor, GitCommandResult } from "#src/changes/git-changes-backend.js";
+import type { GitCommandExecutor, GitCommandResult } from "#src/changes/git-changes-backend.ts";
 import type { TextAnchorResolverContext } from "pi-agent-text";
 
 const repositoryRoot = "/repo";

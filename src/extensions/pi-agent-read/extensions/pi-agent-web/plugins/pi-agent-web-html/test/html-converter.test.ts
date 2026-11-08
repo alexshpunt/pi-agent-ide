@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 
-import { extractReadableHtml } from "#src/extract-readable-html.js";
-import { createHtmlContentConverter } from "#src/html-converter.js";
+import { extractReadableHtml } from "#src/extract-readable-html.ts";
+import { createHtmlContentConverter } from "#src/html-converter.ts";
 
 const encoder = new TextEncoder();
 const article = `<!doctype html>

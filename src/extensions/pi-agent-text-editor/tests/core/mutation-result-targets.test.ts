@@ -1,19 +1,19 @@
 import { expect, test, vi } from "vitest";
 import { createTextDocument } from "pi-agent-text";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import {
   committedMutationTargets,
   type OwnedMutationChanges,
-} from "#src/core/mutation-result-targets.js";
+} from "#src/core/mutation-result-targets.ts";
 import { ResultTargetStore } from "pi-agent-resource";
 import {
   attachCommittedMutationTarget,
   attachWriteTarget,
   setMutationSnapshotReader,
-} from "#src/core/mutation-result-targets.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { FileMutationResult } from "#src/api/mutation-result.js";
-import { wholeFileResultSource } from "#src/core/result-input.js";
+} from "#src/core/mutation-result-targets.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { FileMutationResult } from "#src/api/mutation-result.ts";
+import { wholeFileResultSource } from "#src/core/result-input.ts";
 
 test.each([
   ["shell:owned", "terminal-input"],

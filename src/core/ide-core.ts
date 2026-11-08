@@ -1,14 +1,14 @@
-import { registerTools } from "#src/toolchain/registry.js";
+import { registerTools } from "#src/toolchain/registry.ts";
 
-import { DiagnosticStore } from "#src/core/diagnostic-store.js";
+import { DiagnosticStore } from "#src/core/diagnostic-store.ts";
 
 import type {
   IdeDiagnosticSource,
   IdeDiagnosticFileReader,
   IdePlugin,
   IdePluginApi,
-} from "#src/api/plugin-protocol.js";
-import type { IdeTool } from "#src/toolchain/types.js";
+} from "#src/api/plugin-protocol.ts";
+import type { IdeTool } from "#src/toolchain/types.ts";
 
 export interface IdeCore {
   readonly diagnostics: DiagnosticStore;

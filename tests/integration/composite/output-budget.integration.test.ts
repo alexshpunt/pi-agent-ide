@@ -14,7 +14,7 @@ import {
   testArtifactsDir,
   text,
   toolCall as nativeToolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 
 const root = path.resolve();

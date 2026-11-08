@@ -1,7 +1,7 @@
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
-import { createSettingsPanel } from "./settings-panel.js";
+import { createSettingsPanel } from "./settings-panel.ts";
 
 initTheme("dark", false);
 

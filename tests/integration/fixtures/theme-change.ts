@@ -5,12 +5,12 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Container, Image, visibleWidth } from "@earendil-works/pi-tui";
-import { ReadResultPanel } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.js";
-import { SearchResultPanel } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/search-renderer.js";
-import { MutationPanel } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/mutation-panel.js";
-import { createDiffModel } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/diff-model.js";
-import { createSettingsPanel } from "#src/composite/settings-panel.js";
-import { renderRunResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
+import { ReadResultPanel } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.ts";
+import { SearchResultPanel } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/search-renderer.ts";
+import { MutationPanel } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/mutation-panel.ts";
+import { createDiffModel } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/diff-model.ts";
+import { createSettingsPanel } from "#src/composite/settings-panel.ts";
+import { renderRunResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
 
 /** Exercises native theme changes on an existing diff without changing saved settings. */
 export default function themeChangeFixture(pi: ExtensionAPI): void {

@@ -12,11 +12,11 @@ import {
   type ToolCallHeaderDetail,
 } from "pi-agent-tool-ui";
 
-import { createDiffModel, type DiffModel, type DiffRow } from "./diff-model.js";
-import { type DiffPanelResource, renderDiffPanel } from "./diff-renderer.js";
+import { createDiffModel, type DiffModel, type DiffRow } from "./diff-model.ts";
+import { type DiffPanelResource, renderDiffPanel } from "./diff-renderer.ts";
 
-import type { MutationRenderResource } from "./render-resource.js";
-import { summarizeStatuses } from "./status-summary.js";
+import type { MutationRenderResource } from "./render-resource.ts";
+import { summarizeStatuses } from "./status-summary.ts";
 
 type ToolBackground = "toolPendingBg" | "toolSuccessBg" | "toolErrorBg";
 

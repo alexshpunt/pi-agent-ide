@@ -6,20 +6,20 @@ import {
   type ToolCallAnchorRenderPatch,
 } from "pi-agent-tool-call-interception";
 import { singleLine, type ToolCallHeaderDetail } from "pi-agent-tool-ui";
-import { NEXT_TOOL_CALL_DRAIN_MS, type MutationAnimationPressure } from "./animation-pressure.js";
+import { NEXT_TOOL_CALL_DRAIN_MS, type MutationAnimationPressure } from "./animation-pressure.ts";
 
-import { freezeMutationViewports, type FrozenMutationViewports } from "./frozen-viewport.js";
-import { MutationPanel } from "./mutation-panel.js";
+import { freezeMutationViewports, type FrozenMutationViewports } from "./frozen-viewport.ts";
+import { MutationPanel } from "./mutation-panel.ts";
 import {
   advanceTypingProjectionResources,
   extendTypingPreviewResources,
   preserveCompletedTypingRows,
   projectTypingResources,
-} from "./mutation-projection.js";
-import { resolveMutationResultResources } from "./mutation-result.js";
-import { TYPING_FRAME_INTERVAL_MS, TypingInterpolation } from "./typing-interpolation.js";
+} from "./mutation-projection.ts";
+import { resolveMutationResultResources } from "./mutation-result.ts";
+import { TYPING_FRAME_INTERVAL_MS, TypingInterpolation } from "./typing-interpolation.ts";
 
-import type { MutationRenderResource } from "./render-resource.js";
+import type { MutationRenderResource } from "./render-resource.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";

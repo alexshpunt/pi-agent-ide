@@ -1,6 +1,6 @@
 import type { Readable, Writable } from "node:stream";
-import type { ProcessRecipe, ToolRecipe } from "./catalog.js";
-import type { RecipeEvidence } from "./evidence.js";
+import type { ProcessRecipe, ToolRecipe } from "./catalog.ts";
+import type { RecipeEvidence } from "./evidence.ts";
 
 /** Public managed runtime/adapter path overrides. No credentials or general environment are exposed. */
 export const DOCTOR_TOOL_PATH_KEYS = [

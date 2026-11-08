@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
-import { BatchExecutionJournal, type BatchExecutionReporter } from "./text-edit-batch-execution.js";
+import { BatchExecutionJournal, type BatchExecutionReporter } from "./text-edit-batch-execution.ts";
 
-import type { BlockedToolCall, ToolBatchRecoveryDefinition } from "./text-edit-batch-recovery.js";
+import type { BlockedToolCall, ToolBatchRecoveryDefinition } from "./text-edit-batch-recovery.ts";
 import type {
   AgentToolResult,
   AgentToolUpdateCallback,

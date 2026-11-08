@@ -5,7 +5,7 @@ export {
   formatSymbolSelector,
   parseCodeViewReference,
   resolveCodeViewPath,
-} from "#src/code-view/reference.js";
+} from "#src/code-view/reference.ts";
 
 export {
   addDiagnosticAnnotations,
@@ -15,7 +15,7 @@ export {
   type DiagnosticViewOptions,
   formatDiagnosticViewSource,
   resolveDiagnosticViewPath,
-} from "#src/code-view/diagnostic-view.js";
+} from "#src/code-view/diagnostic-view.ts";
 
 export {
   createSourceMappedTextReadHandler,
@@ -26,4 +26,4 @@ export {
   type SourceViewBlock,
   type SourceViewFormatOptions,
   type SourceViewLine,
-} from "#src/code-view/source-view.js";
+} from "#src/code-view/source-view.ts";

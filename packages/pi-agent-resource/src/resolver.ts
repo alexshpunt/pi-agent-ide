@@ -1,4 +1,4 @@
-import type { Resource } from "./resource.js";
+import type { Resource } from "./resource.ts";
 
 export interface ResourceResolverContext {
   readonly cwd: string;

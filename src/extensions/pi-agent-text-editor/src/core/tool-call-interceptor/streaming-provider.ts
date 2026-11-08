@@ -11,7 +11,7 @@ import {
   type Provider,
 } from "@earendil-works/pi-ai";
 
-import type { GuardInterception } from "./coordinator.js";
+import type { GuardInterception } from "./coordinator.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 type StreamSimple = (

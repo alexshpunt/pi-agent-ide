@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { diagnosticEntryData, renderDiagnosticEntry } from "./diagnostic-entry.js";
+import { diagnosticEntryData, renderDiagnosticEntry } from "./diagnostic-entry.ts";
 
 test("one buffered delivery keeps separate tool owners and leaves unowned findings unclaimed", async () => {
-  const { diagnosticEntryGroups } = await import("./diagnostic-entry.js");
+  const { diagnosticEntryGroups } = await import("./diagnostic-entry.ts");
   const notification = (filePath: string, parentToolCallId?: string) => ({
     filePath,
     parentToolCallId,

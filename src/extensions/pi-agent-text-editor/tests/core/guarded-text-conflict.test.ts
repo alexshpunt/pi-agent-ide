@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 
 // The real-Pi parity eval also exercises this race with an actual external file writer.
 test("guarded text batches reread every approved participant before their first write", async () => {

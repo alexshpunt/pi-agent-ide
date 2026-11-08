@@ -1,5 +1,5 @@
-import type { TextEditIntent } from "#src/api/edit-completion.js";
-import type { TextChange, TextChangeDocument } from "#src/core/text-change-engine.js";
+import type { TextEditIntent } from "#src/api/edit-completion.ts";
+import type { TextChange, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import type { ImageContent } from "pi-agent-resource";
 import type { TextAnchor } from "pi-agent-text";
 import type { Static, TSchema } from "typebox";

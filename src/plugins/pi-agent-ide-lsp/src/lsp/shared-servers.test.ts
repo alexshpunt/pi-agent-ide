@@ -4,9 +4,9 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 import { afterEach, expect, test } from "vitest";
 
-import { LspClient } from "./client.js";
-import { requestDiagnostics } from "./diagnostics.js";
-import { LspSharedServers } from "./shared-servers.js";
+import { LspClient } from "./client.ts";
+import { requestDiagnostics } from "./diagnostics.ts";
+import { LspSharedServers } from "./shared-servers.ts";
 
 const SERVER = path.resolve(
   "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",

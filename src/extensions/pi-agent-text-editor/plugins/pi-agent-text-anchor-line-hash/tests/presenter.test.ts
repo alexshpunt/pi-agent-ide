@@ -1,8 +1,8 @@
 import { createTextDocument } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { createLineHashAnchor } from "#src/anchor.js";
-import { createLineHashPresenter } from "#src/read-handler.js";
+import { createLineHashAnchor } from "#src/anchor.ts";
+import { createLineHashPresenter } from "#src/read-handler.ts";
 
 test.each([
   { source: "notes.txt", resolvedBy: "filesystem" },

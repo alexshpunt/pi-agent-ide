@@ -3,14 +3,14 @@ import path from "node:path";
 import os from "node:os";
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { createTextTool } from "#src/core/text-mutation.js";
-import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
-import { deleteMutationTool } from "#src/tools/tool-text-delete.js";
-import { replaceMutationTool } from "#src/tools/tool-text-replace.js";
-import { executeRegisteredTextBatch } from "#src/core/text-edit-batch-registrar.js";
-import { BatchExecutionJournal } from "#src/core/text-edit-batch-execution.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { createTextTool } from "#src/core/text-mutation.ts";
+import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.ts";
+import { deleteMutationTool } from "#src/tools/tool-text-delete.ts";
+import { replaceMutationTool } from "#src/tools/tool-text-replace.ts";
+import { executeRegisteredTextBatch } from "#src/core/text-edit-batch-registrar.ts";
+import { BatchExecutionJournal } from "#src/core/text-edit-batch-execution.ts";
 
 for (const source of ["debug:123456789abc", "debug:123456789abc/breakpoint/123456789a"]) {
   test(`delete routes ${source} through its semantic handler`, async () => {

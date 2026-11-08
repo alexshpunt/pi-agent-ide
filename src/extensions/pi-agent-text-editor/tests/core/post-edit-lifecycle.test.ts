@@ -5,10 +5,10 @@ import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
   type TextEditorPlugin,
-} from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { createPostEditScope } from "#src/core/post-edit-scope.js";
-import { withTextEditOrigin } from "#src/core/text-edit-origin.js";
+} from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { createPostEditScope } from "#src/core/post-edit-scope.ts";
+import { withTextEditOrigin } from "#src/core/text-edit-origin.ts";
 
 test("waits for post-edit work after writing and rereads the final text", async () => {
   const core = createTextEditorCore();

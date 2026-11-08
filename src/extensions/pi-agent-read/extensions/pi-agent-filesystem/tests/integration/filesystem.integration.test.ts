@@ -11,7 +11,7 @@ import type {
   ResourceResolver,
 } from "pi-agent-resource";
 
-import { createFilesystemReadResolver, createFilesystemWriteResolver } from "#src/resolver.js";
+import { createFilesystemReadResolver, createFilesystemWriteResolver } from "#src/resolver.ts";
 
 const tempRoot = path.resolve(".tmp/pi-agent-filesystem");
 

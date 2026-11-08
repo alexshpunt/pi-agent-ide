@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshConfiguredProcessAccess } from "#src/backend/configured-process.js";
-import { runConfiguredProcess } from "#src/api/tool-config.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { SshBackendError } from "#src/backend/ssh.js";
-import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshConfiguredProcessAccess } from "#src/backend/configured-process.ts";
+import { runConfiguredProcess } from "#src/api/tool-config.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { SshBackendError } from "#src/backend/ssh.ts";
+import type { SshProcessChannel } from "#src/backend/ssh-channel.ts";
 
 /** Check actual native cancellation cleanup before fixture teardown, without undoing a command's write. */
 export async function probeOwnedCommandCancellation(

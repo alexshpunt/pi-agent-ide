@@ -7,7 +7,7 @@ import type {
 } from "pi-agent-read/api/tools/read";
 import { createTextDocument } from "pi-agent-text";
 
-import { executeJq, parseJqView } from "#src/jq.js";
+import { executeJq, parseJqView } from "#src/jq.ts";
 
 export interface JqReadHandlerOptions {
   readonly pluginId: string;

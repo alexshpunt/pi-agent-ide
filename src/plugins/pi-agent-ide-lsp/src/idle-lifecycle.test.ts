@@ -2,12 +2,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { createLspDiagnosticSource } from "./diagnostic-source.js";
-import { withLspDocuments } from "./lsp/document-leases.js";
-import { LspManager } from "./lsp/manager.js";
-import { LspServerRegistry } from "./lsp/registry.js";
+import { createLspDiagnosticSource } from "./diagnostic-source.ts";
+import { withLspDocuments } from "./lsp/document-leases.ts";
+import { LspManager } from "./lsp/manager.ts";
+import { LspServerRegistry } from "./lsp/registry.ts";
 
-import type { LspClient } from "./lsp/client.js";
+import type { LspClient } from "./lsp/client.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

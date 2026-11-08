@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { remoteLocation, resolveRemoteLocation } from "./identity.js";
+import { remoteLocation, resolveRemoteLocation } from "./identity.ts";
 
 test("remote file identity keeps the target and round-trips reserved filename characters", () => {
   const file = remoteLocation("one", "/work/a #b?é.txt");

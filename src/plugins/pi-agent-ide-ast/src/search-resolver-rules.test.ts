@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, onTestFinished, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 import { SearchSessionStore } from "pi-agent-search-text/search-session";
-import { createAstSearchResolver, type AstSearchOptions } from "./search-resolver.js";
+import { createAstSearchResolver, type AstSearchOptions } from "./search-resolver.ts";
 
 const python = [
   "def outer(a):",

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   readPiAgentIdeExtensionsConfig,
   resolvePiAgentIdeExtensionsConfigPaths,
-} from "./extensions-config.js";
+} from "./extensions-config.ts";
 
 const temporaryDirectories: string[] = [];
 

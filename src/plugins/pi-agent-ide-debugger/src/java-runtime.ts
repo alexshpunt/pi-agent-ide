@@ -13,8 +13,8 @@ import {
   type MessageConnection,
 } from "vscode-jsonrpc/node";
 
-import { DapClient } from "./dap-client.js";
-import type { DebugSessionOptions } from "./session-manager.js";
+import { DapClient } from "./dap-client.ts";
+import type { DebugSessionOptions } from "./session-manager.ts";
 
 /** Java executable shared by the owned language server and target JVM. */
 export function javaExecutable(env: NodeJS.ProcessEnv = process.env): string {

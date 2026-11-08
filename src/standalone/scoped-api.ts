@@ -8,8 +8,8 @@ import { Type } from "typebox";
 import { toolCallHeader } from "pi-agent-tool-ui";
 import { connectResultTargets } from "pi-agent-resource";
 import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
-import { getLastResolvedResource } from "#src/extensions/pi-agent-text-editor/src/api/last-resolved-resource.js";
-import type { StandaloneResourceHostOptions, StandaloneResourceTool } from "./resource-host.js";
+import { getLastResolvedResource } from "#src/extensions/pi-agent-text-editor/src/api/last-resolved-resource.ts";
+import type { StandaloneResourceHostOptions, StandaloneResourceTool } from "./resource-host.ts";
 
 const verbs: readonly StandaloneResourceTool[] = [
   "read",

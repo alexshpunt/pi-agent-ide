@@ -4,18 +4,18 @@ import {
   IDE_PLUGIN_REGISTER_EVENT,
   IDE_PROTOCOL,
   isIdePluginRegistrationRequest,
-} from "#src/api/plugin-protocol.js";
-import { createIdeCore } from "#src/core/ide-core.js";
-import { createLiveFeatureFlag } from "#src/core/live-feature-flag.js";
-import { createDiagnosticDelivery } from "#src/core/diagnostic-delivery.js";
+} from "#src/api/plugin-protocol.ts";
+import { createIdeCore } from "#src/core/ide-core.ts";
+import { createLiveFeatureFlag } from "#src/core/live-feature-flag.ts";
+import { createDiagnosticDelivery } from "#src/core/diagnostic-delivery.ts";
 import {
   diagnosticEntryGroups,
   DIAGNOSTIC_ENTRY_TYPE,
   registerDiagnosticEntryRenderer,
-} from "#src/core/diagnostic-entry.js";
-import { runIdePostEditGate } from "#src/post-edit/gate.js";
-import { resetRegistry } from "#src/toolchain/registry.js";
-import registerCodeReview from "#src/code-review/extension.js";
+} from "#src/core/diagnostic-entry.ts";
+import { runIdePostEditGate } from "#src/post-edit/gate.ts";
+import { resetRegistry } from "#src/toolchain/registry.ts";
+import registerCodeReview from "#src/code-review/extension.ts";
 import {
   connectTextEditorPostEditHandler,
   afterPostEditScope,

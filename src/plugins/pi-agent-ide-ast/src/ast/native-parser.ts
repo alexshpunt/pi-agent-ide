@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 
 import { Lang, parse, registerDynamicLanguage, type SgNode } from "@ast-grep/napi";
 
-import type { SyntaxNode, SyntaxTree } from "./syntax-tree.js";
+import type { SyntaxNode, SyntaxTree } from "./syntax-tree.ts";
 
 interface DynamicLanguagePackage {
   readonly libraryPath: string;

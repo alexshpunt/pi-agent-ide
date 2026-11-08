@@ -13,20 +13,20 @@ import {
   type DoctorSetupInspection,
 } from "pi-agent-doctor/api/plugin-protocol";
 
-import { resolvePythonDebuggerCommand } from "./adapter-executables.js";
-import { JavaDebugRuntime, javaDebuggerFiles, javaExecutable } from "./java-runtime.js";
+import { resolvePythonDebuggerCommand } from "./adapter-executables.ts";
+import { JavaDebugRuntime, javaDebuggerFiles, javaExecutable } from "./java-runtime.ts";
 import {
   DEBUGGER_LANGUAGE_MATRIX,
   DEBUGGER_RECIPES,
   debuggerRecipeForLanguage,
-} from "./catalog.js";
+} from "./catalog.ts";
 import {
   DEBUGMCP_EXTENSION_ID,
   debugMcpInstalled,
   debugMcpPort,
   debugMcpResponds,
   findVscodeWindow,
-} from "./vscode-backend.js";
+} from "./vscode-backend.ts";
 
 const DEFAULT_JS_DEBUG_PATH = "/opt/pi-debug-adapters/js-debug/src/dapDebugServer.js";
 const DEFAULT_ELIXIR_LS_DEBUG_PATH = "/opt/pi-debug-adapters/elixir-ls/debug_adapter.sh";

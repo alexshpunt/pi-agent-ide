@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { inspectRecipeEvidence } from "./evidence.js";
-import type { ToolRecipe } from "./catalog.js";
+import { inspectRecipeEvidence } from "./evidence.ts";
+import type { ToolRecipe } from "./catalog.ts";
 
 const recipe: ToolRecipe = {
   id: "owned",

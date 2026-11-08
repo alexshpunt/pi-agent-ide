@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshLspTransport } from "#src/backend/lsp-transport.js";
-import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.js";
-import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
-import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
-import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.js";
-import { createLspCompiler } from "#src/plugins/pi-agent-ide-lsp/src/lsp/lsp-compiler.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshLspTransport } from "#src/backend/lsp-transport.ts";
+import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.ts";
+import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.ts";
+import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.ts";
+import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.ts";
+import { createLspCompiler } from "#src/plugins/pi-agent-ide-lsp/src/lsp/lsp-compiler.ts";
 
 test("SSH language server stdio maps owned URIs without mapping source text or local PIDs", async () => {
   const fixture = await startSshFixture();

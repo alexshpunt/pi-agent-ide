@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
-import { attachFileMutationTargets } from "#src/core/file-result-targets.js";
+import { attachFileMutationTargets } from "#src/core/file-result-targets.ts";
 
 test.each(["directory", "symlink"] as const)(
   "a %s transfer receipt cannot follow a remote link or publish text authority",

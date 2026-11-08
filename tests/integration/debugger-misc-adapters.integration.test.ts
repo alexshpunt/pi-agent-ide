@@ -9,14 +9,14 @@ import {
   type DoctorPlugin,
 } from "pi-agent-doctor/api/plugin-protocol";
 
-import { DoctorCore } from "#src/doctor/core.js";
-import { runDoctor } from "#src/doctor/run.js";
-import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.js";
-import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.js";
+import { DoctorCore } from "#src/doctor/core.ts";
+import { runDoctor } from "#src/doctor/run.ts";
+import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
+import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.ts";
 import {
   DebugSessionManager,
   type DebugAdapter,
-} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 interface MiscAdapterCase {
   readonly language: string;

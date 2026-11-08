@@ -1,7 +1,7 @@
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
-import { LANGUAGES } from "./src/languages.js";
+import { LANGUAGES } from "./src/languages.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";

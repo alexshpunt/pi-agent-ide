@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { createFeatureFlags } from "./feature-flags.js";
+import { createFeatureFlags } from "./feature-flags.ts";
 
 test("feature registration supplies discovery and saved defaults together", () => {
   const registerFlag = vi.fn();

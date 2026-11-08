@@ -6,9 +6,9 @@ import type {
   TextAnchorResolverRecoveryContext,
 } from "pi-agent-text";
 
-import { findExactTextMatches } from "./anchor.js";
-import type { ExactTextRecoveryConfig } from "./config.js";
-import { FUZZY_WORKER_SOURCE } from "./fuzzy-worker.js";
+import { findExactTextMatches } from "./anchor.ts";
+import type { ExactTextRecoveryConfig } from "./config.ts";
+import { FUZZY_WORKER_SOURCE } from "./fuzzy-worker.ts";
 
 interface RankedBlock {
   readonly startLine: number;

@@ -1,6 +1,6 @@
-export { formatDiagnostic } from "#src/toolchain/diagnostic.js";
+export { formatDiagnostic } from "#src/toolchain/diagnostic.ts";
 
-export type { IdeTool } from "#src/toolchain/types.js";
+export type { IdeTool } from "#src/toolchain/types.ts";
 
 export {
   type ActiveToolchain,
@@ -16,4 +16,4 @@ export {
   type LintResult,
   type Severity,
   type ToolContext,
-} from "#src/toolchain/types.js";
+} from "#src/toolchain/types.ts";

@@ -1,4 +1,4 @@
-import { resourceErrorMetadataOf, type ResourceErrorMetadata } from "./resource-error-metadata.js";
+import { resourceErrorMetadataOf, type ResourceErrorMetadata } from "./resource-error-metadata.ts";
 
 const resourceErrorBrand = Symbol.for("pi-agent-resource.ResourceError");
 /**

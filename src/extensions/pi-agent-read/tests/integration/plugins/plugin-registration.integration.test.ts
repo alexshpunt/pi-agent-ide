@@ -18,7 +18,7 @@ import {
   generatePluginRegistrationExtensions,
   SYNC_RESOLVER_SOURCE,
   SYNC_RESOLVER_TEXT,
-} from "#tests/integration/test-stand/generate-plugin-registration-extensions.js";
+} from "#tests/integration/test-stand/generate-plugin-registration-extensions.ts";
 
 const generatedExtensions = await generatePluginRegistrationExtensions();
 afterAll(() => generatedExtensions.dispose());

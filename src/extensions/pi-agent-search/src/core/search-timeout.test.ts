@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 
-import { runWithSearchTimeout, SearchTimeoutError } from "#src/core/search-timeout.js";
+import { runWithSearchTimeout, SearchTimeoutError } from "#src/core/search-timeout.ts";
 
 test("fails and aborts a search that exceeds its timeout", async () => {
   vi.useFakeTimers();

@@ -1,4 +1,4 @@
-import { extractReadableHtml } from "./extract-readable-html.js";
+import { extractReadableHtml } from "./extract-readable-html.ts";
 
 import type { ContentConverter } from "pi-agent-resource";
 

@@ -1,4 +1,4 @@
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import type * as canvas from "@napi-rs/canvas";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -7,6 +7,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 type Content = AgentToolResult<unknown>["content"];
+type CanvasModule = typeof canvas;
 
 /** Shared useful-content budgets. Notices and composition metadata are added afterward. */
 export const IDE_OUTPUT_LIMITS = {
@@ -64,8 +65,12 @@ export async function limitIdeOutput(
   const pixelShare = Math.floor(IDE_OUTPUT_LIMITS.pixels / Math.max(1, selected.length));
   let bytes = 0;
   let omitted = candidates.length - selected.length;
+  // The native canvas module takes noticeable time to load, so it loads with the first image.
+  let canvasModule: CanvasModule | undefined;
   for (const [index, block] of selected.entries()) {
     try {
+      canvasModule ??= await import("@napi-rs/canvas");
+      const { createCanvas, loadImage } = canvasModule;
       const original = Buffer.from(block.data, "base64");
       const decoded = await loadImage(original);
       const scale = Math.min(1, Math.sqrt(pixelShare / (decoded.width * decoded.height)));

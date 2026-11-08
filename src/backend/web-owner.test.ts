@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
-import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.js";
-import { createSshWebResolver, parseSshWebSource } from "./web-owner.js";
-import { SshBackendRegistry } from "./registry.js";
+import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.ts";
+import { createSshWebResolver, parseSshWebSource } from "./web-owner.ts";
+import { SshBackendRegistry } from "./registry.ts";
 
 const source = "web:ssh://fixture/https://example.test/note";
 

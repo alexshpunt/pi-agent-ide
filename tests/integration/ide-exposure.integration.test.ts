@@ -23,7 +23,7 @@ import {
   text,
   toolCall,
   type PiIntegrationTestResult,
-} from "./support/pi-runtime/native-pi-coding-agent-test.js";
+} from "./support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 
 const entry = path.resolve("src/pi-agent-ide.ts");

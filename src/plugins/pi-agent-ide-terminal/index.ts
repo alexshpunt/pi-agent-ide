@@ -1,26 +1,26 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerIdeCapability } from "#src/api/capabilities.js";
+import { registerIdeCapability } from "#src/api/capabilities.ts";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   forgetReloadResource,
   retainReloadResource,
   takeReloadResource,
-} from "#src/core/reload-resource-store.js";
-import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
-import { terminalProcessProvider } from "#src/plugins/pi-agent-ide-terminal/src/process-provider.js";
-import { registerTerminalResources } from "#src/plugins/pi-agent-ide-terminal/src/resources.js";
-import { registerTerminalSearch } from "#src/plugins/pi-agent-ide-terminal/src/search.js";
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { observeQueuedSteering } from "#src/plugins/pi-agent-ide-terminal/src/steering.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
-import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
-import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
-import { registerTerminalOrigins } from "#src/plugins/pi-agent-ide-terminal/src/origin.js";
-import { toolPresentation } from "#src/composite/presentation.js";
-import type { BuiltinExtensionContext } from "#src/composite/selection.js";
-import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { readSshTargets, resolveSshConfigPaths } from "#src/backend/config.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
+} from "#src/core/reload-resource-store.ts";
+import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.ts";
+import { terminalProcessProvider } from "#src/plugins/pi-agent-ide-terminal/src/process-provider.ts";
+import { registerTerminalResources } from "#src/plugins/pi-agent-ide-terminal/src/resources.ts";
+import { registerTerminalSearch } from "#src/plugins/pi-agent-ide-terminal/src/search.ts";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { observeQueuedSteering } from "#src/plugins/pi-agent-ide-terminal/src/steering.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.ts";
+import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.ts";
+import { registerTerminalOrigins } from "#src/plugins/pi-agent-ide-terminal/src/origin.ts";
+import { toolPresentation } from "#src/composite/presentation.ts";
+import type { BuiltinExtensionContext } from "#src/composite/selection.ts";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { readSshTargets, resolveSshConfigPaths } from "#src/backend/config.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
 
 /** Register the platform-aware terminal runner and shell session resources. */
 export default async function registerTerminal(

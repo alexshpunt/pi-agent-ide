@@ -1,4 +1,4 @@
-import type { ContentDescription } from "./content-converter.js";
+import type { ContentDescription } from "./content-converter.ts";
 
 export function renderContentDescription(
   summary: string,

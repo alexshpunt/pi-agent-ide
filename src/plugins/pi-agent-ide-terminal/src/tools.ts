@@ -1,6 +1,6 @@
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { SshBackendRegistry } from "#src/backend/registry.js";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
 
 import {
   defineTool,
@@ -10,28 +10,28 @@ import {
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 
-import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.js";
+import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.ts";
 import {
   formatAgentTerminalSnapshot,
   terminalOutputTail,
-} from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/output-limits.ts";
 import {
   shellOutputSchema,
   structuredShellResult,
-} from "#src/plugins/pi-agent-ide-terminal/src/shell-result.js";
-import { renderRunCall, renderRunResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/shell-result.ts";
+import { renderRunCall, renderRunResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
 
 import {
   shellSyntaxGuidance,
   remoteBashProfile,
-} from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
-import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import type { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import type { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.ts";
 import type {
   ShellProfile,
   TerminalExecutionOrigin,
   TerminalSessionSnapshot,
-} from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const createRunParameters = (profile: ShellProfile) =>
   Type.Object(

@@ -5,7 +5,7 @@ import {
   type PresentedTextRow,
   renderPresentedTextRows,
   type TextChangeMarker,
-} from "./presented-text.js";
+} from "./presented-text.ts";
 
 export interface TextLinePresentation {
   readonly prefix?: string;

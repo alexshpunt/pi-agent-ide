@@ -9,8 +9,8 @@ import {
   type TextSelectionPosition,
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
-import type { ExactTextRecoveryConfig } from "./config.js";
-import { recoverExactText } from "./recovery.js";
+import type { ExactTextRecoveryConfig } from "./config.ts";
+import { recoverExactText } from "./recovery.ts";
 
 /** Text with CRLF and CR line breaks normalized to LF, and a map back to source offsets. */
 interface NormalizedText {

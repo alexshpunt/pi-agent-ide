@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { recoverFilesystemPath } from "#src/path-recovery.js";
+import { recoverFilesystemPath } from "#src/path-recovery.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

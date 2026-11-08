@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { executeFileOperation } from "#pi-agent-text-editor/core/file-operations.js";
+import { executeFileOperation } from "#pi-agent-text-editor/core/file-operations.ts";
 import { mkdir, mkdtemp, readFile, rm, writeFile, access, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

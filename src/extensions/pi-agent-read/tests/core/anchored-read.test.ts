@@ -2,8 +2,8 @@ import { DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import { ResourceError, type ResourceResolver } from "pi-agent-resource";
 import { expect, test } from "vitest";
 
-import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
-import type { FragmentResolverRegistration } from "#src/api/tools/read.js";
+import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.ts";
+import type { FragmentResolverRegistration } from "#src/api/tools/read.ts";
 
 const TEN_LINES = Array.from({ length: 10 }, (_, index) => `l${index + 1}`).join("\n");
 

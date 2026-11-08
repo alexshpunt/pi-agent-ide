@@ -9,11 +9,11 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 import { capabilityCases } from "#capabilities/cases.ts";
 import { validateRoute, type RunEvent } from "#capabilities/validation.ts";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 async function prepare(cwd: string): Promise<string> {

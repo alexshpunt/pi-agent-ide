@@ -1,9 +1,9 @@
 import { createTextDocument, type TextAnchorResolverContext } from "pi-agent-text";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
 import { expect, test } from "vitest";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
-import { TextAnchorRegistry } from "#src/core/text-anchor-registry.js";
-import { TextChangeDocument } from "#src/core/text-change-engine.js";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
+import { TextAnchorRegistry } from "#src/core/text-anchor-registry.ts";
+import { TextChangeDocument } from "#src/core/text-change-engine.ts";
 
 const source = "/workspace/notes.txt";
 function context(content: string): TextAnchorResolverContext {

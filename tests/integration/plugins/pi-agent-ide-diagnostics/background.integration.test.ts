@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, test } from "vitest";
 import { generateReadExtensions } from "pi-agent-read/testing";
-import type { DiagnosticEntryData } from "#src/core/diagnostic-entry.js";
-import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+import type { DiagnosticEntryData } from "#src/core/diagnostic-entry.ts";
+import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import {
   assistantMessage,
   getToolExecution,

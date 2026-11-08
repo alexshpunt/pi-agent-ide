@@ -18,15 +18,15 @@ import { mutationDataSchema } from "pi-agent-text-editor/api/mutation-result";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
-import { renderTerminalScreen } from "#src/plugins/pi-agent-ide-terminal/src/screen-image.js";
+import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.ts";
+import { renderTerminalScreen } from "#src/plugins/pi-agent-ide-terminal/src/screen-image.ts";
 import {
   renderTerminalAction,
   renderTerminalActionResult,
   renderTerminalResult,
-} from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
-import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
+import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const WRITE_PREFIX = "\u0000pi-terminal-write\u0000";
 const KEYS_PREFIX = "\u0000pi-terminal-keys\u0000";

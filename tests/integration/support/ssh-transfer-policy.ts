@@ -1,6 +1,6 @@
 import type { FileOperationPolicy } from "pi-agent-text-editor/api/plugin-protocol";
-import { prepareDeletion } from "#src/extensions/pi-agent-text-editor/src/core/delete-policy.js";
-import { prepareObjectTransfer } from "#src/extensions/pi-agent-text-editor/src/core/file-transfers.js";
+import { prepareDeletion } from "#src/extensions/pi-agent-text-editor/src/core/delete-policy.ts";
+import { prepareObjectTransfer } from "#src/extensions/pi-agent-text-editor/src/core/file-transfers.ts";
 
 /** Real shared host policy for transport-only tests; no implicit approval for tracked removals. */
 export const sshTransferPolicy: FileOperationPolicy = {

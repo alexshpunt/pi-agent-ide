@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { DEFAULT_EXACT_TEXT_RECOVERY_CONFIG, loadExactTextRecoveryConfig } from "#src/config.js";
+import { DEFAULT_EXACT_TEXT_RECOVERY_CONFIG, loadExactTextRecoveryConfig } from "#src/config.ts";
 
 const directories: string[] = [];
 afterEach(async () =>

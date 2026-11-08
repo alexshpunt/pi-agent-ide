@@ -1,9 +1,9 @@
 import path from "node:path";
-import type { ConfiguredProcessAccess } from "#src/api/tool-config.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { sshProjectEnvironment } from "./process-environment.js";
-import { SshBackendError } from "./ssh.js";
-import { runOwnedSshCommand } from "./owned-command.js";
+import type { ConfiguredProcessAccess } from "#src/api/tool-config.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { sshProjectEnvironment } from "./process-environment.ts";
+import { SshBackendError } from "./ssh.ts";
+import { runOwnedSshCommand } from "./owned-command.ts";
 
 /** Run configured exact argv in the source owner's project environment. */
 export function createSshConfiguredProcessAccess(

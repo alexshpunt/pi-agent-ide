@@ -1,7 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.js";
-import { mutationOutcome } from "./structured-result.js";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
+import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.ts";
+import { mutationOutcome } from "./structured-result.ts";
 
 /** Keep hook feedback and short problem notices without copying diagnostics, diffs, or file text. */
 export function writeProblemNotices(results: readonly FileMutationResult[]): string[] {

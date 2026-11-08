@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { SearchEnvironment, SearchSelectionRegistration } from "pi-agent-search/api/search";
-import { createAstSearchResolver } from "#src/search-resolver.js";
+import { createAstSearchResolver } from "#src/search-resolver.ts";
 
 test("structural search keeps its executor, snapshots and presentation on the resource owner", async () => {
   const source = "ssh://fixture/work/note.ts";

@@ -1,6 +1,6 @@
-import type { TipContext } from "#src/api/tips.js";
+import type { TipContext } from "#src/api/tips.ts";
 import { expect, test, vi } from "vitest";
-import { createSetupHintProvider } from "./setup-hint.js";
+import { createSetupHintProvider } from "./setup-hint.ts";
 
 const context: TipContext = {
   cwd: "/first-project",

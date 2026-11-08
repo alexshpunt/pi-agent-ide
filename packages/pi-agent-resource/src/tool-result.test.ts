@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { assertJsonData, structuredResultSchema, withStructuredResult } from "./tool-result.js";
+import { assertJsonData, structuredResultSchema, withStructuredResult } from "./tool-result.ts";
 
 const schema = Type.Object({ count: Type.Integer() }, { additionalProperties: false });
 const result = {

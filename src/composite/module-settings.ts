@@ -1,30 +1,30 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Input } from "@earendil-works/pi-tui";
-import { BUILTIN_EXTENSIONS } from "./builtin-extensions.js";
+import { BUILTIN_EXTENSIONS } from "./builtin-extensions.ts";
 import {
   configuredFeatureFlags,
   readExtensionSettingsScope,
   readPiAgentIdeExtensionsConfig,
   resolvePiAgentIdeExtensionsConfigPaths,
   type PiAgentIdeExtensionsConfig,
-} from "./extensions-config.js";
-import type { FeatureFlag } from "./feature-flags.js";
-import type { AgentIdePreference } from "./preferences.js";
-import { AGENT_IDE_PRESET_OPTIONS, disabledByPreset, type AgentIdePreset } from "./presets.js";
-import { saveModuleChoices, type ModuleChoice } from "./module-settings-store.js";
-import { createSettingsPanel } from "./settings-panel.js";
-import { selectBuiltinExtensions } from "./selection.js";
+} from "./extensions-config.ts";
+import type { FeatureFlag } from "./feature-flags.ts";
+import type { AgentIdePreference } from "./preferences.ts";
+import { AGENT_IDE_PRESET_OPTIONS, disabledByPreset, type AgentIdePreset } from "./presets.ts";
+import { saveModuleChoices, type ModuleChoice } from "./module-settings-store.ts";
+import { createSettingsPanel } from "./settings-panel.ts";
+import { selectBuiltinExtensions } from "./selection.ts";
 import {
   flagRequiresReload,
   pendingReloadChanges,
   preferenceRequiresReload,
-} from "./reload-required.js";
-import { IDE_PRESENTATION_CHANGED } from "./live-presentation.js";
-import { IDE_FEATURE_FLAGS_CHANGED } from "#src/core/live-feature-flag.js";
+} from "./reload-required.ts";
+import { IDE_PRESENTATION_CHANGED } from "./live-presentation.ts";
+import { IDE_FEATURE_FLAGS_CHANGED } from "#src/core/live-feature-flag.ts";
 import {
   SEMANTIC_SETTINGS_CHANGED_EVENT,
   type SemanticSettingsChanged,
-} from "#src/semantic/extension.js";
+} from "#src/semantic/extension.ts";
 
 /** Keep settings available even when every optional module is disabled. */
 export function registerModuleSettings(

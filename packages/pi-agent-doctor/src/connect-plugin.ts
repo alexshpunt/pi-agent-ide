@@ -2,9 +2,9 @@ import {
   DOCTOR_CORE_READY_EVENT,
   DOCTOR_PLUGIN_REGISTER_EVENT,
   isDoctorCoreReady,
-} from "./plugin-protocol.js";
+} from "./plugin-protocol.ts";
 
-import type { DoctorPlugin, DoctorPluginRegistrationRequest } from "./plugin-protocol.js";
+import type { DoctorPlugin, DoctorPluginRegistrationRequest } from "./plugin-protocol.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**

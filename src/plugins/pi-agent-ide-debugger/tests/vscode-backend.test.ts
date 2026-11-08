@@ -5,12 +5,12 @@ import path from "node:path";
 
 import { afterEach, expect, test, vi } from "vitest";
 
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 import {
   isInside,
   vscodePath,
   VscodeDebugSession,
-} from "#src/plugins/pi-agent-ide-debugger/src/vscode-backend.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/vscode-backend.ts";
 
 const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => {

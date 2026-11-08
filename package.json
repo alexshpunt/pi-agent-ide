@@ -200,8 +200,9 @@
   },
   "scripts": {
     "prepare": "husky install",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:catalog && pnpm check:capabilities && pnpm check:package",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:imports && pnpm check:catalog && pnpm check:capabilities && pnpm check:package",
     "check:boundaries": "oxnode scripts/check-package-boundaries.ts",
+    "check:imports": "oxnode scripts/check-import-extensions.ts",
     "check:catalog": "oxnode scripts/generate-tool-catalog.ts --check",
     "check:capabilities": "node benchmarks/tool-capabilities/cli.ts --check",
     "check:package": "oxnode scripts/build-public-package.ts",

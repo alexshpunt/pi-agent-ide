@@ -1,12 +1,12 @@
 import { Box, Container } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 
-import { renderTerminalResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
-import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
+import { renderTerminalResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
+import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
 import type {
   TerminalSession,
   TerminalSessionSnapshot,
-} from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const COMPLETION_DELAY_MS = 120;
 const DEFAULT_STALE_INTERVAL_MS = 120_000;

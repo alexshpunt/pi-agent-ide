@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { remoteLocation } from "#src/backend/identity.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.js";
+import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { remoteLocation } from "#src/backend/identity.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.ts";
 
 test("streamed transfers preserve external edits and clean unpublished staging files", async () => {
   const fixture = await startSshFixture();

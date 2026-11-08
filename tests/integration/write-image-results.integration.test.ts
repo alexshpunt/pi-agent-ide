@@ -10,9 +10,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { FIXTURE_FRAMES } from "#integration/support/image-classifier-fixture.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { FIXTURE_FRAMES } from "#integration/support/image-classifier-fixture.ts";
 
 const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
+import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.ts";
 import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
 import {
   hasConfiguredExecutable,

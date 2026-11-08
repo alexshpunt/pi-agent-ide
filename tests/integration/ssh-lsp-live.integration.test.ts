@@ -1,16 +1,16 @@
 import { expect, test } from "vitest";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { SshBackendError, type SshBackend } from "#src/backend/ssh.js";
-import { createSshLspTransport } from "#src/backend/lsp-transport.js";
-import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.js";
-import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
-import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
-import { searchSymbols } from "#src/plugins/pi-agent-ide-lsp/src/lsp/symbol-search.js";
-import { readLspSymbolGraph } from "#src/plugins/pi-agent-ide-lsp/src/lsp/code-views.js";
-import { sshProjectExecutableAvailability } from "#src/backend/process-environment.js";
-import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.js";
-import { completedDiagnosticAdapter } from "#src/plugins/pi-agent-ide-lsp/src/lsp/diagnostic-adapters.js";
-import { createLspCompiler } from "#src/plugins/pi-agent-ide-lsp/src/lsp/lsp-compiler.js";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { SshBackendError, type SshBackend } from "#src/backend/ssh.ts";
+import { createSshLspTransport } from "#src/backend/lsp-transport.ts";
+import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.ts";
+import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.ts";
+import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.ts";
+import { searchSymbols } from "#src/plugins/pi-agent-ide-lsp/src/lsp/symbol-search.ts";
+import { readLspSymbolGraph } from "#src/plugins/pi-agent-ide-lsp/src/lsp/code-views.ts";
+import { sshProjectExecutableAvailability } from "#src/backend/process-environment.ts";
+import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.ts";
+import { completedDiagnosticAdapter } from "#src/plugins/pi-agent-ide-lsp/src/lsp/diagnostic-adapters.ts";
+import { createLspCompiler } from "#src/plugins/pi-agent-ide-lsp/src/lsp/lsp-compiler.ts";
 
 const host = process.env.PI_IDE_SSH_SMOKE_HOST;
 

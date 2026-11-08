@@ -16,8 +16,8 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const runFile = promisify(execFile);
 const extensions = createExtensionSet();

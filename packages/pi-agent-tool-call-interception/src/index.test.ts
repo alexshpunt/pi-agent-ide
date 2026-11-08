@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { expect, test } from "vitest";
 
-import { ToolCallInterceptionRenderStore, withToolCallInterceptionRendering } from "./index.js";
+import { ToolCallInterceptionRenderStore, withToolCallInterceptionRendering } from "./index.ts";
 
 import {
   keyHint,

@@ -13,7 +13,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
 const execute = promisify(execFile);
 const enabled = process.env.PI_DEBUGGER_JVM_LANGUAGE === "java";

@@ -1,8 +1,8 @@
-import { probeOwnedCommandCancellation } from "#integration/support/ssh-command-probe.js";
+import { probeOwnedCommandCancellation } from "#integration/support/ssh-command-probe.ts";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
 
 test.each(["cancel", "deadline"] as const)(
   "ordinary SSH execute %s reaps its native command before returning, without rolling back its write",

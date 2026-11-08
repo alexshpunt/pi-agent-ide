@@ -3,14 +3,14 @@ import { requiredValue } from "pi-agent-invariant";
 import { FileMutationResult } from "pi-agent-text-editor/api/mutation-result";
 import { describe, expect, test } from "vitest";
 
-import { freezeMutationViewports, projectFinalResources } from "#src/frozen-viewport.js";
+import { freezeMutationViewports, projectFinalResources } from "#src/frozen-viewport.ts";
 
-import { resolveMutationResultResources } from "#src/mutation-result.js";
+import { resolveMutationResultResources } from "#src/mutation-result.ts";
 import {
   advanceTypingProjectionResources,
   preserveCompletedTypingRows,
   projectTypingResources,
-} from "#src/mutation-projection.js";
+} from "#src/mutation-projection.ts";
 
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 

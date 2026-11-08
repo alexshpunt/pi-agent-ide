@@ -2,11 +2,11 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 
-import { compactSearchDetails, restoreSearchDetails } from "#src/persisted-result.js";
-import { createFuzzyPresentation, isSearchToolDetails } from "#src/search-result.js";
-import { SearchResultPanel } from "#src/search-renderer.js";
+import { compactSearchDetails, restoreSearchDetails } from "#src/persisted-result.ts";
+import { createFuzzyPresentation, isSearchToolDetails } from "#src/search-result.ts";
+import { SearchResultPanel } from "#src/search-renderer.ts";
 
-import type { SearchToolDetails } from "#src/search-result.js";
+import type { SearchToolDetails } from "#src/search-result.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
 initTheme("dark");

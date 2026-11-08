@@ -1,8 +1,8 @@
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { retainReloadResource } from "#src/core/reload-resource-store.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { retainReloadResource } from "#src/core/reload-resource-store.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 /** Seed an ended session and exercise cleanup through real Pi tool routing. */
 export default function terminatedDebugFixture(pi: ExtensionAPI): void {

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { createAstOutlineResolver } from "#src/outline-resolver.js";
+import { createAstOutlineResolver } from "#src/outline-resolver.ts";
 
 test("explicit SSH outlines parse the owner snapshot and keep source mappings remote", async () => {
   const source = "ssh://fixture/work/example.ts";

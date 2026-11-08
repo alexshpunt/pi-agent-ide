@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { isDiffStatusContribution } from "./post-edit.js";
+import { isDiffStatusContribution } from "./post-edit.ts";
 
 test("post-edit status contributions accept plain display data and reject invalid entries", () => {
   expect(

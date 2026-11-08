@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
 
 test.each([256 * 1024, 32 * 1024 * 1024])(
   "guarded Git publication keeps exact %i-byte stdin and an outside-workspace native repository",

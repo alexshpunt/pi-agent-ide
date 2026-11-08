@@ -1,7 +1,7 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectResultImages, connectResultTargets } from "pi-agent-resource";
-import { setMutationSnapshotReader } from "./mutation-result-targets.js";
-import { registerTextEditOrigins } from "./text-edit-origin.js";
+import { setMutationSnapshotReader } from "./mutation-result-targets.ts";
+import { registerTextEditOrigins } from "./text-edit-origin.ts";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -13,26 +13,26 @@ import {
   clearLastResolvedResource,
   getLastResolvedResource,
   rememberLastResolvedResource,
-} from "#src/api/last-resolved-resource.js";
+} from "#src/api/last-resolved-resource.ts";
 import {
   isTextEditorPluginRegistrationRequest,
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_CORE_READY_EVENT,
   TEXT_EDITOR_PLUGIN_REGISTER_EVENT,
   TEXT_EDITOR_PROTOCOL,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 import {
   isTextPostEditHandlerRegistrationRequest,
   TEXT_EDITOR_POST_EDIT_REGISTER_EVENT,
-} from "#src/api/post-edit.js";
-import { setTextAnchorRecoveryReader } from "#src/core/text-anchor-recovery.js";
-import { setTextEditBatchRenderArgumentSink } from "#src/core/text-edit-batch-registrar.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { createResultTargetAnchors } from "#src/core/result-target-anchors.js";
-import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.js";
-import { createTextTool } from "#src/core/text-mutation.js";
-import { registerDiff } from "#src/core/diff-tool.js";
-import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
+} from "#src/api/post-edit.ts";
+import { setTextAnchorRecoveryReader } from "#src/core/text-anchor-recovery.ts";
+import { setTextEditBatchRenderArgumentSink } from "#src/core/text-edit-batch-registrar.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { createResultTargetAnchors } from "#src/core/result-target-anchors.ts";
+import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.ts";
+import { createTextTool } from "#src/core/text-mutation.ts";
+import { registerDiff } from "#src/core/diff-tool.ts";
+import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.ts";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
 
 export default async function registerTextEditorCore(

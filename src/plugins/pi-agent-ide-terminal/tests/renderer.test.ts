@@ -1,7 +1,7 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
 
-import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
+import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.ts";
 
 import {
   outputTail,
@@ -9,8 +9,8 @@ import {
   renderRunResult,
   renderTerminalActionResult,
   terminalCardLines,
-} from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const theme = { fg: (_color: never, text: string) => text } as never;
 

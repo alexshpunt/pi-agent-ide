@@ -1,9 +1,9 @@
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 
-import { isContentConverterRegistration, isContentTarget } from "./validation.js";
+import { isContentConverterRegistration, isContentTarget } from "./validation.ts";
 
-import type { ContentConverterRegistration, ContentTarget } from "./content-converter.js";
+import type { ContentConverterRegistration, ContentTarget } from "./content-converter.ts";
 
 export const CONTENT_PROTOCOL = "pi-agent-resource/content-conversion";
 

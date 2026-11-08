@@ -2,12 +2,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
 import type { FileOperationPolicy } from "pi-agent-text-editor/api/plugin-protocol";
-import type { BeforeDeleteEvent } from "#src/extensions/pi-agent-text-editor/src/api/delete-guard.js";
-import { prepareDeletion } from "#src/extensions/pi-agent-text-editor/src/core/delete-policy.js";
-import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.js";
+import type { BeforeDeleteEvent } from "#src/extensions/pi-agent-text-editor/src/api/delete-guard.ts";
+import { prepareDeletion } from "#src/extensions/pi-agent-text-editor/src/core/delete-policy.ts";
+import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.ts";
 
 test.each(["defaults", "settings", "recheck"] as const)(
   "SSH temporary Delete uses target-owned %s",

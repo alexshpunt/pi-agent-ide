@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 import { Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
-import { astSearchSchema } from "#src/plugins/pi-agent-ide-ast/src/tool-ast-search.js";
-import { lspSearchSchema } from "#src/plugins/pi-agent-ide-lsp/src/tool-lsp-search.js";
+import { astSearchSchema } from "#src/plugins/pi-agent-ide-ast/src/tool-ast-search.ts";
+import { lspSearchSchema } from "#src/plugins/pi-agent-ide-lsp/src/tool-lsp-search.ts";
 
 test.each([
   ["ast_search", astSearchSchema],

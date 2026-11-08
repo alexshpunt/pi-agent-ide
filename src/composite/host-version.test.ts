@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { assertSupportedHost, hostOwnsToolLoadout } from "./host-version.js";
+import { assertSupportedHost, hostOwnsToolLoadout } from "./host-version.ts";
 
 // Older hosts must fail clearly before IDE modules can call unavailable APIs.
 test.each(["0.84.2", "0.99.0", "0.99.1-beta.1", "unknown"])(

@@ -9,7 +9,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "./support/pi-runtime/native-pi-coding-agent-test.js";
+} from "./support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 
 const extension = path.resolve("tests/integration/fixtures/semantic-search.ts");

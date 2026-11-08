@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { AstScopeManager, withParsedDocument } from "./manager.js";
-import { isSupportedOutlinePath } from "./outline.js";
+import { AstScopeManager, withParsedDocument } from "./manager.ts";
+import { isSupportedOutlinePath } from "./outline.ts";
 
 const languageSamples: Readonly<Record<string, string>> = {
   "sample.sh": "echo hello",

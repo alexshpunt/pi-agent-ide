@@ -1,8 +1,8 @@
 import path from "node:path";
-import { loadTemporaryDirectories } from "./temporary-directories.js";
+import { loadTemporaryDirectories } from "./temporary-directories.ts";
 import { requiredValue } from "pi-agent-invariant";
-import type { BeforeDeleteEvent, DeleteFileAccess } from "#src/api/delete-guard.js";
-import { localFileTransferAccess as localFiles } from "#src/api/native-files.js";
+import type { BeforeDeleteEvent, DeleteFileAccess } from "#src/api/delete-guard.ts";
+import { localFileTransferAccess as localFiles } from "#src/api/native-files.ts";
 
 /** Host-only deletion dependencies; these are not agent parameters. */
 export interface DeletePolicyContext {

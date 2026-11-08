@@ -4,7 +4,7 @@ Runtime for intercepting streamed Pi tool calls.
 
 import { Allow } from "partial-json";
 import { assertJsonData, resultError, withStructuredResult } from "pi-agent-resource";
-import { mutationDataSchema } from "#src/core/structured-result.js";
+import { mutationDataSchema } from "#src/core/structured-result.ts";
 import {
   isToolCallAnnotation,
   type ToolCallAnnotation,
@@ -12,13 +12,13 @@ import {
 } from "pi-agent-tool-call-interception";
 import { Guard } from "typebox-guard/guard";
 
-import { resolvePartial } from "./partial-json-resolver.js";
+import { resolvePartial } from "./partial-json-resolver.ts";
 import {
   type PartialToolRecoveryBatchEntry,
   PartialToolRecoveryRegistry,
   type PartialToolRecoveryResult,
-} from "./partial-tool-recovery.js";
-import { registerStreamingInterceptorProvider } from "./streaming-provider.js";
+} from "./partial-tool-recovery.ts";
+import { registerStreamingInterceptorProvider } from "./streaming-provider.ts";
 
 import type {
   AgentToolResult,

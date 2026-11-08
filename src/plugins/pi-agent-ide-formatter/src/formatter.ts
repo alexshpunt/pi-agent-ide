@@ -5,8 +5,8 @@ import {
 } from "pi-agent-ide/api/tool-config";
 import path from "node:path";
 
-import { FORMATTER_RECIPES } from "./catalog.js";
-import { FormatterCommandRegistry } from "./registry.js";
+import { FORMATTER_RECIPES } from "./catalog.ts";
+import { FormatterCommandRegistry } from "./registry.ts";
 
 import type { Formatter } from "pi-agent-ide/api/toolchain";
 import type { FormatterCommandConfig } from "pi-agent-ide/api/tool-config";

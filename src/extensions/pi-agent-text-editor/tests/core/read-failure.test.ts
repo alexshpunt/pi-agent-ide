@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 
 test.each(["inspect", "preview", "editText", "editTexts"] as const)(
   "%s reports the read failure cause without running mutations",

@@ -1,12 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectReadPlugin, READ_API_VERSION, READ_PROTOCOL, type ReadRequest } from "./read.js";
+import { connectReadPlugin, READ_API_VERSION, READ_PROTOCOL, type ReadRequest } from "./read.ts";
 import {
   connectTextEditorPlugin,
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
   type AppliedTextChange,
   type TextDocument,
-} from "./text-editor.js";
+} from "./text-editor.ts";
 
 import type { BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";
 export type { BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { TextEditorCore } from "./text-editor-core.js";
+import type { TextEditorCore } from "./text-editor-core.ts";
 
 const activeOrigin = new AsyncLocalStorage<string>();
 const executionRoots = new WeakMap<TextEditorCore, Map<string, string>>();

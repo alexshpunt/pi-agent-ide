@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import { recoverExactText } from "#src/recovery.js";
-import { DEFAULT_EXACT_TEXT_RECOVERY_CONFIG } from "#src/config.js";
+import { recoverExactText } from "#src/recovery.ts";
+import { DEFAULT_EXACT_TEXT_RECOVERY_CONFIG } from "#src/config.ts";
 
 function context(content: string, code: "missing" | "ambiguous") {
   return {

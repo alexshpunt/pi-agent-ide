@@ -4,12 +4,12 @@ import {
   freezeMutationViewports,
   type FrozenMutationViewports,
   projectFinalResources,
-} from "./frozen-viewport.js";
+} from "./frozen-viewport.ts";
 
-import type { MutationRenderResource } from "./render-resource.js";
+import type { MutationRenderResource } from "./render-resource.ts";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 
-import type { PersistedMutationDetails } from "./persisted-result.js";
+import type { PersistedMutationDetails } from "./persisted-result.ts";
 
 interface PersistedTextChange {
   readonly fromA: number;

@@ -2,12 +2,12 @@ import { access, readFile } from "node:fs/promises";
 import { afterEach, describe, expect, test } from "vitest";
 import { loadImage } from "@napi-rs/canvas";
 
-import { renderTerminalScreen } from "#src/plugins/pi-agent-ide-terminal/src/screen-image.js";
+import { renderTerminalScreen } from "#src/plugins/pi-agent-ide-terminal/src/screen-image.ts";
 import {
   encodeTerminalKeys,
   TerminalSessionManager,
-} from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 
 const managers: TerminalSessionManager[] = [];
 

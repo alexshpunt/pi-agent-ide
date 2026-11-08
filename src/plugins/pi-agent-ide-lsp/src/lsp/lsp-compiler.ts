@@ -1,8 +1,8 @@
-import { requestDiagnostics } from "./diagnostics.js";
-import { withLspDocuments } from "./document-leases.js";
+import { requestDiagnostics } from "./diagnostics.ts";
+import { withLspDocuments } from "./document-leases.ts";
 
-import type { LspClient } from "./client.js";
-import type { LspManager } from "./manager.js";
+import type { LspClient } from "./client.ts";
+import type { LspManager } from "./manager.ts";
 import type { Compiler, Diagnostic, ToolContext } from "pi-agent-ide/api/toolchain";
 
 /**

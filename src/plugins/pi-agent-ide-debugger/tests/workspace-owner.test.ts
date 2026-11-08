@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
-import type { DebugWorkspaceOwner } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.js";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
+import type { DebugWorkspaceOwner } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.ts";
 
 function owner(key: string, readText: DebugWorkspaceOwner["readText"]): DebugWorkspaceOwner {
   return {

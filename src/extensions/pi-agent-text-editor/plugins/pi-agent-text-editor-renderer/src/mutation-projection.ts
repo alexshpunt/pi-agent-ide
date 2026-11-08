@@ -6,9 +6,9 @@ import {
   type DiffModel,
   type DiffRow,
   type DiffTextRange,
-} from "./diff-model.js";
+} from "./diff-model.ts";
 
-import type { MutationRenderResource } from "./render-resource.js";
+import type { MutationRenderResource } from "./render-resource.ts";
 import type {
   TextMutationPreviewRange,
   TextMutationPreviewResource,

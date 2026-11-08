@@ -1,7 +1,7 @@
-import type { LspWorkspaceOwner } from "#src/plugins/pi-agent-ide-lsp/index.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
-import { createSshLspTransport } from "./lsp-transport.js";
+import type { LspWorkspaceOwner } from "#src/plugins/pi-agent-ide-lsp/index.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
+import { createSshLspTransport } from "./lsp-transport.ts";
 
 /** Workspace reads, marker checks and stdio remain on their configured SSH owner. */
 export function createSshLspWorkspaceOwner(registry: SshBackendRegistry): LspWorkspaceOwner {

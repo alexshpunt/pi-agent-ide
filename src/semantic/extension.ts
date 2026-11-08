@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { connectTipProvider, TIP_API_VERSION, TIP_PROTOCOL } from "#src/api/tips.js";
-import { semanticEngine, type SemanticEngine } from "./engine.js";
+import { connectTipProvider, TIP_API_VERSION, TIP_PROTOCOL } from "#src/api/tips.ts";
+import { semanticEngine, type SemanticEngine } from "./engine.ts";
 
 /** Backend operations are project scoped; searches update the existing index. */
 export interface SemanticBackend {

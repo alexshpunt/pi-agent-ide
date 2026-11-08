@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
-import { SshBackendRegistry } from "./registry.js";
-import { findSshProcessMetadata } from "./process-metadata.js";
+import { SshBackendRegistry } from "./registry.ts";
+import { findSshProcessMetadata } from "./process-metadata.ts";
 
 const row = {
   pid: 123,

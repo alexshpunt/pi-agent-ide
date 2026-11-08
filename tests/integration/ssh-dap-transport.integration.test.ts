@@ -1,14 +1,14 @@
 import { cp, readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { remoteLocation } from "#src/backend/identity.js";
-import { startSshDapTransport } from "#src/backend/dap-transport.js";
-import { startSshTcpDapTransport } from "#src/backend/dap-tcp-transport.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
-import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { remoteLocation } from "#src/backend/identity.ts";
+import { startSshDapTransport } from "#src/backend/dap-transport.ts";
+import { startSshTcpDapTransport } from "#src/backend/dap-tcp-transport.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
+import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.ts";
 
 test("remote DAP streams drain stderr, retain their owner and stop only their native channel", async () => {
   const fixture = await startSshFixture();

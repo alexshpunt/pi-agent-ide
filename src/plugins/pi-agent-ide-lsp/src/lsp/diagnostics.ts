@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { URI } from "vscode-uri";
-import { DiagnosticSeverity, type LspDiagnostic } from "./types.js";
-import type { LspClient } from "./client.js";
+import { DiagnosticSeverity, type LspDiagnostic } from "./types.ts";
+import type { LspClient } from "./client.ts";
 
-import { completedDiagnosticAdapter } from "./diagnostic-adapters.js";
-import { isMethodNotFound } from "./errors.js";
+import { completedDiagnosticAdapter } from "./diagnostic-adapters.ts";
+import { isMethodNotFound } from "./errors.ts";
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
 
 /** LSP diagnostics do not reliably distinguish parser errors from type errors. */

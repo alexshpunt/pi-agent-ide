@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-import type { SearchPluginApi } from "#src/api/search.js";
+import type { SearchPluginApi } from "#src/api/search.ts";
 
 export const SEARCH_PROTOCOL = "pi-agent-search" as const;
 

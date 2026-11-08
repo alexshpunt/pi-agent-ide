@@ -17,20 +17,20 @@ import {
 } from "vscode-jsonrpc/node";
 import { URI } from "vscode-uri";
 
-import type { LspDiagnostic } from "./types.js";
+import type { LspDiagnostic } from "./types.ts";
 
-import { LspFileWatchers, type LspFileWatcherSubscriptions } from "./file-watchers.js";
+import { LspFileWatchers, type LspFileWatcherSubscriptions } from "./file-watchers.ts";
 import { configurationItems } from "./server-request-handlers.mjs";
 import {
   DEFAULT_SHARED_SERVER_LINGER_MS,
   type LspSharedServer,
   type LspSharedServers,
-} from "./shared-servers.js";
+} from "./shared-servers.ts";
 
-import { TransportWriter } from "./transport-writer.js";
-import { documentUri } from "./document-uri.js";
-import { delayWithSignal, waitWithSignal } from "./abort.js";
-import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.js";
+import { TransportWriter } from "./transport-writer.ts";
+import { documentUri } from "./document-uri.ts";
+import { delayWithSignal, waitWithSignal } from "./abort.ts";
+import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.ts";
 
 /** Latest push observation for an open document, without a completion guarantee. */
 export interface LspDiagnosticPublication {

@@ -7,18 +7,18 @@ import { connectIdePlugin } from "pi-agent-ide/api/connect-plugin";
 import { IDE_API_VERSION, IDE_PROTOCOL, type IdePlugin } from "pi-agent-ide/api/plugin-protocol";
 import type { IdeTool } from "pi-agent-ide/api/toolchain";
 import path from "node:path";
-import { LINTER_RECIPES } from "./src/catalog.js";
-import { createCommandLinter, runConfiguredLinter } from "./src/command-linter.js";
-import { lintDoctorPlugin } from "./src/doctor-plugin.js";
-import { LintCommandRegistry } from "./src/registry.js";
+import { LINTER_RECIPES } from "./src/catalog.ts";
+import { createCommandLinter, runConfiguredLinter } from "./src/command-linter.ts";
+import { lintDoctorPlugin } from "./src/doctor-plugin.ts";
+import { LintCommandRegistry } from "./src/registry.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ConfiguredLinterContext, ConfiguredLintResult } from "./src/command-linter.js";
+import type { ConfiguredLinterContext, ConfiguredLintResult } from "./src/command-linter.ts";
 import type { LinterCommandConfig } from "pi-agent-ide/api/tool-config";
-export { LintCommandRegistry } from "./src/registry.js";
-export { LINTER_RECIPES } from "./src/catalog.js";
-export { runConfiguredLinter } from "./src/command-linter.js";
-export type { ConfiguredLinterContext, ConfiguredLintResult } from "./src/command-linter.js";
+export { LintCommandRegistry } from "./src/registry.ts";
+export { LINTER_RECIPES } from "./src/catalog.ts";
+export { runConfiguredLinter } from "./src/command-linter.ts";
+export type { ConfiguredLinterContext, ConfiguredLintResult } from "./src/command-linter.ts";
 
 /** Keep lint project selection, configuration and execution with the source owner. */
 export interface LintRuntime {

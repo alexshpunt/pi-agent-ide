@@ -6,12 +6,12 @@ import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
   TEXT_SEARCH_ANCHOR_KIND,
-} from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { BatchExecutionJournal } from "#src/core/text-edit-batch-execution.js";
-import { executeRegisteredTextBatch } from "#src/core/text-edit-batch-registrar.js";
-import { executeTextMutation } from "#src/core/text-mutation.js";
-import { replaceMutationTool } from "#src/tools/tool-text-replace.js";
+} from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { BatchExecutionJournal } from "#src/core/text-edit-batch-execution.ts";
+import { executeRegisteredTextBatch } from "#src/core/text-edit-batch-registrar.ts";
+import { executeTextMutation } from "#src/core/text-mutation.ts";
+import { replaceMutationTool } from "#src/tools/tool-text-replace.ts";
 
 const source = "fixture://shared.txt";
 

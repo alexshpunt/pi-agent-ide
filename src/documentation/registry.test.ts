@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import type { AgentDocumentation } from "#src/api/documentation.js";
-import { AgentDocumentationRegistry } from "#src/documentation/registry.js";
+import type { AgentDocumentation } from "#src/api/documentation.ts";
+import { AgentDocumentationRegistry } from "#src/documentation/registry.ts";
 
 const document = (id: string, overrides: Partial<AgentDocumentation> = {}): AgentDocumentation => ({
   id,

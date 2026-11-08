@@ -9,12 +9,12 @@ import {
   type SourceViewLine,
 } from "pi-agent-ide/api/code-view";
 
-import { collectFiles } from "./collect-files.js";
-import { AstScopeManager, withParsedDocument, type ScopeEntry } from "./manager.js";
-import { EXTENSION_LANGUAGES } from "./native-parser.js";
-import { readTextFile } from "./read-text.js";
+import { collectFiles } from "./collect-files.ts";
+import { AstScopeManager, withParsedDocument, type ScopeEntry } from "./manager.ts";
+import { EXTENSION_LANGUAGES } from "./native-parser.ts";
+import { readTextFile } from "./read-text.ts";
 
-import type { SyntaxNode } from "./syntax-tree.js";
+import type { SyntaxNode } from "./syntax-tree.ts";
 
 const SUPPORTED_EXTENSIONS = new Set([
   ...Object.keys(EXTENSION_LANGUAGES),

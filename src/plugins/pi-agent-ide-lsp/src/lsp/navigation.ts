@@ -1,6 +1,6 @@
-import type { LspClient } from "./client.js";
-import { isMethodNotFound } from "./errors.js";
-import type { LspPosition, LspRange } from "./types.js";
+import type { LspClient } from "./client.ts";
+import { isMethodNotFound } from "./errors.ts";
+import type { LspPosition, LspRange } from "./types.ts";
 
 export interface LspLocation {
   uri: string;

@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.js";
-import { createTextResolver } from "#src/resolvers.js";
-import { SearchSessionStore } from "#src/search-session.js";
+import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
+import { createTextResolver } from "#src/resolvers.ts";
+import { SearchSessionStore } from "#src/search-session.ts";
 const directories: string[] = [];
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));

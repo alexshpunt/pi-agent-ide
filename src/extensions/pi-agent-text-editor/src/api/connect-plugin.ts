@@ -6,7 +6,7 @@ import {
   TEXT_EDITOR_PLUGIN_REGISTER_EVENT,
   type TextEditorPlugin,
   type TextEditorPluginRegistrationRequest,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 export function connectTextEditorPlugin(
   pi: ExtensionAPI,

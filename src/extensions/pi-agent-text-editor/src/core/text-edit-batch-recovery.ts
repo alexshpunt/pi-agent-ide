@@ -1,8 +1,8 @@
-import type { BatchCallCandidate, OriginalToolCall } from "./text-edit-batch-coordinator.js";
+import type { BatchCallCandidate, OriginalToolCall } from "./text-edit-batch-coordinator.ts";
 import type {
   BatchCallExecutionEntry,
   BatchExecutionReporter,
-} from "./text-edit-batch-execution.js";
+} from "./text-edit-batch-execution.ts";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export interface BlockedToolCall {

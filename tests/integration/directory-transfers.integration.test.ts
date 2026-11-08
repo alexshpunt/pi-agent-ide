@@ -14,7 +14,7 @@ import { expect, test } from "vitest";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 test("temporary directory roots transfer and delete without host dialogs on both routes", async () => {
   await withTempWorkspace(async (external) => {

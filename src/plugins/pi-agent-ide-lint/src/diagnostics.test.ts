@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDiagnostics } from "./diagnostics.js";
+import { parseDiagnostics } from "./diagnostics.ts";
 
-import { LINTER_RECIPES } from "./catalog.js";
+import { LINTER_RECIPES } from "./catalog.ts";
 import { requiredValue } from "pi-agent-invariant";
 
 describe("linter diagnostic adapters", () => {

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { semanticEngine } from "./engine.js";
+import { semanticEngine } from "./engine.ts";
 
 test("the selected semantic engine defaults to ColGREP and rejects unsupported settings", () => {
   expect(semanticEngine(undefined)).toBe("colgrep");

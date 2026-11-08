@@ -4,11 +4,11 @@ import path from "node:path";
 
 import { expect, it } from "vitest";
 
-import { discoverRecipeCandidates, selectSuggestedRecipes } from "./discovery.js";
+import { discoverRecipeCandidates, selectSuggestedRecipes } from "./discovery.ts";
 
-import type { ToolRecipe } from "#src/api/tool-catalog.js";
-import type { OwnedContribution } from "./core.js";
-import type { RecipeCandidate } from "./discovery.js";
+import type { ToolRecipe } from "#src/api/tool-catalog.ts";
+import type { OwnedContribution } from "./core.ts";
+import type { RecipeCandidate } from "./discovery.ts";
 
 it("does not choose between equally supported tools", () => {
   const candidates: RecipeCandidate[] = [candidate("biome"), candidate("prettier")];

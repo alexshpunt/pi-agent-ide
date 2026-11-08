@@ -1,7 +1,7 @@
-import { renderAgentDiff } from "./agent-diff.js";
-import { groupReplacements, renderGroupedReplacements } from "./grouped-replacements.js";
-import { renderFinalStateFragment } from "./final-state-fragment.js";
-import { type FileMutationResult } from "./file-mutation-result.js";
+import { renderAgentDiff } from "./agent-diff.ts";
+import { groupReplacements, renderGroupedReplacements } from "./grouped-replacements.ts";
+import { renderFinalStateFragment } from "./final-state-fragment.ts";
+import { type FileMutationResult } from "./file-mutation-result.ts";
 
 // ─── Agent-facing result formatter ───────────────────────────────────────
 

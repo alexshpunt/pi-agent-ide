@@ -1,8 +1,8 @@
 import path from "node:path";
 import { expect, test } from "vitest";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshSearchEnvironmentProvider } from "#src/backend/search-environment.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshSearchEnvironmentProvider } from "#src/backend/search-environment.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 
 test("remote search preserves long Unicode lines within the text snapshot bound", async () => {
   const fixture = await startSshFixture();

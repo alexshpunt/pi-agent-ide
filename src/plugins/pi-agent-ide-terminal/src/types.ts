@@ -1,6 +1,6 @@
 import type { IPty } from "node-pty";
 import type { Terminal } from "@xterm/headless";
-import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
+import type { SshProcessChannel } from "#src/backend/ssh-channel.ts";
 
 export type TerminalWaitReason = "timeout" | "interactive" | "steering";
 export type TerminalWaitOutcomeReason = TerminalWaitReason | "aborted";

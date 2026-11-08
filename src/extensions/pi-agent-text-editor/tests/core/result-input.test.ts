@@ -3,12 +3,12 @@ import path from "node:path";
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { createResultTargetAnchors } from "#src/core/result-target-anchors.js";
-import { createTextTool } from "#src/core/text-mutation.js";
-import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
-import { replaceMutationTool } from "#src/tools/tool-text-replace.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { createResultTargetAnchors } from "#src/core/result-target-anchors.ts";
+import { createTextTool } from "#src/core/text-mutation.ts";
+import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.ts";
+import { replaceMutationTool } from "#src/tools/tool-text-replace.ts";
 
 for (const complete of [true, false]) {
   test(`structured replace keeps registered bounds and ${complete ? "uses" : "refuses"} complete authority`, async () => {

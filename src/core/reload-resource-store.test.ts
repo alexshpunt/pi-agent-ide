@@ -4,7 +4,7 @@ import {
   forgetReloadResource,
   retainReloadResource,
   takeReloadResource,
-} from "#src/core/reload-resource-store.js";
+} from "#src/core/reload-resource-store.ts";
 
 const key = "reload-resource-store-test";
 

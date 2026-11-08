@@ -1,11 +1,11 @@
 import { expect, test } from "vitest";
 
 import { initTheme, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
-import { MutationPanel } from "#src/mutation-panel.js";
+import { MutationPanel } from "#src/mutation-panel.ts";
 import { FileMutationResult } from "pi-agent-text-editor/api/mutation-result";
 import { createTextDocument } from "pi-agent-text";
-import { compactMutationDetails } from "#src/persisted-result.js";
-import { resolveMutationResultResources } from "#src/mutation-result.js";
+import { compactMutationDetails } from "#src/persisted-result.ts";
+import { resolveMutationResultResources } from "#src/mutation-result.ts";
 
 function result(lines: number) {
   const before = Array.from(

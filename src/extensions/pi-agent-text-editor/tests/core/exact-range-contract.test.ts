@@ -2,12 +2,12 @@ import { expect, test } from "vitest";
 import { requiredValue } from "pi-agent-invariant";
 import { TextAnchor } from "pi-agent-text";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
-import type { TextMutationContext } from "#src/api/mutation-tool.js";
-import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
-import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.js";
-import { copyMutationTool } from "#src/tools/tool-text-copy.js";
-import { moveMutationTool } from "#src/tools/tool-text-move.js";
-import { insertMutationTool } from "#src/tools/tool-text-insert.js";
+import type { TextMutationContext } from "#src/api/mutation-tool.ts";
+import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
+import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.ts";
+import { copyMutationTool } from "#src/tools/tool-text-copy.ts";
+import { moveMutationTool } from "#src/tools/tool-text-move.ts";
+import { insertMutationTool } from "#src/tools/tool-text-insert.ts";
 
 class Position extends TextAnchor {
   constructor(line: number) {

@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { URI } from "vscode-uri";
-import { LspClient } from "./client.js";
-import type { WatchedFileChange } from "./file-watchers.js";
+import { LspClient } from "./client.ts";
+import type { WatchedFileChange } from "./file-watchers.ts";
 
 test("includes bounded native stderr when a language server cannot initialize", async () => {
   const client = new LspClient({

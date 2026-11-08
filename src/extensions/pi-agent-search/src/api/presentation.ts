@@ -2,7 +2,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ResultPanel, sourceRows, type ResultPanelRow } from "pi-agent-tool-ui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { SearchSelectionMatch } from "./search.js";
+import type { SearchSelectionMatch } from "./search.ts";
 
 /** Present Search ranges consistently, without adding targets or pretending readonly sources are files. */
 export function renderSearchMatches(

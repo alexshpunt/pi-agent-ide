@@ -1,4 +1,4 @@
-import type { Diagnostic, IdeTool, ToolContext } from "#src/toolchain/types.js";
+import type { Diagnostic, IdeTool, ToolContext } from "#src/toolchain/types.ts";
 
 export const IDE_PROTOCOL = "pi-agent-ide" as const;
 

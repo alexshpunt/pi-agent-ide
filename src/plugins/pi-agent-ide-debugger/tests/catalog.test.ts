@@ -4,7 +4,7 @@ import {
   DEBUGGER_LANGUAGE_MATRIX,
   DEBUGGER_RECIPES,
   debuggerRecipeForLanguage,
-} from "#src/plugins/pi-agent-ide-debugger/src/catalog.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/catalog.ts";
 
 const EXECUTABLE_LSP_LANGUAGES = [
   "c",

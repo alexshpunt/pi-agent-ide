@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.js";
+import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.ts";
 import type { ReadResultDetails } from "pi-agent-read/api/tools/read";
 
 import {

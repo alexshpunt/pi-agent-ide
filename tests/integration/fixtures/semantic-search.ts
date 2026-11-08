@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { createSemanticExtension } from "#src/semantic/extension.js";
+import { createSemanticExtension } from "#src/semantic/extension.ts";
 
 export default createSemanticExtension({
   async available(cwd) { return existsSync(join(cwd, ".semantic-test-index")); },

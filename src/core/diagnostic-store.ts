@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { resolveCodeViewPath } from "#src/code-view/reference.js";
+import { resolveCodeViewPath } from "#src/code-view/reference.ts";
 
 import type {
   IdeDiagnosticReport,
@@ -9,8 +9,8 @@ import type {
   IdeDiagnosticSnapshot,
   IdeDiagnosticSource,
   IdeDiagnosticFileReader,
-} from "#src/api/plugin-protocol.js";
-import type { ToolContext } from "#src/toolchain/types.js";
+} from "#src/api/plugin-protocol.ts";
+import type { ToolContext } from "#src/toolchain/types.ts";
 
 /** Nonempty findings shared by hidden model delivery and a separate UI summary. */
 export interface DiagnosticNotification {

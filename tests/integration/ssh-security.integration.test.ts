@@ -5,9 +5,9 @@ import net from "node:net";
 import path from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import { SshBackend, SshBackendError } from "#src/backend/ssh.js";
-import { startSshFixture } from "./support/ssh-fixture.js";
-import { startSshPrivateDiagnosticFixture } from "./support/ssh-private-diagnostic-fixture.js";
+import { SshBackend, SshBackendError } from "#src/backend/ssh.ts";
+import { startSshFixture } from "./support/ssh-fixture.ts";
+import { startSshPrivateDiagnosticFixture } from "./support/ssh-private-diagnostic-fixture.ts";
 
 const run = promisify(execFile);
 

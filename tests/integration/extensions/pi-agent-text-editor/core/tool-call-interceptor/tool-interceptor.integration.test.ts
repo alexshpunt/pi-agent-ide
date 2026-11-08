@@ -12,7 +12,7 @@ import {
 } from "pi-coding-agent-test";
 import { describe, expect, test } from "vitest";
 
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const extension = path.join(
   process.cwd(),

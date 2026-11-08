@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
 
-import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
+import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 
 export const writeSchema = Type.Object(
   {

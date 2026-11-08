@@ -6,9 +6,9 @@ import {
   READ_PROTOCOL,
   type ReadPlugin,
   type ReadPluginApi,
-} from "#src/api/plugin-protocol.js";
-import { readParameters, describeReadParameters } from "#src/api/read-parameters.js";
-import { createReadCore } from "#src/core/read-core.js";
+} from "#src/api/plugin-protocol.ts";
+import { readParameters, describeReadParameters } from "#src/api/read-parameters.ts";
+import { createReadCore } from "#src/core/read-core.ts";
 
 test("puts plugin syntax on its parameter without changing accepted arguments", async () => {
   const core = createReadCore();

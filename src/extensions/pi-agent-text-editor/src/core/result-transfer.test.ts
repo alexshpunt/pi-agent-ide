@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
-import { createTextEditorCore } from "./text-editor-core.js";
-import { prepareResultTransfer } from "./result-transfer.js";
-import { executeWholeFileTool } from "./file-operation-tools.js";
+import { createTextEditorCore } from "./text-editor-core.ts";
+import { prepareResultTransfer } from "./result-transfer.ts";
+import { executeWholeFileTool } from "./file-operation-tools.ts";
 
 test.each([false, true])(
   "Move returns unchanged destination points (same file: %s)",

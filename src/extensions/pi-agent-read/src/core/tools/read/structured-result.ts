@@ -5,9 +5,9 @@ import {
   structuredResultSchema,
   withStructuredResult,
 } from "pi-agent-resource";
-import type { ReadScriptData, ReadToolResult } from "#src/api/tools/read.js";
+import type { ReadScriptData, ReadToolResult } from "#src/api/tools/read.ts";
 import type { TextLine } from "pi-agent-text";
-import { readFailureRecovery } from "#src/core/tools/read/read-result.js";
+import { readFailureRecovery } from "#src/core/tools/read/read-result.ts";
 
 const reference = Type.Object(
   { value: Type.String(), kind: Type.String(), state: Type.Optional(Type.String()) },

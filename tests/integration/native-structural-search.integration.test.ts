@@ -10,8 +10,8 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { textResultChecks } from "#integration/support/text-result-checks.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { textResultChecks } from "#integration/support/text-result-checks.ts";
 
 async function runAstComposition(
   cwd: string,

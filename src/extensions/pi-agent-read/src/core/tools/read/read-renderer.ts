@@ -1,11 +1,11 @@
-import { restoreReadDetails } from "./persisted-result.js";
+import { restoreReadDetails } from "./persisted-result.ts";
 
 import {
   nativeReadArguments,
   nativeReadContext,
   nativeReadPresentation,
   type ReadRenderContext,
-} from "./native-resource-renderer.js";
+} from "./native-resource-renderer.ts";
 import { requiredValue } from "pi-agent-invariant";
 import {
   type AgentToolResult,
@@ -27,8 +27,8 @@ import {
 import { getTextSourceLine, renderPresentedTextDocument } from "pi-agent-text";
 import { toolCallHeader } from "pi-agent-tool-ui";
 
-import type { ReadResultRendererOptions } from "#src/api/rendering.js";
-import type { ReadResultDetails, ReadResultRenderer, ReadTextLine } from "#src/api/tools/read.js";
+import type { ReadResultRendererOptions } from "#src/api/rendering.ts";
+import type { ReadResultDetails, ReadResultRenderer, ReadTextLine } from "#src/api/tools/read.ts";
 
 export const COMPACT_READ_ROWS = 12;
 

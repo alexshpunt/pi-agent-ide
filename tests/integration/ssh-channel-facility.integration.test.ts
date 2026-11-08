@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { startSshProcess } from "#src/backend/ssh-channel.js";
-import { startSshFixture } from "./support/ssh-fixture.js";
+import { startSshProcess } from "#src/backend/ssh-channel.ts";
+import { startSshFixture } from "./support/ssh-fixture.ts";
 
 // These private shims exercise the real native worker's refusal boundary, not OS policy.
 test.each(["missing", "denied"] as const)(

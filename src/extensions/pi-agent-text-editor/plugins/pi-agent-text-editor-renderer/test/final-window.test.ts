@@ -2,9 +2,9 @@ import { expect, test, vi } from "vitest";
 import { DefaultLinesDiffComputer } from "vscode-diff";
 
 import { FileMutationResult } from "pi-agent-text-editor/api/mutation-result";
-import { resolveMutationResultResources } from "#src/mutation-result.js";
-import { freezeMutationViewports, projectFinalResources } from "#src/frozen-viewport.js";
-import { expandedViewport, compactViewport } from "#src/diff-viewport.js";
+import { resolveMutationResultResources } from "#src/mutation-result.ts";
+import { freezeMutationViewports, projectFinalResources } from "#src/frozen-viewport.ts";
+import { expandedViewport, compactViewport } from "#src/diff-viewport.ts";
 import { requiredValue } from "pi-agent-invariant";
 
 const before =

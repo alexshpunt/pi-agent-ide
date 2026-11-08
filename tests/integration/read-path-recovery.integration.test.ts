@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, expect, test } from "vitest";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import {
   assistantMessage,
   getToolExecution,
@@ -11,7 +11,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

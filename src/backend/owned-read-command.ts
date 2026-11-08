@@ -1,5 +1,5 @@
-import { runOwnedSshCommand } from "./owned-command.js";
-import type { SshTarget } from "./ssh.js";
+import { runOwnedSshCommand } from "./owned-command.ts";
+import type { SshTarget } from "./ssh.ts";
 
 /** Bounds for one owned, buffered read service. Both output streams share the byte budget. */
 export interface OwnedReadCommandOptions {

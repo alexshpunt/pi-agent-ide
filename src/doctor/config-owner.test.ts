@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
-import type { DoctorWorkspace } from "#src/api/doctor.js";
-import { writeSuggestedConfigs } from "./config-writer.js";
-import type { RecipeCandidate } from "./discovery.js";
+import type { DoctorWorkspace } from "#src/api/doctor.ts";
+import { writeSuggestedConfigs } from "./config-writer.ts";
+import type { RecipeCandidate } from "./discovery.ts";
 
 const project = "ssh://fixture/project";
 const candidate: RecipeCandidate = {

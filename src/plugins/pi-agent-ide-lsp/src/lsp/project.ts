@@ -1,4 +1,4 @@
-import type { LspClient } from "./client.js";
+import type { LspClient } from "./client.ts";
 
 /** Load unopened TypeScript project files before a workspace query; other servers keep their own readiness rules. */
 export async function prepareProjectQuery(client: LspClient, source: string): Promise<void> {

@@ -10,11 +10,11 @@ import {
   type FileOperationResult,
   type FileTransferEndpoint,
 } from "pi-agent-text-editor/api/plugin-protocol";
-import type { ResolvedSshSource, SshBackendRegistry } from "./registry.js";
-import { remoteLocation } from "./identity.js";
-import { localTransferSource, transferFile } from "./file-transfer.js";
-import { checkCapturedRevision } from "./file-revision.js";
-import { SshBackendError } from "./ssh.js";
+import type { ResolvedSshSource, SshBackendRegistry } from "./registry.ts";
+import { remoteLocation } from "./identity.ts";
+import { localTransferSource, transferFile } from "./file-transfer.ts";
+import { checkCapturedRevision } from "./file-revision.ts";
+import { SshBackendError } from "./ssh.ts";
 
 interface Endpoint extends FileTransferEndpoint {
   readonly remote?: ResolvedSshSource;

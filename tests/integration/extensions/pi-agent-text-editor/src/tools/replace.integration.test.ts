@@ -4,9 +4,9 @@ import path from "node:path";
 import { getToolExecution, getToolResultText } from "pi-coding-agent-test";
 import { describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { runTextToolScenario } from "#integration/support/pi-runtime/scenario.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { runTextToolScenario } from "#integration/support/pi-runtime/scenario.ts";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const extensions = createExtensionSet();

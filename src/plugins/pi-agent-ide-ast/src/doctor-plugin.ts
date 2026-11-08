@@ -6,7 +6,7 @@ import {
   probeProjectExecutable,
 } from "pi-agent-doctor/api/project-probes";
 
-import { withParsedDocument } from "./ast/manager.js";
+import { withParsedDocument } from "./ast/manager.ts";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
 

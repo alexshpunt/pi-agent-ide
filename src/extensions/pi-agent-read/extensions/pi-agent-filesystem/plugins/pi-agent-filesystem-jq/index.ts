@@ -12,7 +12,7 @@ import {
   READ_PROTOCOL,
   type ReadPlugin,
 } from "pi-agent-read/api/plugin-protocol";
-import { createJqReadHandler } from "#src/api/jq.js";
+import { createJqReadHandler } from "#src/api/jq.ts";
 
 export default async function registerFilesystemJq(pi: ExtensionAPI): Promise<void> {
   await Promise.all([connectReadPlugin(pi, readPlugin), connectDoctorPlugin(pi, doctorPlugin)]);

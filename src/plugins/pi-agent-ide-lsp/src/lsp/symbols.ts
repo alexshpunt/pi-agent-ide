@@ -4,9 +4,9 @@
  * Language-agnostic — works with any LSP server that supports
  * documentSymbolProvider.
  */
-import type { LspClient } from "./client.js";
-import type { LspManager } from "./manager.js";
-import type { LspRange } from "./types.js";
+import type { LspClient } from "./client.ts";
+import type { LspManager } from "./manager.ts";
+import type { LspRange } from "./types.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 

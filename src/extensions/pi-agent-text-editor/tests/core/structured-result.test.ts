@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import { FileMutationResult } from "#src/api/mutation-result.js";
-import { mutationOutcome } from "#src/core/structured-result.js";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
+import { FileMutationResult } from "#src/api/mutation-result.ts";
+import { mutationOutcome } from "#src/core/structured-result.ts";
 
 const source = "/workspace/note.txt";
 const completion: TextEditCompletion = {

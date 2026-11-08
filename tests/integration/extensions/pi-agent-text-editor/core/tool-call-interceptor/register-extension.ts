@@ -9,7 +9,7 @@ import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-ag
 import {
   getToolCallRecord,
   registerToolCallRecovery,
-} from "#pi-agent-text-editor/core/tool-call-interceptor/coordinator.js";
+} from "#pi-agent-text-editor/core/tool-call-interceptor/coordinator.ts";
 
 const Parameters = Type.Object({
   value: Type.Optional(Type.String()),

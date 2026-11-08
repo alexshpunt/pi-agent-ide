@@ -3,8 +3,8 @@ import {
   createChangeGroups,
   replaceHeadRangeInIndex,
   reverseChangeGroup,
-} from "./change-groups.js";
-import { GitChangesBackend } from "./git-changes-backend.js";
+} from "./change-groups.ts";
+import { GitChangesBackend } from "./git-changes-backend.ts";
 
 import type {
   ChangeIndexAction,
@@ -13,8 +13,8 @@ import type {
   ChangeInspectionInput,
   GitIndexUpdate,
   PreparedUndoResult,
-} from "./change-types.js";
-import type { GitCommandExecutor } from "./git-changes-backend.js";
+} from "./change-types.ts";
+import type { GitCommandExecutor } from "./git-changes-backend.ts";
 
 export type ChangeServiceCreation =
   | { readonly status: "ready"; readonly service: ChangeService }

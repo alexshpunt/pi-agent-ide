@@ -4,7 +4,7 @@ import {
   fuzzyLimits,
   isFuzzyQuery,
   rankFuzzyIdentifiers,
-} from "#src/api/fuzzy.js";
+} from "#src/api/fuzzy.ts";
 
 test("mixes spelling tiers in stable order without claiming synonyms", () => {
   const names = [

@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { SshBackendError, type SshTarget } from "./ssh.js";
-import { readOwnedSshCommand } from "./owned-read-command.js";
+import { SshBackendError, type SshTarget } from "./ssh.ts";
+import { readOwnedSshCommand } from "./owned-read-command.ts";
 
 const responseSchema = Type.Object({
   url: Type.String(),

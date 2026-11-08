@@ -5,9 +5,9 @@ import { expect, test } from "vitest";
 import {
   createReadFragmentResolver,
   type ReadFragmentAnchorSource,
-} from "#src/core/read-fragment-resolver.js";
-import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.js";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+} from "#src/core/read-fragment-resolver.ts";
+import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.ts";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 
 const CONTENT = ["alpha", "bravo", "charlie"].join("\n");
 

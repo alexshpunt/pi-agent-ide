@@ -1,16 +1,16 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readAgentIdeSetting } from "#src/api/settings.js";
+import { readAgentIdeSetting } from "#src/api/settings.ts";
 import {
   inspectProject,
   indexProject,
   searchProject,
-} from "#src/plugins/pi-agent-ide-semantic/src/backend.js";
+} from "#src/plugins/pi-agent-ide-semantic/src/backend.ts";
 import {
   inspectVeraProject,
   indexVeraProject,
   searchVeraProject,
-} from "#src/plugins/pi-agent-ide-semantic/src/vera-backend.js";
-import { createConfiguredSemanticExtension, type SemanticBackend } from "./extension.js";
+} from "#src/plugins/pi-agent-ide-semantic/src/vera-backend.ts";
+import { createConfiguredSemanticExtension, type SemanticBackend } from "./extension.ts";
 
 const colgrep: SemanticBackend = {
   async available(cwd) {

@@ -10,10 +10,10 @@ import {
   type SearchSelectionMatch,
 } from "pi-agent-search/api/search";
 import path from "node:path";
-import { readLspFileGraph, readLspSymbolGraph, resolveLspDeclaration } from "./lsp/code-views.js";
-import type { LspManager } from "./lsp/manager.js";
-import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.js";
-import { withLspDocuments } from "./lsp/document-leases.js";
+import { readLspFileGraph, readLspSymbolGraph, resolveLspDeclaration } from "./lsp/code-views.ts";
+import type { LspManager } from "./lsp/manager.ts";
+import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
+import { withLspDocuments } from "./lsp/document-leases.ts";
 
 /** Options the `lsp_search` tool passes in `SearchRequest.options.lsp`; their presence selects this resolver. */
 export interface LspSearchOptions {

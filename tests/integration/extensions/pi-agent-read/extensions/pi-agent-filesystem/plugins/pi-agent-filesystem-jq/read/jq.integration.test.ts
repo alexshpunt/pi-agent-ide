@@ -12,7 +12,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { afterAll, expect, test } from "vitest";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const restoreRuntime = forceStandaloneIntegrationFile();
 afterAll(restoreRuntime);

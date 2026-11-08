@@ -11,11 +11,11 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { textResultChecks } from "#integration/support/text-result-checks.js";
+import { textResultChecks } from "#integration/support/text-result-checks.ts";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 test("Native tools move an exact LSP declaration without matching unrelated text", async () => {
   await withTempWorkspace(async (cwd) => {

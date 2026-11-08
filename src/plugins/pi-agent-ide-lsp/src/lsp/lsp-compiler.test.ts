@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
-import { createLspCompiler } from "./lsp-compiler.js";
-import type { LspManager } from "./manager.js";
-import { LspClient } from "./client.js";
+import { createLspCompiler } from "./lsp-compiler.ts";
+import type { LspManager } from "./manager.ts";
+import { LspClient } from "./client.ts";
 
 // Missing capability must be a refusal, not a clean compiler result.
 test("compiler resolves its manager from the actual source owner", async () => {

@@ -1,9 +1,9 @@
-import type { AgentIdeProcessProvider } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
+import type { AgentIdeProcessProvider } from "#src/plugins/pi-agent-ide-processes/src/registry.ts";
 import {
   renderActiveDebugger,
   renderDebugResult,
-} from "#src/plugins/pi-agent-ide-debugger/src/renderer.js";
-import type { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/renderer.ts";
+import type { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 /** Expose active DAP sessions through the shared Agent IDE process registry. */
 export function debuggerProcessProvider(manager: DebugSessionManager): AgentIdeProcessProvider {

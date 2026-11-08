@@ -1,4 +1,4 @@
-export { hasDeferredPostEdit, afterPostEditScope } from "#src/core/post-edit-scope.js";
+export { hasDeferredPostEdit, afterPostEditScope } from "#src/core/post-edit-scope.ts";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
@@ -6,7 +6,7 @@ import {
   isTextEditorCoreReady,
   TEXT_EDITOR_CORE_READY_EVENT,
   TEXT_EDITOR_PROTOCOL,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 import type {
   DiagnosticHint,
@@ -14,7 +14,7 @@ import type {
   MutationDiffStatus,
   SyntaxErrorSummary,
   Warning,
-} from "#src/api/mutation-result.js";
+} from "#src/api/mutation-result.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TextDocument } from "pi-agent-text";
 

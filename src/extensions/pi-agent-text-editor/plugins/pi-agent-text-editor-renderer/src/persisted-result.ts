@@ -3,8 +3,8 @@ import {
   type FileMutationBatchResult,
   type MutationDiffStatus,
 } from "pi-agent-text-editor/api/mutation-result";
-import { resolveMutationResultResources } from "./mutation-result.js";
-import type { DiffModel } from "./diff-model.js";
+import { resolveMutationResultResources } from "./mutation-result.ts";
+import type { DiffModel } from "./diff-model.ts";
 
 /** Width- and theme-independent fragments retained in session history. */
 export interface PersistedMutationResource {

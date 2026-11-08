@@ -1,20 +1,20 @@
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveExternalToolProjectRoot } from "#src/api/tool-config.js";
+import { resolveExternalToolProjectRoot } from "#src/api/tool-config.ts";
 import {
   registerLspWithOwner,
   LspServerRegistry,
   LSP_RECIPES,
-} from "#src/plugins/pi-agent-ide-lsp/index.js";
-import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { readSshTargets, resolveSshConfigPaths } from "./config.js";
-import { SshBackendRegistry } from "./registry.js";
-import { createSshToolConfigAccess } from "./tool-config-access.js";
-import { createSshLspWorkspaceOwner } from "./lsp-workspace-owner.js";
-import { sshProjectExecutableAvailability } from "./process-environment.js";
-import { SshBackendError } from "./ssh.js";
-import { resolveSshToolProject } from "./tool-project.js";
-import { inspectSshRecipeEvidence } from "./recipe-evidence.js";
+} from "#src/plugins/pi-agent-ide-lsp/index.ts";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { readSshTargets, resolveSshConfigPaths } from "./config.ts";
+import { SshBackendRegistry } from "./registry.ts";
+import { createSshToolConfigAccess } from "./tool-config-access.ts";
+import { createSshLspWorkspaceOwner } from "./lsp-workspace-owner.ts";
+import { sshProjectExecutableAvailability } from "./process-environment.ts";
+import { SshBackendError } from "./ssh.ts";
+import { resolveSshToolProject } from "./tool-project.ts";
+import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
 
 /** Load ordinary LSP providers with lazy target-owned configuration and stdio. */
 export default async function registerOwnedLsp(pi: ExtensionAPI): Promise<void> {

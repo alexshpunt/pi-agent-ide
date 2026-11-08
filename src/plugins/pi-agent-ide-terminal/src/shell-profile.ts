@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import type { ShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+import type { ShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 /** Linux SSH sessions use Bash, independently of the local platform shell. */
 export const remoteBashProfile: ShellProfile = {

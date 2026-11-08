@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, test } from "vitest";
 
-import { readSshTargets, resolveSshConfigPaths } from "./config.js";
+import { readSshTargets, resolveSshConfigPaths } from "./config.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

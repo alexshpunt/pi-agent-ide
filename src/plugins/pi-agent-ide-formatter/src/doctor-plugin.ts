@@ -6,8 +6,8 @@ import {
 } from "pi-agent-ide/api/doctor";
 import { runConfiguredFormatter } from "pi-agent-ide/api/tool-config";
 
-import { FORMATTER_RECIPES } from "./catalog.js";
-import { FormatterCommandRegistry } from "./registry.js";
+import { FORMATTER_RECIPES } from "./catalog.ts";
+import { FormatterCommandRegistry } from "./registry.ts";
 
 import type {
   DoctorContext,

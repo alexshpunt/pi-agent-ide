@@ -17,10 +17,10 @@ import {
   type TextAnchorResourceResolver,
   type TextAnchorResourceResolverContext,
   type TextAnchorType,
-} from "#src/api/plugin-protocol.js";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+} from "#src/api/plugin-protocol.ts";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 
-import type { TextAnchorInspectionOutcome } from "#src/api/anchor-inspection.js";
+import type { TextAnchorInspectionOutcome } from "#src/api/anchor-inspection.ts";
 const resolvedAnchorTypes = new WeakMap<TextAnchor, TextAnchorType>();
 
 /** Returns the registered resolver type that produced an anchor. */

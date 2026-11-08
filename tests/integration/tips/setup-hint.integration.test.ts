@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { assistantMessage, PiIntegrationTest, testArtifactsDir, text } from "pi-coding-agent-test";
 import { afterAll, afterEach, expect, test } from "vitest";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { TipStateStore } from "#src/tips/persistence.js";
-import { createSetupHintProvider } from "#src/tips/setup-hint.js";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { TipStateStore } from "#src/tips/persistence.ts";
+import { createSetupHintProvider } from "#src/tips/setup-hint.ts";
 
 const restoreRuntime = forceStandaloneIntegrationFile();
 afterAll(restoreRuntime);

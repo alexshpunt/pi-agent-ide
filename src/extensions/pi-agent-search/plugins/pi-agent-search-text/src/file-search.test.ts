@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { searchFiles } from "./file-search.js";
+import { searchFiles } from "./file-search.ts";
 
 test("file globs find an existing file below an ignored parent directory", async () => {
   const root = path.resolve(".agents/tmp/file-search");

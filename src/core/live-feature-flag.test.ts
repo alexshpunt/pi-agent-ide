@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
-import { createLiveFeatureFlag, IDE_FEATURE_FLAGS_CHANGED } from "./live-feature-flag.js";
+import { createLiveFeatureFlag, IDE_FEATURE_FLAGS_CHANGED } from "./live-feature-flag.ts";
 
 function isShutdown(value: unknown): value is () => void {
   return typeof value === "function";

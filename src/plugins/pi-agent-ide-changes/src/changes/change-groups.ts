@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 
 import { diffLines } from "diff";
 
-import type { ChangeGroup, ChangeSegment, ChangeState } from "./change-types.js";
+import type { ChangeGroup, ChangeSegment, ChangeState } from "./change-types.ts";
 
 const CONTEXT_LINE_COUNT = 3;
 const MINIMUM_SELECTOR_LENGTH = 4;

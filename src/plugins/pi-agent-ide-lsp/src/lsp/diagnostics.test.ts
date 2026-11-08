@@ -2,8 +2,8 @@ import { pathToFileURL } from "node:url";
 
 import { afterEach, expect, test, vi } from "vitest";
 
-import { LspClient } from "./client.js";
-import { requestDiagnostics } from "./diagnostics.js";
+import { LspClient } from "./client.ts";
+import { requestDiagnostics } from "./diagnostics.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();

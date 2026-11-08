@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createOwnedLintRuntime } from "#src/backend/lint-registration.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createOwnedLintRuntime } from "#src/backend/lint-registration.ts";
 
 test("owner lint commands keep native cwd and filter foreign diagnostic paths without rewriting messages", async () => {
   const fixture = await startSshFixture();

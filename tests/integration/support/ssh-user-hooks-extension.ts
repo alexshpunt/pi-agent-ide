@@ -5,7 +5,7 @@ import {
   connectAfterEditHook,
   connectBeforeEditHook,
   connectBeforeReadHook,
-} from "#src/api/hooks.js";
+} from "#src/api/hooks.ts";
 
 /** Trusted controller hooks record only fixture identities and synthetic application content. */
 export default async function (pi: ExtensionAPI): Promise<void> {

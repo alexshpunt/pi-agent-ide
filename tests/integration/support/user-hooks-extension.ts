@@ -4,7 +4,7 @@ import {
   connectBeforeEditHook,
   connectBeforeDeleteHook,
   connectBeforeReadHook,
-} from "#src/api/hooks.js";
+} from "#src/api/hooks.ts";
 
 export default function (pi: ExtensionAPI) {
   void connectBeforeDeleteHook(pi, {

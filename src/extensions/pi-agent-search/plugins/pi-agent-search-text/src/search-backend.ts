@@ -4,10 +4,10 @@ import path from "node:path";
 import { splitGlobList, type SearchEnvironment } from "pi-agent-search/api/search";
 import { createInterface } from "node:readline";
 
-import { resolveRipgrepExecutable } from "#src/ripgrep.js";
+import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
 
-import { type SearchCondition, satisfiesSearchCondition } from "#src/search-query.js";
-import type { TextSearchMatch } from "#src/search-session.js";
+import { type SearchCondition, satisfiesSearchCondition } from "#src/search-query.ts";
+import type { TextSearchMatch } from "#src/search-session.ts";
 
 export interface TextSearchRequest {
   readonly query: string;

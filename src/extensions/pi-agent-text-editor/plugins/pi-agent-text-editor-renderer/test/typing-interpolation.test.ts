@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { TypingInterpolation } from "#src/typing-interpolation.js";
+import { TypingInterpolation } from "#src/typing-interpolation.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();

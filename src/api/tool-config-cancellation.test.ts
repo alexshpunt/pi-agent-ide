@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { loadLayeredToolConfig } from "./tool-config.js";
+import { loadLayeredToolConfig } from "./tool-config.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

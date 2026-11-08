@@ -4,4 +4,4 @@ export {
   type StandaloneResourceHost,
   type StandaloneResourceHostOptions,
   type StandaloneResourceTool,
-} from "#src/standalone/resource-host.js";
+} from "#src/standalone/resource-host.ts";

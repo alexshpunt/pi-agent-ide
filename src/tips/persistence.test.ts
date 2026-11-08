@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, test } from "vitest";
-import { TipStateStore } from "./persistence.js";
+import { TipStateStore } from "./persistence.ts";
 
 const directories: string[] = [];
 

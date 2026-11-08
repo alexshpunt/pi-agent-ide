@@ -7,20 +7,20 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { resolvePythonDebuggerCommand } from "./adapter-executables.js";
+import { resolvePythonDebuggerCommand } from "./adapter-executables.ts";
 import type {
   DebugWorkspaceOwner,
   DebugWorkspaceOwnerResolver,
   OwnedDebugAdapter,
-} from "./workspace-owner.js";
-import { JavaDebugRuntime } from "./java-runtime.js";
-import type { VscodeDebugSession, VscodeDebugState } from "./vscode-backend.js";
+} from "./workspace-owner.ts";
+import { JavaDebugRuntime } from "./java-runtime.ts";
+import type { VscodeDebugSession, VscodeDebugState } from "./vscode-backend.ts";
 import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import {
   DapClient,
   type DapEvent,
   type DapReverseRequest,
-} from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
 
 export type DebugSessionStatus = "configured" | "running" | "stopped" | "terminated";
 

@@ -1,11 +1,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { createTextResolver } from "#src/resolvers.js";
-import { SearchSessionStore } from "#src/search-session.js";
+import { createTextResolver } from "#src/resolvers.ts";
+import { SearchSessionStore } from "#src/search-session.ts";
 import type { SearchRequest } from "pi-agent-search/api/search";
 
-import { searchFuzzy } from "#src/fuzzy-search.js";
+import { searchFuzzy } from "#src/fuzzy-search.ts";
 import { fuzzyLimits } from "pi-agent-search/api/search";
 interface FuzzyData {
   readonly matches: readonly unknown[];

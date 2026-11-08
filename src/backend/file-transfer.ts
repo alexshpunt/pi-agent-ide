@@ -5,10 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FileOperationInput } from "pi-agent-text-editor/api/plugin-protocol";
 import type { ResourceResolverContext } from "pi-agent-resource";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
-import { checkCapturedRevision } from "./file-revision.js";
-import { startSshProcess, type SshProcessChannel } from "./ssh-channel.js";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
+import { checkCapturedRevision } from "./file-revision.ts";
+import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
 
 const CHUNK_BYTES = 1024 * 1024;
 const worker = readFile(new URL("./ssh-transfer-worker.py", import.meta.url), "utf8");
