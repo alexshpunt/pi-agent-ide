@@ -15,6 +15,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 import { withTextResultChecks } from "#integration/support/text-result-checks.js";
 
 async function runComposition(
@@ -727,7 +728,8 @@ test("Copy does not deny actual writes when receipt creation fails", async () =>
       cwd,
       "copy-execution-failure",
       [
-        `const failure=await rejects(()=>tools.copy({path:"c09-probe:source",start:"alpha",target:"c09-probe:target",targetStart:"head"}),/Probe receipt failed after write/);
+        // Edit results present lines, and so build their receipt, only for LINE#HASH edits.
+        `const failure=await rejects(()=>tools.copy({path:"c09-probe:source",start:"alpha",target:"c09-probe:target",targetStart:${JSON.stringify(formatLineHashAnchor(1, "head"))}}),/Probe receipt failed after write/);
 text(failure);
 const state=await tools.fixture_copy_execution_state({});
 check(state.values["c09-probe:source"]==="alpha\\n","Copy changed its source");
