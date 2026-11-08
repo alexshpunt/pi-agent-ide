@@ -56,6 +56,7 @@ import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.js";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
 import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.js";
 import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.js";
+import { retryWhenSourceChanged, SOURCE_CHANGED } from "#src/core/source-change-retry.js";
 import {
   executeNativeTextEditBatch,
   runNativePostEditScope,
@@ -1336,34 +1337,6 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
   }
 
   return { pipeline, source };
-}
-
-/** Error code of a resolved target whose file changed before the edit used it. */
-export const SOURCE_CHANGED = "SOURCE_CHANGED";
-
-/** Attempts of one edit while other processes keep writing its file. */
-const SOURCE_CHANGE_ATTEMPTS = 5;
-
-async function retryWhenSourceChanged(
-  apply: () => Promise<TextResourcesEditOutcome<TextMutation>>,
-): Promise<TextResourcesEditOutcome<TextMutation>> {
-  for (let attempt = 1; ; attempt += 1) {
-    const outcome = await apply();
-    if (attempt >= SOURCE_CHANGE_ATTEMPTS || !changedBeforeWrite(outcome)) return outcome;
-  }
-}
-
-/** The edit wrote nothing because its source changed after it was read. */
-function changedBeforeWrite(outcome: TextResourcesEditOutcome<TextMutation>): boolean {
-  if (outcome.kind !== "failed" || outcome.completed.length > 0) return false;
-  if ((outcome.failure.rollback?.failed.length ?? 0) > 0) return false;
-  for (let cause: unknown = outcome.failure.cause; cause !== undefined;) {
-    if (cause instanceof ResourceError && cause.code === "RESOURCE_CHANGED") return true;
-    if (typeof cause !== "object" || cause === null) return false;
-    if ((cause as { code?: unknown }).code === SOURCE_CHANGED) return true;
-    cause = (cause as { cause?: unknown }).cause;
-  }
-  return false;
 }
 
 const scriptMutationScope = new AsyncLocalStorage<TextEditCompletion[]>();

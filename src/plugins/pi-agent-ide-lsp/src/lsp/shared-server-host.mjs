@@ -2,9 +2,11 @@
 // A detached process that runs one language server for every Pi session on this machine that
 // attaches with the same configuration. shared-servers.ts starts it and describes the protocol.
 // Plain JavaScript so it runs outside Pi's TypeScript loader.
+import { readFileSync, statSync } from "node:fs";
 import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import net from "node:net";
+import { fileURLToPath } from "node:url";
 
 import spawnProcess from "cross-spawn";
 import {
@@ -38,6 +40,7 @@ import {
  * @property {number} version Version the session uses for this document.
  * @property {string} text Text the session last synchronized.
  * @property {boolean} published Whether the session received diagnostics for this version.
+ * @property {number} syncedAt When the session sent this text, to tell it from later writes to the file.
  */
 
 /**
@@ -478,6 +481,7 @@ function openSession(socket, started) {
         version: textDocument.version,
         text: textDocument.text,
         published: false,
+        syncedAt: Date.now(),
       });
       documents.get(textDocument.uri)?.holders.add(session);
       align(session, textDocument.uri);
@@ -498,6 +502,7 @@ function openSession(socket, started) {
       owned.version = textDocument.version;
       owned.text = text;
       owned.published = false;
+      owned.syncedAt = Date.now();
       align(session, textDocument.uri);
     },
   );
@@ -537,6 +542,11 @@ function align(session, uri) {
   const document = documents.get(uri);
   if (!owned || !document) return;
   if (document.text !== owned.text) {
+    // Another process wrote the file after this session sent its copy, so the copy is older than
+    // the file. Putting it back would make the server reparse and cancel the other sessions'
+    // requests; that session catches up with its next request or edit. A copy sent after the
+    // file's last write, such as an unsaved proposal, still reaches the server.
+    if (olderThanFile(uri, document.text, owned)) return;
     document.text = owned.text;
     document.version = ++nextVersion;
     document.publication = undefined;
@@ -557,6 +567,27 @@ function align(session, uri) {
 }
 
 /**
+ * Whether the server has the text of the document's file and a session's copy predates the
+ * file's last write. Documents that are not readable local files are never older.
+ * @param {string} uri
+ * @param {string} serverText
+ * @param {{ text: string; syncedAt: number }} owned
+ */
+function olderThanFile(uri, serverText, owned) {
+  if (!uri.startsWith("file:")) return false;
+  try {
+    const file = fileURLToPath(uri);
+    return (
+      statSync(file).mtimeMs > owned.syncedAt &&
+      owned.text !== serverText &&
+      readFileSync(file, "utf8") === serverText
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * After the server published for its current text, give it the text of another session that
  * still waits for diagnostics. Servers such as clangd publish nothing for a text that a newer
  * one replaced, so without this an earlier session would wait in vain.
@@ -567,7 +598,13 @@ function serveWaitingSession(uri) {
   if (!document) return;
   for (const session of document.holders) {
     const owned = session.documents.get(uri);
-    if (owned && !owned.published && owned.text !== document.text) {
+    // A copy older than the file is not served; see align.
+    if (
+      owned &&
+      !owned.published &&
+      owned.text !== document.text &&
+      !olderThanFile(uri, document.text, owned)
+    ) {
       align(session, uri);
       return;
     }

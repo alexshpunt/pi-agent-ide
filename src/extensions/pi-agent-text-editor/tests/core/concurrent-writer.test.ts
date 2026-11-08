@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { ResourceError } from "pi-agent-resource";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
 import { expect, test } from "vitest";
@@ -8,6 +8,8 @@ import {
   TEXT_SEARCH_ANCHOR_KIND,
 } from "#src/api/plugin-protocol.js";
 import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { BatchExecutionJournal } from "#src/core/text-edit-batch-execution.js";
+import { executeRegisteredTextBatch } from "#src/core/text-edit-batch-registrar.js";
 import { executeTextMutation } from "#src/core/text-mutation.js";
 import { replaceMutationTool } from "#src/tools/tool-text-replace.js";
 
@@ -17,7 +19,7 @@ const source = "fixture://shared.txt";
  * A file that another process appends to between this process's read and write, `changes`
  * times. Like the filesystem resolver, a write refuses to replace text it has not read.
  */
-async function sharedFile(changes: number) {
+async function sharedFileCore(changes: number) {
   const file = { text: "alpha beta\n", writes: 0 };
   let pending = changes;
   const core = createTextEditorCore();
@@ -69,6 +71,11 @@ async function sharedFile(changes: number) {
       });
     },
   });
+  return { file, core };
+}
+
+async function sharedFile(changes: number) {
+  const { file, core } = await sharedFileCore(changes);
   const result = await executeTextMutation(
     core,
     replaceMutationTool,
@@ -94,4 +101,27 @@ test("an edit stops without writing when its file keeps changing", async () => {
   expect(file.text).toContain("alpha beta\n");
   expect(result.details.results?.[0]?.data.ok).toBe(false);
   expect(result.details.effect).toBe("not-applied");
+});
+
+test("a standalone tool call is applied again when another process changed its file", async () => {
+  const { file, core } = await sharedFileCore(2);
+  const journal = new BatchExecutionJournal(["replace-call"]);
+
+  await executeRegisteredTextBatch(
+    core,
+    new Map([["replace", replaceMutationTool]]),
+    {
+      edits: [
+        { callId: "replace-call", op: "replace", path: source, start: "beta", text: "gamma" },
+      ],
+    },
+    undefined,
+    undefined,
+    { cwd: process.cwd() } as ExtensionToolContext,
+    journal.reporter(),
+    () => undefined,
+  );
+
+  expect(file.text).toBe("alpha gamma\nother 1\nother 2\n");
+  expect(journal.get("replace-call").failure).toBeUndefined();
 });

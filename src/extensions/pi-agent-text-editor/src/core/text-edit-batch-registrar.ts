@@ -3,6 +3,7 @@ import {
   type ResultTargetStore,
   type ResultSourceTarget,
 } from "pi-agent-resource";
+import { retryWhenSourceChanged } from "#src/core/source-change-retry.js";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
 import { withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.js";
 import { isResultInput } from "./result-transfer.js";
@@ -428,8 +429,11 @@ export async function executeRegisteredTextBatch(
   let executionPlan = planned;
   const guardedSnapshots = new Map<string, string>();
 
-  try {
-    outcome = await core.editTexts(
+  // A batch planned inside the transaction can run again when another process wrote one of its
+  // files first; a batch planned outside it or bound to snapshots cannot.
+  const replannable = planned === undefined && parameters.expectedContent === undefined;
+  const edit = () =>
+    core.editTexts(
       [...requests.values()],
       { cwd: context.cwd, intent, ...(signal !== undefined && { signal }) },
       async (texts, resolveAnchor) => {
@@ -460,6 +464,8 @@ export async function executeRegisteredTextBatch(
         };
       },
     );
+  try {
+    outcome = replannable ? await retryWhenSourceChanged(edit) : await edit();
   } catch (error) {
     return failTextBatch(
       core,
