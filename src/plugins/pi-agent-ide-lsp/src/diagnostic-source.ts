@@ -61,16 +61,20 @@ export function createLspDiagnosticSource(
           content: context.content,
         });
       };
-      const refresh = async () => {
-        refreshState.queued = true;
-        if (refreshState.active) return;
+      // Servers send refreshes and pushes in bursts while files change, and each pull of a
+      // changed project can make the server check the file again. Pull once the triggers pause,
+      // or after REFRESH_MAX_WAIT_MS when they keep coming.
+      let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+      let firstTrigger: number | undefined;
+      const pullAgain = async () => {
+        refreshTimer = undefined;
+        firstTrigger = undefined;
+        if (refreshState.active || !refreshState.queued || !current()) return;
         refreshState.active = true;
+        refreshState.queued = false;
         try {
-          while (refreshState.queued && current()) {
-            refreshState.queued = false;
-            const result = await request();
-            if (current()) context.publish(toReport(result, client.commandName));
-          }
+          const result = await request();
+          if (current()) context.publish(toReport(result, client.commandName));
         } catch (error) {
           if (current())
             context.publish({
@@ -81,11 +85,27 @@ export function createLspDiagnosticSource(
             });
         } finally {
           refreshState.active = false;
+          // A trigger may have arrived during the pull.
+          schedule();
         }
+      };
+      const schedule = () => {
+        if (refreshState.active || !refreshState.queued || !current()) return;
+        const now = Date.now();
+        firstTrigger ??= now;
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(
+          () => void pullAgain(),
+          Math.max(0, Math.min(REFRESH_QUIET_MS, firstTrigger + REFRESH_MAX_WAIT_MS - now)),
+        );
+      };
+      const refresh = () => {
+        refreshState.queued = true;
+        schedule();
       };
       // A pull server asks for a new pull when results change, such as after other files changed.
       const unsubscribeRefresh = client.onNotification("workspace/diagnostic/refresh", () => {
-        if (current() && client.diagnosticMode === "pull") void refresh();
+        if (current() && client.diagnosticMode === "pull") refresh();
       });
       const unsubscribePush = manager.onPushDiagnostics((event) => {
         if (
@@ -98,7 +118,7 @@ export function createLspDiagnosticSource(
           return;
         if (client.diagnosticMode === "pull" || completedDiagnosticAdapter(client)) {
           // Push notifications are invalidations, not complete reports. Requery without resending didChange.
-          void refresh();
+          refresh();
         } else {
           context.publish({
             status: "snapshot",
@@ -109,6 +129,7 @@ export function createLspDiagnosticSource(
         }
       });
       const unsubscribe = () => {
+        clearTimeout(refreshTimer);
         unsubscribePush();
         unsubscribeRefresh();
       };
@@ -125,14 +146,16 @@ export function createLspDiagnosticSource(
       } finally {
         release();
         refreshState.active = false;
-        if (refreshState.queued && current())
-          queueMicrotask(() => {
-            void refresh();
-          });
+        schedule();
       }
     },
   };
 }
+
+/** Quiet time after the last refresh or push before diagnostics are pulled again. */
+const REFRESH_QUIET_MS = 750;
+/** Longest delay of a repeated pull while triggers keep arriving. */
+const REFRESH_MAX_WAIT_MS = 3000;
 
 function snapshotReason(unversioned: boolean): string {
   return `Latest push snapshot; completion is unknown${unversioned ? "; language server omitted the document version" : ""}`;

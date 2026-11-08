@@ -192,3 +192,32 @@ test("a missing push notification fails at the configured timeout instead of rep
   expect(unsubscribe).toHaveBeenCalledOnce();
   expect(client.hasActiveDiagnosticRequest(uri)).toBe(false);
 });
+
+test("a repeated pull of the same version reuses the report the server reports unchanged", async () => {
+  const { client } = pushClient();
+  let version = 1;
+  vi.mocked(client.documentVersion).mockImplementation(() => version);
+  const item = {
+    code: 1,
+    message: "Undefined name",
+    severity: 1,
+    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+  };
+  vi.mocked(client.sendRequest)
+    .mockResolvedValueOnce({ kind: "full", resultId: "7", items: [item] })
+    .mockResolvedValueOnce({ kind: "unchanged", resultId: "7" })
+    .mockResolvedValueOnce({ kind: "full", resultId: "8", items: [] });
+
+  const first = await requestDiagnostics(client, uri, "python");
+  const second = await requestDiagnostics(client, uri, "python");
+  version = 2;
+  const third = await requestDiagnostics(client, uri, "python");
+
+  expect(second.diagnostics).toEqual(first.diagnostics);
+  expect(third.diagnostics).toEqual([]);
+  expect(vi.mocked(client.sendRequest).mock.calls.map((call) => call[1])).toEqual([
+    { textDocument: { uri } },
+    { textDocument: { uri }, previousResultId: "7" },
+    { textDocument: { uri } },
+  ]);
+});

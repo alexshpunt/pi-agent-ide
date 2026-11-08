@@ -38,6 +38,13 @@ export interface LspDiagnosticPublication {
   readonly diagnostics: LspDiagnostic[];
 }
 
+/** A complete pulled diagnostic report for one synchronized document version. */
+export interface LspPulledDiagnosticReport {
+  readonly version: number;
+  readonly resultId: string;
+  readonly diagnostics: readonly LspDiagnostic[];
+}
+
 /**
  * Generic LSP client — JSON-RPC over stdio.
  *
@@ -69,6 +76,7 @@ export class LspClient {
   private readonly _documentContents = new Map<string, string>();
 
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
+  private readonly _pulledReports = new Map<string, LspPulledDiagnosticReport>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
   /**
    * ID under which the server registered pull diagnostics after initialization, as pyright does.
@@ -243,6 +251,19 @@ export class LspClient {
   /** Reuse a push that arrived after the latest synchronization, including an empty publication. */
   diagnosticPublication(uri: string): LspDiagnosticPublication | undefined {
     return this._diagnosticPublications.get(uri);
+  }
+
+  /**
+   * The last pulled report of the document's current version. A server that still has the same
+   * result answers a pull with its result id as unchanged instead of checking the file again.
+   */
+  pulledReport(uri: string): LspPulledDiagnosticReport | undefined {
+    const report = this._pulledReports.get(uri);
+    return report?.version === this.documentVersion(uri) ? report : undefined;
+  }
+
+  rememberPulledReport(uri: string, report: LspPulledDiagnosticReport): void {
+    if (report.version === this.documentVersion(uri)) this._pulledReports.set(uri, report);
   }
 
   beginDiagnosticRequest(uri: string): void {
@@ -441,6 +462,7 @@ export class LspClient {
       this._connection?.dispose();
       this._connection = null;
       this._diagnosticPublications.clear();
+      this._pulledReports.clear();
       this._activeDiagnosticRequests.clear();
       this._diagnosticMode = "unknown";
       this._pullRegistration = undefined;
@@ -732,6 +754,7 @@ export class LspClient {
     this._documentVersions.clear();
     this._documentContents.clear();
     this._diagnosticPublications.clear();
+    this._pulledReports.clear();
     this._diagnosticMode = "unknown";
     this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
@@ -882,6 +905,7 @@ export class LspClient {
     }
 
     this._diagnosticPublications.delete(uri);
+    this._pulledReports.delete(uri);
     this.sendNotification("textDocument/didOpen", {
       textDocument: { uri, languageId, version, text },
     });
@@ -940,6 +964,7 @@ export class LspClient {
     const currentVersion = this._documentVersions.get(uri);
     const nextVersion = Math.max(version, (currentVersion ?? 0) + 1);
     this._diagnosticPublications.delete(uri);
+    this._pulledReports.delete(uri);
     this.sendNotification("textDocument/didChange", {
       textDocument: { uri, version: nextVersion },
       contentChanges: [{ text }],
@@ -956,6 +981,7 @@ export class LspClient {
     this._documentContents.delete(uri);
 
     this._diagnosticPublications.delete(uri);
+    this._pulledReports.delete(uri);
   }
 
   // ── cleanup ────────────────────────────────────────────────────────
@@ -1013,6 +1039,7 @@ export class LspClient {
     this._documentVersions.clear();
     this._documentContents.clear();
     this._diagnosticPublications.clear();
+    this._pulledReports.clear();
     this._diagnosticMode = "unknown";
     this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
