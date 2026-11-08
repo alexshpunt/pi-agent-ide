@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.9.5 — 2026-11-08
+
+### Added
+
+- Pi sessions on one machine share a local language server with the same configuration.
+- Language servers stop after 10 idle minutes. New setting `lsp.idle-timeout` sets the delay.
+- Python falls back to `pyright` when `basedpyright` is not installed.
+
+### Changed
+
+- Several Pi sessions can edit the same file at once without losing edits.
+- Edits replace files in one step, so other programs never read a half-written file.
+- `symbol:` targets, `lsp_search` and `ast_search` work on files that other sessions edit at the same time.
+- Language servers watch only files inside the project.
+- Reading and editing large files uses less memory and CPU.
+
+### Fixed
+
+- pyright and basedpyright no longer report a file with errors as clean.
+- rust-analyzer no longer returns missing symbols or diagnostics while the project loads, and no longer exits on saves during startup.
+- Requests cancelled by a language server because the file changed are sent again.
+- `lsp_search` with `calls` no longer fails when the server supports only one call direction.
+- A language server that exits during startup is reported at once with its error.
+- Clippy findings are reported when Cargo stops on a compile error.
+- Cancelled or timed-out lint and format commands stop all processes they started.
+- Pi's memory no longer grows with every edit of a large file.
+
 ## 0.9.4 — 2026-11-03
 
 ### Fixed
