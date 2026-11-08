@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.8 — 2026-11-08
+
+### Fixed
+
+- Extensions that typecheck against pi-agent-ide no longer report missing `cross-spawn` types.
+
 ## 0.9.7 — 2026-11-08
 
 ### Fixed

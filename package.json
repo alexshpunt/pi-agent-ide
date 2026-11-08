@@ -1,6 +1,6 @@
 {
   "name": "pi-agent-ide",
-  "version": "0.9.7",
+  "version": "0.9.8",
   "description": "Agent-native IDE extension for Pi Coding Agent with guarded editing, search, LSP, terminals, debugging, and observability",
   "keywords": [
     "agent-ide",
