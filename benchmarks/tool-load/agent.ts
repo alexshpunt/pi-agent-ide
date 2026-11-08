@@ -90,6 +90,9 @@ async function runAgent(config: AgentConfig): Promise<AgentResult> {
       cwd: config.projectDir,
       rawMode: false,
       timeoutMs: config.timeoutMs,
+      // Edit results carry whole-file snapshots in details; tracing them would load the
+      // harness and Pi more than the IDE work being measured.
+      traceToolDetails: false,
       isolateUserResources: true,
       piCommand: config.piCommand,
       extensions: [

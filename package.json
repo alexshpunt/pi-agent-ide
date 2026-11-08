@@ -270,7 +270,7 @@
     "pi-agent-search-text": "workspace:^",
     "pi-agent-text-anchor-exact": "workspace:^",
     "pi-agent-text-anchor-line-hash": "workspace:^",
-    "pi-coding-agent-test": "0.1.5",
+    "pi-coding-agent-test": "0.1.6",
     "typebox": "^1.3.27",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
