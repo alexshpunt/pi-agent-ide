@@ -1,5 +1,5 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -7,6 +7,7 @@ import { ResourceError } from "pi-agent-resource";
 import { textFromAgentContent } from "pi-agent-text";
 
 import { withFileWriteLock } from "./file-write-lock.js";
+import { replaceFileContent } from "./replace-file.js";
 
 import type {
   ContentHost,
@@ -116,9 +117,7 @@ function resolveFilesystemSource(
               throw new ResourceError("RESOURCE_CHANGED", filePath, "not-applied");
           }
           const bytes = Buffer.from(text, "utf8");
-          await writeFile(filePath, bytes, {
-            ...(operationContext.signal !== undefined && { signal: operationContext.signal }),
-          });
+          await replaceFileContent(filePath, bytes, operationContext.signal);
           sourceBytes = bytes;
         });
       },
