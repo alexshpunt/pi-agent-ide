@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, openSync, renameSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { lstat, mkdir } from "node:fs/promises";
 import net from "node:net";
@@ -149,6 +149,7 @@ function startHost(socketPath: string, key: string, directory: string): ChildPro
   const command = process.versions.bun || !singleExecutable() ? process.execPath : "node";
   // Runtime failures such as heap exhaustion are written here; a clean stop removes the file.
   const log = path.join(directory, `${key}.log`);
+  keepFailureLog(log);
   const output = openSync(log, "w", 0o600);
   try {
     const host = spawn(command, [HOST_SCRIPT, socketPath, key, log], {
@@ -162,6 +163,19 @@ function startHost(socketPath: string, key: string, directory: string): ChildPro
     return host;
   } finally {
     closeSync(output);
+  }
+}
+
+/**
+ * A log left with content records why the previous host for this key failed. Keep it under its own
+ * name so the new host does not truncate it; the host sweep removes it after a day.
+ */
+function keepFailureLog(log: string): void {
+  try {
+    const { mtimeMs, size } = statSync(log);
+    if (size > 0) renameSync(log, log.replace(/\.log$/u, `.${String(Math.round(mtimeMs))}.log`));
+  } catch {
+    // No earlier log.
   }
 }
 

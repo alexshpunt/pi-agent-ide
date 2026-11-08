@@ -299,6 +299,26 @@ test("a server that crashes leaves its exit code and error output in the host lo
   expect(await log()).toContain("fixture panic: index out of bounds");
 });
 
+test("a host started after a crash keeps the crashed host's log", async () => {
+  const { cwd, sharing, sockets } = await workspace();
+  const client = await session(cwd, sharing);
+  await expect(client.sendRequest("lifecycle/crash", {})).rejects.toThrow(/./u);
+  const logs = async () =>
+    Promise.all(
+      (await readdir(sockets))
+        .filter((name) => name.endsWith(".log"))
+        .map((name) => readFile(path.join(sockets, name), "utf8")),
+    );
+  await until(async () => (await logs()).some((log) => log.includes("exited with code 3")));
+
+  // The restart starts a new host for the same server.
+  await client.restart();
+  expect(await client.sendRequest("lifecycle/configuration", { section: "fixture.mode" })).toBe(
+    "strict",
+  );
+  expect((await logs()).filter((log) => log.includes("fixture panic"))).toHaveLength(1);
+});
+
 test("the shared host answers server requests for settings and file watching", async () => {
   const { cwd, sharing } = await workspace();
   const client = await session(cwd, sharing);
