@@ -56,15 +56,23 @@ export function createAstScopePostReadHandler(): ReadPostReadHandler {
       return { kind: "continue", context };
     }
 
-    const fullLineByNumber = new Map(state.text.lines.map((line) => [line.lineNumber, line]));
-    const renderedLineNumbers = new Set(renderedLines.map((line) => line.lineNumber));
+    const fullLineByNumber = lineLookup(state.text.lines);
+    // Built on the first scope boundary: reads without scope markers do not need it.
+    let renderedLineNumbers: ReadonlySet<number> | undefined;
     const contextLines = new Map<number, ReadTextLine>();
 
-    for (const renderedLine of renderedLines) {
-      const sourceLine = fullLineByNumber.get(renderedLine.lineNumber);
-      const metadata = getAstScopeMetadata(sourceLine);
+    // Indexed loops: a whole-file read of a large file passes every line through here, and
+    // most lines have no scope boundary.
+    for (let index = 0; index < renderedLines.length; index += 1) {
+      const lineNumber = renderedLines[index]?.lineNumber;
+      const boundaries =
+        lineNumber === undefined
+          ? undefined
+          : getAstScopeMetadata(fullLineByNumber.get(lineNumber))?.boundaries;
+      if (boundaries === undefined) continue;
 
-      for (const boundary of metadata?.boundaries ?? []) {
+      for (const boundary of boundaries) {
+        renderedLineNumbers ??= new Set(renderedLines.map((line) => line.lineNumber));
         if (renderedLineNumbers.has(boundary.endLine)) {
           continue;
         }
@@ -92,6 +100,25 @@ export function createAstScopePostReadHandler(): ReadPostReadHandler {
       context,
       transform: (updated) => appendTextLines(updated, lines, lastRenderedLine),
     };
+  };
+}
+
+/**
+ * Finds a line by its number. Read lines are numbered from 1 in order, so the line usually sits
+ * at its index; an index is built only for documents numbered differently. Building it for
+ * every read would cost one map entry per line of a large file.
+ */
+function lineLookup(lines: readonly ReadTextLine[]): {
+  get(lineNumber: number): ReadTextLine | undefined;
+} {
+  let byNumber: Map<number, ReadTextLine> | undefined;
+  return {
+    get(lineNumber) {
+      const line = lines[lineNumber - 1];
+      if (line?.lineNumber === lineNumber) return line;
+      byNumber ??= new Map(lines.map((candidate) => [candidate.lineNumber, candidate]));
+      return byNumber.get(lineNumber);
+    },
   };
 }
 

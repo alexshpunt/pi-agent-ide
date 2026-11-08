@@ -57,3 +57,13 @@ test("aligns change markers, presented prefixes, and synthetic rows", () => {
     ),
   );
 });
+
+test("a large text split again returns the same immutable document", () => {
+  const content = "line\n".repeat(20_000);
+  const document = createTextDocument("large.ts", content);
+
+  expect(createTextDocument("large.ts", "line\n".repeat(20_000))).toBe(document);
+  expect(createTextDocument("other.ts", content)).not.toBe(document);
+  expect(createTextDocument("large.ts", `${content}more\n`).lines).toHaveLength(20_001);
+  expect(Object.isFrozen(document.lines)).toBe(true);
+});

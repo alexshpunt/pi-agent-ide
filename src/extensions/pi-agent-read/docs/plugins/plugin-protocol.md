@@ -84,12 +84,15 @@ interface ReadViewRegistration {
   readonly view: string;
   readonly contentKind?: "text" | "any";
   readonly includes?: readonly string[];
+  readonly showsLinesOutsideRange?: boolean;
   readonly presenter: TextLinePresenter;
   readonly priority?: number;
 }
 ```
 
 A view may list other views in `includes` when its complete presentation already contains theirs. If a request names both views, read skips the included view instead of returning duplicate annotations. Only declare an inclusion when that plugin actually supplies the complete included presentation.
+
+When a request has `offset` or `limit`, presenters receive the requested lines in `TextPresentationContext.lineNumbers` and may leave the other lines unpresented, which keeps a short read of a large file cheap. A view whose result shows lines outside that range, such as scope context that appends a closing line, sets `showsLinesOutsideRange`; the other presenters then present the whole document.
 
 Views require text by default. Set `contentKind: "any"` for a view handled by a native-content reader, such as image capture. Read explains when a requested text-only view cannot apply to native content. Its warnings stay outside source lines and script data; renderers receive them in `ReadResultDetails.viewWarnings`.
 

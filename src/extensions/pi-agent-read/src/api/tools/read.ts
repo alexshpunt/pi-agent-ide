@@ -111,6 +111,11 @@ export interface ReadViewRegistration {
   readonly contentKind?: "text" | "any";
   /** Requested views whose complete presentation this view already provides. */
   readonly includes?: readonly string[];
+  /**
+   * The result of this view shows lines outside the requested offset and limit, so the other
+   * views present the whole document rather than the requested range.
+   */
+  readonly showsLinesOutsideRange?: boolean;
   readonly presenter: TextLinePresenter;
   readonly priority?: number;
 }
@@ -373,6 +378,7 @@ const viewRegistrationSchema = Type.Object({
   view: Type.String({ pattern: "\\S" }),
   contentKind: Type.Optional(Type.Union([Type.Literal("text"), Type.Literal("any")])),
   includes: Type.Optional(Type.Array(Type.String({ pattern: "\\S" }))),
+  showsLinesOutsideRange: Type.Optional(Type.Boolean()),
   presenter: Type.Object({ id: Type.String(), present: functionSchema }),
   priority: Type.Optional(Type.Number()),
 });

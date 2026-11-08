@@ -48,7 +48,10 @@ export interface TextPresentationContext {
   /** Script data enrichment differs from explicitly requested views. */
   readonly audience?: "agent" | "script";
   readonly requestedViews?: readonly string[];
-  /** Edit-diff only: after-document lines the edit result shows. Other lines may stay unpresented. */
+  /**
+   * Lines the result shows: the requested range of a read, or the after-document lines of an
+   * edit result. Other lines may stay unpresented.
+   */
   readonly lineNumbers?: ReadonlySet<number>;
   readonly source: string;
   readonly cwd: string;
@@ -87,8 +90,34 @@ export function isTextPresenterRegistration(value: unknown): value is TextPresen
   return safeCheck(registrationSchema, value);
 }
 
+/** Texts below this size are split again; reuse matters only for large files. */
+const REUSE_MIN_LENGTH = 64 * 1024;
+const REUSE_LIMIT = 2;
+const REUSE_MS = 2000;
+/**
+ * Recently split large documents. One edit or read of a large file splits the same text several
+ * times, in Read, the editor, search and result checks, and each split holds an object per line.
+ * The documents are released shortly after the last split, so an idle Pi keeps none of them.
+ */
+const recentDocuments: TextDocument[] = [];
+let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Splits text into lines. Documents are immutable, so the same text may return the same one. */
 export function createTextDocument(source: string, content: string): TextDocument {
-  return { source, content, lines: splitTextLines(content) };
+  if (content.length < REUSE_MIN_LENGTH) return { source, content, lines: splitTextLines(content) };
+  const reused = recentDocuments.find(
+    (document) => document.source === source && document.content === content,
+  );
+  if (reused !== undefined) return reused;
+  const document: TextDocument = { source, content, lines: Object.freeze(splitTextLines(content)) };
+  recentDocuments.unshift(document);
+  recentDocuments.length = Math.min(recentDocuments.length, REUSE_LIMIT);
+  clearTimeout(releaseTimer);
+  releaseTimer = setTimeout(() => {
+    recentDocuments.length = 0;
+  }, REUSE_MS);
+  releaseTimer.unref();
+  return document;
 }
 
 export function renderTextDocument(document: TextDocument): string {
