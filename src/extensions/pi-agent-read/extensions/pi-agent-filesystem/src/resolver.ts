@@ -151,10 +151,14 @@ async function readFilesystemContent(
   capture: (bytes: Uint8Array) => void,
 ) {
   throwIfAborted(signal);
-  const bytes = await readFile(filePath, {
-    encoding: null,
-    ...(signal !== undefined && { signal }),
-  });
+  // A write truncates the file before it writes the new text; reading under the same lock never
+  // sees another Pi process's half-written file.
+  const bytes = await withFileWriteLock(filePath, signal, () =>
+    readFile(filePath, {
+      encoding: null,
+      ...(signal !== undefined && { signal }),
+    }),
+  );
   throwIfAborted(signal);
   capture(bytes);
   return contentHost.convert({ source: filePath, bytes }, signal === undefined ? {} : { signal });

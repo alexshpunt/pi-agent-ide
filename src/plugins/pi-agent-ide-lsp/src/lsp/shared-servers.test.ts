@@ -209,6 +209,32 @@ test("requests see the requesting session's text and versions", async () => {
   expect(await text(first)).toBe("alpha\n");
 });
 
+test("a session with an older copy of a file does not take the file's text from the server", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const file = path.join(cwd, "first.fx");
+  const uri = URI.file(file).toString();
+  const text = (client: LspClient) =>
+    client.sendRequest<string>("lifecycle/text", { textDocument: { uri } });
+  first.syncDocument(uri, "first\n", "fixture");
+  expect(await text(first)).toBe("first\n");
+
+  // Another process edits the file; its session syncs the new text. File times come from a
+  // coarse clock, so the write happens visibly later, as an agent's next edit does.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await writeFile(file, "edited\n");
+  second.syncDocument(uri, "edited\n", "fixture");
+  expect(await text(second)).toBe("edited\n");
+
+  // The first session still holds the old copy; its request leaves the file's text in place.
+  expect(await text(first)).toBe("edited\n");
+  expect((await status(first)).events.filter(([event]) => event === "open")).toHaveLength(1);
+  // Once it syncs the file, it sees its own text again.
+  first.syncDocument(uri, "edited\n", "fixture");
+  expect(await text(first)).toBe("edited\n");
+});
+
 test("requests the server cancels as stale are retried through the shared host", async () => {
   const { cwd, sharing } = await workspace();
   const client = await session(cwd, sharing);
