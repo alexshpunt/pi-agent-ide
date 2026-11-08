@@ -13,7 +13,7 @@ export interface LanguageSpec {
   readonly astLanguage: string;
   readonly comment: string;
   /** Project configuration files keyed by path relative to the project root. */
-  projectFiles(agents: readonly string[]): Record<string, string>;
+  projectFiles(modules: readonly string[]): Record<string, string>;
   /** One generated unit: marker line, a function that calls the previous unit, end line. */
   unitFunction(agent: string, index: number, variant: number): string;
   /** A self-contained function nobody calls. */
@@ -227,12 +227,10 @@ const rust: LanguageSpec = {
   extension: "rs",
   astLanguage: "rust",
   comment: "//",
-  projectFiles: (agents) => ({
+  projectFiles: (modules) => ({
     "Cargo.toml":
       '[package]\nname = "tool_load_rust"\nversion = "0.1.0"\nedition = "2021"\n\n[lib]\npath = "src/lib.rs"\n',
-    "src/lib.rs": `${agents
-      .flatMap((agent) => [`pub mod agent_${agent};`, `pub mod scratch_${agent};`])
-      .join("\n")}\n`,
+    "src/lib.rs": `${modules.map((module) => `pub mod ${module};`).join("\n")}\n`,
   }),
   unitFunction: (agent, index, variant) =>
     wrap(

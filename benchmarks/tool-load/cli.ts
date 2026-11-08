@@ -22,6 +22,8 @@ own large generated source file through the IDE tools and checks every result.
   --languages <list>    cpp,typescript,python,rust (default: all four)
   --cycles <n>          Repetitions of the step sequence per agent (default 4)
   --sizes <list>        Source sizes in KB, assigned round-robin per language (default 200,500,1100)
+  --shared-file <kb>    All agents of a language edit one file of this size, each in its own part,
+                        like several agents working on one large source file
   --pause-ms <n>        Model think time before each scripted assistant message (default 1000; 0 = stress)
   --step-timeout <s>    An agent without a finished tool call for this long counts as hung (default 180)
   --stop-free-mb <n>    Stop every agent when free memory falls below this, before the kernel's OOM
@@ -40,6 +42,8 @@ interface Options {
   readonly languages: readonly LanguageId[];
   readonly cycles: number;
   readonly sizesKb: readonly number[];
+  /** Size of the one file all agents of a language share, or undefined for a file per agent. */
+  readonly sharedFileKb: number | undefined;
   readonly pauseMs: number;
   readonly profile: boolean;
   readonly stepTimeoutMs: number;
@@ -56,6 +60,7 @@ function parseOptions(): Options | undefined {
       languages: { type: "string", default: "cpp,typescript,python,rust" },
       cycles: { type: "string", default: "4" },
       sizes: { type: "string", default: "200,500,1100" },
+      "shared-file": { type: "string" },
       "pause-ms": { type: "string", default: "1000" },
       "step-timeout": { type: "string", default: "180" },
       "stop-free-mb": { type: "string", default: "1024" },
@@ -78,6 +83,10 @@ function parseOptions(): Options | undefined {
     languages: selected as LanguageId[],
     cycles: positive(values.cycles, "--cycles"),
     sizesKb: values.sizes.split(",").map((value) => positive(value, "--sizes")),
+    sharedFileKb:
+      values["shared-file"] === undefined
+        ? undefined
+        : positive(values["shared-file"], "--shared-file"),
     pauseMs: Number(values["pause-ms"]),
     profile: values.profile,
     stepTimeoutMs: positive(values["step-timeout"], "--step-timeout") * 1000,
@@ -143,26 +152,49 @@ async function prepareProjects(options: Options): Promise<PlannedAgent[]> {
   for (const [language, agents] of byLanguage) {
     const spec = languages[language];
     const projectDir = path.join(options.out, "projects", language);
-    await writeProjectFiles(projectDir, spec, agents);
+    const sharedBytes =
+      options.sharedFileKb === undefined ? undefined : options.sharedFileKb * 1024;
+    const shared = sharedBytes !== undefined;
+    const fileStem = (agent: string) => (shared ? "agent_shared" : `agent_${agent}`);
+    await writeProjectFiles(projectDir, spec, [
+      ...new Set(agents.map(fileStem)),
+      ...agents.map((agent) => `scratch_${agent}`),
+    ]);
+    // A shared file holds every agent's generated part in turn; unit lines become file lines.
+    const sources = agents.map((agent, position) =>
+      generateSource(
+        spec,
+        agent,
+        sharedBytes === undefined
+          ? (options.sizesKb[position % options.sizesKb.length] ?? 200) * 1024
+          : sharedBytes / agents.length,
+      ),
+    );
+    const sharedContent = sources.map((source) => source.content).join("");
+    let lineOffset = 0;
     for (const [position, agent] of agents.entries()) {
-      const sizeBytes = (options.sizesKb[position % options.sizesKb.length] ?? 200) * 1024;
-      const source = generateSource(spec, agent, sizeBytes);
-      const file = `src/agent_${agent}.${spec.extension}`;
+      const source = sources[position];
+      if (source === undefined) throw new Error(`No generated source for ${agent}`);
+      const file = `src/${fileStem(agent)}.${spec.extension}`;
       const scratch = `src/scratch_${agent}.${spec.extension}`;
-      await writeFile(path.join(projectDir, file), source.content);
+      const content = shared ? sharedContent : source.content;
+      if (!shared || position === 0) await writeFile(path.join(projectDir, file), content);
       await writeFile(path.join(projectDir, scratch), `${spec.scratchHeader(agent, 0)}\n`);
+      const unitLines = source.unitLines.map((line) => line + lineOffset);
+      if (shared) lineOffset += source.content.split("\n").length - 1;
       const agentDir = path.join(options.out, "agents", agent);
       await mkdir(agentDir, { recursive: true });
       planned.push({
-        sizeBytes: Buffer.byteLength(source.content),
+        sizeBytes: Buffer.byteLength(content),
         config: {
           agent,
           language,
           file,
           scratch,
           unitCount: source.unitCount,
-          sizeBytes: Buffer.byteLength(source.content),
-          unitLines: source.unitLines,
+          sizeBytes: Buffer.byteLength(content),
+          unitLines,
+          sharedWith: shared ? agents.length - 1 : 0,
           projectDir,
           agentDir,
           repositoryRoot,
@@ -181,10 +213,10 @@ async function prepareProjects(options: Options): Promise<PlannedAgent[]> {
 async function writeProjectFiles(
   projectDir: string,
   spec: LanguageSpec,
-  agents: readonly string[],
+  modules: readonly string[],
 ): Promise<void> {
   const files: Record<string, string> = {
-    ...spec.projectFiles(agents),
+    ...spec.projectFiles(modules),
     ".pi/settings.json": `${JSON.stringify({ codemode: { mode: "on" }, compaction: { enabled: false } }, null, 2)}\n`,
     ".pi/pi-agent-ide/extensions.json": `${JSON.stringify({ preferences: { "lsp.idle-timeout": String(IDLE_TIMEOUT_MINUTES) } }, null, 2)}\n`,
   };

@@ -40,6 +40,8 @@ export interface AgentFiles {
   readonly sizeBytes: number;
   /** One-based line of each unit marker in the generated file. */
   readonly unitLines: readonly number[];
+  /** Other agents editing the same file at the same time; their edits move this agent's lines. */
+  readonly sharedWith: number;
 }
 
 /** Pi Agent IDE refuses AST outlines of larger files with a clear message. */
@@ -47,6 +49,15 @@ const AST_OUTLINE_LIMIT_BYTES = 262_144;
 
 /** Lines a unit may move by after earlier cycles; reads start this far before the marker. */
 const LINE_SLACK = 12;
+
+/**
+ * Lines one other agent's edits in a shared file can move this agent's units by: an inserted
+ * function and error line, or a function moved out to its scratch file.
+ */
+const SHARED_DRIFT_LINES = 16;
+
+/** Read window size around a unit. */
+const READ_LINES = 60;
 
 /** Builds the deterministic step sequence of one agent. */
 export function buildSteps(spec: LanguageSpec, files: AgentFiles, cycles: number): Step[] {
@@ -81,7 +92,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
     step(
       "read-anchors",
       "read",
-      { path: file, offset: lineOf(files, unit), limit: 60, views: ["anchors"] },
+      { path: file, offset: lineOf(files, unit), limit: readLimit(files), views: ["anchors"] },
       (result) =>
         expectAll(result, [`|${unitMarker(spec, agent, unit)}`]) ??
         (/\d+#[0-9A-F]{4}\|/.test(result) ? undefined : "no LINE#HASH anchors"),
@@ -242,7 +253,7 @@ function codemodeBatch(
   const name = unitName(files.agent, index);
   return `const file = ${JSON.stringify(files.file)};
 const stepLine = ${JSON.stringify(stepLine)};
-const page = String(await tools.read({ path: file, offset: ${lineOf(files, index)}, limit: 60, views: ["anchors"] }));
+const page = String(await tools.read({ path: file, offset: ${lineOf(files, index)}, limit: ${readLimit(files)}, views: ["anchors"] }));
 const line = page.split("\\n").find((candidate) => candidate.includes(stepLine));
 const match = line && /^\\s*(\\d+#[0-9A-F]{4})\\|(.*)$/.exec(line);
 if (!match) throw new Error("no anchored line with " + stepLine);
@@ -254,12 +265,22 @@ const [found, calls, diagnostics] = await Promise.all([
 ]);
 if (!String(found.result).includes("1 match in 1 file")) throw new Error("search after replace: " + found.result);
 if (!calls.hasMatches) throw new Error("ast_search found no call of ${name}");
-if (String(diagnostics).includes("[ERROR]")) throw new Error("unexpected diagnostics: " + diagnostics);
+// Other agents' error lines in a shared file are theirs to check.
+const errors = String(diagnostics).split("\\n").filter((entry) => entry.includes("[ERROR]") && !/broken_a\\d+_\\d+/i.test(entry));
+if (errors.length > 0) throw new Error("unexpected diagnostics: " + errors.join("\\n"));
 text("codemode batch ok");`;
 }
 
 function lineOf(files: AgentFiles, index: number): number {
-  return Math.max(1, (files.unitLines[index] ?? 1) - LINE_SLACK);
+  return Math.max(1, (files.unitLines[index] ?? 1) - LINE_SLACK - sharedDrift(files));
+}
+
+function readLimit(files: AgentFiles): number {
+  return READ_LINES + 2 * sharedDrift(files);
+}
+
+function sharedDrift(files: AgentFiles): number {
+  return files.sharedWith * SHARED_DRIFT_LINES;
 }
 
 function expectAll(result: string, needles: readonly string[]): string | undefined {
