@@ -31,6 +31,8 @@ Every agent repeats the same step sequence for `--cycles` cycles: read with view
 
 - Tool latency p50, p95 and max per tool and language, and error counts.
 - Per Pi process: RSS peak, heap after a full GC at the end of each cycle and its growth per cycle, event-loop delay, TUI frame count and gaps, Pi CPU and the harness's own CPU, so the harness's cost is not blamed on Pi.
+
+Pi runs with tool output expanded, as the test harness sets it, so the TUI renders and keeps every result in full. Heap, RSS and Pi CPU are therefore higher than with Pi's default collapsed output, and heap growth per cycle includes the rendered rows of that cycle's results. Rust agents grow faster than the others for this reason: the generated Rust project has about 2,300 cargo warnings, so the Codemode diagnostics read renders about 1,700 rows each cycle. With collapsed output a Rust agent grows about 1.9 MB per cycle instead of 4.6 MB.
 - Per language: language-server process count, RSS peak and CPU.
 - Machine CPU and free memory.
 
