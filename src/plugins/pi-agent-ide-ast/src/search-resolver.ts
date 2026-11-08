@@ -193,7 +193,10 @@ export function createAstSearchResolver(
             (context.scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
         });
       };
-      const selected = await collect(context.signal);
+      const selected = await collectWhileSourceChanges(
+        () => collect(context.signal),
+        context.signal,
+      );
       const session = await registerSelection(
         { request, matches: selected.matches, complete: selected.complete, refresh: collect },
         context,
@@ -354,7 +357,7 @@ async function selectionMatches(
       const bytes = await readFile(source, { signal });
       const after = await stat(source);
       if (before.mtimeMs !== after.mtimeMs || before.size !== after.size)
-        throw new Error("AST source changed during search. Run the structural query again.");
+        throw sourceChanged("AST source changed during search. Run the structural query again.");
       sources.set(source, bytes);
     }
   }
@@ -371,7 +374,7 @@ async function selectionMatches(
       end > bytes.length ||
       bytes.subarray(start, end).toString("utf8") !== match.text
     )
-      throw new Error("AST range does not match its source snapshot. Search again.");
+      throw sourceChanged("AST range does not match its source snapshot. Search again.");
     const prefix = bytes.subarray(0, start).toString("utf8");
     const throughEnd = bytes.subarray(0, end).toString("utf8");
     const lineNumber = prefix.split("\n").length;
@@ -495,4 +498,28 @@ async function runOwnedAstGrep(
     ...match,
     file: environment.resolve(executionCwd, match.file),
   }));
+}
+
+/** Searches of one pattern while other processes keep writing its files. */
+const SOURCE_CHANGE_DELAYS_MS = [0, 100, 250, 500];
+
+function sourceChanged(message: string): Error {
+  return Object.assign(new Error(message), { code: "SOURCE_CHANGED" });
+}
+
+/** Another Pi process may write a file between ast-grep's parse and this snapshot. */
+async function collectWhileSourceChanges<T>(
+  collect: () => Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await collect();
+    } catch (error) {
+      const delay = SOURCE_CHANGE_DELAYS_MS[attempt];
+      const changed = (error as { code?: unknown } | null)?.code === "SOURCE_CHANGED";
+      if (!changed || delay === undefined || signal?.aborted) throw error;
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
 }

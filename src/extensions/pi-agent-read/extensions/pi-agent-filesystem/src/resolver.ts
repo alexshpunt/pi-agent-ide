@@ -3,7 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { ResourceError } from "pi-agent-resource";
 import { textFromAgentContent } from "pi-agent-text";
+
+import { withFileWriteLock } from "./file-write-lock.js";
 
 import type {
   ContentHost,
@@ -100,9 +103,23 @@ function resolveFilesystemSource(
         const text = textFromAgentContent(content);
         await mkdir(path.dirname(filePath), { recursive: true });
         throwIfAborted(operationContext.signal);
-        await writeFile(filePath, text, {
-          encoding: "utf8",
-          ...(operationContext.signal !== undefined && { signal: operationContext.signal }),
+        await withFileWriteLock(filePath, operationContext.signal, async () => {
+          // Another process may have written the file since this edit read it. Writing now
+          // would drop that change, so refuse and let the editor apply the edit again.
+          const expected = sourceBytes;
+          if (expected !== undefined) {
+            const current = await readFile(filePath).catch((error: unknown) => {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+              throw error;
+            });
+            if (current === undefined || !current.equals(expected))
+              throw new ResourceError("RESOURCE_CHANGED", filePath, "not-applied");
+          }
+          const bytes = Buffer.from(text, "utf8");
+          await writeFile(filePath, bytes, {
+            ...(operationContext.signal !== undefined && { signal: operationContext.signal }),
+          });
+          sourceBytes = bytes;
         });
       },
     },

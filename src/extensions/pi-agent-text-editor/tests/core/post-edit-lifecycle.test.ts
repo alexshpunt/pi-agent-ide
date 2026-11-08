@@ -634,8 +634,13 @@ test.each(["cancel", "external-write"])(
       await scope.finish();
       expect(text).toBe("written");
     } else {
+      // Another process wrote after this edit; the edit stays saved and reports the skip.
       text = "external";
-      await expect(scope.finish()).rejects.toBeInstanceOf(AggregateError);
+      const outcomes = await scope.finish();
+      expect(outcomes.map((outcome) => outcome.kind)).toEqual(["completed"]);
+      expect(JSON.stringify(outcomes[0]?.postEditContributions)).toContain(
+        "Another process changed the file",
+      );
       expect(text).toBe("external");
     }
     expect(formatted).toBe(0);
