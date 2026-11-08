@@ -4,9 +4,9 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import { SshBackend } from "#src/backend/ssh.js";
-import { startSshProcess } from "#src/backend/ssh-channel.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { startSshProcess } from "#src/backend/ssh-channel.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 
 const run = promisify(execFile);
 

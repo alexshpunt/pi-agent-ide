@@ -1,6 +1,6 @@
 import { Text } from "@earendil-works/pi-tui";
-import { MutationPanel } from "./src/mutation-panel.js";
-import { resolveMutationResultResources } from "./src/mutation-result.js";
+import { MutationPanel } from "./src/mutation-panel.ts";
+import { resolveMutationResultResources } from "./src/mutation-result.ts";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import {
   TEXT_EDITOR_API_VERSION,
@@ -8,10 +8,10 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { createMutationAnimationPressure } from "./src/animation-pressure.js";
-import { registerMutationRenderers } from "./src/renderer.js";
+import { createMutationAnimationPressure } from "./src/animation-pressure.ts";
+import { registerMutationRenderers } from "./src/renderer.ts";
 
-import { compactMutationDetails } from "./src/persisted-result.js";
+import { compactMutationDetails } from "./src/persisted-result.ts";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

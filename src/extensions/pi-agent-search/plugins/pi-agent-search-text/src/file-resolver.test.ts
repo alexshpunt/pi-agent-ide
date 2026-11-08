@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, onTestFinished, test } from "vitest";
 
-import { createFileResolver } from "#src/resolvers.js";
+import { createFileResolver } from "#src/resolvers.ts";
 
 async function workspace(): Promise<string> {
   const base = path.resolve(".tmp/file-resolver-tests");

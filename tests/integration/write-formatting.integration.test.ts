@@ -10,7 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("the shared Replace result keeps formatting separate from an ordinary edit", async () => {
   await withTempWorkspace(async (cwd) => {

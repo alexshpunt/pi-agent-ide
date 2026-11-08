@@ -1,13 +1,13 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { EventEmitter } from "node:events";
-import { createAgentIdeSettingsRegistry } from "./settings-registry.js";
-import { registerAgentIdeSettings, readAgentIdeSetting } from "#src/api/settings.js";
+import { createAgentIdeSettingsRegistry } from "./settings-registry.ts";
+import { registerAgentIdeSettings, readAgentIdeSetting } from "#src/api/settings.ts";
 import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { expect, onTestFinished, test, vi } from "vitest";
-import { registerModuleSettings } from "./module-settings.js";
-import { AGENT_IDE_PREFERENCES } from "./preferences.js";
+import { registerModuleSettings } from "./module-settings.ts";
+import { AGENT_IDE_PREFERENCES } from "./preferences.ts";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 
 initTheme("dark", false);

@@ -15,7 +15,7 @@ import { expect, test } from "vitest";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 test("cleans external system temp without dialogs while tracked temp still prompts on both routes", async () => {
   const scratch = await mkdtemp(path.join(os.tmpdir(), "ide-live-temp-delete-"));

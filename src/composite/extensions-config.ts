@@ -1,5 +1,5 @@
-import type { AgentIdePreset } from "./presets.js";
-import { readAgentIdePreset } from "./presets.js";
+import type { AgentIdePreset } from "./presets.ts";
+import { readAgentIdePreset } from "./presets.ts";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

@@ -1,7 +1,7 @@
 import type {
   DebugEvaluation,
   DebugSessionSnapshot,
-} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 /** Extract one immutable snapshot from a debugger semantic-action receipt. */
 export function debuggerSnapshotFromResult(details: unknown): DebugSessionSnapshot | undefined {

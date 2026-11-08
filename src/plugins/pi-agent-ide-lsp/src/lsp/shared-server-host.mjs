@@ -515,13 +515,21 @@ function openSession(socket, started) {
   connection.onRequest(async (method, parameters, token) => {
     const uri = documentUriOf(parameters);
     if (uri) align(session, uri);
+    // The server answers for the text it has now. Another session's text may replace it before
+    // the answer arrives, so the versions are mapped as they were when the request was sent.
+    const owned = uri === undefined ? undefined : session.documents.get(uri);
+    const document = uri === undefined ? undefined : documents.get(uri);
+    const sent =
+      uri !== undefined && owned && document && document.text === owned.text
+        ? { uri, server: document.version, session: owned.version }
+        : undefined;
     const cancellation = new CancellationTokenSource();
     const forward = token.onCancellationRequested(() => cancellation.cancel());
     session.requests.add(cancellation);
     try {
       /** @type {unknown} */
       const result = await started.connection.sendRequest(method, parameters, cancellation.token);
-      return sessionVersions(session, result);
+      return sessionVersions(session, result, sent);
     } finally {
       forward.dispose();
       session.requests.delete(cancellation);
@@ -659,17 +667,21 @@ function publishToSessions(method, parameters) {
  * A version that is not the session's current text never matches one of its versions.
  * @param {Session} session
  * @param {unknown} value
+ * @param {{ uri: string; server: number; session: number }} [sent] the requested
+ *   document's server and session versions when the request was sent
  * @returns {unknown}
  */
-function sessionVersions(session, value) {
-  if (Array.isArray(value)) return value.map((item) => sessionVersions(session, item));
+function sessionVersions(session, value, sent) {
+  if (Array.isArray(value)) return value.map((item) => sessionVersions(session, item, sent));
   if (typeof value !== "object" || value === null) return value;
   const mapped = Object.fromEntries(
-    Object.entries(value).map(([name, item]) => [name, sessionVersions(session, item)]),
+    Object.entries(value).map(([name, item]) => [name, sessionVersions(session, item, sent)]),
   );
   const identifier = /** @type {{ textDocument?: { uri?: unknown; version?: unknown } }} */ (mapped)
     .textDocument;
-  if (typeof identifier?.uri === "string" && typeof identifier.version === "number") {
+  if (sent !== undefined && identifier?.uri === sent.uri && identifier.version === sent.server) {
+    mapped.textDocument = { ...identifier, version: sent.session };
+  } else if (typeof identifier?.uri === "string" && typeof identifier.version === "number") {
     const owned = session.documents.get(identifier.uri);
     const document = documents.get(identifier.uri);
     const current =

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import {
   PiIntegrationTest,
   assistantMessage,
@@ -9,7 +9,7 @@ import {
   getToolResultText,
   getToolExecution,
   testArtifactsDir,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
 // Set this to a theme JSON file to include a real external palette in the same scenario.
 const externalTheme = process.env.PI_AGENT_IDE_TEST_EXTERNAL_THEME;

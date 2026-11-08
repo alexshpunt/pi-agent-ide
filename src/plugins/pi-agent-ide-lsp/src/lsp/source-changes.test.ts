@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { retryWhileSourceChanges, sourceChanged } from "./source-changes.js";
+import { retryWhileSourceChanges, sourceChanged } from "./source-changes.ts";
 
 test("a search that met a concurrent write runs again on the current text", async () => {
   let attempts = 0;

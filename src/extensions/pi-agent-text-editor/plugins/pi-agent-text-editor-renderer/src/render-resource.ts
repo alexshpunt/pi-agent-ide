@@ -1,5 +1,5 @@
 import type { MutationDiffStatus } from "pi-agent-text-editor/api/mutation-result";
-import type { DiffModel } from "./diff-model.js";
+import type { DiffModel } from "./diff-model.ts";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 
 export interface MutationRenderResource extends TextMutationPreviewResource {

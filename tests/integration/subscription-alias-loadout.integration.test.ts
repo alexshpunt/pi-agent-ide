@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { testArtifactsDir } from "pi-coding-agent-test";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { piRuntime } from "#capabilities/inventory.ts";
 import { runProcess } from "#capabilities/sandbox.ts";
 

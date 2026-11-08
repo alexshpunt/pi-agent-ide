@@ -1,5 +1,5 @@
-import { resolveRemoteLocation, type RemoteLocation } from "./identity.js";
-import { SshBackend, SshBackendError, type SshTarget } from "./ssh.js";
+import { resolveRemoteLocation, type RemoteLocation } from "./identity.ts";
+import { SshBackend, SshBackendError, type SshTarget } from "./ssh.ts";
 
 /** A canonical remote source and the explicitly configured transport that owns it. */
 export interface ResolvedSshSource {

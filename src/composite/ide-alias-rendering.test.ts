@@ -8,7 +8,7 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { expect, test } from "vitest";
-import { createNestedIdeRendering } from "./nested-tool-rendering.js";
+import { createNestedIdeRendering } from "./nested-tool-rendering.ts";
 
 function fixture() {
   const tools: ToolInfo[] = [];

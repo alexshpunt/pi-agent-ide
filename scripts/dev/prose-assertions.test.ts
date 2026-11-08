@@ -1,6 +1,6 @@
 import { RuleTester } from "oxlint/plugins-dev";
 import { describe, it } from "vitest";
-import { noProseAssertionsRule } from "./prose-assertions/rule.js";
+import { noProseAssertionsRule } from "./prose-assertions/rule.ts";
 
 RuleTester.describe = describe;
 RuleTester.it = it;

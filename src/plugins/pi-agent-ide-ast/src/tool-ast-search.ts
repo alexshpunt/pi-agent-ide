@@ -17,7 +17,7 @@ import {
 import { toolCallHeader } from "pi-agent-tool-ui";
 import { Type, type Static } from "typebox";
 
-import type { AstSearchOptions } from "./search-resolver.js";
+import type { AstSearchOptions } from "./search-resolver.ts";
 
 export const astSearchSchema = Type.Object(
   {

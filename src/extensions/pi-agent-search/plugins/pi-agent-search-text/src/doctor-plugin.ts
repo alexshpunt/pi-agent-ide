@@ -5,7 +5,7 @@ import {
 
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
-import { resolveRipgrepExecutable } from "#src/ripgrep.js";
+import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
 

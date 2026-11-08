@@ -1,9 +1,9 @@
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import type { SearchEnvironmentProvider } from "pi-agent-search/api/search";
-import { remoteLocation } from "./identity.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
+import { remoteLocation } from "./identity.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
 
 /** Adapt configured SSH scopes to the existing search recipes, without startup probes. */
 export function createSshSearchEnvironmentProvider(

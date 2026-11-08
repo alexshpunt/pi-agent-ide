@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
-import { resourceAccesses } from "./resource-access.js";
+import { resourceAccesses } from "./resource-access.ts";
 
 test("relative paths, file URLs, symlinks, and hard links share a file identity", async () => {
   const cwd = await mkdtemp(path.join(tmpdir(), "resource-access-"));

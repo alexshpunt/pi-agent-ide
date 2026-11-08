@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { createTextDocument } from "pi-agent-text";
-import { LastTextTransactionStore } from "./last-text-transaction-store.js";
+import { LastTextTransactionStore } from "./last-text-transaction-store.ts";
 
 const completion = (before: string, after: string, postProcessing: "deferred" | "final") => ({
   source: "/workspace/file.ts",

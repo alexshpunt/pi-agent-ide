@@ -13,7 +13,7 @@ import {
 import { toolCallHeader } from "pi-agent-tool-ui";
 import { Type, type Static } from "typebox";
 
-import type { FileSearchOptions } from "#src/resolvers.js";
+import type { FileSearchOptions } from "#src/resolvers.ts";
 
 export const fileSearchSchema = Type.Object(
   {

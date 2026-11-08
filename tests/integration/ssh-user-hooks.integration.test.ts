@@ -9,14 +9,14 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import {
   SSH_HOOK_TEXT_FILES,
   SSH_HOOK_FORMATTERS,
-} from "#integration/fixtures/ssh-hook-content.js";
-import { SshBackend } from "#src/backend/ssh.js";
+} from "#integration/fixtures/ssh-hook-content.ts";
+import { SshBackend } from "#src/backend/ssh.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

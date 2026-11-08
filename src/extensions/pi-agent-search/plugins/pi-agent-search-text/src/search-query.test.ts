@@ -5,7 +5,7 @@ import {
   compileSearchQuery,
   compileSearchCondition,
   satisfiesSearchCondition,
-} from "#src/search-query.js";
+} from "#src/search-query.ts";
 
 function expressionFor(query: string) {
   const condition = compileSearchCondition(query);

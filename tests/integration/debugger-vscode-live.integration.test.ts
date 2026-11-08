@@ -14,7 +14,7 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, expect, test } from "vitest";
 
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 // Pi must run in the exact folder that the VS Code window has open.
 const restore = forceStandaloneIntegrationFile();

@@ -1,9 +1,9 @@
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import { createTextDocument } from "pi-agent-text";
-import { searchTextContent } from "#src/search-backend.js";
-import type { TextSearchBackendResult } from "#src/search-backend.js";
-import type { SearchRecipe } from "#src/search-recipe.js";
-import type { TextSearchMatch } from "#src/search-session.js";
+import { searchTextContent } from "#src/search-backend.ts";
+import type { TextSearchBackendResult } from "#src/search-backend.ts";
+import type { SearchRecipe } from "#src/search-recipe.ts";
+import type { TextSearchMatch } from "#src/search-session.ts";
 
 /** Run each real source range separately; gaps and neighboring text are never searched. */
 export async function runScopedSearch(

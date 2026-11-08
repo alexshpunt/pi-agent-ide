@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { terminalProcessProvider } from "#src/plugins/pi-agent-ide-terminal/src/process-provider.js";
-import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.js";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { terminalProcessProvider } from "#src/plugins/pi-agent-ide-terminal/src/process-provider.ts";
+import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.ts";
 
 let fixture: SshFixture;
 let registry: SshBackendRegistry;

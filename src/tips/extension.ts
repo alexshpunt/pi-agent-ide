@@ -4,15 +4,15 @@ import {
   TIP_CORE_READY_EVENT,
   TIP_PROTOCOL,
   TIP_PROVIDER_REGISTER_EVENT,
-} from "#src/api/tips.js";
+} from "#src/api/tips.ts";
 
 import type { ExtensionContext, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { TipContext } from "#src/api/tips.js";
+import type { TipContext } from "#src/api/tips.ts";
 
-import { TipCallout } from "./tip-callout.js";
-import { TipCore } from "./core.js";
-import { normalizeProjectPath, TipStateStore } from "./persistence.js";
-import { createSetupHintProvider } from "./setup-hint.js";
+import { TipCallout } from "./tip-callout.ts";
+import { TipCore } from "./core.ts";
+import { normalizeProjectPath, TipStateStore } from "./persistence.ts";
+import { createSetupHintProvider } from "./setup-hint.ts";
 
 const TIP_ENTRY_TYPE = "pi-agent-ide-startup-tip";
 

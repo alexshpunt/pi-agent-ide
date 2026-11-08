@@ -6,7 +6,7 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { createConstantTextAnchorResolver } from "./src/resolver.js";
+import { createConstantTextAnchorResolver } from "./src/resolver.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

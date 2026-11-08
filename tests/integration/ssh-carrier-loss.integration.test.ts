@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.js";
-import { SshBackend, SshBackendError } from "#src/backend/ssh.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
+import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.ts";
+import { SshBackend, SshBackendError } from "#src/backend/ssh.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import type { SshProcessChannel } from "#src/backend/ssh-channel.ts";
 
 test.each(["pipe", "pty", "execute"] as const)(
   "real SSH TCP carrier loss keeps %s unknown and reconciles only its native command",

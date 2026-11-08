@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { probeOwnedSshTree } from "./support/ssh-tree-probe.js";
+import { probeOwnedSshTree } from "./support/ssh-tree-probe.ts";
 
 for (const pty of [false, true]) {
   test.each(["cancel", "exit", "loss"] as const)(

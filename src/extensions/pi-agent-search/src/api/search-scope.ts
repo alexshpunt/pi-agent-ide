@@ -1,5 +1,5 @@
 import type { ResolvedResultTargets } from "pi-agent-resource";
-import type { SearchSelectionMatch } from "./search.js";
+import type { SearchSelectionMatch } from "./search.ts";
 
 /** Keep a provider match only when one declared region wholly contains its exact range. */
 export function containsSearchMatch(

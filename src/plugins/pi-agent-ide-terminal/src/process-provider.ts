@@ -1,9 +1,9 @@
-import type { AgentIdeProcessProvider } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
+import type { AgentIdeProcessProvider } from "#src/plugins/pi-agent-ide-processes/src/registry.ts";
 import {
   renderActiveTerminal,
   renderTerminalResult,
-} from "#src/plugins/pi-agent-ide-terminal/src/renderer.js";
-import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
+import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
 
 /** Expose active PTY sessions through the shared Agent IDE process registry. */
 export function terminalProcessProvider(manager: TerminalSessionManager): AgentIdeProcessProvider {

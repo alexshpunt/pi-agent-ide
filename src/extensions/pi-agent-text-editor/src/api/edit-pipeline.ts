@@ -1,8 +1,8 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-import type { TextEditorToolId } from "#src/api/plugin-protocol.js";
-import type { TextSemanticMutationHandler } from "#src/api/mutation-tool.js";
+import type { TextEditorToolId } from "#src/api/plugin-protocol.ts";
+import type { TextSemanticMutationHandler } from "#src/api/mutation-tool.ts";
 
 export type TextEditPipelineStage = "text-pre-edit" | "text-edit" | "text-post-edit";
 

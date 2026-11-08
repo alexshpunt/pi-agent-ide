@@ -1,9 +1,9 @@
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import * as ripgrep from "#src/ripgrep.js";
-import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.js";
-import { searchText } from "#src/search-backend.js";
+import * as ripgrep from "#src/ripgrep.ts";
+import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
+import { searchText } from "#src/search-backend.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

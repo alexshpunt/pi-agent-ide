@@ -2,8 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test, expect, onTestFinished } from "vitest";
-import { saveModuleChoices } from "./module-settings-store.js";
-import { readPiAgentIdeExtensionsConfig } from "./extensions-config.js";
+import { saveModuleChoices } from "./module-settings-store.ts";
+import { readPiAgentIdeExtensionsConfig } from "./extensions-config.ts";
 
 test("Codemode project preference overrides global and Default restores inheritance", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "ide-codemode-scopes-"));

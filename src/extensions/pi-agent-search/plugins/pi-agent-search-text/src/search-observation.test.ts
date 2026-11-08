@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { SearchSessionStore } from "#src/search-session.js";
+import { SearchSessionStore } from "#src/search-session.ts";
 
 test("repeats saved scope once per session and retains incomplete and failed observations", async () => {
   const root = path.resolve(".agents/tmp/search-observation");

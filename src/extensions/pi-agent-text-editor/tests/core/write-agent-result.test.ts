@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import { FileMutationResult, type FileMutationBatchResult } from "#src/api/mutation-result.js";
-import { writeAgentResult, writeProblemNotices } from "#src/core/write-agent-result.js";
+import { FileMutationResult, type FileMutationBatchResult } from "#src/api/mutation-result.ts";
+import { writeAgentResult, writeProblemNotices } from "#src/core/write-agent-result.ts";
 
 test.each(["applied", "not-applied", "unknown"] as const)(
   "semantic Write retains its %s action receipt without file completions",

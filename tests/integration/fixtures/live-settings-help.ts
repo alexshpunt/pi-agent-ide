@@ -5,7 +5,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { setTimeout as delay } from "node:timers/promises";
 import { Type } from "typebox";
-import { registerSettingsHelp } from "#src/composite/settings-help.js";
+import { registerSettingsHelp } from "#src/composite/settings-help.ts";
 
 /** Internal live viewport probe. Load only alongside the task's feature IDE. */
 export default function liveSettingsHelp(pi: ExtensionAPI): void {

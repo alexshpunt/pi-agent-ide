@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { LspClient } from "./client.js";
-import { LspManager } from "./manager.js";
-import { LspServerRegistry } from "./registry.js";
+import { LspClient } from "./client.ts";
+import { LspManager } from "./manager.ts";
+import { LspServerRegistry } from "./registry.ts";
 
 afterEach(async () => {
   await LspManager.resetForTest();

@@ -1,9 +1,9 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { DoctorCore } from "./core.js";
-import { inspectDoctorSetup } from "./run.js";
-import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.js";
+import { DoctorCore } from "./core.ts";
+import { inspectDoctorSetup } from "./run.ts";
+import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.ts";
 
 test("a package manifest alone does not select JSONLint", async () => {
   const parent = path.resolve(".agents/tmp/doctor-native-evidence");

@@ -6,8 +6,8 @@ import type {
   ClassifierResult,
   ModelsClassifierOptions,
 } from "@earendil-works/pi-ai";
-import type { ReviewRule } from "./config.js";
-import { reviewFragments } from "./fragments.js";
+import type { ReviewRule } from "./config.ts";
+import { reviewFragments } from "./fragments.ts";
 
 /** Use Pi's authenticated classifier runtime, never a separate provider client. */
 export interface ReviewRuntime {

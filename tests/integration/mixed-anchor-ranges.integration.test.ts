@@ -9,9 +9,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
 
 const original =
   "HEADER\nleft START suffix\nmiddle\nprefix END suffix\nGAP\nprefix DEST suffix\nTAIL\n";

@@ -3,9 +3,9 @@ import { URI } from "vscode-uri";
 
 import { doctorRuntimeOptions, doctorExecutableAvailable } from "pi-agent-ide/api/doctor";
 
-import { LSP_RECIPES } from "./catalog.js";
-import { LspClient } from "./lsp/client.js";
-import { LspServerRegistry } from "./lsp/registry.js";
+import { LSP_RECIPES } from "./catalog.ts";
+import { LspClient } from "./lsp/client.ts";
+import { LspServerRegistry } from "./lsp/registry.ts";
 
 import type {
   DoctorContext,
@@ -13,7 +13,7 @@ import type {
   DoctorPlugin,
   DoctorSetupInspection,
 } from "pi-agent-doctor/api/plugin-protocol";
-import type { ResolvedServer } from "./lsp/types.js";
+import type { ResolvedServer } from "./lsp/types.ts";
 import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 
 /**

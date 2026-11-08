@@ -126,6 +126,8 @@ Check package paths before committing:
 pnpm check:paths
 ```
 
+Imports of TypeScript files name the `.ts` file, for example `#src/core/read-core.ts` or `./position-map.ts`, not `.js`. Pi loads a local checkout through jiti, which tries a `.js` specifier's missing file before it finds the `.ts` file; with about 1,700 such imports, loading the extension from sources took four times longer. `pnpm check:imports` reports `.js` imports of TypeScript files, and `pnpm check` runs it.
+
 ## Build the public package
 
 Build and validate the single publishable tarball:

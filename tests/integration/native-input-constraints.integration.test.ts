@@ -8,9 +8,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "./support/pi-runtime/native-pi-coding-agent-test.js";
+} from "./support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 interface ConstraintSnapshot {
   hostEntry: string;

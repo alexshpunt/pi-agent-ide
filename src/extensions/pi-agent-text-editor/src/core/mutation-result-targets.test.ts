@@ -1,14 +1,14 @@
-import { createTextEditorCore } from "./text-editor-core.js";
+import { createTextEditorCore } from "./text-editor-core.ts";
 import { expect, test } from "vitest";
 import { createTextDocument } from "pi-agent-text";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import {
   attachCommittedMutationTarget,
   committedMutationTargets,
   type OwnedMutationChanges,
-} from "./mutation-result-targets.js";
+} from "./mutation-result-targets.ts";
 import { ResultTargetStore } from "pi-agent-resource";
-import { FileMutationResult } from "./mutation-result/file-mutation-result.js";
+import { FileMutationResult } from "./mutation-result/file-mutation-result.ts";
 
 test("move cannot publish a removed position when a handler did not supply owned destination changes", async () => {
   const result = await attachCommittedMutationTarget(

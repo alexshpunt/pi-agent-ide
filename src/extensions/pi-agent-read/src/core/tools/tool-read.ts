@@ -43,25 +43,25 @@ import {
   type ReadViewRegistration,
   type ResourceResolverRegistration,
   type TextTargetResolverRegistration,
-} from "#src/api/tools/read.js";
-import { explainReadWindow, limitReadOutput } from "#src/core/tools/read/output-truncation.js";
-import { createReadResultRenderer, renderReadCall } from "#src/core/tools/read/read-renderer.js";
+} from "#src/api/tools/read.ts";
+import { explainReadWindow, limitReadOutput } from "#src/core/tools/read/output-truncation.ts";
+import { createReadResultRenderer, renderReadCall } from "#src/core/tools/read/read-renderer.ts";
 import {
   createReadState,
   failureResult,
   projectReadState,
   resolveTextRange,
   withReadCancellation,
-} from "#src/core/tools/read/read-result.js";
+} from "#src/core/tools/read/read-result.ts";
 import { TempResourceStore } from "pi-agent-resource";
 
 import {
   type readParameters,
   describeReadParameters,
   type ReadParameterText,
-} from "#src/api/read-parameters.js";
-import { readRaw } from "#src/core/tools/read/raw-read.js";
-import { readOutputSchema, structuredRead } from "./read/structured-result.js";
+} from "#src/api/read-parameters.ts";
+import { readRaw } from "#src/core/tools/read/raw-read.ts";
+import { readOutputSchema, structuredRead } from "./read/structured-result.ts";
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
 

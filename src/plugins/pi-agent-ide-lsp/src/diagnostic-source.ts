@@ -1,6 +1,6 @@
-import { requestDiagnostics, type LspDiagnosticResult } from "./lsp/diagnostics.js";
-import { completedDiagnosticAdapter } from "./lsp/diagnostic-adapters.js";
-import type { LspManager } from "./lsp/manager.js";
+import { requestDiagnostics, type LspDiagnosticResult } from "./lsp/diagnostics.ts";
+import { completedDiagnosticAdapter } from "./lsp/diagnostic-adapters.ts";
+import type { LspManager } from "./lsp/manager.ts";
 import type { IdeDiagnosticReport, IdeDiagnosticSource } from "pi-agent-ide/api/plugin-protocol";
 
 /** Bind complete requests or explicitly incomplete push snapshots to the current file revision. */

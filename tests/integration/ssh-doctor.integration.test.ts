@@ -1,17 +1,17 @@
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { expect, test } from "vitest";
-import { DoctorCore } from "#src/doctor/core.js";
-import { runDoctor } from "#src/doctor/run.js";
-import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.js";
-import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.js";
-import { lspDoctorPlugin } from "#src/plugins/pi-agent-ide-lsp/src/doctor-plugin.js";
-import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { startSshFixture } from "./support/ssh-fixture.js";
-import { probeOwnedDoctorApply, probeOwnedDoctorBrowser } from "./support/ssh-doctor-probe.js";
-import { probeOwnedDoctorDebugger } from "./support/ssh-doctor-probe.js";
+import { DoctorCore } from "#src/doctor/core.ts";
+import { runDoctor } from "#src/doctor/run.ts";
+import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.ts";
+import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.ts";
+import { lspDoctorPlugin } from "#src/plugins/pi-agent-ide-lsp/src/doctor-plugin.ts";
+import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { startSshFixture } from "./support/ssh-fixture.ts";
+import { probeOwnedDoctorApply, probeOwnedDoctorBrowser } from "./support/ssh-doctor-probe.ts";
+import { probeOwnedDoctorDebugger } from "./support/ssh-doctor-probe.ts";
 function gate() {
   const callbacks: { resolve?: () => void; reject?: (reason?: unknown) => void } = {};
   const promise = new Promise<void>((resolve, reject) => {

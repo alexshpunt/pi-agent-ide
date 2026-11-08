@@ -1,9 +1,9 @@
 import { expect, test, vi } from "vitest";
-import { probeOwnedCommandCancellation } from "#integration/support/ssh-command-probe.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshConfiguredProcessAccess } from "#src/backend/configured-process.js";
-import { runConfiguredProcess } from "#src/api/tool-config.js";
+import { probeOwnedCommandCancellation } from "#integration/support/ssh-command-probe.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshConfiguredProcessAccess } from "#src/backend/configured-process.ts";
+import { runConfiguredProcess } from "#src/api/tool-config.ts";
 
 test("configured owner commands expand native argv and inherit only the owner environment", async () => {
   const fixture = await startSshFixture({}, { OWNER_ONLY: "remote-value" });

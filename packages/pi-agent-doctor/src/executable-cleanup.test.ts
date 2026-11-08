@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test } from "vitest";
-import { probeExecutable } from "./executable.js";
-import { probeOwnedLocalVersion } from "./fixtures/executable-probe.js";
+import { probeExecutable } from "./executable.ts";
+import { probeOwnedLocalVersion } from "./fixtures/executable-probe.ts";
 
 test.skipIf(process.platform !== "linux").each(["timeout", "cancel"] as const)(
   "a local project version probe awaits its exact owned leader after %s",

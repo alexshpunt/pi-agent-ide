@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { parseToolCapture, renderToolCapture } from "./render-tool-schemas.js";
+import { parseToolCapture, renderToolCapture } from "./render-tool-schemas.ts";
 
 test("retains nested contracts and every changed request", () => {
   const tool = {

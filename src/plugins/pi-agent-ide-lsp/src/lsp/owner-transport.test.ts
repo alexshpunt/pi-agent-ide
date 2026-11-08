@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mapLspUris } from "./owner-transport.js";
+import { mapLspUris } from "./owner-transport.ts";
 
 const map = (uri: string) => uri.replace("file:///", "ssh://alpha/");
 

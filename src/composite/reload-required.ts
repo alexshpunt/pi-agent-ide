@@ -1,9 +1,9 @@
-import type { PiAgentIdeExtensionsConfig } from "./extensions-config.js";
-import { configuredFeatureFlags } from "./extensions-config.js";
-import type { FeatureFlag } from "./feature-flags.js";
-import type { AgentIdePreference } from "./preferences.js";
-import { disabledByPreset } from "./presets.js";
-import { selectBuiltinExtensions, type BuiltinExtension } from "./selection.js";
+import type { PiAgentIdeExtensionsConfig } from "./extensions-config.ts";
+import { configuredFeatureFlags } from "./extensions-config.ts";
+import type { FeatureFlag } from "./feature-flags.ts";
+import type { AgentIdePreference } from "./preferences.ts";
+import { disabledByPreset } from "./presets.ts";
+import { selectBuiltinExtensions, type BuiltinExtension } from "./selection.ts";
 
 // These settings are consumed dynamically. Unknown extension settings are conservative:
 // their owner may have read the value only during registration.

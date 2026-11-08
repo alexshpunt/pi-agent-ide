@@ -7,8 +7,8 @@ import {
   type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 
-import type { ReadRequest, ReadResultDetails, ReadToolResult } from "#src/api/tools/read.js";
-import { anchoredStartLine } from "#src/core/tools/read/read-result.js";
+import type { ReadRequest, ReadResultDetails, ReadToolResult } from "#src/api/tools/read.ts";
+import { anchoredStartLine } from "#src/core/tools/read/read-result.ts";
 
 export interface ReadTruncationOptions {
   /** Absolute 1-based line where an anchored read's window starts. */

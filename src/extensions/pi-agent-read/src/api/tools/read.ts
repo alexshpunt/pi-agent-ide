@@ -467,9 +467,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export { readParameters } from "#src/api/read-parameters.js";
+export { readParameters } from "#src/api/read-parameters.ts";
 export {
   readDataSchema,
   readOutputSchema,
   structuredRead,
-} from "#src/core/tools/read/structured-result.js";
+} from "#src/core/tools/read/structured-result.ts";

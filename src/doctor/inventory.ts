@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import type { LanguageDefinition } from "#src/api/tool-catalog.js";
+import type { LanguageDefinition } from "#src/api/tool-catalog.ts";
 
 const execFileAsync = promisify(execFile);
 const skippedDirectories = new Set([

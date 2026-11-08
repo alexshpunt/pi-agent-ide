@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { probeExecutable } from "../executable.js";
-import { probeProjectExecutable } from "../project-probes.js";
+import { probeExecutable } from "../executable.ts";
+import { probeProjectExecutable } from "../project-probes.ts";
 
 async function ownedPid(marker: string): Promise<number> {
   const pid = Number(await readFile(marker, "utf8"));

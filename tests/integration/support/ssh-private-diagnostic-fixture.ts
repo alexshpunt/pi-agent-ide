@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { startSshFixture } from "./ssh-fixture.js";
+import { startSshFixture } from "./ssh-fixture.ts";
 
 /** Seed only a private OpenSSH proxy diagnostic; never use a real secret or user SSH configuration. */
 export async function startSshPrivateDiagnosticFixture() {

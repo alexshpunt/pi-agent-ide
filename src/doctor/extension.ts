@@ -4,20 +4,20 @@ import {
   DOCTOR_PLUGIN_REGISTER_EVENT,
   DOCTOR_PROTOCOL,
   isDoctorPluginRegistrationRequest,
-} from "#src/api/doctor.js";
+} from "#src/api/doctor.ts";
 
-import { writeSuggestedConfigs } from "./config-writer.js";
-import { parseDoctorArguments } from "./arguments.js";
-import type { DoctorWorkspace } from "#src/api/doctor.js";
-import { DoctorCore } from "./core.js";
+import { writeSuggestedConfigs } from "./config-writer.ts";
+import { parseDoctorArguments } from "./arguments.ts";
+import type { DoctorWorkspace } from "#src/api/doctor.ts";
+import { DoctorCore } from "./core.ts";
 import {
   buildDoctorAgentPrompt,
   doctorNeedsWork,
   formatDoctorReport,
   inspectDoctorSetup,
   runDoctor,
-} from "./run.js";
-import { registerDoctorTipProvider } from "./tip-provider.js";
+} from "./run.ts";
+import { registerDoctorTipProvider } from "./tip-provider.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

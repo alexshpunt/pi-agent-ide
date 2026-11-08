@@ -2,13 +2,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   registerDebuggerWithOwner,
   type DebuggerWorkspaceAccess,
-} from "#src/plugins/pi-agent-ide-debugger/index.js";
-import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { readSshTargets, resolveSshConfigPaths } from "./config.js";
-import { SshBackendRegistry } from "./registry.js";
-import { remoteLocation } from "./identity.js";
-import { SshBackendError } from "./ssh.js";
-import { createSshDebuggerWorkspaceOwner } from "./debugger-workspace-owner.js";
+} from "#src/plugins/pi-agent-ide-debugger/index.ts";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { readSshTargets, resolveSshConfigPaths } from "./config.ts";
+import { SshBackendRegistry } from "./registry.ts";
+import { remoteLocation } from "./identity.ts";
+import { SshBackendError } from "./ssh.ts";
+import { createSshDebuggerWorkspaceOwner } from "./debugger-workspace-owner.ts";
 
 /** Resolve ordinary debugger inputs on their selected target without controller path operations. */
 export function createSshDebuggerAccess(registry: SshBackendRegistry): DebuggerWorkspaceAccess {

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { afterAll, expect, test } from "vitest";
 
-import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.js";
+import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
 
 const tempRoot = path.resolve(".agents", "tmp", "search-config-tests");
 await mkdir(tempRoot, { recursive: true });

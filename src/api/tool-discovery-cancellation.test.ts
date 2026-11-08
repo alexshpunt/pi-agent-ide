@@ -6,7 +6,7 @@ import {
   hasConfiguredExecutable,
   resolveExternalToolProjectRoot,
   toolRuntimeEvidence,
-} from "./tool-config.js";
+} from "./tool-config.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

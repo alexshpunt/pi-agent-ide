@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 
-import type { TextMutationContext } from "#src/api/mutation-tool.js";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
-import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
-import { insertionChanges, selectionChanges } from "#src/tools/text-selection.js";
+import type { TextMutationContext } from "#src/api/mutation-tool.ts";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
+import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
+import { insertionChanges, selectionChanges } from "#src/tools/text-selection.ts";
 
 test("keeps the preceding separator when deleting a non-linewise final match", () => {
   const source = "source.txt";

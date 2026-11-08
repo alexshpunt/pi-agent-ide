@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { requiredValue } from "pi-agent-invariant";
 import { ResourceScheduler, resourceAccesses } from "pi-agent-resource";
-import type { TextResourceEditOutcome } from "./text-editor-core.js";
+import type { TextResourceEditOutcome } from "./text-editor-core.ts";
 
 type Completed = Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>;
 type Finalize = () => Promise<Completed>;

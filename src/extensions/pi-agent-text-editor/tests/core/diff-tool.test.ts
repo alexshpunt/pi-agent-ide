@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { comparisonText } from "#src/core/diff-tool.js";
+import { comparisonText } from "#src/core/diff-tool.ts";
 
 test("comparison text retains every resolved resource without parsing presentation", () => {
   const value = comparisonText(

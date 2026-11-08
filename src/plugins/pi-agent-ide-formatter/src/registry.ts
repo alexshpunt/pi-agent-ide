@@ -1,4 +1,4 @@
-import { FORMATTER_RECIPES } from "./catalog.js";
+import { FORMATTER_RECIPES } from "./catalog.ts";
 import {
   toolRuntimeEvidence,
   loadLayeredToolConfig,

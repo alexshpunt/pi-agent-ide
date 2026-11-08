@@ -5,7 +5,7 @@ import type { TextEditorPluginApi } from "pi-agent-text-editor/api/plugin-protoc
 import type * as ResourceSdk from "pi-agent-resource";
 import type * as TextEditorSdk from "pi-agent-ide/api/text-editor";
 import type * as ReadSdk from "pi-agent-ide/api/read";
-import type * as CandidateRendererSdk from "#pi-agent-text-editor-renderer/src/renderer.js";
+import type * as CandidateRendererSdk from "#pi-agent-text-editor-renderer/src/renderer.ts";
 
 const source = "fixture://saved-mismatch/content";
 

@@ -1,5 +1,5 @@
 import { storeText, restoreText, type StoredText } from "pi-agent-text";
-import type { SearchToolDetails, SearchResultFile, SearchResultRange } from "./search-result.js";
+import type { SearchToolDetails, SearchResultFile, SearchResultRange } from "./search-result.ts";
 
 type StoredLine =
   | readonly [number, StoredText, readonly SearchResultRange[]]

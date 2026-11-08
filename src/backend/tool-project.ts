@@ -1,10 +1,10 @@
 import path from "node:path";
 import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
-import { recipeMatchesFile, type ToolConfigName } from "#src/api/tool-config.js";
-import type { SshBackend } from "./ssh.js";
-import { SshBackendError } from "./ssh.js";
-import { remoteLocation } from "./identity.js";
-import { inspectSshRecipeEvidence } from "./recipe-evidence.js";
+import { recipeMatchesFile, type ToolConfigName } from "#src/api/tool-config.ts";
+import type { SshBackend } from "./ssh.ts";
+import { SshBackendError } from "./ssh.ts";
+import { remoteLocation } from "./identity.ts";
+import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
 
 /** Resolve an SSH file or directory's native project; an explicit current project keeps its context. */
 export async function resolveSshToolProject(

@@ -4,7 +4,7 @@ import {
   isContentConverterRegistration,
   isContentInput,
   isContentTarget,
-} from "./validation.js";
+} from "./validation.ts";
 
 import type {
   ContentConversionContext,
@@ -13,8 +13,8 @@ import type {
   ContentDescription,
   ContentInput,
   ContentTarget,
-} from "./content-converter.js";
-import type { AgentContent } from "#src/content.js";
+} from "./content-converter.ts";
+import type { AgentContent } from "#src/content.ts";
 
 interface RegisteredConverter {
   readonly converter: ContentConverter;

@@ -15,15 +15,15 @@ import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 
 import { readAgentIdeSetting, SETTINGS_UNAVAILABLE } from "pi-agent-ide/api/settings";
-import { LSP_RECIPES } from "./src/catalog.js";
-import { LSP_IDLE_TIMEOUT_SETTING, lspIdleTimeoutMs } from "./src/idle-timeout.js";
-import { createLspDiagnosticSource } from "./src/diagnostic-source.js";
-import { lspDoctorPlugin } from "./src/doctor-plugin.js";
-import { createLspCompiler, LspManager, LspServerRegistry } from "./src/lsp/index.js";
-import { createLspSearchResolver } from "./src/search-resolver.js";
-import { registerLspSearchTool, type LspSearchRuntime } from "./src/tool-lsp-search.js";
-import { createDeclarationTargets } from "./src/declaration-targets.js";
-import { prepareSymbolRename } from "./src/rename-plan.js";
+import { LSP_RECIPES } from "./src/catalog.ts";
+import { LSP_IDLE_TIMEOUT_SETTING, lspIdleTimeoutMs } from "./src/idle-timeout.ts";
+import { createLspDiagnosticSource } from "./src/diagnostic-source.ts";
+import { lspDoctorPlugin } from "./src/doctor-plugin.ts";
+import { createLspCompiler, LspManager, LspServerRegistry } from "./src/lsp/index.ts";
+import { createLspSearchResolver } from "./src/search-resolver.ts";
+import { registerLspSearchTool, type LspSearchRuntime } from "./src/tool-lsp-search.ts";
+import { createDeclarationTargets } from "./src/declaration-targets.ts";
+import { prepareSymbolRename } from "./src/rename-plan.ts";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import {
   TEXT_EDITOR_PROTOCOL,
@@ -34,18 +34,18 @@ import {
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** Backend-neutral language server transport for root registration bridges. */
-import type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.js";
-import { SharedStartup, waitWithSignal } from "./src/lsp/abort.js";
-import { LspSharedServers } from "./src/lsp/shared-servers.js";
-export type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.js";
+import type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.ts";
+import { SharedStartup, waitWithSignal } from "./src/lsp/abort.ts";
+import { LspSharedServers } from "./src/lsp/shared-servers.ts";
+export type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.ts";
 export type {
   LspFileWatcherSubscriptions,
   WatchPattern,
   WatchedFileChange,
-} from "./src/lsp/file-watchers.js";
-export type { LspOwnerTransport, LspOwnedProcess } from "./src/lsp/owner-transport.js";
-export { LspServerRegistry } from "./src/lsp/registry.js";
-export { LSP_RECIPES } from "./src/catalog.js";
+} from "./src/lsp/file-watchers.ts";
+export type { LspOwnerTransport, LspOwnedProcess } from "./src/lsp/owner-transport.ts";
+export { LspServerRegistry } from "./src/lsp/registry.ts";
+export { LSP_RECIPES } from "./src/catalog.ts";
 
 /** Resource-owner hooks for root registration without backend imports in the LSP package. */
 export interface LspRegistrationOwner {

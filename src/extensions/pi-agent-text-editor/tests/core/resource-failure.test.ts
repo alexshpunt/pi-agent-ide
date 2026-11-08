@@ -1,10 +1,10 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ResourceError } from "pi-agent-resource";
 import { expect, test } from "vitest";
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { executeTextMutation } from "#src/core/text-mutation.js";
-import { writeMutationTool } from "#src/tools/tool-text-write.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { executeTextMutation } from "#src/core/text-mutation.ts";
+import { writeMutationTool } from "#src/tools/tool-text-write.ts";
 
 const source = "fixture://owner/note%20caf%C3%A9.txt";
 const privateDiagnostic = "Private transport diagnostic";

@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 
-import { planSearchPresentation } from "#src/search-presentation.js";
+import { planSearchPresentation } from "#src/search-presentation.ts";
 
-import type { TextSearchMatch } from "#src/search-session.js";
+import type { TextSearchMatch } from "#src/search-session.ts";
 
 function matches(source: string, count: number, lineText = "needle"): TextSearchMatch[] {
   return Array.from({ length: count }, (_, index) => ({

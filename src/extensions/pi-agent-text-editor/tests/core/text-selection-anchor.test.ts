@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 
 test("copies and validates exact endpoint extents independently of linewise selections", () => {
   const ranges = [

@@ -15,15 +15,15 @@ import {
   renderContentDescription,
 } from "pi-agent-resource";
 
-import { webDoctorPlugin } from "#src/doctor-plugin.js";
-import { createWebResolver } from "#src/resolver.js";
+import { webDoctorPlugin } from "#src/doctor-plugin.ts";
+import { createWebResolver } from "#src/resolver.ts";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import {
   SEARCH_API_VERSION,
   SEARCH_PROTOCOL,
   type SearchPlugin,
 } from "pi-agent-search/api/plugin-protocol";
-import { createWebSearchResolver } from "#src/search.js";
+import { createWebSearchResolver } from "#src/search.ts";
 
 const readTarget = { provider: "web", capability: "read" } satisfies ContentTarget;
 const renderWebResult = createReadResultRenderer({ kind: "markdown", label: "WEB" });

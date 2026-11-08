@@ -7,17 +7,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 import { projectIdeConfigPath } from "pi-agent-ide/api/tool-config";
 
-import { writeSuggestedConfigs } from "#src/doctor/config-writer.js";
-import { DoctorCore } from "#src/doctor/core.js";
-import { runDoctor } from "#src/doctor/run.js";
-import { astDoctorPlugin } from "#src/plugins/pi-agent-ide-ast/src/doctor-plugin.js";
-import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.js";
-import { FORMATTER_RECIPES } from "#src/plugins/pi-agent-ide-formatter/src/catalog.js";
-import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.js";
-import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.js";
-import { LINTER_RECIPES } from "#src/plugins/pi-agent-ide-lint/src/catalog.js";
-import { lspDoctorPlugin } from "#src/plugins/pi-agent-ide-lsp/src/doctor-plugin.js";
-import { LSP_RECIPES } from "#src/plugins/pi-agent-ide-lsp/src/catalog.js";
+import { writeSuggestedConfigs } from "#src/doctor/config-writer.ts";
+import { DoctorCore } from "#src/doctor/core.ts";
+import { runDoctor } from "#src/doctor/run.ts";
+import { astDoctorPlugin } from "#src/plugins/pi-agent-ide-ast/src/doctor-plugin.ts";
+import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.ts";
+import { FORMATTER_RECIPES } from "#src/plugins/pi-agent-ide-formatter/src/catalog.ts";
+import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.ts";
+import { lintDoctorPlugin } from "#src/plugins/pi-agent-ide-lint/src/doctor-plugin.ts";
+import { LINTER_RECIPES } from "#src/plugins/pi-agent-ide-lint/src/catalog.ts";
+import { lspDoctorPlugin } from "#src/plugins/pi-agent-ide-lsp/src/doctor-plugin.ts";
+import { LSP_RECIPES } from "#src/plugins/pi-agent-ide-lsp/src/catalog.ts";
 
 import type { DoctorPlugin } from "pi-agent-doctor/api/plugin-protocol";
 

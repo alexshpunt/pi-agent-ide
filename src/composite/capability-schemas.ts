@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { IdeCapabilitySchema } from "#src/api/capabilities.js";
+import type { IdeCapabilitySchema } from "#src/api/capabilities.ts";
 
 function joinUnique(values: readonly (string | undefined)[]): string {
   return [

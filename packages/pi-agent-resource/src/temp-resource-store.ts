@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { AgentContent } from "./content.js";
-import type { ResourceResolutionAttempt, ResourceResolver } from "./resolver.js";
+import type { AgentContent } from "./content.ts";
+import type { ResourceResolutionAttempt, ResourceResolver } from "./resolver.ts";
 
 export interface TempResourceStoreOptions {
   /** Parent folder for this store's private temporary directory. */

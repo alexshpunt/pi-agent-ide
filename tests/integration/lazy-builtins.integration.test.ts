@@ -22,7 +22,7 @@ test("registers only selected built-ins", async () => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
       path.join(cwd, "package.json"),
-      JSON.stringify({ type: "module", imports: { "#src/*.js": "./src/*.ts" } }),
+      JSON.stringify({ type: "module", imports: { "#src/*": "./src/*" } }),
     );
     await cp(path.resolve("src"), path.join(cwd, "src"), {
       recursive: true,
@@ -31,8 +31,8 @@ test("registers only selected built-ins", async () => {
     await writeFile(
       path.join(cwd, "src/composite/builtin-extensions.ts"),
       `export const BUILTIN_EXTENSIONS = [
-  { id: "ide.tips", dependencies: [], register: async (pi, context) => (await import("#src/tips/extension.js")).default(pi, context) },
-  { id: "disabled.fixture", dependencies: [], defaultEnabled: false, register: async (pi, context) => (await import("#src/disabled/extension.js")).default(pi, context) },
+  { id: "ide.tips", dependencies: [], register: async (pi, context) => (await import("#src/tips/extension.ts")).default(pi, context) },
+  { id: "disabled.fixture", dependencies: [], defaultEnabled: false, register: async (pi, context) => (await import("#src/disabled/extension.ts")).default(pi, context) },
 ];
 `,
     );

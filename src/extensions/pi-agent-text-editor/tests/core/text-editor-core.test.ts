@@ -6,8 +6,8 @@ import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
   type TextEditorPlugin,
-} from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
+} from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 
 test("registered whole-file owners receive SSH inputs through core dispatch", async () => {
   const core = createTextEditorCore();

@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { chmod, link, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { SshBackend } from "#src/backend/ssh.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 
 test("SSH journal restoration rejects a destination changed after capture", async () => {
   const fixture = await startSshFixture();

@@ -13,7 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test.each(["evaluate", "late"] as const)(
   "public debugger %s returns the current stopped-frame state",

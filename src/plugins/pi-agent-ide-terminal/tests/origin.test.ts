@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
-import { registerTerminalOrigins } from "#src/plugins/pi-agent-ide-terminal/src/origin.js";
+import { registerTerminalOrigins } from "#src/plugins/pi-agent-ide-terminal/src/origin.ts";
 
 test("captures real execution ancestry without using sibling calls or parsing IDs", () => {
   type Event = { toolCallId: string; parentToolCallId?: string };

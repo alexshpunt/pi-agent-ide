@@ -8,7 +8,7 @@ import type {
   ReadTextState,
   ReadToolResult,
   UnsupportedContentBlockDetail,
-} from "#src/api/tools/read.js";
+} from "#src/api/tools/read.ts";
 import {
   ResourceError,
   resourceErrorMetadataOf,

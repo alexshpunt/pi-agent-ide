@@ -19,8 +19,8 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
-import { limitIdeOutput } from "./output-limits.js";
-import { searchFacts, searchFactsSchema } from "./search-facts.js";
+import { limitIdeOutput } from "./output-limits.ts";
+import { searchFacts, searchFactsSchema } from "./search-facts.ts";
 
 /** Tools whose Codemode value is `{ result, hasMatches, complete }`. */
 const searchTools = new Set(["search", "ast_search", "lsp_search", "file_search"]);

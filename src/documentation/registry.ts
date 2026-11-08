@@ -1,4 +1,4 @@
-import type { AgentDocumentation } from "#src/api/documentation.js";
+import type { AgentDocumentation } from "#src/api/documentation.ts";
 
 const DOCUMENT_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 

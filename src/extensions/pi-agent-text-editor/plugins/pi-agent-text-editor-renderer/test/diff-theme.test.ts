@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 
-import { createDiffThemePalette, type DiffThemeTone } from "#src/diff-theme.js";
+import { createDiffThemePalette, type DiffThemeTone } from "#src/diff-theme.ts";
 
 interface Rgb {
   readonly red: number;

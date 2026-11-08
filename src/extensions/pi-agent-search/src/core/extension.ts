@@ -26,16 +26,16 @@ import {
   SEARCH_CORE_READY_EVENT,
   SEARCH_PLUGIN_REGISTER_EVENT,
   SEARCH_PROTOCOL,
-} from "#src/api/plugin-protocol.js";
-import { createSearchCore } from "#src/core/search-core.js";
+} from "#src/api/plugin-protocol.ts";
+import { createSearchCore } from "#src/core/search-core.ts";
 
-import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.js";
-import { runWithSearchTimeout } from "#src/core/search-timeout.js";
+import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
+import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
 
-import type { SearchToolDetails } from "#src/api/search.js";
+import type { SearchToolDetails } from "#src/api/search.ts";
 
-import { searchSchema } from "#src/api/search-parameters.js";
-import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.js";
+import { searchSchema } from "#src/api/search-parameters.ts";
+import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.ts";
 import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
 
 /** Arguments accepted by the search tool. */

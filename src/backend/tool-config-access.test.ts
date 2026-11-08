@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { SshBackendRegistry } from "./registry.js";
-import { SshBackend } from "./ssh.js";
-import { createSshToolConfigAccess } from "./tool-config-access.js";
+import { SshBackendRegistry } from "./registry.ts";
+import { SshBackend } from "./ssh.ts";
+import { createSshToolConfigAccess } from "./tool-config-access.ts";
 
 afterEach(() => vi.restoreAllMocks());
 

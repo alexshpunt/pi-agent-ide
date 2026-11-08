@@ -3,12 +3,12 @@ import path from "node:path";
 
 import { requiredValue } from "pi-agent-invariant";
 import { afterEach, expect, test, vi } from "vitest";
-import { DiagnosticStore } from "./diagnostic-store.js";
+import { DiagnosticStore } from "./diagnostic-store.ts";
 import type {
   IdeDiagnosticContext,
   IdeDiagnosticReport,
   IdeDiagnosticSource,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 test("owned diagnostic snapshots retain URI identity and refuse unclaimed resources", async () => {
   const source = "ssh://fixture/workspace/note.ts";

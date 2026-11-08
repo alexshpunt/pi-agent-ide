@@ -10,13 +10,13 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 import {
   expectToolRowsHaveBackground,
   toolBackgroundTheme,
-} from "#integration/support/tui-background.js";
+} from "#integration/support/tui-background.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

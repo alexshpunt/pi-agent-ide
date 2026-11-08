@@ -5,7 +5,7 @@ import type {
   ResourceResolver,
 } from "pi-agent-resource";
 
-import { type BrowserHtmlLoader, createSystemBrowserHtmlLoader } from "./browser-loader.js";
+import { type BrowserHtmlLoader, createSystemBrowserHtmlLoader } from "./browser-loader.ts";
 
 type WebContentHost = Pick<ContentHost, "convert">;
 

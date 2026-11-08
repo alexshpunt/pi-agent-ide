@@ -1,8 +1,8 @@
 import { Type } from "typebox";
 import { expect, test } from "vitest";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AnyTextMutationToolRegistration } from "#src/api/mutation-tool.js";
-import { planRegisteredTextBatch } from "#src/core/text-edit-batch-registrar.js";
+import type { AnyTextMutationToolRegistration } from "#src/api/mutation-tool.ts";
+import { planRegisteredTextBatch } from "#src/core/text-edit-batch-registrar.ts";
 
 test("independent batch mutations plan together and still reject conflicts in call order", async () => {
   let release!: () => void;

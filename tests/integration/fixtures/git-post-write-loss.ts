@@ -2,11 +2,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "pi-agent-text-editor/api/plugin-protocol";
-import { createOwnedGitExecutor } from "#src/backend/git-registration.js";
-import { readSshTargets, resolveSshConfigPaths } from "#src/backend/config.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { gitSourceDirectory } from "#src/plugins/pi-agent-ide-changes/src/changes/git-paths.js";
+import { createOwnedGitExecutor } from "#src/backend/git-registration.ts";
+import { readSshTargets, resolveSshConfigPaths } from "#src/backend/config.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { gitSourceDirectory } from "#src/plugins/pi-agent-ide-changes/src/changes/git-paths.ts";
 
 /** Lose the acknowledgement only after a real owned text and Git index publication. */
 export default async function (pi: ExtensionAPI): Promise<void> {

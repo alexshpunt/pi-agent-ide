@@ -11,8 +11,8 @@ import {
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import { requiredValue } from "pi-agent-invariant";
 import { expect, test } from "vitest";
-import { nativeReadArguments } from "#src/core/tools/read/native-resource-renderer.js";
-import { createReadResultRenderer, renderReadCall } from "#src/core/tools/read/read-renderer.js";
+import { nativeReadArguments } from "#src/core/tools/read/native-resource-renderer.ts";
+import { createReadResultRenderer, renderReadCall } from "#src/core/tools/read/read-renderer.ts";
 
 initTheme("dark", false);
 const theme = {

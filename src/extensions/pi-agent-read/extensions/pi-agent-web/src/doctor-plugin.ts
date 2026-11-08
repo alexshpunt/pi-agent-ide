@@ -1,7 +1,7 @@
 import { probeExecutable } from "pi-agent-doctor/api/executable";
 import { DOCTOR_API_VERSION, DOCTOR_PROTOCOL } from "pi-agent-doctor/api/plugin-protocol";
 
-import { resolveSystemBrowserExecutable } from "./browser-loader.js";
+import { resolveSystemBrowserExecutable } from "./browser-loader.ts";
 
 import type { DoctorPlugin, DoctorWorkspace } from "pi-agent-doctor/api/plugin-protocol";
 

@@ -1,4 +1,4 @@
-import type { LspOwnerTransport } from "./owner-transport.js";
+import type { LspOwnerTransport } from "./owner-transport.ts";
 
 /** Workspace I/O and process creation supplied by the resource owner. */
 export interface LspWorkspaceOwner {

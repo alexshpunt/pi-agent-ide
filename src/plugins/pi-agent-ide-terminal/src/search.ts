@@ -10,8 +10,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 interface TerminalSearchPayload {
   readonly snapshot: TerminalSessionSnapshot;

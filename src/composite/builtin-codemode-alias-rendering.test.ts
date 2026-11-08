@@ -6,7 +6,7 @@ import {
   type ToolRendererResolver,
 } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
-import { registerIdeAliasCompatibility } from "./ide-alias-rendering.js";
+import { registerIdeAliasCompatibility } from "./ide-alias-rendering.ts";
 
 function fixture() {
   const definitions: ToolDefinition[] = [];

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { createInterface } from "node:readline";
 
-import { resolveRipgrepExecutable } from "#src/ripgrep.js";
+import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
 
 import { splitGlobList, type SearchRequest } from "pi-agent-search/api/search";
 import type { SearchEnvironment } from "pi-agent-search/api/search";

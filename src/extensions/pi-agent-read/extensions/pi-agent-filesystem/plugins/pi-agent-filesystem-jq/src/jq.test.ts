@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { executeJq, parseJqView } from "#src/jq.js";
+import { executeJq, parseJqView } from "#src/jq.ts";
 
 describe("jq read view", () => {
   test("preserves a complete jq filter", () => {

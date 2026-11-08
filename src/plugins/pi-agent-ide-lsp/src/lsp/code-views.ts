@@ -1,6 +1,6 @@
 import { requiredValue } from "pi-agent-invariant";
-import { LinePositionMap } from "./position-map.js";
-import { retryWhileSourceChanges, sourceChanged } from "./source-changes.js";
+import { LinePositionMap } from "./position-map.ts";
+import { retryWhileSourceChanges, sourceChanged } from "./source-changes.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,20 +10,20 @@ import {
   formatSymbolSelector,
 } from "pi-agent-ide/api/code-view";
 
-import { requestCallHierarchy, requestReferences } from "./navigation.js";
-import { requestDocumentSymbols, symbolKindName } from "./symbols.js";
+import { requestCallHierarchy, requestReferences } from "./navigation.ts";
+import { requestDocumentSymbols, symbolKindName } from "./symbols.ts";
 
-import type { LspClient } from "./client.js";
-import type { LspManager } from "./manager.js";
+import type { LspClient } from "./client.ts";
+import type { LspManager } from "./manager.ts";
 import type {
   LspCallDirection,
   LspCallHierarchyResult,
   LspIncomingCall,
   LspLocation,
   LspOutgoingCall,
-} from "./navigation.js";
-import type { LspDocumentSymbol } from "./symbols.js";
-import type { LspRange } from "./types.js";
+} from "./navigation.ts";
+import type { LspDocumentSymbol } from "./symbols.ts";
+import type { LspRange } from "./types.ts";
 
 const MAX_GROUPS = 10;
 const MAX_ITEMS_PER_GROUP = 5;

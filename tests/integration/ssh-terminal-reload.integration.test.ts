@@ -9,9 +9,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

@@ -1,4 +1,4 @@
-import type { TextSearchMatch } from "#src/search-session.js";
+import type { TextSearchMatch } from "#src/search-session.ts";
 
 export interface SearchPresentationGroup {
   readonly text: string;

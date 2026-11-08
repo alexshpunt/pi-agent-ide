@@ -3,8 +3,8 @@ import {
   isExecutableAvailable,
   probeExecutable,
   type ExecutableProbeResult,
-} from "./executable.js";
-import type { DoctorContext } from "./plugin-protocol.js";
+} from "./executable.ts";
+import type { DoctorContext } from "./plugin-protocol.ts";
 
 /** Test a file on the selected owner without turning an access refusal into absence. */
 export async function projectFileExists(context: DoctorContext, source: string): Promise<boolean> {

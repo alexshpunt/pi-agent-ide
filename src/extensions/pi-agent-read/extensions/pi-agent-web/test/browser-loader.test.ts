@@ -7,7 +7,7 @@ import { expect, test } from "vitest";
 import {
   createSystemBrowserHtmlLoader,
   resolveSystemBrowserExecutable,
-} from "#src/browser-loader.js";
+} from "#src/browser-loader.ts";
 
 test("finds Chromium on PATH", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "pi-agent-web-browser-"));

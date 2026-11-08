@@ -1,11 +1,11 @@
 import { requiredValue } from "pi-agent-invariant";
 import { diffLines } from "diff";
 
-import { ChangeService } from "#src/changes/change-service.js";
-import { gitSourceDirectory } from "#src/changes/git-paths.js";
+import { ChangeService } from "#src/changes/change-service.ts";
+import { gitSourceDirectory } from "#src/changes/git-paths.ts";
 
-import type { ChangeGroup } from "#src/changes/change-types.js";
-import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
+import type { ChangeGroup } from "#src/changes/change-types.ts";
+import type { GitCommandExecutor } from "#src/changes/git-changes-backend.ts";
 import type { PresentedTextRow, TextDocument, TextLine, TextLinePresenter } from "pi-agent-text";
 
 const FILESYSTEM_RESOLVER_ID = "filesystem";

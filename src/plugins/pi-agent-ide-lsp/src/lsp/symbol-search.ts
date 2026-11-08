@@ -1,9 +1,9 @@
 import path from "node:path";
-import { LinePositionMap } from "./position-map.js";
-import { retryWhileSourceChanges, sourceChanged } from "./source-changes.js";
+import { LinePositionMap } from "./position-map.ts";
+import { retryWhileSourceChanges, sourceChanged } from "./source-changes.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { URI } from "vscode-uri";
-import { documentUri } from "./document-uri.js";
+import { documentUri } from "./document-uri.ts";
 import { createTextDocument } from "pi-agent-text";
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import {
@@ -12,14 +12,14 @@ import {
   type SearchSelectionMatch,
 } from "pi-agent-search/api/search";
 
-import { LspManager } from "./manager.js";
-import { requestReferences, type LspLocation } from "./navigation.js";
+import { LspManager } from "./manager.ts";
+import { requestReferences, type LspLocation } from "./navigation.ts";
 import {
   requestWorkspaceSymbols,
   requestDocumentSymbols,
   type LspDocumentSymbol,
-} from "./symbols.js";
-import type { LspRange } from "./types.js";
+} from "./symbols.ts";
+import type { LspRange } from "./types.ts";
 
 /** Strict discovery scope, or an explicit seed scope for reference navigation. */
 export interface SymbolSearchScope {

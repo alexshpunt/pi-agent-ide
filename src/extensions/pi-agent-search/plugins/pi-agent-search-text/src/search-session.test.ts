@@ -10,7 +10,7 @@ import {
   createSearchSessionId,
   SearchSessionStore,
   type TextSearchMatch,
-} from "#src/search-session.js";
+} from "#src/search-session.ts";
 
 function searchMatch(source: string, matchedText: string): TextSearchMatch {
   return {

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import type { SshBackendRegistry } from "./registry.js";
-import { startSshDapTransport, type SshDapTransport } from "./dap-transport.js";
-import { SshBackendError } from "./ssh.js";
+import type { SshBackendRegistry } from "./registry.ts";
+import { startSshDapTransport, type SshDapTransport } from "./dap-transport.ts";
+import { SshBackendError } from "./ssh.ts";
 
 let worker: Promise<string> | undefined;
 

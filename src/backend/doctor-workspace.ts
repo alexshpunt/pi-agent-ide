@@ -3,19 +3,19 @@ import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import type { DoctorWorkspace } from "#src/api/doctor.js";
-import { DOCTOR_TOOL_PATH_KEYS } from "#src/api/doctor.js";
-import { createSshToolConfigAccess } from "./tool-config-access.js";
-import { createSshConfiguredProcessAccess } from "./configured-process.js";
-import { createSshLspTransport } from "./lsp-transport.js";
-import { sshProjectExecutableAvailability } from "./process-environment.js";
-import { inspectSshRecipeEvidence } from "./recipe-evidence.js";
-import { remoteLocation } from "./identity.js";
-import { readOwnedSshCommand } from "./owned-read-command.js";
-import { startSshProcess, type SshProcessChannel } from "./ssh-channel.js";
-import { SshBackendError } from "./ssh.js";
-import { probeSshBrowser } from "./web-browser.js";
-import type { SshBackendRegistry } from "./registry.js";
+import type { DoctorWorkspace } from "#src/api/doctor.ts";
+import { DOCTOR_TOOL_PATH_KEYS } from "#src/api/doctor.ts";
+import { createSshToolConfigAccess } from "./tool-config-access.ts";
+import { createSshConfiguredProcessAccess } from "./configured-process.ts";
+import { createSshLspTransport } from "./lsp-transport.ts";
+import { sshProjectExecutableAvailability } from "./process-environment.ts";
+import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
+import { remoteLocation } from "./identity.ts";
+import { readOwnedSshCommand } from "./owned-read-command.ts";
+import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
+import { SshBackendError } from "./ssh.ts";
+import { probeSshBrowser } from "./web-browser.ts";
+import type { SshBackendRegistry } from "./registry.ts";
 
 const probeSchema = Type.Object({
   directory: Type.String(),

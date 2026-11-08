@@ -1,6 +1,6 @@
 import { ResourceError } from "pi-agent-resource";
 import { expect, test } from "vitest";
-import { buildFailedCopyWriteResult } from "#src/core/text-mutation.js";
+import { buildFailedCopyWriteResult } from "#src/core/text-mutation.ts";
 
 for (const rollback of [undefined, { failed: [], originallyMissing: [], restored: [] }]) {
   test(`Copy retains an uncertain write even when peers were rolled back (${rollback === undefined ? "no peers" : "restored peers"})`, () => {

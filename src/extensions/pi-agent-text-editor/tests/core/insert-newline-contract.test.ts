@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { TextChangeDocument, applyTextChanges } from "#src/core/text-change-engine.js";
+import { TextChangeDocument, applyTextChanges } from "#src/core/text-change-engine.ts";
 
 for (const separator of ["\n", "\r\n"]) {
   for (const payload of ["NEW", "NEW\n", "\nNEW", "NEW\n\n", "\nNEW\n"]) {

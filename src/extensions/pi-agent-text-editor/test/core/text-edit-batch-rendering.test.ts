@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import {
   registerToolBatch,
   type ToolBatchDefinition,
-} from "#src/core/text-edit-batch-coordinator.js";
+} from "#src/core/text-edit-batch-coordinator.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

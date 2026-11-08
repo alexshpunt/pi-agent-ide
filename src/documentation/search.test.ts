@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import type { SearchRequest } from "pi-agent-search/api/search";
-import { AgentDocumentationRegistry } from "#src/documentation/registry.js";
-import { createDocumentationSearchResolver } from "#src/documentation/search.js";
+import { AgentDocumentationRegistry } from "#src/documentation/registry.ts";
+import { createDocumentationSearchResolver } from "#src/documentation/search.ts";
 
 const context = { cwd: process.cwd() };
 function registry() {

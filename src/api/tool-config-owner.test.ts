@@ -3,7 +3,7 @@ import {
   loadLayeredToolConfig,
   parseFormattersConfig,
   runConfiguredProcess,
-} from "./tool-config.js";
+} from "./tool-config.ts";
 
 const configuration = (command: string) =>
   JSON.stringify({

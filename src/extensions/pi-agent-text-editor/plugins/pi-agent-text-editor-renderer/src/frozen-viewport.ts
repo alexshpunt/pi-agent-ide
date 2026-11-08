@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
-import { createDiffModel, DIFF_CONTEXT_LINES, type DiffModel, type DiffRow } from "./diff-model.js";
+import { createDiffModel, DIFF_CONTEXT_LINES, type DiffModel, type DiffRow } from "./diff-model.ts";
 
-import type { MutationRenderResource } from "./render-resource.js";
+import type { MutationRenderResource } from "./render-resource.ts";
 import type {
   TextMutationPreviewRange,
   TextMutationPreviewResource,

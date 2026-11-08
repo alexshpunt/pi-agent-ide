@@ -1,10 +1,10 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { LspClient } from "./client.js";
-import { LspManager } from "./manager.js";
-import { LspServerRegistry } from "./registry.js";
-import { readLspFileGraph, readLspSymbolGraph } from "./code-views.js";
-import { requestCallHierarchy } from "./navigation.js";
-import { searchSymbols } from "./symbol-search.js";
+import { LspClient } from "./client.ts";
+import { LspManager } from "./manager.ts";
+import { LspServerRegistry } from "./registry.ts";
+import { readLspFileGraph, readLspSymbolGraph } from "./code-views.ts";
+import { requestCallHierarchy } from "./navigation.ts";
+import { searchSymbols } from "./symbol-search.ts";
 
 const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } };
 const uri = "ssh://fixture/workspace/note.ts";
@@ -89,7 +89,7 @@ test("reference queries load the advertised TypeScript project before reading un
     .mockResolvedValueOnce({ success: true })
     .mockResolvedValueOnce([{ uri, range }]);
   const signal = new AbortController().signal;
-  const { requestReferences } = await import("./navigation.js");
+  const { requestReferences } = await import("./navigation.ts");
   expect(await requestReferences(connection, uri, range.start, signal)).toEqual([{ uri, range }]);
   expect(requests.mock.calls.map(([method]) => method)).toEqual([
     "workspace/executeCommand",
@@ -115,7 +115,7 @@ test("a failed advertised project load cannot become a partial reference result"
   vi.spyOn(connection, "supportsCommand").mockReturnValue(true);
   vi.spyOn(connection, "serverDocumentPath").mockReturnValue("/workspace/note.ts");
   const requests = vi.spyOn(connection, "sendRequest").mockResolvedValue({ success: false });
-  const { requestReferences } = await import("./navigation.js");
+  const { requestReferences } = await import("./navigation.ts");
   await expect(requestReferences(connection, uri, range.start)).rejects.toThrow(
     /load the project/u,
   );

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type PartialToolRecoveryRegistration,
   PartialToolRecoveryRegistry,
-} from "#src/core/tool-call-interceptor/partial-tool-recovery.js";
+} from "#src/core/tool-call-interceptor/partial-tool-recovery.ts";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 

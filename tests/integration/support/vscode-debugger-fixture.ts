@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { DebugMcpClient } from "#src/plugins/pi-agent-ide-debugger/src/debugmcp-client.js";
-import { debugMcpPort } from "#src/plugins/pi-agent-ide-debugger/src/vscode-backend.js";
+import { DebugMcpClient } from "#src/plugins/pi-agent-ide-debugger/src/debugmcp-client.ts";
+import { debugMcpPort } from "#src/plugins/pi-agent-ide-debugger/src/vscode-backend.ts";
 
 /** Drive public debugger tools against the VS Code window that has the test workspace open. */
 export default function vscodeDebuggerFixture(pi: ExtensionAPI): void {

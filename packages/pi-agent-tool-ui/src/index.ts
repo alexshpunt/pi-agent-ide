@@ -322,4 +322,4 @@ export {
   type ResultPanelRow,
   type ResultPanelModel,
   type SourcePreview,
-} from "./result-panel.js";
+} from "./result-panel.ts";

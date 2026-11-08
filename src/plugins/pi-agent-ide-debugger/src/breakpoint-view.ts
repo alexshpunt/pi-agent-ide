@@ -6,7 +6,7 @@ import type { TextLinePresenter } from "pi-agent-text";
 import type {
   DebugBreakpoint,
   DebugSessionManager,
-} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 /** Annotate source lines with breakpoints from current debug sessions. */
 export function createBreakpointPresenter(manager: DebugSessionManager): TextLinePresenter {

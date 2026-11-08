@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { parseTerminalVisualView } from "#src/plugins/pi-agent-ide-terminal/src/resources.js";
+import { parseTerminalVisualView } from "#src/plugins/pi-agent-ide-terminal/src/resources.ts";
 
 describe("terminal visual views", () => {
   test("parses a bounded sequence with scale", () => {

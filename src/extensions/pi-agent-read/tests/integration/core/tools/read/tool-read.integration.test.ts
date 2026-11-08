@@ -12,7 +12,7 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, expect, test } from "vitest";
 
-import { generateReadExtensions } from "#tests/integration/test-stand/generate-read-extensions.js";
+import { generateReadExtensions } from "#tests/integration/test-stand/generate-read-extensions.ts";
 
 const generatedExtensions = await generateReadExtensions();
 afterAll(() => generatedExtensions.dispose());

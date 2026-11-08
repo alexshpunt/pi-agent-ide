@@ -220,10 +220,10 @@ export interface SearchToolDetails {
   };
 }
 
-export { searchSchema } from "#src/api/search-parameters.js";
-export { renderSearchMatches } from "./presentation.js";
-export { containsSearchMatch } from "./search-scope.js";
-export { splitGlobList } from "./glob-list.js";
+export { searchSchema } from "#src/api/search-parameters.ts";
+export { renderSearchMatches } from "./presentation.ts";
+export { containsSearchMatch } from "./search-scope.ts";
+export { splitGlobList } from "./glob-list.ts";
 export {
   fuzzyLimits,
   isFuzzyResultData,
@@ -232,12 +232,12 @@ export {
   rankFuzzyIdentifiers,
   fuzzyCandidateData,
   formatFuzzyCandidate,
-} from "#src/api/fuzzy.js";
+} from "#src/api/fuzzy.ts";
 export type {
   FuzzyIdentifier,
   FuzzyResultData,
   FuzzyCandidate,
   FuzzyResult,
   FuzzyCandidateData,
-} from "#src/api/fuzzy.js";
-export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.js";
+} from "#src/api/fuzzy.ts";
+export { searchDataSchema, searchOutputSchema, selectionData } from "./structured-result.ts";

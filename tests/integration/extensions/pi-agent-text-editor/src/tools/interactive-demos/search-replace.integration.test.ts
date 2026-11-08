@@ -12,9 +12,9 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { toolBackgroundTheme } from "#integration/support/tui-background.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { toolBackgroundTheme } from "#integration/support/tui-background.ts";
 
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(

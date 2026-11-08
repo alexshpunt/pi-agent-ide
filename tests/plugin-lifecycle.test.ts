@@ -1,14 +1,14 @@
 /* oxlint-disable anti-slop/no-chained-type-assertions -- Test fixtures implement only the API surface under test. */
 import { expect, test } from "vitest";
 
-import { connectIdePlugin } from "#src/api/connect-plugin.js";
-import { IDE_API_VERSION, IDE_PROTOCOL, type IdePlugin } from "#src/api/plugin-protocol.js";
-import { createIdeCore } from "#src/core/ide-core.js";
-import { listRegistered, resetRegistry } from "#src/toolchain/registry.js";
-import registerPiAgentIde from "#src/core/extension.js";
+import { connectIdePlugin } from "#src/api/connect-plugin.ts";
+import { IDE_API_VERSION, IDE_PROTOCOL, type IdePlugin } from "#src/api/plugin-protocol.ts";
+import { createIdeCore } from "#src/core/ide-core.ts";
+import { listRegistered, resetRegistry } from "#src/toolchain/registry.ts";
+import registerPiAgentIde from "#src/core/extension.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { IdeTool } from "#src/toolchain/types.js";
+import type { IdeTool } from "#src/toolchain/types.ts";
 
 for (const order of ["core-first", "plugin-first"] as const) {
   test(`connects an IDE plugin when loaded ${order}`, async () => {

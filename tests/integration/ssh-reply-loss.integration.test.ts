@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test } from "vitest";
-import { SshBackend } from "#src/backend/ssh.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import {
   assistantMessage,
@@ -12,8 +12,8 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { afterAll } from "vitest";
 
 const restore = forceStandaloneIntegrationFile();

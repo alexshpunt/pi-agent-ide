@@ -2,16 +2,16 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
-import type { DebugWorkspaceOwnerResolver } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { remoteLocation } from "./identity.js";
-import { SshBackendError, type SshBackend } from "./ssh.js";
-import { startSshDapTransport } from "./dap-transport.js";
-import { startSshTcpDapTransport } from "./dap-tcp-transport.js";
-import { prepareSshNodeDebugger } from "./dap-node-transport.js";
-import { prepareSshJavaDebugger } from "./dap-java-transport.js";
-import type { DebugSessionOptions } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import type { DebugWorkspaceOwnerResolver } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { remoteLocation } from "./identity.ts";
+import { SshBackendError, type SshBackend } from "./ssh.ts";
+import { startSshDapTransport } from "./dap-transport.ts";
+import { startSshTcpDapTransport } from "./dap-tcp-transport.ts";
+import { prepareSshNodeDebugger } from "./dap-node-transport.ts";
+import { prepareSshJavaDebugger } from "./dap-java-transport.ts";
+import type { DebugSessionOptions } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 type StdioRecipe = {
   readonly command: string;

@@ -4,10 +4,10 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 
 import { preserveEnclosingBackground } from "pi-agent-tool-ui";
 
-import { createDiffThemePalette, type DiffThemePalette, type DiffThemeTone } from "./diff-theme.js";
-import { compactViewport, expandedViewport, type ViewportRow } from "./diff-viewport.js";
+import { createDiffThemePalette, type DiffThemePalette, type DiffThemeTone } from "./diff-theme.ts";
+import { compactViewport, expandedViewport, type ViewportRow } from "./diff-viewport.ts";
 
-import type { DiffModel, DiffRow, DiffTextRange } from "./diff-model.js";
+import type { DiffModel, DiffRow, DiffTextRange } from "./diff-model.ts";
 
 export interface DiffPanelResource {
   readonly path: string;

@@ -9,10 +9,10 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const code =
   '// NATIVE_SCRIPT_MARKER\nawait tools.read({path:"note.txt"}); text("NATIVE_OUTPUT_MARKER");';

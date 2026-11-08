@@ -3,10 +3,10 @@ import type {
   TextMutation,
   TextMutationContext,
   TextMutationEdit,
-} from "#src/api/mutation-tool.js";
-import { TextChangeDocument, type TextChange } from "./text-change-engine.js";
-import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.js";
-import { wholeFileResultSource } from "./result-input.js";
+} from "#src/api/mutation-tool.ts";
+import { TextChangeDocument, type TextChange } from "./text-change-engine.ts";
+import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
+import { wholeFileResultSource } from "./result-input.ts";
 
 /** Distinguish structured source authority from ordinary paths and legacy anchors. */
 export function isResultInput(value: unknown): boolean {

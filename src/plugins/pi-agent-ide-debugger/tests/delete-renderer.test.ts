@@ -7,9 +7,9 @@ import {
 import type { TextEditorToolRendererRegistration } from "pi-agent-text-editor/api/tool-renderer";
 import { expect, test } from "vitest";
 
-import registerDebugger from "#src/plugins/pi-agent-ide-debugger/index.js";
-import { retainReloadResource } from "#src/core/reload-resource-store.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import registerDebugger from "#src/plugins/pi-agent-ide-debugger/index.ts";
+import { retainReloadResource } from "#src/core/reload-resource-store.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 type SemanticHandler = Parameters<ReturnType<TextEditorPluginApi["tool"]>["addSemanticHandler"]>[0];
 

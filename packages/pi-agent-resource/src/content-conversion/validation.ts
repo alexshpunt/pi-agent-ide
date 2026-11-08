@@ -1,7 +1,7 @@
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 
-import { isAgentContent } from "#src/validation.js";
+import { isAgentContent } from "#src/validation.ts";
 
 import type {
   ContentConversionAttempt,
@@ -10,7 +10,7 @@ import type {
   ContentConverterRegistration,
   ContentInput,
   ContentTarget,
-} from "./content-converter.js";
+} from "./content-converter.ts";
 
 const objectOptions = { additionalProperties: true } as const;
 const functionSchema = Type.Function([], Type.Unknown());

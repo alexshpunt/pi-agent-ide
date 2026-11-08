@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import type { LspClient } from "./client.js";
+import type { LspClient } from "./client.ts";
 
 /** Documents one operation keeps open, released together when it finishes. */
 type DocumentScope = Map<LspClient, Map<string, () => void>>;

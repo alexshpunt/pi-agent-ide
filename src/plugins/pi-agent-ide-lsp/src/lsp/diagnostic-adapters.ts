@@ -1,5 +1,5 @@
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
-import type { LspClient } from "./client.js";
+import type { LspClient } from "./client.ts";
 
 /** A server capability that returns completed diagnostics rather than intermediate pushes. */
 export interface CompletedDiagnosticAdapter {

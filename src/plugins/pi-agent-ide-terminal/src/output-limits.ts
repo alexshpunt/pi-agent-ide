@@ -6,7 +6,7 @@ import {
   type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 /** Keep the useful end of terminal output within the shared Read output budget. */
 export function terminalOutputTail(output: string): TruncationResult {

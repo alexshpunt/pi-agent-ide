@@ -1,6 +1,6 @@
 import { ResourceError } from "pi-agent-resource";
 
-import type { TextResourcesEditOutcome } from "#src/core/text-editor-core.js";
+import type { TextResourcesEditOutcome } from "#src/core/text-editor-core.ts";
 
 /** Error code of a resolved target whose file changed before the edit used it. */
 export const SOURCE_CHANGED = "SOURCE_CHANGED";

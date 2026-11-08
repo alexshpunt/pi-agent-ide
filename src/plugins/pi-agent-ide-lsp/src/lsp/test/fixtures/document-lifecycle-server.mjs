@@ -100,9 +100,14 @@ connection.onNotification("textDocument/didClose", ({ textDocument }) => {
 connection.onRequest("textDocument/documentSymbol", () => []);
 connection.onRequest("lifecycle/status", () => ({ open: [...open.keys()], events, watched, pid: process.pid }));
 connection.onRequest("lifecycle/text", ({ textDocument }) => texts.get(textDocument.uri) ?? null);
-connection.onRequest("textDocument/rename", ({ textDocument }) => ({
-  documentChanges: [{ textDocument: { uri: textDocument.uri, version: open.get(textDocument.uri) ?? null }, edits: [] }],
-}));
+// Answers for the version it had when the request arrived, after LIFECYCLE_RENAME_DELAY_MS.
+const renameDelayMs = Number(process.env.LIFECYCLE_RENAME_DELAY_MS ?? 0);
+connection.onRequest("textDocument/rename", ({ textDocument }) => {
+  const answer = {
+    documentChanges: [{ textDocument: { uri: textDocument.uri, version: open.get(textDocument.uri) ?? null }, edits: [] }],
+  };
+  return renameDelayMs > 0 ? new Promise((resolve) => setTimeout(() => resolve(answer), renameDelayMs)) : answer;
+});
 connection.onRequest("lifecycle/configuration", async ({ section }) => (await connection.sendRequest("workspace/configuration", { items: [{ section }] }))[0]);
 connection.onRequest("lifecycle/watch", ({ pattern }) =>
   connection.sendRequest("client/registerCapability", {

@@ -1,5 +1,5 @@
-import type { DapClient } from "./dap-client.js";
-import type { DebugSessionOptions } from "./session-manager.js";
+import type { DapClient } from "./dap-client.ts";
+import type { DebugSessionOptions } from "./session-manager.ts";
 
 /** A prepared adapter on the selected workspace, with native launch arguments. */
 export interface OwnedDebugAdapter {

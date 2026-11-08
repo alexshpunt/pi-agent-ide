@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { reviewFragments } from "./fragments.js";
+import { reviewFragments } from "./fragments.ts";
 
 test("reviews separate small diffs with nearby lines, not unrelated file contents", () => {
   const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}\n`);

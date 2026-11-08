@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { parseReviewRules } from "./config.js";
+import { parseReviewRules } from "./config.ts";
 
 test("loads natural-language YAML rules and omits disabled rules", () => {
   expect(

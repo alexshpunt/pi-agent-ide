@@ -1,7 +1,7 @@
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 
-import { preserveEnclosingBackground, ToolCallHeader, type ToolCallHeaderModel } from "./index.js";
+import { preserveEnclosingBackground, ToolCallHeader, type ToolCallHeaderModel } from "./index.ts";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 

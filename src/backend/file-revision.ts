@@ -1,4 +1,4 @@
-import { SshBackendError } from "./ssh.js";
+import { SshBackendError } from "./ssh.ts";
 
 /** Keep a checkpoint revision authoritative when an effect obtains fresh metadata.
  * This check does not replace the owner's final publication guard or provide external CAS.

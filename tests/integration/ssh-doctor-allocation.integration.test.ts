@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import * as channels from "#src/backend/ssh-channel.js";
-import { startSshFixture } from "./support/ssh-fixture.js";
-import { probeOwnedDoctorAllocation } from "./support/ssh-doctor-allocation-probe.js";
+import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import * as channels from "#src/backend/ssh-channel.ts";
+import { startSshFixture } from "./support/ssh-fixture.ts";
+import { probeOwnedDoctorAllocation } from "./support/ssh-doctor-allocation-probe.ts";
 
 // Lose only the owned allocation reply after its real filesystem effects. Keep a private receipt for RED cleanup.
 test("Doctor cleans its native allocation when its creation receipt is lost", async () => {

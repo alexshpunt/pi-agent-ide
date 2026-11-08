@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { SharedStartup } from "./abort.js";
+import { SharedStartup } from "./abort.ts";
 
 test("the last cancelled waiter keeps its cancellation and failed startup cleanup", async () => {
   const cancelled = new Error("Cancel my startup");

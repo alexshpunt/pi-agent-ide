@@ -5,9 +5,9 @@ import {
   PiIntegrationTest,
   testArtifactsDir,
   text,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("live settings apply without reload and pending module changes clear when reverted", async () => {
   await withTempWorkspace(async (cwd) => {

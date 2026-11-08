@@ -6,7 +6,7 @@ import {
   indexVeraProject,
   inspectVeraProject,
   searchVeraProject,
-} from "#src/plugins/pi-agent-ide-semantic/src/vera-backend.js";
+} from "#src/plugins/pi-agent-ide-semantic/src/vera-backend.ts";
 
 const roots: string[] = []; // Each fixture owns an isolated project.
 afterEach(async () => {

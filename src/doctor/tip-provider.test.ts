@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import { createDoctorTipProvider, registerDoctorTipProvider } from "./tip-provider.js";
+import { createDoctorTipProvider, registerDoctorTipProvider } from "./tip-provider.ts";
 
-import type { DoctorSetupRun } from "./run.js";
+import type { DoctorSetupRun } from "./run.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const context = {

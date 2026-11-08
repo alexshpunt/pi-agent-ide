@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ResultTargetStore, type ResultSourceTarget } from "./result-targets.js";
+import { ResultTargetStore, type ResultSourceTarget } from "./result-targets.ts";
 
 const target: ResultSourceTarget = {
   source: "/workspace/a.txt",

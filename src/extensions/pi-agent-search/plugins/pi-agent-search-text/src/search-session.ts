@@ -23,7 +23,7 @@ import {
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
 import type { TextAnchorResourceResolver } from "pi-agent-text-editor/api/plugin-protocol";
-import { runSearchRecipe, type SearchRecipe } from "#src/search-recipe.js";
+import { runSearchRecipe, type SearchRecipe } from "#src/search-recipe.ts";
 
 const searchAnchorPattern = /^SEARCH#([A-F0-9]{4,64}):(all|[1-9]\d*):(line|match)$/u;
 const minimumSearchSessionIdLength = 4;

@@ -7,8 +7,8 @@ import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_API_VERSION, READ_PROTOCOL } from "pi-agent-read/api/plugin-protocol";
 import { Type } from "typebox";
 
-import registerStaleAnchor from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.js";
-import { processToolCallStreamEvent } from "#pi-agent-text-editor/core/tool-call-interceptor/coordinator.js";
+import registerStaleAnchor from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.ts";
+import { processToolCallStreamEvent } from "#pi-agent-text-editor/core/tool-call-interceptor/coordinator.ts";
 
 /** Drive repeated stream inspections through the real interceptor without aborting the provider. */
 export default async function registerBlockCacheProbe(pi: ExtensionAPI): Promise<void> {

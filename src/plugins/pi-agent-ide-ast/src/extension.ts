@@ -18,14 +18,14 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { AstScopeManager } from "./ast/manager.js";
-import { astDoctorPlugin } from "./doctor-plugin.js";
-import { createAstOutlineResolver } from "./outline-resolver.js";
-import { createAstOverflowHandler, reduceAstReadOutput } from "./overflow-handler.js";
-import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.js";
-import { createAstScopeAnchorResolver } from "./scope-resolver.js";
-import { createAstSearchResolver } from "./search-resolver.js";
-import { registerAstSearchTool, type AstSearchRuntime } from "./tool-ast-search.js";
+import { AstScopeManager } from "./ast/manager.ts";
+import { astDoctorPlugin } from "./doctor-plugin.ts";
+import { createAstOutlineResolver } from "./outline-resolver.ts";
+import { createAstOverflowHandler, reduceAstReadOutput } from "./overflow-handler.ts";
+import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.ts";
+import { createAstScopeAnchorResolver } from "./scope-resolver.ts";
+import { createAstSearchResolver } from "./search-resolver.ts";
+import { registerAstSearchTool, type AstSearchRuntime } from "./tool-ast-search.ts";
 
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "AST" });
 

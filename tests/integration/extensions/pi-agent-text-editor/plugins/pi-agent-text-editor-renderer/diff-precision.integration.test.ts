@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
 import {
   assistantMessage,
   getToolExecution,
@@ -10,7 +10,7 @@ import {
   PiIntegrationTest,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/pi-coding-agent-test.ts";
 
 const extension = path.resolve(import.meta.dirname, "register-extension.ts");
 const extensions = createExtensionSet();

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { ResourceError } from "./resource-error.js";
-import { resultError, resultErrorSchema } from "./tool-result.js";
+import { ResourceError } from "./resource-error.ts";
+import { resultError, resultErrorSchema } from "./tool-result.ts";
 import { Value } from "typebox/value";
 
 const rateLimit = {

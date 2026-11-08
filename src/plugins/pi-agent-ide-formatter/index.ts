@@ -2,11 +2,11 @@ import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { connectIdePlugin } from "pi-agent-ide/api/connect-plugin";
 import { IDE_API_VERSION, IDE_PROTOCOL, type IdePlugin } from "pi-agent-ide/api/plugin-protocol";
 
-import { formatterDoctorPlugin } from "./src/doctor-plugin.js";
-import { createFormatter, type FormatterRuntime } from "./src/formatter.js";
-export { FormatterCommandRegistry } from "./src/registry.js";
-export { FORMATTER_RECIPES } from "./src/catalog.js";
-export type { FormatterRuntime } from "./src/formatter.js";
+import { formatterDoctorPlugin } from "./src/doctor-plugin.ts";
+import { createFormatter, type FormatterRuntime } from "./src/formatter.ts";
+export { FormatterCommandRegistry } from "./src/registry.ts";
+export { FORMATTER_RECIPES } from "./src/catalog.ts";
+export type { FormatterRuntime } from "./src/formatter.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { IdeTool } from "pi-agent-ide/api/toolchain";

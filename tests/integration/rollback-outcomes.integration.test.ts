@@ -12,7 +12,7 @@ import {
 } from "pi-coding-agent-test";
 import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 for (const native of [false, true]) {
   for (const [scenario, effect, finalText] of [

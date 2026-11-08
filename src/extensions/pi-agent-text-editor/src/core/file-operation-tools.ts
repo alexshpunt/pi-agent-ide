@@ -1,16 +1,16 @@
 import path from "node:path";
 import { confirmOperation } from "pi-agent-tool-ui/operation-approval";
-import type { TextEditorCore } from "#src/core/text-editor-core.js";
-import type { FileOperation, FileOperationResult } from "#src/core/file-operations.js";
-import { forgetDeferredPostEdit } from "./post-edit-scope.js";
+import type { TextEditorCore } from "#src/core/text-editor-core.ts";
+import type { FileOperation, FileOperationResult } from "#src/core/file-operations.ts";
+import { forgetDeferredPostEdit } from "./post-edit-scope.ts";
 import type {
   AgentToolResult,
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.js";
-import { isDiffStatusContribution } from "#src/api/post-edit.js";
-import type { MutationDiffStatus } from "#src/api/mutation-result.js";
+import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.ts";
+import { isDiffStatusContribution } from "#src/api/post-edit.ts";
+import type { MutationDiffStatus } from "#src/api/mutation-result.ts";
 
 /** Return whether a hybrid text tool invocation addresses a complete file. */
 export function isWholeFileInvocation(

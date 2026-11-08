@@ -1,8 +1,8 @@
 import { requiredValue } from "pi-agent-invariant";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
-import type { IdeDiagnosticResult } from "#src/api/plugin-protocol.js";
-import type { DiagnosticNotification } from "#src/core/diagnostic-store.js";
+import type { IdeDiagnosticResult } from "#src/api/plugin-protocol.ts";
+import type { DiagnosticNotification } from "#src/core/diagnostic-store.ts";
 
 export const DIAGNOSTIC_ENTRY_TYPE = "ide-diagnostic-summary";
 

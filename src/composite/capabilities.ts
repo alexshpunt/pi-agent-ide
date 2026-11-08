@@ -8,8 +8,8 @@ import {
   type IdeCapability,
   type IdeCapabilityRegistration,
   type IdeCapabilitySchema,
-} from "#src/api/capabilities.js";
-import { composeCapabilitySchema } from "./capability-schemas.js";
+} from "#src/api/capabilities.ts";
+import { composeCapabilitySchema } from "./capability-schemas.ts";
 
 const ENTRY = "ide-capabilities/v1";
 

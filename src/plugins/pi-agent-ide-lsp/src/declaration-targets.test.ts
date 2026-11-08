@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { createDeclarationTargets } from "./declaration-targets.js";
+import { createDeclarationTargets } from "./declaration-targets.ts";
 
 test("declaration text resolution leaves symbol name resources to semantic rename", async () => {
   const managerFor = vi.fn(async () => {

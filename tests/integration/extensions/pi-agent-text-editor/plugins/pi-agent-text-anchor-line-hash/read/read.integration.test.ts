@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.js";
+import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.ts";
 
 import {
   formatLineHashAnchor,

@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
 
-import { DoctorCore } from "./core.js";
-import { inspectDoctorSetup } from "./run.js";
-import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.js";
+import { DoctorCore } from "./core.ts";
+import { inspectDoctorSetup } from "./run.ts";
+import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { createLspDiagnosticSource } from "./diagnostic-source.js";
-import { LspClient } from "./lsp/client.js";
-import type { LspPushDiagnosticsEvent } from "./lsp/manager.js";
+import { createLspDiagnosticSource } from "./diagnostic-source.ts";
+import { LspClient } from "./lsp/client.ts";
+import type { LspPushDiagnosticsEvent } from "./lsp/manager.ts";
 
 afterEach(() => vi.restoreAllMocks());
 

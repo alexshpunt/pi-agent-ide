@@ -3,8 +3,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { renderSearchMatches } from "pi-agent-search/api/search";
 
-import { findTerminalMatches } from "#src/plugins/pi-agent-ide-terminal/src/search.js";
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+import { findTerminalMatches } from "#src/plugins/pi-agent-ide-terminal/src/search.ts";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const snapshot = {
   id: "abcdef123456",

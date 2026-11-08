@@ -1,6 +1,6 @@
 import { cp, realpath } from "node:fs/promises";
 import path from "node:path";
-import { startSshFixture } from "./ssh-fixture.js";
+import { startSshFixture } from "./ssh-fixture.ts";
 
 /** Copy only the installed public Playwright runtime into an owned unprivileged SSH fixture. */
 export async function startSshWebFixture(

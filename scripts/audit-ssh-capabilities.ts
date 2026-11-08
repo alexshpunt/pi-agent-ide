@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.js";
+import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.ts";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 
 const root = findRepositoryRoot(import.meta.url);

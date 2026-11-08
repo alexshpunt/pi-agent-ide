@@ -5,8 +5,8 @@ import path from "node:path";
 import { TextAnchor } from "pi-agent-text";
 import * as WTS from "web-tree-sitter";
 
-import { parseNativeDocument } from "./native-parser.js";
-import type { SyntaxNode, SyntaxTree } from "./syntax-tree.js";
+import { parseNativeDocument } from "./native-parser.ts";
+import type { SyntaxNode, SyntaxTree } from "./syntax-tree.ts";
 
 export interface ScopeEntry {
   readonly name: string;

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import * as exporter from "./export-agent-interface.js";
+import * as exporter from "./export-agent-interface.ts";
 
 const parameters = {
   type: "object",

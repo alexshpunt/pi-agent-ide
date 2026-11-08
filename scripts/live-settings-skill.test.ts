@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { probeNativeCodemodeRenderer, settingsSmokeGuard } from "./live-settings-skill.js";
+import { probeNativeCodemodeRenderer, settingsSmokeGuard } from "./live-settings-skill.ts";
 
 test("startup probe records untouched native Codemode input", () => {
   expect(probeNativeCodemodeRenderer((_name, fallback) => fallback())).toEqual({

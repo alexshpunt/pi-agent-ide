@@ -1,8 +1,8 @@
 import { Text } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 
 test("a conditional tool renderer preserves the existing renderer for unmatched resources", async () => {
   const core = createTextEditorCore();

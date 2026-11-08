@@ -7,7 +7,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 
 for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]) {

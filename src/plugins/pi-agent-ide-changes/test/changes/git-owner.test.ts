@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { GitChangesBackend, type GitCommandExecutor } from "#src/changes/git-changes-backend.js";
+import { GitChangesBackend, type GitCommandExecutor } from "#src/changes/git-changes-backend.ts";
 
 const root = "ssh://fixture/srv/work";
 
@@ -52,7 +52,7 @@ test("a remote index write without an owner blob writer never uses a local tempo
 test.each(["not-applied", "applied", "unknown"] as const)(
   "index failures retain their %s publication effect",
   async (effect) => {
-    const { ChangeService } = await import("#src/changes/change-service.js");
+    const { ChangeService } = await import("#src/changes/change-service.ts");
     const failure = Object.assign(new Error("GIT_INDEX_CHANGED"), {
       code: "GIT_INDEX_CHANGED",
       effect,

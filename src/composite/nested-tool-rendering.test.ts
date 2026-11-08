@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { expect, test } from "vitest";
-import { createNestedIdeRendering, formatToolDuration } from "./nested-tool-rendering.js";
+import { createNestedIdeRendering, formatToolDuration } from "./nested-tool-rendering.ts";
 
 interface Retention {
   argumentsTruncated: boolean;

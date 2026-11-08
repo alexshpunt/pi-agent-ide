@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { AstScopeManager } from "#src/api/scope.js";
+import { AstScopeManager } from "#src/api/scope.ts";
 
 // Each body was walked twice per level before, so this depth took about 2^26 visits and froze Pi.
 test("finds every scope of a deeply nested file in linear time", async () => {

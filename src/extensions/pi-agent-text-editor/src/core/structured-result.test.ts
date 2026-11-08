@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { Value } from "typebox/value";
-import { mutationOutcome, mutationResultSchema, structuredMutation } from "./structured-result.js";
-import { FileMutationResult } from "./mutation-result/file-mutation-result.js";
+import { mutationOutcome, mutationResultSchema, structuredMutation } from "./structured-result.ts";
+import { FileMutationResult } from "./mutation-result/file-mutation-result.ts";
 
 function semanticResult(action: Record<string, unknown>) {
   return { content: [], details: { results: undefined, metadata: { semanticAction: action } } };

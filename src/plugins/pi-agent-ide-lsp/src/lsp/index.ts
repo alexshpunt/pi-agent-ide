@@ -1,6 +1,6 @@
-export { LspClient } from "./client.js";
+export { LspClient } from "./client.ts";
 
-export { requestDiagnostics } from "./diagnostics.js";
+export { requestDiagnostics } from "./diagnostics.ts";
 
 export {
   findDocumentSymbol,
@@ -8,23 +8,23 @@ export {
   requestDocumentSymbols,
   requestWorkspaceSymbols,
   symbolKindName,
-} from "./symbols.js";
+} from "./symbols.ts";
 
-export { requestRename, workspaceEditEntries } from "./rename.js";
+export { requestRename, workspaceEditEntries } from "./rename.ts";
 
-export { searchSymbols } from "./symbol-search.js";
+export { searchSymbols } from "./symbol-search.ts";
 
-export type { SymbolHit } from "./symbol-search.js";
+export type { SymbolHit } from "./symbol-search.ts";
 
-export type { LspWorkspaceEdit } from "./rename.js";
+export type { LspWorkspaceEdit } from "./rename.ts";
 
-export type { LspWorkspaceSymbol } from "./symbols.js";
+export type { LspWorkspaceSymbol } from "./symbols.ts";
 
-export { requestCallHierarchy, requestReferences } from "./navigation.js";
+export { requestCallHierarchy, requestReferences } from "./navigation.ts";
 
-export { readLspFileGraph, readLspSymbolGraph, resolveLspCodeSymbol } from "./code-views.js";
+export { readLspFileGraph, readLspSymbolGraph, resolveLspCodeSymbol } from "./code-views.ts";
 
-export type { LspCodeSymbol } from "./code-views.js";
+export type { LspCodeSymbol } from "./code-views.ts";
 
 export type {
   LspCallHierarchyItem,
@@ -32,15 +32,15 @@ export type {
   LspIncomingCall,
   LspLocation,
   LspOutgoingCall,
-} from "./navigation.js";
+} from "./navigation.ts";
 
-export { createLspCompiler } from "./lsp-compiler.js";
+export { createLspCompiler } from "./lsp-compiler.ts";
 
-export { LspManager } from "./manager.js";
+export { LspManager } from "./manager.ts";
 
-export type { LspPushDiagnosticsEvent } from "./manager.js";
+export type { LspPushDiagnosticsEvent } from "./manager.ts";
 
-export { LspServerRegistry } from "./registry.js";
+export { LspServerRegistry } from "./registry.ts";
 
 export type {
   DiagnosticSeverity,
@@ -52,8 +52,8 @@ export type {
   ResolvedServer,
   ServerCapability,
   ServerConfig,
-} from "./types.js";
+} from "./types.ts";
 
-export { DiagnosticSeverity as LspSeverity } from "./types.js";
+export { DiagnosticSeverity as LspSeverity } from "./types.ts";
 
-export type { LspDocumentSymbol } from "./symbols.js";
+export type { LspDocumentSymbol } from "./symbols.ts";

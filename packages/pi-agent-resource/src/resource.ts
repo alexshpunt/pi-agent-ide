@@ -1,4 +1,4 @@
-import type { AgentContent } from "./content.js";
+import type { AgentContent } from "./content.ts";
 
 export interface ResourceOperationContext {
   readonly signal?: AbortSignal;

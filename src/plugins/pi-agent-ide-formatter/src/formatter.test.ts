@@ -1,8 +1,8 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { createFormatter } from "./formatter.js";
-import { FormatterCommandRegistry } from "./registry.js";
+import { createFormatter } from "./formatter.ts";
+import { FormatterCommandRegistry } from "./registry.ts";
 
 test("formatter dispatch retains the source owner through project selection and execution", async () => {
   const root = "ssh://formatter/srv/project";

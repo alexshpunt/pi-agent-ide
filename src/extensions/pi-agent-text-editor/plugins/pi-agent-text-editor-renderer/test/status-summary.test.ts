@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { summarizeStatuses } from "#src/status-summary.js";
+import { summarizeStatuses } from "#src/status-summary.ts";
 
 test.each(["disabled", "deferred"] as const)(
   "does not claim formatting ran for a known %s state",

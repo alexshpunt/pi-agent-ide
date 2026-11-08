@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { LINTER_RECIPES } from "./catalog.js";
-import { LintCommandRegistry } from "./registry.js";
+import { LINTER_RECIPES } from "./catalog.ts";
+import { LintCommandRegistry } from "./registry.ts";
 
 const directories: string[] = [];
 const originalAgentDirectory = process.env.PI_CODING_AGENT_DIR;

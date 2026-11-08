@@ -1,11 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { type Component, type TuiMouseEvent, Text } from "@earendil-works/pi-tui";
 
-import { AgentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
+import { AgentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.ts";
 import {
   AgentIdeProcessesUi,
   renderProcessWidget,
-} from "#src/plugins/pi-agent-ide-processes/src/ui.js";
+} from "#src/plugins/pi-agent-ide-processes/src/ui.ts";
 
 describe("Agent IDE process registry", () => {
   test("combines active contributions and removes a provider cleanly", () => {

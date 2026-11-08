@@ -3,8 +3,8 @@ import path from "node:path";
 import { Type } from "typebox";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { confirmOperation } from "#src/api/approval.js";
-import { registerAgentIdeSettings } from "#src/api/settings.js";
+import { confirmOperation } from "#src/api/approval.ts";
+import { registerAgentIdeSettings } from "#src/api/settings.ts";
 
 interface BlockedState {
   readonly active: boolean;

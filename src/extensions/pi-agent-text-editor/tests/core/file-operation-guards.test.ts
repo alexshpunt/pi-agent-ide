@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { guardFileOperation } from "#src/core/file-operation-guards.js";
-import type { TextMutationPlan } from "#src/api/mutation-guard.js";
+import { guardFileOperation } from "#src/core/file-operation-guards.ts";
+import type { TextMutationPlan } from "#src/api/mutation-guard.ts";
 
 const context = { cwd: "/local", intent: "mixed" as const };
 

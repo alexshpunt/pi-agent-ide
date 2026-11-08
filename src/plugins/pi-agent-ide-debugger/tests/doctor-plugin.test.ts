@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { inspectDebuggerSetup } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.js";
+import { inspectDebuggerSetup } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
 
 const temporaryDirectories: string[] = [];
 

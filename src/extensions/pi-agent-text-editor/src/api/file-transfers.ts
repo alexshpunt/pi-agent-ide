@@ -1,4 +1,4 @@
-import type { DeleteFileAccess } from "./delete-guard.js";
+import type { DeleteFileAccess } from "./delete-guard.ts";
 
 /** A native object captured without following its final symlink. */
 export interface FileObjectEntry {

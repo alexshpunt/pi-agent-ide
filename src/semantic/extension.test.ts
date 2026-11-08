@@ -4,7 +4,7 @@ import {
   SEMANTIC_SETTINGS_CHANGED_EVENT,
   createSemanticExtension,
   type SemanticBackend,
-} from "./extension.js";
+} from "./extension.ts";
 
 type Context = ReturnType<typeof context>;
 type Tool = {

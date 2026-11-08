@@ -3,10 +3,10 @@ import path from "node:path";
 
 import { format } from "oxfmt";
 
-import { FORMATTER_RECIPES } from "#src/plugins/pi-agent-ide-formatter/src/catalog.js";
-import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.js";
-import { LINTER_RECIPES } from "#src/plugins/pi-agent-ide-lint/src/catalog.js";
-import { LSP_RECIPES } from "#src/plugins/pi-agent-ide-lsp/src/catalog.js";
+import { FORMATTER_RECIPES } from "#src/plugins/pi-agent-ide-formatter/src/catalog.ts";
+import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.ts";
+import { LINTER_RECIPES } from "#src/plugins/pi-agent-ide-lint/src/catalog.ts";
+import { LSP_RECIPES } from "#src/plugins/pi-agent-ide-lsp/src/catalog.ts";
 
 const outputDirectory = path.resolve("docs", "generated", "tool-catalog");
 const isCheck = process.argv.includes("--check");

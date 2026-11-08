@@ -1,4 +1,4 @@
-import type { DiffModel, DiffRow } from "./diff-model.js";
+import type { DiffModel, DiffRow } from "./diff-model.ts";
 
 export const COMPACT_BODY_ROWS = 12;
 

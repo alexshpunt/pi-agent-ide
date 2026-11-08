@@ -1,7 +1,7 @@
 import type { SKRSContext2D } from "@napi-rs/canvas";
 import type { IBufferCell } from "@xterm/headless";
 
-import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
+import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
 
 const CELL_WIDTH = 9;
 const CELL_HEIGHT = 18;

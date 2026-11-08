@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { ImageContent, ResultImageStore } from "pi-agent-resource";
-import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.js";
+import type { FileMutationBatchResult } from "#src/core/mutation-result/file-mutation-result.ts";
 
 const extensions: Readonly<Record<string, readonly string[]>> = {
   "image/png": [".png"],

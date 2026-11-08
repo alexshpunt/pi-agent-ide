@@ -3,8 +3,8 @@ import { expect, test } from "vitest";
 import {
   renderDebugActionCall,
   renderDebugResult,
-} from "#src/plugins/pi-agent-ide-debugger/src/renderer.js";
-import type { DebugSessionSnapshot } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/renderer.ts";
+import type { DebugSessionSnapshot } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 const theme = { fg: (_color: never, text: string) => text } as never;
 

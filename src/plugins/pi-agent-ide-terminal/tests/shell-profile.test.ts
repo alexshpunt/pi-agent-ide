@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   resolveShellProfile,
   shellSyntaxGuidance,
-} from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 
 describe("terminal shell profile", () => {
   test("uses the configured Unix shell and describes its syntax", () => {

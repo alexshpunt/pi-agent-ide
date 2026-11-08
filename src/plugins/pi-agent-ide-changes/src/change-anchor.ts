@@ -1,10 +1,10 @@
 import { TextAnchor, type TextAnchorResolver, type TextAnchorResolverContext } from "pi-agent-text";
 
-import { ChangeService } from "#src/changes/change-service.js";
-import { gitSourceDirectory } from "#src/changes/git-paths.js";
+import { ChangeService } from "#src/changes/change-service.ts";
+import { gitSourceDirectory } from "#src/changes/git-paths.ts";
 
-import type { ChangeGroup, ChangeInspection } from "#src/changes/change-types.js";
-import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
+import type { ChangeGroup, ChangeInspection } from "#src/changes/change-types.ts";
+import type { GitCommandExecutor } from "#src/changes/git-changes-backend.ts";
 
 export const CHANGE_ANCHOR_KIND = "pi-agent-ide-changes/change";
 

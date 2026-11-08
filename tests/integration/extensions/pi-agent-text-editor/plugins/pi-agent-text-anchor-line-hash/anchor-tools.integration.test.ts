@@ -4,13 +4,13 @@ import path from "node:path";
 import { getToolExecution, getToolResultText } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { createLineHashAnchor } from "#pi-agent-text-anchor-line-hash/src/anchor.js";
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { createLineHashAnchor } from "#pi-agent-text-anchor-line-hash/src/anchor.ts";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import {
   expectTextToolDiff,
   runTextToolScenario,
-} from "#integration/support/pi-runtime/scenario.js";
+} from "#integration/support/pi-runtime/scenario.ts";
 
 const extensions = await createExtensionSet();
 afterAll(() => extensions.dispose());

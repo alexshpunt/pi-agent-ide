@@ -1,8 +1,8 @@
 import path from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { SshBackend } from "#src/backend/ssh.js";
-import { startSshProcess } from "#src/backend/ssh-channel.js";
-import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.js";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { startSshProcess } from "#src/backend/ssh-channel.ts";
+import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.ts";
 
 let fixture: SshFixture;
 let backend: SshBackend;

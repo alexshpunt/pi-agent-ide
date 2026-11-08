@@ -10,7 +10,7 @@ import { selectionData, containsSearchMatch, splitGlobList } from "pi-agent-sear
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
 
-import { createAstSearchPresentation } from "./search-presentation.js";
+import { createAstSearchPresentation } from "./search-presentation.ts";
 
 interface AstGrepMatch {
   readonly text: string;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { TIP_API_VERSION, TIP_PROTOCOL, type Tip, type TipProvider } from "#src/api/tips.js";
-import { TipCore } from "./core.js";
+import { TIP_API_VERSION, TIP_PROTOCOL, type Tip, type TipProvider } from "#src/api/tips.ts";
+import { TipCore } from "./core.ts";
 
 const context = {
   cwd: "/project",

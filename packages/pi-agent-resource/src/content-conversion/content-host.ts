@@ -1,19 +1,19 @@
-import { createContentRunner, targetsEqual } from "./content-runner.js";
+import { createContentRunner, targetsEqual } from "./content-runner.ts";
 import {
   CONTENT_API_VERSION,
   CONTENT_CONVERTER_REGISTER_EVENT,
   CONTENT_HOST_READY_EVENT,
   CONTENT_PROTOCOL,
   isContentConverterRegistrationRequest,
-} from "./plugin-protocol.js";
+} from "./plugin-protocol.ts";
 
 import type {
   ContentConversionContext,
   ContentDescription,
   ContentInput,
   ContentTarget,
-} from "./content-converter.js";
-import type { AgentContent } from "#src/content.js";
+} from "./content-converter.ts";
+import type { AgentContent } from "#src/content.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export interface ContentHost {

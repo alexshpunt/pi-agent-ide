@@ -14,8 +14,8 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { PiIntegrationTest as NativePiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { PiIntegrationTest as NativePiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
 async function rendererRuntime() {
   const source = path.resolve(process.env.PI_AGENT_IDE_CANONICAL_SOURCE ?? ".");

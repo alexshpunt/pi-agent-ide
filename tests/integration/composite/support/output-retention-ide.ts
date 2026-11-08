@@ -1,7 +1,7 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import registerIde from "#src/pi-agent-ide.js";
+import registerIde from "#src/pi-agent-ide.ts";
 
 /** Inspect saved output while the real runtime still owns its temporary files. */
 export default async function outputRetentionIde(pi: ExtensionAPI) {

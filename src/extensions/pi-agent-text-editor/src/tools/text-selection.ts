@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
-import { TextSelectionAnchor, type TextSelectionRange } from "#src/api/text-selection-anchor.js";
+import { TextSelectionAnchor, type TextSelectionRange } from "#src/api/text-selection-anchor.ts";
 
-import type { TextMutationContext } from "#src/api/mutation-tool.js";
+import type { TextMutationContext } from "#src/api/mutation-tool.ts";
 import type { TextAnchor } from "pi-agent-text";
 
 export function textSelections(

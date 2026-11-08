@@ -3,17 +3,17 @@ import { Type } from "typebox";
 import {
   resultSourceProperty,
   sourceRangeProperties,
-} from "#src/tools/text-tool-schema-properties.js";
+} from "#src/tools/text-tool-schema-properties.ts";
 
-import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.js";
+import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import {
   anchorSpanRange,
   deleteAnchorSpan,
   selectionChanges,
   textSelections,
-} from "#src/tools/text-selection.js";
+} from "#src/tools/text-selection.ts";
 
-import type { TextMutationToolRegistration } from "#src/api/mutation-tool.js";
+import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 
 export const deleteSchema = Type.Object(
   {

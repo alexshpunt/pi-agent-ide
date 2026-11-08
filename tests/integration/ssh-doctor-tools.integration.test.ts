@@ -3,9 +3,9 @@ import path from "node:path";
 import { afterAll, expect, test } from "vitest";
 import { assistantMessage, PiIntegrationTest, testArtifactsDir, text } from "pi-coding-agent-test";
 import { requiredValue } from "pi-agent-invariant";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { startSshFixture } from "./support/ssh-fixture.js";
-import { forceStandaloneIntegrationFile } from "./support/pi-runtime/standalone.js";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { startSshFixture } from "./support/ssh-fixture.ts";
+import { forceStandaloneIntegrationFile } from "./support/pi-runtime/standalone.ts";
 
 const restoreSharedRunner = forceStandaloneIntegrationFile();
 afterAll(restoreSharedRunner);

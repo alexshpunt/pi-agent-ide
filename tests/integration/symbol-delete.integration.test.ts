@@ -13,7 +13,7 @@ import { expect, test } from "vitest";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 const source =
   'import { value } from "./helper";\nexport function doomed() { return value; }\nexport const label = "doomed";\n';

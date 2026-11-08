@@ -1,14 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 import { resourceScheduler } from "pi-agent-resource";
-import { createSearchCore } from "#src/core/search-core.js";
-import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "#src/api/plugin-protocol.js";
+import { createSearchCore } from "#src/core/search-core.ts";
+import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "#src/api/plugin-protocol.ts";
 import type {
   SearchRequest,
   SearchContext,
   SearchResolutionAttempt,
   SearchResolverRegistration,
-} from "#src/api/search.js";
+} from "#src/api/search.ts";
 
 test.each([false, true])(
   "trusted Search API resolves scopes (array: %s) and guards them before any resolver runs",

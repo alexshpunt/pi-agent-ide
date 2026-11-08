@@ -18,7 +18,7 @@ import { generateReadExtensions } from "pi-agent-read/testing";
 import {
   expectToolRowsHaveBackground,
   toolBackgroundTheme,
-} from "#integration/support/tui-background.js";
+} from "#integration/support/tui-background.ts";
 
 const generatedExtensions = await generateReadExtensions([
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",

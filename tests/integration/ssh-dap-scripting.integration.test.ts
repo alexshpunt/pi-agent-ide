@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { remoteLocation } from "#src/backend/identity.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { remoteLocation } from "#src/backend/identity.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 const cases = [
   {

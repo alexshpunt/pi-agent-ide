@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 
-import { formatDoctorReport } from "./run.js";
+import { formatDoctorReport } from "./run.ts";
 
-import { doctorNeedsWork } from "./run.js";
+import { doctorNeedsWork } from "./run.ts";
 
-import type { DoctorRun } from "./run.js";
+import type { DoctorRun } from "./run.ts";
 
 test("does not treat informational warnings as setup work", () => {
   const run: DoctorRun = {

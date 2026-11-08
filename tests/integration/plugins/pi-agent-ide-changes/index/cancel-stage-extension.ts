@@ -3,9 +3,9 @@ import path from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { extensionGitExecutor } from "#src/plugins/pi-agent-ide-changes/src/changes/git-changes-backend.js";
-import { IndexMutationQueue } from "#src/plugins/pi-agent-ide-changes/src/index-mutation-queue.js";
-import { createIndexChangeTool } from "#src/plugins/pi-agent-ide-changes/src/tool-index-change.js";
+import { extensionGitExecutor } from "#src/plugins/pi-agent-ide-changes/src/changes/git-changes-backend.ts";
+import { IndexMutationQueue } from "#src/plugins/pi-agent-ide-changes/src/index-mutation-queue.ts";
+import { createIndexChangeTool } from "#src/plugins/pi-agent-ide-changes/src/tool-index-change.ts";
 
 /** Cancel a real Stage operation at either side of the real Git index write. */
 export default function cancelStageAtIndexWrite(pi: ExtensionAPI): void {

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { AGENT_IDE_PREFERENCES } from "./preferences.js";
-import { effectiveToolPresentation, toolPresentation } from "./presentation.js";
+import { AGENT_IDE_PREFERENCES } from "./preferences.ts";
+import { effectiveToolPresentation, toolPresentation } from "./presentation.ts";
 
 const presentationIds = ["ui.diffs", "ui.read", "ui.search", "ui.terminal"];
 

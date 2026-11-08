@@ -8,10 +8,10 @@ import { Container, Spacer, Text, type Component, type TUI } from "@earendil-wor
 import {
   NATIVE_EDIT_BATCH_EVENT,
   type NativeEditBatchEvent,
-} from "#src/extensions/pi-agent-text-editor/src/api/native-edit-batch-event.js";
-import { compactMutationDetails } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/persisted-result.js";
+} from "#src/extensions/pi-agent-text-editor/src/api/native-edit-batch-event.ts";
+import { compactMutationDetails } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/persisted-result.ts";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
-import { registerIdeAliasCompatibility } from "./ide-alias-rendering.js";
+import { registerIdeAliasCompatibility } from "./ide-alias-rendering.ts";
 
 const ENTRY_TYPE = "ide-nested-results";
 const MAX_CALLS = 256;

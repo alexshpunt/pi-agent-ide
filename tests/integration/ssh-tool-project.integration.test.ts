@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackend } from "#src/backend/ssh.js";
-import { resolveSshToolProject } from "#src/backend/tool-project.js";
-import { LSP_RECIPES } from "#src/plugins/pi-agent-ide-lsp/index.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { resolveSshToolProject } from "#src/backend/tool-project.ts";
+import { LSP_RECIPES } from "#src/plugins/pi-agent-ide-lsp/index.ts";
 
 test("an explicit SSH file discovers its nearest native project rather than the default workspace", async () => {
   const fixture = await startSshFixture();

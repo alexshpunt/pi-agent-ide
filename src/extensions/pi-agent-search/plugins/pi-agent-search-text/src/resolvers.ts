@@ -1,19 +1,19 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ResultPanel } from "pi-agent-tool-ui";
-import { runScopedSearch } from "#src/scoped-search.js";
+import { runScopedSearch } from "#src/scoped-search.ts";
 
-import { searchFiles } from "#src/file-search.js";
-import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.js";
-import { renderSearchResult } from "#src/search-renderer.js";
-import { createFuzzyPresentation, createSearchToolDetails } from "#src/search-result.js";
-import { planSearchPresentation } from "#src/search-presentation.js";
+import { searchFiles } from "#src/file-search.ts";
+import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.ts";
+import { renderSearchResult } from "#src/search-renderer.ts";
+import { createFuzzyPresentation, createSearchToolDetails } from "#src/search-result.ts";
+import { planSearchPresentation } from "#src/search-presentation.ts";
 
 import type {
   SearchSessionStore,
   TextSearchMatch,
   TextSearchSession,
-} from "#src/search-session.js";
+} from "#src/search-session.ts";
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 import {
   selectionData,
@@ -23,8 +23,8 @@ import {
   formatFuzzyCandidate,
   type FuzzyResult,
 } from "pi-agent-search/api/search";
-import type { SearchToolDetails } from "#src/search-result.js";
-import { searchFuzzy, searchFuzzyAlternative } from "#src/fuzzy-search.js";
+import type { SearchToolDetails } from "#src/search-result.ts";
+import { searchFuzzy, searchFuzzyAlternative } from "#src/fuzzy-search.ts";
 
 const SEARCH_ANCHOR_LEGEND =
   "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)";

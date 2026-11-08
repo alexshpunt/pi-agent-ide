@@ -1,7 +1,7 @@
-import { findSshProcessMetadata } from "./process-metadata.js";
-import type { SshBackendRegistry } from "./registry.js";
-import type { SshProcessChannel } from "./ssh-channel.js";
-import { SshBackendError } from "./ssh.js";
+import { findSshProcessMetadata } from "./process-metadata.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import type { SshProcessChannel } from "./ssh-channel.ts";
+import { SshBackendError } from "./ssh.ts";
 
 /** Stop an owned service; after carrier loss, confirm its exact native identity through a new connection.
  * Only native absence or PID reuse proves the original process is gone. Never signal a replacement.

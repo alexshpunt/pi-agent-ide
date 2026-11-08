@@ -1,8 +1,8 @@
 import path from "node:path";
-import { startSshFixture } from "./ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
+import { startSshFixture } from "./ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import type { SshProcessChannel } from "#src/backend/ssh-channel.ts";
 
 /** Check native cleanup before unlocking a real filesystem operation or tearing down its fixture. */
 export async function probeOwnedFilesystemCancellation(

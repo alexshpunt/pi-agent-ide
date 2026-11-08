@@ -10,7 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 for (const name of ["before-save.note", "after-save.note", "unknown.note"] as const) {
   test(`retains an honest final interruption result for ${name}`, async () => {

@@ -8,8 +8,8 @@ import {
   type ResultError,
 } from "pi-agent-resource";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
+import type { FileMutationBatchResult } from "#src/api/mutation-result.ts";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 
 const effect = Type.Union([
   Type.Literal("pending"),

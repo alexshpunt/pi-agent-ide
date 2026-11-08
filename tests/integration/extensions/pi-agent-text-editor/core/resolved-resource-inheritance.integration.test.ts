@@ -8,12 +8,12 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
 
 const extensions = createExtensionSet();
 const tempRoot = path.resolve(".agents/tmp/source-inheritance");

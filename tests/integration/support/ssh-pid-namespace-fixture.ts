@@ -1,6 +1,6 @@
 import { readFile, readlink } from "node:fs/promises";
 import path from "node:path";
-import { startSshFixture } from "./ssh-fixture.js";
+import { startSshFixture } from "./ssh-fixture.ts";
 
 /** Own one private PID, mount and network namespace with native PID 1 behind a Unix SSH proxy. */
 export async function startSshPidNamespaceFixture() {

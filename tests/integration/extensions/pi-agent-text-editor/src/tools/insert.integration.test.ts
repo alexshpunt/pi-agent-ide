@@ -5,12 +5,12 @@ import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor"
 import { getToolExecution } from "pi-coding-agent-test";
 import { describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import {
   expectTextToolDiff,
   runTextToolScenario,
-} from "#integration/support/pi-runtime/scenario.js";
+} from "#integration/support/pi-runtime/scenario.ts";
 
 const extensions = createExtensionSet();
 

@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
 
 const rowSchema = Type.Object({
   pid: Type.Integer({ minimum: 1 }),

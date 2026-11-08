@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
+import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
 
 describe("text change engine", () => {
   test("applies replacements, insertions, deletions, and full replacements", () => {

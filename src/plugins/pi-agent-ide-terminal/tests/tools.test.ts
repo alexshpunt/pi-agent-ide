@@ -5,10 +5,10 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
 
-import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
+import { formatAgentTerminalSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.ts";
 
 test.runIf(process.platform !== "win32").each(["timeout", "abort"] as const)(
   "keeps launch ownership when the foreground wait ends by %s",

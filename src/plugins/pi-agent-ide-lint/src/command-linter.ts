@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { sameFilePath } from "pi-agent-ide/api/path-identity";
 import { runConfiguredProcess } from "pi-agent-ide/api/tool-config";
 
-import { parseDiagnostics } from "./diagnostics.js";
-import { LintCommandRegistry } from "./registry.js";
+import { parseDiagnostics } from "./diagnostics.ts";
+import { LintCommandRegistry } from "./registry.ts";
 
 import type { LinterCommandConfig, ProcessResult } from "pi-agent-ide/api/tool-config";
 import type { ConfiguredProcessContext } from "pi-agent-ide/api/tool-config";

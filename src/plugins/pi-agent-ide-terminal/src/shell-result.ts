@@ -1,6 +1,6 @@
 import { open } from "node:fs/promises";
 import { Type } from "typebox";
-import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 

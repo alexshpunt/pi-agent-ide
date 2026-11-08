@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "vitest";
 
-import { terminalProcessProvider } from "#src/plugins/pi-agent-ide-terminal/src/process-provider.js";
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
+import { terminalProcessProvider } from "#src/plugins/pi-agent-ide-terminal/src/process-provider.ts";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 
 let manager: TerminalSessionManager | undefined;
 

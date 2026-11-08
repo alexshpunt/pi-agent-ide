@@ -1,12 +1,12 @@
 import { ResultTargetStore } from "pi-agent-resource";
 import { expect, test } from "vitest";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
   TEXT_SEARCH_ANCHOR_KIND,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 async function fixture() {
   const cwd = "/fixture";

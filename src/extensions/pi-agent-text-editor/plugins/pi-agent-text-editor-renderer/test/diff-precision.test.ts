@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createDiffModel } from "#src/diff-model.js";
+import { createDiffModel } from "#src/diff-model.ts";
 import writeAlignment from "./fixtures/write-alignment.json" with { type: "json" };
 
 function modified(before: string, after: string) {

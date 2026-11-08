@@ -11,12 +11,12 @@ import type {
   ReadRequest,
   ReadResourceGuardRegistration,
   ReadToolResult,
-} from "#src/api/tools/read.js";
-import { failureResult } from "#src/core/tools/read/read-result.js";
+} from "#src/api/tools/read.ts";
+import { failureResult } from "#src/core/tools/read/read-result.ts";
 import {
   READ_OUTPUT_MAX_BYTES,
   READ_OUTPUT_MAX_LINES,
-} from "#src/core/tools/read/output-truncation.js";
+} from "#src/core/tools/read/output-truncation.ts";
 
 // A row contains 16 bytes and at most 90 ASCII characters, including large offsets.
 const DISPLAY_BUDGET =

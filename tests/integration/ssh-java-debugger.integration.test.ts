@@ -1,11 +1,11 @@
 import { cp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 const enabled = process.platform === "linux" && process.env.PI_DEBUGGER_JVM_LANGUAGE === "java";
 

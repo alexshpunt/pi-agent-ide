@@ -9,10 +9,10 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { SshBackend } from "#src/backend/ssh.js";
-import { startSshPrivateDiagnosticFixture } from "./support/ssh-private-diagnostic-fixture.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { startSshPrivateDiagnosticFixture } from "./support/ssh-private-diagnostic-fixture.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

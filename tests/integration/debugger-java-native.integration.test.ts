@@ -5,8 +5,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
 
-import { JavaDebugRuntime } from "#src/plugins/pi-agent-ide-debugger/src/java-runtime.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { JavaDebugRuntime } from "#src/plugins/pi-agent-ide-debugger/src/java-runtime.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 const execute = promisify(execFile);
 const enabled = process.env.PI_DEBUGGER_JVM_LANGUAGE === "java";

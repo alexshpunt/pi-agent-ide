@@ -2,8 +2,8 @@ import { mkdtemp, readFile, writeFile, mkdir, symlink, rm, lstat } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { executeFileOperation } from "#src/core/file-operations.js";
-import { isWholeFileInvocation } from "#src/core/file-operation-tools.js";
+import { executeFileOperation } from "#src/core/file-operations.ts";
+import { isWholeFileInvocation } from "#src/core/file-operation-tools.ts";
 
 const roots: string[] = [];
 afterEach(async () => {

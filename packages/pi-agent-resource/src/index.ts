@@ -1,6 +1,6 @@
-export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.js";
-export { resourceAccesses } from "./resource-access.js";
-export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.js";
+export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.ts";
+export { resourceAccesses } from "./resource-access.ts";
+export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.ts";
 export {
   assertJsonData,
   MAX_STRUCTURED_BYTES,
@@ -10,22 +10,22 @@ export {
   withStructuredResult,
   type ResultError,
   type StructuredResult,
-} from "./tool-result.js";
-export { ResourceError } from "./resource-error.js";
+} from "./tool-result.ts";
+export { ResourceError } from "./resource-error.ts";
 export {
   resourceErrorMetadata,
   resourceErrorMetadataOf,
   resourceErrorMetadataSchema,
   type ResourceErrorMetadata,
   type ResourceRateLimit,
-} from "./resource-error-metadata.js";
+} from "./resource-error-metadata.ts";
 export type {
   AgentContent,
   AgentContentBlock,
   CustomContent,
   ImageContent,
   TextContent,
-} from "./content.js";
+} from "./content.ts";
 
 export type {
   ContentCapability,
@@ -36,20 +36,20 @@ export type {
   ContentDescription,
   ContentInput,
   ContentTarget,
-} from "./content-conversion/content-converter.js";
+} from "./content-conversion/content-converter.ts";
 
-export { renderContentDescription } from "./content-conversion/content-description.js";
+export { renderContentDescription } from "./content-conversion/content-description.ts";
 
-export { type ContentHost, createContentHost } from "./content-conversion/content-host.js";
+export { type ContentHost, createContentHost } from "./content-conversion/content-host.ts";
 
 export {
   type ContentRunner,
   createContentRunner,
   targetsEqual,
   UnsupportedContentError,
-} from "./content-conversion/content-runner.js";
+} from "./content-conversion/content-runner.ts";
 
-export { connectContentConverter } from "./content-conversion/connect-plugin.js";
+export { connectContentConverter } from "./content-conversion/connect-plugin.ts";
 
 export {
   CONTENT_API_VERSION,
@@ -60,7 +60,7 @@ export {
   type ContentHostReady,
   isContentConverterRegistrationRequest,
   isContentHostReady,
-} from "./content-conversion/plugin-protocol.js";
+} from "./content-conversion/plugin-protocol.ts";
 
 export {
   isContentConversionAttempt,
@@ -69,7 +69,7 @@ export {
   isContentConverterRegistration,
   isContentInput,
   isContentTarget,
-} from "./content-conversion/validation.js";
+} from "./content-conversion/validation.ts";
 
 export type {
   ReadableResource,
@@ -82,21 +82,21 @@ export type {
   ResourceRead,
   ResourceWrite,
   WritableResource,
-} from "./resource.js";
+} from "./resource.ts";
 
 export type {
   ResourceResolutionAttempt,
   ResourceResolver,
   ResourceResolverContext,
   ResourceTryResolve,
-} from "./resolver.js";
+} from "./resolver.ts";
 
 export {
   isAgentContent,
   isResource,
   isResourceResolutionAttempt,
   isResourceResolver,
-} from "./validation.js";
+} from "./validation.ts";
 
 export {
   connectResultTargets,
@@ -106,5 +106,5 @@ export {
   type ResultRange,
   type ResultSourceTarget,
   type ResolvedResultTargets,
-} from "./result-targets.js";
-export { connectResultImages, ResultImageStore } from "./result-images.js";
+} from "./result-targets.ts";
+export { connectResultImages, ResultImageStore } from "./result-images.ts";

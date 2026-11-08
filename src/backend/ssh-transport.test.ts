@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { sshFailureCode } from "./ssh-transport.js";
+import { sshFailureCode } from "./ssh-transport.ts";
 
 test("exit status alone cannot diagnose a missing remote Python dependency", () => {
   expect(sshFailureCode(127, "")).toBe("TRANSPORT_FAILED");

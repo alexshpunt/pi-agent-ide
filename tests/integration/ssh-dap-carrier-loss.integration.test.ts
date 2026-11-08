@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { startSshDapTransport } from "#src/backend/dap-transport.js";
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
+import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { startSshDapTransport } from "#src/backend/dap-transport.ts";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
 
 test("a real DAP carrier cut rejects its pending request and confirms native cleanup without stopping a sibling", async () => {
   const fixture = await startSshCarrierFixture();

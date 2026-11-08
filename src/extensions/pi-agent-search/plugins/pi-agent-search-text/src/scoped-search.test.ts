@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 import { ResultTargetStore, type ResolvedResultTargets } from "pi-agent-resource";
-import { runScopedSearch } from "#src/scoped-search.js";
-import { createSearchRecipe } from "#src/search-recipe.js";
-import { SearchSessionStore } from "#src/search-session.js";
+import { runScopedSearch } from "#src/scoped-search.ts";
+import { createSearchRecipe } from "#src/search-recipe.ts";
+import { SearchSessionStore } from "#src/search-session.ts";
 
 const source = "ssh://left/work/note.ts";
 const content = 'greet("hello", "world");\r\na😀café end\r\n';

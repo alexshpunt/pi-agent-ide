@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
-import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
-import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
-import { registerTerminalOrigins } from "#src/plugins/pi-agent-ide-terminal/src/origin.js";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.ts";
+import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.ts";
+import { registerTerminalOrigins } from "#src/plugins/pi-agent-ide-terminal/src/origin.ts";
 
 /** Exercise real terminal notices with a short idle interval. */
 export default function registerStaleTerminal(pi: ExtensionAPI): void {

@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { registerTerminalSearch } from "#src/plugins/pi-agent-ide-terminal/src/search.js";
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
-import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
+import { registerTerminalSearch } from "#src/plugins/pi-agent-ide-terminal/src/search.ts";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.ts";
 
 /** Give the shell search regression a stable retained-output address. */
 export default async function registerTerminalSearchFixture(pi: ExtensionAPI): Promise<void> {

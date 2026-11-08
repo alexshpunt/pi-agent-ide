@@ -1,8 +1,8 @@
 import { readlink, stat } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { fetchSshWebResponse } from "#src/backend/web-http.js";
-import { readSshBrowserPage } from "#src/backend/web-browser.js";
-import { startIsolatedSshWebFixture } from "./support/ssh-isolated-web-fixture.js";
+import { fetchSshWebResponse } from "#src/backend/web-http.ts";
+import { readSshBrowserPage } from "#src/backend/web-browser.ts";
+import { startIsolatedSshWebFixture } from "./support/ssh-isolated-web-fixture.ts";
 
 test("native HTTP and Playwright reach an endpoint unavailable in the controller network", async () => {
   const fixture = await startIsolatedSshWebFixture();

@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { warmupFormatting } from "#src/toolchain/registry.js";
+import { warmupFormatting } from "#src/toolchain/registry.ts";
 import type { MutationFormatting } from "pi-agent-text-editor/api/mutation-result";
 import type {
   TextPostEditTransaction,

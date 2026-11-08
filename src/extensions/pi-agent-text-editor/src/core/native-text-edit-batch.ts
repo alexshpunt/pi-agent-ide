@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { withTextEditOrigin } from "./text-edit-origin.js";
+import { withTextEditOrigin } from "./text-edit-origin.ts";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
@@ -8,24 +8,24 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import type { AnyTextMutationToolRegistration } from "#src/api/mutation-tool.js";
-import { getLastResolvedResource } from "#src/api/last-resolved-resource.js";
-import { isMutationAnchorValue } from "#src/api/mutation-tool.js";
-import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.js";
-import type { TextBatchEntry } from "./text-edit-batch.js";
-import type { TextEditCompletion } from "#src/api/edit-completion.js";
-import type { TextEditorCore, TextResourceEditRequest } from "./text-editor-core.js";
-import { BatchExecutionJournal } from "./text-edit-batch-execution.js";
+import type { AnyTextMutationToolRegistration } from "#src/api/mutation-tool.ts";
+import { getLastResolvedResource } from "#src/api/last-resolved-resource.ts";
+import { isMutationAnchorValue } from "#src/api/mutation-tool.ts";
+import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.ts";
+import type { TextBatchEntry } from "./text-edit-batch.ts";
+import type { TextEditCompletion } from "#src/api/edit-completion.ts";
+import type { TextEditorCore, TextResourceEditRequest } from "./text-editor-core.ts";
+import { BatchExecutionJournal } from "./text-edit-batch-execution.ts";
 import {
   executeRegisteredTextBatch,
   planRegisteredTextBatch,
   type PlannedTextBatch,
-} from "./text-edit-batch-registrar.js";
-import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.js";
-import { isWholeFileInvocation } from "./file-operation-tools.js";
-import { isResultInput } from "./result-transfer.js";
-import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.js";
-import { writeProblemNotices } from "./write-agent-result.js";
+} from "./text-edit-batch-registrar.ts";
+import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.ts";
+import { isWholeFileInvocation } from "./file-operation-tools.ts";
+import { isResultInput } from "./result-transfer.ts";
+import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.ts";
+import { writeProblemNotices } from "./write-agent-result.ts";
 import {
   ResourceScheduler,
   resourceAccesses,
@@ -34,16 +34,16 @@ import {
   type ResultTargetStore,
   type StructuredResult,
 } from "pi-agent-resource";
-import { createPostEditScope } from "./post-edit-scope.js";
-import { committedMutationTargets, unchangedCopySources } from "./mutation-result-targets.js";
-import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.js";
-import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.js";
-import { captureScriptMutation } from "./text-mutation.js";
+import { createPostEditScope } from "./post-edit-scope.ts";
+import { committedMutationTargets, unchangedCopySources } from "./mutation-result-targets.ts";
+import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.ts";
+import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.ts";
+import { captureScriptMutation } from "./text-mutation.ts";
 import {
   NATIVE_EDIT_BATCH_EVENT,
   type NativeEditBatchEvent,
-} from "#src/api/native-edit-batch-event.js";
-import { mutationOutcome, type MutationData, type BatchMutationData } from "./structured-result.js";
+} from "#src/api/native-edit-batch-event.ts";
+import { mutationOutcome, type MutationData, type BatchMutationData } from "./structured-result.ts";
 
 /** A confirmed whole-file write can finish formatting after its child tool has returned. */
 function appliedFileAction(

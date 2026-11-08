@@ -4,7 +4,7 @@ import vm from "node:vm";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 
-import { registerDetachedResults } from "./detached-results.js";
+import { registerDetachedResults } from "./detached-results.ts";
 
 v8.setFlagsFromString("--expose-gc");
 const collectGarbage = vm.runInNewContext("gc") as () => void;

@@ -1,9 +1,9 @@
 import path from "node:path";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { SshBackendError } from "#src/backend/ssh.js";
-import type { SshProcessChannel } from "#src/backend/ssh-channel.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { SshBackendError } from "#src/backend/ssh.ts";
+import type { SshProcessChannel } from "#src/backend/ssh-channel.ts";
 
 /** Verify guarded index interruption against its exact native Git child before fixture teardown. */
 export async function probeOwnedGitCancellation(mode: "cancel" | "deadline") {

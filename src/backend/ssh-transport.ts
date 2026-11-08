@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import type { SshTarget } from "./ssh.js";
-import { remoteLocation } from "./identity.js";
+import type { SshTarget } from "./ssh.ts";
+import { remoteLocation } from "./identity.ts";
 
 /** Validate configured aliases without reading credentials or probing the host. */
 export function validateSshTarget(target: SshTarget): void {

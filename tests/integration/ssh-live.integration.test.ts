@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test } from "vitest";
 
-import { SshBackend } from "#src/backend/ssh.js";
+import { SshBackend } from "#src/backend/ssh.ts";
 
 // Explicit opt-in: this check uses a real configured host and installs nothing.
 const host = process.env.PI_IDE_SSH_SMOKE_HOST;

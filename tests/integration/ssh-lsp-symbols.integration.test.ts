@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.js";
-import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
-import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
-import { searchSymbols } from "#src/plugins/pi-agent-ide-lsp/src/lsp/symbol-search.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshLspWorkspaceOwner } from "#src/backend/lsp-workspace-owner.ts";
+import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.ts";
+import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.ts";
+import { searchSymbols } from "#src/plugins/pi-agent-ide-lsp/src/lsp/symbol-search.ts";
 
 test("owned symbol search includes references and never treats a server error as empty", async () => {
   const fixture = await startSshFixture();

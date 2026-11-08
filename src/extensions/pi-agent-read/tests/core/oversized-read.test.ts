@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 
-import type { ReadToolResult } from "#src/api/tools/read.js";
-import { limitReadOutput } from "#src/core/tools/read/output-truncation.js";
-import { createReadTool } from "#src/core/tools/tool-read.js";
+import type { ReadToolResult } from "#src/api/tools/read.ts";
+import { limitReadOutput } from "#src/core/tools/read/output-truncation.ts";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
 
 function sourceResult(source: string, resolvedBy: string, content: string): ReadToolResult {
   return {

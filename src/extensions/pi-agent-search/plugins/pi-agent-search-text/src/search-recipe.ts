@@ -3,13 +3,13 @@ import {
   searchText,
   type TextSearchRequest,
   type TextSearchBackendResult,
-} from "#src/search-backend.js";
+} from "#src/search-backend.ts";
 import {
   compileSearchQuery,
   compileSearchFallbackQuery,
   compileSearchCondition,
   type SearchCondition,
-} from "#src/search-query.js";
+} from "#src/search-query.ts";
 
 /** One optional broadening step after the previous search finds no matches. */
 export interface SearchFallback {

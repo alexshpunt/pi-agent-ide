@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.js";
+import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.ts";
 
 const directories: string[] = [];
 afterEach(async () =>

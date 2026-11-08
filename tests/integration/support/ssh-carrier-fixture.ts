@@ -1,8 +1,8 @@
 import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackend, type SshTarget } from "#src/backend/ssh.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackend, type SshTarget } from "#src/backend/ssh.ts";
 
 /** Route only one private fixture's encrypted SSH traffic; cut owned sockets, never host networking. */
 export async function startSshCarrierFixture(

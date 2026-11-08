@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { LinePositionMap } from "./position-map.js";
+import { LinePositionMap } from "./position-map.ts";
 
 const range = (startLine: number, endLine: number, start = 0, end = 1) => ({
   start: { line: startLine, character: start },

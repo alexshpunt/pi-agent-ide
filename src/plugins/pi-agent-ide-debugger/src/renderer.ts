@@ -8,7 +8,7 @@ import type {
   DebugSessionSnapshot,
   DebugSessionStatus,
   DebugStop,
-} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 type DebugTheme = Pick<Theme, "fg">;
 

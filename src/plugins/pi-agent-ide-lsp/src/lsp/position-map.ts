@@ -1,6 +1,6 @@
 import { diffLines } from "diff";
 
-import type { LspRange } from "./types.js";
+import type { LspRange } from "./types.ts";
 
 /** Lines of one text that appear unchanged in another, as `[fromLine, toLine, count]` runs. */
 type UnchangedRuns = readonly (readonly [number, number, number])[];

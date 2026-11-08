@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { IDE_PRESENTATION_CHANGED } from "#src/composite/live-presentation.js";
+import { IDE_PRESENTATION_CHANGED } from "#src/composite/live-presentation.ts";
 
 /** Drive the actual command and settings panel in a real Pi terminal. */
 export default async function liveSettingsProbe(pi: ExtensionAPI): Promise<void> {

@@ -4,9 +4,9 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 import { afterEach, expect, test } from "vitest";
 
-import { LspClient } from "./client.js";
-import { requestDiagnostics } from "./diagnostics.js";
-import { LspSharedServers } from "./shared-servers.js";
+import { LspClient } from "./client.ts";
+import { requestDiagnostics } from "./diagnostics.ts";
+import { LspSharedServers } from "./shared-servers.ts";
 
 const SERVER = path.resolve(
   "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",
@@ -207,6 +207,31 @@ test("requests see the requesting session's text and versions", async () => {
     first.documentVersion(uri),
   );
   expect(await text(first)).toBe("alpha\n");
+});
+
+test("an answer keeps the requesting session's version when another session's text replaces it meanwhile", async () => {
+  const { cwd, sharing } = await workspace();
+  // The server publishes for the second session's text while its rename is still running, and the
+  // host then gives the server the first session's text, which still waits for diagnostics.
+  const env = { LIFECYCLE_PUBLISH_DELAY_MS: "100", LIFECYCLE_RENAME_DELAY_MS: "400" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  first.syncDocument(uri, "alpha\n", "fixture");
+  second.syncDocument(uri, "gamma\n", "fixture");
+
+  const renamed = await second.sendRequest<{
+    documentChanges: { textDocument: { version: number } }[];
+  }>("textDocument/rename", {
+    textDocument: { uri },
+    position: { line: 0, character: 0 },
+    newName: "renamed",
+  });
+
+  expect(await second.sendRequest<string>("lifecycle/text", { textDocument: { uri } })).toBe(
+    "gamma\n",
+  );
+  expect(renamed.documentChanges[0]?.textDocument.version).toBe(second.documentVersion(uri));
 });
 
 test("a session with an older copy of a file does not take the file's text from the server", async () => {
