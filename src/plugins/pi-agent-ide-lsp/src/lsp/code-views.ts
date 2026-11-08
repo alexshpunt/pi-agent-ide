@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { retryWhileSourceChanges, sourceChanged } from "./source-changes.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,6 +53,20 @@ export async function resolveLspDeclaration(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
+  // Another Pi process may write the file while the server reports its symbols.
+  return retryWhileSourceChanges(
+    () => resolveLspDeclarationOnce(manager, filePath, selector, cwd, signal),
+    signal,
+  );
+}
+
+async function resolveLspDeclarationOnce(
+  manager: LspManager,
+  filePath: string,
+  selector: readonly string[],
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
   throwIfAborted(signal);
   const before = await manager.readSourceText(filePath, signal);
   const document = await openCodeDocument(manager, filePath, cwd, signal);
@@ -59,7 +74,9 @@ export async function resolveLspDeclaration(
   const after = await manager.readSourceText(document.filePath, signal);
   throwIfAborted(signal);
   if (before !== after)
-    throw new Error("The symbol source changed during resolution. Read it again before editing.");
+    throw sourceChanged(
+      "The symbol source changed during resolution. Read it again before editing.",
+    );
   return { source: document.filePath, range: symbol.range, content: after };
 }
 /** Resolve the native identifier position and client without guessing from declaration text. */

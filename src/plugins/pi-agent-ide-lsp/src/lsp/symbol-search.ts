@@ -1,4 +1,5 @@
 import path from "node:path";
+import { retryWhileSourceChanges, sourceChanged } from "./source-changes.js";
 import { requiredValue } from "pi-agent-invariant";
 import { URI } from "vscode-uri";
 import { documentUri } from "./document-uri.js";
@@ -115,6 +116,22 @@ export async function searchSymbols(
   scope: SymbolSearchScope = {},
   manager = LspManager.getInstance(),
 ): Promise<{ readonly hits: SymbolHit[]; readonly complete: boolean }> {
+  // Another Pi process may edit a searched file while the server answers. Its ranges then fit
+  // neither version, so search again on the current text.
+  return retryWhileSourceChanges(
+    () => searchSymbolsOnce(query, cwd, limit, signal, scope, manager),
+    signal,
+  );
+}
+
+async function searchSymbolsOnce(
+  query: string,
+  cwd: string,
+  limit: number,
+  signal: AbortSignal | undefined,
+  scope: SymbolSearchScope,
+  manager: LspManager,
+): Promise<{ readonly hits: SymbolHit[]; readonly complete: boolean }> {
   signal?.throwIfAborted();
   const resultScope = scope.resultScope;
   if (resultScope !== undefined) {
@@ -176,7 +193,7 @@ export async function searchSymbols(
         position.character < 0 ||
         position.character > line.content.length
       )
-        throw new Error("LSP range does not match its source snapshot.");
+        throw sourceChanged("LSP range does not match its source snapshot.");
     }
     const first = requiredValue(document.lines[start.line]);
     const offset = (line: number) =>
@@ -221,7 +238,7 @@ export async function searchSymbols(
         const symbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
         const names = declarationNames(symbols, definition.name, definition.location.range);
         if (names.length !== 1)
-          throw new Error(
+          throw sourceChanged(
             "LSP declaration has no unique provider selectionRange; cannot search its references.",
           );
         location = { uri: opened.uri, range: requiredValue(names[0]) };
@@ -283,7 +300,7 @@ export async function searchSymbols(
   for (const [source, snapshot] of contents) {
     const current = await manager.readSourceSnapshot(source, signal);
     if (current.version !== snapshot.version || current.content !== snapshot.document.content)
-      throw new Error("LSP source changed during search.");
+      throw sourceChanged("LSP source changed during search.");
   }
   if (resultScope !== undefined) await verifyResultTargets(resultScope, signal);
   hits.sort(

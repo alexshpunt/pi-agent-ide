@@ -1954,16 +1954,13 @@ async function finalizeTextResource<Result>(
     !skipPostEdit && request.resource.read
       ? await readSavedText(request.resource, request.context)
       : request.requestedText;
-  if (
+  // Another process wrote the file after this edit and before its deferred post-processing.
+  // The edit is saved and that writer saw it; formatting the newer text is not this edit's job.
+  const overwritten =
     !skipPostEdit &&
-    request.postProcessingFinal &&
+    request.postProcessingFinal === true &&
     !request.context.signal?.aborted &&
-    savedText !== (request.savedText ?? request.requestedText)
-  )
-    throw Object.assign(
-      new Error(`Resource changed before final post-processing: ${request.resource.source}`),
-      { code: "POST_EDIT_STALE", effect: "applied" as const },
-    );
+    savedText !== (request.savedText ?? request.requestedText);
   const parentToolCallId = request.postProcessingFinal
     ? request.parentToolCallId
     : currentTextEditOrigin();
@@ -1992,7 +1989,10 @@ async function finalizeTextResource<Result>(
     ? [{ id: "post-edit-scope", data: { formatting: { status: "deferred" } } }]
     : [];
 
-  for (const registration of skipPostEdit || deferred || request.context.signal?.aborted
+  for (const registration of skipPostEdit ||
+  deferred ||
+  overwritten ||
+  request.context.signal?.aborted
     ? []
     : request.postEditHandlers) {
     try {
@@ -2006,6 +2006,18 @@ async function finalizeTextResource<Result>(
     }
   }
 
+  if (overwritten)
+    postEditContributions.push({
+      id: "post-edit-interruption",
+      data: {
+        diffStatuses: [
+          {
+            text: "Another process changed the file after this edit, so post-edit processing was skipped. Read the file before editing it again.",
+            tone: "warning",
+          },
+        ],
+      },
+    });
   if (!skipPostEdit && !deferred && request.context.signal?.aborted)
     postEditContributions.push({
       id: "post-edit-interruption",
@@ -2037,7 +2049,7 @@ async function finalizeTextResource<Result>(
     intent: request.context.intent ?? "edit",
     postProcessing: deferred
       ? "deferred"
-      : request.context.signal?.aborted
+      : request.context.signal?.aborted || overwritten
         ? "interrupted"
         : request.postProcessingFinal
           ? "final"
