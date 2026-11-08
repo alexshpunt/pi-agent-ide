@@ -247,6 +247,21 @@ test("a session that attaches while the server loads the project waits for it to
   expect(await second.sendRequest("lifecycle/loaded", {})).toBe(true);
 });
 
+test("a save made while the server loads the project reaches it after loading", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_LOADING_MS: "800", LIFECYCLE_SAVE: "1" };
+  const client = await session(cwd, sharing, undefined, LINGER_MS, env);
+  await until(() => client.loading);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+
+  // Like rust-analyzer, the fixture exits when a save arrives during loading.
+  client.syncDocument(uri, "edited\n", "fixture", true);
+  await client.waitUntilLoaded();
+
+  expect(await client.sendRequest("lifecycle/saves", {})).toEqual([uri]);
+  expect(client.crashed).toBe(false);
+});
+
 test.each([false, true])(
   "diagnostics are pulled from a server that registers pull after it starts (shared=%s)",
   async (shared) => {

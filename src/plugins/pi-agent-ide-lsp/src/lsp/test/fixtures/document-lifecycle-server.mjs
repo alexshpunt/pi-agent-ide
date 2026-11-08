@@ -37,10 +37,26 @@ const send = (uri, version) =>
 // Like rust-analyzer, report that the project is loading for this long after initialization.
 const loadingMs = Number(process.env.LIFECYCLE_LOADING_MS ?? 0);
 let serverStatus = false;
+// Like rust-analyzer, ask for saves and exit when one arrives while the project loads.
+const saveSupport = process.env.LIFECYCLE_SAVE === "1";
+const saves = [];
+connection.onNotification("textDocument/didSave", ({ textDocument }) => {
+  if (loadingMs > 0 && !loaded) {
+    process.stderr.write("fixture panic: save during project loading\n");
+    process.exit(101);
+  }
+  saves.push(textDocument.uri);
+});
+connection.onRequest("lifecycle/saves", () => saves);
 connection.onRequest("initialize", ({ capabilities }) => {
   serverStatus = capabilities.experimental?.serverStatusNotification === true;
   pullRegistered = pullDiagnostics && capabilities.textDocument?.diagnostic?.dynamicRegistration === true;
-  return { capabilities: { textDocumentSync: { openClose: true, change: 1 }, documentSymbolProvider: true } };
+  return {
+    capabilities: {
+      textDocumentSync: { openClose: true, change: 1, ...(saveSupport && { save: true }) },
+      documentSymbolProvider: true,
+    },
+  };
 });
 const reportStatus = (quiescent) => serverStatus && connection.sendNotification("experimental/serverStatus", { health: "ok", quiescent, message: quiescent ? null : "Loading" });
 connection.onNotification("initialized", () => {
