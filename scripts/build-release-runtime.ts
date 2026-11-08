@@ -140,7 +140,14 @@ export async function buildReleaseRuntime(
     ],
   });
 
+  // Compiled files must go through Pi's extension loader. jiti imports a `.js` file of a
+  // `"type": "module"` package natively, and Node then resolves `@earendil-works/*` and `typebox`
+  // from the importing plugin's own node_modules, such as a checkout with development copies, so
+  // a second copy of Pi's packages loads. Without a module type, jiti transforms these files and
+  // gives them the running Pi's modules; Node still detects their ESM syntax when it loads them.
+  const untyped = new Set([outputDirectory]);
   for (const { directory, entry } of redirects) {
+    untyped.add(path.join(directory, "runtime"));
     const wrapper = path.join(directory, "runtime", `${entry.name}.js`);
     const output = path.join(outputDirectory, `${entry.name}.js`);
     const specifier = path.relative(path.dirname(wrapper), output).split(path.sep).join("/");
@@ -153,6 +160,10 @@ export async function buildReleaseRuntime(
       wrapper,
       `export * from ${source};\n${metadata.exports.includes("default") ? `export { default } from ${source};\n` : ""}`,
     );
+  }
+  for (const directory of untyped) {
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(path.join(directory, "package.json"), "{}\n");
   }
   for (const { directory, manifest } of manifests) {
     writeFileSync(path.join(directory, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);

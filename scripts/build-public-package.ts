@@ -462,7 +462,18 @@ function validatePackage(
     );
   }
 
-  const manifestPaths = paths.filter((path) => path.endsWith("package.json"));
+  // Compiled directories carry an empty package.json that removes the module type, so Pi's loader
+  // transforms them with its own modules (see build-release-runtime.ts). It is not a package.
+  const scopeMarkers = paths.filter((path) => /(?:^dist|\/runtime)\/package\.json$/.test(path));
+  assert(scopeMarkers.includes("dist/package.json"), "Missing dist/package.json module scope");
+  for (const markerPath of scopeMarkers)
+    assert(
+      readFileSync(join(packageRoot, markerPath), "utf8").trim() === "{}",
+      `${markerPath} must be an empty module scope`,
+    );
+  const manifestPaths = paths.filter(
+    (path) => path.endsWith("package.json") && !scopeMarkers.includes(path),
+  );
   for (const manifestPath of manifestPaths) {
     const manifestText = readFileSync(join(packageRoot, manifestPath), "utf8");
     const manifest = readJson(join(packageRoot, manifestPath));

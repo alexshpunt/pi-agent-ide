@@ -140,7 +140,7 @@ The result is written to `.agents/tmp/public-package/`. The tarball contains the
 
 Only the `pi-agent-ide` tarball is intended for registry publication. The bundled package names are implementation details and are not published separately.
 
-The release runs compiled JavaScript from `dist/`. Its public entrypoints share generated chunks, so the extension and plugins use the same runtime modules. Source files remain for TypeScript consumers and module-relative resources. Development still loads `src/pi-agent-ide.ts` directly. PDF, browser, and HTML extraction dependencies load on first use instead of during startup.
+The release runs compiled JavaScript from `dist/`. Its public entrypoints share generated chunks, so the extension and plugins use the same runtime modules. Source files remain for TypeScript consumers and module-relative resources. Development still loads `src/pi-agent-ide.ts` directly. PDF, browser, and HTML extraction dependencies load on first use instead of during startup. `dist/` and the bundled packages' `runtime/` directories have a `package.json` without a module type, so Pi's extension loader transforms them with the running Pi's modules instead of importing them natively; a native import would resolve `@earendil-works/*` and `typebox` from an importing plugin's own `node_modules` and load a second copy of Pi's packages.
 
 To check an installed tarball, create a clean directory outside the checkout and install it with production dependencies. Pass that directory (the parent of `node_modules`) to the package integration tests:
 
