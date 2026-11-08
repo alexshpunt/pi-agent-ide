@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.6 — 2026-11-08
+
+### Changed
+
+- Pi starts faster with pi-agent-ide installed: the image processing module loads on first use instead of at startup.
+- Pi loads pi-agent-ide from a local checkout about four times faster.
+
+### Fixed
+
+- Renames and other edits from a language server shared by several Pi sessions are no longer rejected as stale when another session's text reaches the server during the request.
+
 ## 0.9.5 — 2026-11-08
 
 ### Added
