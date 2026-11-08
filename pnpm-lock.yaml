@@ -124,8 +124,8 @@ importers:
         specifier: workspace:^
         version: link:src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash
       pi-coding-agent-test:
-        specifier: 0.1.5
-        version: 0.1.5(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3)
+        specifier: 0.1.6
+        version: 0.1.6(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3)
       typebox:
         specifier: ^1.3.27
         version: 1.3.27
@@ -3163,6 +3163,11 @@ packages:
     engines: {node: '>=22.19.0'}
     hasBin: true
 
+  pi-coding-agent-test@0.1.6:
+    resolution: {integrity: sha512-bssAOQRxvQVigDKEFUCIfV+sGRjwCufD7bDS+Cm9AuRZmoxGAYFDYqbzEb8FjKtFzuCthPGv7gherwBQBo+zQw==}
+    engines: {node: '>=22.19.0'}
+    hasBin: true
+
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
@@ -5436,6 +5441,26 @@ snapshots:
       '@napi-rs/canvas': 1.0.9
 
   pi-coding-agent-test@0.1.5(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3):
+    dependencies:
+      '@earendil-works/pi-ai': 1.5.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3)
+      '@xterm/headless': 6.0.0
+      cross-spawn: 7.0.6
+      node-pty: 1.1.0
+      playwright: 1.62.1
+    transitivePeerDependencies:
+      - '@aws-sdk/credential-provider-node'
+      - '@modelcontextprotocol/sdk'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - bufferutil
+      - kerberos
+      - supports-color
+      - undici
+      - utf-8-validate
+      - ws
+      - zod
+
+  pi-coding-agent-test@0.1.6(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3):
     dependencies:
       '@earendil-works/pi-ai': 1.5.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3)
       '@xterm/headless': 6.0.0
