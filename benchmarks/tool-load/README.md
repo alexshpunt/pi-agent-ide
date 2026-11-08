@@ -33,6 +33,7 @@ Every agent repeats the same step sequence for `--cycles` cycles: read with view
 - Per Pi process: RSS peak, heap after a full GC at the end of each cycle and its growth per cycle, event-loop delay, TUI frame count and gaps, Pi CPU and the harness's own CPU, so the harness's cost is not blamed on Pi.
 
 Pi runs with tool output expanded, as the test harness sets it, so the TUI renders and keeps every result in full. Heap, RSS and Pi CPU are therefore higher than with Pi's default collapsed output, and heap growth per cycle includes the rendered rows of that cycle's results. Rust agents grow faster than the others for this reason: the generated Rust project has about 2,300 cargo warnings, so the Codemode diagnostics read renders about 1,700 rows each cycle. With collapsed output a Rust agent grows about 1.9 MB per cycle instead of 4.6 MB.
+
 - Per language: language-server process count, RSS peak and CPU.
 - Machine CPU and free memory.
 
@@ -40,14 +41,14 @@ Pi runs with tool output expanded, as the test harness sets it, so the TUI rende
 
 The run fails when a session hangs (no finished tool call for `--step-timeout` seconds) or crashes, a step or final file check fails, a language-server process is left after the idle timeout, or a value exceeds `thresholds.json`:
 
-| Key | Meaning |
-| --- | --- |
-| `toolLatencyMs` | p95 and max per tool; `default` applies to tools without their own entry |
-| `piHeapGrowthPerCycleMb` | heap growth per cycle of one Pi process |
-| `piRssPeakMb` | RSS peak of one Pi process |
-| `piLoopDelayMaxMs` | longest event-loop block of one Pi process |
-| `lspRssPeakMbPerLanguage` | RSS peak of one language's servers |
-| `minMemAvailableMb` | lowest free memory of the machine |
+| Key                       | Meaning                                                                  |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `toolLatencyMs`           | p95 and max per tool; `default` applies to tools without their own entry |
+| `piHeapGrowthPerCycleMb`  | heap growth per cycle of one Pi process                                  |
+| `piRssPeakMb`             | RSS peak of one Pi process                                               |
+| `piLoopDelayMaxMs`        | longest event-loop block of one Pi process                               |
+| `lspRssPeakMbPerLanguage` | RSS peak of one language's servers                                       |
+| `minMemAvailableMb`       | lowest free memory of the machine                                        |
 
 The values come from the default run on ZinPC (16 threads, WSL with 15.6 GB), with about 50% headroom. Tighten them when a fix lowers the baseline. A slower machine may need its own file through `--thresholds`.
 

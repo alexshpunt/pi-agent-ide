@@ -99,7 +99,7 @@ ${fail ? 'throw new Error("planned failure");' : ""}
 );
 
 test.each(["path", "result"] as const)(
-  "failed final processing keeps applied effects without an old final snapshot for %s input",
+  "a file changed by another process before final processing keeps applied effects without an old final snapshot for %s input",
   async (input) => {
     await withTempWorkspace(async (cwd) => {
       await enableNativeCodemode(cwd);
@@ -146,7 +146,9 @@ await tools.post_edit_external_change({path:"a.note",content:"EXTERNAL\\n"});
           assistantMessage([text("Finished without replaying confirmed writes.")]),
         ],
       }).run("Keep final-processing failure separate from applied writes");
-      expect(getToolExecution(run, "edit").isError).toBe(true);
+      // Another process's newer text is not this edit's to format: the edit stays applied and
+      // reports that its post-edit processing was skipped.
+      expect(getToolExecution(run, "edit").isError).toBe(false);
       expect(await readFile(path.join(cwd, "a.note"), "utf8")).toBe("EXTERNAL\n");
       expect(await readFile(path.join(cwd, "b.note"), "utf8")).toBe("ANCHOR\nB\nTAIL\n");
       expect(getToolExecutionResult(run, "edit")).toMatchObject({
@@ -174,16 +176,17 @@ await tools.post_edit_external_change({path:"a.note",content:"EXTERNAL\\n"});
           }>;
         };
       };
-      const failure = panel.data.calls.find(
+      const skipped = panel.data.calls.find(
         (call) =>
           call.name === "insert" &&
           call.result?.details?.results?.some(
             (item) => typeof item.data.path === "string" && item.data.path.endsWith("a.note"),
           ),
       );
-      expect(failure?.result?.isError).toBe(true);
-      const data = failure?.result?.details?.results?.[0]?.data;
-      expect(data).toMatchObject({ ok: false, errors: [{ code: "POST_EDIT_FAILED" }] });
+      expect(skipped?.result?.isError).toBe(false);
+      expect(JSON.stringify(skipped?.result)).toContain("post-edit processing was skipped");
+      const data = skipped?.result?.details?.results?.[0]?.data;
+      expect(data).toMatchObject({ ok: true });
       expect(data).not.toHaveProperty("afterContent");
       expect(data).not.toHaveProperty("afterDocument");
     });
