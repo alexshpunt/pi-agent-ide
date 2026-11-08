@@ -81,6 +81,8 @@ export class LspClient {
   /** Latest `experimental/serverStatus` (rust-analyzer); undefined until the server sends one. */
   private _serverStatus: { quiescent: boolean; message?: string } | undefined;
   private readonly _serverStatusListeners = new Set<() => void>();
+  /** Saves held back until the server has loaded the project. */
+  private readonly _pendingSaves = new Set<string>();
   /** Operations that still use each open document; the last release closes it. */
   private readonly _documentLeases = new Map<string, number>();
   private _pendingRequests = 0;
@@ -898,17 +900,40 @@ export class LspClient {
     } else {
       this.changeDocument(uri, text, currentVersion + 1);
     }
+    if (!saved) return;
+    // rust-analyzer exits when a save arrives while it scans the project
+    // (rust-lang/rust-analyzer#19406), so report the save once loading ends.
+    if (this.loading) this._deferSave(uri);
+    else this._sendSave(uri);
+  }
+
+  private _sendSave(uri: string): void {
     const synchronization = this._serverCapabilities?.textDocumentSync;
     const save =
       typeof synchronization === "object" && synchronization !== null
         ? (synchronization as { save?: boolean | { includeText?: boolean } }).save
         : undefined;
-    if (saved && save) {
-      this.sendNotification("textDocument/didSave", {
-        textDocument: { uri },
-        ...(typeof save === "object" && save.includeText && { text }),
-      });
-    }
+    const text = this._documentContents.get(uri);
+    if (!save || text === undefined) return;
+    this.sendNotification("textDocument/didSave", {
+      textDocument: { uri },
+      ...(typeof save === "object" && save.includeText && { text }),
+    });
+  }
+
+  private _deferSave(uri: string): void {
+    const waiting = this._pendingSaves.size > 0;
+    this._pendingSaves.add(uri);
+    if (waiting) return;
+    const listener = () => {
+      if (this.loading) return;
+      this._serverStatusListeners.delete(listener);
+      const uris = [...this._pendingSaves];
+      this._pendingSaves.clear();
+      // A document closed in the meantime has no save to report.
+      for (const pending of uris) this._sendSave(pending);
+    };
+    this._serverStatusListeners.add(listener);
   }
 
   changeDocument(uri: string, text: string, version: number): void {
