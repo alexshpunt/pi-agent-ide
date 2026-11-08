@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.7 — 2026-11-08
+
+### Fixed
+
+- Extensions that import `pi-agent-ide/api/*` from their own dependencies no longer load a second copy of Pi's packages, so Pi starts faster with them.
+
 ## 0.9.6 — 2026-11-08
 
 ### Changed
