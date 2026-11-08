@@ -86,17 +86,21 @@ export function projectReadState(
   const totalLines = state.text.lines.length;
   const range = resolveTextRange(request, totalLines, options?.originLine);
   const lines = state.text.lines.slice(range.startIndex, range.endIndex);
-  const renderedText =
-    state.textMode === "final"
-      ? renderFinalTextLines(lines, range.endIndex < totalLines)
-      : renderPresentedTextDocument({
-          ...state.text,
-          lines: lines.map((line, index) => ({
-            ...line,
-            lineEnding:
-              index === lines.length - 1 && range.endIndex < totalLines ? "" : line.lineEnding,
-          })),
-        });
+  const stoppedEarly = range.endIndex < totalLines;
+  // Lines without presentation render as their plain text. Skipping the presented-row
+  // rendering matters for whole-file reads of large files, such as the rereads that check
+  // a source before an edit, which would otherwise build several objects per line.
+  const plain =
+    state.textMode === "final" || lines.every((line) => line.presentation === undefined);
+  const renderedText = plain
+    ? renderFinalTextLines(lines, stoppedEarly)
+    : renderPresentedTextDocument({
+        ...state.text,
+        lines: lines.map((line, index) => ({
+          ...line,
+          lineEnding: index === lines.length - 1 && stoppedEarly ? "" : line.lineEnding,
+        })),
+      });
   const originalBlock = state.content[0];
   const content: TextContent[] = [
     {
@@ -113,7 +117,10 @@ export function projectReadState(
       kind: "text",
       ...(state.text.references === undefined ? {} : { references: state.text.references }),
       source: state.source,
-      content: lines.map((line) => line.content + line.lineEnding).join(""),
+      content:
+        plain && !stoppedEarly
+          ? renderedText
+          : lines.map((line) => line.content + line.lineEnding).join(""),
       lines,
       startLine: lines[0]?.lineNumber ?? 0,
       endLine: lines.at(-1)?.lineNumber ?? 0,
@@ -308,7 +315,7 @@ function projectAgentContent(content: AgentContent): {
   };
 }
 
-function resolveTextRange(
+export function resolveTextRange(
   request: ReadRequest,
   totalLines: number,
   originLine?: number,
