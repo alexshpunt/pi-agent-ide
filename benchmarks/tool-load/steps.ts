@@ -23,7 +23,8 @@ export interface Step {
   readonly expectsError?: boolean;
   /**
    * A result that says a checker is still pending is recorded instead of failing: a cold start
-   * (rust-analyzer loading, the first clippy build) can take longer than a diagnostics read waits.
+   * (rust-analyzer loading, the first clippy build) can take longer than a diagnostics read waits,
+   * and a file other agents keep editing can change before its check finishes.
    */
   readonly allowsPending?: boolean;
   /** Returns a problem description, or undefined when the result is as expected. */
@@ -144,7 +145,8 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       ...step("read-diagnostics", "read", { path: `diagnostics:${file}` }, (result) =>
         expectErrorOn(result, spec.brokenLine(agent, cycle)),
       ),
-      allowsPending: cycle === 1,
+      // A shared file can change faster than its server checks it, so no revision settles.
+      allowsPending: cycle === 1 || files.sharedWith > 0,
     },
     step("delete-error", "delete", { path: file, start: spec.brokenLine(agent, cycle) }, (result) =>
       expectAll(result, ["Deleted selected text"]),

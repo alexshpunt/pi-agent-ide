@@ -173,7 +173,7 @@ export function buildReport(data: RunData): { json: unknown; markdown: string; p
     for (const step of result?.steps ?? []) {
       if (step.pending !== true) continue;
       const status = /[\w-]+: pending\b[^\n]*/.exec(step.excerpt ?? "")?.[0] ?? "pending";
-      notes.push(`${label}: ${step.id}: diagnostics still pending at cold start (${status})`);
+      notes.push(`${label}: ${step.id}: diagnostics still pending (${status})`);
     }
     for (const problem of result?.fileProblems ?? [])
       failures.push(`${label}: final file: ${problem}`);
