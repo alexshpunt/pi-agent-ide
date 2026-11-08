@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
-import type { TextMutationContext } from "#src/api/mutation-tool.js";
-import { TextChangeDocument, applyTextChanges } from "#src/core/text-change-engine.js";
-import { prepareResultTransfer } from "#src/core/result-transfer.js";
+import type { TextMutationContext } from "#src/api/mutation-tool.ts";
+import { TextChangeDocument, applyTextChanges } from "#src/core/text-change-engine.ts";
+import { prepareResultTransfer } from "#src/core/result-transfer.ts";
 
 function fixture() {
   const cwd = process.cwd();

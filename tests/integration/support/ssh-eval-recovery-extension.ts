@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectBeforeEditHook } from "#src/api/hooks.js";
+import { connectBeforeEditHook } from "#src/api/hooks.ts";
 
 /** Introduce one real external write after edit preparation, only in the owned eval file. */
 export default async function evalRecovery(pi: ExtensionAPI): Promise<void> {

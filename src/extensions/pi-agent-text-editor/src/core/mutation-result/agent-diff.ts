@@ -1,10 +1,10 @@
 import { requiredValue } from "pi-agent-invariant";
 import { type PresentedTextRow, renderPresentedTextRows } from "pi-agent-text";
 
-import { diffTextLines } from "./diff.js";
-import { formatHint } from "./inline-hints.js";
+import { diffTextLines } from "./diff.ts";
+import { formatHint } from "./inline-hints.ts";
 
-import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.js";
+import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.ts";
 
 const CONTEXT_LINES = 5;
 const MAX_SYNTAX_ERRORS = 5;

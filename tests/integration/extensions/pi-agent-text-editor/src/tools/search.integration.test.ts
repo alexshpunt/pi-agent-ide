@@ -13,9 +13,9 @@ import {
 import { afterAll, describe, expect, test } from "vitest";
 
 import { createSearchSessionId, type TextSearchMatch } from "pi-agent-search-text/search-session";
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const extensions = createExtensionSet();
 const restoreSharedRunner = forceStandaloneIntegrationFile();

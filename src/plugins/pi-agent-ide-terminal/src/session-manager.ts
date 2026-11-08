@@ -6,8 +6,8 @@ import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { stripVTControlCharacters } from "node:util";
 import { StringDecoder } from "node:string_decoder";
-import type { ResolvedSshSource } from "#src/backend/registry.js";
-import { remoteBashProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
+import type { ResolvedSshSource } from "#src/backend/registry.ts";
+import { remoteBashProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 
 import type { Terminal as XtermTerminal } from "@xterm/headless";
 import type { IPty, IPtyForkOptions, IWindowsPtyForkOptions } from "node-pty";
@@ -17,7 +17,7 @@ import type {
   TerminalSession,
   TerminalSessionSnapshot,
   TerminalWaitOutcomeReason,
-} from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const require = createRequire(import.meta.url);
 const MAX_OUTPUT_CHARS = 1_000_000;

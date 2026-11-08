@@ -3,10 +3,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   registerGitChangesWithExecutor,
   type GitCommandExecutor,
-} from "#src/plugins/pi-agent-ide-changes/index.js";
-import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { readSshTargets, resolveSshConfigPaths } from "./config.js";
-import { SshBackendRegistry } from "./registry.js";
+} from "#src/plugins/pi-agent-ide-changes/index.ts";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { readSshTargets, resolveSshConfigPaths } from "./config.ts";
+import { SshBackendRegistry } from "./registry.ts";
 
 /** Register Git commands and text reads on the explicitly configured resource owner. */
 export default async function registerOwnedGit(pi: ExtensionAPI): Promise<void> {

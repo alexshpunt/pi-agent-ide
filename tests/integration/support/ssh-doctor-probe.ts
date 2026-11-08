@@ -1,14 +1,14 @@
 import { requiredValue } from "pi-agent-invariant";
-import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { writeSuggestedConfigs } from "#src/doctor/config-writer.js";
-import { DoctorCore } from "#src/doctor/core.js";
-import { runDoctor } from "#src/doctor/run.js";
-import type { RecipeCandidate } from "#src/doctor/discovery.js";
-import { webDoctorPlugin } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/doctor-plugin.js";
-import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.js";
-import { startSshFixture } from "./ssh-fixture.js";
-import { startSshWebFixture } from "./ssh-web-fixture.js";
+import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { writeSuggestedConfigs } from "#src/doctor/config-writer.ts";
+import { DoctorCore } from "#src/doctor/core.ts";
+import { runDoctor } from "#src/doctor/run.ts";
+import type { RecipeCandidate } from "#src/doctor/discovery.ts";
+import { webDoctorPlugin } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/doctor-plugin.ts";
+import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
+import { startSshFixture } from "./ssh-fixture.ts";
+import { startSshWebFixture } from "./ssh-web-fixture.ts";
 
 /** Exercise target-only config publication and retain the actual guarded-write observations. */
 export async function probeOwnedDoctorApply() {

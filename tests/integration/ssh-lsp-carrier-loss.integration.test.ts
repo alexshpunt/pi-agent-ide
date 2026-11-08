@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { probeSshLspCarrierLoss } from "#integration/support/lsp-carrier-loss-probe.js";
+import { probeSshLspCarrierLoss } from "#integration/support/lsp-carrier-loss-probe.ts";
 
 test("actual SSH carrier loss rejects a pending language-server request and restarts without stale diagnostics", async () => {
   const proof = await probeSshLspCarrierLoss();

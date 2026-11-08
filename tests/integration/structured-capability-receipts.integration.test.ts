@@ -8,8 +8,8 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { capabilityCases } from "#capabilities/cases.ts";
 import { parseEvents, resultText, validateRoute } from "#capabilities/validation.ts";
 import { expect, test } from "vitest";

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { splitGlobList } from "./glob-list.js";
+import { splitGlobList } from "./glob-list.ts";
 
 test("keeps commas inside brace alternatives in one glob", () => {
   expect(splitGlobList("**/*.{cmake,txt,h}")).toEqual(["**/*.{cmake,txt,h}"]);

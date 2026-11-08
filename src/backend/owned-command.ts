@@ -1,5 +1,5 @@
-import { startSshProcess, type SshProcessChannel } from "./ssh-channel.js";
-import { SshBackendError, type SshTarget } from "./ssh.js";
+import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
+import { SshBackendError, type SshTarget } from "./ssh.ts";
 
 /** Bounds for one owned, buffered command. Both output streams share the byte budget. */
 export interface OwnedCommandOptions {

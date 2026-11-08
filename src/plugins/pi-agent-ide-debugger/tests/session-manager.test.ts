@@ -2,8 +2,8 @@ import net from "node:net";
 
 import { afterEach, expect, test, vi } from "vitest";
 
-import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 const cleanup: (() => void)[] = [];
 afterEach(() => {

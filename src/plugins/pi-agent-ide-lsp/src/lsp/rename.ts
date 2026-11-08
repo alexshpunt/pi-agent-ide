@@ -1,5 +1,5 @@
-import type { LspClient } from "./client.js";
-import type { LspPosition, LspTextEdit } from "./types.js";
+import type { LspClient } from "./client.ts";
+import type { LspPosition, LspTextEdit } from "./types.ts";
 
 export interface LspDocumentChange {
   textDocument: { uri: string; version?: number | null };

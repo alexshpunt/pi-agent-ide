@@ -1,8 +1,8 @@
-import { connectIdePlugin } from "#src/api/connect-plugin.js";
-import { IDE_PROTOCOL, IDE_API_VERSION } from "#src/api/plugin-protocol.js";
+import { connectIdePlugin } from "#src/api/connect-plugin.ts";
+import { IDE_PROTOCOL, IDE_API_VERSION } from "#src/api/plugin-protocol.ts";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
-import { createSshSearchEnvironmentProvider } from "./search-environment.js";
+import { createSshSearchEnvironmentProvider } from "./search-environment.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
@@ -20,11 +20,11 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { createSshFileOperationResolver } from "./file-operation-resolver.js";
-import { remoteLocation } from "./identity.js";
-import { SshBackendRegistry } from "./registry.js";
-import { createSshResourceResolver } from "./resource-resolver.js";
-import type { SshTarget } from "./ssh.js";
+import { createSshFileOperationResolver } from "./file-operation-resolver.ts";
+import { remoteLocation } from "./identity.ts";
+import { SshBackendRegistry } from "./registry.ts";
+import { createSshResourceResolver } from "./resource-resolver.ts";
+import type { SshTarget } from "./ssh.ts";
 
 /** Connect explicitly configured targets to the existing tools, without startup connections. */
 export async function registerSshResources(

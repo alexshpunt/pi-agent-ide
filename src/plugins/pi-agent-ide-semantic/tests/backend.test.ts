@@ -6,7 +6,7 @@ import {
   inspectProject,
   indexProject,
   searchProject,
-} from "#src/plugins/pi-agent-ide-semantic/src/backend.js";
+} from "#src/plugins/pi-agent-ide-semantic/src/backend.ts";
 
 const temporary: string[] = [];
 afterEach(async () => {

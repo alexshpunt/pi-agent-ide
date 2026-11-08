@@ -1,13 +1,13 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 
-import { connectTextEditorPlugin } from "#src/api/connect-plugin.js";
+import { connectTextEditorPlugin } from "#src/api/connect-plugin.ts";
 import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
   type TextEditorPlugin,
-} from "#src/api/plugin-protocol.js";
-import registerTextEditorCore from "#src/core/extension.js";
+} from "#src/api/plugin-protocol.ts";
+import registerTextEditorCore from "#src/core/extension.ts";
 
 test("reload detaches the previous text editor core registration listener", async () => {
   const environment = createExtensionEnvironment();

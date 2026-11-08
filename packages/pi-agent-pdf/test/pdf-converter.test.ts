@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 
 import { createPdfContentConverter, isPdf } from "pi-agent-pdf";
 
-import { createPdfFixture } from "./pdf-fixture.js";
+import { createPdfFixture } from "./pdf-fixture.ts";
 
 const pdf = createPdfFixture(["Hello from PDF", "Second page"]);
 

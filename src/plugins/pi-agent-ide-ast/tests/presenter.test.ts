@@ -1,8 +1,8 @@
 import { createTextDocument } from "pi-agent-text";
-import { AstScopeManager } from "#src/api/scope.js";
+import { AstScopeManager } from "#src/api/scope.ts";
 import { expect, test } from "vitest";
 
-import { createAstScopePresenter } from "#src/scope-handler.js";
+import { createAstScopePresenter } from "#src/scope-handler.ts";
 
 test.each([
   { source: "fixture.js", resolvedBy: "filesystem" },

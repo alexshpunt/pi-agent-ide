@@ -1,15 +1,15 @@
 import { expect, test } from "vitest";
 import { TextAnchor } from "pi-agent-text";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
-import { TextChangeDocument } from "#src/core/text-change-engine.js";
-import type { TextMutationContext } from "#src/api/mutation-tool.js";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
+import { TextChangeDocument } from "#src/core/text-change-engine.ts";
+import type { TextMutationContext } from "#src/api/mutation-tool.ts";
 import {
   anchorSpanRange,
   insertionChanges,
   singleAnchorSpan,
   replaceAnchorSpan,
   deleteAnchorSpan,
-} from "#src/tools/text-selection.js";
+} from "#src/tools/text-selection.ts";
 
 const source = "fixture";
 const document = new TextChangeDocument("left START right\r\nmiddle\r\nleft END right\r\nlast");

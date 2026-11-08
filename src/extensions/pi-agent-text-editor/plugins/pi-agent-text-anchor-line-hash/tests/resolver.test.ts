@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, test } from "vitest";
 
-import { createLineHashAnchor, createLineHashAnchorResolver } from "#src/anchor.js";
+import { createLineHashAnchor, createLineHashAnchorResolver } from "#src/anchor.ts";
 
 const resolver = createLineHashAnchorResolver();
 const context = {

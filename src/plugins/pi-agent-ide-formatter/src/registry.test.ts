@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { FORMATTER_RECIPES } from "./catalog.js";
-import { FormatterCommandRegistry } from "./registry.js";
+import { FORMATTER_RECIPES } from "./catalog.ts";
+import { FormatterCommandRegistry } from "./registry.ts";
 
 test("owned formatter layers use owner probes and evidence without controller filesystem access", async () => {
   const root = "ssh://formatter/srv/project";

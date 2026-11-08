@@ -3,8 +3,8 @@ import path from "node:path";
 import { createTextDocument } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { createBreakpointPresenter } from "#src/plugins/pi-agent-ide-debugger/src/breakpoint-view.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+import { createBreakpointPresenter } from "#src/plugins/pi-agent-ide-debugger/src/breakpoint-view.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 test.skipIf(process.platform === "win32")(
   "breakpoint view aggregates normal file reads and scopes debug source reads",

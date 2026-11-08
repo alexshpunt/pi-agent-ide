@@ -1,7 +1,7 @@
-import { isTipCoreReady, TIP_CORE_READY_EVENT, TIP_PROVIDER_REGISTER_EVENT } from "./tips.js";
+import { isTipCoreReady, TIP_CORE_READY_EVENT, TIP_PROVIDER_REGISTER_EVENT } from "./tips.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { TipProvider, TipProviderRegistrationRequest } from "./tips.js";
+import type { TipProvider, TipProviderRegistrationRequest } from "./tips.ts";
 
 /**
 Connects a startup-tip provider to the built-in core regardless of extension load order.

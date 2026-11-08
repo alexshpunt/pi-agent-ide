@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { probeOwnedGitCancellation } from "#integration/support/ssh-git-cancellation-probe.js";
+import { probeOwnedGitCancellation } from "#integration/support/ssh-git-cancellation-probe.ts";
 
 test.each(["cancel", "deadline"] as const)(
   "guarded Git index %s awaits its native child without changing the index or a sibling",

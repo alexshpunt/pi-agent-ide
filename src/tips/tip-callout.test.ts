@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 
-import { TipCallout } from "./tip-callout.js";
+import { TipCallout } from "./tip-callout.ts";
 
 const theme = {
   bold: (text: string): string => `\u001B[1m${text}\u001B[22m`,

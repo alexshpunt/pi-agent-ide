@@ -6,9 +6,9 @@ import {
   TIP_PROTOCOL,
   type TipContext,
   type TipProvider,
-} from "#src/api/tips.js";
+} from "#src/api/tips.ts";
 
-import type { DoctorSetupRun } from "./run.js";
+import type { DoctorSetupRun } from "./run.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const DOCTOR_TIP_PROVIDER_ID = "doctor";

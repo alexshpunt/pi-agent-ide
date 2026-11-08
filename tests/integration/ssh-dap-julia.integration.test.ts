@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { probeOwnedSshJulia } from "#integration/support/ssh-julia-probe.js";
+import { probeOwnedSshJulia } from "#integration/support/ssh-julia-probe.ts";
 
 const runtime = process.env.PI_IDE_JULIA_PATH;
 const project = process.env.PI_IDE_JULIA_DEBUG_PROJECT;

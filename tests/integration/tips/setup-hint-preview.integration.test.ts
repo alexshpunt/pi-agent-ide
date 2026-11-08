@@ -2,9 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { assistantMessage, PiIntegrationTest, testArtifactsDir, text } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { TipStateStore } from "#src/tips/persistence.js";
-import { createSetupHintProvider } from "#src/tips/setup-hint.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { TipStateStore } from "#src/tips/persistence.ts";
+import { createSetupHintProvider } from "#src/tips/setup-hint.ts";
 
 // Developer command registration must follow normal Project/Global flag inheritance.
 test.each([

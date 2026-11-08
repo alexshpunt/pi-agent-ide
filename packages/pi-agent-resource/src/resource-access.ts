@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ResourceAccess } from "./resource-scheduler.js";
+import type { ResourceAccess } from "./resource-scheduler.ts";
 
 /** Identify file aliases (including hard links) or an owner's canonical protocol source. */
 export async function resourceAccesses(

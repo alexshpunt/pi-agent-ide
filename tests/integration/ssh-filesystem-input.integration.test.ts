@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { chmod, mkdir } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackend } from "#src/backend/ssh.js";
-import { remoteLocation } from "#src/backend/identity.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { remoteLocation } from "#src/backend/identity.ts";
 
 function checksum(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");

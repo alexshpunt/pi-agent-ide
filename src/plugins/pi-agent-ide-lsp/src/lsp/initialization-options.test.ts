@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { resolveInitializationOptions } from "./initialization-options.js";
+import { resolveInitializationOptions } from "./initialization-options.ts";
 
 test("expands nested plugin paths without mutating options or interpreting dollar signs", () => {
   const options = {

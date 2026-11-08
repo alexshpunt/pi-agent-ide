@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, expect, test, vi } from "vitest";
-import { executeFileOperation } from "#src/core/file-operations.js";
+import { executeFileOperation } from "#src/core/file-operations.ts";
 
 test("reports unknown effects when recursive removal fails after removing an entry", async () => {
   const cwd = await fixture();

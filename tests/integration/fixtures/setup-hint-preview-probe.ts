@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI, RegisteredCommand } from "@earendil-works/pi-coding-agent";
-import registerIde from "#src/pi-agent-ide.js";
+import registerIde from "#src/pi-agent-ide.ts";
 
 /** Inspect the real preview command without resetting its one-time startup claim. */
 export default async function setupHintPreviewProbe(pi: ExtensionAPI): Promise<void> {

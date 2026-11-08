@@ -15,7 +15,7 @@ import {
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, expect, test } from "vitest";
-import { remoteLocation } from "#src/backend/identity.js";
+import { remoteLocation } from "#src/backend/identity.ts";
 import {
   assistantMessage,
   getToolExecution,
@@ -24,9 +24,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { startSshPidNamespaceFixture } from "#integration/support/ssh-pid-namespace-fixture.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { startSshPidNamespaceFixture } from "#integration/support/ssh-pid-namespace-fixture.ts";
 
 const execute = promisify(execFile);
 const restore = forceStandaloneIntegrationFile();

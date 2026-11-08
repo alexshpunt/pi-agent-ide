@@ -10,7 +10,7 @@ import {
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import type { SearchPluginApi } from "pi-agent-search/api/search";
-import { registerFileSearchTool } from "#src/tool-file-search.js";
+import { registerFileSearchTool } from "#src/tool-file-search.ts";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import {
   TEXT_EDITOR_API_VERSION,
@@ -18,12 +18,12 @@ import {
   TEXT_SEARCH_ANCHOR_KIND,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { textSearchDoctorPlugin } from "#src/doctor-plugin.js";
-import { createFileResolver, createRegexResolver, createTextResolver } from "#src/resolvers.js";
-import { SearchSessionStore } from "#src/search-session.js";
+import { textSearchDoctorPlugin } from "#src/doctor-plugin.ts";
+import { createFileResolver, createRegexResolver, createTextResolver } from "#src/resolvers.ts";
+import { SearchSessionStore } from "#src/search-session.ts";
 
-import { compactSearchDetails } from "#src/persisted-result.js";
-import { isSearchToolDetails } from "#src/search-result.js";
+import { compactSearchDetails } from "#src/persisted-result.ts";
+import { isSearchToolDetails } from "#src/search-result.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -213,6 +213,6 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
   ]);
 }
 
-export { createSearchSessionId } from "#src/search-session.js";
+export { createSearchSessionId } from "#src/search-session.ts";
 
-export type { TextSearchMatch } from "#src/search-session.js";
+export type { TextSearchMatch } from "#src/search-session.ts";

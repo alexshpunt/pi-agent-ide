@@ -14,8 +14,8 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { createFilesystemReadResolver, createFilesystemWriteResolver } from "#src/resolver.js";
-import { recoverFilesystemPath } from "#src/path-recovery.js";
+import { createFilesystemReadResolver, createFilesystemWriteResolver } from "#src/resolver.ts";
+import { recoverFilesystemPath } from "#src/path-recovery.ts";
 
 const readTarget = { provider: "filesystem", capability: "read" } satisfies ContentTarget;
 const writeTarget = { provider: "filesystem", capability: "write" } satisfies ContentTarget;

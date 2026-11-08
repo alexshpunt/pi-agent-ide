@@ -9,7 +9,7 @@ import type {
   ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
-import { registerStreamingInterceptorProvider } from "#src/core/tool-call-interceptor/streaming-provider.js";
+import { registerStreamingInterceptorProvider } from "#src/core/tool-call-interceptor/streaming-provider.ts";
 
 const model: Model<"openai-completions"> = {
   id: "fixture",

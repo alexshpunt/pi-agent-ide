@@ -5,7 +5,7 @@ import {
   computeChangedRanges,
   createUnifiedDiff,
   diffTextLines,
-} from "#src/core/mutation-result/diff.js";
+} from "#src/core/mutation-result/diff.ts";
 
 /** Small deterministic generator so failures reproduce. */
 function random(seed: number): () => number {

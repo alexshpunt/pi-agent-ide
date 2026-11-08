@@ -15,19 +15,19 @@ import {
   TEXT_EDITOR_API_VERSION,
   TEXT_EDITOR_PROTOCOL,
 } from "pi-agent-text-editor/api/plugin-protocol";
-import { createIdeTextResults } from "#src/composite/text-results.js";
-import registerReadCore from "#src/extensions/pi-agent-read/src/core/extension.js";
-import { createReadResultTargetHandler } from "#src/extensions/pi-agent-read/src/core/tools/read/result-target.js";
-import registerSearchCore from "#src/extensions/pi-agent-search/src/core/extension.js";
-import { registerResourceSearchSelections } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.js";
-import registerEditorCore from "#src/extensions/pi-agent-text-editor/src/core/extension.js";
-import { registerTextEditorTools } from "#src/extensions/pi-agent-text-editor/src/tools/extension.js";
-import registerConstantAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-constant/index.js";
-import registerHashAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/index.js";
-import registerExactAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-exact/index.js";
-import registerRenderer from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/index.js";
-import registerDocumentation from "#src/documentation/extension.js";
-import { createResourceHostApi } from "./scoped-api.js";
+import { createIdeTextResults } from "#src/composite/text-results.ts";
+import registerReadCore from "#src/extensions/pi-agent-read/src/core/extension.ts";
+import { createReadResultTargetHandler } from "#src/extensions/pi-agent-read/src/core/tools/read/result-target.ts";
+import registerSearchCore from "#src/extensions/pi-agent-search/src/core/extension.ts";
+import { registerResourceSearchSelections } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.ts";
+import registerEditorCore from "#src/extensions/pi-agent-text-editor/src/core/extension.ts";
+import { registerTextEditorTools } from "#src/extensions/pi-agent-text-editor/src/tools/extension.ts";
+import registerConstantAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-constant/index.ts";
+import registerHashAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-line-hash/index.ts";
+import registerExactAnchors from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-exact/index.ts";
+import registerRenderer from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/index.ts";
+import registerDocumentation from "#src/documentation/extension.ts";
+import { createResourceHostApi } from "./scoped-api.ts";
 
 export type StandaloneResourceTool =
   | "read"

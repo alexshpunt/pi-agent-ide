@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, onTestFinished, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 import { SearchSessionStore } from "pi-agent-search-text/search-session";
-import { createAstSearchResolver } from "./search-resolver.js";
+import { createAstSearchResolver } from "./search-resolver.ts";
 
 test("AST matches and captures stay inside one exact scope with their source authority", async () => {
   const base = path.resolve(".tmp/ast-scoped-tests");

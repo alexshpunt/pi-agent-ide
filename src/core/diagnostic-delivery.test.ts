@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { createDiagnosticDelivery } from "#src/core/diagnostic-delivery.js";
+import { createDiagnosticDelivery } from "#src/core/diagnostic-delivery.ts";
 
 afterEach(() => vi.useRealTimers());
 

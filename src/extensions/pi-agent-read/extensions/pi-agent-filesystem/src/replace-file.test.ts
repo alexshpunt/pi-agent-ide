@@ -15,7 +15,7 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { replaceFileContent } from "./replace-file.js";
+import { replaceFileContent } from "./replace-file.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

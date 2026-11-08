@@ -4,10 +4,10 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { createContentRunner } from "pi-agent-resource";
 import { createTextContentConverter } from "pi-agent-text";
 
-import { SshBackend } from "#src/backend/ssh.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshResourceResolver } from "#src/backend/resource-resolver.js";
-import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.js";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshResourceResolver } from "#src/backend/resource-resolver.ts";
+import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.ts";
 
 let fixture: SshFixture;
 let stopFixture: (() => Promise<void>) | undefined;

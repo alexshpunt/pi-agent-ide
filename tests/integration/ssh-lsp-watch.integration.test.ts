@@ -1,11 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { createSshLspTransport } from "#src/backend/lsp-transport.js";
-import { createSshLspFileWatchers } from "#src/backend/lsp-file-watchers.js";
-import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { createSshLspTransport } from "#src/backend/lsp-transport.ts";
+import { createSshLspFileWatchers } from "#src/backend/lsp-file-watchers.ts";
+import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.ts";
 
 interface WatchStatus {
   watching: { dynamicRegistration: boolean };

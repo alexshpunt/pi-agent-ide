@@ -4,22 +4,22 @@ import {
   resolveExternalToolProjectRoot,
   runConfiguredFormatter,
   runConfiguredProcess,
-} from "#src/api/tool-config.js";
+} from "#src/api/tool-config.ts";
 import {
   registerFormatterWithOwner,
   FormatterCommandRegistry,
   FORMATTER_RECIPES,
   type FormatterRuntime,
-} from "#src/plugins/pi-agent-ide-formatter/index.js";
-import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { readSshTargets, resolveSshConfigPaths } from "./config.js";
-import { SshBackendRegistry } from "./registry.js";
-import { createSshToolConfigAccess } from "./tool-config-access.js";
-import { createSshConfiguredProcessAccess } from "./configured-process.js";
-import { sshProjectExecutableAvailability } from "./process-environment.js";
-import { inspectSshRecipeEvidence } from "./recipe-evidence.js";
-import { resolveSshToolProject } from "./tool-project.js";
-import { SshBackendError } from "./ssh.js";
+} from "#src/plugins/pi-agent-ide-formatter/index.ts";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { readSshTargets, resolveSshConfigPaths } from "./config.ts";
+import { SshBackendRegistry } from "./registry.ts";
+import { createSshToolConfigAccess } from "./tool-config-access.ts";
+import { createSshConfiguredProcessAccess } from "./configured-process.ts";
+import { sshProjectExecutableAvailability } from "./process-environment.ts";
+import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
+import { resolveSshToolProject } from "./tool-project.ts";
+import { SshBackendError } from "./ssh.ts";
 
 /** Keep formatter selection, command execution and guarded stdout publication with their owner. */
 export function createOwnedFormatterRuntime(registry: SshBackendRegistry): FormatterRuntime {

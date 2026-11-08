@@ -11,9 +11,9 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { afterAll, afterEach, expect, test } from "vitest";
-import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.js";
-import { AGENT_IDE_PRESET_OPTIONS } from "#src/composite/presets.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.ts";
+import { AGENT_IDE_PRESET_OPTIONS } from "#src/composite/presets.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const extension = process.env.PI_AGENT_IDE_TEST_EXTENSION ?? path.resolve("src/pi-agent-ide.ts");
 const workspaces: string[] = [];

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { registerIdeCapability } from "#src/api/capabilities.js";
+import { registerIdeCapability } from "#src/api/capabilities.ts";
 import { access } from "node:fs/promises";
 
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -51,23 +51,23 @@ import {
   forgetReloadResource,
   retainReloadResource,
   takeReloadResource,
-} from "#src/core/reload-resource-store.js";
-import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.js";
-import { createBreakpointPresenter } from "#src/plugins/pi-agent-ide-debugger/src/breakpoint-view.js";
+} from "#src/core/reload-resource-store.ts";
+import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
+import { createBreakpointPresenter } from "#src/plugins/pi-agent-ide-debugger/src/breakpoint-view.ts";
 import {
   renderDebugActionCall,
   renderDebugCall,
   renderDebugResult,
-} from "#src/plugins/pi-agent-ide-debugger/src/renderer.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/renderer.ts";
 import {
   debuggerEvaluationFromResult,
   debuggerFailureFromResult,
   debuggerSnapshotFromResult,
-} from "#src/plugins/pi-agent-ide-debugger/src/ui.js";
-import { debuggerProcessProvider } from "#src/plugins/pi-agent-ide-debugger/src/process-provider.js";
-import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.js";
-import type { DebugWorkspaceOwnerResolver } from "./src/workspace-owner.js";
-import { VscodeDebugSession } from "./src/vscode-backend.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/ui.ts";
+import { debuggerProcessProvider } from "#src/plugins/pi-agent-ide-debugger/src/process-provider.ts";
+import { agentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.ts";
+import type { DebugWorkspaceOwnerResolver } from "./src/workspace-owner.ts";
+import { VscodeDebugSession } from "./src/vscode-backend.ts";
 
 interface DebugToolDetails {
   readonly source?: string;
@@ -90,7 +90,7 @@ import {
   type DebugEvaluation,
   type DebugSession,
   type DebugSessionOptions,
-} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 /** Keep Pi's provider-friendly `{ type: "string", enum }` schema with a TypeBox literal type. */
 function stringEnum<const T extends readonly string[]>(

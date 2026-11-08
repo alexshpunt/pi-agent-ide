@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { createReadTool } from "#src/core/tools/tool-read.js";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
 
 test("caller cancellation returns a failed Read, not a completed source or an ordinary failure", async () => {
   const read = createReadTool();

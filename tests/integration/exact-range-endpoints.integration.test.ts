@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
 import {
   assistantMessage,
   getToolExecution,
@@ -10,7 +10,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
 const files = {
   "sentence.txt": "left START old words END right\n",

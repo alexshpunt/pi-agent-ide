@@ -7,8 +7,8 @@ import vm from "node:vm";
 import { ResultTargetStore, type ResourceResolver } from "pi-agent-resource";
 import { expect, onTestFinished, test } from "vitest";
 
-import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.js";
-import { createReadTool } from "#src/core/tools/tool-read.js";
+import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.ts";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
 
 v8.setFlagsFromString("--expose-gc");
 const collectGarbage = vm.runInNewContext("gc") as () => void;

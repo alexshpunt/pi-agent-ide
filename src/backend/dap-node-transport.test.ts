@@ -1,8 +1,8 @@
 import { PassThrough } from "node:stream";
 import { expect, test, vi } from "vitest";
-import { SshBackendRegistry } from "./registry.js";
-import * as dap from "./dap-transport.js";
-import { prepareSshNodeDebugger } from "./dap-node-transport.js";
+import { SshBackendRegistry } from "./registry.ts";
+import * as dap from "./dap-transport.ts";
+import { prepareSshNodeDebugger } from "./dap-node-transport.ts";
 
 function transport(pid: number): dap.SshDapTransport {
   const readable = new PassThrough();

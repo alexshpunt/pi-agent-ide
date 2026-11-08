@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { ResourceScheduler } from "./resource-scheduler.js";
+import { ResourceScheduler } from "./resource-scheduler.ts";
 
 function gate() {
   let resolve!: () => void;

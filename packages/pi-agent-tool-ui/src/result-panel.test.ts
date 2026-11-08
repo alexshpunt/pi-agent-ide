@@ -2,7 +2,7 @@ import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { highlightCode, initTheme } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
-import { ResultPanel, sourceRows } from "./result-panel.js";
+import { ResultPanel, sourceRows } from "./result-panel.ts";
 
 const theme = Object.assign(Object.create(null) as Theme, {
   bold: (s: string) => s,

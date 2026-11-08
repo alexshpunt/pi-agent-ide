@@ -2,11 +2,11 @@ import { describe, expect, test, vi } from "vitest";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.js";
+import { TerminalUi } from "#src/plugins/pi-agent-ide-terminal/src/ui.ts";
 import type {
   TerminalSession,
   TerminalSessionSnapshot,
-} from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 describe("terminal completion UI", () => {
   test("separates mixed completion owners while delivering the full batch to the agent once", () => {

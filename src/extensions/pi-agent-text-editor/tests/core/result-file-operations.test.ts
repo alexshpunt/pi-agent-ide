@@ -4,13 +4,13 @@ import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 import { Value } from "typebox/value";
 import { ResultTargetStore } from "pi-agent-resource";
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { createResultTargetAnchors } from "#src/core/result-target-anchors.js";
-import { createTextTool } from "#src/core/text-mutation.js";
-import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
-import { writeMutationTool } from "#src/tools/tool-text-write.js";
-import { deleteMutationTool } from "#src/tools/tool-text-delete.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { createResultTargetAnchors } from "#src/core/result-target-anchors.ts";
+import { createTextTool } from "#src/core/text-mutation.ts";
+import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.ts";
+import { writeMutationTool } from "#src/tools/tool-text-write.ts";
+import { deleteMutationTool } from "#src/tools/tool-text-delete.ts";
 
 for (const operation of ["write", "delete"] as const) {
   test(`${operation} respects whole-file versus selected-text result authority`, async () => {

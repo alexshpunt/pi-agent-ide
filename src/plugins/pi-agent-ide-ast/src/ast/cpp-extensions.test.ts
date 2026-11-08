@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { withParsedDocument } from "./manager.js";
-import { isSupportedOutlinePath } from "./outline.js";
+import { withParsedDocument } from "./manager.ts";
+import { isSupportedOutlinePath } from "./outline.ts";
 
 test.each([".cc", ".hh", ".hxx"])(
   "parses and enables outlines for C++ %s files",

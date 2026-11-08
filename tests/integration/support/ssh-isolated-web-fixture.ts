@@ -1,7 +1,7 @@
 import { readFile, readlink } from "node:fs/promises";
 import path from "node:path";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { startSshWebFixture } from "./ssh-web-fixture.js";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { startSshWebFixture } from "./ssh-web-fixture.ts";
 
 /** Start HTTP and SSH in a private network namespace, reachable only through the owned Unix socket. */
 export async function startIsolatedSshWebFixture() {

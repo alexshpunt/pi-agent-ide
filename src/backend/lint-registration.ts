@@ -1,23 +1,23 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveExternalToolProjectRoot } from "#src/api/tool-config.js";
+import { resolveExternalToolProjectRoot } from "#src/api/tool-config.ts";
 import {
   registerLintWithOwner,
   LintCommandRegistry,
   LINTER_RECIPES,
   runConfiguredLinter,
   type LintRuntime,
-} from "#src/plugins/pi-agent-ide-lint/index.js";
-import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { readSshTargets, resolveSshConfigPaths } from "./config.js";
-import { SshBackendRegistry } from "./registry.js";
-import { createSshToolConfigAccess } from "./tool-config-access.js";
-import { createSshConfiguredProcessAccess } from "./configured-process.js";
-import { sshProjectExecutableAvailability } from "./process-environment.js";
-import { inspectSshRecipeEvidence } from "./recipe-evidence.js";
-import { resolveSshToolProject } from "./tool-project.js";
-import { SshBackendError } from "./ssh.js";
+} from "#src/plugins/pi-agent-ide-lint/index.ts";
+import { resolvePiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { readSshTargets, resolveSshConfigPaths } from "./config.ts";
+import { SshBackendRegistry } from "./registry.ts";
+import { createSshToolConfigAccess } from "./tool-config-access.ts";
+import { createSshConfiguredProcessAccess } from "./configured-process.ts";
+import { sshProjectExecutableAvailability } from "./process-environment.ts";
+import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
+import { resolveSshToolProject } from "./tool-project.ts";
+import { SshBackendError } from "./ssh.ts";
 
 /** Select owner tool layers and normalize only diagnostic file identities, never message text. */
 export function createOwnedLintRuntime(registry: SshBackendRegistry): LintRuntime {

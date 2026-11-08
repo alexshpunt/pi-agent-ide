@@ -4,4 +4,4 @@ export {
   doctorProcessAccess,
   doctorExecutableAvailable,
   withDoctorProbeCopy,
-} from "./doctor-runtime.js";
+} from "./doctor-runtime.ts";

@@ -7,7 +7,7 @@ import vm from "node:vm";
 import { expect, onTestFinished, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 
-import { SearchSessionStore, type TextSearchMatch } from "#src/search-session.js";
+import { SearchSessionStore, type TextSearchMatch } from "#src/search-session.ts";
 
 // A large source like the 27k-line C++ file where repeated searches leaked about 9 MiB each.
 const lineCount = 27_000;

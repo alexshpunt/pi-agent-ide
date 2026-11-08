@@ -5,9 +5,9 @@ import {
   type AnyTextMutationToolRegistration,
   assertTextMutationToolRegistration,
   type TextMutationToolRegistration,
-} from "#src/api/mutation-tool.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { TEXT_EDITOR_API_VERSION } from "#src/api/plugin-protocol.js";
+} from "#src/api/mutation-tool.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { TEXT_EDITOR_API_VERSION } from "#src/api/plugin-protocol.ts";
 
 const schema = Type.Object(
   {

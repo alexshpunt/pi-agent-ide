@@ -3,8 +3,8 @@ import { ResourceError, type AgentContent } from "pi-agent-resource";
 import { createTextDocument } from "pi-agent-text";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { createReadTool } from "#src/extensions/pi-agent-read/src/core/tools/tool-read.js";
-import { createJqReadHandler, type ReadPipelineContext, type ReadToolResult } from "./read.js";
+import { createReadTool } from "#src/extensions/pi-agent-read/src/core/tools/tool-read.ts";
+import { createJqReadHandler, type ReadPipelineContext, type ReadToolResult } from "./read.ts";
 
 const source = "fixture://json/card";
 const rendered = "# Fixture card\nAn acquired JSON payload has a separate presentation.\n";

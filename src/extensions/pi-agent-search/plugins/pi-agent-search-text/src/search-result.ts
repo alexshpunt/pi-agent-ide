@@ -7,8 +7,8 @@ import {
 } from "pi-agent-search/api/search";
 import { pathToFileURL } from "node:url";
 
-import type { TextSearchMatch } from "#src/search-session.js";
-import { planSearchPresentation } from "#src/search-presentation.js";
+import type { TextSearchMatch } from "#src/search-session.ts";
+import { planSearchPresentation } from "#src/search-presentation.ts";
 
 export interface SearchResultRange {
   readonly from: number;

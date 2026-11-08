@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { type BuiltinExtension, selectBuiltinExtensions } from "./selection.js";
+import { type BuiltinExtension, selectBuiltinExtensions } from "./selection.ts";
 
 const extensions: readonly BuiltinExtension[] = [
   extension("core"),

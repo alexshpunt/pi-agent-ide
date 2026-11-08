@@ -5,7 +5,7 @@ import type {
   IdeTool,
   Linter,
   ToolContext,
-} from "./types.js";
+} from "./types.ts";
 
 const formatters: Formatter[] = [];
 const compilers: Compiler[] = [];

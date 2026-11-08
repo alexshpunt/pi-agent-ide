@@ -1,4 +1,4 @@
-import { LINTER_RECIPES } from "./catalog.js";
+import { LINTER_RECIPES } from "./catalog.ts";
 
 import {
   toolRuntimeEvidence,

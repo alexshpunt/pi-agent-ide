@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 
-import type { ReadToolPluginApi } from "#src/api/tools/read.js";
+import type { ReadToolPluginApi } from "#src/api/tools/read.ts";
 
 export const READ_PROTOCOL = "pi-agent-read";
 

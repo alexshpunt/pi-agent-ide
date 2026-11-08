@@ -5,13 +5,13 @@ import { truncateLine } from "@earendil-works/pi-coding-agent";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Text, type Component } from "@earendil-works/pi-tui";
 
-import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.js";
-import { terminalOutputTail } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.js";
+import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.ts";
+import { terminalOutputTail } from "#src/plugins/pi-agent-ide-terminal/src/output-limits.ts";
 import type {
   ShellProfile,
   TerminalSessionSnapshot,
   TerminalSessionStatus,
-} from "#src/plugins/pi-agent-ide-terminal/src/types.js";
+} from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 type TerminalTheme = Pick<Theme, "fg">;
 const TERMINAL_MAX_LINE_LENGTH = 500;

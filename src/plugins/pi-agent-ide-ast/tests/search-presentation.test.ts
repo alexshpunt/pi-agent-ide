@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { isSearchToolDetails } from "pi-agent-search-text/result";
 
-import { createAstSearchPresentation } from "#src/search-presentation.js";
+import { createAstSearchPresentation } from "#src/search-presentation.ts";
 
 test("groups AST matches and highlights every matched line", () => {
   const details = createAstSearchPresentation(

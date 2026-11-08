@@ -1,4 +1,4 @@
-import { TIP_API_VERSION, TIP_PROTOCOL, type TipProvider } from "#src/api/tips.js";
+import { TIP_API_VERSION, TIP_PROTOCOL, type TipProvider } from "#src/api/tips.ts";
 
 /** Creates a global setup hint when the setup skill is available in an interactive session. */
 export function createSetupHintProvider(hasSkill: () => boolean): TipProvider {

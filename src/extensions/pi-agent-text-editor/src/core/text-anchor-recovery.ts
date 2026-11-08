@@ -1,4 +1,4 @@
-import type { TextEditorCore } from "#src/core/text-editor-core.js";
+import type { TextEditorCore } from "#src/core/text-editor-core.ts";
 import type { ReadRequest, ReadToolResult } from "pi-agent-read/api/tools/read";
 import type { ResourceResolverContext } from "pi-agent-resource";
 

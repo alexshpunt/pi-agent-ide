@@ -1,7 +1,7 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectContentConverter, type ContentConverterRegistration } from "pi-agent-resource";
 
-import { createHtmlContentConverter } from "./src/html-converter.js";
+import { createHtmlContentConverter } from "./src/html-converter.ts";
 
 const registration = {
   target: { provider: "web", capability: "read" },

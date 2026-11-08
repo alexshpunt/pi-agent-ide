@@ -1,9 +1,9 @@
 import type { ResultTargetStore } from "pi-agent-resource";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import {
   TEXT_SEARCH_ANCHOR_KIND,
   type TextAnchorResolverRegistration,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 /** Resolve registered snapshot targets through the editor's normal source and anchor guards. */
 export function createResultTargetAnchors(

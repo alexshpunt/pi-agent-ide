@@ -1,10 +1,10 @@
 import { requiredValue } from "pi-agent-invariant";
-import { type FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.js";
-import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
-import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
+import { type FileMutationBatchResult, FileMutationResult } from "#src/api/mutation-result.ts";
+import { createUnifiedDiff } from "#src/core/mutation-result/diff.ts";
+import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
 
 import type { ResultSourceTarget } from "pi-agent-resource";
-import type { OriginalToolCall } from "#src/core/text-edit-batch-coordinator.js";
+import type { OriginalToolCall } from "#src/core/text-edit-batch-coordinator.ts";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 
 export interface TextBatchParams {

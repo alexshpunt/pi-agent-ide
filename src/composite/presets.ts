@@ -1,4 +1,4 @@
-import type { BuiltinExtension } from "./selection.js";
+import type { BuiltinExtension } from "./selection.ts";
 
 /** Agent IDE capability presets saved in extension settings. */
 export type AgentIdePreset = "full" | "text-editor";

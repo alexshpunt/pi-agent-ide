@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { resolveRipgrepExecutable } from "#src/ripgrep.js";
+import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
 
 const temporaryDirectories: string[] = [];
 

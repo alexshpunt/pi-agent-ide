@@ -23,7 +23,7 @@ import {
   toolCall,
   type PiIntegrationTestResult,
   getProviderSystemPrompt,
-} from "./support/pi-runtime/native-pi-coding-agent-test.js";
+} from "./support/pi-runtime/native-pi-coding-agent-test.ts";
 
 const entry = path.resolve("src/pi-agent-ide.ts");
 const fixture = path.resolve("tests/integration/fixtures/deferred-capabilities.ts");

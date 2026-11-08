@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
 import type { ResourceResolutionAttempt } from "pi-agent-resource";
-import { createReadTool } from "#src/core/tools/tool-read.js";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
 
 test("raw reads retain exact bytes and byte windows without invoking text handlers", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "raw-read-"));

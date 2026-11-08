@@ -11,11 +11,11 @@ import {
   type DoctorPlugin,
 } from "pi-agent-doctor/api/plugin-protocol";
 
-import { DoctorCore } from "#src/doctor/core.js";
-import { runDoctor } from "#src/doctor/run.js";
-import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
-import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.js";
+import { DoctorCore } from "#src/doctor/core.ts";
+import { runDoctor } from "#src/doctor/run.ts";
+import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
+import { LANGUAGES } from "#src/plugins/pi-agent-ide-languages/src/languages.ts";
 
 const execute = promisify(execFile);
 

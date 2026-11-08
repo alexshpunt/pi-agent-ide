@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
-import type { FileMutationBatchResult } from "./mutation-result.js";
+import type { FileMutationBatchResult } from "./mutation-result.ts";
 
 /** A finished native editor batch, sent through Pi's event bus without saving raw snapshots. */
 export interface NativeEditBatchEvent {

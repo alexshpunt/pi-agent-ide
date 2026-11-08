@@ -10,9 +10,9 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { readParameters, type ReadScriptData } from "pi-agent-read/api/tools/read";
 import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
-import type { TextEditorCore } from "#src/core/text-editor-core.js";
-import { createUnifiedDiff, type DiffStats } from "#src/core/mutation-result/diff.js";
-import { FileMutationResult } from "#src/core/mutation-result/file-mutation-result.js";
+import type { TextEditorCore } from "#src/core/text-editor-core.ts";
+import { createUnifiedDiff, type DiffStats } from "#src/core/mutation-result/diff.ts";
+import { FileMutationResult } from "#src/core/mutation-result/file-mutation-result.ts";
 import { resultError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
 const comparisonSourceSchema = Type.Object(
   { source: Type.String(), sources: Type.Array(Type.String()) },

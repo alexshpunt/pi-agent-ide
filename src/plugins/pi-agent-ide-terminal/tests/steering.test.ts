@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { observeQueuedSteering } from "#src/plugins/pi-agent-ide-terminal/src/steering.js";
+import { observeQueuedSteering } from "#src/plugins/pi-agent-ide-terminal/src/steering.ts";
 
 const cleanups: (() => void)[] = [];
 

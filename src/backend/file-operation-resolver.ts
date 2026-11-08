@@ -1,10 +1,10 @@
 import type { FileOperationResolver } from "pi-agent-text-editor/api/plugin-protocol";
 
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
-import { transferObject } from "./object-transfer.js";
-import { checkCapturedRevision } from "./file-revision.js";
-import { remoteLocation } from "./identity.js";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
+import { transferObject } from "./object-transfer.ts";
+import { checkCapturedRevision } from "./file-revision.ts";
+import { remoteLocation } from "./identity.ts";
 
 /** Route owned whole-file operations without text conversion or local path fallback. */
 export function createSshFileOperationResolver(

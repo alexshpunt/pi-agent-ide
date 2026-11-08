@@ -1,4 +1,4 @@
-import type { Tip, TipContext, TipProvider } from "#src/api/tips.js";
+import type { Tip, TipContext, TipProvider } from "#src/api/tips.ts";
 
 /** A provider-owned tip paired with its source provider ID. */
 export interface TipContribution {

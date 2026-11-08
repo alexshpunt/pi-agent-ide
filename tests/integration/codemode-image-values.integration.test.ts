@@ -13,8 +13,8 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { FIXTURE_FRAMES } from "#integration/support/image-classifier-fixture.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { FIXTURE_FRAMES } from "#integration/support/image-classifier-fixture.ts";
 
 const pixel = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import {
   assistantMessage,
   getToolExecution,
@@ -10,7 +10,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "./support/pi-runtime/native-pi-coding-agent-test.js";
+} from "./support/pi-runtime/native-pi-coding-agent-test.ts";
 
 test("capability loaders hide internal result envelopes in native TUI without removing agent data", async () => {
   await withTempWorkspace(async (cwd) => {

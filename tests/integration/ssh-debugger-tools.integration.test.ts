@@ -9,11 +9,11 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { JULIA_DEBUG_SOURCE } from "#integration/fixtures/julia-debug-source.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { JULIA_DEBUG_SOURCE } from "#integration/fixtures/julia-debug-source.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

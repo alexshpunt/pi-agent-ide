@@ -6,10 +6,10 @@ import {
   PiIntegrationTest,
   testArtifactsDir,
   text,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.ts";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test.each(["dark", "light"])(
   "help is transient and scrollable with modules disabled in %s",

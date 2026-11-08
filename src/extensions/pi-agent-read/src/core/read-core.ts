@@ -3,7 +3,7 @@ import {
   READ_PROTOCOL,
   type ReadPlugin,
   type ReadPluginApi,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 import {
   isFragmentResolverRegistration,
   isReadHandlerRegistration,
@@ -19,9 +19,9 @@ import {
   type ReadViewRegistration,
   type ResourceResolverRegistration,
   type TextTargetResolverRegistration,
-} from "#src/api/tools/read.js";
-import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
-import { readParameters, type ReadParameterText } from "#src/api/read-parameters.js";
+} from "#src/api/tools/read.ts";
+import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.ts";
+import { readParameters, type ReadParameterText } from "#src/api/read-parameters.ts";
 
 type PluginStatus = "active" | "pending";
 

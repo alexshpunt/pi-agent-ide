@@ -11,7 +11,7 @@ import {
   resolveToolConfigPaths,
   runConfiguredFormatter,
   runConfiguredProcess,
-} from "./tool-config.js";
+} from "./tool-config.ts";
 
 const root = path.resolve(".agents", "tmp", "tool-config-tests");
 const directories: string[] = [];

@@ -1,7 +1,7 @@
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { isExecutableAvailable } from "./executable.js";
+import { isExecutableAvailable } from "./executable.ts";
 
 test("does not mistake a directory for an executable", async () => {
   const root = path.resolve(".agents/tmp/executable-tests");

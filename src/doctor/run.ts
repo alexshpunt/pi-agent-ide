@@ -1,17 +1,17 @@
 import path from "node:path";
 
-import { runContributedChecks, runContributedSetupChecks } from "./core.js";
-import { discoverRecipeCandidates, selectSuggestedRecipes } from "./discovery.js";
-import { collectProjectFiles, detectProjectLanguages } from "./inventory.js";
+import { runContributedChecks, runContributedSetupChecks } from "./core.ts";
+import { discoverRecipeCandidates, selectSuggestedRecipes } from "./discovery.ts";
+import { collectProjectFiles, detectProjectLanguages } from "./inventory.ts";
 
 import type {
   DoctorFinding,
   DoctorSetupAction,
   DoctorToolSelection,
   DoctorWorkspace,
-} from "#src/api/doctor.js";
-import type { DoctorSnapshot } from "./core.js";
-import type { RecipeCandidate } from "./discovery.js";
+} from "#src/api/doctor.ts";
+import type { DoctorSnapshot } from "./core.ts";
+import type { RecipeCandidate } from "./discovery.ts";
 
 function assertWorkspace(cwd: string, workspace?: DoctorWorkspace): void {
   if ((cwd.includes("://") && !workspace) || (workspace && workspace.source !== cwd))

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { executeFileOperation } from "#src/core/file-operations.js";
+import { executeFileOperation } from "#src/core/file-operations.ts";
 
 const exec = promisify(execFile);
 let root: string;

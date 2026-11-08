@@ -1,9 +1,9 @@
-import { resolveCodeViewPath } from "./reference.js";
+import { resolveCodeViewPath } from "./reference.ts";
 
-import { formatDiagnostic } from "#src/toolchain/diagnostic.js";
+import { formatDiagnostic } from "#src/toolchain/diagnostic.ts";
 
-import type { Diagnostic } from "#src/toolchain/types.js";
-import type { SourceMappedTextContent } from "./source-view.js";
+import type { Diagnostic } from "#src/toolchain/types.ts";
+import type { SourceMappedTextContent } from "./source-view.ts";
 import type { TextDocument, TextSourceLine } from "pi-agent-text";
 
 /** Diagnostics produced by one named source such as `lsp` or `lint`. */

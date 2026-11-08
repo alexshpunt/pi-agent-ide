@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { probeSshLspServerLoss } from "#integration/support/lsp-server-loss-probe.js";
+import { probeSshLspServerLoss } from "#integration/support/lsp-server-loss-probe.ts";
 
 test("an actual owned server exit rejects its request and restarts without stale process state", async () => {
   const proof = await probeSshLspServerLoss();

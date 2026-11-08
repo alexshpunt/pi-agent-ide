@@ -5,7 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { expect, test } from "vitest";
-import { createIdeToolAvailability } from "./tool-availability.js";
+import { createIdeToolAvailability } from "./tool-availability.ts";
 
 // The fake keeps registration state only; real-Pi tests own native execution and lifecycle.
 test("an excluded IDE tool stays hidden when registered again and keeps live metadata", () => {

@@ -4,19 +4,19 @@ import path from "node:path";
 
 import { URI } from "vscode-uri";
 
-import { LspClient } from "./client.js";
-import type { LspSharedServers } from "./shared-servers.js";
-import { SharedStartup, waitWithSignal } from "./abort.js";
-import { documentUri } from "./document-uri.js";
-import type { LspWorkspaceOwner } from "./workspace-owner.js";
-import { prepareProjectQuery } from "./project.js";
-import { retainForCurrentOperation } from "./document-leases.js";
+import { LspClient } from "./client.ts";
+import type { LspSharedServers } from "./shared-servers.ts";
+import { SharedStartup, waitWithSignal } from "./abort.ts";
+import { documentUri } from "./document-uri.ts";
+import type { LspWorkspaceOwner } from "./workspace-owner.ts";
+import { prepareProjectQuery } from "./project.ts";
+import { retainForCurrentOperation } from "./document-leases.ts";
 
-import { resolveInitializationOptions } from "./initialization-options.js";
-import { toDiagnostic } from "./diagnostics.js";
-import { type LspDiagnostic, type ResolvedServer } from "./types.js";
+import { resolveInitializationOptions } from "./initialization-options.ts";
+import { toDiagnostic } from "./diagnostics.ts";
+import { type LspDiagnostic, type ResolvedServer } from "./types.ts";
 
-import type { LspServerRegistry } from "./registry.js";
+import type { LspServerRegistry } from "./registry.ts";
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
 
 /** A workspace-scoped published report; an omitted version leaves freshness unverified. */

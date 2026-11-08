@@ -1,9 +1,9 @@
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 
-import type { AgentContent } from "./content.js";
-import type { ResourceResolutionAttempt, ResourceResolver } from "./resolver.js";
-import type { Resource } from "./resource.js";
+import type { AgentContent } from "./content.ts";
+import type { ResourceResolutionAttempt, ResourceResolver } from "./resolver.ts";
+import type { Resource } from "./resource.ts";
 
 const objectOptions = { additionalProperties: true } as const;
 const functionSchema = Type.Function([], Type.Unknown());

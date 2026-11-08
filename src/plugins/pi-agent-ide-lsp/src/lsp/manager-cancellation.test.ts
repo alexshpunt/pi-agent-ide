@@ -1,8 +1,8 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { LspClient } from "./client.js";
-import { LspManager } from "./manager.js";
-import { LspServerRegistry } from "./registry.js";
-import type { LspWorkspaceOwner } from "./workspace-owner.js";
+import { LspClient } from "./client.ts";
+import { LspManager } from "./manager.ts";
+import { LspServerRegistry } from "./registry.ts";
+import type { LspWorkspaceOwner } from "./workspace-owner.ts";
 
 function registry(root: string) {
   return LspServerRegistry.fromConfig(

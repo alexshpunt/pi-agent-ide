@@ -1,5 +1,5 @@
 import { Type, type TSchema } from "typebox";
-import type { ReadRequest } from "#src/api/tools/read.js";
+import type { ReadRequest } from "#src/api/tools/read.ts";
 
 /** Canonical arguments shared by standalone and composed operations. */
 export const readParameters = Type.Object({

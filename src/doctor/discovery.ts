@@ -4,10 +4,10 @@ import { inspectRecipeEvidence } from "pi-agent-doctor/api/evidence";
 
 import { isExecutableAvailable } from "pi-agent-doctor/api/executable";
 
-import { projectIdeConfigPath } from "#src/api/tool-config.js";
-import type { DoctorToolSelection, DoctorWorkspace } from "#src/api/doctor.js";
-import type { ToolRecipe } from "#src/api/tool-catalog.js";
-import type { OwnedContribution } from "./core.js";
+import { projectIdeConfigPath } from "#src/api/tool-config.ts";
+import type { DoctorToolSelection, DoctorWorkspace } from "#src/api/doctor.ts";
+import type { ToolRecipe } from "#src/api/tool-catalog.ts";
+import type { OwnedContribution } from "./core.ts";
 
 export interface RecipeCandidate {
   readonly pluginId: string;

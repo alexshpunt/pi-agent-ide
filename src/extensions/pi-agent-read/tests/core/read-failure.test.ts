@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import type { ReadFailure } from "#src/api/tools/read.js";
-import { failureResult, readFailureRecovery } from "#src/core/tools/read/read-result.js";
-import { structuredRead } from "#src/core/tools/read/structured-result.js";
-import { createReadTool } from "#src/core/tools/tool-read.js";
+import type { ReadFailure } from "#src/api/tools/read.ts";
+import { failureResult, readFailureRecovery } from "#src/core/tools/read/read-result.ts";
+import { structuredRead } from "#src/core/tools/read/structured-result.ts";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
 
 function resultText(failure: ReadFailure): string {
   const result = failureResult(failure);

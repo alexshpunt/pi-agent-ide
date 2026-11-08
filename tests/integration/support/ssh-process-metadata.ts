@@ -1,6 +1,6 @@
-import { findSshProcessMetadata } from "#src/backend/process-metadata.js";
-import type { SshBackendRegistry } from "#src/backend/registry.js";
-import { SshBackendError } from "#src/backend/ssh.js";
+import { findSshProcessMetadata } from "#src/backend/process-metadata.ts";
+import type { SshBackendRegistry } from "#src/backend/registry.ts";
+import { SshBackendError } from "#src/backend/ssh.ts";
 
 export { findSshProcessMetadata };
 

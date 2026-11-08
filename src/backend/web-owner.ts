@@ -1,9 +1,9 @@
 import type { ContentHost, ResourceResolver } from "pi-agent-resource";
-import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.js";
-import { SshBackendError } from "./ssh.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { fetchSshWebResponse } from "./web-http.js";
-import { readSshBrowserPage } from "./web-browser.js";
+import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.ts";
+import { SshBackendError } from "./ssh.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { fetchSshWebResponse } from "./web-http.ts";
+import { readSshBrowserPage } from "./web-browser.ts";
 
 /** An explicit target web source; the nested HTTP(S) URL retains its query and fragment. */
 export function parseSshWebSource(

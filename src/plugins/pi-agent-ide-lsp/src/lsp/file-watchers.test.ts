@@ -3,7 +3,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "vitest";
 import { URI } from "vscode-uri";
-import { LspFileWatchers, type WatchedFileChange } from "./file-watchers.js";
+import { LspFileWatchers, type WatchedFileChange } from "./file-watchers.ts";
 
 test("delivers native matching file events and stops an unregistered subscription", async () => {
   const parent = path.resolve(".agents/tmp/lsp-watcher-tests");

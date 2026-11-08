@@ -14,9 +14,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { afterAll, expect, test } from "vitest";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 // Restart checks must replace a real process session, not the shared runner's session.
 const restoreSharedRunner = forceStandaloneIntegrationFile();

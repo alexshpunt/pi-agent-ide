@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import { TextSelectionAnchor } from "pi-agent-text-editor/api/text-selection-anchor";
 
-import { resolveExactTextAnchor } from "#src/anchor.js";
+import { resolveExactTextAnchor } from "#src/anchor.ts";
 
 function resolve(value: string, content: string) {
   return resolveExactTextAnchor(value, {

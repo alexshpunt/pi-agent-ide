@@ -6,8 +6,8 @@ import { StreamMessageWriter } from "vscode-jsonrpc/node";
 import {
   JavaDebugRuntime,
   javaDebuggerFiles,
-} from "#src/plugins/pi-agent-ide-debugger/src/java-runtime.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#src/plugins/pi-agent-ide-debugger/src/java-runtime.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 async function files(root: string): Promise<NodeJS.ProcessEnv> {
   await mkdir(path.join(root, "plugins"), { recursive: true });

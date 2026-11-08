@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BatchExecutionJournal } from "#src/core/text-edit-batch-execution.js";
+import { BatchExecutionJournal } from "#src/core/text-edit-batch-execution.ts";
 
 const result = { content: [{ type: "text" as const, text: "ok" }], details: {} };
 

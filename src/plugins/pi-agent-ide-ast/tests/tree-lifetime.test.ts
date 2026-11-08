@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import * as WTS from "web-tree-sitter";
 
-import { AstScopeManager } from "#src/api/scope.js";
-import { AstOutlineManager } from "#src/ast/outline.js";
+import { AstScopeManager } from "#src/api/scope.ts";
+import { AstOutlineManager } from "#src/ast/outline.ts";
 
 // web-tree-sitter trees live in WASM memory that JavaScript GC never frees.
 // Every tree the IDE parses must be deleted, or each parse of a large file leaks for the session.

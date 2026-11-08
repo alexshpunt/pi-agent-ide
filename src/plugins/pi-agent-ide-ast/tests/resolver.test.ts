@@ -1,9 +1,9 @@
 import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, test } from "vitest";
 
-import { AstScopeManager } from "#src/api/scope.js";
+import { AstScopeManager } from "#src/api/scope.ts";
 
-import { createAstScopeAnchorResolver } from "#src/scope-resolver.js";
+import { createAstScopeAnchorResolver } from "#src/scope-resolver.ts";
 
 const manager = new AstScopeManager();
 const resolver = createAstScopeAnchorResolver(manager);

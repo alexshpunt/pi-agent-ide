@@ -6,7 +6,7 @@ import {
   READ_PLUGIN_REGISTER_EVENT,
   type ReadPlugin,
   type ReadPluginRegistrationRequest,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 export function connectReadPlugin(pi: ExtensionAPI, plugin: ReadPlugin): void | Promise<void> {
   const announce = (): Promise<void> | undefined => {

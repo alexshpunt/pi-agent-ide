@@ -2,9 +2,9 @@ import { requiredValue } from "pi-agent-invariant";
 import type { FragmentResolverRegistration } from "pi-agent-read/api/tools/read";
 import type { TextAnchor } from "pi-agent-text";
 
-import type { TextAnchorInTextRequest } from "#src/core/text-editor-core.js";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
-import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.js";
+import type { TextAnchorInTextRequest } from "#src/core/text-editor-core.ts";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
+import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.ts";
 
 /** Anything that can resolve an anchor value against provided text content. */
 export interface ReadFragmentAnchorSource {

@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { promisify } from "node:util";
 import type { Stats } from "node:fs";
-import type { FileObjectEntry, FileObjectSnapshot, FileTransferAccess } from "./file-transfers.js";
+import type { FileObjectEntry, FileObjectSnapshot, FileTransferAccess } from "./file-transfers.ts";
 
 const exec = promisify(execFile);
 

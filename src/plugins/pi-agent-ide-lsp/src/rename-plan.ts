@@ -1,14 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/edit-pipeline";
-import type { LspManagerProvider } from "./manager-provider.js";
-import { resolveLspRenameTarget } from "./lsp/code-views.js";
-import { withLspDocuments } from "./lsp/document-leases.js";
-import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.js";
-import type { LspClient } from "./lsp/client.js";
-import type { LspPosition } from "./lsp/types.js";
-import { documentUri } from "./lsp/document-uri.js";
-import { loadQueryProject } from "./lsp/navigation.js";
+import type { LspManagerProvider } from "./manager-provider.ts";
+import { resolveLspRenameTarget } from "./lsp/code-views.ts";
+import { withLspDocuments } from "./lsp/document-leases.ts";
+import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.ts";
+import type { LspClient } from "./lsp/client.ts";
+import type { LspPosition } from "./lsp/types.ts";
+import { documentUri } from "./lsp/document-uri.ts";
+import { loadQueryProject } from "./lsp/navigation.ts";
 
 function renameEntries(edit: LspWorkspaceEdit | null, client: LspClient) {
   if (edit === null)

@@ -5,9 +5,9 @@ import {
   withStructuredResult,
   type ResultTargetStore,
 } from "pi-agent-resource";
-import { searchDataSchema } from "#src/api/structured-result.js";
+import { searchDataSchema } from "#src/api/structured-result.ts";
 
-import type { SearchPlugin } from "#src/api/plugin-protocol.js";
+import type { SearchPlugin } from "#src/api/plugin-protocol.ts";
 import type {
   SearchActionRegistration,
   SearchEnvironmentProvider,
@@ -23,7 +23,7 @@ import type {
   SearchResolverRegistration,
   SearchToolDetails,
   SearchToolResult,
-} from "#src/api/search.js";
+} from "#src/api/search.ts";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 
 interface RegisteredResolver {

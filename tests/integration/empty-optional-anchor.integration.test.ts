@@ -8,11 +8,11 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 // Models often send an empty string for an optional selector they mean to omit. A single
 // direct call, a batch of direct calls in one message and native Codemode take separate paths.

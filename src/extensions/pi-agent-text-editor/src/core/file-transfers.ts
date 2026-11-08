@@ -1,17 +1,17 @@
 import path from "node:path";
-import { localFileTransferAccess } from "#src/api/native-files.js";
+import { localFileTransferAccess } from "#src/api/native-files.ts";
 import type {
   FileObjectEntry,
   FileObjectSnapshot,
   FileTransferEndpoint,
   FileTransferGuard,
-} from "#src/api/file-transfers.js";
+} from "#src/api/file-transfers.ts";
 import {
   assertUnprotectedTransferPath,
   prepareDeletionGuard,
   type DeletePolicyContext,
   type DeletionGuard,
-} from "./delete-policy.js";
+} from "./delete-policy.ts";
 
 /** Object kinds supported by byte-preserving whole-object transfers. */
 export type TransferKind = "file" | "directory" | "symlink";

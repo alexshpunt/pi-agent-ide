@@ -9,7 +9,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("native Codemode prepares and commits disjoint edits at the same time", async () => {
   await withTempWorkspace(async (cwd) => {

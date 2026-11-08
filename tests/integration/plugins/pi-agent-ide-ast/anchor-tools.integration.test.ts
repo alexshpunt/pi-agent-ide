@@ -1,16 +1,16 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { AstScopeManager } from "#src/plugins/pi-agent-ide-ast/src/api/scope.js";
+import { AstScopeManager } from "#src/plugins/pi-agent-ide-ast/src/api/scope.ts";
 import { getToolExecution, getToolResultText } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import {
   expectTextToolDiff,
   runTextToolScenario,
-} from "#integration/support/pi-runtime/scenario.js";
+} from "#integration/support/pi-runtime/scenario.ts";
 
 const extensions = createExtensionSet();
 afterAll(() => extensions.dispose());

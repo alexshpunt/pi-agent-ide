@@ -1,8 +1,8 @@
 import { expect, test, vi } from "vitest";
 import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackend } from "#src/backend/ssh.js";
-import { inspectSshRecipeEvidence } from "#src/backend/recipe-evidence.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { inspectSshRecipeEvidence } from "#src/backend/recipe-evidence.ts";
 
 const recipe: ToolRecipe = {
   id: "owned",

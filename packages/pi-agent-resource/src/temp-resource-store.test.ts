@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { TempResourceStore } from "./temp-resource-store.js";
+import { TempResourceStore } from "./temp-resource-store.ts";
 
 test("keeps complete private files until disposal, including saves already in flight", async () => {
   const store = new TempResourceStore();

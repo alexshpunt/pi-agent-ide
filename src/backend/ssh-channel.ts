@@ -3,14 +3,14 @@ import { PassThrough, type Readable } from "node:stream";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
-import { remoteLocation } from "./identity.js";
-import { SshBackendError, type SshTarget, type BackendOperationContext } from "./ssh.js";
+import { remoteLocation } from "./identity.ts";
+import { SshBackendError, type SshTarget, type BackendOperationContext } from "./ssh.ts";
 import {
   sshFailureCode,
   sshWorkerCommand,
   systemSshArguments,
   validateSshTarget,
-} from "./ssh-transport.js";
+} from "./ssh-transport.ts";
 
 const frameSchema = Type.Union([
   Type.Object({

@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { registerTerminalResources } from "#src/plugins/pi-agent-ide-terminal/src/resources.js";
-import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.js";
-import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.js";
-import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.js";
+import { registerTerminalResources } from "#src/plugins/pi-agent-ide-terminal/src/resources.ts";
+import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.ts";
 
 export default async function registerDeterministicTerminal(pi: ExtensionAPI): Promise<void> {
   const ids = ["abcdef123456", "abcdef123457"];

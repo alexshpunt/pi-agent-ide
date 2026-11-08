@@ -1,6 +1,6 @@
 import path from "node:path";
-import type { SshBackend } from "./ssh.js";
-import { SshBackendError } from "./ssh.js";
+import type { SshBackend } from "./ssh.ts";
+import { SshBackendError } from "./ssh.ts";
 
 /** Read only remote PATH and prepend the existing project executable directories. */
 export async function sshProjectEnvironment(

@@ -11,8 +11,8 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { textResultChecks } from "#integration/support/text-result-checks.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { textResultChecks } from "#integration/support/text-result-checks.ts";
 
 for (const mode of ["on", "only"] as const) {
   test(`Write results select the final whole file after formatting in Codemode ${mode}`, async () => {

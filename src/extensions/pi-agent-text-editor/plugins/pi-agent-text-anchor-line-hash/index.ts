@@ -12,8 +12,8 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { createLineHashAnchorResolver } from "./src/anchor.js";
-import { createLineHashPresenter } from "./src/read-handler.js";
+import { createLineHashAnchorResolver } from "./src/anchor.ts";
+import { createLineHashPresenter } from "./src/read-handler.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

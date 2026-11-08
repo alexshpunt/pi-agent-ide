@@ -1,10 +1,10 @@
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
-import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { SshBackendError } from "#src/backend/ssh.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { startSshFixture } from "./ssh-fixture.js";
+import { createSshDoctorWorkspace } from "#src/backend/doctor-workspace.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { SshBackendError } from "#src/backend/ssh.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { startSshFixture } from "./ssh-fixture.ts";
 
 async function absent(use: () => Promise<unknown>): Promise<void> {
   try {

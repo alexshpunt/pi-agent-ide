@@ -1,4 +1,4 @@
-import type { AstScopeManager } from "./ast/manager.js";
+import type { AstScopeManager } from "./ast/manager.ts";
 import type { TextAnchorResolver } from "pi-agent-text";
 
 const scopeAnchorPattern = /^scope-(begin|end)-[A-Z0-9]{3,4}(?:-[1-9]\d*)?$/;

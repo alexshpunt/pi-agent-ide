@@ -10,10 +10,10 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("direct IDE mutations keep the same custom renderer in an isolated runtime", async () => {
   await withTempWorkspace(async (cwd) => {

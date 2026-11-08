@@ -1,10 +1,10 @@
 import { Writable } from "node:stream";
 import { callbackify } from "node:util";
-import type { DapTransport } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
-import { sshProjectEnvironment } from "./process-environment.js";
-import { stopOwnedSshProcess } from "./owned-process-stop.js";
+import type { DapTransport } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
+import { sshProjectEnvironment } from "./process-environment.ts";
+import { stopOwnedSshProcess } from "./owned-process-stop.ts";
 
 /** Exact target stdio and native lifetime metadata, never a controller process ID. */
 export interface SshDapTransport extends DapTransport {

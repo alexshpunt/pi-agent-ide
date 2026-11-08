@@ -3,7 +3,7 @@ import {
   formatCodeViewReference,
   parseCodeViewReference,
   resolveCodeViewPath,
-} from "./reference.js";
+} from "./reference.ts";
 
 test("code-view paths retain explicit and cwd-relative SSH identity", () => {
   expect(resolveCodeViewPath("ssh://target/work/note.ts", "/local")).toBe(

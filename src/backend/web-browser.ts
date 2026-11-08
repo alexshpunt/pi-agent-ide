@@ -4,9 +4,9 @@ import { Value } from "typebox/value";
 import type {
   BrowserLoadOptions,
   BrowserPageSnapshot,
-} from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/browser-loader.js";
-import { readOwnedSshCommand } from "./owned-read-command.js";
-import { SshBackendError, type SshTarget } from "./ssh.js";
+} from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/browser-loader.ts";
+import { readOwnedSshCommand } from "./owned-read-command.ts";
+import { SshBackendError, type SshTarget } from "./ssh.ts";
 
 const pageSchema = Type.Object({ html: Type.String(), source: Type.String() });
 const refusalCodes = new Set([

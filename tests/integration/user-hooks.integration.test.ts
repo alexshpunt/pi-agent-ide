@@ -13,7 +13,7 @@ import { expect, test } from "vitest";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 test("file hooks block resolved access and report saved-edit feedback", async () => {
   await withTempWorkspace(async (cwd) => {

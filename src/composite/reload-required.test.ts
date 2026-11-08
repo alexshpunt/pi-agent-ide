@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { pendingReloadChanges } from "./reload-required.js";
-import type { PiAgentIdeExtensionsConfig } from "./extensions-config.js";
-import type { BuiltinExtension } from "./selection.js";
+import { pendingReloadChanges } from "./reload-required.ts";
+import type { PiAgentIdeExtensionsConfig } from "./extensions-config.ts";
+import type { BuiltinExtension } from "./selection.ts";
 
 const modules: BuiltinExtension[] = [
   { id: "core", name: "Core", dependencies: [], register() {} },

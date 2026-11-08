@@ -6,7 +6,7 @@ import {
   type ConfiguredProcessAccess,
   type ProcessConfig,
   type ToolRuntimeConfigOptions,
-} from "./tool-config.js";
+} from "./tool-config.ts";
 
 /** Reuse layered tool selection on the Doctor project's file and process owner. */
 export function doctorRuntimeOptions(context: DoctorContext): ToolRuntimeConfigOptions {

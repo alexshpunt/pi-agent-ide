@@ -1,13 +1,13 @@
 import { Writable } from "node:stream";
 import { callbackify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import type { LspOwnerTransport } from "#src/plugins/pi-agent-ide-lsp/index.js";
-import { remoteLocation } from "./identity.js";
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
-import { sshProjectEnvironment } from "./process-environment.js";
-import { createSshLspFileWatchers } from "./lsp-file-watchers.js";
-import { stopOwnedSshProcess } from "./owned-process-stop.js";
+import type { LspOwnerTransport } from "#src/plugins/pi-agent-ide-lsp/index.ts";
+import { remoteLocation } from "./identity.ts";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
+import { sshProjectEnvironment } from "./process-environment.ts";
+import { createSshLspFileWatchers } from "./lsp-file-watchers.ts";
+import { stopOwnedSshProcess } from "./owned-process-stop.ts";
 
 /** Lazy LSP stdio on one configured SSH owner, with server file URIs mapped at the boundary. */
 export function createSshLspTransport(

@@ -11,7 +11,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 async function runText(cwd: string, name: string, scripts: string[]) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });

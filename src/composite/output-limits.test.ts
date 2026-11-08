@@ -1,7 +1,7 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
-import { limitIdeOutput } from "./output-limits.js";
+import { limitIdeOutput } from "./output-limits.ts";
 
 for (const shape of ["many-lines", "long-unicode", "many-blocks"] as const) {
   test(`bounds ${shape} across the whole payload`, async () => {

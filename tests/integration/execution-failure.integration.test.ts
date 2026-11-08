@@ -12,7 +12,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 for (const mode of ["standalone", "codemode"] as const) {
   test.each([

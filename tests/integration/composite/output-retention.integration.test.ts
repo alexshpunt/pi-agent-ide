@@ -9,7 +9,7 @@ import {
   testArtifactsDir,
   text,
   toolCall as nativeToolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
 const root = path.resolve();
 const extension = path.join(root, "tests/integration/composite/support/output-retention-ide.ts");

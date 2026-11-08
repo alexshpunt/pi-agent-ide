@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { probeLocalLspConfigCancellation, probeLocalLspDiscoveryCancellation } from "../support/lsp-local-config-probe.js";
+import { probeLocalLspConfigCancellation, probeLocalLspDiscoveryCancellation } from "../support/lsp-local-config-probe.ts";
 
 /** Run the native local registry check in the loaded Pi runtime without adding tools. */
 export default function localConfigProof(pi: ExtensionAPI): void {

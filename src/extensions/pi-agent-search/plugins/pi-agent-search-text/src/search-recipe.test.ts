@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.js";
+import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
 
 const directories: string[] = [];
 afterEach(async () => {

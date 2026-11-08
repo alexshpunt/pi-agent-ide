@@ -1,7 +1,7 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
-import type { ToolRecipe } from "./catalog.js";
+import type { ToolRecipe } from "./catalog.ts";
 
 /** Native project evidence shared by Doctor and runtime tool selection. */
 export interface RecipeEvidence {

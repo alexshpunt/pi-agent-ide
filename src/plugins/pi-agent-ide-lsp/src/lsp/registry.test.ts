@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { LspServerRegistry, parseLspConfig } from "./registry.js";
+import { LspServerRegistry, parseLspConfig } from "./registry.ts";
 
 test("owned resolution checks remote root markers without consulting local files", async () => {
   const config = parseLspConfig({

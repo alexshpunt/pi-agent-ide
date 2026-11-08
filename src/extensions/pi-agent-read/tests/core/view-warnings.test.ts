@@ -1,8 +1,8 @@
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 import type { AgentContent } from "pi-agent-resource";
-import { createReadTool } from "#src/core/tools/tool-read.js";
-import { createReadResultRenderer } from "#src/core/tools/read/read-renderer.js";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
+import { createReadResultRenderer } from "#src/core/tools/read/read-renderer.ts";
 
 initTheme("dark", false);
 const theme = {

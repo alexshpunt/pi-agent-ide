@@ -6,8 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ResourceError } from "pi-agent-resource";
 import { textFromAgentContent } from "pi-agent-text";
 
-import { withFileWriteLock } from "./file-write-lock.js";
-import { replaceFileContent } from "./replace-file.js";
+import { withFileWriteLock } from "./file-write-lock.ts";
+import { replaceFileContent } from "./replace-file.ts";
 
 import type {
   ContentHost,

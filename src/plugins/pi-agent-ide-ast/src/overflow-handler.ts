@@ -18,7 +18,7 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
   )
     return undefined;
   try {
-    const { AstOutlineManager, isSupportedOutlinePath } = await import("./ast/outline.js");
+    const { AstOutlineManager, isSupportedOutlinePath } = await import("./ast/outline.ts");
     if (!isSupportedOutlinePath(source)) return undefined;
     const format = (outline: SourceViewBlock): string =>
       [

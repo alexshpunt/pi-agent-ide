@@ -1,10 +1,10 @@
 import { Type, type TSchema } from "typebox";
-import { ResourceError } from "./resource-error.js";
+import { ResourceError } from "./resource-error.ts";
 import {
   resourceErrorMetadataOf,
   resourceErrorMetadataSchema,
   type ResourceErrorMetadata,
-} from "./resource-error-metadata.js";
+} from "./resource-error-metadata.ts";
 import { Value } from "typebox/value";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 

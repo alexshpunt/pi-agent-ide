@@ -1,8 +1,8 @@
 import { access } from "node:fs/promises";
 import { expect, test } from "vitest";
-import { startSshPidNamespaceFixture } from "#integration/support/ssh-pid-namespace-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
+import { startSshPidNamespaceFixture } from "#integration/support/ssh-pid-namespace-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
 
 test("the same native PID on two SSH targets never becomes a controller process or the other target", async () => {
   const left = await startSshPidNamespaceFixture();

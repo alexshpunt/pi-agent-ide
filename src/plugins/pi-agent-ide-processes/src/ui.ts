@@ -15,7 +15,7 @@ import {
   type SelectItem,
 } from "@earendil-works/pi-tui";
 
-import type { AgentIdeProcess, AgentIdeProcessRegistry } from "./registry.js";
+import type { AgentIdeProcess, AgentIdeProcessRegistry } from "./registry.ts";
 
 export type ProcessActivityMode = "detailed" | "compact" | "off";
 

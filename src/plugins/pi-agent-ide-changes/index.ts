@@ -14,15 +14,15 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
-import { changesDoctorPlugin } from "#src/doctor-plugin.js";
-import { CHANGE_ANCHOR_KIND, createChangeAnchorRegistration } from "#src/change-anchor.js";
-import { extensionGitExecutor } from "#src/changes/git-changes-backend.js";
-export type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
-import { createCurrentChangePresenter } from "#src/current-change-presenter.js";
-import { IndexMutationQueue } from "#src/index-mutation-queue.js";
-import { LastTextTransactionStore } from "#src/last-text-transaction-store.js";
-import { registerIndexChangeTools } from "#src/tool-index-change.js";
-import { createUndoMutationTool } from "#src/tool-text-undo.js";
+import { changesDoctorPlugin } from "#src/doctor-plugin.ts";
+import { CHANGE_ANCHOR_KIND, createChangeAnchorRegistration } from "#src/change-anchor.ts";
+import { extensionGitExecutor } from "#src/changes/git-changes-backend.ts";
+export type { GitCommandExecutor } from "#src/changes/git-changes-backend.ts";
+import { createCurrentChangePresenter } from "#src/current-change-presenter.ts";
+import { IndexMutationQueue } from "#src/index-mutation-queue.ts";
+import { LastTextTransactionStore } from "#src/last-text-transaction-store.ts";
+import { registerIndexChangeTools } from "#src/tool-index-change.ts";
+import { createUndoMutationTool } from "#src/tool-text-undo.ts";
 
 export default function registerGitChanges(pi: ExtensionAPI): Promise<void> {
   return registerGitChangesWithExecutor(pi, extensionGitExecutor(pi));

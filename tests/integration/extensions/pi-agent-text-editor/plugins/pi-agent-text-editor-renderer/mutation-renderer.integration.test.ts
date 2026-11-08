@@ -6,8 +6,8 @@ import { promisify } from "node:util";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import {
   assistantMessage,
   getToolExecution,
@@ -15,12 +15,12 @@ import {
   PiIntegrationTest,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/pi-coding-agent-test.js";
+} from "#integration/support/pi-runtime/pi-coding-agent-test.ts";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 import {
   expectToolRowsPreserveBackground,
   toolBackgroundTheme,
-} from "#integration/support/tui-background.js";
+} from "#integration/support/tui-background.ts";
 
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(

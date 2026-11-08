@@ -1,14 +1,14 @@
 import { expect, test } from "vitest";
 
-import { DoctorCore } from "./core.js";
-import { runDoctor } from "./run.js";
-import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.js";
-import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.js";
-import { astDoctorPlugin } from "#src/plugins/pi-agent-ide-ast/src/doctor-plugin.js";
-import { changesDoctorPlugin } from "#src/plugins/pi-agent-ide-changes/src/doctor-plugin.js";
-import { webDoctorPlugin } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/doctor-plugin.js";
-import { textSearchDoctorPlugin } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/doctor-plugin.js";
-import type { DoctorWorkspace } from "#src/api/doctor.js";
+import { DoctorCore } from "./core.ts";
+import { runDoctor } from "./run.ts";
+import { formatterDoctorPlugin } from "#src/plugins/pi-agent-ide-formatter/src/doctor-plugin.ts";
+import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
+import { astDoctorPlugin } from "#src/plugins/pi-agent-ide-ast/src/doctor-plugin.ts";
+import { changesDoctorPlugin } from "#src/plugins/pi-agent-ide-changes/src/doctor-plugin.ts";
+import { webDoctorPlugin } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/doctor-plugin.ts";
+import { textSearchDoctorPlugin } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/doctor-plugin.ts";
+import type { DoctorWorkspace } from "#src/api/doctor.ts";
 import { vi } from "vitest";
 
 const project = "ssh://fixture/project";

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { registerIdeCapability } from "#src/api/capabilities.js";
+import { registerIdeCapability } from "#src/api/capabilities.ts";
 
 export const alpha = "fixture-capability-alpha";
 export const beta = "fixture-capability-beta";

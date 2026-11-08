@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import { requiredValue } from "pi-agent-invariant";
 
-import { LINTER_RECIPES } from "./catalog.js";
-import { createCommandLinter, runConfiguredLinter } from "./command-linter.js";
-import { LintCommandRegistry } from "./registry.js";
+import { LINTER_RECIPES } from "./catalog.ts";
+import { createCommandLinter, runConfiguredLinter } from "./command-linter.ts";
+import { LintCommandRegistry } from "./registry.ts";
 
 describe("command linter", () => {
   it("keeps project-wide findings attached to their own file", async () => {

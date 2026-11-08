@@ -10,8 +10,8 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
-import { withTextResultChecks } from "#integration/support/text-result-checks.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
 
 const initial = "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n";
 const copy = {

@@ -1,4 +1,4 @@
-import type { ServerConfig } from "./types.js";
+import type { ServerConfig } from "./types.ts";
 
 /**
  * Extension → languageId + serverIds mapping.

@@ -1,14 +1,14 @@
 import { access } from "node:fs/promises";
-import { JULIA_DEBUG_SOURCE } from "#integration/fixtures/julia-debug-source.js";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { remoteLocation } from "#src/backend/identity.js";
+import { JULIA_DEBUG_SOURCE } from "#integration/fixtures/julia-debug-source.ts";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { remoteLocation } from "#src/backend/identity.ts";
 import {
   findSshProcessMetadata,
   readSshProcessMetadata,
-} from "#integration/support/ssh-process-metadata.js";
-import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.js";
-import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.js";
+} from "#integration/support/ssh-process-metadata.ts";
+import { createSshDebuggerWorkspaceOwner } from "#src/backend/debugger-workspace-owner.ts";
+import { DebugSessionManager } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
 /** Explicit private Julia installation; the depot must belong to the fixture account. */
 export interface PrivateJuliaInstallation {

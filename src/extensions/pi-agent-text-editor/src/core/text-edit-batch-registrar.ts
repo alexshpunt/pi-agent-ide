@@ -3,47 +3,47 @@ import {
   type ResultTargetStore,
   type ResultSourceTarget,
 } from "pi-agent-resource";
-import { retryWhenSourceChanged } from "#src/core/source-change-retry.js";
-import { TextSelectionAnchor } from "#src/api/text-selection-anchor.js";
-import { withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.js";
-import { isResultInput } from "./result-transfer.js";
+import { retryWhenSourceChanged } from "#src/core/source-change-retry.ts";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
+import { withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.ts";
+import { isResultInput } from "./result-transfer.ts";
 import {
   committedMutationTargets,
   describeUnavailableCopyTarget,
   unchangedCopySources,
   verifyMutationTargets,
-} from "./mutation-result-targets.js";
+} from "./mutation-result-targets.ts";
 import { requiredValue } from "pi-agent-invariant";
-import { postWriteFailureEffect } from "./text-mutation.js";
+import { postWriteFailureEffect } from "./text-mutation.ts";
 import { renderTextAnchor } from "pi-agent-text";
 import {
   TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH,
   type ToolCallAnchorRenderState,
 } from "pi-agent-tool-call-interception";
-import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
-import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.js";
+import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
+import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
 import {
   applyTextChanges,
   type TextChange,
   TextChangeDocument,
-} from "#src/core/text-change-engine.js";
+} from "#src/core/text-change-engine.ts";
 import {
   executeWithBatchCoordinator,
   registerBlockedToolCall,
   registerToolBatch,
   type ToolBatchDefinition,
-} from "#src/core/text-edit-batch-coordinator.js";
+} from "#src/core/text-edit-batch-coordinator.ts";
 import {
   splitTextBatchResult,
   type TextBatchDetails,
   type TextBatchEntry,
   type TextBatchParams,
-} from "#src/core/text-edit-batch.js";
+} from "#src/core/text-edit-batch.ts";
 import {
   contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
   TextMutationAnchorResolutionError,
-} from "#src/core/text-mutation-anchor-error.js";
+} from "#src/core/text-mutation-anchor-error.ts";
 import {
   buildFailedCopyWriteResult,
   buildFailedTextMutationResult,
@@ -52,24 +52,24 @@ import {
   preflightMutationAnchors,
   presentedFinalStateLines,
   textMutationOperationReceipts,
-} from "#src/core/text-mutation.js";
-import { registerBlockedToolCallSink } from "#src/core/tool-call-interceptor/coordinator.js";
+} from "#src/core/text-mutation.ts";
+import { registerBlockedToolCallSink } from "#src/core/tool-call-interceptor/coordinator.ts";
 
-import type { TextEditIntent } from "#src/api/edit-completion.js";
+import type { TextEditIntent } from "#src/api/edit-completion.ts";
 import type {
   FileMutationBatchResult,
   FileMutationResult,
   MutationResultPresentation,
-} from "#src/api/mutation-result.js";
-import type { AnyTextMutationToolRegistration, TextMutation } from "#src/api/mutation-tool.js";
-import type { BatchExecutionReporter } from "#src/core/text-edit-batch-execution.js";
+} from "#src/api/mutation-result.ts";
+import type { AnyTextMutationToolRegistration, TextMutation } from "#src/api/mutation-tool.ts";
+import type { BatchExecutionReporter } from "#src/core/text-edit-batch-execution.ts";
 import type {
   TextEditorCore,
   TextResourceEditFailure,
   ResolveResourceTextAnchor,
   TextResourceEditRequest,
   TextResourcesEditOutcome,
-} from "#src/core/text-editor-core.js";
+} from "#src/core/text-editor-core.ts";
 import type {
   AgentToolResult,
   AgentToolUpdateCallback,

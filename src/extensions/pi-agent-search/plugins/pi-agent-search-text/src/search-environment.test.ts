@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { searchText } from "#src/search-backend.js";
-import { searchFuzzy } from "#src/fuzzy-search.js";
-import { SearchSessionStore } from "#src/search-session.js";
-import { createTextResolver } from "#src/resolvers.js";
+import { searchText } from "#src/search-backend.ts";
+import { searchFuzzy } from "#src/fuzzy-search.ts";
+import { SearchSessionStore } from "#src/search-session.ts";
+import { createTextResolver } from "#src/resolvers.ts";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
 
 test("fuzzy alternatives collect names and verify exact matches on their original owner", async () => {

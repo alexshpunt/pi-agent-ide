@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { EventEmitter } from "node:events";
 import { expect, test, vi } from "vitest";
-import { IDE_PRESENTATION_CHANGED, listenPresentationPreference } from "./live-presentation.js";
+import { IDE_PRESENTATION_CHANGED, listenPresentationPreference } from "./live-presentation.ts";
 
 function isShutdown(value: unknown): value is () => void {
   return typeof value === "function";

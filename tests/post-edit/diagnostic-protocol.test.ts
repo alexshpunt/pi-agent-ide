@@ -1,11 +1,11 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { DiagnosticStore } from "#src/core/diagnostic-store.js";
-import { createLspDiagnosticSource } from "#src/plugins/pi-agent-ide-lsp/src/diagnostic-source.js";
-import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.js";
-import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.js";
-import { requestDiagnostics } from "#src/plugins/pi-agent-ide-lsp/src/lsp/diagnostics.js";
+import { DiagnosticStore } from "#src/core/diagnostic-store.ts";
+import { createLspDiagnosticSource } from "#src/plugins/pi-agent-ide-lsp/src/diagnostic-source.ts";
+import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.ts";
+import { LspServerRegistry } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.ts";
+import { requestDiagnostics } from "#src/plugins/pi-agent-ide-lsp/src/lsp/diagnostics.ts";
 
 const cleanup: (() => Promise<void> | void)[] = [];
 afterEach(async () => {

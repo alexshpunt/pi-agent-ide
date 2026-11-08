@@ -1,12 +1,12 @@
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
-import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.js";
-import type { TextSemanticMutationResult } from "#src/api/mutation-tool.js";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { createTextTool } from "#src/core/text-mutation.js";
-import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.js";
-import { insertMutationTool } from "#src/tools/tool-text-insert.js";
-import { deleteMutationTool } from "#src/tools/tool-text-delete.js";
+import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
+import type { TextSemanticMutationResult } from "#src/api/mutation-tool.ts";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { createTextTool } from "#src/core/text-mutation.ts";
+import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.ts";
+import { insertMutationTool } from "#src/tools/tool-text-insert.ts";
+import { deleteMutationTool } from "#src/tools/tool-text-delete.ts";
 
 const SOURCE = "probe:window";
 const CROPS = [

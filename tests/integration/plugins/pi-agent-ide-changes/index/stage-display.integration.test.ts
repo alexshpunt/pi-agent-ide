@@ -15,8 +15,8 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const runFile = promisify(execFile);
 const fileName = "tracked.txt";

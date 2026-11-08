@@ -7,8 +7,8 @@ import type {
 } from "pi-agent-resource";
 import { textFromAgentContent } from "pi-agent-text";
 
-import type { SshBackendRegistry } from "./registry.js";
-import { SshBackendError } from "./ssh.js";
+import type { SshBackendRegistry } from "./registry.ts";
+import { SshBackendError } from "./ssh.ts";
 
 /** Bridge configured SSH targets to existing content hosts and read/editor resolver registries. */
 export function createSshResourceResolver(

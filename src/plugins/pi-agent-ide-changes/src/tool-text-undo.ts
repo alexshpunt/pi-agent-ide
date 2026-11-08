@@ -2,13 +2,13 @@ import { diffChars } from "diff";
 import { Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
 
-import { CHANGE_ANCHOR_KIND } from "#src/change-anchor.js";
-import { ChangeService } from "#src/changes/change-service.js";
-import { gitSourceDirectory } from "#src/changes/git-paths.js";
+import { CHANGE_ANCHOR_KIND } from "#src/change-anchor.ts";
+import { ChangeService } from "#src/changes/change-service.ts";
+import { gitSourceDirectory } from "#src/changes/git-paths.ts";
 
-import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
-import type { IndexMutationQueue } from "#src/index-mutation-queue.js";
-import type { LastTextTransactionStore } from "#src/last-text-transaction-store.js";
+import type { GitCommandExecutor } from "#src/changes/git-changes-backend.ts";
+import type { IndexMutationQueue } from "#src/index-mutation-queue.ts";
+import type { LastTextTransactionStore } from "#src/last-text-transaction-store.ts";
 import type { TextMutationToolRegistration } from "pi-agent-text-editor/api/mutation-tool";
 
 export const undoSchema = Type.Object(

@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, it } from "vitest";
 
-import { resolvePartial } from "#src/core/tool-call-interceptor/partial-json-resolver.js";
+import { resolvePartial } from "#src/core/tool-call-interceptor/partial-json-resolver.ts";
 // ─── Helper ───────────────────────────────────────────────────────────────
 
 function editsOf(json: string): Array<Record<string, unknown>> | undefined {

@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 
-import { FileMutationResult } from "#src/api/mutation-result.js";
+import { FileMutationResult } from "#src/api/mutation-result.ts";
 import {
   finalStateLineNumbers,
   renderFinalStateFragment,
-} from "#src/core/mutation-result/final-state-fragment.js";
+} from "#src/core/mutation-result/final-state-fragment.ts";
 
 const before = Array.from({ length: 100 }, (_, index) => `line ${index + 1}`).join("\n");
 const after = before.replace("line 50", "changed 50");

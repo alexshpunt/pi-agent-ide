@@ -27,12 +27,12 @@ const indexDataSchema = Type.Object(
 );
 export const indexOutputSchema = structuredResultSchema(indexDataSchema);
 
-import { ChangeService } from "#src/changes/change-service.js";
-import { gitSourceDirectory, resolveGitSource } from "#src/changes/git-paths.js";
+import { ChangeService } from "#src/changes/change-service.ts";
+import { gitSourceDirectory, resolveGitSource } from "#src/changes/git-paths.ts";
 
-import type { ChangeIndexAction } from "#src/changes/change-types.js";
-import type { GitCommandExecutor } from "#src/changes/git-changes-backend.js";
-import type { IndexMutationQueue } from "#src/index-mutation-queue.js";
+import type { ChangeIndexAction } from "#src/changes/change-types.ts";
+import type { GitCommandExecutor } from "#src/changes/git-changes-backend.ts";
+import type { IndexMutationQueue } from "#src/index-mutation-queue.ts";
 
 /** Shared validation for standalone and composed index changes. */
 export const indexChangeSchema = Type.Object(

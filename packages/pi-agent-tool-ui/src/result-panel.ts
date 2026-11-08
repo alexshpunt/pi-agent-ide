@@ -13,7 +13,7 @@ import {
   wrapTextWithAnsi,
   sliceByColumn,
 } from "@earendil-works/pi-tui";
-import { singleLine, preserveEnclosingBackground } from "./index.js";
+import { singleLine, preserveEnclosingBackground } from "./index.ts";
 
 /** Source identity, highlighted code, or a concise explanation inside one result frame. */
 export type ResultPanelRow =

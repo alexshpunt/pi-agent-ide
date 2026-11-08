@@ -1,7 +1,7 @@
 import { createTextDocument } from "pi-agent-text";
 import { afterEach, expect, test, vi } from "vitest";
-import { runIdePostEditGate } from "#src/post-edit/gate.js";
-import { registerTools, resetRegistry } from "#src/toolchain/registry.js";
+import { runIdePostEditGate } from "#src/post-edit/gate.ts";
+import { registerTools, resetRegistry } from "#src/toolchain/registry.ts";
 import type { TextPostEditTransaction } from "pi-agent-text-editor/api/post-edit";
 
 function transaction(resourceSource = "/workspace/example.ts"): TextPostEditTransaction {

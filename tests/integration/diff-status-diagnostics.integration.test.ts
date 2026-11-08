@@ -10,9 +10,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import type { DiagnosticEntryData } from "#src/core/diagnostic-entry.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import type { DiagnosticEntryData } from "#src/core/diagnostic-entry.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

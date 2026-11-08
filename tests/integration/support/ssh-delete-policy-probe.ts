@@ -1,8 +1,8 @@
 import { appendFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectBeforeDeleteHook } from "#src/api/hooks.js";
-import { SshBackend, type SshTarget } from "#src/backend/ssh.js";
+import { connectBeforeDeleteHook } from "#src/api/hooks.ts";
+import { SshBackend, type SshTarget } from "#src/backend/ssh.ts";
 
 /** Observe canonical owners and provide deterministic decisions at the host UI boundary. */
 export default function (pi: ExtensionAPI) {

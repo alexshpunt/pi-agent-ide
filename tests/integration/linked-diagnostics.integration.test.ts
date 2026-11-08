@@ -14,7 +14,7 @@ import { PiRun } from "pi-coding-agent-test/base";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 test("late diagnostic summaries keep direct and nested edit owners across deferred finalization", async () => {
   await withTempWorkspace(async (cwd) => {

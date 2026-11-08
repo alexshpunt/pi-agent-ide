@@ -1,11 +1,11 @@
-import { copyMutationTool } from "#src/tools/tool-text-copy.js";
-import { deleteMutationTool } from "#src/tools/tool-text-delete.js";
-import { insertMutationTool } from "#src/tools/tool-text-insert.js";
-import { moveMutationTool } from "#src/tools/tool-text-move.js";
-import { replaceMutationTool } from "#src/tools/tool-text-replace.js";
-import { writeMutationTool } from "#src/tools/tool-text-write.js";
+import { copyMutationTool } from "#src/tools/tool-text-copy.ts";
+import { deleteMutationTool } from "#src/tools/tool-text-delete.ts";
+import { insertMutationTool } from "#src/tools/tool-text-insert.ts";
+import { moveMutationTool } from "#src/tools/tool-text-move.ts";
+import { replaceMutationTool } from "#src/tools/tool-text-replace.ts";
+import { writeMutationTool } from "#src/tools/tool-text-write.ts";
 
-import type { TextEditorCore } from "#src/core/text-editor-core.js";
+import type { TextEditorCore } from "#src/core/text-editor-core.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export function registerTextEditorTools(_pi: ExtensionAPI, core: TextEditorCore): void {

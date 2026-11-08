@@ -12,15 +12,15 @@ import { highlightCode } from "@earendil-works/pi-coding-agent";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 
 import { requiredValue } from "pi-agent-invariant";
-import { createDiffModel } from "#src/diff-model.js";
-import { COMPACT_BODY_ROWS, compactViewport, expandedViewport } from "#src/diff-viewport.js";
-import { renderDiffPanel } from "#src/diff-renderer.js";
-import { createDiffThemePalette } from "#src/diff-theme.js";
-import { MutationPanel } from "#src/mutation-panel.js";
+import { createDiffModel } from "#src/diff-model.ts";
+import { COMPACT_BODY_ROWS, compactViewport, expandedViewport } from "#src/diff-viewport.ts";
+import { renderDiffPanel } from "#src/diff-renderer.ts";
+import { createDiffThemePalette } from "#src/diff-theme.ts";
+import { MutationPanel } from "#src/mutation-panel.ts";
 import {
   advanceTypingProjectionResources,
   projectTypingResources,
-} from "#src/mutation-projection.js";
+} from "#src/mutation-projection.ts";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 
 function changedRows(model: ReturnType<typeof createDiffModel>) {

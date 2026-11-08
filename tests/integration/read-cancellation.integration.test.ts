@@ -10,7 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("a cancelled HTTP Read reports no completed result and a fresh Read still works", async () => {
   let slowRequests = 0;

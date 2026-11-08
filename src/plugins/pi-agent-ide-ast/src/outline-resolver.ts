@@ -4,8 +4,8 @@ import {
   resolveCodeViewPath,
 } from "pi-agent-ide/api/code-view";
 
-import type * as AstOutline from "./ast/outline.js";
-import { MAX_SOURCE_BYTES } from "./ast/read-text.js";
+import type * as AstOutline from "./ast/outline.ts";
+import { MAX_SOURCE_BYTES } from "./ast/read-text.ts";
 import type {
   ResourceResolutionAttempt,
   ResourceResolver,
@@ -68,7 +68,7 @@ function resolveAstOutlineSource(
       link: canonicalSource,
       async read({ signal }) {
         signal?.throwIfAborted();
-        const astOutline = await (astOutlineModule ??= import("./ast/outline.js"));
+        const astOutline = await (astOutlineModule ??= import("./ast/outline.ts"));
         const outlineManager = manager ?? (defaultManager ??= new astOutline.AstOutlineManager());
         let outline;
         if (filePath.startsWith("ssh://")) {

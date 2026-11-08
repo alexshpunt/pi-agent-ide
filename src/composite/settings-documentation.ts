@@ -1,8 +1,8 @@
-import type { AgentDocumentation } from "#src/api/documentation.js";
-import { BUILTIN_EXTENSIONS } from "./builtin-extensions.js";
-import type { FeatureFlag } from "./feature-flags.js";
-import { AGENT_IDE_PREFERENCES, type AgentIdePreference } from "./preferences.js";
-import { AGENT_IDE_PRESET_OPTIONS } from "./presets.js";
+import type { AgentDocumentation } from "#src/api/documentation.ts";
+import { BUILTIN_EXTENSIONS } from "./builtin-extensions.ts";
+import type { FeatureFlag } from "./feature-flags.ts";
+import { AGENT_IDE_PREFERENCES, type AgentIdePreference } from "./preferences.ts";
+import { AGENT_IDE_PRESET_OPTIONS } from "./presets.ts";
 
 /** Build an explicit, read-only guide from the same descriptors as the settings menu. */
 export function createIdeSettingsDocumentation(

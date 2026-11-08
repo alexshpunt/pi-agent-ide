@@ -1,6 +1,6 @@
 import type { ClassifierApi, ClassifierModel, ClassifierResult } from "@earendil-works/pi-ai";
 import { afterEach, expect, test, vi } from "vitest";
-import { createCodeReview, type ReviewRuntime, type ReviewNotice } from "./reviewer.js";
+import { createCodeReview, type ReviewRuntime, type ReviewNotice } from "./reviewer.ts";
 
 const jev: ClassifierModel<ClassifierApi> = {
   type: "classifier",

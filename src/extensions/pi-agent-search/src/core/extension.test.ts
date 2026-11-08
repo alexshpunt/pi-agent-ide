@@ -3,7 +3,7 @@ import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { renderToolCallHeader } from "pi-agent-tool-ui";
 import { expect, test } from "vitest";
 
-import { searchCallModel } from "#src/core/extension.js";
+import { searchCallModel } from "#src/core/extension.ts";
 
 const theme = {
   bold: (text: string): string => text,

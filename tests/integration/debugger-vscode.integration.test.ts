@@ -13,7 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("debug falls back to native adapters when VS Code does not have the workspace open", async () => {
   await withTempWorkspace(async (cwd) => {

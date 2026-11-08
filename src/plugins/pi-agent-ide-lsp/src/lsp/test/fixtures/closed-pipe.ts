@@ -1,6 +1,6 @@
 import { closeSync, writeFileSync } from "node:fs";
 import { URI } from "vscode-uri";
-import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.js";
+import { LspClient } from "#src/plugins/pi-agent-ide-lsp/src/lsp/client.ts";
 
 if (process.argv.includes("--server")) {
 

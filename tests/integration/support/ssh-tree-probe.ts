@@ -1,8 +1,8 @@
-import { startSshProcess } from "#src/backend/ssh-channel.js";
-import { SshBackendError } from "#src/backend/ssh.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { startSshCarrierFixture } from "./ssh-carrier-fixture.js";
+import { startSshProcess } from "#src/backend/ssh-channel.ts";
+import { SshBackendError } from "#src/backend/ssh.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { startSshCarrierFixture } from "./ssh-carrier-fixture.ts";
 
 /** Check exact adopted descendants and an independent sibling before disposing the private SSH fixture. */
 export async function probeOwnedSshTree(mode: "cancel" | "exit" | "loss", pty: boolean) {

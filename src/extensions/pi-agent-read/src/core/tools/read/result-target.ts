@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { ResultRange, ResultTargetStore } from "pi-agent-resource";
-import type { ReadPostReadHandler, ReadToolPluginApi } from "#src/api/tools/read.js";
+import type { ReadPostReadHandler, ReadToolPluginApi } from "#src/api/tools/read.ts";
 
 /** Retain exact local or SSH text windows with an owning, guarded reread; never grant authority to converted output. */
 export function createReadResultTargetHandler(

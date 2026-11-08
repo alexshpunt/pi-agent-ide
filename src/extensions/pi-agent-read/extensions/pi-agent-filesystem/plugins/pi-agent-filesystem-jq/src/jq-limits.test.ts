@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { executeJq } from "#src/jq.js";
+import { executeJq } from "#src/jq.ts";
 
 test("jq rejects output above its byte cap without returning a partial value", async () => {
   const bytes = 10 * 1024 * 1024;

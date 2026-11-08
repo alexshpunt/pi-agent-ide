@@ -4,14 +4,14 @@ import path from "node:path";
 import { getToolExecution, getToolExecutionDetails, getToolResultText } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
-import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import {
   expectTextToolDiff,
   getTextToolMutationData,
   runTextToolScenario,
-} from "#integration/support/pi-runtime/scenario.js";
+} from "#integration/support/pi-runtime/scenario.ts";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const restoreRunner = forceStandaloneIntegrationFile();

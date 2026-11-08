@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { createDiffModel } from "#pi-agent-text-editor-renderer/src/diff-model.js";
+import { createDiffModel } from "#pi-agent-text-editor-renderer/src/diff-model.ts";
 
 // Run with: pnpm exec oxnode scripts/dev/profile-tui-diff.ts
 // Warm timings include line alignment, inline ranges, and viewport projection.

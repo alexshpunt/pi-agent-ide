@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { createOwnedGitExecutor } from "#src/backend/git-registration.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { ChangeService } from "#src/plugins/pi-agent-ide-changes/src/changes/change-service.js";
-import { startSshFixture } from "./support/ssh-fixture.js";
+import { createOwnedGitExecutor } from "#src/backend/git-registration.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { ChangeService } from "#src/plugins/pi-agent-ide-changes/src/changes/change-service.ts";
+import { startSshFixture } from "./support/ssh-fixture.ts";
 
 test("Git reads and index changes use the remote repository without local execution", async () => {
   const fixture = await startSshFixture();

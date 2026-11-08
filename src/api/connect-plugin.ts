@@ -4,7 +4,7 @@ import {
   type IdePlugin,
   type IdePluginRegistrationRequest,
   isIdeCoreReady,
-} from "#src/api/plugin-protocol.js";
+} from "#src/api/plugin-protocol.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

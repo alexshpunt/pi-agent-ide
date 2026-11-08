@@ -1,9 +1,9 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { expect, test } from "vitest";
 
-import { connectReadPlugin } from "#src/api/connect-plugin.js";
-import { READ_API_VERSION, READ_PROTOCOL, type ReadPlugin } from "#src/api/plugin-protocol.js";
-import registerReadCore from "#src/core/extension.js";
+import { connectReadPlugin } from "#src/api/connect-plugin.ts";
+import { READ_API_VERSION, READ_PROTOCOL, type ReadPlugin } from "#src/api/plugin-protocol.ts";
+import registerReadCore from "#src/core/extension.ts";
 
 test("reload detaches the previous read core registration listener", async () => {
   const environment = createExtensionEnvironment();

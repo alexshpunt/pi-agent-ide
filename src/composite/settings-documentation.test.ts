@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
-import { AgentDocumentationRegistry } from "#src/documentation/registry.js";
-import { BUILTIN_EXTENSIONS } from "./builtin-extensions.js";
-import type { FeatureFlag } from "./feature-flags.js";
-import { AGENT_IDE_PREFERENCES } from "./preferences.js";
-import { AGENT_IDE_PRESET_OPTIONS } from "./presets.js";
-import { createIdeSettingsDocumentation } from "./settings-documentation.js";
+import { AgentDocumentationRegistry } from "#src/documentation/registry.ts";
+import { BUILTIN_EXTENSIONS } from "./builtin-extensions.ts";
+import type { FeatureFlag } from "./feature-flags.ts";
+import { AGENT_IDE_PREFERENCES } from "./preferences.ts";
+import { AGENT_IDE_PRESET_OPTIONS } from "./presets.ts";
+import { createIdeSettingsDocumentation } from "./settings-documentation.ts";
 
 const flags: readonly FeatureFlag[] = [
   { id: "fixture-flag", name: "Fixture", description: "A registered boolean.", default: false },

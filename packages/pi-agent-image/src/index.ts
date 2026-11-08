@@ -3,4 +3,4 @@ export {
   createImageContentConverter,
   detectSupportedImageMimeType,
   type SupportedImageMimeType,
-} from "./image-converter.js";
+} from "./image-converter.ts";

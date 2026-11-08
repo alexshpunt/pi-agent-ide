@@ -3,10 +3,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ResolvedResultTargets } from "pi-agent-resource";
-import { LspClient } from "./client.js";
-import { LspManager } from "./manager.js";
-import { LspServerRegistry } from "./registry.js";
-import { searchSymbols } from "./symbol-search.js";
+import { LspClient } from "./client.ts";
+import { LspManager } from "./manager.ts";
+import { LspServerRegistry } from "./registry.ts";
+import { searchSymbols } from "./symbol-search.ts";
 
 const workspaces: string[] = [];
 afterEach(async () => {

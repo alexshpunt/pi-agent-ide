@@ -7,11 +7,11 @@ import {
   DOCUMENTATION_READY_EVENT,
   DOCUMENTATION_REGISTER_EVENT,
   type AgentDocumentation,
-} from "#src/api/documentation.js";
-import { AgentDocumentationRegistry } from "#src/documentation/registry.js";
+} from "#src/api/documentation.ts";
+import { AgentDocumentationRegistry } from "#src/documentation/registry.ts";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
-import { createDocumentationSearchResolver } from "#src/documentation/search.js";
+import { createDocumentationSearchResolver } from "#src/documentation/search.ts";
 
 interface RegistrationRequest {
   readonly documents: readonly AgentDocumentation[];

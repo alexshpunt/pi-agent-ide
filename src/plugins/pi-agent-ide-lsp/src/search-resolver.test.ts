@@ -1,9 +1,9 @@
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SearchRequest, SearchSelectionRegistration } from "pi-agent-search/api/search";
-import { LspManager } from "./lsp/manager.js";
-import { LspServerRegistry } from "./lsp/registry.js";
-import { createLspSearchResolver, type LspSearchBackend } from "./search-resolver.js";
+import { LspManager } from "./lsp/manager.ts";
+import { LspServerRegistry } from "./lsp/registry.ts";
+import { createLspSearchResolver, type LspSearchBackend } from "./search-resolver.ts";
 
 const cwd = path.resolve("/workspace");
 const manager = LspManager.init(LspServerRegistry.fromConfig({ version: 1, servers: {} }, cwd));

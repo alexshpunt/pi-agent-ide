@@ -2,7 +2,7 @@ import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { ResultSourceTarget, ResultTargetStore } from "pi-agent-resource";
-import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
+import type { FileMutationBatchResult } from "#src/api/mutation-result.ts";
 
 /** Publish whole destination/restored files only after checking their actual text bytes. */
 export async function attachFileMutationTargets(

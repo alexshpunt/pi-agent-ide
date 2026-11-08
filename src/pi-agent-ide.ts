@@ -1,31 +1,31 @@
-import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.js";
+import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.ts";
 import {
   readPiAgentIdeExtensionsConfig,
   resolvePiAgentIdeExtensionsConfigPaths,
-} from "#src/composite/extensions-config.js";
-import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.js";
-import { disabledByPreset } from "#src/composite/presets.js";
-import { selectBuiltinExtensions } from "#src/composite/selection.js";
-import { registerModuleSettings } from "#src/composite/module-settings.js";
-import { registerSettingsHelp } from "#src/composite/settings-help.js";
-import { createFeatureFlags } from "#src/composite/feature-flags.js";
-import { connectAgentDocumentation } from "#src/api/documentation.js";
-import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.js";
-import { createIdeToolAvailability } from "#src/composite/tool-availability.js";
-import { createIdeCapabilities } from "#src/composite/capabilities.js";
-import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.js";
-import { createIdeTextResults } from "#src/composite/text-results.js";
-import { registerDetachedResults } from "#src/composite/detached-results.js";
-import { preserveResponsesToolOmission } from "#src/composite/responses-tools.js";
+} from "#src/composite/extensions-config.ts";
+import { AGENT_IDE_PREFERENCES } from "#src/composite/preferences.ts";
+import { disabledByPreset } from "#src/composite/presets.ts";
+import { selectBuiltinExtensions } from "#src/composite/selection.ts";
+import { registerModuleSettings } from "#src/composite/module-settings.ts";
+import { registerSettingsHelp } from "#src/composite/settings-help.ts";
+import { createFeatureFlags } from "#src/composite/feature-flags.ts";
+import { connectAgentDocumentation } from "#src/api/documentation.ts";
+import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.ts";
+import { createIdeToolAvailability } from "#src/composite/tool-availability.ts";
+import { createIdeCapabilities } from "#src/composite/capabilities.ts";
+import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.ts";
+import { createIdeTextResults } from "#src/composite/text-results.ts";
+import { registerDetachedResults } from "#src/composite/detached-results.ts";
+import { preserveResponsesToolOmission } from "#src/composite/responses-tools.ts";
 import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
-import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.js";
-import { readAgentIdeSetting } from "#src/api/settings.js";
-import { listenPresentationPreference } from "#src/composite/live-presentation.js";
-import { createLiveFeatureFlag } from "#src/core/live-feature-flag.js";
+import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.ts";
+import { readAgentIdeSetting } from "#src/api/settings.ts";
+import { listenPresentationPreference } from "#src/composite/live-presentation.ts";
+import { createLiveFeatureFlag } from "#src/core/live-feature-flag.ts";
 
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
-import { assertSupportedHost, hostOwnsToolLoadout } from "#src/composite/host-version.js";
+import { assertSupportedHost, hostOwnsToolLoadout } from "#src/composite/host-version.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /**

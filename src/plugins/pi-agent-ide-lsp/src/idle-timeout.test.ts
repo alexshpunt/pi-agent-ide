@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { lspIdleTimeoutMs } from "./idle-timeout.js";
+import { lspIdleTimeoutMs } from "./idle-timeout.ts";
 
 test.each([
   ["", 600_000],

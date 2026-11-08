@@ -4,10 +4,10 @@ import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { withTextSourceLine } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { createReadResultRenderer } from "#src/core/tools/read/read-renderer.js";
-import { createReadTool } from "#src/core/tools/tool-read.js";
+import { createReadResultRenderer } from "#src/core/tools/read/read-renderer.ts";
+import { createReadTool } from "#src/core/tools/tool-read.ts";
 
-import type { ReadResultDetails, ReadTextLine } from "#src/api/tools/read.js";
+import type { ReadResultDetails, ReadTextLine } from "#src/api/tools/read.ts";
 
 const plainTheme = {
   bold: (text: string): string => text,

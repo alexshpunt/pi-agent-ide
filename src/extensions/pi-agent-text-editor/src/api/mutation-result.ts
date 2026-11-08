@@ -22,13 +22,13 @@ export {
   type StrictEditErrorCode,
   type SyntaxErrorSummary,
   type Warning,
-} from "#src/core/mutation-result/file-mutation-result.js";
+} from "#src/core/mutation-result/file-mutation-result.ts";
 
-export { type ChangedRange, computeChangedRanges } from "#src/core/mutation-result/diff.js";
+export { type ChangedRange, computeChangedRanges } from "#src/core/mutation-result/diff.ts";
 export {
   mutationDataSchema,
   mutationResultSchema,
   type BatchMutationData,
   structuredMutation,
   type MutationData,
-} from "#src/core/structured-result.js";
+} from "#src/core/structured-result.ts";

@@ -3,10 +3,10 @@ import { mkdir, readFile, readlink, writeFile, symlink, lstat, rm } from "node:f
 import path from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
-import { startSshFixture } from "#integration/support/ssh-fixture.js";
-import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.js";
-import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
+import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.ts";
+import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
 
 const exec = promisify(execFile);
 

@@ -11,7 +11,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { capabilityCases } from "#capabilities/cases.ts";
 import { validateRoute, type RunEvent } from "#capabilities/validation.ts";
 

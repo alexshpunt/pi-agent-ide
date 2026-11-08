@@ -14,9 +14,9 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
-import { startSshWebFixture } from "./support/ssh-web-fixture.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { startSshWebFixture } from "./support/ssh-web-fixture.ts";
 import { createPdfFixture } from "#test-fixtures/pdf";
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

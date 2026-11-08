@@ -7,11 +7,11 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
 import { ResultPanel, type ResultPanelRow } from "pi-agent-tool-ui";
-import { isSearchToolDetails } from "#src/search-result.js";
-import { restoreSearchDetails } from "#src/persisted-result.js";
+import { isSearchToolDetails } from "#src/search-result.ts";
+import { restoreSearchDetails } from "#src/persisted-result.ts";
 const restoredDetails = new WeakMap<object, SearchToolDetails>();
 
-import type { SearchResultFile, SearchResultLine, SearchToolDetails } from "#src/search-result.js";
+import type { SearchResultFile, SearchResultLine, SearchToolDetails } from "#src/search-result.ts";
 
 const COMPACT_SEARCH_ROWS = 12;
 

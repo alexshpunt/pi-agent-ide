@@ -10,10 +10,10 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   highlightCode: vi.fn((source: string) => source.split("\n")),
 }));
 
-import * as frozenViewport from "#src/frozen-viewport.js";
-import { registerMutationRenderers } from "#src/renderer.js";
+import * as frozenViewport from "#src/frozen-viewport.ts";
+import { registerMutationRenderers } from "#src/renderer.ts";
 
-import { compactMutationDetails } from "#src/persisted-result.js";
+import { compactMutationDetails } from "#src/persisted-result.ts";
 
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";

@@ -1,5 +1,5 @@
-import type { SearchSelectionMatch } from "#src/api/search.js";
-import { fuzzyDataSchema, selectionData } from "#src/api/structured-result.js";
+import type { SearchSelectionMatch } from "#src/api/search.ts";
+import { fuzzyDataSchema, selectionData } from "#src/api/structured-result.ts";
 import { Value } from "typebox/value";
 
 /** Fixed budgets for the extra branch, independent of ordinary Search's detail limit. */

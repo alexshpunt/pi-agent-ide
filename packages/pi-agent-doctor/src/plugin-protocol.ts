@@ -1,7 +1,7 @@
-import type { LanguageDefinition, ToolRecipe, ToolRecipeKind } from "./catalog.js";
-import type { DoctorWorkspace } from "./workspace.js";
-export type { DoctorCommand, DoctorProcessResult, DoctorWorkspace } from "./workspace.js";
-export { DOCTOR_TOOL_PATH_KEYS, type DoctorToolPathKey } from "./workspace.js";
+import type { LanguageDefinition, ToolRecipe, ToolRecipeKind } from "./catalog.ts";
+import type { DoctorWorkspace } from "./workspace.ts";
+export type { DoctorCommand, DoctorProcessResult, DoctorWorkspace } from "./workspace.ts";
+export { DOCTOR_TOOL_PATH_KEYS, type DoctorToolPathKey } from "./workspace.ts";
 
 /**
 Shared protocol identifier.

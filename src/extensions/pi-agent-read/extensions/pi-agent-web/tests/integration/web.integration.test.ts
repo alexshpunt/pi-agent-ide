@@ -5,7 +5,7 @@ import { afterAll, beforeAll, expect, test } from "vitest";
 import { type ContentRunner, createContentRunner } from "pi-agent-resource";
 import { createTextContentConverter } from "pi-agent-text";
 
-import { createWebResolver } from "#src/resolver.js";
+import { createWebResolver } from "#src/resolver.ts";
 
 const requestCounts = new Map<string, number>();
 let server: Server;

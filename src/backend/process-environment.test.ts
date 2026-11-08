@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
-import { SshBackend } from "./ssh.js";
-import { sshProjectExecutableAvailability } from "./process-environment.js";
+import { SshBackend } from "./ssh.ts";
+import { sshProjectExecutableAvailability } from "./process-environment.ts";
 
 test("executable discovery sends one owned candidate set without returning environment values", async () => {
   const backend = new SshBackend({ id: "fixture", host: "fixture", workspace: "/workspace" });

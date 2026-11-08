@@ -3,8 +3,8 @@ import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
-import { createTextEditorCore } from "#src/core/text-editor-core.js";
-import { executeWholeFileTool } from "#src/core/file-operation-tools.js";
+import { createTextEditorCore } from "#src/core/text-editor-core.ts";
+import { executeWholeFileTool } from "#src/core/file-operation-tools.ts";
 import {
   createOperationApproval,
   OPERATION_APPROVAL_EVENT,

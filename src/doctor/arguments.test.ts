@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { parseDoctorArguments } from "./arguments.js";
+import { parseDoctorArguments } from "./arguments.ts";
 
 test("Doctor keeps local cwd without a source and binds apply flags to the explicit SSH project", () => {
   expect(parseDoctorArguments("--no-apply", "/controller")).toEqual({

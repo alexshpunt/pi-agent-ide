@@ -3,8 +3,8 @@ import path from "node:path";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
-import type { PiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.js";
-import { SshBackend, type SshTarget } from "./ssh.js";
+import type { PiAgentIdeExtensionsConfigPaths } from "#src/composite/extensions-config.ts";
+import { SshBackend, type SshTarget } from "./ssh.ts";
 
 const settingsSchema = Type.Object(
   {

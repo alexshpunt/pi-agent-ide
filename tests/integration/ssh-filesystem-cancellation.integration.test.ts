@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { probeOwnedFilesystemCancellation } from "#integration/support/ssh-filesystem-cancellation-probe.js";
+import { probeOwnedFilesystemCancellation } from "#integration/support/ssh-filesystem-cancellation-probe.ts";
 
 for (const operation of ["write", "journal"] as const) {
   for (const mode of ["cancel", "deadline"] as const) {

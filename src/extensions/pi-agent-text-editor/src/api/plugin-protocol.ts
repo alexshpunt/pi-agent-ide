@@ -12,38 +12,38 @@ import { Value } from "typebox/value";
 import type {
   TextAnchorInspectionOutcome,
   TextAnchorInspectionRequest,
-} from "#src/api/anchor-inspection.js";
-import type { TextEditCompletionListener } from "#src/api/edit-completion.js";
-import type { TextEditorToolPluginApi } from "#src/api/edit-pipeline.js";
-import type { DeleteGuardRegistration } from "#src/api/delete-guard.js";
-import type { TextMutationGuardRegistration } from "#src/api/mutation-guard.js";
+} from "#src/api/anchor-inspection.ts";
+import type { TextEditCompletionListener } from "#src/api/edit-completion.ts";
+import type { TextEditorToolPluginApi } from "#src/api/edit-pipeline.ts";
+import type { DeleteGuardRegistration } from "#src/api/delete-guard.ts";
+import type { TextMutationGuardRegistration } from "#src/api/mutation-guard.ts";
 import type {
   TextMutationPreviewOutcome,
   TextMutationPreviewRequest,
-} from "#src/api/mutation-preview.js";
+} from "#src/api/mutation-preview.ts";
 import type {
   TextMutationToolListener,
   TextMutationToolRegistration,
-} from "#src/api/mutation-tool.js";
-import type { TextEditorToolRendererRegistration } from "#src/api/tool-renderer.js";
-import type { FileOperationResolver } from "#src/api/file-operations.js";
+} from "#src/api/mutation-tool.ts";
+import type { TextEditorToolRendererRegistration } from "#src/api/tool-renderer.ts";
+import type { FileOperationResolver } from "#src/api/file-operations.ts";
 
 export type {
   FileOperation,
   FileOperationInput,
   FileOperationResult,
   FileOperationResolver,
-} from "#src/api/file-operations.js";
-export type { DeleteFileAccess } from "#src/api/delete-guard.js";
-export type { FileOperationPolicy } from "#src/api/file-operations.js";
+} from "#src/api/file-operations.ts";
+export type { DeleteFileAccess } from "#src/api/delete-guard.ts";
+export type { FileOperationPolicy } from "#src/api/file-operations.ts";
 export type {
   FileObjectEntry,
   FileObjectSnapshot,
   FileTransferAccess,
   FileTransferEndpoint,
   FileTransferGuard,
-} from "#src/api/file-transfers.js";
-export { localFileTransferAccess, snapshotLocalObjects } from "#src/api/native-files.js";
+} from "#src/api/file-transfers.ts";
+export { localFileTransferAccess, snapshotLocalObjects } from "#src/api/native-files.ts";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
 export const TEXT_EDITOR_API_VERSION = 32;

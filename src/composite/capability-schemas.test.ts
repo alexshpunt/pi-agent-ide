@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { Type } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { composeCapabilitySchema } from "./capability-schemas.js";
+import { composeCapabilitySchema } from "./capability-schemas.ts";
 
 const first = "fixture-first";
 const second = "fixture-second";

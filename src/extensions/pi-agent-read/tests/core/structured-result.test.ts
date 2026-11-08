@@ -1,6 +1,6 @@
 import { MAX_STRUCTURED_BYTES } from "pi-agent-resource";
 import { expect, test } from "vitest";
-import { structuredRead } from "#src/core/tools/read/structured-result.js";
+import { structuredRead } from "#src/core/tools/read/structured-result.ts";
 
 test("native image bytes stay in content instead of overflowing the private Read record", () => {
   const image = {

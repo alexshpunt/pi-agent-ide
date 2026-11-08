@@ -1,5 +1,5 @@
 import { storeText, restoreText, type StoredText } from "pi-agent-text";
-import type { ReadResultDetails, ReadTextLine } from "#src/api/tools/read.js";
+import type { ReadResultDetails, ReadTextLine } from "#src/api/tools/read.ts";
 
 type StoredLine = readonly [
   number,

@@ -12,7 +12,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("delete removes a terminated debug session and its breakpoint through real Pi", async () => {
   await withTempWorkspace(async (cwd) => {

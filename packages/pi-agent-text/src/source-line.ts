@@ -1,4 +1,4 @@
-import type { TextLine } from "./text-document.js";
+import type { TextLine } from "./text-document.ts";
 
 const SOURCE_LINE_METADATA_KEY = "pi-agent-text/source-line";
 

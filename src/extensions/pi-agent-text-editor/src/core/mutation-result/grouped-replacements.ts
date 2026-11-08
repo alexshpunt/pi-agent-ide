@@ -1,4 +1,4 @@
-import type { FileMutationResult } from "./file-mutation-result.js";
+import type { FileMutationResult } from "./file-mutation-result.ts";
 
 /** Exact applied replacement pairs and complete per-file counts, before formatting. */
 export interface GroupedReplacements {

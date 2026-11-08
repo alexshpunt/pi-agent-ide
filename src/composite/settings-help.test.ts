@@ -2,7 +2,7 @@ import type { ExtensionCommandContext, RegisteredCommand } from "@earendil-works
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test, vi } from "vitest";
-import { registerSettingsHelp, SettingsHelpPanel } from "./settings-help.js";
+import { registerSettingsHelp, SettingsHelpPanel } from "./settings-help.ts";
 
 initTheme("dark", false);
 const theme = { fg: (_color: string, value: string) => value } as Theme;

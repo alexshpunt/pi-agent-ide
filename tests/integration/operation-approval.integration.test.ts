@@ -21,7 +21,7 @@ import { expect, test, vi } from "vitest";
 import {
   enableNativeCodemode,
   withTempWorkspace,
-} from "#integration/support/pi-runtime/fixtures.js";
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 const ide = path.resolve("src/pi-agent-ide.ts");
 const fixture = path.resolve("tests/integration/support/operation-approval-extension.ts");

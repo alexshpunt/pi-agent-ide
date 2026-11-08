@@ -1,4 +1,4 @@
-import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.js";
+import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.ts";
 
 export class TextMutationAnchorResolutionError extends Error {
   public constructor(

@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { TextEditorCore } from "#src/core/text-editor-core.js";
-import { buildFailedTextMutationResult } from "#src/core/text-mutation.js";
-import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
-import { FileMutationResult } from "#src/core/mutation-result/file-mutation-result.js";
+import type { TextEditorCore } from "#src/core/text-editor-core.ts";
+import { buildFailedTextMutationResult } from "#src/core/text-mutation.ts";
+import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
+import { FileMutationResult } from "#src/core/mutation-result/file-mutation-result.ts";
 
 const failure = {
   ok: false,

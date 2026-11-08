@@ -1,20 +1,20 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { expect, test, vi } from "vitest";
-import { createSshWebResolver } from "#src/backend/web-owner.js";
-import { createHtmlContentConverter } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/plugins/pi-agent-web-html/src/html-converter.js";
+import { createSshWebResolver } from "#src/backend/web-owner.ts";
+import { createHtmlContentConverter } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/plugins/pi-agent-web-html/src/html-converter.ts";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import * as processChannels from "#src/backend/ssh-channel.js";
-import { fetchSshWebResponse } from "#src/backend/web-http.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
-import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.js";
-import { createWebSearchResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/search.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
+import * as processChannels from "#src/backend/ssh-channel.ts";
+import { fetchSshWebResponse } from "#src/backend/web-http.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
+import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.ts";
+import { createWebSearchResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/search.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
 import type { ContentHost } from "pi-agent-resource";
-import { startSshFixture } from "./support/ssh-fixture.js";
-import { startSshWebFixture } from "./support/ssh-web-fixture.js";
-import { readSshBrowserPage } from "#src/backend/web-browser.js";
+import { startSshFixture } from "./support/ssh-fixture.ts";
+import { startSshWebFixture } from "./support/ssh-web-fixture.ts";
+import { readSshBrowserPage } from "#src/backend/web-browser.ts";
 
 test("explicit target HTTP uses its native proxy environment and preserves read-only URL identity", async () => {
   const requests: string[] = [];

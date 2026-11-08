@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, test } from "vitest";
 
-import { collectProjectFiles, detectProjectLanguages } from "./inventory.js";
+import { collectProjectFiles, detectProjectLanguages } from "./inventory.ts";
 
 test("tool configuration files are not treated as project source files", async () => {
   const project = await mkdtemp(path.join(os.tmpdir(), "pi-agent-doctor-inventory-"));

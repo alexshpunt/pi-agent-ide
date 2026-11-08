@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createMutationAnimationPressure,
   type MutationAnimationEventSource,
-} from "#src/animation-pressure.js";
+} from "#src/animation-pressure.ts";
 
 import type { MessageUpdateEvent } from "@earendil-works/pi-coding-agent";
 

@@ -19,15 +19,15 @@ export {
   type TextAnchorResolver,
   type TextAnchorResolverContext,
   type TextAnchorResolverRecoveryContext,
-} from "./text-anchor.js";
+} from "./text-anchor.ts";
 
 export {
   type PresentedTextRow,
   renderPresentedTextRows,
   type TextChangeMarker,
-} from "./presented-text.js";
+} from "./presented-text.ts";
 
-export { getTextSourceLine, type TextSourceLine, withTextSourceLine } from "./source-line.js";
+export { getTextSourceLine, type TextSourceLine, withTextSourceLine } from "./source-line.ts";
 
 export {
   createTextDocument,
@@ -41,13 +41,13 @@ export {
   type TextLinePresenter,
   type TextPresentationContext,
   type TextPresenterRegistration,
-} from "./text-document.js";
+} from "./text-document.ts";
 
 export {
   createTextContentConverter,
   isTextualMediaType,
   textFromAgentContent,
-} from "./text-converter.js";
+} from "./text-converter.ts";
 
 export {
   isTextTargetResolutionAttempt,
@@ -57,6 +57,6 @@ export {
   type TextTargetResolutionAttempt,
   type TextTargetResolver,
   type TextTargetResolverContext,
-} from "./text-target.js";
+} from "./text-target.ts";
 
-export { storeText, restoreText, type StoredText } from "./stored-text.js";
+export { storeText, restoreText, type StoredText } from "./stored-text.ts";

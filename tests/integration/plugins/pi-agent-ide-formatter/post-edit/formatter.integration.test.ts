@@ -9,7 +9,7 @@ import { afterAll, expect, test } from "vitest";
 import {
   expectTextToolDiff,
   runTextToolScenario,
-} from "#integration-tests/support/pi-runtime/scenario.js";
+} from "#integration-tests/support/pi-runtime/scenario.ts";
 
 const repoRoot = process.cwd();
 const generatedExtensions = await generateReadExtensions([

@@ -1,10 +1,10 @@
 import { requiredValue } from "pi-agent-invariant";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
-import { projectIdeConfigDirectory, projectIdeConfigPath } from "#src/api/tool-config.js";
-import type { DoctorWorkspace } from "#src/api/doctor.js";
+import { projectIdeConfigDirectory, projectIdeConfigPath } from "#src/api/tool-config.ts";
+import type { DoctorWorkspace } from "#src/api/doctor.ts";
 
-import type { RecipeCandidate } from "./discovery.js";
+import type { RecipeCandidate } from "./discovery.ts";
 
 type ConfigAccess = Pick<DoctorWorkspace, "source" | "configPaths" | "readText" | "writeText">;
 

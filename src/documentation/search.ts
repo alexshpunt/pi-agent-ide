@@ -5,7 +5,7 @@ import {
   type SearchResolver,
   type SearchSelectionMatch,
 } from "pi-agent-search/api/search";
-import type { AgentDocumentationRegistry } from "#src/documentation/registry.js";
+import type { AgentDocumentationRegistry } from "#src/documentation/registry.ts";
 
 interface DocumentationSearchResult {
   readonly source: string;

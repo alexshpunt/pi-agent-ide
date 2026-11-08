@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { isTextAnchorResolutionAttempt, isTextAnchorResolver, TextAnchor } from "#src/index.js";
+import { isTextAnchorResolutionAttempt, isTextAnchorResolver, TextAnchor } from "#src/index.ts";
 
 class FixtureTextAnchor extends TextAnchor {
   public constructor(value: string, lineNumber: number) {

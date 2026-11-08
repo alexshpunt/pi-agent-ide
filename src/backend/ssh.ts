@@ -4,9 +4,9 @@ import type { FileObjectSnapshot } from "pi-agent-text-editor/api/plugin-protoco
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 
-import { remoteLocation } from "./identity.js";
-import type { SshProcessChannel, SshProcessContext } from "./ssh-channel.js";
-import { sshWorkerProgram, validateSshTarget } from "./ssh-transport.js";
+import { remoteLocation } from "./identity.ts";
+import type { SshProcessChannel, SshProcessContext } from "./ssh-channel.ts";
+import { sshWorkerProgram, validateSshTarget } from "./ssh-transport.ts";
 
 /** One explicitly configured host alias. Authentication stays in the user's OpenSSH environment. */
 export interface SshTarget {
@@ -510,7 +510,7 @@ export class SshBackend {
     cwd: string,
     context: BackendOperationContext = {},
   ) {
-    const { runOwnedSshCommand } = await import("./owned-command.js");
+    const { runOwnedSshCommand } = await import("./owned-command.ts");
     return runOwnedSshCommand(
       { ...this.target, workspace: cwd },
       command,
@@ -534,7 +534,7 @@ export class SshBackend {
     cwd: string,
     context: SshProcessContext = {},
   ): Promise<SshProcessChannel> {
-    const { startSshProcess } = await import("./ssh-channel.js");
+    const { startSshProcess } = await import("./ssh-channel.ts");
     return startSshProcess(this.target, command, args, cwd, context);
   }
 
@@ -568,7 +568,7 @@ export class SshBackend {
     if (!Number.isFinite(deadline) || deadline <= 0)
       throw new TypeError("SSH operation deadline must be positive");
     context.signal?.throwIfAborted();
-    const { runOwnedSshCommand } = await import("./owned-command.js");
+    const { runOwnedSshCommand } = await import("./owned-command.ts");
     const program = await sshWorkerProgram(new URL("./ssh-worker.py", import.meta.url));
     // Filesystem operands are absolute. A neutral existing cwd must not turn the workspace
     // into a sandbox or prevent creation beneath a missing parent.

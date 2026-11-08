@@ -8,9 +8,9 @@ import {
   metadataForLine,
   selectSyntaxHints,
   splitLines,
-} from "./agent-diff.js";
+} from "./agent-diff.ts";
 
-import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.js";
+import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.ts";
 
 /** Inputs that decide which final lines a successful mutation shows. */
 export interface FinalStateLineInput {

@@ -17,8 +17,8 @@ import {
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, relative, resolve, sep } from "node:path";
-import { searchFiles } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/file-search.js";
-import type { BackendOptions, ProjectStatus } from "./backend.js";
+import { searchFiles } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/file-search.ts";
+import type { BackendOptions, ProjectStatus } from "./backend.ts";
 
 const VERSION = "2.3.0"; // Version with the verified JSON and filtering contracts.
 const RELEASE = `https://github.com/VeraTools/vera/releases/download/v${VERSION}`;

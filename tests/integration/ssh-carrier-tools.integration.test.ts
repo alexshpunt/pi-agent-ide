@@ -1,9 +1,9 @@
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, test } from "vitest";
-import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.js";
-import { SshBackendRegistry } from "#src/backend/registry.js";
-import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.js";
+import { startSshCarrierFixture } from "#integration/support/ssh-carrier-fixture.ts";
+import { SshBackendRegistry } from "#src/backend/registry.ts";
+import { readSshProcessMetadata } from "#integration/support/ssh-process-metadata.ts";
 import {
   assistantMessage,
   getToolExecution,
@@ -12,8 +12,8 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "#integration/support/pi-runtime/native-pi-coding-agent-test.js";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.js";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);

@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "vitest";
 import { requiredValue } from "pi-agent-invariant";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
-import { MutationPanel } from "#src/mutation-panel.js";
-import { createDiffModel } from "#src/diff-model.js";
+import { MutationPanel } from "#src/mutation-panel.ts";
+import { createDiffModel } from "#src/diff-model.ts";
 
 // Pi keeps one proxy while replacing the theme behind it.
 const theme = new Proxy({} as Theme, {

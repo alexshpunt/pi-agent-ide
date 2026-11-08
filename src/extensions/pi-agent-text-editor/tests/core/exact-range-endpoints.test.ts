@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
-import { TextChangeDocument } from "#src/core/text-change-engine.js";
-import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.js";
-import type { TextMutationContext } from "#src/api/mutation-tool.js";
+import { TextChangeDocument } from "#src/core/text-change-engine.ts";
+import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.ts";
+import type { TextMutationContext } from "#src/api/mutation-tool.ts";
 
 function fixture(content: string) {
   const source = "fixture.txt";

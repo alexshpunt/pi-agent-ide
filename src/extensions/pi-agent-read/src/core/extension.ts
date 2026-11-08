@@ -1,6 +1,6 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectResultTargets } from "pi-agent-resource";
-import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.js";
+import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.ts";
 import {
   ToolCallInterceptionRenderStore,
   withToolCallInterceptionRendering,
@@ -12,10 +12,10 @@ import {
   READ_CORE_READY_EVENT,
   READ_PLUGIN_REGISTER_EVENT,
   READ_PROTOCOL,
-} from "#src/api/plugin-protocol.js";
-import { createReadCore } from "#src/core/read-core.js";
+} from "#src/api/plugin-protocol.ts";
+import { createReadCore } from "#src/core/read-core.ts";
 
-import { compactReadDetails } from "#src/core/tools/read/persisted-result.js";
+import { compactReadDetails } from "#src/core/tools/read/persisted-result.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

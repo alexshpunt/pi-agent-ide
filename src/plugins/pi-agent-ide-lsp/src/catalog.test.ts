@@ -4,8 +4,8 @@ import { expect, test } from "vitest";
 
 import { resolveToolConfigPaths } from "pi-agent-ide/api/tool-config";
 
-import { LSP_RECIPES } from "./catalog.js";
-import { parseLspConfig } from "./lsp/registry.js";
+import { LSP_RECIPES } from "./catalog.ts";
+import { parseLspConfig } from "./lsp/registry.ts";
 
 test("the shipped LSP JSON stays aligned with the doctor catalog", async () => {
   const file = resolveToolConfigPaths(process.cwd(), "lsp-servers").builtIn;

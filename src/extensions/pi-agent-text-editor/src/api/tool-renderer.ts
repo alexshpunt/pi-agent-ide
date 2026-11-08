@@ -1,8 +1,8 @@
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 
-import type { FileMutationBatchResult } from "#src/api/mutation-result.js";
-import type { TextEditorToolId } from "#src/api/plugin-protocol.js";
+import type { FileMutationBatchResult } from "#src/api/mutation-result.ts";
+import type { TextEditorToolId } from "#src/api/plugin-protocol.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 type TextEditorRenderedTool = ToolDefinition<TSchema, FileMutationBatchResult>;

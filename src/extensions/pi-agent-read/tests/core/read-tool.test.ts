@@ -4,7 +4,7 @@ import { resourceScheduler, type ResourceResolver } from "pi-agent-resource";
 import type { TextLinePresenter } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.js";
+import { createReadTool, type ReadTool } from "#src/core/tools/tool-read.ts";
 
 test("a reserved writer blocks only reads of its resource", async () => {
   const read = createReadTool();

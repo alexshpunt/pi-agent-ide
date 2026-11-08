@@ -1,6 +1,6 @@
 import { rm, unlink } from "node:fs/promises";
-import { prepareFileTransfer, prepareObjectTransfer, type TransferKind } from "./file-transfers.js";
-import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.js";
+import { prepareFileTransfer, prepareObjectTransfer, type TransferKind } from "./file-transfers.ts";
+import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.ts";
 import path from "node:path";
 import fs from "fs-extra";
 import { Type } from "typebox";
@@ -11,9 +11,9 @@ import type {
   FileOperationInput,
   FileOperationResult,
   FileOperationResolver,
-} from "#src/api/file-operations.js";
-export { fileOperations } from "#src/api/file-operations.js";
-export type { FileOperation, FileOperationResult } from "#src/api/file-operations.js";
+} from "#src/api/file-operations.ts";
+export { fileOperations } from "#src/api/file-operations.ts";
+export type { FileOperation, FileOperationResult } from "#src/api/file-operations.ts";
 const filePath = Type.String({
   minLength: 1,
   description:

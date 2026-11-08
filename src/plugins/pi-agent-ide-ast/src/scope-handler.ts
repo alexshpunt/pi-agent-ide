@@ -1,4 +1,4 @@
-import type { AstScopeManager, ScopeEntry } from "./ast/manager.js";
+import type { AstScopeManager, ScopeEntry } from "./ast/manager.ts";
 import type {
   ReadPostReadHandler,
   ReadTextLine,

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { Value } from "typebox/value";
-import { searchFacts, searchFactsSchema } from "./search-facts.js";
+import { searchFacts, searchFactsSchema } from "./search-facts.ts";
 
 const result = "unchanged issued result";
 

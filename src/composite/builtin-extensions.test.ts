@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest";
 
-import { BUILTIN_EXTENSIONS } from "./builtin-extensions.js";
-import { disabledByPreset } from "./presets.js";
-import { selectBuiltinExtensions } from "./selection.js";
+import { BUILTIN_EXTENSIONS } from "./builtin-extensions.ts";
+import { disabledByPreset } from "./presets.ts";
+import { selectBuiltinExtensions } from "./selection.ts";
 
 describe("built-in extension catalog", () => {
   test("cannot restore removed Vision through the module catalog or old enable configuration", () => {

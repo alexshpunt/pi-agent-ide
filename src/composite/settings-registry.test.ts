@@ -8,8 +8,8 @@ import {
   registerAgentIdeSettings,
   readAgentIdeSetting,
   type AgentIdeSetting,
-} from "#src/api/settings.js";
-import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.js";
+} from "#src/api/settings.ts";
+import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.ts";
 
 const definitions: readonly AgentIdeSetting[] = [
   {

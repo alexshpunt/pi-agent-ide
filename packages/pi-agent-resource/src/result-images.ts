@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ImageContent } from "./content.js";
+import type { ImageContent } from "./content.ts";
 
 const event = "pi-agent-resource:result-images";
 /** Base64 characters of images kept for later writes; the oldest results drop out first. */
