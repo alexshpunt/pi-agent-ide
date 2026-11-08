@@ -232,6 +232,7 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.9",
+    "@types/cross-spawn": "^6.0.6",
     "@xterm/headless": "^6.0.0",
     "cross-spawn": "^7.0.6",
     "diff": "^9.0.0",
@@ -258,7 +259,6 @@
     "@earendil-works/pi-coding-agent": "1.5.0",
     "@earendil-works/pi-tui": "1.5.0",
     "@oxlint/plugins": "^1.87.0",
-    "@types/cross-spawn": "^6.0.6",
     "@typescript/native": "npm:typescript@^7.0.2",
     "esbuild": "0.25.12",
     "eslint-plugin-test-signal": "^1.2.14",
