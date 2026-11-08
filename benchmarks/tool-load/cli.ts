@@ -24,6 +24,8 @@ own large generated source file through the IDE tools and checks every result.
   --sizes <list>        Source sizes in KB, assigned round-robin per language (default 200,500,1100)
   --pause-ms <n>        Model think time before each scripted assistant message (default 1000; 0 = stress)
   --step-timeout <s>    An agent without a finished tool call for this long counts as hung (default 180)
+  --stop-free-mb <n>    Stop every agent when free memory falls below this, before the kernel's OOM
+                        killer picks unrelated processes (default 1024)
   --pi <command>        Pi executable (default: $PI_COMMAND or pi)
   --profile             Write V8 CPU profiles of every Pi process to agents/<id>/profile/
   --out <dir>           Output directory (default .tmp/tool-load/<timestamp>)
@@ -41,6 +43,7 @@ interface Options {
   readonly pauseMs: number;
   readonly profile: boolean;
   readonly stepTimeoutMs: number;
+  readonly stopFreeBytes: number;
   readonly piCommand: string;
   readonly out: string;
   readonly thresholds: string;
@@ -55,6 +58,7 @@ function parseOptions(): Options | undefined {
       sizes: { type: "string", default: "200,500,1100" },
       "pause-ms": { type: "string", default: "1000" },
       "step-timeout": { type: "string", default: "180" },
+      "stop-free-mb": { type: "string", default: "1024" },
       pi: { type: "string", default: process.env.PI_COMMAND ?? "pi" },
       out: { type: "string" },
       thresholds: { type: "string", default: path.join(benchmarkDir, "thresholds.json") },
@@ -77,6 +81,7 @@ function parseOptions(): Options | undefined {
     pauseMs: Number(values["pause-ms"]),
     profile: values.profile,
     stepTimeoutMs: positive(values["step-timeout"], "--step-timeout") * 1000,
+    stopFreeBytes: positive(values["stop-free-mb"], "--stop-free-mb") * 1024 * 1024,
     piCommand: values.pi,
     out: path.resolve(values.out ?? path.join(repositoryRoot, ".tmp", "tool-load", stamp)),
     thresholds: path.resolve(values.thresholds),
@@ -254,10 +259,20 @@ async function run(options: Options): Promise<number> {
   );
 
   let lastReport = 0;
+  let stopped: string | undefined;
   while (live.some((agent) => !agent.finished)) {
     await sleep(SAMPLE_INTERVAL_MS);
-    machine.push(await sampleMachine());
+    const sample = await sampleMachine();
+    machine.push(sample);
     const processes = await listProcesses();
+    if (stopped === undefined && sample.memAvailableBytes < options.stopFreeBytes) {
+      // Out of memory, the kernel kills whatever it picks, including the user's own services.
+      stopped = `free memory fell to ${Math.round(sample.memAvailableBytes / 1024 / 1024)} MB; all agents were stopped to protect the machine`;
+      console.log(stopped);
+      for (const agent of live)
+        if (agent.child.pid !== undefined)
+          for (const pid of descendants(processes, agent.child.pid)) killQuietly(pid);
+    }
     const agentPids = new Set<number>();
     for (const agent of live) {
       await readProbe(agent);
@@ -351,6 +366,7 @@ async function run(options: Options): Promise<number> {
     machine,
     lsp,
     leftovers: leftovers.map((info) => `${info.pid} ${info.args.slice(0, 160)}`),
+    ...(stopped !== undefined && { stopped }),
     agents,
     thresholds,
   });

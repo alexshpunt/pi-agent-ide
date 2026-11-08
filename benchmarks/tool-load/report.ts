@@ -72,6 +72,8 @@ export interface RunData {
   readonly machine: readonly MachineSample[];
   readonly lsp: readonly LspSample[];
   readonly leftovers: readonly string[];
+  /** Why the runner stopped every agent early, such as low free memory. */
+  readonly stopped?: string;
   readonly agents: readonly {
     agent: string;
     language: string;
@@ -106,6 +108,7 @@ export function buildReport(data: RunData): { json: unknown; markdown: string; p
   /** Observations that do not fail the run. */
   const notes: string[] = [];
   const { thresholds } = data;
+  if (data.stopped !== undefined) failures.push(`run stopped: ${data.stopped}`);
 
   const latency = new Map<
     string,
