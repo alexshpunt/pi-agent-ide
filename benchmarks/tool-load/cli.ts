@@ -16,7 +16,8 @@ const repositoryRoot = findRepositoryRoot(import.meta.url);
 const usage = `Usage: pnpm bench:tool-load [options]
 
 Runs real Pi processes in TUI mode with a scripted provider (no model calls). Each agent edits its
-own large generated source file through the IDE tools and checks every result.
+own large generated source file, or its part of one shared file, through the IDE tools and checks
+every result.
 
   --agents <n>          Pi processes, spread over the languages (default 10)
   --languages <list>    cpp,typescript,python,rust (default: all four)
