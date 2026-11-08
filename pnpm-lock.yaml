@@ -11,6 +11,9 @@ importers:
       '@napi-rs/canvas':
         specifier: ^1.0.9
         version: 1.0.9
+      '@types/cross-spawn':
+        specifier: ^6.0.6
+        version: 6.0.6
       '@xterm/headless':
         specifier: ^6.0.0
         version: 6.0.0
@@ -84,9 +87,6 @@ importers:
       '@oxlint/plugins':
         specifier: ^1.87.0
         version: 1.87.0
-      '@types/cross-spawn':
-        specifier: ^6.0.6
-        version: 6.0.6
       '@typescript/native':
         specifier: npm:typescript@^7.0.2
         version: typescript@7.0.2
