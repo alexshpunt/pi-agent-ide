@@ -103,6 +103,8 @@ export function stats(values: readonly number[]): Stats {
 /** Builds the JSON and Markdown reports and evaluates the thresholds. */
 export function buildReport(data: RunData): { json: unknown; markdown: string; passed: boolean } {
   const failures: string[] = [];
+  /** Observations that do not fail the run. */
+  const notes: string[] = [];
   const { thresholds } = data;
 
   const latency = new Map<
@@ -165,6 +167,11 @@ export function buildReport(data: RunData): { json: unknown; markdown: string; p
       failures.push(`${label}: session failed: ${firstLine(result.error)}`);
     for (const step of failedSteps)
       failures.push(`${label}: ${step.id} (${step.tool}): ${step.problem}`);
+    for (const step of result?.steps ?? []) {
+      if (step.pending !== true) continue;
+      const status = /[\w-]+: pending\b[^\n]*/.exec(step.excerpt ?? "")?.[0] ?? "pending";
+      notes.push(`${label}: ${step.id}: diagnostics still pending at cold start (${status})`);
+    }
     for (const problem of result?.fileProblems ?? [])
       failures.push(`${label}: final file: ${problem}`);
     if (growth !== undefined && growth > thresholds.piHeapGrowthPerCycleMb) {
@@ -241,6 +248,7 @@ export function buildReport(data: RunData): { json: unknown; markdown: string; p
   const json = {
     passed,
     failures,
+    notes,
     options: data.options,
     servers: data.servers,
     durationS: (data.finishedAt - data.startedAt) / 1000,
@@ -267,7 +275,7 @@ export function buildReport(data: RunData): { json: unknown; markdown: string; p
   };
   return {
     json,
-    markdown: markdown(data, passed, failures, latencyRows, agentRows, lspRows, machine),
+    markdown: markdown(data, passed, failures, notes, latencyRows, agentRows, lspRows, machine),
     passed,
   };
 }
@@ -283,6 +291,7 @@ function markdown(
   data: RunData,
   passed: boolean,
   failures: readonly string[],
+  notes: readonly string[],
   latencyRows: readonly {
     tool: string;
     language: string;
@@ -334,6 +343,7 @@ function markdown(
     if (failures.length > 60) lines.push(`- … ${failures.length - 60} more in report.json`);
     lines.push("");
   }
+  if (notes.length > 0) lines.push("## Notes", "", ...notes.map((note) => `- ${note}`), "");
   lines.push(
     "## Tool latency",
     "",

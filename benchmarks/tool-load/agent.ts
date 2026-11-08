@@ -32,7 +32,9 @@ export interface StepOutcome {
   readonly tool: string;
   readonly isError: boolean;
   readonly problem?: string;
-  /** Start of the result text, kept for failed steps. */
+  /** A cold-start diagnostics read found a checker still pending; see `Step.allowsPending`. */
+  readonly pending?: boolean;
+  /** Start of the result text, kept for failed and pending steps. */
   readonly excerpt?: string;
 }
 
@@ -146,11 +148,18 @@ async function runAgent(config: AgentConfig): Promise<AgentResult> {
           : found.isError
             ? "tool error"
             : "the tool accepted a call it should refuse";
+      const excerpt = found.text.slice(0, 1200);
+      if (
+        problem !== undefined &&
+        step.allowsPending === true &&
+        /(?:^|\. )[\w-]+: pending\b/m.test(found.text)
+      )
+        return { id: step.id, tool: step.tool, isError: found.isError, pending: true, excerpt };
       return {
         id: step.id,
         tool: step.tool,
         isError: found.isError,
-        ...(problem !== undefined && { problem, excerpt: found.text.slice(0, 1200) }),
+        ...(problem !== undefined && { problem, excerpt }),
       };
     });
     const fileProblems = await checkFiles(config);

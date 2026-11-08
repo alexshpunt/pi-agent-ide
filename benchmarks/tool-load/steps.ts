@@ -21,6 +21,11 @@ export interface Step {
   readonly arguments: Readonly<Record<string, unknown>>;
   /** The step expects the tool to refuse the call. */
   readonly expectsError?: boolean;
+  /**
+   * A result that says a checker is still pending is recorded instead of failing: a cold start
+   * (rust-analyzer loading, the first clippy build) can take longer than a diagnostics read waits.
+   */
+  readonly allowsPending?: boolean;
   /** Returns a problem description, or undefined when the result is as expected. */
   check(result: string): string | undefined;
 }
@@ -124,9 +129,12 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       },
       (result) => expectAll(result, ["Inserted new text", spec.brokenLine(agent, cycle)]),
     ),
-    step("read-diagnostics", "read", { path: `diagnostics:${file}` }, (result) =>
-      expectErrorOn(result, spec.brokenLine(agent, cycle)),
-    ),
+    {
+      ...step("read-diagnostics", "read", { path: `diagnostics:${file}` }, (result) =>
+        expectErrorOn(result, spec.brokenLine(agent, cycle)),
+      ),
+      allowsPending: cycle === 1,
+    },
     step("delete-error", "delete", { path: file, start: spec.brokenLine(agent, cycle) }, (result) =>
       expectAll(result, ["Deleted selected text"]),
     ),
