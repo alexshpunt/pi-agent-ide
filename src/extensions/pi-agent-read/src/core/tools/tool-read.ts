@@ -50,6 +50,7 @@ import {
   createReadState,
   failureResult,
   projectReadState,
+  resolveTextRange,
   withReadCancellation,
 } from "#src/core/tools/read/read-result.js";
 import { TempResourceStore } from "pi-agent-resource";
@@ -240,7 +241,9 @@ export function createReadTool(
             "agent",
             outputSaver,
           );
-          return structuredRead(withReadCancellation(result, parameters.path, signal));
+          return withoutScriptData(
+            structuredRead(withReadCancellation(result, parameters.path, signal)),
+          );
         } catch (error) {
           if (signal?.aborted) throw error;
           return structuredRead(
@@ -555,7 +558,7 @@ async function executeRead(
   }
 
   pipeline = processed.context;
-  pipeline = await runTextPresenters(pipeline, viewSnapshot, requestedViews);
+  pipeline = await runTextPresenters(pipeline, viewSnapshot, requestedViews, origin);
   const projected = projectReadState(requiredValue(pipeline.state), pipeline.request, {
     audience,
     originLine: origin,
@@ -762,6 +765,16 @@ async function resolveTextTargets(
     );
   }
   return undefined;
+}
+
+/**
+ * Pi keeps a returned result for the rest of the session, including fields it does not use. The
+ * script data has served as structured content by now, and its lines are cut from the whole
+ * source text, which they would keep in memory.
+ */
+function withoutScriptData(result: ReadToolResult): ReadToolResult {
+  const { script: _script, ...rest } = result;
+  return rest;
 }
 
 const ANCHOR_SEPARATOR = "#";
@@ -1140,6 +1153,7 @@ async function runTextPresenters(
   context: ReadPipelineContext,
   views: readonly RegisteredView[],
   requestedViews: ReadonlySet<string>,
+  originLine?: number,
 ): Promise<ReadPipelineContext> {
   const state = context.state;
 
@@ -1148,16 +1162,6 @@ async function runTextPresenters(
   }
 
   const document = state.text;
-  const presentationContext: TextPresentationContext = {
-    purpose: "read",
-    ...(context.sourceText === undefined ? {} : { sourceText: context.sourceText }),
-    audience: context.resolverContext.audience,
-    requestedViews: context.request.views,
-    source: state.source,
-    cwd: context.resolverContext.cwd,
-    resolvedBy: state.resolvedBy,
-    ...(context.resolverContext.signal !== undefined && { signal: context.resolverContext.signal }),
-  };
   const requestedRegistrations = views.filter(({ registration }) =>
     requestedViews.has(registration.view),
   );
@@ -1167,6 +1171,28 @@ async function runTextPresenters(
   const activeViews = requestedRegistrations.filter(
     ({ registration }) => !includedViews.has(registration.view),
   );
+  // A read of a few lines of a large file presents only those lines, unless a view shows more.
+  const ranged =
+    (context.request.offset !== undefined || context.request.limit !== undefined) &&
+    !activeViews.some(({ registration }) => registration.showsLinesOutsideRange === true);
+  const range = ranged
+    ? resolveTextRange(context.request, document.lines.length, originLine)
+    : undefined;
+  const presentationContext: TextPresentationContext = {
+    purpose: "read",
+    ...(context.sourceText === undefined ? {} : { sourceText: context.sourceText }),
+    audience: context.resolverContext.audience,
+    requestedViews: context.request.views,
+    source: state.source,
+    cwd: context.resolverContext.cwd,
+    resolvedBy: state.resolvedBy,
+    ...(range !== undefined && {
+      lineNumbers: new Set(
+        document.lines.slice(range.startIndex, range.endIndex).map((line) => line.lineNumber),
+      ),
+    }),
+    ...(context.resolverContext.signal !== undefined && { signal: context.resolverContext.signal }),
+  };
   const contributions = await Promise.all(
     activeViews.map(async ({ registration }) => ({
       presenterId: registration.presenter.id,

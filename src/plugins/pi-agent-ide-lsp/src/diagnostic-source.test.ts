@@ -112,3 +112,58 @@ test("late empty TypeScript pushes requery complete reports without resyncing th
   });
   expect(publish).toHaveBeenCalledOnce();
 });
+
+test("a burst of pushes requeries a held document once after the pushes pause", async () => {
+  const client = new LspClient({
+    serverId: "custom-name",
+    rootUri: "file:///project",
+    command: ["/tools/typescript-language-server", "--stdio"],
+  });
+  vi.spyOn(client, "supportsCommand").mockReturnValue(true);
+  vi.spyOn(client, "syncDocument").mockImplementation(() => {});
+  vi.spyOn(client, "documentVersion").mockReturnValue(1);
+  const sendRequest = vi.spyOn(client, "sendRequest").mockImplementation(async (method) => {
+    if (method === "textDocument/diagnostic")
+      throw Object.assign(new Error("Method not found"), { code: -32601 });
+    return { success: true, body: [] };
+  });
+  let push: (event: LspPushDiagnosticsEvent) => void = () => {};
+  const manager = {
+    getOrStart: async () => client,
+    languageId: () => "typescript",
+    onPushDiagnostics: (handler: typeof push) => {
+      push = handler;
+      return () => {};
+    },
+  };
+  const controller = new AbortController();
+  const publish = vi.fn();
+  await createLspDiagnosticSource(async () => manager).diagnose("/project/file.ts", {
+    cwd: "/project",
+    content: "bad",
+    signal: controller.signal,
+    publish,
+  });
+  // The first report tries a pull, then asks for three completed TypeScript diagnostic kinds.
+  expect(sendRequest).toHaveBeenCalledTimes(4);
+  vi.useFakeTimers();
+  try {
+    const event = {
+      uri: client.toUri("/project/file.ts"),
+      serverId: "custom-name",
+      cwd: "/project",
+      diagnostics: [],
+    };
+    for (let index = 0; index < 3; index += 1) {
+      push(event);
+      await vi.advanceTimersByTimeAsync(200);
+    }
+    expect(sendRequest).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(publish).toHaveBeenCalledOnce();
+    expect(sendRequest).toHaveBeenCalledTimes(7);
+  } finally {
+    controller.abort();
+    vi.useRealTimers();
+  }
+});

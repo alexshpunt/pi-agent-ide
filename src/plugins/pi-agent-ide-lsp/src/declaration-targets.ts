@@ -1,6 +1,7 @@
 import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 import type { TextTargetResolver } from "pi-agent-text";
 import { resolveLspDeclaration } from "./lsp/code-views.js";
+import { withLspDocuments } from "./lsp/document-leases.js";
 import type { LspManagerProvider } from "./manager-provider.js";
 
 /** Resolve a live symbol reference to its exact declaration, not matching identifier words. */
@@ -20,16 +21,19 @@ export function createDeclarationTargets(managerFor: LspManagerProvider): TextTa
           },
         };
       try {
-        const declaration = await resolveLspDeclaration(
-          await managerFor(
-            context.cwd,
+        const selector = reference.selector;
+        const declaration = await withLspDocuments(async () =>
+          resolveLspDeclaration(
+            await managerFor(
+              context.cwd,
+              resolveCodeViewPath(reference.path, context.cwd),
+              context.signal,
+            ),
             resolveCodeViewPath(reference.path, context.cwd),
+            selector,
+            context.cwd,
             context.signal,
           ),
-          resolveCodeViewPath(reference.path, context.cwd),
-          reference.selector,
-          context.cwd,
-          context.signal,
         );
         return {
           kind: "resolved",
@@ -53,12 +57,15 @@ export function createDeclarationTargets(managerFor: LspManagerProvider): TextTa
           ],
         };
       } catch (error) {
+        if (context.signal?.aborted) return { kind: "failed", error };
+        // Edit tools hide the text of resolver failures; a rejection shows the agent why the
+        // declaration is unavailable, such as a language server that could not start.
         return {
-          kind: "failed",
-          error: new Error(
-            `${error instanceof Error ? error.message : String(error)} Read the physical file and use explicit text anchors if declaration resolution is unavailable.`,
-            { cause: error },
-          ),
+          kind: "rejected",
+          rejection: {
+            code: "invalid",
+            reason: `${error instanceof Error ? error.message : String(error)} Read the physical file and use explicit text anchors if declaration resolution is unavailable.`,
+          },
         };
       }
     },

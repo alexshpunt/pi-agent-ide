@@ -14,6 +14,7 @@ import { expect, test } from "vitest";
 import { capabilityCases } from "#capabilities/cases.ts";
 import { validateRoute, type RunEvent } from "#capabilities/validation.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 async function prepare(cwd: string): Promise<string> {
   const directory = path.join(cwd, ".tmp/move-effects");
@@ -212,7 +213,8 @@ test("text Move failure keeps uncertainty after receipt creation fails", async (
           path: ".tmp/move-effects/text-source.txt",
           start: "MOVE-ME",
           target: ".tmp/move-effects/text-target.txt",
-          targetStart: "head",
+          // Edit results present lines, and so build their receipt, only for LINE#HASH edits.
+          targetStart: formatLineHashAnchor(1, "head"),
         }),
         assistantMessage([text("The failed Move needs inspection before retrying.")]),
       ],

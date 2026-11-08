@@ -35,6 +35,8 @@ export interface AgentIdeSettingValue {
 export const SETTINGS_REGISTER_EVENT = "pi-agent-ide/settings/register/v1";
 export const SETTINGS_READ_EVENT = "pi-agent-ide/settings/read/v1";
 export const SETTINGS_READY_EVENT = "pi-agent-ide/settings/ready/v1";
+/** Error code of a read when no Agent IDE settings host is loaded. */
+export const SETTINGS_UNAVAILABLE = "SETTINGS_UNAVAILABLE";
 
 /** Synchronous acceptance keeps extension-registration errors visible to their caller. */
 export interface SettingsRegistration {
@@ -111,7 +113,10 @@ export async function readAgentIdeSetting(
       result = value;
     },
   } satisfies SettingsReadRequest);
-  if (result === undefined) throw new Error("Agent IDE settings service is unavailable");
+  if (result === undefined)
+    throw Object.assign(new Error("Agent IDE settings service is unavailable"), {
+      code: SETTINGS_UNAVAILABLE,
+    });
   return result;
 }
 

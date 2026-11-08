@@ -1,4 +1,6 @@
 import { requiredValue } from "pi-agent-invariant";
+import { LinePositionMap } from "./position-map.js";
+import { retryWhileSourceChanges, sourceChanged } from "./source-changes.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +16,7 @@ import { requestDocumentSymbols, symbolKindName } from "./symbols.js";
 import type { LspClient } from "./client.js";
 import type { LspManager } from "./manager.js";
 import type {
+  LspCallDirection,
   LspCallHierarchyResult,
   LspIncomingCall,
   LspLocation,
@@ -41,6 +44,8 @@ interface LspCodeDocument {
   readonly filePath: string;
   readonly displayPath: string;
   readonly symbols: readonly LspCodeSymbol[];
+  /** Text the server answered for, or undefined when the client holds none. */
+  readonly servedText: string | undefined;
 }
 
 /** Resolve a declaration's exact server range for guarded text operations. */
@@ -51,15 +56,41 @@ export async function resolveLspDeclaration(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
+  // Another Pi process may write the file while the server reports its symbols.
+  return retryWhileSourceChanges(
+    () => resolveLspDeclarationOnce(manager, filePath, selector, cwd, signal),
+    signal,
+  );
+}
+
+async function resolveLspDeclarationOnce(
+  manager: LspManager,
+  filePath: string,
+  selector: readonly string[],
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
   throwIfAborted(signal);
-  const before = await manager.readSourceText(filePath, signal);
   const document = await openCodeDocument(manager, filePath, cwd, signal);
   const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-  const after = await manager.readSourceText(document.filePath, signal);
+  const current = await manager.readSourceText(document.filePath, signal);
   throwIfAborted(signal);
-  if (before !== after)
-    throw new Error("The symbol source changed during resolution. Read it again before editing.");
-  return { source: document.filePath, range: symbol.range, content: after };
+  // Other Pi processes may have edited the file while the server answered, and on a shared
+  // server another session's newer text may be what it answered for. The text where the name
+  // sits at the reported position is the one the ranges belong to; the declaration then moves
+  // with its unchanged lines, and one whose own lines changed is resolved again.
+  const served = document.servedText;
+  const range =
+    served === current || answeredFor(current, symbol)
+      ? symbol.range
+      : served !== undefined && answeredFor(served, symbol)
+        ? LinePositionMap.between(served, current).mapRange(symbol.range)
+        : undefined;
+  if (range === undefined)
+    throw sourceChanged(
+      "The symbol source changed during resolution. Read it again before editing.",
+    );
+  return { source: document.filePath, range, content: current };
 }
 /** Resolve the native identifier position and client without guessing from declaration text. */
 export async function resolveLspRenameTarget(
@@ -95,12 +126,31 @@ export async function readLspSymbolGraph(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  throwIfAborted(signal);
-  const document = await openCodeDocument(manager, filePath, cwd, signal);
-  const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-  const relations = await queryRelations(document, symbol, signal);
-  const locations = new LocationPresenter(cwd);
-  return await formatSymbolGraph(document, symbol, relations, locations);
+  return retryWhileSourceChanges(async () => {
+    throwIfAborted(signal);
+    const document = await openCodeDocument(manager, filePath, cwd, signal);
+    const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
+    const relations = await queryRelations(document, symbol, signal);
+    const locations = new LocationPresenter(cwd);
+    const graph = await formatSymbolGraph(document, symbol, relations, locations);
+    await assertAnsweredForCurrentText(manager, document, signal);
+    return graph;
+  }, signal);
+}
+
+/**
+ * Graph lines carry anchors of the current file at the server's line numbers. When another
+ * process edited the file while the server answered, those numbers can name other lines.
+ */
+async function assertAnsweredForCurrentText(
+  manager: LspManager,
+  document: LspCodeDocument,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (document.servedText === undefined) return;
+  const current = await manager.readSourceText(document.filePath, signal);
+  if (document.servedText !== current)
+    throw sourceChanged("The file changed while the language server answered. Read it again.");
 }
 
 export async function readLspFileGraph(
@@ -109,21 +159,24 @@ export async function readLspFileGraph(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  throwIfAborted(signal);
-  const document = await openCodeDocument(manager, filePath, cwd, signal);
-  const locations = new LocationPresenter(cwd);
-  const lines = [
-    `## file graph: ${document.displayPath}`,
-    `Top-level declarations: ${document.symbols.length}`,
-  ];
-
-  for (const symbol of document.symbols) {
+  return retryWhileSourceChanges(async () => {
     throwIfAborted(signal);
-    const relations = await queryRelations(document, symbol, signal);
-    lines.push("", ...(await formatFileGraphSymbol(document, symbol, relations, locations)));
-  }
+    const document = await openCodeDocument(manager, filePath, cwd, signal);
+    const locations = new LocationPresenter(cwd);
+    const lines = [
+      `## file graph: ${document.displayPath}`,
+      `Top-level declarations: ${document.symbols.length}`,
+    ];
 
-  return lines.join("\n");
+    for (const symbol of document.symbols) {
+      throwIfAborted(signal);
+      const relations = await queryRelations(document, symbol, signal);
+      lines.push("", ...(await formatFileGraphSymbol(document, symbol, relations, locations)));
+    }
+
+    await assertAnsweredForCurrentText(manager, document, signal);
+    return lines.join("\n");
+  }, signal);
 }
 
 export function resolveLspCodeSymbol(
@@ -189,6 +242,7 @@ async function openCodeDocument(
     );
   }
 
+  const servedText = opened.client.documentContent(opened.uri);
   const rawSymbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
   const symbols = normalizeDocumentSymbols(rawSymbols).sort(compareSymbols);
   return {
@@ -197,6 +251,7 @@ async function openCodeDocument(
     filePath: absolutePath,
     displayPath: displayFilePath(absolutePath, cwd),
     symbols,
+    servedText,
   };
 }
 
@@ -274,9 +329,11 @@ async function formatSymbolGraph(
     "",
     ...(await formatReferences(relations.references, locations)),
     "",
-    ...(await formatIncomingCalls(relations.calls.incoming, locations)),
+    ...(unsupportedCalls(document, relations, "incoming") ??
+      (await formatIncomingCalls(relations.calls.incoming, locations))),
     "",
-    ...(await formatOutgoingCalls(relations.calls.outgoing, locations)),
+    ...(unsupportedCalls(document, relations, "outgoing") ??
+      (await formatOutgoingCalls(relations.calls.outgoing, locations))),
   ];
   return lines.join("\n");
 }
@@ -307,11 +364,25 @@ async function formatReferences(
   return lines;
 }
 
+/** A calls section for a direction the server does not implement, or undefined when it does. */
+function unsupportedCalls(
+  document: LspCodeDocument,
+  relations: SymbolRelations,
+  direction: LspCallDirection,
+): string[] | undefined {
+  if (!relations.calls.unsupported.includes(direction)) return undefined;
+  const label = direction === "incoming" ? "Incoming calls" : "Outgoing calls";
+  return [`${label}: not supported by ${document.client.serverId}`];
+}
+
 async function formatIncomingCalls(
   calls: readonly LspIncomingCall[],
   locations: LocationPresenter,
 ): Promise<string[]> {
   const lines = [`Incoming calls: ${calls.length}`];
+  // Servers such as clangd answer callers from an index that is rebuilt after edits.
+  if (calls.length === 0)
+    lines.push("- none found; the server's index can miss callers added in the last seconds");
 
   for (const call of calls.slice(0, MAX_CALLS)) {
     const line = call.fromRanges[0]?.start.line ?? call.from.selectionRange.start.line;
@@ -370,8 +441,12 @@ async function formatFileGraphSymbol(
     `Selector: ${formatSymbolSelector(symbol.selector)}`,
     `Definition: ${definitionAnchor}`,
     `Used by: ${summarize(referenceFiles)}`,
-    `Incoming calls: ${summarize(incoming)}`,
-    `Outgoing calls: ${summarize(outgoing)}`,
+    ...(unsupportedCalls(document, relations, "incoming") ?? [
+      `Incoming calls: ${summarize(incoming)}`,
+    ]),
+    ...(unsupportedCalls(document, relations, "outgoing") ?? [
+      `Outgoing calls: ${summarize(outgoing)}`,
+    ]),
   ];
 
   if (symbol.children.length > 0) {
@@ -482,4 +557,15 @@ function abortReason(signal: AbortSignal, fallback?: unknown): Error {
   const error = new Error("The operation was aborted");
   error.name = "AbortError";
   return error;
+}
+
+/**
+ * Whether the server's ranges belong to this text: the symbol's name is where it says. A name
+ * range over several lines cannot be checked this way and never matches.
+ */
+function answeredFor(text: string, symbol: LspCodeSymbol): boolean {
+  const lines = text.split("\n");
+  const { start, end } = symbol.selectionRange;
+  if (start.line !== end.line) return false;
+  return lines[start.line]?.slice(start.character, end.character) === symbol.name;
 }

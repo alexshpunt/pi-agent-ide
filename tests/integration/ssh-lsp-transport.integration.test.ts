@@ -120,10 +120,17 @@ test("SSH language server stdio maps owned URIs without mapping source text or l
         expect(source).toBe(note);
         return Promise.resolve(manager);
       });
-      await expect(compiler.compile({ filePath: note }, { cwd: "/controller" })).rejects.toThrow(
-        "Language server diagnostics are a snapshot, not a completed report",
-      );
-      expect(opened?.client.documentVersion(note)).toBe(1);
+      // Documents close after the operation that opened them unless another holder keeps them.
+      const release = opened?.client.retainDocument(note);
+      try {
+        await expect(compiler.compile({ filePath: note }, { cwd: "/controller" })).rejects.toThrow(
+          "Language server diagnostics are a snapshot, not a completed report",
+        );
+        // The compiler reuses the open document instead of sending its text again.
+        expect(opened?.client.documentVersion(note)).toBe(1);
+      } finally {
+        release?.();
+      }
     } finally {
       await LspManager.resetForTest();
     }

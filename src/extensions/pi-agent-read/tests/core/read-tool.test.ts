@@ -481,6 +481,35 @@ test("presents text before projecting the read result", async () => {
   expect(annotated.content).toEqual([{ type: "text", text: "anchor|alpha" }]);
 });
 
+test("a read of a line range presents only those lines unless a view shows lines outside it", async () => {
+  const read = createReadTool();
+  const presented: (readonly number[] | undefined)[] = [];
+  const recordingPresenter = (id: string): TextLinePresenter => ({
+    id,
+    present(document, context) {
+      presented.push(context.lineNumbers === undefined ? undefined : [...context.lineNumbers]);
+      return document;
+    },
+  });
+  read.registerContributions("fixture-plugin", {
+    resolvers: [{ resolver: textResolver("one\ntwo\nthree\nfour\n") }],
+    views: [
+      { view: "marks", presenter: recordingPresenter("marks") },
+      { view: "context", presenter: recordingPresenter("context"), showsLinesOutsideRange: true },
+    ],
+  });
+  const readLines = (views: string[], range: { offset?: number; limit?: number }) =>
+    read.tool.execute("call", { path: "notes.txt", views, ...range }, undefined, undefined, {
+      cwd: process.cwd(),
+    } as Parameters<ReadTool["tool"]["execute"]>[4]);
+
+  await readLines(["marks"], { offset: 2, limit: 2 });
+  await readLines(["marks"], {});
+  await readLines(["marks", "context"], { offset: 2, limit: 2 });
+
+  expect(presented).toEqual([[2, 3], undefined, undefined, undefined]);
+});
+
 test("treats the removed lines view as unknown and leaves source bytes raw", async () => {
   const read = createReadTool();
   read.registerContributions("fixture-plugin", {

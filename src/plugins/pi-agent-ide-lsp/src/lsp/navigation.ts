@@ -1,4 +1,5 @@
 import type { LspClient } from "./client.js";
+import { isMethodNotFound } from "./errors.js";
 import type { LspPosition, LspRange } from "./types.js";
 
 export interface LspLocation {
@@ -29,6 +30,20 @@ export interface LspCallHierarchyResult {
   items: LspCallHierarchyItem[];
   incoming: LspIncomingCall[];
   outgoing: LspOutgoingCall[];
+  /** Call directions the server does not implement, such as outgoing calls in clangd 18. */
+  unsupported: LspCallDirection[];
+}
+
+export type LspCallDirection = "incoming" | "outgoing";
+
+/** Resolve to undefined when the server does not implement the method. */
+async function unlessUnsupported<T>(request: Promise<T>): Promise<T | undefined> {
+  try {
+    return await request;
+  } catch (error) {
+    if (isMethodNotFound(error)) return undefined;
+    throw error;
+  }
 }
 
 /** Load unopened TypeScript project files before a workspace-wide query when the server advertises support. */
@@ -80,35 +95,36 @@ export async function requestCallHierarchy(
   position: LspPosition,
   signal?: AbortSignal,
 ): Promise<LspCallHierarchyResult> {
-  const items = await client.sendRequest<LspCallHierarchyItem[] | null>(
-    "textDocument/prepareCallHierarchy",
-    {
-      textDocument: { uri },
-      position,
-    },
-    signal,
+  const items = await unlessUnsupported(
+    client.sendRequest<LspCallHierarchyItem[] | null>(
+      "textDocument/prepareCallHierarchy",
+      { textDocument: { uri }, position },
+      signal,
+    ),
   );
+  if (items === undefined)
+    return { items: [], incoming: [], outgoing: [], unsupported: ["incoming", "outgoing"] };
 
   const firstItem = items?.[0];
 
   if (!firstItem) {
-    return { items: [], incoming: [], outgoing: [] };
+    return { items: [], incoming: [], outgoing: [], unsupported: [] };
   }
 
   const [incoming, outgoing] = await Promise.all([
-    client.sendRequest<LspIncomingCall[] | null>(
-      "callHierarchy/incomingCalls",
-      {
-        item: firstItem,
-      },
-      signal,
+    unlessUnsupported(
+      client.sendRequest<LspIncomingCall[] | null>(
+        "callHierarchy/incomingCalls",
+        { item: firstItem },
+        signal,
+      ),
     ),
-    client.sendRequest<LspOutgoingCall[] | null>(
-      "callHierarchy/outgoingCalls",
-      {
-        item: firstItem,
-      },
-      signal,
+    unlessUnsupported(
+      client.sendRequest<LspOutgoingCall[] | null>(
+        "callHierarchy/outgoingCalls",
+        { item: firstItem },
+        signal,
+      ),
     ),
   ]);
 
@@ -116,5 +132,9 @@ export async function requestCallHierarchy(
     items,
     incoming: incoming ?? [],
     outgoing: outgoing ?? [],
+    unsupported: [
+      ...(incoming === undefined ? (["incoming"] as const) : []),
+      ...(outgoing === undefined ? (["outgoing"] as const) : []),
+    ],
   };
 }

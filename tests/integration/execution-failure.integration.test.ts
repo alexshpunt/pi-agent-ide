@@ -11,12 +11,26 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.js";
 
 for (const mode of ["standalone", "codemode"] as const) {
   test.each([
-    { name: "presenter.txt", effect: "applied", status: "Saved · post-write step failed" },
-    { name: "post-handler.txt", effect: "unknown", status: "Effects unknown · edit failed" },
+    // Presenters run only for results that show fresh LINE#HASH anchors.
+    {
+      name: "presenter.txt",
+      tool: "replace",
+      edit: { start: formatLineHashAnchor(1, "before"), text: "changed" },
+      effect: "applied",
+      status: "Saved · post-write step failed",
+    },
+    {
+      name: "post-handler.txt",
+      tool: "write",
+      edit: { content: "changed\n" },
+      effect: "unknown",
+      status: "Effects unknown · edit failed",
+    },
   ] as const)(`reports execution failure honestly in ${mode}: $name`, async (fixture) => {
     await withTempWorkspace(async (cwd) => {
       await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -35,14 +49,18 @@ for (const mode of ["standalone", "codemode"] as const) {
         mode === "standalone"
           ? toolCall({
               id: "failed",
-              name: "write",
-              arguments: { path: source, content: "changed\n" },
+              name: fixture.tool,
+              arguments: { path: source, ...fixture.edit },
             })
           : toolCall({
               id: "failed",
               name: "codemode",
               arguments: {
-                code: `try { await tools.write({path:${JSON.stringify(source)},content:"changed\\n"}); throw Error("Unsafe success"); } catch(error) { if (String(error).includes("Unsafe success")) throw error; text(String(error)); }`,
+                // Script edits commit after the script, so only Write fails inside it.
+                code:
+                  fixture.tool === "write"
+                    ? `try { await tools.write(${JSON.stringify({ path: source, ...fixture.edit })}); throw Error("Unsafe success"); } catch(error) { if (String(error).includes("Unsafe success")) throw error; text(String(error)); }`
+                    : `await tools.${fixture.tool}(${JSON.stringify({ path: source, ...fixture.edit })});`,
               },
             });
       const run = await new PiIntegrationTest({
@@ -55,13 +73,16 @@ for (const mode of ["standalone", "codemode"] as const) {
           "builtin:codemode",
           path.resolve("tests/integration/support/execution-failure-presenter.ts"),
         ],
-        tools: ["write", "codemode"],
+        tools: ["write", "replace", "codemode"],
         conversation: [
           assistantMessage([call], { stopReason: "toolUse" }),
           assistantMessage([text("Failure observed.")]),
         ],
       }).run("Keep confirmed writes separate from unconfirmed execution effects");
-      expect(getToolExecution(run, "failed").isError).toBe(mode === "standalone");
+      // A script that catches the Write failure succeeds; a failed script edit batch fails it.
+      expect(getToolExecution(run, "failed").isError).toBe(
+        mode === "standalone" || fixture.tool !== "write",
+      );
       expect(await readFile(path.join(cwd, source), "utf8")).toBe("changed\n");
       if (fixture.effect === "unknown")
         expect(
@@ -74,7 +95,9 @@ for (const mode of ["standalone", "codemode"] as const) {
           .trim()
           .split("\n")
           .map((line) => JSON.parse(line) as { content: string });
-        expect(events).toEqual([expect.objectContaining({ content: "changed\n" })]);
+        // Script batches present again after deferred final processing.
+        expect(events.length).toBeGreaterThan(0);
+        for (const event of events) expect(event).toMatchObject({ content: "changed\n" });
       }
       if (mode === "standalone")
         expect(getToolExecutionDetails(getToolExecution(run, "failed"))).toMatchObject({

@@ -12,9 +12,11 @@ import {
 import type { ExactTextRecoveryConfig } from "./config.js";
 import { recoverExactText } from "./recovery.js";
 
+/** Text with CRLF and CR line breaks normalized to LF, and a map back to source offsets. */
 interface NormalizedText {
   readonly text: string;
-  readonly boundaries: readonly number[];
+  /** Maps an offset in `text` to the matching offset in the source. */
+  readonly sourceOffset: (offset: number) => number;
 }
 
 /** Creates the catch-all resolver for unique exact text spans. */
@@ -75,8 +77,8 @@ export function resolveExactTextAnchor(
   }
 
   const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
-  const startOffset = bomOffset + boundaryAt(source.boundaries, normalizedStart);
-  const endOffset = bomOffset + boundaryAt(source.boundaries, normalizedStart + query.length);
+  const startOffset = bomOffset + source.sourceOffset(normalizedStart);
+  const endOffset = bomOffset + source.sourceOffset(normalizedStart + query.length);
 
   const linewise = isWholeLineMatch(context.content, startOffset, endOffset);
   const selectionEndOffset =
@@ -115,11 +117,8 @@ export function findExactTextMatches(
   return {
     total: matches.total,
     ranges: matches.starts.map((start) => ({
-      start: positionAt(context.content, bomOffset + boundaryAt(source.boundaries, start)),
-      end: positionAt(
-        context.content,
-        bomOffset + boundaryAt(source.boundaries, start + query.length),
-      ),
+      start: positionAt(context.content, bomOffset + source.sourceOffset(start)),
+      end: positionAt(context.content, bomOffset + source.sourceOffset(start + query.length)),
     })),
   };
 }
@@ -154,24 +153,44 @@ function stripInitialBom(value: string): string {
 }
 
 function normalizeText(value: string): NormalizedText {
-  const characters: string[] = [];
-  const boundaries: number[] = [0];
-
-  for (let offset = 0; offset < value.length; offset += 1) {
-    const character = value[offset];
-    if (character === "\r") {
-      const width = value[offset + 1] === "\n" ? 2 : 1;
-      characters.push("\n");
-      offset += width - 1;
-      boundaries.push(offset + 1);
-      continue;
-    }
-
-    characters.push(character ?? "");
-    boundaries.push(offset + 1);
+  if (!value.includes("\r")) {
+    return { text: value, sourceOffset: (offset) => checkedOffset(offset, value.length) };
   }
 
-  return { text: characters.join(""), boundaries };
+  // Each CRLF becomes one LF, so a normalized offset maps back by adding the CRLFs before it.
+  const collapsed: number[] = [];
+  let removed = 0;
+  for (let crlf = value.indexOf("\r\n"); crlf !== -1; crlf = value.indexOf("\r\n", crlf + 2)) {
+    collapsed.push(crlf - removed);
+    removed += 1;
+  }
+  const text = value.replace(/\r\n?/gu, "\n");
+  return {
+    text,
+    sourceOffset: (offset) => checkedOffset(offset, text.length) + countBefore(collapsed, offset),
+  };
+}
+
+function checkedOffset(offset: number, length: number): number {
+  if (offset < 0 || offset > length) {
+    throw new RangeError("Exact text match is outside normalized source boundaries");
+  }
+  return offset;
+}
+
+/** Counts sorted positions lower than `offset`. */
+function countBefore(positions: readonly number[], offset: number): number {
+  let low = 0;
+  let high = positions.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if ((positions[middle] ?? Infinity) < offset) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
 }
 
 function overlappingMatches(content: string, query: string, limit: number): number[] {
@@ -216,31 +235,27 @@ function scanMatches(
   return { starts, total };
 }
 
-function boundaryAt(boundaries: readonly number[], index: number): number {
-  const boundary = boundaries[index];
-  if (boundary === undefined) {
-    throw new RangeError("Exact text match is outside normalized source boundaries");
-  }
-  return boundary;
-}
-
 function positionAt(content: string, offset: number): TextSelectionPosition {
   let lineNumber = 1;
-  let column = 0;
-  for (let index = 0; index < offset; index += 1) {
-    const character = content[index];
-    if (character === "\r") {
-      if (content[index + 1] === "\n") {
-        index += 1;
-      }
-      lineNumber += 1;
-      column = 0;
-    } else if (character === "\n") {
-      lineNumber += 1;
-      column = 0;
-    } else {
-      column += 1;
+  let lineStart = 0;
+  let nextCr = content.indexOf("\r");
+  let nextLf = content.indexOf("\n");
+  for (;;) {
+    const lineBreak = nextCr === -1 ? nextLf : nextLf === -1 ? nextCr : Math.min(nextCr, nextLf);
+    if (lineBreak === -1 || lineBreak >= offset) {
+      break;
+    }
+    lineStart =
+      content[lineBreak] === "\r" && content[lineBreak + 1] === "\n"
+        ? lineBreak + 2
+        : lineBreak + 1;
+    lineNumber += 1;
+    if (nextCr !== -1 && nextCr < lineStart) {
+      nextCr = content.indexOf("\r", lineStart);
+    }
+    if (nextLf !== -1 && nextLf < lineStart) {
+      nextLf = content.indexOf("\n", lineStart);
     }
   }
-  return { lineNumber, column };
+  return { lineNumber, column: Math.max(0, offset - lineStart) };
 }

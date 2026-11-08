@@ -1,9 +1,13 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { ResourceError } from "pi-agent-resource";
 import { textFromAgentContent } from "pi-agent-text";
+
+import { withFileWriteLock } from "./file-write-lock.js";
+import { replaceFileContent } from "./replace-file.js";
 
 import type {
   ContentHost,
@@ -100,9 +104,21 @@ function resolveFilesystemSource(
         const text = textFromAgentContent(content);
         await mkdir(path.dirname(filePath), { recursive: true });
         throwIfAborted(operationContext.signal);
-        await writeFile(filePath, text, {
-          encoding: "utf8",
-          ...(operationContext.signal !== undefined && { signal: operationContext.signal }),
+        await withFileWriteLock(filePath, operationContext.signal, async () => {
+          // Another process may have written the file since this edit read it. Writing now
+          // would drop that change, so refuse and let the editor apply the edit again.
+          const expected = sourceBytes;
+          if (expected !== undefined) {
+            const current = await readFile(filePath).catch((error: unknown) => {
+              if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+              throw error;
+            });
+            if (current === undefined || !current.equals(expected))
+              throw new ResourceError("RESOURCE_CHANGED", filePath, "not-applied");
+          }
+          const bytes = Buffer.from(text, "utf8");
+          await replaceFileContent(filePath, bytes, operationContext.signal);
+          sourceBytes = bytes;
         });
       },
     },
@@ -134,10 +150,14 @@ async function readFilesystemContent(
   capture: (bytes: Uint8Array) => void,
 ) {
   throwIfAborted(signal);
-  const bytes = await readFile(filePath, {
-    encoding: null,
-    ...(signal !== undefined && { signal }),
-  });
+  // A write truncates the file before it writes the new text; reading under the same lock never
+  // sees another Pi process's half-written file.
+  const bytes = await withFileWriteLock(filePath, signal, () =>
+    readFile(filePath, {
+      encoding: null,
+      ...(signal !== undefined && { signal }),
+    }),
+  );
   throwIfAborted(signal);
   capture(bytes);
   return contentHost.convert({ source: filePath, bytes }, signal === undefined ? {} : { signal });

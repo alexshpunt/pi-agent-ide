@@ -62,7 +62,8 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         when: { resolvedBy: "ast", contentKind: "text" },
         handler: createSourceMappedTextReadHandler(),
       });
-      api.addView({ view: "ast", presenter });
+      // Scope context appends each scope's closing line, which may lie outside the range.
+      api.addView({ view: "ast", presenter, showsLinesOutsideRange: true });
       const overflow = createAstOverflowHandler();
       api.addOutputReducer(reduceAstReadOutput);
       const scopes = createAstScopePostReadHandler();
@@ -91,7 +92,6 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         kind: TEXT_POSITION_ANCHOR_KIND,
         type: "auxiliary",
       });
-      api.addTextPresenter({ presenter });
     },
   } satisfies TextEditorPlugin;
 

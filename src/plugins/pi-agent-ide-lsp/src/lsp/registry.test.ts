@@ -152,6 +152,28 @@ test("selects an available project-local shipped LSP server", async () => {
   });
 });
 
+test.each([
+  [["pyright-langserver"], "pyright", "pyright-langserver"],
+  [["basedpyright-langserver", "pyright-langserver"], "basedpyright", "basedpyright-langserver"],
+])("Python files with %j installed use %s", async (executables, serverId, command) => {
+  const project = await temporaryDirectory("lsp-python-project-");
+  process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("lsp-python-agent-");
+  const bin = await temporaryDirectory("lsp-python-bin-");
+  for (const name of executables) {
+    await writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", "utf8");
+    await chmod(path.join(bin, name), 0o755);
+  }
+
+  const registry = await LspServerRegistry.fromPackageDir(project, {
+    environment: { PATH: bin },
+  });
+
+  expect(registry.resolve("main.py")[0]).toMatchObject({
+    serverId,
+    config: { command: [command, "--stdio"] },
+  });
+});
+
 test("orders project servers before matching global and built-in servers", async () => {
   const project = await temporaryDirectory("lsp-layer-project-");
   const agentDirectory = await temporaryDirectory("lsp-layer-agent-");

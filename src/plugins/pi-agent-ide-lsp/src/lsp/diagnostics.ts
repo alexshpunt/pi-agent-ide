@@ -4,6 +4,7 @@ import { DiagnosticSeverity, type LspDiagnostic } from "./types.js";
 import type { LspClient } from "./client.js";
 
 import { completedDiagnosticAdapter } from "./diagnostic-adapters.js";
+import { isMethodNotFound } from "./errors.js";
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
 
 /** LSP diagnostics do not reliably distinguish parser errors from type errors. */
@@ -47,18 +48,35 @@ async function requestCurrentDiagnostics(
   signal.throwIfAborted();
   if (client.diagnosticMode !== "push") {
     const version = client.documentVersion(uri);
+    // A repeated pull of the same version, such as after a refresh request, lets the server
+    // answer "unchanged" instead of checking the file again.
+    const previous = client.pulledReport(uri);
     try {
-      const raw = await client.sendRequest<{ kind: string; items?: LspDiagnostic[] }>(
+      const raw = await client.sendRequest<{
+        kind: string;
+        resultId?: unknown;
+        items?: LspDiagnostic[];
+      }>(
         "textDocument/diagnostic",
-        { textDocument: { uri } },
+        {
+          textDocument: { uri },
+          ...(previous !== undefined && { previousResultId: previous.resultId }),
+        },
         signal,
       );
-      if (raw.kind !== "full" || !Array.isArray(raw.items))
-        throw new Error("Invalid full diagnostic report");
+      const items =
+        raw.kind === "full" && Array.isArray(raw.items)
+          ? raw.items
+          : raw.kind === "unchanged" && previous !== undefined && raw.resultId === previous.resultId
+            ? [...previous.diagnostics]
+            : undefined;
+      if (items === undefined) throw new Error("Invalid full diagnostic report");
       if (client.documentVersion(uri) !== version)
         throw new Error("Document changed during diagnostic request");
       client.setDiagnosticMode("pull");
-      return classify(raw.items, false, true);
+      if (version !== undefined && typeof raw.resultId === "string")
+        client.rememberPulledReport(uri, { version, resultId: raw.resultId, diagnostics: items });
+      return classify(items, false, true);
     } catch (error) {
       if (!isMethodNotFound(error)) throw error;
       client.setDiagnosticMode("push");
@@ -156,8 +174,4 @@ function classify(
 ): LspDiagnosticResult {
   const diagnostics = items.map(toDiagnostic);
   return { diagnostics, syntaxErrors: [], otherDiagnostics: diagnostics, unversioned, complete };
-}
-
-function isMethodNotFound(error: unknown): boolean {
-  return error !== null && typeof error === "object" && "code" in error && error.code === -32601;
 }

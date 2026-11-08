@@ -12,6 +12,7 @@ import {
   createMessageConnection,
   CancellationTokenSource,
   type MessageConnection,
+  ResponseError,
   StreamMessageReader,
 } from "vscode-jsonrpc/node";
 import { URI } from "vscode-uri";
@@ -19,16 +20,29 @@ import { URI } from "vscode-uri";
 import type { LspDiagnostic } from "./types.js";
 
 import { LspFileWatchers, type LspFileWatcherSubscriptions } from "./file-watchers.js";
+import { configurationItems } from "./server-request-handlers.mjs";
+import {
+  DEFAULT_SHARED_SERVER_LINGER_MS,
+  type LspSharedServer,
+  type LspSharedServers,
+} from "./shared-servers.js";
 
 import { TransportWriter } from "./transport-writer.js";
 import { documentUri } from "./document-uri.js";
-import { waitWithSignal } from "./abort.js";
+import { delayWithSignal, waitWithSignal } from "./abort.js";
 import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.js";
 
 /** Latest push observation for an open document, without a completion guarantee. */
 export interface LspDiagnosticPublication {
   readonly version?: number;
   readonly diagnostics: LspDiagnostic[];
+}
+
+/** A complete pulled diagnostic report for one synchronized document version. */
+export interface LspPulledDiagnosticReport {
+  readonly version: number;
+  readonly resultId: string;
+  readonly diagnostics: readonly LspDiagnostic[];
 }
 
 /**
@@ -42,6 +56,8 @@ export class LspClient {
   private _ownedProcess: LspOwnedProcess | null = null;
   private _ownedStartup: Promise<LspOwnedProcess> | undefined;
   private readonly _ownerTransport: LspOwnerTransport | undefined;
+  private readonly _sharedServers: LspSharedServers | undefined;
+  private _sharedServer: LspSharedServer | null = null;
   private _connection: MessageConnection | null = null;
   private _initialized = false;
   private _serverCapabilities: Record<string, unknown> | null = null;
@@ -60,8 +76,27 @@ export class LspClient {
   private readonly _documentContents = new Map<string, string>();
 
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
+  private readonly _pulledReports = new Map<string, LspPulledDiagnosticReport>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
+  /**
+   * ID under which the server registered pull diagnostics after initialization, as pyright does.
+   * Its pushes can then be incomplete reports from an analysis still in progress.
+   */
+  private _pullRegistration: string | undefined;
+  /** Set once the server versions its pushes; its unversioned pushes then describe closed documents. */
+  private _versionedDiagnostics = false;
   private readonly _activeDiagnosticRequests = new Set<string>();
+  /** Latest `experimental/serverStatus` (rust-analyzer); undefined until the server sends one. */
+  private _serverStatus: { quiescent: boolean; message?: string } | undefined;
+  private readonly _serverStatusListeners = new Set<() => void>();
+  /** Saves held back until the server has loaded the project. */
+  private readonly _pendingSaves = new Set<string>();
+  /** Operations that still use each open document; the last release closes it. */
+  private readonly _documentLeases = new Map<string, number>();
+  private _pendingRequests = 0;
+  private _idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly _idleTimeoutMs: number | undefined;
+  private readonly _onIdle: (() => void) | undefined;
 
   readonly serverId: string;
   readonly rootUri: string;
@@ -81,6 +116,11 @@ export class LspClient {
     settings?: Record<string, unknown>;
     timeoutMs?: number;
     ownerTransport?: LspOwnerTransport;
+    /** Share a local server with other Pi sessions; if that fails, start an own process. */
+    sharedServers?: LspSharedServers;
+    /** Without requests or open operations for this long, onIdle runs. Omitted: never idle. */
+    idleTimeoutMs?: number;
+    onIdle?: () => void;
   }) {
     this.serverId = parameters.serverId;
     this.rootUri = parameters.rootUri;
@@ -91,6 +131,9 @@ export class LspClient {
     this._settings = parameters.settings;
     this._timeoutMs = parameters.timeoutMs ?? 30_000;
     this._ownerTransport = parameters.ownerTransport;
+    this._sharedServers = parameters.sharedServers;
+    this._idleTimeoutMs = parameters.idleTimeoutMs;
+    this._onIdle = parameters.onIdle;
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────
@@ -104,7 +147,12 @@ export class LspClient {
   }
 
   get pid(): number | null {
-    return this._process?.pid ?? null;
+    return this._process?.pid ?? this._sharedServer?.pid ?? null;
+  }
+
+  /** Whether this client reaches a server shared with other Pi sessions. */
+  get shared(): boolean {
+    return this._sharedServer !== null;
   }
 
   /** Remote process identity; pid remains null for these servers. */
@@ -137,6 +185,51 @@ export class LspClient {
     return Array.isArray(provider?.commands) && provider.commands.includes(command);
   }
 
+  /** Whether the server reports that it is still loading the project, so its results are incomplete. */
+  get loading(): boolean {
+    return this._serverStatus?.quiescent === false;
+  }
+
+  /**
+   * Wait until the server has loaded the project, so empty results mean that nothing was found.
+   * Fails when loading takes longer than the request timeout.
+   */
+  async waitUntilLoaded(signal?: AbortSignal): Promise<void> {
+    if (!this.loading) return;
+    let listener: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await waitWithSignal(
+        new Promise<void>((resolve, reject) => {
+          listener = () => {
+            if (!this.loading) resolve();
+          };
+          this._serverStatusListeners.add(listener);
+          timer = setTimeout(() => {
+            const message = this._serverStatus?.message;
+            reject(
+              Object.assign(
+                new Error(
+                  `[lsp] ${this.serverId} is still loading the project${message ? ` (${message})` : ""}; its results would be incomplete. Try again later.`,
+                ),
+                { code: "SERVER_LOADING" },
+              ),
+            );
+          }, this._timeoutMs);
+        }),
+        signal,
+      );
+    } finally {
+      clearTimeout(timer);
+      if (listener) this._serverStatusListeners.delete(listener);
+    }
+  }
+
+  private _setServerStatus(status: { quiescent: boolean; message?: string } | undefined): void {
+    this._serverStatus = status;
+    for (const listener of [...this._serverStatusListeners]) listener();
+  }
+
   /** Whether initialization advertised support for workspace/symbol requests. */
   get hasWorkspaceSymbolCapability(): boolean {
     const provider = this._serverCapabilities?.workspaceSymbolProvider;
@@ -158,6 +251,19 @@ export class LspClient {
   /** Reuse a push that arrived after the latest synchronization, including an empty publication. */
   diagnosticPublication(uri: string): LspDiagnosticPublication | undefined {
     return this._diagnosticPublications.get(uri);
+  }
+
+  /**
+   * The last pulled report of the document's current version. A server that still has the same
+   * result answers a pull with its result id as unchanged instead of checking the file again.
+   */
+  pulledReport(uri: string): LspPulledDiagnosticReport | undefined {
+    const report = this._pulledReports.get(uri);
+    return report?.version === this.documentVersion(uri) ? report : undefined;
+  }
+
+  rememberPulledReport(uri: string, report: LspPulledDiagnosticReport): void {
+    if (report.version === this.documentVersion(uri)) this._pulledReports.set(uri, report);
   }
 
   beginDiagnosticRequest(uri: string): void {
@@ -224,6 +330,42 @@ export class LspClient {
       },
     ];
 
+    const watchFiles = this._ownerTransport
+      ? this._ownerTransport.fileWatchers !== undefined
+      : true;
+    const initializeParameters = {
+      processId: this._ownerTransport ? null : process.pid,
+      rootUri: this._ownerTransport?.toServerUri(this.rootUri) ?? this.rootUri,
+
+      workspaceFolders,
+      capabilities: {
+        workspace: {
+          applyEdit: false,
+
+          configuration: true,
+
+          workspaceFolders: true,
+
+          didChangeWatchedFiles: {
+            dynamicRegistration: watchFiles,
+            relativePatternSupport: watchFiles,
+          },
+          symbol: { dynamicRegistration: false },
+        },
+        // rust-analyzer reports while it loads the project; its results are incomplete until then.
+        experimental: { serverStatusNotification: true },
+        textDocument: {
+          synchronization: { didOpen: true, didChange: true, didClose: true },
+          publishDiagnostics: { relatedInformation: true, versionSupport: true },
+
+          diagnostic: { dynamicRegistration: true, relatedDocumentSupport: false },
+          documentSymbol: { hierarchicalDocumentSymbolSupport: true },
+          foldingRange: { lineFoldingOnly: true },
+        },
+      },
+      initializationOptions: this._initOptions,
+    };
+
     this._ownedStartup = this._ownerTransport?.start({
       rootUri: this.rootUri,
       command: this._command,
@@ -236,23 +378,36 @@ export class LspClient {
     // An owner can become ready while shutdown is waiting for it.
     // eslint-disable-next-line typescript/no-unnecessary-condition
     if (this._disposed) throw new Error(`[lsp] ${this.serverId}: disposed`);
-    const childProcess = ownedProcess
+    const sharedServer = ownedProcess
       ? undefined
-      : spawnProcess(bin, this._args, {
-          stdio: ["pipe", "pipe", "pipe"],
-          ...(signal && { signal }),
-          cwd: projectRoot,
-          env: createConfiguredProcessEnvironment(
-            { command: this._command, env: this._env },
-            projectRoot,
-            process.env,
-          ),
-        });
+      : await this._attachSharedServer(projectRoot, initializeParameters, signal);
+    // Shutdown that ran during the attach could not see this connection.
+    // eslint-disable-next-line typescript/no-unnecessary-condition
+    if (this._disposed) {
+      await sharedServer?.stop();
+      throw new Error(`[lsp] ${this.serverId}: disposed`);
+    }
+    this._sharedServer = sharedServer ?? null;
+    signal?.throwIfAborted();
+    const childProcess =
+      ownedProcess || sharedServer
+        ? undefined
+        : spawnProcess(bin, this._args, {
+            stdio: ["pipe", "pipe", "pipe"],
+            ...(signal && { signal }),
+            cwd: projectRoot,
+            env: createConfiguredProcessEnvironment(
+              { command: this._command, env: this._env },
+              projectRoot,
+              process.env,
+            ),
+          });
     this._process = childProcess ?? null;
     const spawnPromise = childProcess ? waitForSpawn(childProcess) : Promise.resolve();
-    const stdin = requiredValue(ownedProcess?.stdin ?? childProcess?.stdin);
-    const stdout = requiredValue(ownedProcess?.stdout ?? childProcess?.stdout);
-    const stderr = requiredValue(ownedProcess?.stderr ?? childProcess?.stderr);
+    const stream = ownedProcess ?? sharedServer;
+    const stdin = requiredValue(stream?.stdin ?? childProcess?.stdin);
+    const stdout = requiredValue(stream?.stdout ?? childProcess?.stdout);
+    const stderr = requiredValue(stream?.stderr ?? childProcess?.stderr);
 
     // Consume process stream errors so a failed optional server cannot
     // become an uncaught exception in the host process.
@@ -261,6 +416,16 @@ export class LspClient {
     stderr.on("error", () => void 0);
 
     this._stderr = "";
+    // A process can exit before its last stderr output arrives; startup errors wait for it.
+    const stderrEnded = new Promise<void>((resolve) => {
+      stderr.once("end", resolve);
+      stderr.once("close", resolve);
+    });
+    let exitCode: number | null | undefined;
+    let markExited = () => {};
+    const exited = new Promise<void>((resolve) => {
+      markExited = resolve;
+    });
     stderr.setEncoding("utf8");
     stderr.on("data", (chunk: string) => {
       this._stderr = (this._stderr + chunk).slice(-4096);
@@ -279,9 +444,16 @@ export class LspClient {
       this._process = null;
     });
 
+    const current = () =>
+      ownedProcess
+        ? this._ownedProcess === ownedProcess
+        : sharedServer
+          ? this._sharedServer === sharedServer
+          : this._process === childProcess;
     const onExit = (code: number | null) => {
-      if (ownedProcess ? this._ownedProcess !== ownedProcess : this._process !== childProcess)
-        return;
+      if (!current()) return;
+      exitCode ??= code;
+      markExited();
       void this._closeFileWatchers();
       if (!this._disposed && code !== 0 && code !== null) {
         this._crashed = true;
@@ -290,16 +462,20 @@ export class LspClient {
       this._connection?.dispose();
       this._connection = null;
       this._diagnosticPublications.clear();
+      this._pulledReports.clear();
       this._activeDiagnosticRequests.clear();
       this._diagnosticMode = "unknown";
+      this._pullRegistration = undefined;
+      this._versionedDiagnostics = false;
+      this._setServerStatus(undefined);
       this._process = null;
       this._initialized = false;
     };
     childProcess?.on("exit", onExit);
-    void ownedProcess?.completion.then(
+    void stream?.completion.then(
       ({ exitCode }) => onExit(exitCode),
       () => {
-        if (this._ownedProcess !== ownedProcess) return;
+        if (!current()) return;
         this._crashed = true;
         onExit(null);
       },
@@ -328,9 +504,12 @@ export class LspClient {
     };
     const failed = (error: Error) =>
       console.error(`[lsp] ${this.serverId}: file watcher failed:`, error);
+    // A shared host watches files for its server itself.
     this._fileWatchers = this._ownerTransport
       ? this._ownerTransport.fileWatchers?.(this.rootUri, changed, failed)
-      : new LspFileWatchers(projectRoot, changed, failed);
+      : sharedServer
+        ? undefined
+        : new LspFileWatchers(projectRoot, changed, failed);
     this._connection.onRequest(
       "client/registerCapability",
       async (parameters: {
@@ -343,6 +522,11 @@ export class LspClient {
         for (const registration of parameters.registrations) {
           // Settings are fixed for this client and already served by workspace/configuration.
           if (registration.method === "workspace/didChangeConfiguration") continue;
+          if (registration.method === "textDocument/diagnostic") {
+            this._pullRegistration = registration.id;
+            if (this._initialized) this._diagnosticMode = "pull";
+            continue;
+          }
           if (registration.method !== "workspace/didChangeWatchedFiles")
             throw new Error(`Unsupported dynamic capability: ${registration.method}`);
           if (!this._fileWatchers)
@@ -358,26 +542,28 @@ export class LspClient {
     this._connection.onRequest(
       "client/unregisterCapability",
       async (parameters: { unregisterations: { id: string }[] }) => {
-        for (const registration of parameters.unregisterations)
-          await this._fileWatchers?.unregister(registration.id);
+        for (const registration of parameters.unregisterations) {
+          if (registration.id === this._pullRegistration) {
+            this._pullRegistration = undefined;
+            if (this._initialized) this._diagnosticMode = "push";
+          } else await this._fileWatchers?.unregister(registration.id);
+        }
         return null;
       },
     );
     this._connection.onRequest("window/workDoneProgress/create", () => null);
+    // A pull-diagnostic server asks for new pulls after results change; pyright exits when this
+    // request fails. Handlers registered for the method see each refresh.
+    this._connection.onRequest("workspace/diagnostic/refresh", () => {
+      for (const handler of this._handlers.get("workspace/diagnostic/refresh") ?? [])
+        handler(undefined);
+      return null;
+    });
 
     this._connection.onRequest(
       "workspace/configuration",
       (parameters: { items: { section?: string }[] }) =>
-        parameters.items.map((item) => {
-          let value: unknown = this._settings ?? null;
-          for (const segment of item.section?.split(".").filter(Boolean) ?? []) {
-            value =
-              typeof value === "object" && value !== null
-                ? ((value as Record<string, unknown>)[segment] ?? null)
-                : null;
-          }
-          return value;
-        }),
+        configurationItems(this._settings, parameters.items),
     );
 
     this._connection.listen();
@@ -392,6 +578,16 @@ export class LspClient {
         const publication = mapped as
           | { uri?: unknown; version?: unknown; diagnostics?: unknown }
           | undefined;
+        if (typeof publication?.version === "number") this._versionedDiagnostics = true;
+        else if (
+          this._versionedDiagnostics &&
+          typeof publication?.uri === "string" &&
+          this._documentVersions.has(publication.uri)
+        )
+          // A server that versions its reports omits the version only for a document it sees as
+          // closed. Such a push for a document open here was sent before the server processed
+          // the latest didOpen, for example the clear for a close that a quick reopen followed.
+          return;
         if (
           publication &&
           typeof publication.uri === "string" &&
@@ -406,6 +602,13 @@ export class LspClient {
           });
         }
       }
+      if (method === "experimental/serverStatus") {
+        const status = mapped as { quiescent?: unknown; message?: unknown } | undefined;
+        this._setServerStatus({
+          quiescent: status?.quiescent !== false,
+          ...(typeof status?.message === "string" && { message: status.message }),
+        });
+      }
       for (const handler of this._handlers.get(method) ?? []) {
         handler(mapped);
       }
@@ -419,44 +622,28 @@ export class LspClient {
 
     const initResult = await waitWithSignal(
       withTimeout(
-        this._connection.sendRequest<InitResult>("initialize", {
-          processId: this._ownerTransport ? null : process.pid,
-          rootUri: this._ownerTransport?.toServerUri(this.rootUri) ?? this.rootUri,
-
-          workspaceFolders,
-          capabilities: {
-            workspace: {
-              applyEdit: false,
-
-              configuration: true,
-
-              workspaceFolders: true,
-
-              didChangeWatchedFiles: {
-                dynamicRegistration: this._fileWatchers !== undefined,
-                relativePatternSupport: this._fileWatchers !== undefined,
-              },
-              symbol: { dynamicRegistration: false },
-            },
-            textDocument: {
-              synchronization: { didOpen: true, didChange: true, didClose: true },
-              publishDiagnostics: { relatedInformation: true },
-
-              diagnostic: { dynamicRegistration: false, relatedDocumentSupport: false },
-              documentSymbol: { hierarchicalDocumentSymbolSupport: true },
-              foldingRange: { lineFoldingOnly: true },
-            },
-          },
-          initializationOptions: this._initOptions,
-        }),
+        this._connection.sendRequest<InitResult>("initialize", initializeParameters),
         this._timeoutMs,
         `[lsp] ${this.serverId}: initialize timed out`,
       ),
       signal,
-    ).catch((error: unknown) => {
+    ).catch(async (error: unknown) => {
+      if (signal?.aborted) throw error;
+      // A failed initialize write can precede the exit event and the server's last stderr output.
+      await Promise.race([
+        Promise.all([stderrEnded, exited]),
+        delayWithSignal(STDERR_DRAIN_MS, signal),
+      ]).catch(() => undefined);
       const detail = this._stderr.trim();
-      if (!detail) throw error;
-      throw new Error(`[lsp] ${this.serverId}: ${detail}`, { cause: error });
+      const exit =
+        exitCode === undefined
+          ? undefined
+          : `exited during startup${exitCode === null ? "" : ` with code ${exitCode}`}`;
+      if (!detail && !exit) throw error;
+      const message = `[lsp] ${this.serverId}${exit ? ` ${exit}` : ""}${detail ? `: ${detail}` : ""}`;
+      // The exit is the root cause; the connection error it caused would hide it from callers
+      // that report the innermost cause.
+      throw exit ? new Error(message) : new Error(message, { cause: error });
     });
 
     await this._connection.sendNotification("initialized", {
@@ -477,11 +664,81 @@ export class LspClient {
     this._serverCapabilities = initResult.capabilities;
 
     // Unadvertised methods may return null or internal errors rather than MethodNotFound.
-    this._diagnosticMode = initResult.capabilities.diagnosticProvider ? "pull" : "push";
+    this._diagnosticMode =
+      initResult.capabilities.diagnosticProvider || this._pullRegistration !== undefined
+        ? "pull"
+        : "push";
   }
 
+  /** Reach a server shared with other Pi sessions; undefined means start an own process. */
+  private async _attachSharedServer(
+    projectRoot: string,
+    initialize: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+  ): Promise<LspSharedServer | undefined> {
+    if (!this._sharedServers) return undefined;
+    try {
+      return await this._sharedServers.attach({
+        serverId: this.serverId,
+        command: this._command,
+        cwd: projectRoot,
+        configuredEnv: this._env,
+        env: createConfiguredProcessEnvironment(
+          { command: this._command, env: this._env },
+          projectRoot,
+          process.env,
+        ),
+        settings: this._settings,
+        initialize,
+        lingerMs: this._idleTimeoutMs ?? DEFAULT_SHARED_SERVER_LINGER_MS,
+        timeoutMs: this._timeoutMs,
+        ...(signal && { signal }),
+      });
+    } catch {
+      signal?.throwIfAborted();
+      // The shared host is optional: an own process gives the same results.
+      return undefined;
+    }
+  }
+
+  /** Restart the idle period; requests and open operations keep the server busy. */
   touch(): void {
-    // LSP server lives for the session duration — no idle timeout
+    clearTimeout(this._idleTimer);
+    this._idleTimer = undefined;
+    if (this._idleTimeoutMs === undefined || this._disposed || this._busy) return;
+    const timer = setTimeout(() => {
+      if (this._idleTimer !== timer) return;
+      this._idleTimer = undefined;
+      if (this.ready && !this._busy) this._onIdle?.();
+    }, this._idleTimeoutMs);
+    timer.unref();
+    this._idleTimer = timer;
+  }
+
+  private get _busy(): boolean {
+    return this._pendingRequests > 0 || this._documentLeases.size > 0;
+  }
+
+  /**
+   * Keep a document open for one operation. The returned release is idempotent; the last
+   * release of a document closes it on the server.
+   */
+  retainDocument(uri: string): () => void {
+    this._documentLeases.set(uri, (this._documentLeases.get(uri) ?? 0) + 1);
+    this.touch();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (this._documentLeases.get(uri) ?? 1) - 1;
+      if (remaining > 0) {
+        this._documentLeases.set(uri, remaining);
+        return;
+      }
+      this._documentLeases.delete(uri);
+      if (this.ready && this._documentVersions.has(uri)) this.closeDocument(uri);
+      this.touch();
+    };
   }
 
   async restart(signal?: AbortSignal): Promise<void> {
@@ -497,7 +754,9 @@ export class LspClient {
     this._documentVersions.clear();
     this._documentContents.clear();
     this._diagnosticPublications.clear();
+    this._pulledReports.clear();
     this._diagnosticMode = "unknown";
+    this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
     await this.start(signal);
@@ -513,6 +772,40 @@ export class LspClient {
   ): Promise<T> {
     this._assertReady();
     signal?.throwIfAborted();
+    this._pendingRequests++;
+    this.touch();
+    try {
+      let reloaded = false;
+      for (let attempt = 0; ; attempt++) {
+        let result: T;
+        try {
+          result = await this._sendRequest<T>(method, parameters, signal);
+        } catch (error) {
+          const delay = REQUEST_RETRY_DELAYS_MS[attempt];
+          if (delay === undefined || !isRetryableCancellation(error)) throw error;
+          // The server dropped a stale result; ask again once it has applied the latest text.
+          await delayWithSignal(delay, signal);
+          this._assertReady();
+          continue;
+        }
+        // A server that is still loading the project answers from the part it has seen, often
+        // with nothing. Ask once more after loading; commands may have effects and run once.
+        if (reloaded || !this.loading || method === "workspace/executeCommand") return result;
+        reloaded = true;
+        await this.waitUntilLoaded(signal);
+        this._assertReady();
+      }
+    } finally {
+      this._pendingRequests--;
+      this.touch();
+    }
+  }
+
+  private async _sendRequest<T>(
+    method: string,
+    parameters: unknown,
+    signal: AbortSignal | undefined,
+  ): Promise<T> {
     const owner = this._ownerTransport;
     const requestParameters = owner
       ? mapLspUris(parameters, (uri) => owner.toServerUri(uri))
@@ -612,6 +905,7 @@ export class LspClient {
     }
 
     this._diagnosticPublications.delete(uri);
+    this._pulledReports.delete(uri);
     this.sendNotification("textDocument/didOpen", {
       textDocument: { uri, languageId, version, text },
     });
@@ -630,23 +924,47 @@ export class LspClient {
     } else {
       this.changeDocument(uri, text, currentVersion + 1);
     }
+    if (!saved) return;
+    // rust-analyzer exits when a save arrives while it scans the project
+    // (rust-lang/rust-analyzer#19406), so report the save once loading ends.
+    if (this.loading) this._deferSave(uri);
+    else this._sendSave(uri);
+  }
+
+  private _sendSave(uri: string): void {
     const synchronization = this._serverCapabilities?.textDocumentSync;
     const save =
       typeof synchronization === "object" && synchronization !== null
         ? (synchronization as { save?: boolean | { includeText?: boolean } }).save
         : undefined;
-    if (saved && save) {
-      this.sendNotification("textDocument/didSave", {
-        textDocument: { uri },
-        ...(typeof save === "object" && save.includeText && { text }),
-      });
-    }
+    const text = this._documentContents.get(uri);
+    if (!save || text === undefined) return;
+    this.sendNotification("textDocument/didSave", {
+      textDocument: { uri },
+      ...(typeof save === "object" && save.includeText && { text }),
+    });
+  }
+
+  private _deferSave(uri: string): void {
+    const waiting = this._pendingSaves.size > 0;
+    this._pendingSaves.add(uri);
+    if (waiting) return;
+    const listener = () => {
+      if (this.loading) return;
+      this._serverStatusListeners.delete(listener);
+      const uris = [...this._pendingSaves];
+      this._pendingSaves.clear();
+      // A document closed in the meantime has no save to report.
+      for (const pending of uris) this._sendSave(pending);
+    };
+    this._serverStatusListeners.add(listener);
   }
 
   changeDocument(uri: string, text: string, version: number): void {
     const currentVersion = this._documentVersions.get(uri);
     const nextVersion = Math.max(version, (currentVersion ?? 0) + 1);
     this._diagnosticPublications.delete(uri);
+    this._pulledReports.delete(uri);
     this.sendNotification("textDocument/didChange", {
       textDocument: { uri, version: nextVersion },
       contentChanges: [{ text }],
@@ -663,6 +981,7 @@ export class LspClient {
     this._documentContents.delete(uri);
 
     this._diagnosticPublications.delete(uri);
+    this._pulledReports.delete(uri);
   }
 
   // ── cleanup ────────────────────────────────────────────────────────
@@ -674,6 +993,9 @@ export class LspClient {
 
   private async _shutdown(): Promise<void> {
     this._disposed = true;
+    this._setServerStatus(undefined);
+    clearTimeout(this._idleTimer);
+    this._idleTimer = undefined;
 
     const watcherCleanup = this._closeFileWatchers();
 
@@ -701,6 +1023,9 @@ export class LspClient {
     this._ownedProcess = null;
     this._ownedStartup = undefined;
     const ownedCleanup = Promise.resolve().then(() => owned?.stop());
+    const shared = this._sharedServer;
+    this._sharedServer = null;
+    const sharedCleanup = Promise.resolve().then(() => shared?.stop());
     const child = this._process;
     this._process = null;
     if (child && !child.killed) {
@@ -714,10 +1039,12 @@ export class LspClient {
     this._documentVersions.clear();
     this._documentContents.clear();
     this._diagnosticPublications.clear();
+    this._pulledReports.clear();
     this._diagnosticMode = "unknown";
+    this._versionedDiagnostics = false;
     this._activeDiagnosticRequests.clear();
     this._serverCapabilities = null;
-    const results = await Promise.allSettled([ownedCleanup, watcherCleanup]);
+    const results = await Promise.allSettled([ownedCleanup, sharedCleanup, watcherCleanup]);
     const failures: unknown[] = [];
     for (const result of results) {
       if (result.status === "rejected") failures.push(result.reason);
@@ -763,6 +1090,33 @@ export class LspClient {
       throw new Error(`[lsp] ${this.serverId}: connection lost`);
     }
   }
+}
+
+/** How long a startup error waits for stderr output of a server that already exited. */
+const STDERR_DRAIN_MS = 250;
+
+/** Waits before each retry of a request the server cancelled; about 1.5 s in total. */
+const REQUEST_RETRY_DELAYS_MS = [50, 100, 200, 400, 800];
+/** LSP error codes from the specification; vscode-jsonrpc defines only JSON-RPC ones. */
+const CONTENT_MODIFIED = -32_801;
+const SERVER_CANCELLED = -32_802;
+
+/**
+ * ContentModified (-32801): the document changed while the server computed the result.
+ * ServerCancelled (-32802): the server dropped the request, for example while it reloads the
+ * project; a diagnostic request is not retried when the server says retriggering will not help.
+ */
+function isRetryableCancellation(error: unknown): boolean {
+  if (!(error instanceof ResponseError)) return false;
+  if (error.code === CONTENT_MODIFIED) return true;
+  if (error.code !== SERVER_CANCELLED) return false;
+  const data: unknown = error.data;
+  return !(
+    data !== null &&
+    typeof data === "object" &&
+    "retriggerRequest" in data &&
+    data.retriggerRequest === false
+  );
 }
 
 function waitForSpawn(childProcess: ChildProcess): Promise<void> {

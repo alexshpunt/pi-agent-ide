@@ -553,6 +553,7 @@ test("preserves every confirmed write when later presentation fails", async () =
         ]),
       ),
       result: undefined,
+      presentedLines: () => [1],
     }),
   );
   expect(outcome).toMatchObject({
@@ -615,6 +616,7 @@ test("presents the after-document in stable priority order", async () => {
   const outcome = await core.editText("notes.md", { cwd: "/workspace" }, () => ({
     text: "after",
     result: undefined,
+    presentedLines: () => [1],
   }));
 
   expect(outcome).toMatchObject({
@@ -625,6 +627,69 @@ test("presents the after-document in stable priority order", async () => {
       lines: [{ content: "after", presentation: { prefix: "AB" } }],
     },
   });
+});
+
+test("presents only the after-document lines that the edit result shows", async () => {
+  const core = createTextEditorCore();
+  const presented: (readonly number[] | undefined)[] = [];
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "selected-lines",
+    setup(api) {
+      api.addResolver({ resolver: textResolver("filesystem", "notes.md", "one\ntwo\nthree\n") });
+      api.addTextPresenter({
+        presenter: {
+          id: "recording",
+          present(document, context) {
+            presented.push(context.lineNumbers && [...context.lineNumbers]);
+            return document;
+          },
+        },
+      });
+    },
+  });
+
+  const outcome = await core.editText("notes.md", { cwd: "/workspace" }, () => ({
+    text: "one\nTWO\nthree\n",
+    result: undefined,
+    presentedLines: (edit) => {
+      expect(edit).toMatchObject({ source: "notes.md", after: { content: "one\nTWO\nthree\n" } });
+      return [2];
+    },
+  }));
+
+  expect(outcome).toMatchObject({ kind: "completed" });
+  expect(presented).toEqual([[2]]);
+});
+
+test("does not run presenters when the edit result shows no presented lines", async () => {
+  const core = createTextEditorCore();
+  await core.registerPlugin({
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: "unshown-lines",
+    setup(api) {
+      api.addResolver({ resolver: textResolver("filesystem", "notes.md", "before") });
+      api.addTextPresenter({
+        presenter: {
+          id: "unused",
+          present() {
+            throw new Error("presenter ran for an edit result that shows no presented lines");
+          },
+        },
+      });
+    },
+  });
+
+  for (const presentedLines of [undefined, () => []]) {
+    const outcome = await core.editText("notes.md", { cwd: "/workspace" }, () => ({
+      text: "after",
+      result: undefined,
+      ...(presentedLines === undefined ? {} : { presentedLines }),
+    }));
+    expect(outcome).toMatchObject({ kind: "completed", after: { content: "after" } });
+  }
 });
 
 test("does not fall back after a resource lacks an editor capability", async () => {

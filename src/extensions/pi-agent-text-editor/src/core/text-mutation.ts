@@ -49,12 +49,14 @@ import {
   type StaleAnchorMessageDetails,
 } from "#src/api/stale-anchor-message.js";
 import { createUnifiedDiff } from "#src/core/mutation-result/diff.js";
+import { finalStateLineNumbers } from "#src/core/mutation-result/final-state-fragment.js";
 import { imageWriteResult, planImageWrite } from "#src/core/image-write.js";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.js";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.js";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.js";
 import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.js";
 import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.js";
+import { retryWhenSourceChanged, SOURCE_CHANGED } from "#src/core/source-change-retry.js";
 import {
   executeNativeTextEditBatch,
   runNativePostEditScope,
@@ -80,7 +82,7 @@ import {
   withToolCallInterceptionRendering,
 } from "#src/core/tool-call-interceptor/rendering.js";
 
-import type { TextEditExecutionOutcome } from "#src/api/edit-pipeline.js";
+import type { TextEditExecutionOutcome, TextPreEditState } from "#src/api/edit-pipeline.js";
 import type {
   TextMutationPreviewOutcome,
   TextMutationPreviewRequest,
@@ -90,6 +92,7 @@ import type {
   TextEditorCore,
   TextResourceEditFailure,
   TextResourceEditOutcome,
+  TextPresentedLines,
   TextResourcesEditOutcome,
 } from "#src/core/text-editor-core.js";
 import { renderTextAnchor, type TextAnchor } from "pi-agent-text";
@@ -1166,106 +1169,69 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
       input: parameters,
       ...(signal !== undefined && { signal }),
     },
-    async (state) => {
-      try {
-        if (state.editPlan !== undefined) {
-          const plan = state.editPlan;
-          if (
-            plan.files.length === 0 ||
-            new Set(plan.files.map((file) => file.source)).size !== plan.files.length
-          )
-            throw new Error("Semantic edit plan must contain distinct source files.");
-          const outcome = await core.editTexts(
-            plan.files.map((file) => ({ source: file.source, read: true })),
-            {
-              cwd: state.cwd,
-              intent: definition.intent ?? "edit",
-              ...(state.signal !== undefined && { signal: state.signal }),
-            },
-            (texts) => {
-              for (const file of plan.files) {
-                if (texts.get(file.source) !== file.expectedContent)
-                  throw new Error(
-                    "A semantic edit source changed. Resolve the symbol again before retrying.",
-                  );
-              }
-              const edits = new Map(
-                plan.files.map((file) => [
-                  file.source,
-                  { changes: file.changes, action: "edited" as const },
-                ]),
-              );
-              return Promise.resolve({
-                changes: new Map(plan.files.map((file) => [file.source, file.changes])),
-                result: {
-                  edits,
-                  resultPresentations: new Map(
-                    plan.files.map((file) => [file.source, "plain" as const]),
-                  ),
-                },
-              });
-            },
-          );
-          return await completeTextMutation(outcome, requiredValue(plan.files[0]).source);
-        }
-        const sources = await resolveMutationSources(
-          core,
-          definition,
-          state.input,
-          state,
-          lastResolvedSource,
-        );
-        const semanticHandler = core.getSemanticMutationHandler(definition.name, state.input);
-        if (semanticHandler !== undefined) {
-          return await core.editTexts(
-            sources.resources.map((resourceSource) => ({
-              source: resourceSource,
-              read: true,
-              requireWrite: false,
-            })),
-            {
-              cwd: state.cwd,
-              intent: definition.intent ?? "edit",
-              ...(state.signal !== undefined && { signal: state.signal }),
-            },
-            async (texts, resolveAnchor) => {
-              for (const target of sources.targets) {
-                if (
-                  target.expectedContent !== undefined &&
-                  texts.get(target.source) !== target.expectedContent
-                ) {
-                  throw new Error(
-                    "The selected source changed before the semantic action. Resolve it again.",
-                  );
-                }
-              }
-              const mutationContext = createMutationContext(
-                definition,
-                state.input,
-                state,
-                sources,
-                texts,
-                resolveAnchor,
-                publishAnchorRenderState,
-              );
-              await preflightMutationAnchors(definition, state.input, mutationContext);
-              const semanticAction = await semanticHandler.execute(mutationContext, state.input);
-              return {
-                changes: new Map(),
-                result: withResultPresentations(
-                  { edits: new Map(), semanticAction },
-                  mutationContext,
-                ),
-                resourceEffect: true,
-              };
-            },
-          );
-        }
+    // Another Pi process may write the file between this edit's read and its write. The write
+    // is then refused, and the edit runs again on the current text, anchors included.
+    (state) => retryWhenSourceChanged(() => applyTextMutation(state)),
+  );
+
+  async function applyTextMutation(
+    state: TextPreEditState<Static<TParameters>>,
+  ): Promise<TextResourcesEditOutcome<TextMutation>> {
+    try {
+      if (state.editPlan !== undefined) {
+        const plan = state.editPlan;
+        if (
+          plan.files.length === 0 ||
+          new Set(plan.files.map((file) => file.source)).size !== plan.files.length
+        )
+          throw new Error("Semantic edit plan must contain distinct source files.");
         const outcome = await core.editTexts(
+          plan.files.map((file) => ({ source: file.source, read: true })),
+          {
+            cwd: state.cwd,
+            intent: definition.intent ?? "edit",
+            ...(state.signal !== undefined && { signal: state.signal }),
+          },
+          (texts) => {
+            for (const file of plan.files) {
+              if (texts.get(file.source) !== file.expectedContent)
+                throw new Error(
+                  "A semantic edit source changed. Resolve the symbol again before retrying.",
+                );
+            }
+            const edits = new Map(
+              plan.files.map((file) => [
+                file.source,
+                { changes: file.changes, action: "edited" as const },
+              ]),
+            );
+            return Promise.resolve({
+              changes: new Map(plan.files.map((file) => [file.source, file.changes])),
+              result: {
+                edits,
+                resultPresentations: new Map(
+                  plan.files.map((file) => [file.source, "plain" as const]),
+                ),
+              },
+            });
+          },
+        );
+        return await completeTextMutation(outcome, requiredValue(plan.files[0]).source);
+      }
+      const sources = await resolveMutationSources(
+        core,
+        definition,
+        state.input,
+        state,
+        lastResolvedSource,
+      );
+      const semanticHandler = core.getSemanticMutationHandler(definition.name, state.input);
+      if (semanticHandler !== undefined) {
+        return await core.editTexts(
           sources.resources.map((resourceSource) => ({
             source: resourceSource,
             read: true,
-            ...(definition.name === "write" && { allowReadFailure: true }),
+            requireWrite: false,
           })),
           {
             cwd: state.cwd,
@@ -1277,10 +1243,14 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
               if (
                 target.expectedContent !== undefined &&
                 texts.get(target.source) !== target.expectedContent
-              )
-                throw new Error(
-                  "The selected source changed before editing. Resolve the symbol again.",
+              ) {
+                throw Object.assign(
+                  new Error(
+                    "The selected source changed before the semantic action. Resolve it again.",
+                  ),
+                  { code: SOURCE_CHANGED },
                 );
+              }
             }
             const mutationContext = createMutationContext(
               definition,
@@ -1292,35 +1262,79 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
               publishAnchorRenderState,
             );
             await preflightMutationAnchors(definition, state.input, mutationContext);
-            const mutation = await definition.mutate(mutationContext, state.input);
-            const executedMutation: ExecutedTextMutation = {
-              ...withResultPresentations(mutation, mutationContext),
-              ...(definition.name === "write" && {
-                unchangedWrite: {
-                  source: mutationContext.sourceFor("path"),
-                  content: mutationContext.sourceDocument.content,
-                },
-              }),
-            };
+            const semanticAction = await semanticHandler.execute(mutationContext, state.input);
             return {
-              changes: new Map(
-                [...mutation.edits].map(([editSource, edit]) => [editSource, edit.changes]),
+              changes: new Map(),
+              result: withResultPresentations(
+                { edits: new Map(), semanticAction },
+                mutationContext,
               ),
-              result: executedMutation,
+              resourceEffect: true,
             };
           },
         );
-        return await completeTextMutation(outcome, mutationSource(definition, state.input));
-      } catch (error) {
-        return failedResourceEdit(
-          mutationSource(definition, state.input),
-          "INVALID_REQUEST",
-          errorMessage(error),
-          error,
-        );
       }
-    },
-  );
+      const outcome = await core.editTexts(
+        sources.resources.map((resourceSource) => ({
+          source: resourceSource,
+          read: true,
+          ...(definition.name === "write" && { allowReadFailure: true }),
+        })),
+        {
+          cwd: state.cwd,
+          intent: definition.intent ?? "edit",
+          ...(state.signal !== undefined && { signal: state.signal }),
+        },
+        async (texts, resolveAnchor) => {
+          for (const target of sources.targets) {
+            if (
+              target.expectedContent !== undefined &&
+              texts.get(target.source) !== target.expectedContent
+            )
+              throw Object.assign(
+                new Error("The selected source changed before editing. Resolve the symbol again."),
+                { code: SOURCE_CHANGED },
+              );
+          }
+          const mutationContext = createMutationContext(
+            definition,
+            state.input,
+            state,
+            sources,
+            texts,
+            resolveAnchor,
+            publishAnchorRenderState,
+          );
+          await preflightMutationAnchors(definition, state.input, mutationContext);
+          const mutation = await definition.mutate(mutationContext, state.input);
+          const executedMutation: ExecutedTextMutation = {
+            ...withResultPresentations(mutation, mutationContext),
+            ...(definition.name === "write" && {
+              unchangedWrite: {
+                source: mutationContext.sourceFor("path"),
+                content: mutationContext.sourceDocument.content,
+              },
+            }),
+          };
+          return {
+            changes: new Map(
+              [...mutation.edits].map(([editSource, edit]) => [editSource, edit.changes]),
+            ),
+            result: executedMutation,
+            presentedLines: presentedFinalStateLines([executedMutation]),
+          };
+        },
+      );
+      return await completeTextMutation(outcome, mutationSource(definition, state.input));
+    } catch (error) {
+      return failedResourceEdit(
+        mutationSource(definition, state.input),
+        "INVALID_REQUEST",
+        errorMessage(error),
+        error,
+      );
+    }
+  }
 
   return { pipeline, source };
 }
@@ -1390,6 +1404,53 @@ export function textMutationOperationReceipts(
       : edit.changes.length;
   return operation === "copy" && changes === 0 ? [] : [{ operation, changes }];
 }
+function textMutationRawChanges(before: string, changes: TextMutationEdit["changes"]) {
+  return applyTextChanges(before, changes, before.length === 0).changes.map(
+    (change, editIndex) => ({
+      editIndex,
+      fromA: change.fromBefore,
+      toA: change.toBefore,
+      fromB: change.fromAfter,
+      toB: change.toAfter,
+      removedText: change.removedText,
+      insertedText: change.insertedText,
+    }),
+  );
+}
+
+/**
+ * Selects the final lines that a successful result shows with presenter output. Only results of
+ * edits that used major anchors (LINE#HASH) show it, as fresh anchors for chaining edits.
+ */
+export function presentedFinalStateLines(
+  mutations: readonly {
+    readonly edits: ReadonlyMap<string, TextMutationEdit>;
+    readonly resultPresentations: ReadonlyMap<string, MutationResultPresentation>;
+  }[],
+): TextPresentedLines {
+  return ({ source, before, after, postEditContributions }) => {
+    if (
+      !mutations.some(
+        (mutation) =>
+          mutation.edits.has(source) && mutation.resultPresentations.get(source) === "major-anchor",
+      )
+    )
+      return [];
+    return finalStateLineNumbers({
+      before: before.content,
+      after: after.content,
+      rawChanges: textMutationRawChanges(
+        before.content,
+        mutations.flatMap((mutation) => mutation.edits.get(source)?.changes ?? []),
+      ),
+      hints:
+        postEditContributions
+          .map((contribution) => contribution.data)
+          .find(isTextMutationResultContributionData)?.hints ?? [],
+    });
+  };
+}
+
 /** Builds a mutation receipt; peer ranges are supplied only for per-call batch display results. */
 export function buildSuccessfulTextMutationResult(
   resource: CompletedTextResource,
@@ -1408,20 +1469,11 @@ export function buildSuccessfulTextMutationResult(
 ): FileMutationResult {
   const before = resource.before.content;
   const finalAfter = resource.after.content;
-  const applied = applyTextChanges(before, edit.changes, before.length === 0);
   const unified = createUnifiedDiff(resultSource, before, diffAfterContent);
   const mutationResultData = resource.postEditContributions
     .map((contribution) => contribution.data)
     .find(isTextMutationResultContributionData);
-  const rawChanges = applied.changes.map((change, editIndex) => ({
-    editIndex,
-    fromA: change.fromBefore,
-    toA: change.toBefore,
-    fromB: change.fromAfter,
-    toB: change.toAfter,
-    removedText: change.removedText,
-    insertedText: change.insertedText,
-  }));
+  const rawChanges = textMutationRawChanges(before, edit.changes);
 
   return new FileMutationResult({
     ...mutationResultData,

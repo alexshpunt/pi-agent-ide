@@ -120,25 +120,30 @@ export function createAstSearchResolver(
 
       const owner = (source: string): SearchEnvironment | undefined =>
         context.environmentForSource?.(source) ?? context.environment;
+      // Bytes ast-grep parsed, by file, so results and captures map onto the same text even
+      // when another process writes the file meanwhile.
+      let snapshots = new Map<string, Buffer>();
+      const search = async (searched: SearchRequest, signal?: AbortSignal) => {
+        const environment = owner(searched.path ?? ".");
+        const snapshot =
+          environment === undefined
+            ? await runAstGrepOnSnapshot(pattern, searched, context.cwd, signal)
+            : undefined;
+        if (snapshot === undefined)
+          return runAstGrep(pattern, searched, context.cwd, signal, environment);
+        snapshots.set(snapshot.source, snapshot.bytes);
+        return snapshot.matches;
+      };
       const collect = async (signal?: AbortSignal) => {
+        snapshots = new Map();
         if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
         const found: AstGrepMatch[] = [];
         if (context.scope === undefined) {
-          found.push(
-            ...(await runAstGrep(pattern, request, context.cwd, signal, context.environment)),
-          );
+          found.push(...(await search(request, signal)));
         } else {
           for (const source of new Set(context.scope.targets.map((target) => target.source))) {
             signal?.throwIfAborted();
-            found.push(
-              ...(await runAstGrep(
-                pattern,
-                { ...request, path: source },
-                context.cwd,
-                signal,
-                owner(source),
-              )),
-            );
+            found.push(...(await search({ ...request, path: source }, signal)));
           }
         }
         const mapped = found.map((match) => ({
@@ -154,7 +159,7 @@ export function createAstSearchResolver(
         const eligible: { raw: AstGrepMatch; selection: SearchSelectionMatch }[] = [];
         for (const match of mapped) {
           const selection = (
-            await selectionMatches([match], context.cwd, signal, owner(match.file))
+            await selectionMatches([match], context.cwd, signal, owner(match.file), snapshots)
           )[0];
           if (selection === undefined) throw new Error("Missing AST selection snapshot");
           if (
@@ -184,18 +189,31 @@ export function createAstSearchResolver(
             : eligible;
         const kept = candidates.slice(0, request.limit ?? 100);
         if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
-        return {
+        // The search session keeps this result and its refresh closure for as long as its anchors
+        // live. A copy keeps only the matched text, not each file the text was cut from.
+        return structuredClone({
           raw: kept.map((item) => item.raw),
           matches: kept.map((item) => item.selection),
           complete:
             (context.scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
-        };
+        });
       };
-      const selected = await collect(context.signal);
-      const session = await registerSelection(
-        { request, matches: selected.matches, complete: selected.complete, refresh: collect },
-        context,
-      );
+      // Anchors register only while the file still has the searched text; another process may
+      // write it in between, so search again.
+      const { selected, session } = await collectWhileSourceChanges(async () => {
+        const selected = await collect(context.signal);
+        try {
+          const session = await registerSelection(
+            { request, matches: selected.matches, complete: selected.complete, refresh: collect },
+            context,
+          );
+          return { selected, session };
+        } catch (error) {
+          if (error instanceof Error && error.name === "SearchSnapshotChangedError")
+            throw sourceChanged(error.message);
+          throw error;
+        }
+      }, context.signal);
       const data = selectionData(selected.matches, selected.complete, session.id, session);
       const captures: Record<string, ReturnType<typeof selectionData>["matches"]>[] = [];
       const captureGroups: Record<string, { target: string; nodes: number }>[] = [];
@@ -224,6 +242,7 @@ export function createAstSearchResolver(
             context.cwd,
             context.signal,
             owner(raw.file),
+            snapshots,
           );
           const group = await registerSelection(
             {
@@ -340,11 +359,17 @@ async function selectionMatches(
   cwd: string,
   signal?: AbortSignal,
   environment?: SearchEnvironment,
+  snapshots?: ReadonlyMap<string, Buffer>,
 ): Promise<SearchSelectionMatch[]> {
   const sources = new Map<string, Buffer>();
   for (const match of matches) {
     const source = resolveSource(cwd, match.file, environment);
     if (sources.has(source)) continue;
+    const snapshot = snapshots?.get(source);
+    if (snapshot !== undefined) {
+      sources.set(source, snapshot);
+      continue;
+    }
     if (environment !== undefined) {
       sources.set(source, Buffer.from(await environment.readText(source, signal)));
     } else {
@@ -352,7 +377,7 @@ async function selectionMatches(
       const bytes = await readFile(source, { signal });
       const after = await stat(source);
       if (before.mtimeMs !== after.mtimeMs || before.size !== after.size)
-        throw new Error("AST source changed during search. Run the structural query again.");
+        throw sourceChanged("AST source changed during search. Run the structural query again.");
       sources.set(source, bytes);
     }
   }
@@ -369,7 +394,7 @@ async function selectionMatches(
       end > bytes.length ||
       bytes.subarray(start, end).toString("utf8") !== match.text
     )
-      throw new Error("AST range does not match its source snapshot. Search again.");
+      throw sourceChanged("AST range does not match its source snapshot. Search again.");
     const prefix = bytes.subarray(0, start).toString("utf8");
     const throughEnd = bytes.subarray(0, end).toString("utf8");
     const lineNumber = prefix.split("\n").length;
@@ -493,4 +518,117 @@ async function runOwnedAstGrep(
     ...match,
     file: environment.resolve(executionCwd, match.file),
   }));
+}
+
+/** Searches of one pattern while other processes keep writing its files. */
+const SOURCE_CHANGE_DELAYS_MS = [0, 100, 250, 500];
+
+function sourceChanged(message: string): Error {
+  return Object.assign(new Error(message), { code: "SOURCE_CHANGED" });
+}
+
+/** Another Pi process may write a file between ast-grep's parse and this snapshot. */
+async function collectWhileSourceChanges<T>(
+  collect: () => Promise<T>,
+  signal: AbortSignal | undefined,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await collect();
+    } catch (error) {
+      const delay = SOURCE_CHANGE_DELAYS_MS[attempt];
+      const changed = (error as { code?: unknown } | null)?.code === "SOURCE_CHANGED";
+      if (!changed || delay === undefined || signal?.aborted) throw error;
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+/**
+ * Searches one local file through ast-grep's standard input, with the bytes read here. Returns
+ * undefined when the path is not one file or ast-grep cannot take the language from the request
+ * or the file extension; the caller then lets ast-grep read the path.
+ */
+async function runAstGrepOnSnapshot(
+  pattern: string,
+  request: SearchRequest,
+  cwd: string,
+  signal: AbortSignal | undefined,
+): Promise<{ source: string; bytes: Buffer; matches: AstGrepMatch[] } | undefined> {
+  // Globs filter files by path, which standard input does not have.
+  if (
+    request.path === undefined ||
+    request.path.includes("://") ||
+    cwd.includes("://") ||
+    request.include !== undefined ||
+    request.exclude !== undefined
+  )
+    return undefined;
+  const source = path.resolve(cwd, request.path);
+  const isFile = await stat(source).then(
+    (info) => info.isFile(),
+    () => false,
+  );
+  if (!isFile) return undefined;
+  const { rule, language } = astOptions(request) ?? {};
+  const lang = language ?? path.extname(source).slice(1);
+  if (lang.length === 0) return undefined;
+  const bytes = await readFile(source, { signal });
+  const arguments_ =
+    rule === undefined
+      ? ["run", "--pattern", pattern, "--lang", lang, "--stdin", "--json=compact"]
+      : [
+          "scan",
+          "--inline-rules",
+          JSON.stringify({ id: "ast_search", language, severity: "hint", rule }),
+          "--stdin",
+          "--json=compact",
+        ];
+  const result = await spawnAstGrep(arguments_, cwd, signal, bytes);
+  if (result === undefined) return undefined;
+  return { source, bytes, matches: result.map((match) => ({ ...match, file: source })) };
+}
+
+/** Runs ast-grep on standard input; undefined when it fails, such as for an unknown language. */
+function spawnAstGrep(
+  arguments_: readonly string[],
+  cwd: string,
+  signal: AbortSignal | undefined,
+  input: Buffer,
+): Promise<AstGrepMatch[] | undefined> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const child = spawn("ast-grep", [...arguments_], {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    }) as ChildProcessWithoutNullStreams;
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => (stdout += chunk));
+    child.stderr.resume();
+    const abort = (): void => {
+      child.kill("SIGTERM");
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    child.once("error", reject);
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(input);
+    child.once("close", (code) => {
+      signal?.removeEventListener("abort", abort);
+      if (signal?.aborted === true) {
+        reject(signal.reason instanceof Error ? signal.reason : new Error("AST search aborted"));
+        return;
+      }
+      if (code !== 0 && code !== 1) {
+        resolve(undefined);
+        return;
+      }
+      try {
+        const value: unknown = JSON.parse(stdout.length === 0 ? "[]" : stdout);
+        resolve(Array.isArray(value) ? (value as AstGrepMatch[]) : undefined);
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
 }

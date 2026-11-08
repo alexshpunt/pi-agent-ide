@@ -1,1 +1,1 @@
-export { AstScopeManager, parseDocument, type ScopeEntry } from "#src/ast/manager.js";
+export { AstScopeManager, withParsedDocument, type ScopeEntry } from "#src/ast/manager.js";

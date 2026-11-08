@@ -5,10 +5,12 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 
 import { LspClient } from "./client.js";
+import type { LspSharedServers } from "./shared-servers.js";
 import { SharedStartup, waitWithSignal } from "./abort.js";
 import { documentUri } from "./document-uri.js";
 import type { LspWorkspaceOwner } from "./workspace-owner.js";
 import { prepareProjectQuery } from "./project.js";
+import { retainForCurrentOperation } from "./document-leases.js";
 
 import { resolveInitializationOptions } from "./initialization-options.js";
 import { toDiagnostic } from "./diagnostics.js";
@@ -28,6 +30,13 @@ export interface LspPushDiagnosticsEvent {
 
 type PushHandler = (event: LspPushDiagnosticsEvent) => void;
 
+export interface LspManagerOptions {
+  /** Stop a server after this long without requests or open operations. Omitted: never. */
+  readonly idleTimeoutMs?: number;
+  /** Share local servers with other Pi sessions on this machine. Omitted: every server is own. */
+  readonly sharedServers?: LspSharedServers;
+}
+
 /**
  * LspManager — server lifecycle, connection pooling, idle timeout.
  *
@@ -40,10 +49,6 @@ export class LspManager {
     */
   private readonly _clients = new Map<string, LspClient>();
   private readonly _clientStarts = new Map<string, SharedStartup<LspClient>>();
-  /**
-    Track already-opened URIs to avoid duplicate didOpen in formatter.
-    */
-  private readonly _openDocs = new Set<string>();
   private readonly _pushUnsubscribers = new Map<string, () => void>();
   private readonly _pushHandlers = new Set<PushHandler>();
   private readonly _pushFingerprints = new Map<string, string>();
@@ -54,6 +59,7 @@ export class LspManager {
   private constructor(
     private _registry: LspServerRegistry,
     private _owner?: LspWorkspaceOwner,
+    private _options: LspManagerOptions = {},
   ) {}
 
   static getInstance(): LspManager {
@@ -68,17 +74,22 @@ export class LspManager {
     return LspManager._instance;
   }
 
-  static init(registry: LspServerRegistry, owner?: LspWorkspaceOwner): LspManager {
+  static init(
+    registry: LspServerRegistry,
+    owner?: LspWorkspaceOwner,
+    options: LspManagerOptions = {},
+  ): LspManager {
     const current = LspManager._instance;
 
     if (current?._disposed) {
       current._registry = registry;
       current._owner = owner;
+      current._options = options;
       current._disposed = false;
       return current;
     }
 
-    LspManager._instance = new LspManager(registry, owner);
+    LspManager._instance = new LspManager(registry, owner, options);
     return LspManager._instance;
   }
 
@@ -158,7 +169,10 @@ export class LspManager {
       return pending.wait(signal);
     }
     const client = this._clients.get(clientKey);
-    if (client?.ready) return client;
+    if (client?.ready) {
+      client.touch();
+      return client;
+    }
     const startup = new SharedStartup((startupSignal) =>
       this._startClient(clientKey, rootUri, match, client, startupSignal),
     );
@@ -167,7 +181,23 @@ export class LspManager {
       if (this._clientStarts.get(clientKey) === startup) this._clientStarts.delete(clientKey);
     };
     void startup.promise.then(settled, settled);
-    return startup.wait(signal);
+    const started = await startup.wait(signal);
+    started.touch();
+    return started;
+  }
+
+  /** Stop a server with no requests or open operations; the next request starts a new one. */
+  private _stopIdleClient(clientKey: string, client: LspClient): void {
+    if (this._clients.get(clientKey) === client) {
+      this._clients.delete(clientKey);
+      this._pushUnsubscribers.get(clientKey)?.();
+      this._pushUnsubscribers.delete(clientKey);
+      for (const key of this._pushFingerprints.keys())
+        if (key.startsWith(`${clientKey}:`)) this._pushFingerprints.delete(key);
+    }
+    void client.shutdown().catch((error: unknown) => {
+      console.error(`[lsp] ${client.serverId}: idle shutdown failed:`, error);
+    });
   }
 
   private async _startClient(
@@ -187,6 +217,8 @@ export class LspManager {
           this._owner && {
             ownerTransport: this._owner.transport(rootUri),
           }),
+        ...(!rootUri.startsWith("ssh://") &&
+          this._options.sharedServers && { sharedServers: this._options.sharedServers }),
         ...(match.config.env && { env: match.config.env }),
         ...(match.config.initializationOptions && {
           initOptions: resolveInitializationOptions(
@@ -198,6 +230,10 @@ export class LspManager {
         }),
         ...(match.config.settings && { settings: match.config.settings }),
         ...(match.config.timeoutMs && { timeoutMs: match.config.timeoutMs }),
+        ...(this._options.idleTimeoutMs !== undefined && {
+          idleTimeoutMs: this._options.idleTimeoutMs,
+          onIdle: () => this._stopIdleClient(clientKey, startingClient),
+        }),
       });
 
     try {
@@ -385,13 +421,6 @@ export class LspManager {
     return this._registry.languageId(extension);
   }
 
-  /**
-    True if this URI was already opened via openFile.
-    */
-  isOpen(uri: string): boolean {
-    return this._openDocs.has(uri);
-  }
-
   /** Publish saved text only to already-open documents; never start a server or probe a file. */
   syncEditedSource(source: string, content: string): void {
     for (const client of this._clients.values()) {
@@ -473,6 +502,7 @@ export class LspManager {
     }
 
     const uri = client.toUri(absolutePath);
+    retainForCurrentOperation(client, uri);
     const owner = remote ? this.requireOwner() : undefined;
     const resolved = owner
       ? await this._registry.resolveOwned(absolutePath, (source) => owner.exists(source, signal))
@@ -483,7 +513,7 @@ export class LspManager {
       const text = await owner.readText(uri, signal);
       signal?.throwIfAborted();
       client.syncDocument(uri, text, languageId);
-      this._openDocs.add(uri);
+      await client.waitUntilLoaded(signal);
       return { client, uri, languageId };
     }
     // Read file content for didOpen
@@ -493,12 +523,13 @@ export class LspManager {
       const text = await readFile(absolutePath, { encoding: "utf8", signal });
       signal?.throwIfAborted();
       client.syncDocument(uri, text, languageId);
-      this._openDocs.add(uri);
     } catch (error) {
       signal?.throwIfAborted();
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
       // Files created later will be synchronized by the next change.
     }
+    // A server that is still loading the project answers with incomplete or empty results.
+    await client.waitUntilLoaded(signal);
 
     return { client, uri, languageId };
   }

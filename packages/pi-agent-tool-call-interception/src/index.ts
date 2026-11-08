@@ -239,6 +239,8 @@ class AnnotatedToolCall implements Component {
     private backgroundAnsi: string | undefined,
   ) {}
 
+  private readonly backgroundLines = new BackgroundLines();
+
   public get inner(): Component {
     return this.component;
   }
@@ -281,7 +283,7 @@ class AnnotatedToolCall implements Component {
       }
     }
 
-    return preserveBackgroundLines(renderedLines, this.backgroundAnsi);
+    return this.backgroundLines.apply(renderedLines, this.backgroundAnsi);
   }
 
   public invalidate(): void {
@@ -295,6 +297,8 @@ class EnclosingBackgroundComponent implements Component {
     private backgroundAnsi: string,
   ) {}
 
+  private readonly backgroundLines = new BackgroundLines();
+
   public get inner(): Component {
     return this.component;
   }
@@ -305,7 +309,7 @@ class EnclosingBackgroundComponent implements Component {
   }
 
   public render(width: number): string[] {
-    return preserveBackgroundLines(this.component.render(width), this.backgroundAnsi);
+    return this.backgroundLines.apply(this.component.render(width), this.backgroundAnsi);
   }
 
   public invalidate(): void {
@@ -313,13 +317,32 @@ class EnclosingBackgroundComponent implements Component {
   }
 }
 
-function preserveBackgroundLines(
-  lines: readonly string[],
-  backgroundAnsi: string | undefined,
-): string[] {
-  return backgroundAnsi === undefined
-    ? [...lines]
-    : lines.map((line) => preserveEnclosingBackground(line, backgroundAnsi));
+/**
+ * Restores the tool background after resets in rendered lines. Pi renders every tool call on
+ * every frame, so lines that did not change keep their previous result. Returning the same
+ * strings also keeps the enclosing Box cache check an identity comparison.
+ */
+class BackgroundLines {
+  private input: readonly string[] = [];
+  private output: string[] = [];
+  private backgroundAnsi: string | undefined;
+
+  public apply(lines: readonly string[], backgroundAnsi: string | undefined): string[] {
+    if (backgroundAnsi === undefined) return [...lines];
+    const reusable = backgroundAnsi === this.backgroundAnsi;
+    let changed = !reusable || lines.length !== this.output.length;
+    const output = lines.map((line, index) => {
+      const previous = this.output[index];
+      if (reusable && previous !== undefined && this.input[index] === line) return previous;
+      changed = true;
+      return preserveEnclosingBackground(line, backgroundAnsi);
+    });
+    if (!changed) return this.output;
+    this.input = [...lines];
+    this.output = output;
+    this.backgroundAnsi = backgroundAnsi;
+    return output;
+  }
 }
 
 export function withToolCallInterceptionRendering<TParameters extends TSchema, TDetails, TState>(

@@ -260,9 +260,22 @@ type StageRunOutcome<State> =
       readonly failure: TextEditPipelineFailure;
     };
 
+/** A saved document that an edit result may show with presenter output. */
+export interface TextPresentedEdit {
+  readonly source: string;
+  readonly before: TextDocument;
+  readonly after: TextDocument;
+  readonly postEditContributions: readonly TextPostEditContribution[];
+}
+
+/** Returns the after-document lines that the edit result shows with presenter output. */
+export type TextPresentedLines = (edit: TextPresentedEdit) => readonly number[];
+
 export interface TextMutationResult<Result> {
   readonly text: string;
   readonly result: Result;
+  /** Presenters run only for the selected lines; without a selection they do not run. */
+  readonly presentedLines?: TextPresentedLines;
 }
 
 export interface TextResourceEditFailure {
@@ -321,6 +334,8 @@ export interface TextResourcesMutationResult<Result> {
   readonly result: Result;
   /** Complete without document writes, mutation guards, post-edit work, or edit completions. */
   readonly resourceEffect?: boolean;
+  /** Presenters run only for the selected lines; without a selection they do not run. */
+  readonly presentedLines?: TextPresentedLines;
 }
 
 export type TextResourcesEditOutcome<Result> =
@@ -1690,6 +1705,7 @@ async function editTextResources<Result>(
             requestedText: text,
             context,
             presenters,
+            presentedLines: mutation.presentedLines,
             postEditHandlers,
             editCompletionListeners,
             result: mutation.result,
@@ -1905,6 +1921,7 @@ interface FinalizeTextResourceRequest<Result> {
   readonly requestedText: string;
   readonly context: ResourceResolverContext & { readonly intent?: TextEditIntent };
   readonly presenters: readonly RegisteredPresenter[];
+  readonly presentedLines?: TextPresentedLines | undefined;
   readonly postEditHandlers: readonly TextPostEditHandlerRegistration[];
   readonly editCompletionListeners: readonly TextEditCompletionListener[];
   readonly result: Result;
@@ -1937,16 +1954,13 @@ async function finalizeTextResource<Result>(
     !skipPostEdit && request.resource.read
       ? await readSavedText(request.resource, request.context)
       : request.requestedText;
-  if (
+  // Another process wrote the file after this edit and before its deferred post-processing.
+  // The edit is saved and that writer saw it; formatting the newer text is not this edit's job.
+  const overwritten =
     !skipPostEdit &&
-    request.postProcessingFinal &&
+    request.postProcessingFinal === true &&
     !request.context.signal?.aborted &&
-    savedText !== (request.savedText ?? request.requestedText)
-  )
-    throw Object.assign(
-      new Error(`Resource changed before final post-processing: ${request.resource.source}`),
-      { code: "POST_EDIT_STALE", effect: "applied" as const },
-    );
+    savedText !== (request.savedText ?? request.requestedText);
   const parentToolCallId = request.postProcessingFinal
     ? request.parentToolCallId
     : currentTextEditOrigin();
@@ -1975,7 +1989,10 @@ async function finalizeTextResource<Result>(
     ? [{ id: "post-edit-scope", data: { formatting: { status: "deferred" } } }]
     : [];
 
-  for (const registration of skipPostEdit || deferred || request.context.signal?.aborted
+  for (const registration of skipPostEdit ||
+  deferred ||
+  overwritten ||
+  request.context.signal?.aborted
     ? []
     : request.postEditHandlers) {
     try {
@@ -1989,6 +2006,18 @@ async function finalizeTextResource<Result>(
     }
   }
 
+  if (overwritten)
+    postEditContributions.push({
+      id: "post-edit-interruption",
+      data: {
+        diffStatuses: [
+          {
+            text: "Another process changed the file after this edit, so post-edit processing was skipped. Read the file before editing it again.",
+            tone: "warning",
+          },
+        ],
+      },
+    });
   if (!skipPostEdit && !deferred && request.context.signal?.aborted)
     postEditContributions.push({
       id: "post-edit-interruption",
@@ -2020,7 +2049,7 @@ async function finalizeTextResource<Result>(
     intent: request.context.intent ?? "edit",
     postProcessing: deferred
       ? "deferred"
-      : request.context.signal?.aborted
+      : request.context.signal?.aborted || overwritten
         ? "interrupted"
         : request.postProcessingFinal
           ? "final"
@@ -2050,15 +2079,27 @@ async function finalizeTextResource<Result>(
   }
 
   let after = finalAfter;
+  // Presenters cost a whole-document pass (AST parsing, line hashing); run them only for shown lines.
+  const lineNumbers = new Set(
+    request.context.signal?.aborted
+      ? []
+      : (request.presentedLines?.({
+          source: request.outcomeSource,
+          before: request.before,
+          after: finalAfter,
+          postEditContributions,
+        }) ?? []),
+  );
   const presentationContext: TextPresentationContext = {
     purpose: "edit-diff",
+    lineNumbers,
     source: request.resource.source,
     cwd: request.context.cwd,
     resolvedBy: request.resolvedBy,
     ...(request.context.signal !== undefined && { signal: request.context.signal }),
   };
 
-  for (const { registration } of request.context.signal?.aborted ? [] : request.presenters) {
+  for (const { registration } of lineNumbers.size === 0 ? [] : request.presenters) {
     try {
       after = await registration.presenter.present(after, presentationContext);
     } catch (error) {
@@ -2271,6 +2312,7 @@ async function editTextResource<Result>(
         requestedText: mutation.text,
         context,
         presenters,
+        presentedLines: mutation.presentedLines,
         postEditHandlers,
         editCompletionListeners,
         result: mutation.result,

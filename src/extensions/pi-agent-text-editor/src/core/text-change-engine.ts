@@ -257,14 +257,11 @@ function validateChanges(length: number, changes: readonly TextChange[]): void {
 }
 
 function findLineStarts(text: string): number[] {
+  // Both line breaks end with "\n", so every line after the first starts after one. indexOf
+  // avoids a match object per line of a large file.
   const starts = [0];
-  const lineBreak = /\r\n|\n/gu;
-  let match: RegExpExecArray | null;
-
-  while ((match = lineBreak.exec(text)) !== null) {
-    starts.push(match.index + match[0].length);
-  }
-
+  for (let end = text.indexOf("\n"); end !== -1; end = text.indexOf("\n", end + 1))
+    starts.push(end + 1);
   return starts;
 }
 

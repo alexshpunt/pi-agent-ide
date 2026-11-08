@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { parseDocument } from "./manager.js";
+import { withParsedDocument } from "./manager.js";
 import { isSupportedOutlinePath } from "./outline.js";
 
 test.each([".cc", ".hh", ".hxx"])(
@@ -7,7 +7,12 @@ test.each([".cc", ".hh", ".hxx"])(
   async (extension) => {
     const file = `main${extension}`;
     expect(isSupportedOutlinePath(file)).toBe(true);
-    const tree = await parseDocument(file, process.cwd(), ["int main() { return 0; }"]);
-    expect(tree).toBeDefined();
+    const parsed = await withParsedDocument(
+      file,
+      process.cwd(),
+      ["int main() { return 0; }"],
+      (tree) => tree !== undefined,
+    );
+    expect(parsed).toBe(true);
   },
 );

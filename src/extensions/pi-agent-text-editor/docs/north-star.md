@@ -63,7 +63,7 @@ A resolver may recover its own rejected value. Recovery is non-mutating: core va
 10. writes accepted changed Resources in stable order through the same Resource objects;
 11. runs post-edit handlers and rereads each written Resource;
 12. notifies completion listeners with the raw before and final after documents;
-13. applies presenters to the final document used by tool results.
+13. applies presenters to the final-document lines that the tool result shows, if it shows any.
 
 Resolution, snapshot validation, change application, overlap checks, and guards all finish before the first write. These failures leave every Resource unchanged. If a later Resource write fails, core attempts to restore that Resource and every Resource written earlier, then reports any rollback failures. A rejection explicitly marked `effect: "not-applied"` guarantees that the rejected write made no stored change; core skips restoring that Resource and restores only earlier writes. Failures after all writes, such as post-write finalization failures, can report an applied effect instead of pretending the mutation was not persisted. `editText()` remains the one-Resource form of the same contract.
 

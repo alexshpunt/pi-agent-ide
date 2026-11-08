@@ -131,7 +131,29 @@ async function ensureParser(extension: string): Promise<WTS.Parser | undefined> 
   return parser;
 }
 
-export async function parseDocument(
+/**
+Parse a document and pass its syntax tree to `use`, then free the tree.
+
+web-tree-sitter trees live in WASM memory that JavaScript GC never reclaims, so the tree and its
+nodes are valid only until `use` settles. `use` receives `undefined` when no parser handles the
+file or the document is empty.
+*/
+export async function withParsedDocument<T>(
+  filePath: string,
+  cwd: string,
+  lines: readonly string[],
+  use: (tree: SyntaxTree | undefined) => T | Promise<T>,
+): Promise<T> {
+  const tree = await parseDocument(filePath, cwd, lines);
+
+  try {
+    return await use(tree);
+  } finally {
+    tree?.delete?.();
+  }
+}
+
+async function parseDocument(
   filePath: string,
   cwd: string,
   lines: readonly string[],
@@ -198,16 +220,16 @@ export class AstScopeManager {
       return [];
     }
 
-    const tree = await parseDocument(filePath, cwd, lines);
+    return await withParsedDocument(filePath, cwd, lines, (tree) => {
+      if (!tree) {
+        return [];
+      }
 
-    if (!tree) {
-      return [];
-    }
+      const candidates: ScopeCandidate[] = [];
+      this.collectCandidates(tree.rootNode, candidates);
 
-    const candidates: ScopeCandidate[] = [];
-    this.collectCandidates(tree.rootNode, candidates);
-
-    return this.buildEntries(candidates, lines);
+      return this.buildEntries(candidates, lines);
+    });
   }
 
   private collectCandidates(

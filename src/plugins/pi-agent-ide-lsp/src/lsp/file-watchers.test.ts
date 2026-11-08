@@ -47,3 +47,54 @@ test("delivers native matching file events and stops an unregistered subscriptio
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("watches only the project for patterns based on a parent directory or elsewhere", async () => {
+  const parent = path.resolve(".agents/tmp/lsp-watcher-tests");
+  await mkdir(parent, { recursive: true });
+  const outer = await mkdtemp(path.join(parent, "outer-"));
+  const root = path.join(outer, "project");
+  const sibling = path.join(outer, "sibling");
+  await mkdir(path.join(root, "node_modules", "package"), { recursive: true });
+  await mkdir(sibling);
+  const changes: WatchedFileChange[] = [];
+  const errors: Error[] = [];
+  const watchers = new LspFileWatchers(
+    root,
+    (event) => changes.push(event),
+    (error) => errors.push(error),
+  );
+  const uri = (file: string) => URI.file(file).toString();
+  try {
+    // Like typescript, which asks for every file under the project's parent directory.
+    await watchers.register("parent", [
+      { globPattern: { baseUri: URI.file(outer).toString(), pattern: "**/*.ts" } },
+    ]);
+    await watchers.register("sibling", [
+      { globPattern: { baseUri: URI.file(sibling).toString(), pattern: "**/*" } },
+    ]);
+    await writeFile(path.join(sibling, "outside.ts"), "");
+    await writeFile(path.join(root, "node_modules", "package", "index.ts"), "");
+    await writeFile(path.join(root, "inside.ts"), "");
+    await mkdir(path.join(root, "added"));
+    await delay(50);
+    await writeFile(path.join(root, "added", "nested.ts"), "");
+
+    await expect
+      .poll(() => changes.map((event) => event.uri))
+      .toEqual(
+        expect.arrayContaining([
+          uri(path.join(root, "inside.ts")),
+          uri(path.join(root, "added", "nested.ts")),
+        ]),
+      );
+    await delay(100);
+    expect(changes.map((event) => event.uri)).not.toContain(uri(path.join(sibling, "outside.ts")));
+    expect(changes.map((event) => event.uri)).not.toContain(
+      uri(path.join(root, "node_modules", "package", "index.ts")),
+    );
+    expect(errors).toEqual([]);
+  } finally {
+    watchers.dispose();
+    await rm(outer, { recursive: true, force: true });
+  }
+});

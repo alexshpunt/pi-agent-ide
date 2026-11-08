@@ -1,0 +1,8 @@
+{
+  "toolLatencyMs": { "default": { "p95": 5000, "max": 10000 } },
+  "piHeapGrowthPerCycleMb": 15,
+  "piRssPeakMb": 1200,
+  "piLoopDelayMaxMs": 1000,
+  "lspRssPeakMbPerLanguage": 4500,
+  "minMemAvailableMb": 1024
+}

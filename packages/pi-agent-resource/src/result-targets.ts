@@ -53,6 +53,8 @@ export class ResultTargetStore {
     string,
     { cwd: string; digest: string; consumable: boolean; references: string[]; resources: string[] }
   >();
+  /** One retained copy of each current source text, shared by every entry that snapshots it. */
+  readonly #contents = new Map<string, { identity: string; content: string }>();
 
   /** Forget results when the session closes or the extensions reload. */
   public clear(): void {
@@ -60,6 +62,7 @@ export class ResultTargetStore {
     this.#matchReferences.clear();
     this.#snapshots.clear();
     this.#results.clear();
+    this.#contents.clear();
   }
 
   /** Register trusted resolver data, not a live Resource or agent-supplied coordinates. */
@@ -68,7 +71,7 @@ export class ResultTargetStore {
     const reference = `${prefix}${randomUUID()}`;
     this.#entries.set(reference, {
       state: "ready",
-      targets: combineTargets(targets),
+      targets: combineTargets(this.#shareContents(targets, cwd)),
       complete,
       cwd: path.resolve(cwd),
     });
@@ -91,7 +94,7 @@ export class ResultTargetStore {
     this.#entries.set(reference, {
       state: "ready",
       cwd: entry.cwd,
-      targets: combineTargets(targets),
+      targets: combineTargets(this.#shareContents(targets, cwd)),
       complete: true,
     });
   }
@@ -268,6 +271,8 @@ export class ResultTargetStore {
 
   /** Permanently retire every ready selection of a changed file, including derived results. */
   public invalidate(source: string): void {
+    for (const [key, shared] of this.#contents)
+      if (shared.identity === source) this.#contents.delete(key);
     const removed = new Set<string>();
     for (const [reference, entry] of this.#entries) {
       if (
@@ -306,6 +311,22 @@ export class ResultTargetStore {
     for (const snapshot of [...this.#snapshots.values()])
       this.refresh(snapshot.source, snapshot.cwd);
   }
+  /** Replace equal snapshot text with the copy already retained, so repeated results add no copy. */
+  #shareContents(
+    targets: readonly ResultSourceTarget[],
+    cwd: string,
+  ): readonly ResultSourceTarget[] {
+    return targets.map((target) => {
+      const identity = sourcePath(target.source, cwd);
+      const key = JSON.stringify([path.resolve(cwd), identity]);
+      const shared = this.#contents.get(key);
+      if (shared?.content === target.expectedContent)
+        return { ...target, expectedContent: shared.content };
+      this.#contents.set(key, { identity, content: target.expectedContent });
+      return target;
+    });
+  }
+
   #references(input: unknown): string[] {
     if (typeof input === "string" && input.startsWith(prefix)) return [input];
     if (Array.isArray(input)) return input.flatMap((child) => this.#references(child));
