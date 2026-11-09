@@ -3,36 +3,10 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { SshBackend } from "#src/backend/ssh.ts";
 import { remotePython } from "#src/backend/ssh-transport.ts";
 import {
-  directions,
-  sourcePlatform,
+  selectedDirections,
   startTargetFixture,
-  type Direction,
   type SshTargetFixture,
 } from "#integration/support/ssh-target-fixture.ts";
-
-/**
- * Directions to run, written `source>target`. CI names them explicitly, so a direction whose
- * fixture cannot start fails here instead of being skipped. Without the variable, the
- * directions this machine can serve run: Windows targets need a Windows source or WSL interop.
- */
-function selectedDirections(): readonly Direction[] {
-  const requested = process.env.PI_SSH_COVERAGE_DIRECTIONS;
-  if (!requested)
-    return directions.filter(
-      (direction) =>
-        direction.startsWith(sourcePlatform) &&
-        (direction !== "linux>windows" || Boolean(process.env.WSL_DISTRO_NAME)),
-    );
-  return requested.split(",").map((name) => {
-    const direction = directions.find((candidate) => candidate === name.trim());
-    if (!direction) throw new Error(`Unknown SSH coverage direction: ${name}`);
-    if (!direction.startsWith(sourcePlatform))
-      throw new Error(
-        `${direction} needs a ${direction.split(">")[0]} source, not ${sourcePlatform}`,
-      );
-    return direction;
-  });
-}
 
 const sample = Buffer.concat([Buffer.from([0, 255, 128, 13, 10]), Buffer.from("café ü\r\nend")]);
 
@@ -86,7 +60,7 @@ describe.each(selectedDirections())("SSH direction %s", (direction) => {
   test("runs a program with exact arguments, cwd, binary output and exit status", async () => {
     const result = await backend.execute(
       remotePython(
-        "import json,os,sys\nsys.stdout.buffer.write(bytes([0,255,13,10]))\nprint(json.dumps([os.getcwd(),sys.argv[1:]],ensure_ascii=False),file=sys.stderr)\nsys.exit(7)",
+        "import json,os,sys\nsys.stdout.buffer.write(bytes([0,255,13,10]))\nprint(json.dumps([os.getcwd(),sys.argv[1:]]),file=sys.stderr)\nsys.exit(7)",
       ),
       ["two words", "café", "semi;colon"],
       fixture.canonical("nested café"),
@@ -114,4 +88,35 @@ describe.each(selectedDirections())("SSH direction %s", (direction) => {
     await expect(channel.completion).resolves.toEqual({ exitCode: 5 });
     expect(Buffer.concat(chunks)).toEqual(Buffer.from([255, 3, 2, 1]));
   });
+
+  test.runIf(targetOs === "windows")(
+    "refuses to replace a file another process holds open, without changing it",
+    async () => {
+      const file = fixture.canonical("held.txt");
+      const version = await backend.write(file, Buffer.from("before\r\n"), null);
+      // Open without sharing, as an editor or a running program may hold a file.
+      const holder = await backend.startProcess(
+        remotePython(
+          "import ctypes,sys\nk=ctypes.WinDLL('kernel32',use_last_error=True)\nk.CreateFileW.restype=ctypes.c_void_p\nk.CreateFileW.argtypes=[ctypes.c_wchar_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p]\nh=k.CreateFileW(sys.argv[1],0xC0000000,0,None,3,0x80,None)\nprint('held' if h not in (None,ctypes.c_void_p(-1).value) else 'failed',flush=True)\nsys.stdin.read()",
+        ),
+        [file.slice(1).replaceAll("/", "\\")],
+        fixture.workspace,
+      );
+      holder.stderr.resume();
+      try {
+        const opened = await new Promise<string>((resolve) =>
+          holder.stdout.once("data", (bytes: Buffer) => resolve(bytes.toString().trim())),
+        );
+        expect(opened).toBe("held");
+        await expect(backend.write(file, Buffer.from("after\r\n"), version)).rejects.toMatchObject({
+          code: "FILE_IN_USE",
+          effect: "not-applied",
+        });
+      } finally {
+        await holder.end();
+        await holder.completion;
+      }
+      expect((await fixture.get("held.txt")).toString("latin1")).toBe("before\r\n");
+    },
+  );
 });

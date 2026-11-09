@@ -3,12 +3,15 @@ name: SSH platforms
 
 # Runs the four Linux/Windows SSH directions on one Windows runner:
 # Linux and Windows Pi, each against a Linux sshd in WSL 2 and the Windows OpenSSH server.
+# ssh-platform-matrix checks the backend contract; ssh-platform-tools uses the IDE tools through real Pi.
 on:
   push:
     branches: [main, develop]
     paths:
       - src/backend/**
+      - src/plugins/pi-agent-ide-terminal/**
       - tests/integration/ssh-platform-matrix.integration.test.ts
+      - tests/integration/ssh-platform-tools.integration.test.ts
       - tests/integration/support/ssh-target-fixture.ts
       - tests/integration/support/ssh-fixture.ts
       - .github/workflows/ssh-platforms.yml
@@ -16,7 +19,9 @@ on:
     branches: [main, develop, "release/*"]
     paths:
       - src/backend/**
+      - src/plugins/pi-agent-ide-terminal/**
       - tests/integration/ssh-platform-matrix.integration.test.ts
+      - tests/integration/ssh-platform-tools.integration.test.ts
       - tests/integration/support/ssh-target-fixture.ts
       - tests/integration/support/ssh-fixture.ts
       - .github/workflows/ssh-platforms.yml
@@ -90,6 +95,7 @@ jobs:
           mkdir -p .agents/tmp/test-results
           env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs \
             tests/integration/ssh-platform-matrix.integration.test.ts \
+            tests/integration/ssh-platform-tools.integration.test.ts \
             --reporter=default --reporter=junit \
             --outputFile.junit=.agents/tmp/test-results/integration-ssh-platforms-windows.xml
 
@@ -118,6 +124,7 @@ jobs:
           status=0
           env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs \
             tests/integration/ssh-platform-matrix.integration.test.ts \
+            tests/integration/ssh-platform-tools.integration.test.ts \
             --reporter=default --reporter=junit \
             --outputFile.junit=.agents/tmp/test-results/integration-ssh-platforms-linux.xml || status=$?
           destination="$(wslpath -u '${{ github.workspace }}')/.agents/tmp/test-results"
