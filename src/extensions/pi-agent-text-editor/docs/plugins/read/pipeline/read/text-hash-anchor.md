@@ -1,8 +1,8 @@
-# Line-hash text anchor extension
+# Line anchor text extension
 
 ## Purpose
 
-`pi-agent-text-anchor-line-hash` is an optional extension that owns the `LINE#HASH` format. It registers both:
+`pi-agent-text-anchor-line-hash` is an optional extension that owns the line-anchor format. It registers both:
 
 - a major text anchor resolver with `pi-agent-text-editor`;
 - a matching read prefix handler with `pi-agent-read`.
@@ -11,25 +11,26 @@ The editor core and read core do not know this syntax.
 
 ## Format
 
-A line anchor is `${lineNumber}#${hash}`.
+A line anchor is one token of seven characters from the alphabet `0-9A-HJKMNP-TV-Z` (35 bits), for example `K7M2QX4`. The token is computed from the current text of the whole file in one pass; no map is stored.
 
-- line numbers are 1-based;
-- the hash uses exact line content without its terminator;
-- the hash is the first four uppercase hexadecimal characters of SHA-1;
-- an empty line hashes as `DA39`.
+- A line whose text occurs once in the file is named by a hash of that text alone. Its anchor stays valid however the file shifts, until the line itself changes or a copy of it appears.
+- A repeated line is named by a hash of its landmark (the nearest unique line above it), the number of times its text occurred since that landmark, and its text. The anchor stays valid after any change outside the stretch between the landmark and the line.
+- When no unique line is above, the start of the file is the landmark, so in a file of identical lines the anchor is in effect the occurrence number from the top.
 
-The resolver handles only this pattern. It fails when the line does not exist or the current line hash differs. A mismatch is terminal because the resolver owns the format.
+Lines are split as Read splits them: a line has no terminator, and a final line terminator does not add an empty line.
+
+The resolver handles only values of this shape. It fails when no line of the current file produces the anchor, and when several lines do; the second failure lists the candidates. A failure is terminal because the resolver owns the format.
 
 ## Read presentation
 
 For filesystem text, the read handler computes anchors before range projection and adds a neutral prefix:
 
 ```text
- 9#ABCD|const value = config.timeout;
-10#EF01|return value;
+K7M2QX4|const value = config.timeout;
+B4NR9T2|return value;
 ```
 
-It pads anchors to the maximum width of the complete text snapshot. It does not attach a `FileAnchor` object or change canonical line content.
+Every anchor has the same width, so no padding is needed. The handler derives each anchor from the complete text snapshot, not from the window being shown. It does not attach a `FileAnchor` object or change canonical line content.
 
 ## Registration
 

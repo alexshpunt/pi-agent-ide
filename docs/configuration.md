@@ -405,7 +405,7 @@ Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, 
 | ID                        | Contribution                         |
 | ------------------------- | ------------------------------------ |
 | `editor.anchor.constant`  | `begin` and `end` anchors            |
-| `editor.anchor.line-hash` | Snapshot-aware line anchors          |
+| `editor.anchor.line-hash` | Content-derived line anchors         |
 | `editor.anchor.exact`     | Unique exact text spans and recovery |
 | `editor.stale-anchor`     | Stale-anchor recovery behavior       |
 
