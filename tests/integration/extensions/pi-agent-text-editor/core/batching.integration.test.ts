@@ -68,11 +68,11 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "replace-shared", {
                 path: "shared.txt",
-                start: formatLineHashAnchor(2, "replace-me"),
+                start: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 2),
                 text: "replaced",
               }),
               call("delete", "delete-shared", {
-                start: formatLineHashAnchor(3, "delete-me"),
+                start: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 3),
               }),
             ],
             { stopReason: "toolUse" },
@@ -87,10 +87,10 @@ describe("pi-agent-text-editor batching", () => {
       expect(getToolResultText(result, "replace-shared")).not.toContain("replaced");
       expect(getToolResultText(result, "delete-shared")).toContain("shared.txt");
       expect(getToolResultText(result, "delete-shared")).toContain(
-        `${formatLineHashAnchor(2, "replaced")}|replaced`,
+        `${formatLineHashAnchor("alpha\nreplaced\nomega", 2)}|replaced`,
       );
       expect(getToolResultText(result, "delete-shared")).toContain(
-        `${formatLineHashAnchor(3, "omega")}|omega`,
+        `${formatLineHashAnchor("alpha\nreplaced\nomega", 3)}|omega`,
       );
       await expect(readFile(file, "utf8")).resolves.toBe("alpha\nreplaced\nomega");
     });
@@ -114,27 +114,30 @@ describe("pi-agent-text-editor batching", () => {
               call("write", "all-write", { path: "written.txt", content: "created" }),
               call("replace", "all-replace", {
                 path: "edited.txt",
-                start: formatLineHashAnchor(2, "replace-me"),
+                start: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 2),
                 text: "replaced",
               }),
               call("delete", "all-delete", {
                 path: "moved.txt",
-                start: formatLineHashAnchor(2, "delete-me"),
+                start: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 2),
               }),
               call("insert", "all-insert", {
                 path: "edited.txt",
-                anchor: formatLineHashAnchor(4, "insert-anchor"),
+                anchor: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 4),
                 text: "inserted",
               }),
               call("move", "all-move", {
                 path: "moved.txt",
-                start: formatLineHashAnchor(3, "move-me"),
-                targetStart: formatLineHashAnchor(5, "omega"),
+                start: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 3),
+                targetStart: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 5),
               }),
               call("copy", "all-copy", {
                 path: "edited.txt",
-                start: formatLineHashAnchor(3, "copy-me"),
-                targetStart: formatLineHashAnchor(5, "omega"),
+                start: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 3),
+                targetStart: formatLineHashAnchor(
+                  "alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega",
+                  5,
+                ),
               }),
             ],
             { stopReason: "toolUse" },
@@ -180,18 +183,18 @@ describe("pi-agent-text-editor batching", () => {
         return [
           call("replace", `grouped-${id}-replace`, {
             path: file,
-            start: formatLineHashAnchor(2, "change"),
+            start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
             text: `changed-${id}`,
           }),
           call("insert", `grouped-${id}-insert`, {
             path: file,
-            anchor: formatLineHashAnchor(3, "anchor"),
+            anchor: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
             text: `added-${id}`,
           }),
           call("copy", `grouped-${id}-copy`, {
             path: file,
-            start: formatLineHashAnchor(1, "alpha"),
-            targetStart: formatLineHashAnchor(4, "tail"),
+            start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+            targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
           }),
         ];
       });
@@ -240,46 +243,46 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "mixed-first-replace", {
                 path: "first-mixed.txt",
-                start: formatLineHashAnchor(2, "change"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
                 text: "changed-first",
               }),
               call("delete", "mixed-second-delete", {
                 path: "second-mixed.txt",
-                start: formatLineHashAnchor(2, "change"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
               }),
               call("replace", "mixed-third-replace", {
                 path: "third-mixed.txt",
-                start: formatLineHashAnchor(2, "change"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
                 text: "changed-third",
               }),
               call("insert", "mixed-first-insert", {
                 path: "first-mixed.txt",
-                anchor: formatLineHashAnchor(3, "anchor"),
+                anchor: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
                 text: "added-first",
               }),
               call("insert", "mixed-second-insert", {
                 path: "second-mixed.txt",
-                anchor: formatLineHashAnchor(3, "anchor"),
+                anchor: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
                 text: "added-second",
               }),
               call("delete", "mixed-third-delete", {
                 path: "third-mixed.txt",
-                start: formatLineHashAnchor(1, "alpha"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
               }),
               call("copy", "mixed-first-copy", {
                 path: "first-mixed.txt",
-                start: formatLineHashAnchor(1, "alpha"),
-                targetStart: formatLineHashAnchor(4, "tail"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+                targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
               }),
               call("copy", "mixed-second-copy", {
                 path: "second-mixed.txt",
-                start: formatLineHashAnchor(1, "alpha"),
-                targetStart: formatLineHashAnchor(4, "tail"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+                targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
               }),
               call("copy", "mixed-third-copy", {
                 path: "third-mixed.txt",
-                start: formatLineHashAnchor(1, "alpha"),
-                targetStart: formatLineHashAnchor(4, "tail"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+                targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
               }),
             ],
             { stopReason: "toolUse" },
@@ -328,17 +331,17 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "partial-first", {
                 path: "partial-failure.txt",
-                start: formatLineHashAnchor(2, "change"),
+                start: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 2),
                 text: "changed",
               }),
               call("replace", "partial-failed", {
                 path: "partial-failure.txt",
-                start: formatLineHashAnchor(99, "missing"),
+                start: "ZZZZZZZ",
                 text: "never",
               }),
               call("insert", "partial-last", {
                 path: "partial-failure.txt",
-                anchor: formatLineHashAnchor(3, "anchor"),
+                anchor: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 3),
                 text: "added",
               }),
             ],
@@ -352,7 +355,7 @@ describe("pi-agent-text-editor batching", () => {
       expect(getToolResultText(result, "partial-first")).toContain(deferredResult);
       expect(getToolExecution(result, "partial-failed").isError).toBe(true);
       expect(getToolResultText(result, "partial-failed")).toContain("replace blocked");
-      expect(getToolResultText(result, "partial-failed")).toContain("was not found");
+      expect(getToolResultText(result, "partial-failed")).toContain("is stale");
       expect(getToolExecution(result, "partial-last").isError).toBe(false);
       expect(getToolResultText(result, "partial-last")).toContain("partial-failure.txt");
       expect(getToolResultText(result, "partial-last")).toContain("changed");

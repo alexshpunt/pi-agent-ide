@@ -30,6 +30,16 @@ export {
 export { getTextSourceLine, type TextSourceLine, withTextSourceLine } from "./source-line.ts";
 
 export {
+  documentLineAnchors,
+  isLineAnchor,
+  LINE_ANCHOR_PATTERN,
+  lineAnchors,
+  linesWithAnchor,
+  PRESENTED_LINE_ANCHOR_PATTERN,
+  textLineAnchors,
+} from "./line-anchors.ts";
+
+export {
   createTextDocument,
   isTextLinePresenter,
   isTextPresenterRegistration,

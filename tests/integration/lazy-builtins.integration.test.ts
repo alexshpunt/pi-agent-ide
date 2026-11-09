@@ -118,7 +118,7 @@ test("the reduced text configuration keeps AST, anchors and edits working", asyn
     for (const id of ["ast", "anchors", "insert"])
       expect(getToolExecution(result, id).isError).toBe(false);
     expect(getToolResultText(result, "ast")).toContain("total");
-    expect(getToolResultText(result, "anchors")).toMatch(/1#[A-Z0-9]+\|/u);
+    expect(getToolResultText(result, "anchors")).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|/u);
     expect(await readFile(path.join(cwd, "example.ts"), "utf8")).toBe(
       source.replace("  return", "  // Keep the increment.\n  return"),
     );

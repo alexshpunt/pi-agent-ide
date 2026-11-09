@@ -3,7 +3,7 @@ import type { ExtensionAPI, ToolCallEvent, ToolResultEvent } from "@earendil-wor
 const PLACEHOLDER = /^SEARCH#RUNTIME:(\d+):(all|[1-9]\d*):(line|match)$/u;
 const LINE_PLACEHOLDER = /^LINE#RUNTIME:(\d+)$/u;
 const ANCHOR = /SEARCH#([A-F0-9]{4,64}):(all|[1-9]\d*):(line|match)/gu;
-const LINE_ANCHOR = /(?<![A-Za-z0-9])([1-9]\d*#[A-Z0-9]{3,4})\|/u;
+const LINE_ANCHOR = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|/mu;
 
 /**
  * Rewrites test placeholders with the search-session ID produced inside the

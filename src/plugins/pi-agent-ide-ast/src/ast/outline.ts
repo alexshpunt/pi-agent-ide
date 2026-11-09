@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { lineAnchors } from "pi-agent-text";
 import path from "node:path";
 
 import {
@@ -301,6 +302,7 @@ export class AstOutlineManager {
     const projectedLines = renderNodeLines(node, source, extension, maxDepth);
     const scopes = await getOutlineScopes(this.fallbackScopeManager, filePath, cwd, sourceLines);
     const markersByLine = buildScopeMarkers(scopes);
+    const anchors = lineAnchors(sourceLines);
     const renderedLines = projectedLines.map((line) => {
       const sourceLineNumber = line.sourceLine;
       const sourceContent =
@@ -316,6 +318,9 @@ export class AstOutlineManager {
             source: filePath,
             lineNumber: sourceLineNumber,
             content: sourceContent,
+            ...(anchors[sourceLineNumber - 1] !== undefined && {
+              anchor: anchors[sourceLineNumber - 1],
+            }),
           },
         }),
         ...(suffix.length > 0 && { suffix }),
@@ -339,6 +344,7 @@ function formatUnsupportedSourceBlock(
   displayPath: string,
   sourceLines: readonly string[],
 ): SourceViewBlock {
+  const anchors = lineAnchors(sourceLines);
   return {
     path: displayPath,
     startLine: sourceLines.length > 0 ? 1 : 0,
@@ -351,6 +357,7 @@ function formatUnsupportedSourceBlock(
           source: sourcePath,
           lineNumber: index + 1,
           content,
+          anchor: requiredValue(anchors[index]),
         },
       }),
     ),

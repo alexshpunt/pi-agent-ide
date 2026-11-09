@@ -4,7 +4,7 @@ import { formatDiagnostic } from "#src/toolchain/diagnostic.ts";
 
 import type { Diagnostic } from "#src/toolchain/types.ts";
 import type { SourceMappedTextContent } from "./source-view.ts";
-import type { TextDocument, TextSourceLine } from "pi-agent-text";
+import { textLineAnchors, type TextDocument, type TextSourceLine } from "pi-agent-text";
 
 /** Diagnostics produced by one named source such as `lsp` or `lint`. */
 export interface DiagnosticSource {
@@ -64,6 +64,7 @@ export function createDiagnosticViewContent(
     sources: sources.map((source) => source.source),
   };
   const fileLines = text.split(/\r\n|\r|\n/u);
+  const anchors = textLineAnchors(filePath, text);
   const diagnosticsByLine = diagnosticsByValidLine(sources, fileLines.length);
 
   if (diagnosticsByLine.size === 0) {
@@ -103,7 +104,13 @@ export function createDiagnosticViewContent(
       )
       .join(" ");
     renderedLines.push(annotations.length === 0 ? content : `${content}  ${annotations}`);
-    sourceLines[String(renderedLines.length)] = { source: filePath, lineNumber, content };
+    const anchor = anchors[lineNumber - 1];
+    sourceLines[String(renderedLines.length)] = {
+      source: filePath,
+      lineNumber,
+      content,
+      ...(anchor !== undefined && { anchor }),
+    };
   }
 
   return {

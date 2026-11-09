@@ -117,8 +117,8 @@ describe("interactive text editor demos", () => {
       expectedLines.splice(startIndex, endIndex - startIndex + 1, ...replacement.split("\n"));
       const arguments_ = {
         path: demoFileName,
-        start: formatLineHashAnchor(startIndex + 1, lines[startIndex]),
-        end: formatLineHashAnchor(endIndex + 1, lines[endIndex]),
+        start: formatLineHashAnchor(initialSource, startIndex + 1),
+        end: formatLineHashAnchor(initialSource, endIndex + 1),
         text: replacement,
       };
       const callId = "demo-large-range-replace";

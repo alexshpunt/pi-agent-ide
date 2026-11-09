@@ -127,7 +127,7 @@ test("ast source returns a compressed outline with original file anchors", async
     expect(rendered).toContain("getUser(id: string): string");
     expect(rendered).not.toContain("this.token");
     expect(rendered).not.toContain("hidden implementation");
-    expect(rendered).toMatch(/1#[A-Z0-9]{4}\|export class UserService/u);
+    expect(rendered).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|export class UserService/u);
     expect(rendered).toContain("<!-- scope-begin-");
 
     const message = getToolResultMessage(result, "read-ast-outline-source");
@@ -214,7 +214,7 @@ test("ast source outlines a language shared with LSP and debugger", async () => 
     const rendered = getToolResultText(result, "read-native-ast-outline-source");
     expect(rendered).toContain("## file: main.go");
     expect(rendered).toContain("func greet()");
-    expect(rendered).toMatch(/3#[A-Z0-9]{4}\|func greet\(\)/u);
+    expect(rendered).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|func greet\(\)/u);
     expect(rendered).toContain("<!-- scope-begin-");
   });
 }, 60_000);

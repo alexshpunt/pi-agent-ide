@@ -22,7 +22,7 @@ const tempRoot = path.resolve(".agents/tmp/source-inheritance");
 test.each([
   {
     name: "replace",
-    arguments: { start: formatLineHashAnchor(1, "HEADER"), text: "CHANGED" },
+    arguments: { start: formatLineHashAnchor("HEADER\nBODY\nTAIL\n", 1), text: "CHANGED" },
     expected: "CHANGED\nBODY\nTAIL\n",
   },
   {

@@ -344,7 +344,7 @@ async function inspectAnchors(
     result.contextRange === undefined
       ? undefined
       : await readApi.read(
-          // The blocked message teaches a fresh anchor, so context must carry hashes.
+          // The blocked message teaches a fresh anchor, so context must carry anchors.
           { path: source, views: ["anchors"], ...result.contextRange },
           {
             cwd: context.cwd,

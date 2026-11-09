@@ -58,7 +58,10 @@ const changedFixtureLines = fixtureLines.map((line, index) =>
   index === 7 ? "The changed observation produces a different content-derived anchor." : line,
 );
 
-test("adds hash anchors to filesystem text", async () => {
+const fixtureContent = fixtureLines.join("\n");
+const changedContent = changedFixtureLines.join("\n");
+
+test("adds line anchors to filesystem text", async () => {
   await withTempDirectory(async (directory) => {
     await writeFile(path.join(directory, "original.md"), fixtureLines.join("\n"), "utf8");
     await writeFile(path.join(directory, "changed.md"), changedFixtureLines.join("\n"), "utf8");
@@ -75,11 +78,11 @@ test("adds hash anchors to filesystem text", async () => {
     const original = getToolResultMessage<ReadResultDetails>(result, "read-original");
     const originalText = getToolResultText(result, "read-original");
     const changedText = getToolResultText(result, "read-changed");
-    const originalAnchor = formatLineHashAnchor(8, fixtureLines[7]);
-    const changedAnchor = formatLineHashAnchor(8, changedFixtureLines[7]);
+    const originalAnchor = formatLineHashAnchor(fixtureContent, 8);
+    const changedAnchor = formatLineHashAnchor(changedContent, 8);
 
-    expect(originalText).toBe(renderLineHashLines(fixtureLines).join("\n"));
-    expect(changedText).toBe(renderLineHashLines(changedFixtureLines).join("\n"));
+    expect(originalText).toBe(renderLineHashLines(fixtureContent).join("\n"));
+    expect(changedText).toBe(renderLineHashLines(changedContent).join("\n"));
     expect(originalAnchor).not.toBe(changedAnchor);
     expect(originalText).toContain(`${originalAnchor}|${fixtureLines[7]}`);
     expect(changedText).toContain(`${changedAnchor}|${changedFixtureLines[7]}`);
@@ -103,7 +106,7 @@ test("keeps original anchors when projecting a range", async () => {
     const selectedLines = fixtureLines.slice(6, 9);
 
     expect(getToolResultText(result, "read-range")).toContain(
-      renderLineHashLines(fixtureLines, 7, 9).join("\n"),
+      renderLineHashLines(fixtureContent, 7, 9).join("\n"),
     );
     expect(restoreReadDetails(read.details, getToolResultText(result, "read-range"))).toMatchObject(
       {

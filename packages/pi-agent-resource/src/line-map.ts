@@ -74,16 +74,6 @@ export function createLineMap(before: string, after: string): LineMap | undefine
   };
 }
 
-/** Follow a map and then the next one; a line survives only when it survives both. */
-export function composeLineMaps(first: Int32Array, second: Int32Array): Int32Array {
-  const composed = new Int32Array(first.length);
-  for (let line = 1; line < first.length; line += 1) {
-    const middle = first[line] ?? 0;
-    composed[line] = middle === 0 ? 0 : (second[middle] ?? 0);
-  }
-  return composed;
-}
-
 /**
  * Move a range to the new text. Every line it touches must be unchanged and still adjacent;
  * otherwise the selected text changed, and the range has no safe position.

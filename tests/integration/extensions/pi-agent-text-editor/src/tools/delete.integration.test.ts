@@ -24,7 +24,10 @@ describe("pi-agent-text-editor delete", () => {
         cwd: directory,
         testName: "text-editor-delete",
         tool: "delete",
-        arguments: { path: relativeFile, start: formatLineHashAnchor(2, "delete-me") },
+        arguments: {
+          path: relativeFile,
+          start: formatLineHashAnchor("before\ndelete-me\nafter\n", 2),
+        },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
       expectTextToolDiff(scenario, relativeFile, "before\ndelete-me\nafter\n", "before\nafter\n");

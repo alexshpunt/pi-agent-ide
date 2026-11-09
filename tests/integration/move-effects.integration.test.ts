@@ -213,8 +213,8 @@ test("text Move failure keeps uncertainty after receipt creation fails", async (
           path: ".tmp/move-effects/text-source.txt",
           start: "MOVE-ME",
           target: ".tmp/move-effects/text-target.txt",
-          // Edit results present lines, and so build their receipt, only for LINE#HASH edits.
-          targetStart: formatLineHashAnchor(1, "head"),
+          // Edit results present lines, and so build their receipt, only for line anchor edits.
+          targetStart: formatLineHashAnchor("head\ntail\n", 1),
         }),
         assistantMessage([text("The failed Move needs inspection before retrying.")]),
       ],

@@ -59,12 +59,8 @@ export class FileMutationAgentResult {
   // ── Failure formatting ────────────────────────────────────────────────
 
   private formatFailure(fmr: FileMutationResult): string {
-    // Special case: all edits were stale anchors (without detailed staleDiagnostic)
-    if (
-      fmr.errors.some((e) => e.code === "STALE_ANCHOR") &&
-      fmr.staleEdits.length > 0 &&
-      !fmr.staleDiagnostic
-    ) {
+    // Special case: every edit failed on a stale anchor
+    if (fmr.errors.some((e) => e.code === "STALE_ANCHOR") && fmr.staleEdits.length > 0) {
       return this.formatStaleFailure(fmr);
     }
 
@@ -197,27 +193,6 @@ export class FileMutationAgentResult {
 
     if (fmr.editIndices !== undefined && fmr.editIndices.length > 0) {
       lines.push("", `Edit indices: ${fmr.editIndices.join(", ")}`);
-    }
-
-    // Stale diagnostic (detailed stale anchor with context)
-    if (fmr.staleDiagnostic) {
-      const sd = fmr.staleDiagnostic;
-      lines.push("", `target: ${fmr.path ?? "?"}`);
-      lines.push(`line: ${sd.lineNumber}`, "");
-      lines.push("expected:");
-      lines.push(`  ${sd.expected.lineNumber}#${sd.expected.hash}  (original text unavailable)`);
-      lines.push("", "current:");
-      lines.push(`  ${sd.current.lineNumber}#${sd.current.hash}  ${sd.current.text}`);
-      lines.push("", `anchor_hash_changed: ${sd.anchorHashChanged}`);
-
-      if (sd.currentContext.length > 0) {
-        lines.push("", "current_context:");
-
-        for (const context of sd.currentContext) {
-          const marker = context.lineNumber === sd.lineNumber ? ">>" : "  ";
-          lines.push(`  ${marker} ${context.lineNumber}#${context.hash}  ${context.text}`);
-        }
-      }
     }
 
     // A failed call alone does not prove that files stayed unchanged.

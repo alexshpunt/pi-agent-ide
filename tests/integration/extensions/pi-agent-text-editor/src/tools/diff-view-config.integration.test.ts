@@ -95,13 +95,12 @@ async function seedFile(
 }
 
 function replaceArguments(fileName: string, content: string) {
-  const lines = content.split("\n");
   const startIndex = 9;
   const endIndex = startIndex + SWAPPED_ROWS - 1;
   return {
     path: fileName,
-    start: formatLineHashAnchor(startIndex + 1, lines[startIndex]),
-    end: formatLineHashAnchor(endIndex + 1, lines[endIndex]),
+    start: formatLineHashAnchor(content, startIndex + 1),
+    end: formatLineHashAnchor(content, endIndex + 1),
     text: replacement,
   };
 }

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isLineAnchor } from "pi-agent-text";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import {
   TEXT_EDITOR_API_VERSION,
@@ -35,9 +36,10 @@ function usesRegisteredSelector(input: Record<string, unknown>): boolean {
     return values.some(
       (value: unknown) =>
         typeof value === "string" &&
-        /^(?:RESULT#|SEARCH#|CHANGE#|scope-(?:begin|end)-|\d+#[a-f\d]+$|begin$|end$|<system-result)/iu.test(
-          value,
-        ),
+        (isLineAnchor(value) ||
+          /^(?:RESULT#|SEARCH#|CHANGE#|scope-(?:begin|end)-|begin$|end$|<system-result)/iu.test(
+            value,
+          )),
     );
   });
 }

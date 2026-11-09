@@ -17,7 +17,6 @@ export {
   type MutationOperationReceipt,
   type MutationSnapshot,
   type MutationResultPresentation,
-  type StaleAnchorDiagnostic,
   type StaleEditInfo,
   type StrictEditErrorCode,
   type SyntaxErrorSummary,

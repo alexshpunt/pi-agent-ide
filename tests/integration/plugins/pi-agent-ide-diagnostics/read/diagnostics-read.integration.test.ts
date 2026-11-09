@@ -121,13 +121,12 @@ test("diagnostics source combines lint and LSP with context and normal ranges", 
     expect(focused).toContain("// context 2");
     expect(focused).toContain("// context 15");
     expect(focused).not.toContain("export function checkValue");
-    expect(focused).not.toMatch(/\n\s*17#[A-Z0-9]{4}\|/u);
     expect(focused).toContain("<!-- eslint_d:");
     expect(focused).toContain("eslint_d:no-console");
     expect(focused).toContain("<!-- tsc:");
     expect(focused).toContain("tsc:2352");
-    expect(focused).toMatch(/7#[A-Z0-9]{4}\|/u);
-    expect(focused).toMatch(/11#[A-Z0-9]{4}\|/u);
+    expect(focused).toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|.*<!-- eslint_d:/mu);
+    expect(focused).toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|.*<!-- tsc:/mu);
 
     const focusedMessage = getToolResultMessage(result, "read-diagnostics-source");
     expect((focusedMessage.details as { readonly source?: string }).source).toMatch(

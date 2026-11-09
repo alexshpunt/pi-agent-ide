@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { composeLineMaps, createLineMap, rebaseRange, type LineMap } from "./line-map.ts";
+import { createLineMap, rebaseRange, type LineMap } from "./line-map.ts";
 
 /** Serializable source coordinates. Lines are one-based; columns are UTF-16 offsets. */
 export interface ResultRange {
@@ -37,17 +37,6 @@ const event = "pi-agent-resource:result-targets";
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
-/** Earlier versions of one file whose lines can still be located, and files tracked this way. */
-const maxLineMapsPerFile = 32;
-const maxTrackedFiles = 64;
-
-/** Where the lines of earlier versions of a local file sit in its latest known text. */
-interface VersionChain {
-  latest: string;
-  /** One table per earlier version, newest first, each indexed by that version's line number. */
-  maps: Int32Array[];
-}
-
 type ResultEntry = { readonly cwd: string } & (
   | (ResolvedResultTargets & { readonly state: "ready" })
   | { readonly state: "pending" }
@@ -68,11 +57,9 @@ export class ResultTargetStore {
   >();
   /** One retained copy of each current source text, shared by every entry that snapshots it. */
   readonly #contents = new Map<string, { identity: string; content: string }>();
-  readonly #chains = new Map<string, VersionChain>();
 
   /** Forget results when the session closes or the extensions reload. */
   public clear(): void {
-    this.#chains.clear();
     this.#entries.clear();
     this.#matchReferences.clear();
     this.#snapshots.clear();
@@ -323,29 +310,6 @@ export class ResultTargetStore {
     this.#snapshots.set(key, { source, cwd, stamp });
   }
 
-  /**
-   * Current line numbers of a line that existed in an earlier version of a local file and has not
-   * changed since. Several earlier versions can disagree, so every candidate is returned; the
-   * caller must check each against the text it is looking for. `content` is the text being edited.
-   */
-  public relocatedLines(
-    source: string,
-    cwd: string,
-    content: string,
-    lineNumber: number,
-  ): number[] {
-    this.refresh(source, cwd);
-    const identity = sourcePath(source, cwd);
-    if (!this.#chains.has(identity)) return [];
-    this.#advance(identity, content);
-    const lines = new Set<number>();
-    for (const table of this.#chains.get(identity)?.maps ?? []) {
-      const moved = table[lineNumber];
-      if (moved !== undefined && moved !== 0) lines.add(moved);
-    }
-    return [...lines];
-  }
-
   /** Check surviving snapshots at a script boundary, including final formatting. */
   public refreshAll(): void {
     for (const snapshot of [...this.#snapshots.values()])
@@ -358,11 +322,9 @@ export class ResultTargetStore {
   #retire(identity: string, stamp: string | undefined): void {
     const next = stamp === undefined ? undefined : readLocalText(identity);
     if (next === undefined) {
-      this.#chains.delete(identity);
       this.invalidate(identity);
       return;
     }
-    this.#advance(identity, next);
     const maps = new Map<string, LineMap | undefined>();
     const removed = new Set<string>();
     const rebased = new Set<string>();
@@ -417,30 +379,6 @@ export class ResultTargetStore {
         this.#results.delete(id);
   }
 
-  /** Record that a local file now reads `next`, keeping where its earlier lines went. */
-  #advance(identity: string, next: string): void {
-    if (!path.isAbsolute(identity)) return;
-    const chain = this.#chains.get(identity);
-    if (chain === undefined) {
-      this.#chains.set(identity, { latest: next, maps: [] });
-      while (this.#chains.size > maxTrackedFiles) {
-        const oldest = this.#chains.keys().next().value;
-        if (oldest === undefined) break;
-        this.#chains.delete(oldest);
-      }
-      return;
-    }
-    if (chain.latest === next) return;
-    const step = createLineMap(chain.latest, next);
-    if (step === undefined) {
-      this.#chains.set(identity, { latest: next, maps: [] });
-      return;
-    }
-    chain.maps = [step.table, ...chain.maps.map((table) => composeLineMaps(table, step.table))];
-    chain.maps.length = Math.min(chain.maps.length, maxLineMapsPerFile);
-    chain.latest = next;
-  }
-
   /** Replace equal snapshot text with the copy already retained, so repeated results add no copy. */
   #shareContents(
     targets: readonly ResultSourceTarget[],
@@ -452,7 +390,6 @@ export class ResultTargetStore {
       const shared = this.#contents.get(key);
       if (shared?.content === target.expectedContent)
         return { ...target, expectedContent: shared.content };
-      this.#advance(identity, target.expectedContent);
       this.#contents.set(key, { identity, content: target.expectedContent });
       return target;
     });

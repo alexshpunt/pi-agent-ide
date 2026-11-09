@@ -49,7 +49,8 @@ describe("pi-agent-text-editor batch recovery", () => {
   test("resolves every same-file anchor against the original file", async () => {
     await withTempWorkspace(async (directory) => {
       const file = path.join(directory, "original-anchors.txt");
-      await writeFile(file, ["line-01", "line-02", "line-03", "line-04"].join("\n"), "utf8");
+      const content = ["line-01", "line-02", "line-03", "line-04"].join("\n");
+      await writeFile(file, content, "utf8");
 
       const result = await new PiIntegrationTest({
         artifactsDir: testArtifactsDir(expect.getState().testPath),
@@ -62,12 +63,12 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("insert", "insert-first", {
                 path: "original-anchors.txt",
-                anchor: formatLineHashAnchor(1, "line-01"),
+                anchor: formatLineHashAnchor(content, 1),
                 text: "NORMAL-INSERT-1",
               }),
               call("insert", "insert-second", {
                 path: "original-anchors.txt",
-                anchor: formatLineHashAnchor(3, "line-03"),
+                anchor: formatLineHashAnchor(content, 3),
                 text: "NORMAL-INSERT-2",
               }),
             ],
@@ -118,25 +119,22 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("insert", "mixed-insert", {
                 path: "transaction.ts",
-                anchor: formatLineHashAnchor(1, "export function loadConfig() {"),
+                anchor: formatLineHashAnchor(source, 1),
                 text: '    const env = process.env.NODE_ENV ?? "development";',
               }),
               call("replace", "mixed-replace", {
                 path: "transaction.ts",
-                start: formatLineHashAnchor(3, "    const retries = 2;"),
+                start: formatLineHashAnchor(source, 3),
                 text: "    const retries = 4;",
               }),
               call("delete", "mixed-delete", {
                 path: "transaction.ts",
-                start: formatLineHashAnchor(5, "    const deprecated = true;"),
+                start: formatLineHashAnchor(source, 5),
               }),
               call("copy", "mixed-copy", {
                 path: "transaction.ts",
-                start: formatLineHashAnchor(7, "    const headers = createHeaders();"),
-                targetStart: formatLineHashAnchor(
-                  9,
-                  "    return { mode, retries, timeout, endpoint, headers };",
-                ),
+                start: formatLineHashAnchor(source, 7),
+                targetStart: formatLineHashAnchor(source, 9),
               }),
             ],
             { stopReason: "toolUse" },
@@ -171,8 +169,11 @@ describe("pi-agent-text-editor batch recovery", () => {
     await withTempWorkspace(async (directory) => {
       const firstFile = path.join(directory, "atomic-first.txt");
       const secondFile = path.join(directory, "atomic-second.txt");
-      await writeFile(firstFile, "alpha\nfirst\nsecond\nomega", "utf8");
-      await writeFile(secondFile, "beta\nchange\nomega", "utf8");
+      const firstContent = "alpha\nfirst\nsecond\nomega";
+      const secondContent = "beta\nchange\nomega";
+      const outdatedAnchor = formatLineHashAnchor("alpha\nfirst\noutdated\nomega", 3);
+      await writeFile(firstFile, firstContent, "utf8");
+      await writeFile(secondFile, secondContent, "utf8");
 
       const result = await new PiIntegrationTest({
         artifactsDir: testArtifactsDir(expect.getState().testPath),
@@ -185,22 +186,22 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("replace", "atomic-first", {
                 path: "atomic-first.txt",
-                start: formatLineHashAnchor(2, "first"),
+                start: formatLineHashAnchor(firstContent, 2),
                 text: "first-change",
               }),
               call("replace", "atomic-second", {
                 path: "atomic-second.txt",
-                start: formatLineHashAnchor(2, "change"),
+                start: formatLineHashAnchor(secondContent, 2),
                 text: "second-change",
               }),
               call("replace", "atomic-stale", {
                 path: "atomic-first.txt",
-                start: formatLineHashAnchor(3, "outdated"),
+                start: outdatedAnchor,
                 text: "must-not-apply",
               }),
               call("replace", "atomic-after-stale", {
                 path: "atomic-second.txt",
-                start: formatLineHashAnchor(3, "omega"),
+                start: formatLineHashAnchor(secondContent, 3),
                 text: "omega-change",
               }),
             ],
@@ -220,10 +221,7 @@ describe("pi-agent-text-editor batch recovery", () => {
       expect(staleDetails).toHaveProperty("batchRecovery.recovered", false);
       expect(getToolExecution(result, "atomic-after-stale").isError).toBe(false);
       const staleResult = getToolResultText(result, "atomic-stale");
-      expect(staleResult).toContain(
-        `replace blocked: start anchor "${formatLineHashAnchor(3, "outdated")}" is stale`,
-      );
-      expect(staleResult).toContain("3#352F|second");
+      expect(staleResult).toContain(`replace blocked: start anchor "${outdatedAnchor}" is stale`);
       expect(staleResult).not.toContain("Reason:");
       await expect(readFile(firstFile, "utf8")).resolves.toBe("alpha\nfirst-change\nsecond\nomega");
       await expect(readFile(secondFile, "utf8")).resolves.toBe("beta\nsecond-change\nomega-change");
@@ -243,6 +241,7 @@ describe("pi-agent-text-editor batch recovery", () => {
         "sixth",
         "omega",
       ].join("\n");
+      const outdatedStreamedAnchor = formatLineHashAnchor(source.replace("third", "outdated"), 4);
       const staleText = Array.from(
         { length: 100 },
         (_, index) => `stale text ${String(index + 1).padStart(2, "0")}`,
@@ -250,25 +249,25 @@ describe("pi-agent-text-editor batch recovery", () => {
       const staleChunks: ChunkSpec = {
         kind: "explicit",
         chunks: [
-          `{"start":${JSON.stringify(formatLineHashAnchor(4, "outdated"))},`,
+          `{"start":${JSON.stringify(outdatedStreamedAnchor)},`,
           `"text":${JSON.stringify(staleText)}}`,
         ],
       };
       const tailCalls = [
-        { id: "tail-fourth", line: 5, original: "fourth" },
-        { id: "tail-fifth", line: 6, original: "fifth" },
-        { id: "tail-sixth", line: 7, original: "sixth" },
+        { id: "tail-fourth", line: 5 },
+        { id: "tail-fifth", line: 6 },
+        { id: "tail-sixth", line: 7 },
       ];
-      const tailChunks = tailCalls.map(({ id, line, original }, index) => ({
+      const tailChunks = tailCalls.map(({ id, line }, index) => ({
         id,
         contentIndex: index + 4,
-        argumentsJson: `{"start":${JSON.stringify(formatLineHashAnchor(line, original))},"text":${JSON.stringify(
+        argumentsJson: `{"start":${JSON.stringify(formatLineHashAnchor(source, line))},"text":${JSON.stringify(
           `${id}\n${staleText}`,
         )}}`,
         chunks: {
           kind: "explicit" as const,
           chunks: [
-            `{"start":${JSON.stringify(formatLineHashAnchor(line, original))},`,
+            `{"start":${JSON.stringify(formatLineHashAnchor(source, line))},`,
             `"text":${JSON.stringify(`${id}\n${staleText}`)}}`,
           ],
         },
@@ -286,11 +285,11 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("replace", "safe-first", {
                 path: "streamed-batch.txt",
-                start: formatLineHashAnchor(2, "first"),
+                start: formatLineHashAnchor(source, 2),
                 text: "first-change",
               }),
               call("replace", "safe-second", {
-                start: formatLineHashAnchor(3, "second"),
+                start: formatLineHashAnchor(source, 3),
                 text: "second-change",
               }),
               ...tailChunks.map(({ id, contentIndex, argumentsJson, chunks }) =>

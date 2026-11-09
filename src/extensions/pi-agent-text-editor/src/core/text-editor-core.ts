@@ -485,12 +485,7 @@ export function createTextEditorCore(
 ): TextEditorCore {
   const projectConfig = loadTextEditorConfig(process.cwd());
   const resolvers: RegisteredResolver[] = [];
-  const anchorRegistry = new TextAnchorRegistry(
-    resultTargets === undefined
-      ? undefined
-      : (context, lineNumber) =>
-          resultTargets.relocatedLines(context.source, context.cwd, context.content, lineNumber),
-  );
+  const anchorRegistry = new TextAnchorRegistry();
   const handlers: RegisteredHandler[] = [];
   const semanticHandlers: RegisteredSemanticHandler[] = [];
   const presenters: RegisteredPresenter[] = [];
@@ -2084,7 +2079,7 @@ async function finalizeTextResource<Result>(
   }
 
   let after = finalAfter;
-  // Presenters cost a whole-document pass (AST parsing, line hashing); run them only for shown lines.
+  // Presenters cost a whole-document pass (AST parsing, deriving line anchors); run them only for shown lines.
   const lineNumbers = new Set(
     request.context.signal?.aborted
       ? []

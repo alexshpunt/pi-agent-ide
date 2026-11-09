@@ -68,13 +68,13 @@ describe("resolvePartial", () => {
     const json = JSON.stringify({
       edits: [
         { path: "a.ts", start: "begin", end: "end", text: "content" },
-        { path: "b.ts", start: "1#ABCD", end: "50#EFGH", text: "other" },
+        { path: "b.ts", start: "K7M2QX4", end: "E5R6T7S", text: "other" },
       ],
     });
     const edits = editsOf(json);
     expect(edits).toHaveLength(2);
     expect(requiredValue(edits)[0]).toMatchObject({ path: "a.ts", start: "begin" });
-    expect(requiredValue(edits)[1]).toMatchObject({ path: "b.ts", start: "1#ABCD" });
+    expect(requiredValue(edits)[1]).toMatchObject({ path: "b.ts", start: "K7M2QX4" });
   });
 
   // ─── Partial: object still streaming ────────────────────────────────
@@ -98,11 +98,11 @@ describe("resolvePartial", () => {
 
   it("extracts objects from array with one complete + one incomplete", () => {
     const json =
-      '{"edits":[{"path":"a.ts","start":"begin","end":"end","text":"ok"},{"path":"b.ts","start":"1#ABCD"';
+      '{"edits":[{"path":"a.ts","start":"begin","end":"end","text":"ok"},{"path":"b.ts","start":"K7M2QX4"';
     const edits = editsOf(json);
     expect(edits).toHaveLength(2);
     expect(requiredValue(edits)[0]).toMatchObject({ path: "a.ts", start: "begin" });
-    expect(requiredValue(edits)[1]).toMatchObject({ path: "b.ts", start: "1#ABCD" });
+    expect(requiredValue(edits)[1]).toMatchObject({ path: "b.ts", start: "K7M2QX4" });
   });
 
   it("extracts objects when second is barely started", () => {
@@ -122,7 +122,7 @@ describe("resolvePartial", () => {
 
   it("extracts multiple complete objects from partial array", () => {
     const json =
-      '{"edits":[{"path":"a.ts","start":"begin","end":"end","text":"ok"},{"path":"b.ts","start":"2#AAAA","end":"10#BBBB","text":"more"}';
+      '{"edits":[{"path":"a.ts","start":"begin","end":"end","text":"ok"},{"path":"b.ts","start":"F3G8H2J","end":"M4N5P6Q","text":"more"}';
     const edits = editsOf(json);
     expect(edits).toHaveLength(2);
     expect(requiredValue(edits)[0]).toMatchObject({ path: "a.ts" });

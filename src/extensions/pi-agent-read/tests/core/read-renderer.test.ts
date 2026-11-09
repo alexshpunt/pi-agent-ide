@@ -143,7 +143,7 @@ test("code views highlight source before adding line and scope annotations", () 
       content: "export const answer = 42;",
       lineEnding: "\n",
       presentation: {
-        prefix: "7#ABCD|",
+        prefix: "C8P3V5W|",
         suffix: "  <!-- scope-begin-C0DE -->",
       },
     },
@@ -157,7 +157,7 @@ test("code views highlight source before adding line and scope annotations", () 
     content: [
       {
         type: "text",
-        text: "7#ABCD|export const answer = 42;  <!-- scope-begin-C0DE -->\n",
+        text: "C8P3V5W|export const answer = 42;  <!-- scope-begin-C0DE -->\n",
       },
     ],
     details: {
@@ -177,11 +177,11 @@ test("code views highlight source before adding line and scope annotations", () 
     .render(100)
     .join("\n");
 
-  expect(rendered).toContain("7#ABCD|");
+  expect(rendered).toContain("C8P3V5W|");
   expect(rendered).toContain("scope-begin-C0DE");
   expect(rendered).toContain("\u001b[");
   expect(stripTerminalSequences(rendered)).toContain(
-    "7#ABCD|export const answer = 42;  <!-- scope-begin-C0DE -->",
+    "C8P3V5W|export const answer = 42;  <!-- scope-begin-C0DE -->",
   );
 });
 test("shows read intent in one compact line and exact arguments when expanded", () => {
@@ -243,7 +243,7 @@ test("lets shell resources render their own identity instead of exposing the add
 test.each([
   {
     name: "an anchor window",
-    arguments: { path: "notes.ts#12#ABCD", offset: 2, limit: 3 },
+    arguments: { path: "notes.ts#D9Q4X6Y", offset: 2, limit: 3 },
     compact: "relative lines 2-4",
     expanded: "relative lines=2-4",
   },

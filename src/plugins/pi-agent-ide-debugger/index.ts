@@ -5,6 +5,7 @@ import { access } from "node:fs/promises";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
+import { textLineAnchors } from "pi-agent-text";
 import { Type, type Static } from "typebox";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -402,7 +403,7 @@ export async function registerDebuggerWithOwner(
                   ? "delete-session"
                   : `delete-breakpoint ${path.basename(breakpoint.file)}:${breakpoint.line}`
                 : input.text === "breakpoint" && sourceFile !== undefined
-                  ? `breakpoint ${path.basename(sourceFile)}:${breakpointLine(input)}`
+                  ? `breakpoint ${path.basename(sourceFile)}:${breakpointAnchor(input)}`
                   : (input.text ?? "debug action");
             return renderDebugActionCall(snapshot, action, theme);
           },
@@ -793,10 +794,9 @@ function requiredSession(manager: DebugSessionManager, source: string): DebugSes
   return session;
 }
 
-function breakpointLine(input: unknown): string {
+function breakpointAnchor(input: unknown): string {
   const anchor = isRecord(input) && typeof input.anchor === "string" ? input.anchor : undefined;
-  const match = /^(\d+)#/u.exec(anchor ?? "");
-  return match?.[1] ?? anchor ?? "selected line";
+  return anchor ?? "selected line";
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -804,16 +804,20 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 function debugSourceContent(sourceFile: string, text: string) {
+  const anchors = textLineAnchors(sourceFile, text);
   return {
     type: "text" as const,
     text,
     sourceLines: Object.fromEntries(
-      text
-        .split(/\r?\n/u)
-        .map((line, index) => [
-          String(index + 1),
-          { source: sourceFile, lineNumber: index + 1, content: line },
-        ]),
+      text.split(/\r?\n/u).map((line, index) => [
+        String(index + 1),
+        {
+          source: sourceFile,
+          lineNumber: index + 1,
+          content: line,
+          ...(anchors[index] !== undefined && { anchor: anchors[index] }),
+        },
+      ]),
     ),
   };
 }

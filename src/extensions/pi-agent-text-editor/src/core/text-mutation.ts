@@ -1483,7 +1483,7 @@ function textMutationRawChanges(before: string, changes: TextMutationEdit["chang
 
 /**
  * Selects the final lines that a successful result shows with presenter output. Only results of
- * edits that used major anchors (LINE#HASH) show it, as fresh anchors for chaining edits.
+ * edits that used major anchors (line anchors) show it, as fresh anchors for chaining edits.
  */
 export function presentedFinalStateLines(
   mutations: readonly {
@@ -1795,7 +1795,10 @@ async function anchorFailureToolResult(
       : resolution.rejection?.contextRange === undefined
         ? []
         : [resolution.rejection.contextRange];
-  if (windows.length === 0) windows.push({ offset: 1, limit: 40 });
+  // An anchor no line produces has no position to show lines around; the first lines would only mislead.
+  if (windows.length === 0 && resolution.rejection?.code !== "stale") {
+    windows.push({ offset: 1, limit: 40 });
+  }
 
   const reads = await Promise.all(
     windows.map((range) =>

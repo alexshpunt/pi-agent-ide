@@ -12,6 +12,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { textLineAnchors } from "pi-agent-text";
 
 const repoRoot = path.resolve();
 const extensionRoot = repoRoot;
@@ -61,7 +62,7 @@ test("inherits the last resolved resource in a later edit call", async () => {
             toolCall({
               id: "replace-line",
               name: "replace",
-              arguments: { start: "1#BE76", text: "changed" },
+              arguments: { start: textLineAnchors(file, "alpha\nbeta\n")[0], text: "changed" },
             }),
           ],
           { stopReason: "toolUse" },

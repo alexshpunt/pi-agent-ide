@@ -22,6 +22,7 @@ import { TYPING_FRAME_INTERVAL_MS, TypingInterpolation } from "./typing-interpol
 import type { MutationRenderResource } from "./render-resource.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
+import { isLineAnchor } from "pi-agent-text";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
 import { isDiffStatusContribution } from "pi-agent-text-editor/api/post-edit";
@@ -854,15 +855,20 @@ function renderAnchorRange(
       return undefined;
     }
     const raw = stringValue(input[field]);
+    const state = anchorRenderPatch?.[field];
+    // An anchor names a line by content, so the user sees the line number it resolved to.
+    if (raw !== undefined && !expanded && isLineAnchor(raw) && state?.kind === "resolved") {
+      return singleLine(state.compact);
+    }
     if (raw !== undefined) {
       const displayed = singleLine(raw);
       const structured =
-        /^(?:\d+#[0-9A-F]+|CHANGE#[0-9A-F]+|SEARCH#|scope-(?:begin|end)-|begin$|end$)/.test(raw);
+        isLineAnchor(raw) ||
+        /^(?:CHANGE#[0-9A-F]+|SEARCH#|scope-(?:begin|end)-|begin$|end$)/.test(raw);
       return expanded || structured || displayed.length <= 100
         ? displayed
         : `${displayed.slice(0, 60)}…${displayed.slice(-30)} (${raw.length} chars)`;
     }
-    const state = anchorRenderPatch?.[field];
     return state?.kind === "resolved"
       ? singleLine(expanded ? state.full : state.compact)
       : undefined;

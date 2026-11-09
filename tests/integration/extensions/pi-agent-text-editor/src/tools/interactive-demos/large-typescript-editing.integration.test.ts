@@ -383,8 +383,8 @@ function replaceUntil(
   return {
     arguments: {
       path: file,
-      start: formatLineHashAnchor(startIndex + 1, lines[startIndex]),
-      end: formatLineHashAnchor(endIndex + 1, lines[endIndex]),
+      start: formatLineHashAnchor(source, startIndex + 1),
+      end: formatLineHashAnchor(source, endIndex + 1),
       text: replacement,
     },
     after: afterLines.join("\n"),
@@ -405,7 +405,7 @@ function insertAfter(
   return {
     arguments: {
       path: file,
-      anchor: formatLineHashAnchor(anchorIndex + 1, lines[anchorIndex]),
+      anchor: formatLineHashAnchor(source, anchorIndex + 1),
       text: insertion,
     },
     after: afterLines.join("\n"),

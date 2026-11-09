@@ -60,7 +60,7 @@ describe("interactive text editor demos", () => {
                 name: "replace",
                 arguments: {
                   path: demoFileName,
-                  start: formatLineHashAnchor(line, marker),
+                  start: formatLineHashAnchor(baseline, line),
                   text: replacement,
                 },
                 ...interactivePacing,

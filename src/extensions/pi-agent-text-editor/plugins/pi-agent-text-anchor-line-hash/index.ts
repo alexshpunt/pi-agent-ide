@@ -26,7 +26,7 @@ export default async function registerLineHashTextAnchor(pi: ExtensionAPI): Prom
     setup(api) {
       api.addView({ view: "anchors", presenter });
       api.describe({
-        views: "anchors — LINE#HASH references for edits.",
+        views: "anchors — line anchors for edits.",
       });
     },
   } satisfies ReadPlugin;

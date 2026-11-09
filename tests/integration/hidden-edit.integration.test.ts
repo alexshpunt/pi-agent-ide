@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 import {
   assistantMessage,
   getToolExecution,
@@ -61,7 +62,11 @@ test.each(["direct", "native"] as const)(
             : []),
           call("direct-edit", "edit", {}),
           call("read", "read", { path: "subject.txt", views: ["anchors"] }),
-          call("insert", "insert", { path: "subject.txt", anchor: "1#BE76", text: "recovered" }),
+          call("insert", "insert", {
+            path: "subject.txt",
+            anchor: formatLineHashAnchor("alpha\nbeta\n", 1),
+            text: "recovered",
+          }),
           assistantMessage([text("Done")]),
         ],
       }).run("Check that edit is withdrawn, then use the guarded editor.");
