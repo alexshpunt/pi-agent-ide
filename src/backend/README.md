@@ -39,14 +39,13 @@ The integration fixture starts an isolated loopback sshd with disposable keys an
 
 `tests/integration/ssh-platform-matrix.integration.test.ts` runs one set of checks in each direction, written `source>target`: `linux>linux`, `linux>windows`, `windows>linux` and `windows>windows`. The source is the machine running Pi; the target is the SSH server. `tests/integration/support/ssh-target-fixture.ts` starts a disposable server for each direction with its own keys, configuration, known hosts and workspace; it does not touch user SSH files, the Windows sshd service or `ProgramData\ssh`.
 
-| Direction | Server | Needs |
-| --- | --- | --- |
-| `linux>linux` | the loopback sshd above | system sshd, the `agent` account |
-| `windows>windows` | `sshd.exe -D -f <private config>` on localhost | Windows OpenSSH Server and `py -3` |
-| `windows>linux` | sshd inside WSL 2, started through `wsl.exe` and reached on localhost | a default WSL distribution with sshd, Python 3 and an `agent` account (`PI_SSH_WSL_DISTRO` selects another) |
-| `linux>windows` | `sshd.exe` started from WSL through interop and reached at the WSL gateway address | Pi inside WSL on a Windows host; an administrator account, because the fixture adds and removes a firewall rule for its port |
+| Direction         | Server                                                                             | Needs                                                                                                                        |
+| ----------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `linux>linux`     | the loopback sshd above                                                            | system sshd, the `agent` account                                                                                             |
+| `windows>windows` | `sshd.exe -D -f <private config>` on localhost                                     | Windows OpenSSH Server and `py -3`                                                                                           |
+| `windows>linux`   | sshd inside WSL 2, started through `wsl.exe` and reached on localhost              | a default WSL distribution with sshd, Python 3 and an `agent` account (`PI_SSH_WSL_DISTRO` selects another)                  |
+| `linux>windows`   | `sshd.exe` started from WSL through interop and reached at the WSL gateway address | Pi inside WSL on a Windows host; an administrator account, because the fixture adds and removes a firewall rule for its port |
 
 `PI_SSH_COVERAGE_DIRECTIONS` lists the directions to run. A listed direction that cannot start, or one this machine cannot be the source of, fails the run; nothing is skipped. Without the variable the test runs the directions this machine can serve: `linux>linux` on Linux, plus `linux>windows` inside WSL, and both Windows-source directions on Windows.
 
 The `SSH platforms` workflow (`.github/workflows/ssh-platforms.yml`) runs all four on a `windows-latest` runner in two parallel jobs: a Windows source and a Linux source inside WSL 2. It runs for changes to this directory and the fixtures, takes about three minutes, and is separate from the main CI workflow.
-
