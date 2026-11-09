@@ -271,7 +271,8 @@ export async function transferObject(
             const info = await fd.stat();
             if (String(info.dev) !== created.device || String(info.ino) !== created.inode)
               throw new SshBackendError("TRANSFER_TARGET_CHANGED", target.source, "unknown");
-            await fd.chmod(entry.mode & 0o7777);
+            // Windows has no POSIX directory modes; fchmod on a directory handle fails with EPERM.
+            if (process.platform !== "win32") await fd.chmod(entry.mode & 0o7777);
           } finally {
             await fd.close();
           }
