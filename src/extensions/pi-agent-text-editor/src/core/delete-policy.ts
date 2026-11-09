@@ -193,6 +193,8 @@ function assertUnprotected(
   if (
     contains(resolvedPath, boundary, paths) ||
     resolvedPath === paths.parse(resolvedPath).root ||
+    // A Windows target spells its drive root as /C:, which POSIX parsing does not treat as a root.
+    windowsDriveRoot.test(resolvedPath) ||
     controls.some(
       (control) => contains(control, resolvedPath, paths) || contains(resolvedPath, control, paths),
     )
@@ -271,11 +273,16 @@ async function findProject(
         return { root: directory, controls: controls.sort(), gitAvailable: false };
       }
       const parent = paths.dirname(directory);
-      if (parent === directory) return { controls: [], gitAvailable: false };
+      // A Windows target's `/C:` is a drive root; its POSIX parent `/` is not a directory there.
+      if (parent === directory || windowsDriveRoot.test(directory))
+        return { controls: [], gitAvailable: false };
       directory = parent;
     }
   }
 }
+
+/** The root of a Windows target's drive in canonical form, such as `/C:`. */
+const windowsDriveRoot = /^\/[A-Za-z]:\/?$/u;
 
 function contains(parent: string, child: string, paths = path): boolean {
   const relative = paths.relative(parent, child);

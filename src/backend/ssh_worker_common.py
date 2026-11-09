@@ -24,8 +24,10 @@ def run(platform):
     except OperationError as error:
         reply = {"ok": False, "code": error.code, "effect": platform.effect}
     except OSError as error:
-        reply = {"ok": False, "code": errno.errorcode.get(error.errno, "REMOTE_OPERATION_FAILED"),
-                 "effect": platform.effect}
+        # A platform can name failures that errno cannot, such as a file open elsewhere.
+        classify = getattr(platform, "error_code", None)
+        code = (classify and classify(error)) or errno.errorcode.get(error.errno, "REMOTE_OPERATION_FAILED")
+        reply = {"ok": False, "code": code, "effect": platform.effect}
     except Exception:
         reply = {"ok": False, "code": "REMOTE_OPERATION_FAILED", "effect": platform.effect}
     sys.stdout.buffer.write(json.dumps(reply, ensure_ascii=True).encode("ascii") + b"\n")
