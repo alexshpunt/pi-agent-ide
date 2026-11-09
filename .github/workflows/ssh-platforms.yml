@@ -5,7 +5,7 @@ name: SSH platforms
 # Linux and Windows Pi, each against a Linux sshd in WSL 2 and the Windows OpenSSH server.
 on:
   push:
-    branches: [main, develop, lpt-1288-ssh-coverage-all-directions]
+    branches: [main, develop]
     paths:
       - src/backend/**
       - tests/integration/ssh-platform-matrix.integration.test.ts
