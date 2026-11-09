@@ -57,6 +57,12 @@ export interface SearchContext {
   readonly environmentForSource?: (source: string) => SearchEnvironment | undefined;
   /** Trusted snapshot scopes resolved by the owning tool; never accepted as raw JSON coordinates. */
   readonly scope?: ResolvedResultTargets;
+  /**
+   * Resolve `scope` again against the text its sources have now. Its regions whose lines changed
+   * move to the same region of the current text and are marked `adjusted`. Retry with it when a
+   * source changed during a search.
+   */
+  readonly rescope?: (signal?: AbortSignal) => Promise<ResolvedResultTargets>;
   readonly environment?: SearchEnvironment;
   readonly cwd: string;
   readonly signal?: AbortSignal;
@@ -222,7 +228,7 @@ export interface SearchToolDetails {
 
 export { searchSchema } from "#src/api/search-parameters.ts";
 export { renderSearchMatches } from "./presentation.ts";
-export { containsSearchMatch } from "./search-scope.ts";
+export { containsSearchMatch, currentScope } from "./search-scope.ts";
 export { splitGlobList } from "./glob-list.ts";
 export {
   fuzzyLimits,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createLineMap, rebaseRange } from "./line-map.ts";
+import { createLineMap, moveRange, rebaseRange, relocateRange } from "./line-map.ts";
 import type { ResultRange } from "./result-targets.ts";
 
 const before = "one\ntwo\nthree\nfour\nfive\n";
@@ -16,6 +16,11 @@ const span = (
 function rebased(after: string, range: ResultRange): ResultRange | undefined {
   const map = createLineMap(before, after);
   return map === undefined ? undefined : rebaseRange(range, map);
+}
+
+function relocated(after: string, range: ResultRange): ResultRange | undefined {
+  const map = createLineMap(before, after);
+  return map === undefined ? undefined : relocateRange(range, map, after.split("\n"));
 }
 
 describe("line maps", () => {
@@ -85,5 +90,48 @@ describe("line maps", () => {
     const repeated = "}\n}\n}\nx\n";
     const map = createLineMap(repeated, `y\n${repeated}`);
     expect([1, 2, 3, 4].map((line) => map?.newLine(line))).toEqual([2, 3, 4, 5]);
+  });
+});
+
+describe("relocating a range whose lines changed", () => {
+  const range = span(2, 0, 4, 4);
+  const adjusted = (value: ResultRange): ResultRange => ({ ...value, adjusted: true });
+
+  test("keeps the region when a line inside it changed", () => {
+    expect(relocated(before.replace("three", "THREE"), range)).toEqual(adjusted(range));
+    expect(relocated(`zero\n${before.replace("three", "THREE")}`, range)).toEqual(
+      adjusted(span(3, 0, 5, 4)),
+    );
+  });
+
+  test("reaches over a changed edge line to the nearest unchanged line", () => {
+    expect(relocated(before.replace("two", "TWO"), range)).toEqual(adjusted(range));
+    expect(relocated(before.replace("two\n", "a\nb\n"), range)).toEqual(adjusted(span(2, 0, 5, 4)));
+    expect(relocated(before.replace("four", "4a\n4b"), range)).toEqual(adjusted(span(2, 0, 6, 0)));
+    expect(relocated(before.replace("five\n", "5x\n"), span(4, 0, 5, 4))).toEqual(
+      adjusted(span(4, 0, 6, 0)),
+    );
+  });
+
+  test("includes lines added inside the region", () => {
+    expect(relocated(before.replace("three\n", "three\nnew\n"), range)).toEqual(
+      adjusted(span(2, 0, 5, 4)),
+    );
+  });
+
+  test("keeps a whole-line range whole-line", () => {
+    const lines = { ...span(2, 0, 5, 0), linewise: true };
+    expect(relocated(before.replace("three", "THREE"), lines)).toEqual(adjusted(lines));
+  });
+
+  test("finds no region when none of its lines survive", () => {
+    expect(relocated(before.replace("three", "thr33"), span(3, 0, 3, 5))).toBeUndefined();
+    expect(relocated(before.replace("three\nfour", "3\n4"), span(3, 0, 4, 4))).toBeUndefined();
+  });
+
+  test("moves a range whose text is unchanged without marking it", () => {
+    const map = createLineMap(before, `zero\n${before}`);
+    if (map === undefined) throw new Error("No line map");
+    expect(moveRange(range, map, () => [])).toEqual(span(3, 0, 5, 4));
   });
 });

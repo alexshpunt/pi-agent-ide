@@ -17,7 +17,7 @@
 
 ## Search inside a result
 
-Pass an unchanged Read/Search/edit result as `path` to search only its ranges; gaps between ranges and `include`/`exclude` don't apply. Use it to narrow a selection before editing, for example the text between two markers:
+Pass an unchanged Read/Search/edit result as `path` to search only its ranges; gaps between ranges and `include`/`exclude` don't apply. If other sessions changed lines inside a range since the result was issued, the search reads the current text of the same region and the output says so; it fails only when no line of the region is left. Edits still need the text the result selected. Use it to narrow a selection before editing, for example the text between two markers:
 
 ```js
 const section = await tools.read({ path: "notes.md", offset: 20, limit: 40 });

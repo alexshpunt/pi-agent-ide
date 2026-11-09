@@ -5,13 +5,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createLineMap, rebaseRange, type LineMap } from "./line-map.ts";
+import { createLineMap, moveRange, type LineMap } from "./line-map.ts";
 
 /** Serializable source coordinates. Lines are one-based; columns are UTF-16 offsets. */
 export interface ResultRange {
   readonly start: { readonly lineNumber: number; readonly column: number };
   readonly end: { readonly lineNumber: number; readonly column: number };
   readonly linewise?: boolean;
+  /**
+   * The selected lines changed after the result was issued, and this range covers the same region
+   * of the current text. Read-only consumers may search it; anything that edits needs the text
+   * that was selected, so resolving it for an edit fails.
+   */
+  readonly adjusted?: boolean;
 }
 
 /** Backend-owned text targets; never accepted directly from untrusted JSON. */
@@ -109,7 +115,11 @@ export class ResultTargetStore {
   }
 
   /** Traverse supported result shapes and resolve only registered source targets. */
-  public resolve(input: unknown, cwd: string): ResolvedResultTargets {
+  public resolve(
+    input: unknown,
+    cwd: string,
+    options: { readonly allowAdjusted?: boolean } = {},
+  ): ResolvedResultTargets {
     input = this.source(input, cwd);
     const references = this.#references(input);
     const targets: ResultSourceTarget[] = [];
@@ -127,6 +137,11 @@ export class ResultTargetStore {
       // A changed file moves the entry's selections, so read it again after the refresh.
       const current = this.#entries.get(reference);
       if (current?.state !== "ready")
+        throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
+      if (
+        options.allowAdjusted !== true &&
+        current.targets.some((target) => target.ranges.some((range) => range.adjusted === true))
+      )
         throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
       complete &&= current.complete;
       targets.push(...current.targets);
@@ -150,6 +165,19 @@ export class ResultTargetStore {
       }
     }
     return { targets, complete: resolved.complete };
+  }
+
+  /**
+   * Resolve a result for a consumer that only reads, such as Search. The targets carry the current
+   * text of each source and the regions of it that the result selected, wherever other writers
+   * moved or rewrote them. Fails only when a region cannot be found any more.
+   */
+  public async resolveCurrent(
+    input: unknown,
+    cwd: string,
+    signal?: AbortSignal,
+  ): Promise<ResolvedResultTargets> {
+    return currentResultTargets(this.resolve(input, cwd, { allowAdjusted: true }), signal);
   }
 
   /** Reject changed source bytes before a consumer uses a retained selection. */
@@ -317,7 +345,9 @@ export class ResultTargetStore {
   }
   /**
    * A source changed. A local file keeps every selection whose lines are all unchanged and moves it
-   * to its new position; any other source, or a selection whose text changed, is retired.
+   * to its new position. A selection with changed lines moves to the same region of the new text and
+   * is marked `adjusted`: Search may use it, an edit may not. It is retired when none of its lines
+   * survive, and so is any selection of another kind of source.
    */
   #retire(identity: string, stamp: string | undefined): void {
     const next = stamp === undefined ? undefined : readLocalText(identity);
@@ -326,6 +356,8 @@ export class ResultTargetStore {
       return;
     }
     const maps = new Map<string, LineMap | undefined>();
+    let lines: readonly string[] | undefined;
+    const newLines = () => (lines ??= next.split("\n"));
     const removed = new Set<string>();
     const rebased = new Set<string>();
     for (const [reference, entry] of this.#entries) {
@@ -347,7 +379,7 @@ export class ResultTargetStore {
           maps.set(target.expectedContent, createLineMap(target.expectedContent, next));
         const map = maps.get(target.expectedContent);
         const ranges = target.ranges.map((range) =>
-          map === undefined ? undefined : rebaseRange(range, map),
+          map === undefined ? undefined : moveRange(range, map, newLines),
         );
         if (ranges.some((range) => range === undefined)) {
           survives = false;
@@ -463,6 +495,77 @@ export async function verifyResultTargets(
       throw new Error("Result target is stale; repeat Read/Search.");
   }
 }
+/**
+ * Align a resolved result with the text its sources have now, for a consumer that only reads. Each
+ * target gets the current text and its ranges moved onto it; a range whose own lines changed keeps
+ * its region and is marked `adjusted`. Fails when a region cannot be found any more.
+ */
+export async function currentResultTargets(
+  result: ResolvedResultTargets,
+  signal?: AbortSignal,
+): Promise<ResolvedResultTargets> {
+  const contents = new Map<string, string>();
+  const targets: ResultSourceTarget[] = [];
+  for (const target of result.targets) {
+    signal?.throwIfAborted();
+    let current = contents.get(target.source);
+    if (current === undefined) {
+      current =
+        target.readCurrent === undefined
+          ? await readFile(target.source, { encoding: "utf8", signal })
+          : await target.readCurrent(signal);
+      signal?.throwIfAborted();
+      contents.set(target.source, current);
+    }
+    if (current === target.expectedContent) {
+      targets.push(target);
+      continue;
+    }
+    const map = createLineMap(target.expectedContent, current);
+    let lines: readonly string[] | undefined;
+    const ranges = target.ranges.map((range) =>
+      map === undefined ? undefined : moveRange(range, map, () => (lines ??= current.split("\n"))),
+    );
+    if (ranges.some((range) => range === undefined))
+      throw new Error(
+        `The region this result selected can no longer be found in ${target.source}; repeat Read/Search.`,
+      );
+    targets.push({
+      ...target,
+      expectedContent: current,
+      ranges: ranges.filter((range) => range !== undefined),
+    });
+  }
+  return { targets: combineTargets(targets), complete: result.complete };
+}
+
+/** Tell a reader that a result's text changed and which regions of the current text were used. */
+export function describeAdjustedRanges(
+  result: ResolvedResultTargets,
+  cwd: string,
+): string | undefined {
+  const regions = result.targets.flatMap((target) =>
+    target.ranges
+      .filter((range) => range.adjusted === true)
+      .map((range) => {
+        const { start, end } = range;
+        const last =
+          end.column === 0 && end.lineNumber > start.lineNumber
+            ? end.lineNumber - 1
+            : end.lineNumber;
+        const prefix = cwd.endsWith(path.sep) ? cwd : `${cwd}${path.sep}`;
+        const name = target.source.startsWith(prefix)
+          ? target.source.slice(prefix.length)
+          : target.source;
+        return `${name}:${start.lineNumber}-${last}`;
+      }),
+  );
+  if (regions.length === 0) return undefined;
+  const shown = regions.slice(0, 5).join(", ");
+  const more = regions.length > 5 ? ` and ${regions.length - 5} more` : "";
+  return `The result's text changed after it was issued. Searched the current text of the same region (${shown}${more}); matches are anchored to the current file.`;
+}
+
 function combineTargets(targets: readonly ResultSourceTarget[]): ResultSourceTarget[] {
   const grouped = new Map<
     string,

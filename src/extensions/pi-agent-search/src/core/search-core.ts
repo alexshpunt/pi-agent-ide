@@ -2,7 +2,9 @@ import { withBlockedToolResult } from "pi-agent-tool-call-interception";
 import {
   resourceAccesses,
   resourceScheduler,
+  describeAdjustedRanges,
   withStructuredResult,
+  type ResolvedResultTargets,
   type ResultTargetStore,
 } from "pi-agent-resource";
 import { searchDataSchema } from "#src/api/structured-result.ts";
@@ -203,6 +205,7 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
 
+      let latestScope: ResolvedResultTargets | undefined;
       try {
         if (typeof input.path === "string") {
           for (const provider of scopeProviders) {
@@ -222,11 +225,22 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         if (scoped) {
           if (targets === undefined) throw new Error("Result scopes are unavailable.");
           if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
-          const scope = targets.resolve(input.path, context.cwd);
-          await targets.verify(scope, context.signal);
-          context = { ...context, scope };
+          const scopeInput = input.path;
+          const cwd = context.cwd;
+          // Search only reads, so a result whose lines changed still selects the same region.
+          const rescope = (signal?: AbortSignal) => targets.resolveCurrent(scopeInput, cwd, signal);
+          context = { ...context, scope: await rescope(context.signal), rescope };
           request = Object.assign({}, request, { path: undefined });
         }
+        if (context.rescope !== undefined) {
+          // Remember the scope of the latest attempt: it is the one the result describes.
+          const rescope = context.rescope;
+          context = {
+            ...context,
+            rescope: async (signal) => (latestScope = await rescope(signal)),
+          };
+        }
+        latestScope = context.scope;
         if (context.scope !== undefined) {
           const ownerContext = context;
           context = {
@@ -365,6 +379,7 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
                 return withStructuredResult(
                   {
                     content: [
+                      ...adjustedNotice(latestScope, context.cwd),
                       ...(entry.registration.fallback && protocolLike
                         ? [
                             {
@@ -472,6 +487,15 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
   };
 
   return core;
+}
+
+/** A scope whose text changed says so, so the reader knows which text was searched. */
+function adjustedNotice(
+  scope: ResolvedResultTargets | undefined,
+  cwd: string,
+): { type: "text"; text: string }[] {
+  const text = scope === undefined ? undefined : describeAdjustedRanges(scope, cwd);
+  return text === undefined ? [] : [{ type: "text", text }];
 }
 
 function assertResolver(value: unknown): asserts value is SearchResolverRegistration {

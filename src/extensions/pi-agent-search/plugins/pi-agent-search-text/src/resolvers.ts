@@ -16,6 +16,7 @@ import type {
 } from "#src/search-session.ts";
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 import {
+  currentScope,
   selectionData,
   fuzzyLimits,
   isFuzzyQuery,
@@ -210,7 +211,13 @@ function createMatchResolver(
         result.recipe,
         scope === undefined
           ? undefined
-          : (signal) => runScopedSearch(result.recipe, scope, context.cwd, signal),
+          : async (signal) =>
+              runScopedSearch(
+                result.recipe,
+                (await currentScope(context, signal)) ?? scope,
+                context.cwd,
+                signal,
+              ),
         undefined,
         context.environment,
       );

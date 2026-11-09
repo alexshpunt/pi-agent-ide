@@ -172,10 +172,12 @@ export default async function registerSearchCore(
               const scoped =
                 parameters.path !== undefined &&
                 (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
-              const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
-              if (scope !== undefined) {
-                await targets.verify(scope, operationSignal);
-              }
+              // Search only reads, so a result whose lines changed still selects the same region.
+              const rescope = scoped
+                ? (signal?: AbortSignal) =>
+                    targets.resolveCurrent(parameters.path, context.cwd, signal)
+                : undefined;
+              const scope = rescope === undefined ? undefined : await rescope(operationSignal);
               return core.execute(
                 {
                   ...parameters,
@@ -184,7 +186,7 @@ export default async function registerSearchCore(
                 },
                 {
                   cwd: context.cwd,
-                  ...(scope === undefined ? {} : { scope }),
+                  ...(scope === undefined || rescope === undefined ? {} : { scope, rescope }),
                   ...(operationSignal !== undefined && { signal: operationSignal }),
                   ...(onUpdate !== undefined && { onUpdate }),
                 },

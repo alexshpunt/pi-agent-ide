@@ -101,6 +101,8 @@ export {
 export {
   connectResultTargets,
   verifyResultTargets,
+  currentResultTargets,
+  describeAdjustedRanges,
   ResultTargetStore,
   resultInputSchema,
   type ResultRange,
