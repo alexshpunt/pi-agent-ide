@@ -254,11 +254,11 @@ describe("pi-agent-text-editor batch recovery", () => {
         ],
       };
       const tailCalls = [
-        { id: "tail-fourth", line: 5, original: "fourth" },
-        { id: "tail-fifth", line: 6, original: "fifth" },
-        { id: "tail-sixth", line: 7, original: "sixth" },
+        { id: "tail-fourth", line: 5 },
+        { id: "tail-fifth", line: 6 },
+        { id: "tail-sixth", line: 7 },
       ];
-      const tailChunks = tailCalls.map(({ id, line, original }, index) => ({
+      const tailChunks = tailCalls.map(({ id, line }, index) => ({
         id,
         contentIndex: index + 4,
         argumentsJson: `{"start":${JSON.stringify(formatLineHashAnchor(source, line))},"text":${JSON.stringify(

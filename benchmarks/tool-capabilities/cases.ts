@@ -1755,7 +1755,12 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "copy",
-      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      args: {
+        path: "task.txt",
+        start: "alpha",
+        end: "beta",
+        targetStart: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+      },
       reuse: reuse(1, "targetStart", "anchor"),
     },
   ],
@@ -2311,13 +2316,13 @@ add(
 add(
   "stale-insert-recovery",
   ["edit.stale-insert-feedback", "edit.bounded-stale-feedback"],
-  "Read task.txt with anchors. Replace OLD with NEW. Attempt Insert with the OLD Read's line-2 hash anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-2 hash. Keep the other bytes.",
+  "Read task.txt with anchors. Replace OLD with NEW. Attempt Insert with the OLD Read's line-2 anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: /^2#[A-F\d]+$/u },
+      args: { path: "task.txt", anchor: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: reuse(0, "anchor", "anchor"),
       error: true,
       finalContains: "is stale",
@@ -2332,6 +2337,26 @@ add(
     },
   ],
   { modes: ["direct"], expected: { "task.txt": "keep\nNEW\nRECOVERED\nlast\n" } },
+);
+
+add(
+  "repeated-line-anchor-after-shift",
+  ["edit.repeated-line-anchor-shift"],
+  "Read task.txt with anchors. Insert the line top before alpha, which shifts every line down. Then delete the final } line of the file using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "insert", args: { path: "task.txt", anchor: "alpha", before: true, text: "top\n" } },
+    {
+      tool: "delete",
+      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(0, "start", "anchor"),
+    },
+  ],
+  {
+    modes: ["direct"],
+    files: { "task.txt": "alpha\nfn one() {\n  work();\n}\nfn two() {\n  more();\n}\n" },
+    expected: { "task.txt": "top\nalpha\nfn one() {\n  work();\n}\nfn two() {\n  more();\n" },
+  },
 );
 
 add(

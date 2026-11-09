@@ -88,8 +88,7 @@ test("read shows complex TypeScript changes as independent undo groups", async (
       "export function formatDebugRun",
       "return JSON.stringify(run, undefined, 2)",
     ]);
-    expect(rendered).toContain("1#");
-    expect(rendered).toContain(`${current.trimEnd().split("\n").length}#`);
+    expect(rendered).toMatch(/\|[0-9A-HJKMNP-TV-Z]{7}\|/u);
   });
 }, 60_000);
 
@@ -105,8 +104,8 @@ test("pagination keeps the deletion-only change anchor from the complete file", 
       readCall("full", fileName),
       readCall("page", fileName, { offset: deletionLine, limit: 1 }),
     ]);
-    const fullAnchor = anchorOnLineNumber(getToolResultText(result, "full"), deletionLine);
-    const pageAnchor = anchorOnLineNumber(getToolResultText(result, "page"), deletionLine);
+    const fullAnchor = anchorOnLine(getToolResultText(result, "full"), marker);
+    const pageAnchor = anchorOnLine(getToolResultText(result, "page"), marker);
 
     expect(fullAnchor).toBeDefined();
     expect(pageAnchor).toBe(fullAnchor);
@@ -383,10 +382,10 @@ function findHunkBegin(lines: readonly string[], fromIndex: number): number {
   return -1;
 }
 
-function anchorOnLineNumber(rendered: string, lineNumber: number): string | undefined {
+function anchorOnLine(rendered: string, content: string): string | undefined {
   const lines = rendered.split("\n");
-  const lineIndex = lines.findIndex((line) =>
-    line.slice(2).trimStart().startsWith(`${lineNumber}#`),
+  const lineIndex = lines.findIndex(
+    (line) => /^[0-9A-HJKMNP-TV-Z]{7}\|/u.test(line.slice(2).trimStart()) && line.includes(content),
   );
   const beginIndex = findHunkBegin(lines, lineIndex);
   return lines[beginIndex]?.match(/change-begin: (CHANGE#[A-Z0-9]+)/u)?.[1];

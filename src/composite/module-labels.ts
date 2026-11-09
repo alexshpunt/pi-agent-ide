@@ -51,8 +51,8 @@ export const moduleLabels = {
     "Use begin and end to select file boundaries.",
   ],
   "editor.anchor.line-hash": [
-    "Checked line selectors",
-    "Select lines with hashes that detect stale content.",
+    "Line anchors",
+    "Select lines by content-derived anchors that stay valid while other lines change.",
   ],
   "editor.anchor.exact": ["Exact text selectors", "Locate edit ranges using unique source text."],
   "editor.stale-anchor": [

@@ -52,9 +52,12 @@ test("aligns change markers, presented prefixes, and synthetic rows", () => {
   };
 
   expect(renderPresentedTextDocument(presented)).toBe(
-    ["-|        |old value", "+| K7M2QX4|new value  <!-- change -->", " | B4NR9T2|context", ""].join(
-      "\n",
-    ),
+    [
+      "-|        |old value",
+      "+| K7M2QX4|new value  <!-- change -->",
+      " | B4NR9T2|context",
+      "",
+    ].join("\n"),
   );
 });
 

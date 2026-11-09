@@ -95,7 +95,6 @@ async function seedFile(
 }
 
 function replaceArguments(fileName: string, content: string) {
-  const lines = content.split("\n");
   const startIndex = 9;
   const endIndex = startIndex + SWAPPED_ROWS - 1;
   return {

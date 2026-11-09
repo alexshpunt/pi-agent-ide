@@ -128,7 +128,7 @@ export default async function registerTextEditorCore(
       throw new Error("Text anchor recovery requires pi-agent-read");
     }
 
-    // Recovery context teaches the agent a fresh anchor, so it must carry hashes.
+    // Recovery context teaches the agent a fresh anchor, so it must carry anchors.
     return readApi.read({ ...request, views: ["anchors"] }, context);
   });
 

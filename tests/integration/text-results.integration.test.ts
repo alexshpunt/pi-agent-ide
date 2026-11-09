@@ -316,7 +316,7 @@ async function followText(result, nextLine, expectedPrefix, views) {
 const limited = await tools.read({path:"lines.txt",limit:2010});
 await followText(limited,2001,"row 2001\n");
 const anchors = await tools.read({path:"lines.txt",limit:5,views:["anchors"]});
-const anchor = /\b(5#[A-Fa-f0-9]+)\|row 5/.exec(anchors)?.[1];
+const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|row 5$/m.exec(anchors)?.[1];
 if (!anchor) throw Error("No current line-5 anchor");
 await followText(await tools.read({path:"lines.txt#"+anchor}),2005,"row 2005\n");
 await followText(await tools.read({path:"bytes.txt"}),51,"row 51 ");
@@ -395,7 +395,7 @@ await tools.write({path:"note.txt",content:"ALPHA\\nbeta\\ngamma\\n"});
 let stillBlocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { stillBlocked=String(error); }
 if(!stillBlocked.includes("blocked")) throw Error("An unanchored write bypassed recovery");
 const current=await tools.read({path:"note.txt",views:["anchors"]});
-const anchor=/(\\d+#[A-Fa-f0-9]+)[^\\n]*beta/.exec(current)?.[1];
+const anchor=/^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|beta/m.exec(current)?.[1];
 if(!anchor) throw Error("Read did not show beta's anchor: "+current);
 await tools.replace({path:"note.txt",start:anchor,text:"BETA"});
 const recovered=await tools.read({path:"note.txt"});

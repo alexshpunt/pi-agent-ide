@@ -135,17 +135,6 @@ export interface EditDiagnosticLine {
   text: string;
 }
 
-/**
-Detailed stale anchor diagnostic with context.
-*/
-export interface StaleAnchorDiagnostic {
-  lineNumber: number;
-  expected: { lineNumber: number; hash: string; textAvailable: false };
-  current: EditDiagnosticLine;
-  anchorHashChanged: boolean;
-  currentContext: EditDiagnosticLine[];
-}
-
 export type StrictEditErrorCode =
   | "INVALID_ARGUMENT"
   | "INVALID_PATH"
@@ -187,8 +176,6 @@ export interface EditFailureOptions {
   fileChangedStatement?: string;
   editIndex?: number;
   editIndices?: number[];
-
-  staleDiagnostic?: StaleAnchorDiagnostic;
 }
 
 /**
@@ -243,7 +230,6 @@ export interface FileMutationData {
   editIndex?: number | undefined;
   editIndices?: number[] | undefined;
 
-  staleDiagnostic?: StaleAnchorDiagnostic | undefined;
   fileChangedStatement?: string | undefined;
   /** Failed rollback resources; an empty list means all attempted writes were restored. */
   rollback?:
@@ -472,9 +458,6 @@ export class FileMutationResult {
     return this.data.editIndices;
   }
 
-  get staleDiagnostic(): StaleAnchorDiagnostic | undefined {
-    return this.data.staleDiagnostic;
-  }
   get fileChangedStatement(): string | undefined {
     return this.data.fileChangedStatement;
   }
@@ -540,7 +523,7 @@ export class FileMutationResult {
    * Examples:
    *   "3 files changed, +45/-12 lines"
    *   "Created 2 files"
-   *   "Failed: STALE_ANCHOR — anchor hash mismatch"
+   *   "Failed: STALE_ANCHOR — no line produces the anchor"
    */
   get summary(): string {
     if (!this.ok) {

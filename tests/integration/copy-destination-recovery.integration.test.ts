@@ -73,7 +73,7 @@ test.each([
                   code: withTextResultChecks(String.raw`
 ${surface === "codemode" ? rejectCopy : ""}
 const current = await tools.read({path:"same.txt",views:["anchors"]});
-const destination = /^(\d+#[A-F\d]+)\|INSERT_HERE$/m.exec(current)?.[1];
+const destination = /^([0-9A-HJKMNP-TV-Z]{7})\|INSERT_HERE$/m.exec(current)?.[1];
 check(destination,"Missing issued destination anchor");
 text(await tools.copy(${corrected}));
 `),

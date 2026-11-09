@@ -98,7 +98,7 @@ test("shows the AST outline and lsp_search declaration and call views on a produ
 
     const ast = getToolResultText(result, "demo-read-ast");
     expect(ast).toContain("export function parseCodeViewReference");
-    expect(ast).toMatch(/\d+#[A-F0-9]{4}\|export function parseCodeViewReference/u);
+    expect(ast).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|export function parseCodeViewReference/u);
     expect(ast).not.toContain("const value = source.slice");
 
     const symbol = getToolResultText(result, "demo-read-symbol");

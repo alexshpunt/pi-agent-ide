@@ -62,7 +62,7 @@ test("uses a search resource in path as a multi-file delete target", async () =>
       expect(finalState).toContain(value);
     }
     expect(finalState).not.toMatch(/^[+ -]\|/mu);
-    expect(finalState).not.toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
+    expect(finalState).not.toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|/mu);
     expect(finalState).not.toContain("SEARCH#");
     await expect(readFile(first, "utf8")).resolves.toBe("keep first\n");
     await expect(readFile(second, "utf8")).resolves.toBe("keep second\n");

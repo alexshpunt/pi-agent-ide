@@ -92,7 +92,7 @@ describe("exact text anchors through real text editor tools", () => {
       expectTextToolDiff(scenario, relativeFile, policyFixture, expectedContent);
       expect(renderedLines).toContain(replacement);
       expect(rendered).not.toMatch(/^[+ -]\|/mu);
-      expect(rendered).not.toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
+      expect(rendered).not.toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|/mu);
 
       expect(rendered).not.toContain("scope-begin-");
       expect(rendered).not.toContain("scope-end-");
@@ -233,7 +233,7 @@ describe("exact text anchors through real text editor tools", () => {
       const resultText = getToolResultText(scenario.result, scenario.mutationCallId);
       expect(resultText).toContain('anchor "a" is ambiguous');
       expect(resultText).not.toContain("is stale");
-      expect(resultText).toMatch(/\d+#[A-F0-9]{4}\|/u);
+      expect(resultText).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|/u);
       expect(getToolExecutionDetails(execution)).toHaveProperty("anchorRecoveries.0.total", 5);
       await expect(readFile(file, "utf8")).resolves.toBe(content);
     });
@@ -254,7 +254,7 @@ describe("exact text anchors through real text editor tools", () => {
       const resultText = getToolResultText(scenario.result, scenario.mutationCallId);
       expect(resultText).toContain('anchor "charle" was not found');
       expect(resultText).not.toContain("is stale");
-      expect(resultText).toMatch(/\d+#[A-F0-9]{4}\|charlie/u);
+      expect(resultText).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|charlie/u);
       await expect(readFile(file, "utf8")).resolves.toBe(content);
     });
   });
