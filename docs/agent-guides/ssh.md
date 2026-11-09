@@ -25,6 +25,8 @@ Keep machine-specific targets out of shared Git history unless the user asks.
 - Name Windows files with their drive: `ssh://win/C:/Users/name/file.txt`. Relative paths may use `\` or `/`.
 - Windows targets support `read`, `raw:` and directory listings, and terminal sessions through `remote_powershell`. Other operations on a Windows target report `CAPABILITY_UNAVAILABLE`.
 - `remote_powershell` runs Windows PowerShell in a terminal session with resize, control keys such as Ctrl+C, background sessions and `shell:` references. Stopping a session ends everything it started.
+- `search` and `file_search` need ripgrep (`rg`) and `ast_search` needs `ast-grep` on the target's PATH for SSH sessions; for example `winget install BurntSushi.ripgrep.MSVC` and `npm install --global @ast-grep/cli`. A missing tool is reported by name with this hint. An npm `.cmd` shim works.
+- The `changes` view, `stage` and `unstage` use the target's Git. With `core.autocrlf` or an `eol` attribute, a CRLF file is compared to Git's LF blobs. `undo` with a `CHANGE#` anchor rewrites the file, so it needs file writes on the target; it restores CRLF only in a file that is uniformly CRLF.
 
 ## Work on a target
 
