@@ -224,6 +224,7 @@ export function registerModuleSettings(
             },
             done,
             `${scope}${pendingNames.size ? " · * reload pending" : ""}`,
+            () => tui.terminal.rows,
           );
           return {
             render: (width) => panel.render(width),
