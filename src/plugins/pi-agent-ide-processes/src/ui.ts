@@ -13,6 +13,7 @@ import {
   truncateToWidth,
   visibleWidth,
   type SelectItem,
+  type TUI,
 } from "@earendil-works/pi-tui";
 
 import type { AgentIdeProcess, AgentIdeProcessRegistry } from "./registry.ts";
@@ -117,6 +118,7 @@ export class AgentIdeProcessesUi {
       }
 
       let disposeRefresh: () => void = () => undefined;
+      let hideBackdrop: () => void = () => undefined;
       let refreshTimer: ReturnType<typeof setInterval> | undefined;
       let action: { readonly source: string } | null;
       try {
@@ -161,6 +163,7 @@ export class AgentIdeProcessesUi {
               tui.requestRender();
             };
             disposeRefresh = this.registry.onDidChange(refresh);
+            hideBackdrop = showClickAwayBackdrop(tui, () => done(null));
             refreshTimer = setInterval(refresh, 1_000);
 
             return {
@@ -238,6 +241,7 @@ export class AgentIdeProcessesUi {
         );
       } finally {
         disposeRefresh();
+        hideBackdrop();
         if (refreshTimer !== undefined) clearInterval(refreshTimer);
       }
       if (action === null) return;
@@ -245,6 +249,33 @@ export class AgentIdeProcessesUi {
       if (process !== undefined) await process.stop();
     }
   }
+}
+
+/** Only the fullscreen renderer can snapshot the last frame. */
+function hasScreenLines(tui: TUI): tui is TUI & { getScreenLines(): string[] } {
+  return "getScreenLines" in tui && typeof tui.getScreenLines === "function";
+}
+
+/**
+ * Fullscreen mode never delivers a click outside an overlay to that overlay, so put a full-screen
+ * layer under it that shows the frozen screen and reports presses. Call it before the overlay
+ * is shown; it returns the cleanup. Regular mode has no mouse input, so no layer is shown there.
+ */
+function showClickAwayBackdrop(tui: TUI, onPress: () => void): () => void {
+  if (!hasScreenLines(tui)) return () => undefined;
+  const screen = tui.getScreenLines();
+  const handle = tui.showOverlay(
+    {
+      invalidate() {},
+      render: (width) => screen.map((line) => truncateToWidth(line, width, "")),
+      handleMouse(event) {
+        if (event.type === "press" && event.button === "left") onPress();
+        return { handled: true };
+      },
+    },
+    { width: "100%", maxHeight: "100%", anchor: "top-left", nonCapturing: true },
+  );
+  return () => handle.hide();
 }
 
 /** Render all active process kinds in one stable shared widget. */

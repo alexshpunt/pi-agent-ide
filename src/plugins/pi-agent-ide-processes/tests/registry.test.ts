@@ -175,6 +175,88 @@ describe("Agent IDE process registry", () => {
     ui.dispose();
     vi.useRealTimers();
   });
+  test("closes the overlay when the pointer is pressed outside it, without stopping anything", async () => {
+    let commandHandler: ((args: string, context: never) => Promise<void>) | undefined;
+    const stop = vi.fn(async () => undefined);
+    const registry = new AgentIdeProcessRegistry();
+    registry.add({
+      id: "terminal",
+      list: () => [{ ...processWithDetail("shell:one", "detail"), stop }],
+      onDidChange: () => () => undefined,
+    });
+    const ui = new AgentIdeProcessesUi(registry, "off", {
+      registerCommand: (_name: string, command: { handler: typeof commandHandler }) => {
+        commandHandler = command.handler;
+      },
+    } as never);
+    const backdrops: { component: Component; options: unknown; hide: ReturnType<typeof vi.fn> }[] =
+      [];
+    const tui = {
+      requestRender() {},
+      getScreenLines: () => ["chat line one", "chat line two"],
+      showOverlay(component: Component, options: unknown) {
+        const hide = vi.fn();
+        backdrops.push({ component, options, hide });
+        return { hide };
+      },
+    };
+    let overlay: Component | undefined;
+    const context = {
+      mode: "tui",
+      hasUI: true,
+      ui: {
+        notify: vi.fn(),
+        setWidget: vi.fn(),
+        setStatus: vi.fn(),
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keys: unknown,
+              done: (v: null) => void,
+            ) => Component,
+          ) =>
+            new Promise<null>((resolve) => {
+              overlay = factory(tui, theme(), undefined, resolve);
+            }),
+        ),
+      },
+    };
+    const press = (
+      type: TuiMouseEvent["type"],
+      button: TuiMouseEvent["button"],
+    ): TuiMouseEvent => ({
+      type,
+      button,
+      x: 1,
+      y: 1,
+      screenX: 1,
+      screenY: 1,
+      width: 80,
+      height: 2,
+      shift: false,
+      alt: false,
+      ctrl: false,
+    });
+
+    const running = commandHandler?.("", context as never);
+    overlay?.handleInput?.("\r");
+    overlay?.handleInput?.("d");
+    expect(overlay?.render(80).join("\n")).toContain("Stop this process?");
+    const backdrop = backdrops[0];
+    expect(backdrop?.component.render(40)).toEqual(["chat line one", "chat line two"]);
+    expect(backdrop?.options).toMatchObject({ width: "100%", nonCapturing: true });
+
+    backdrop?.component.handleMouse?.(press("press", "right"));
+    backdrop?.component.handleMouse?.(press("click", "left"));
+    expect(backdrop?.hide).not.toHaveBeenCalled();
+    backdrop?.component.handleMouse?.(press("press", "left"));
+    await running;
+    expect(backdrop?.hide).toHaveBeenCalledTimes(1);
+    expect(stop).not.toHaveBeenCalled();
+    ui.dispose();
+  });
   test.each([
     [1, "shell:first"],
     [2, "shell:first"],
