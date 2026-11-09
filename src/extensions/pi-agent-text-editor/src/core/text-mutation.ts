@@ -69,6 +69,12 @@ import {
   unchangedCopySources,
 } from "./mutation-result-targets.ts";
 import { wholeFileResultSource } from "./result-input.ts";
+import {
+  bindContextAliases,
+  canonicalizeContextEdits,
+  findSourceAliases,
+  type SourceAliases,
+} from "./source-aliases.ts";
 import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import { isResultInput, prepareResultTransfer } from "./result-transfer.ts";
 import { hasSearchReference, resolveSearchReferenceList } from "./search-reference-list.ts";
@@ -301,7 +307,10 @@ export function createTextTool<TParameters extends TSchema>(
                 executionDefinition = {
                   ...directDefinition,
                   mutate: async (mutationContext, arguments_) => {
-                    const mutation = await directDefinition.mutate(mutationContext, arguments_);
+                    const mutation = canonicalizeContextEdits(
+                      await directDefinition.mutate(mutationContext, arguments_),
+                      mutationContext,
+                    );
                     plannedEdits = mutation.edits;
                     if (definition.name === "copy") {
                       for (const source of mutation.edits.keys())
@@ -570,6 +579,8 @@ interface ResolvedMutationSources {
   readonly implicitTargets: ReadonlyMap<string, readonly TextTarget[]>;
   readonly targets: readonly TextTarget[];
   readonly resources: readonly string[];
+  /** Other names of resources in `resources`, such as a relative path for an absolute one. */
+  readonly aliases: SourceAliases;
 }
 
 async function resolveMutationSources(
@@ -729,12 +740,33 @@ async function resolveMutationSources(
   const targets = [...expandedBySourceField.values()]
     .flat()
     .reduce<TextTarget[]>((all, target) => mergeTargets(all, [target]), []);
+  // One file named differently by its fields and selections (relative, absolute or symlinked)
+  // is one resource: edits to it must share a single document.
+  const aliases = await findSourceAliases(
+    [...fields.values(), ...targets.map((target) => target.source)],
+    context.cwd,
+  );
+  const canonical = (source: string): string => aliases.get(source) ?? source;
+  const canonicalTargets = (selected: readonly TextTarget[]): TextTarget[] =>
+    selected.reduce<TextTarget[]>(
+      (all, target) => mergeTargets(all, [{ ...target, source: canonical(target.source) }]),
+      [],
+    );
+  const resolvedFields = new Map([...fields].map(([field, source]) => [field, canonical(source)]));
+  const resolvedTargets = canonicalTargets(targets);
   return {
-    fields,
-    anchors,
-    implicitTargets,
-    targets,
-    resources: [...new Set([...fields.values(), ...targets.map((target) => target.source)])],
+    fields: resolvedFields,
+    anchors: new Map(
+      [...anchors].map(([field, sources]) => [field, [...new Set(sources.map(canonical))]]),
+    ),
+    implicitTargets: new Map(
+      [...implicitTargets].map(([field, selected]) => [field, canonicalTargets(selected)]),
+    ),
+    targets: resolvedTargets,
+    resources: [
+      ...new Set([...resolvedFields.values(), ...resolvedTargets.map((target) => target.source)]),
+    ],
+    aliases,
   };
 }
 
@@ -898,7 +930,8 @@ function createMutationContext(
 
     return source;
   };
-  const documentFor = (source: string): TextChangeDocument => {
+  const documentFor = (requested: string): TextChangeDocument => {
+    const source = sources.aliases.get(requested) ?? requested;
     const document = documents.get(source);
 
     if (document === undefined) {
@@ -985,7 +1018,7 @@ function createMutationContext(
     return pending;
   };
 
-  return {
+  const context: MutationExecutionContext = {
     cwd: invocation.cwd,
     ...(invocation.signal !== undefined && { signal: invocation.signal }),
     sourceDocument: documentFor(sourceFor(definition.source.field)),
@@ -1021,6 +1054,8 @@ function createMutationContext(
         : "plain";
     },
   };
+  bindContextAliases(context, sources.aliases);
+  return context;
 }
 
 function withResultPresentations(
@@ -1115,7 +1150,10 @@ export async function previewTextMutation(
         if (semanticHandler !== undefined) {
           return { changes: new Map(), result: { edits: new Map() } };
         }
-        const mutation = await definition.mutate(mutationContext, request.input);
+        const mutation = canonicalizeContextEdits(
+          await definition.mutate(mutationContext, request.input),
+          mutationContext,
+        );
 
         return {
           changes: new Map([...mutation.edits].map(([source, edit]) => [source, edit.changes])),
@@ -1314,7 +1352,10 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
             publishAnchorRenderState,
           );
           await preflightMutationAnchors(definition, state.input, mutationContext);
-          const mutation = await definition.mutate(mutationContext, state.input);
+          const mutation = canonicalizeContextEdits(
+            await definition.mutate(mutationContext, state.input),
+            mutationContext,
+          );
           const executedMutation: ExecutedTextMutation = {
             ...withResultPresentations(mutation, mutationContext),
             ...(definition.name === "write" && {
