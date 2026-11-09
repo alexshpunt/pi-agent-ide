@@ -43,7 +43,11 @@ export type {
   FileTransferEndpoint,
   FileTransferGuard,
 } from "#src/api/file-transfers.ts";
-export { localFileTransferAccess, snapshotLocalObjects } from "#src/api/native-files.ts";
+export {
+  localFileTransferAccess,
+  localObjectMode,
+  snapshotLocalObjects,
+} from "#src/api/native-files.ts";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
 export const TEXT_EDITOR_API_VERSION = 32;
