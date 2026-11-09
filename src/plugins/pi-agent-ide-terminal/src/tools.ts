@@ -36,7 +36,6 @@ import type {
 } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 const osLabel: Readonly<Record<SshTargetOs, string>> = { linux: "Linux", windows: "Windows" };
-const hostOs: SshTargetOs = process.platform === "win32" ? "windows" : "linux";
 /** Cross-OS tools are named for the shell they run. */
 const remoteToolName = (os: SshTargetOs): string =>
   os === "windows" ? "remote_powershell" : "remote_bash";
@@ -91,6 +90,7 @@ const createRunParameters = (profile: ShellProfile, scope: ShellToolScope) =>
 function assertScope(
   scope: ShellToolScope,
   remote: ResolvedSshSource | undefined,
+  hostOs: SshTargetOs,
 ): asserts remote is ResolvedSshSource | undefined {
   if (remote === undefined) {
     if (scope.remoteOnly) {
@@ -126,7 +126,9 @@ export function registerTerminalTools(
     | (() => "full" | "compact" | "disabled") = "compact",
   targets: SshBackendRegistry = new SshBackendRegistry([]),
   executionOrigin?: (toolCallId: string, context: ExtensionContext) => TerminalExecutionOrigin,
+  platform: NodeJS.Platform = process.platform,
 ): () => void {
+  const hostOs: SshTargetOs = platform === "win32" ? "windows" : "linux";
   // Keep wait cancellation in this registration, not in a PTY manager retained from older code.
   const foregroundWaits = new Set<AbortController>();
   registerShellTool(
@@ -174,7 +176,7 @@ export function registerTerminalTools(
           ui.bind(context);
           const origin = executionOrigin?.(toolCallId, context);
           const remote = targets.resolve(input.cwd ?? context.cwd, context.cwd);
-          assertScope(scope, remote);
+          assertScope(scope, remote, hostOs);
           const options = {
             command: input.command,
             background: input.background ?? false,
@@ -242,9 +244,17 @@ export function registerTerminalTools(
             theme,
           );
         },
-        renderResult(result, options, theme) {
+        renderResult(result, options, theme, context) {
+          const details = result.details as Partial<TerminalSessionSnapshot> | undefined;
+          // A call refused before any session started has no snapshot to draw.
+          if (context.isError && details?.status === undefined) {
+            // The refusal is the first paragraph; guidance appended after it is not part of it.
+            const message = result.content.find((part) => part.type === "text");
+            const refusal = message?.text.split("\n\n")[0] ?? "Command was not started.";
+            return new Text(theme.fg("error", refusal), 0, 0);
+          }
           return renderRunResult(
-            result.details as Partial<TerminalSessionSnapshot>,
+            details ?? {},
             options.expanded
               ? "full"
               : typeof presentation === "function"

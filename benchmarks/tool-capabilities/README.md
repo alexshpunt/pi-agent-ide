@@ -45,6 +45,8 @@ IDE filesystem, GitHub and Linear approvals use the shared operation dialog. Ter
 
 The `ssh-guide` case checks that Read exposes SSH setup guidance before any target is configured. It does not verify connection setup, reload, or remote operations. Its direct and Codemode routes remain unverified until a paid run.
 
+`remote_powershell` and `remote_bash` exist only when an SSH target of the other OS is configured, so the free inventory never lists them and no paid case covers them. Run the free gate with no such target in the project or global `ssh.json`; a configured one adds the tool and fails coverage. Registration and working-directory rules are checked by focused unit tests, and execution on a Windows target by live checks. Their direct and Codemode routes remain unverified.
+
 The `debug-backend-fallback` case checks the explicit VS Code refusal and recovery through the native backend; the sandbox has no VS Code. Debugging through VS Code and DebugMCP needs the user's running VS Code window, so it is checked live, not by a paid route.
 
 Resumed tool loadouts are host lifecycle, not a model route. On Pi 1.3.0 and newer, Pi restores discovered tools and applies CLI `+name`/`-name` selections; the deterministic `ide-exposure` real-Pi cases check that the IDE keeps those choices and its exclusions. The `discovery.*` capabilities stay fresh-session routes.
