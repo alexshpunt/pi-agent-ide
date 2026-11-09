@@ -22,6 +22,32 @@ export const directions: readonly Direction[] = [
 /** Pi's own machine. A Linux Pi inside WSL on a Windows host is still a Linux source. */
 export const sourcePlatform: Platform = process.platform === "win32" ? "windows" : "linux";
 
+/**
+ * Directions to run, written `source>target`. CI names them explicitly, so a direction whose
+ * fixture cannot start fails instead of being skipped. Without the variable, the directions this
+ * machine can serve run: Windows targets need a Windows source, WSL interop, or a trusted
+ * Windows host named by PI_SSH_COVERAGE_WINDOWS_HOST.
+ */
+export function selectedDirections(): readonly Direction[] {
+  const requested = process.env.PI_SSH_COVERAGE_DIRECTIONS;
+  if (!requested)
+    return directions.filter(
+      (direction) =>
+        direction.startsWith(sourcePlatform) &&
+        (direction !== "linux>windows" ||
+          Boolean(process.env.WSL_DISTRO_NAME || process.env.PI_SSH_COVERAGE_WINDOWS_HOST)),
+    );
+  return requested.split(",").map((name) => {
+    const direction = directions.find((candidate) => candidate === name.trim());
+    if (!direction) throw new Error(`Unknown SSH coverage direction: ${name}`);
+    if (!direction.startsWith(sourcePlatform))
+      throw new Error(
+        `${direction} needs a ${direction.split(">")[0]} source, not ${sourcePlatform}`,
+      );
+    return direction;
+  });
+}
+
 /** One disposable SSH server reached from this process, with out-of-band file access to its workspace. */
 export interface SshTargetFixture {
   readonly source: Platform;
@@ -95,15 +121,18 @@ function remote(target: Platform, source: string, input: Uint8Array | string = "
   };
 }
 
+/** OpenSSH arguments that reach a fixture server through its private client config. */
+const fixtureDestination = (config: string): readonly string[] => ["-F", config, "fixture"];
+
 function sshAccess(
-  config: string,
+  destination: readonly string[],
   target: Platform,
   nativeRoot: string,
 ): Pick<SshTargetFixture, "put" | "get"> {
   const join = (relative: string) => `${nativeRoot}/${relative}`;
   const execute = async (source: string, input?: Uint8Array | string) => {
     const program = remote(target, source, input);
-    return run("ssh", ["-F", config, "fixture", program.command], { input: program.input });
+    return run("ssh", [...destination, program.command], { input: program.input });
   };
   return {
     async put(relative, bytes) {
@@ -188,6 +217,8 @@ async function privateDirectory(): Promise<string> {
 
 /** Start the target of one direction, or fail setup; a missing capability is never a skip. */
 export async function startTargetFixture(targetOs: Platform): Promise<SshTargetFixture> {
+  const windowsHost = process.env.PI_SSH_COVERAGE_WINDOWS_HOST;
+  if (targetOs === "windows" && windowsHost) return startExistingWindowsTarget(windowsHost);
   if (sourcePlatform === "linux" && targetOs === "linux") return startLinuxFromLinux();
   if (sourcePlatform === "windows" && targetOs === "linux") return startLinuxFromWindows();
   return startWindowsTarget();
@@ -206,8 +237,37 @@ async function startLinuxFromLinux(): Promise<SshTargetFixture> {
     },
     workspace: fixture.workspace,
     canonical: (relative) => `${fixture.workspace}/${relative}`,
-    ...sshAccess(fixture.config, "linux", fixture.workspace),
+    ...sshAccess(fixtureDestination(fixture.config), "linux", fixture.workspace),
     stop: () => fixture.stop(),
+  };
+}
+
+/**
+ * A trusted Windows host from the user's OpenSSH config, for directions this machine cannot start
+ * a Windows server for. The workspace is a new temporary directory that stop() removes.
+ */
+async function startExistingWindowsTarget(host: string): Promise<SshTargetFixture> {
+  const destination = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=20", host];
+  const python = async (source: string) => {
+    const program = remote("windows", source);
+    return (await run("ssh", [...destination, program.command], { input: program.input }))
+      .toString("utf8")
+      .trim();
+  };
+  const native = (
+    await python("import tempfile\nprint(tempfile.mkdtemp(prefix='pi-ide-ssh-'), end='')")
+  ).replaceAll("\\", "/");
+  const workspace = `/${native.replace(/^([a-z]):/iu, (_match, drive: string) => `${drive.toUpperCase()}:`)}`;
+  return {
+    source: sourcePlatform,
+    os: "windows",
+    target: { id: "fixture", host, workspace, os: "windows" },
+    workspace,
+    canonical: (relative) => `${workspace}/${relative}`,
+    ...sshAccess(destination, "windows", native),
+    stop: async () => {
+      await python(`import shutil\nshutil.rmtree(${JSON.stringify(native)}, ignore_errors=True)`);
+    },
   };
 }
 
@@ -296,7 +356,7 @@ async function startLinuxFromWindows(): Promise<SshTargetFixture> {
       target: { id: "fixture", host: "fixture", workspace, configFile: config },
       workspace,
       canonical: (relative) => `${workspace}/${relative}`,
-      ...sshAccess(config, "linux", workspace),
+      ...sshAccess(fixtureDestination(config), "linux", workspace),
       stop: cleanup,
     };
   } catch (error) {
@@ -416,7 +476,7 @@ async function startWindowsTarget(): Promise<SshTargetFixture> {
       target: { id: "fixture", host: "fixture", workspace, configFile: config, os: "windows" },
       workspace,
       canonical: (relative) => `${workspace}/${relative}`,
-      ...sshAccess(config, "windows", native),
+      ...sshAccess(fixtureDestination(config), "windows", native),
       stop: cleanup,
     };
   } catch (error) {

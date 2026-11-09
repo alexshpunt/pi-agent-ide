@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { remoteLocation, resolveRemoteLocation } from "./identity.ts";
+import { remoteLocation, remoteParent, resolveRemoteLocation } from "./identity.ts";
 
 test("remote file identity keeps the target and round-trips reserved filename characters", () => {
   const file = remoteLocation("one", "/work/a #b?é.txt");
@@ -66,4 +66,13 @@ test("Windows path forms do not change Linux target identities", () => {
   expect(resolveRemoteLocation("C:/file", "ssh://one/work")).toBeUndefined();
   expect(remoteLocation("one", "/C:/file").path).toBe("/C:/file");
   expect(() => remoteLocation("one", "C:/file")).toThrow(TypeError);
+});
+
+test("walking up a remote path stops at the filesystem root or a Windows drive root", () => {
+  expect(remoteParent("/C:/Users/me")).toBe("/C:/Users");
+  expect(remoteParent("/C:/Users")).toBe("/C:");
+  expect(remoteParent("/C:")).toBeUndefined();
+  expect(remoteParent("/C:/")).toBeUndefined();
+  expect(remoteParent("/home/me")).toBe("/home");
+  expect(remoteParent("/")).toBeUndefined();
 });
