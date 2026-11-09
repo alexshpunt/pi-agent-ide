@@ -910,6 +910,28 @@ for (const operation of ["replace", "delete", "insert"] as const) {
   );
 }
 add(
+  "insert-search-anchor-list",
+  ["edit.insert-search-anchor-list"],
+  "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Insert call whose path is an array of two actual issued references: the first :line reference of the OLD search and the first :line reference of the TAIL search. Insert ADDED before each selected line (before: true). Do not retype the file path and do not retry. Keep every other byte.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "OLD" } },
+    { tool: "search", args: { path: "task.txt", query: "TAIL" } },
+    {
+      tool: "insert",
+      args: {
+        path: [/^SEARCH#[A-F0-9]+:1:line$/u, /^SEARCH#[A-F0-9]+:1:line$/u],
+        text: "ADDED",
+        before: true,
+      },
+      reuse: [reuse(0), reuse(1)],
+    },
+  ],
+  {
+    files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nTAIL\n" },
+    expected: { "task.txt": "keep1\nADDED\nOLD\nkeep2\nOLD\nkeep3\nADDED\nTAIL\n" },
+  },
+);
+add(
   "replace-search-anchor-list",
   ["edit.replace-search-anchor-list"],
   "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Replace call whose path is an array of two actual issued references: the first :match reference of the OLD search and the first :match reference of the TAIL search. Replace both selected matches with NEW. Do not retype the file path, do not use start/end and do not retry. Keep every other byte.",

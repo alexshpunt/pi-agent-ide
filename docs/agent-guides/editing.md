@@ -19,7 +19,7 @@ Pass a result unchanged as `path` (outside Codemode its UUID also works). It sel
 - replace and insert: the new text; copy and move: the destination text;
 - write and undo: the whole file; delete: nothing.
 
-To replace chosen matches, pass `replace` an array of `SEARCH#…:N:match` or `:line` references as `path`. They may come from different searches. One expired or unknown reference rejects the whole call without changes and the error names it.
+To act on chosen matches, pass `replace`, `insert`, `delete`, `copy` or `move` an array of `SEARCH#…:N:match` or `:line` references (or issued results) as `path`; `copy` and `move` accept one for `target` too. They may come from different searches. An array holds references only, never paths. One expired, unknown or plain-path item rejects the whole call without changes and the error names it.
 
 In Codemode, `search` returns `{ result, hasMatches, complete }`: pass `result` on. `hasMatches: false` proves absence only when `complete` is `true`. A failed read resolves to `{ status: "error", errors }` instead of rejecting. An image read returns an image block; pass it to `write` as `content` to save it.
 

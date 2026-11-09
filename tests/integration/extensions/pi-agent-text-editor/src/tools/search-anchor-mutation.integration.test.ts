@@ -971,3 +971,118 @@ test("rejects a whole anchor list without changes when one search result is stal
     await expect(readFile(second, "utf8")).resolves.toBe("delta one\n");
   });
 }, 180_000);
+
+async function runReferenceList(
+  name: string,
+  files: Record<string, string>,
+  queries: readonly string[],
+  tool: string,
+  tools: readonly string[],
+  args: Record<string, unknown>,
+) {
+  return withTempWorkspace(async (directory) => {
+    for (const [file, content] of Object.entries(files))
+      await writeFile(path.join(directory, file), content, "utf8");
+    const result = await new PiIntegrationTest({
+      testName: name,
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", ...tools],
+      conversation: [
+        ...queries.map((query, index) =>
+          assistantMessage(
+            [toolCall({ id: `search-${index}`, name: "search", arguments: { query } })],
+            { stopReason: "toolUse" },
+          ),
+        ),
+        assistantMessage([toolCall({ id: "act", name: tool, arguments: args })], {
+          stopReason: "toolUse",
+        }),
+        assistantMessage([text("done")]),
+      ],
+    }).run(`Search, then ${tool} a list of references`);
+    const contents: Record<string, string> = {};
+    for (const file of Object.keys(files))
+      contents[file] = await readFile(path.join(directory, file), "utf8");
+    return {
+      failed: getToolExecution(result, "act").isError,
+      text: getToolResultText(result, "act"),
+      contents,
+    };
+  });
+}
+
+test("inserts after every reference of a list from different searches", async () => {
+  const run = await runReferenceList(
+    "reference-list-insert",
+    { "a.txt": "one\nneedle\n", "b.txt": "pin\n" },
+    ["needle", "pin"],
+    "insert",
+    ["insert"],
+    {
+      path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#RUNTIME:2:1:line"],
+      text: "added",
+    },
+  );
+  expect(run.failed).toBe(false);
+  expect(run.contents).toEqual({ "a.txt": "one\nneedle\nadded", "b.txt": "pin\nadded" });
+}, 180_000);
+
+test("deletes every reference of a list from different searches", async () => {
+  const run = await runReferenceList(
+    "reference-list-delete",
+    { "a.txt": "one\nneedle\ntwo\n", "b.txt": "pin\nkeep\n" },
+    ["needle", "pin"],
+    "delete",
+    ["delete"],
+    { path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#RUNTIME:2:1:line"] },
+  );
+  expect(run.failed).toBe(false);
+  expect(run.contents).toEqual({ "a.txt": "one\ntwo\n", "b.txt": "keep\n" });
+}, 180_000);
+
+test("copies each referenced source into the matching referenced target", async () => {
+  const run = await runReferenceList(
+    "reference-list-copy",
+    { "src.txt": "AAA BBB\n", "dst.txt": "x1 x2\n" },
+    ["AAA", "BBB", "x1", "x2"],
+    "copy",
+    ["copy"],
+    {
+      path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#RUNTIME:2:1:match"],
+      target: ["SEARCH#RUNTIME:3:1:match", "SEARCH#RUNTIME:4:1:match"],
+    },
+  );
+  expect(run.failed, run.text).toBe(false);
+  expect(run.contents["src.txt"]).toBe("AAA BBB\n");
+  expect(run.contents["dst.txt"]).toBe("AAA BBB\n");
+}, 180_000);
+
+test("rejects a plain path in a reference list and names it", async () => {
+  const run = await runReferenceList(
+    "reference-list-plain-path",
+    { "a.txt": "needle\n" },
+    ["needle"],
+    "replace",
+    ["replace"],
+    { path: ["SEARCH#RUNTIME:1:1:match", "a.txt"], text: "x" },
+  );
+  expect(run.failed).toBe(true);
+  expect(run.text).toContain("Reference a.txt cannot be used");
+  expect(run.text).not.toContain("Unsupported result input");
+  expect(run.contents["a.txt"]).toBe("needle\n");
+}, 180_000);
+
+test("rejects an unknown reference in a delete list without changes", async () => {
+  const run = await runReferenceList(
+    "reference-list-delete-unknown",
+    { "a.txt": "needle\nkeep\n" },
+    ["needle"],
+    "delete",
+    ["delete"],
+    { path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#FFFF:1:line"] },
+  );
+  expect(run.failed).toBe(true);
+  expect(run.text).toContain("SEARCH#FFFF:1:line");
+  expect(run.contents["a.txt"]).toBe("needle\nkeep\n");
+}, 180_000);
