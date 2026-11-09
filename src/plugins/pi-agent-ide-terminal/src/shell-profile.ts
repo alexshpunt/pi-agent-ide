@@ -1,7 +1,21 @@
 import os from "node:os";
 import path from "node:path";
 
+import type { SshTargetOs } from "#src/backend/identity.ts";
 import type { ShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
+
+/** Windows SSH sessions use Windows PowerShell, which every supported Windows target has. */
+export const remotePowershellProfile: ShellProfile = {
+  executable: "powershell.exe",
+  displayName: "Windows PowerShell over SSH",
+  family: "powershell",
+  commandArgs: (command) => ["-NoLogo", "-NoProfile", "-Command", command],
+};
+
+/** The shell a target runs, chosen by its declared OS and not by the local platform. */
+export function remoteShellProfile(os: SshTargetOs): ShellProfile {
+  return os === "windows" ? remotePowershellProfile : remoteBashProfile;
+}
 
 /** Linux SSH sessions use Bash, independently of the local platform shell. */
 export const remoteBashProfile: ShellProfile = {
