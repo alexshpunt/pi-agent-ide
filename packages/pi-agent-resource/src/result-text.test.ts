@@ -25,7 +25,7 @@ test("displayed exact Search references retain their registered ranges and expir
     await writeFile(source, "B gap");
     store.refresh(source, cwd);
     await writeFile(source, "A gap");
-    expect(() => store.source(match, cwd)).toThrow("expired");
+    expect(() => store.resolve([match], cwd)).toThrow("expired");
     store.clear();
     expect(store.source(match, cwd)).toBe(match);
   } finally {
@@ -82,7 +82,8 @@ test("retired snapshots and their derived text results never revive after A to B
     store.refresh(source, cwd);
     expect(() => store.resolve(a, cwd)).toThrow("expired");
     expect(() => store.resolve(derived, cwd)).toThrow("expired");
-    expect(() => store.source(output, cwd)).toThrow("expired");
+    // The result stays, and its use reports what changed instead of an unknown reference.
+    expect(() => store.resolve(store.source(output, cwd), cwd)).toThrow("expired");
     const current = store.register([{ source, expectedContent: "A", ranges: [range] }], cwd);
     expect(store.resolve(current, cwd).targets[0]?.expectedContent).toBe("A");
   } finally {

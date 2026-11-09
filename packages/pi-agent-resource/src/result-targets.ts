@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createLineMap, moveRange, type LineMap } from "./line-map.ts";
+import { createLineMap, describeLostRange, moveRange, type LineMap } from "./line-map.ts";
 
 /** Serializable source coordinates. Lines are one-based; columns are UTF-16 offsets. */
 export interface ResultRange {
@@ -53,6 +53,7 @@ type ResultEntry = { readonly cwd: string } & (
 export class ResultTargetStore {
   readonly #entries = new Map<string, ResultEntry>();
   readonly #matchReferences = new Map<string, string>();
+  readonly #referenceNames = new Map<string, string>();
   readonly #snapshots = new Map<
     string,
     { source: string; cwd: string; stamp: string | undefined }
@@ -68,6 +69,7 @@ export class ResultTargetStore {
   public clear(): void {
     this.#entries.clear();
     this.#matchReferences.clear();
+    this.#referenceNames.clear();
     this.#snapshots.clear();
     this.#results.clear();
     this.#contents.clear();
@@ -136,13 +138,13 @@ export class ResultTargetStore {
       for (const target of entry.targets) this.refresh(target.source, cwd);
       // A changed file moves the entry's selections, so read it again after the refresh.
       const current = this.#entries.get(reference);
+      if (current?.state === "rejected") throw new Error(current.reason);
       if (current?.state !== "ready")
         throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
-      if (
-        options.allowAdjusted !== true &&
-        current.targets.some((target) => target.ranges.some((range) => range.adjusted === true))
-      )
-        throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
+      if (options.allowAdjusted !== true) {
+        const adjusted = adjustedRegions(current.targets);
+        if (adjusted.length > 0) throw new Error(retiredReason(adjusted));
+      }
       complete &&= current.complete;
       targets.push(...current.targets);
     }
@@ -198,7 +200,22 @@ export class ResultTargetStore {
       throw new Error("A Search reference needs a registered result target.");
     this.resolve(target, cwd);
     this.#matchReferences.set(reference, target);
+    this.#referenceNames.set(target, reference);
   }
+
+  /** The Search reference a handle was issued for, so messages name what the agent passed. */
+  public referenceName(handle: string): string {
+    return this.#referenceNames.get(handle) ?? handle;
+  }
+  /**
+   * Targets of a numbered Search reference bound by `registerSearchReference`, or `undefined` when
+   * none is bound. A bound reference that cannot be used throws the reason, with current lines.
+   */
+  public resolveSearchReference(reference: string, cwd: string): ResolvedResultTargets | undefined {
+    const target = this.#matchReferences.get(reference);
+    return target === undefined ? undefined : this.resolve(target, cwd);
+  }
+
   /** Register readable output without exposing the stored tool data to the agent. */
   public publish(outcome: unknown, text: string, cwd: string, resources: string[] = []): string {
     const id = randomUUID();
@@ -363,7 +380,7 @@ export class ResultTargetStore {
     for (const [reference, entry] of this.#entries) {
       if (entry.state !== "ready") continue;
       let touches = false;
-      let survives = true;
+      const lost: string[] = [];
       const targets: ResultSourceTarget[] = [];
       for (const target of entry.targets) {
         if (sourcePath(target.source, entry.cwd) !== identity) {
@@ -378,35 +395,36 @@ export class ResultTargetStore {
         if (!maps.has(target.expectedContent))
           maps.set(target.expectedContent, createLineMap(target.expectedContent, next));
         const map = maps.get(target.expectedContent);
-        const ranges = target.ranges.map((range) =>
-          map === undefined ? undefined : moveRange(range, map, newLines),
-        );
-        if (ranges.some((range) => range === undefined)) {
-          survives = false;
-          break;
+        const ranges: ResultRange[] = [];
+        for (const range of target.ranges) {
+          const moved = map === undefined ? undefined : moveRange(range, map, newLines);
+          if (moved === undefined) lost.push(describeLostRange(range, map));
+          else ranges.push(moved);
         }
-        targets.push({
-          ...target,
-          expectedContent: next,
-          ranges: ranges.filter((range) => range !== undefined),
-        });
+        targets.push({ ...target, expectedContent: next, ranges });
       }
       if (!touches) continue;
-      if (survives) {
+      if (lost.length === 0) {
         this.#entries.set(reference, { ...entry, targets: combineTargets(targets) });
         rebased.add(reference);
       } else {
-        this.#entries.delete(reference);
+        // Keep a marker: the next use reports what changed instead of "expired or unknown".
+        this.#entries.set(reference, {
+          state: "rejected",
+          cwd: entry.cwd,
+          reason: retiredReason(lost),
+        });
         removed.add(reference);
       }
     }
     for (const [key, shared] of this.#contents)
       if (shared.identity === identity) this.#contents.set(key, { identity, content: next });
     for (const [id, result] of this.#results)
+      // A result whose selections moved, or were marked as changed, stays: its next use then
+      // reports exactly what changed.
       if (
-        result.references.some((reference) => removed.has(reference)) ||
-        (result.resources.some((resource) => sourcePath(resource, result.cwd) === identity) &&
-          !result.references.some((reference) => rebased.has(reference)))
+        result.resources.some((resource) => sourcePath(resource, result.cwd) === identity) &&
+        !result.references.some((reference) => rebased.has(reference) || removed.has(reference))
       )
         this.#results.delete(id);
   }
@@ -444,6 +462,31 @@ export class ResultTargetStore {
       "This result has no supported source target; do not use preview text as a source.",
     );
   }
+}
+
+/** One line per range that could not follow its file's change; long lists are cut, never hidden. */
+function retiredReason(lost: readonly string[]): string {
+  const shown = lost.slice(0, 10);
+  const more = lost.length - shown.length;
+  return [
+    `Result target expired after its snapshot changed: ${String(lost.length)} selected range${lost.length === 1 ? "" : "s"} no longer match${lost.length === 1 ? "es" : ""} the file. Repeat Read/Search.`,
+    ...shown.map((item) => `- ${item}`),
+    ...(more > 0 ? [`- and ${String(more)} more`] : []),
+  ].join("\n");
+}
+
+/** Where the text of each adjusted range stands now, for the error of an edit that needs the old text. */
+function adjustedRegions(targets: readonly ResultSourceTarget[]): string[] {
+  return targets.flatMap((target) => {
+    const lines = target.expectedContent.split("\n");
+    return target.ranges
+      .filter((range) => range.adjusted === true)
+      .map((range) => {
+        const first = (lines[range.start.lineNumber - 1] ?? "").trim();
+        const shown = first.length > 120 ? `${first.slice(0, 120)}…` : first;
+        return `lines ${String(range.start.lineNumber)}–${String(range.end.lineNumber)} changed: now ${String(range.start.lineNumber)}| ${shown}`;
+      });
+  });
 }
 
 function sourcePath(source: string, cwd: string): string {
