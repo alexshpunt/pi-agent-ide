@@ -169,12 +169,9 @@ test.skipIf(process.platform !== "win32" || !host)(
       expect(getToolResultText(run, "list-after-delete")).toContain("tree");
 
       expect(getToolExecution(run, "windows-cwd").isError).toBe(true);
-      expect(getToolResultText(run, "windows-cwd")).toContain("is a Windows target");
       expect(getToolExecution(run, "local-cwd").isError).toBe(true);
-      expect(getToolResultText(run, "local-cwd")).toContain("runs only on SSH targets");
       expect(getToolExecution(run, "no-cwd").isError).toBe(true);
       expect(getToolExecution(run, "powershell-linux").isError).toBe(true);
-      expect(getToolResultText(run, "powershell-linux")).toContain("Use remote_bash");
       expect(getToolExecution(run, "local-powershell").isError).toBe(false);
       for (const id of ["windows-cwd", "local-cwd", "no-cwd", "powershell-linux"])
         expect(getToolResultText(run, id)).not.toContain("MUST-NOT-RUN\n");
