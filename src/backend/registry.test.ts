@@ -23,3 +23,18 @@ test("ambiguous duplicate target IDs fail configuration instead of selecting one
       ]),
   ).toThrow("Duplicate SSH target");
 });
+
+test("a Windows target resolves drive paths with its own rules", () => {
+  const registry = new SshBackendRegistry([
+    { id: "win", host: "deliberately-unreachable-win", workspace: "C:\\work", os: "windows" },
+    { id: "linux", host: "deliberately-unreachable-linux", workspace: "/work" },
+  ]);
+  expect(registry.resolve("src\\file.ts", "ssh://win/C:/work")?.location.path).toBe(
+    "/C:/work/src/file.ts",
+  );
+  expect(registry.resolve("ssh://win/c:/Work/file")?.location.source).toBe(
+    "ssh://win/C:/Work/file",
+  );
+  expect(() => registry.resolve("ssh://win/work/file")).toThrow(TypeError);
+  expect(registry.resolve("ssh://linux/work/file")?.location.path).toBe("/work/file");
+});
