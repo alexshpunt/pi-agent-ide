@@ -1,11 +1,15 @@
-import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import type { ResolvedResultTargets } from "pi-agent-resource";
 import { createTextDocument } from "pi-agent-text";
 import { searchTextContent } from "#src/search-backend.ts";
 import type { TextSearchBackendResult } from "#src/search-backend.ts";
 import type { SearchRecipe } from "#src/search-recipe.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
 
-/** Run each real source range separately; gaps and neighboring text are never searched. */
+/**
+ * Run each real source range separately; gaps and neighboring text are never searched. The
+ * ranges describe the text in `scope`, which is what is searched; the caller makes the scope
+ * current first, and registering the matches checks them against the file again.
+ */
 export async function runScopedSearch(
   recipe: SearchRecipe,
   scope: ResolvedResultTargets,
@@ -26,7 +30,6 @@ export async function runScopedSearch(
     const seen = new Set<string>();
     for (const target of scope.targets) {
       signal?.throwIfAborted();
-      await verifyResultTargets({ targets: [target], complete: scope.complete }, signal);
       const document = createTextDocument(target.source, target.expectedContent);
       const starts = [0];
       for (const line of document.lines)
@@ -103,6 +106,5 @@ export async function runScopedSearch(
       notices.push("Search fallback: invalid regex skipped; literal search found no matches.");
     }
   }
-  await verifyResultTargets(scope, signal);
   return { ...result, query, notices };
 }

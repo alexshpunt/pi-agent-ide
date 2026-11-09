@@ -1,4 +1,7 @@
-import { describe, expect, test, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 import { resourceScheduler } from "pi-agent-resource";
 import { createSearchCore } from "#src/core/search-core.ts";
@@ -423,5 +426,84 @@ describe("search fallback dispatch", () => {
     ).toBe("INVALID_REQUEST");
     expect(fallback).not.toHaveBeenCalled();
     expect(specialized).not.toHaveBeenCalled();
+  });
+});
+
+describe("result scopes whose lines were edited", () => {
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+
+  async function searchChangedScope(edited: string) {
+    const directory = mkdtempSync(path.join(tmpdir(), "search-core-scope-"));
+    onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
+    const file = path.join(directory, "note.txt");
+    writeFileSync(file, original);
+    const targets = new ResultTargetStore();
+    const reference = targets.register(
+      [
+        {
+          source: file,
+          expectedContent: original,
+          ranges: [{ start: { lineNumber: 2, column: 0 }, end: { lineNumber: 5, column: 0 } }],
+        },
+      ],
+      directory,
+    );
+    writeFileSync(file, edited);
+    const core = createSearchCore(targets);
+    const seen: SearchContext[] = [];
+    await core.registerPlugin({
+      protocol: SEARCH_PROTOCOL,
+      apiVersion: SEARCH_API_VERSION,
+      id: "scoped-reader",
+      setup(api) {
+        api.addResolver({
+          resolver: {
+            id: "text",
+            supportsResultScope: true,
+            tryResolve: (_request, context) => {
+              seen.push(context);
+              return { kind: "resolved" as const, payload: [] };
+            },
+            format: () => ({ content: [{ type: "text", text: "No matches found." }], details: {} }),
+            toScriptData: () => ({ kind: "matches", complete: true, matches: [] }),
+          },
+        });
+      },
+    });
+    const result = await core.execute(
+      { query: "x", path: reference },
+      { cwd: directory },
+      "script",
+    );
+    return { result, seen, targets, reference, directory };
+  }
+
+  test("are searched as the current text of their region, and the output says so", async () => {
+    const { result, seen, targets, reference, directory } = await searchChangedScope(
+      `zero\n${original.replace("three", "THREE")}`,
+    );
+    expect(result.isError).not.toBe(true);
+    const range = seen[0]?.scope?.targets[0]?.ranges[0];
+    expect(range).toMatchObject({
+      start: { lineNumber: 3 },
+      end: { lineNumber: 6 },
+      adjusted: true,
+    });
+    expect(seen[0]?.rescope).toBeTypeOf("function");
+    expect(JSON.stringify(result.content)).toContain("note.txt:3-5");
+    // An edit would need the text that was selected.
+    expect(() => targets.resolve(reference, directory)).toThrow(/expired/u);
+  });
+
+  test("say nothing when only lines around the region changed", async () => {
+    const { result, seen } = await searchChangedScope(`zero\n${original}`);
+    expect(seen[0]?.scope?.targets[0]?.ranges[0]?.adjusted).toBeUndefined();
+    expect(JSON.stringify(result.content)).not.toContain("changed after");
+  });
+
+  test("fail when the region is gone", async () => {
+    const { result, seen } = await searchChangedScope("unrelated\n");
+    expect(result.isError).toBe(true);
+    expect(seen).toHaveLength(0);
   });
 });

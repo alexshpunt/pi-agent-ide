@@ -88,6 +88,31 @@ text(await tools.replace({path:timeout,text:"99"}));`,
   });
 });
 
+test("searches the current text of a Read window whose lines other sessions changed", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(
+      path.join(cwd, "calls.ts"),
+      "legacyRequest(a);\nlegacyRequest(b);\nother();\nlegacyRequest(c);\nlegacyRequest(d);\n",
+    );
+    const run = await runAstComposition(cwd, "ast-changed-window", [
+      `const window=await tools.read({path:"calls.ts",offset:2,limit:3});
+await tools.replace({path:"calls.ts",start:"other();",text:"changed();"});
+await tools.replace({path:"calls.ts",start:"legacyRequest(a);",text:"legacyRequest(top);\\nlegacyRequest(a);"});
+const found=await tools.ast_search({path:window,pattern:"legacyRequest($ARG)"}).then(value => value.result);
+check(/changed after it was issued/.test(found) && found.includes("calls.ts:3-5"),"Missing notice about the changed region");
+check(matches(found).length===2 && found.includes("calls.ts:3:1") && found.includes("calls.ts:5:1"),"Wrong matches for the current region");
+const stale=await tools.search({path:window,query:"changed"}).then(value => value.result);
+check(matches(stale).length===1 && /changed after it was issued/.test(stale),"Search lost the changed region");
+await rejects(()=>tools.replace({path:window,text:"BAD"}),/expired/);
+text(await tools.replace({path:matches(found)[1],text:"legacyRequest(z)"}));`,
+    ]);
+    expectScriptsPassed(run, 1);
+    expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(
+      "legacyRequest(top);\nlegacyRequest(a);\nlegacyRequest(b);\nchanged();\nlegacyRequest(z);\nlegacyRequest(d);\n",
+    );
+  });
+});
+
 test("keeps sparse multi-file AST scopes and capture groups without matching across a gap", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(

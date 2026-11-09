@@ -2,7 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { ResultTargetStore, type ResultRange, type ResultSourceTarget } from "./result-targets.ts";
+import {
+  ResultTargetStore,
+  currentResultTargets,
+  describeAdjustedRanges,
+  type ResultRange,
+  type ResultSourceTarget,
+} from "./result-targets.ts";
 
 const target: ResultSourceTarget = {
   source: "/workspace/a.txt",
@@ -309,5 +315,124 @@ describe("selections of a local file edited elsewhere", () => {
     const reference = select(store, line(3));
     edit(Array.from({ length: 9000 }, (_, index) => `row ${index}`).join("\n"));
     expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
+  });
+});
+
+describe("selections whose own lines were edited, for readers", () => {
+  let directory: string;
+  let file: string;
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+  const block: ResultRange = {
+    start: { lineNumber: 2, column: 0 },
+    end: { lineNumber: 4, column: 4 },
+  };
+  const select = (store: ResultTargetStore, ...ranges: ResultRange[]): string =>
+    store.register([{ source: file, expectedContent: original, ranges }], directory);
+
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "result-targets-readers-"));
+    file = path.join(directory, "a.txt");
+    writeFileSync(file, original);
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  test("resolve to the same region of the current text and are marked", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, block);
+    const content = `zero\n${original.replace("three", "THREE")}`;
+    writeFileSync(file, content);
+    const current = await store.resolveCurrent(reference, directory);
+    expect(current.targets).toEqual([
+      {
+        source: file,
+        expectedContent: content,
+        ranges: [
+          {
+            ...block,
+            start: { lineNumber: 3, column: 0 },
+            end: { lineNumber: 5, column: 4 },
+            adjusted: true,
+          },
+        ],
+      },
+    ]);
+    expect(describeAdjustedRanges(current, directory)).toContain("a.txt:3-5");
+  });
+
+  test("are refused to anything that edits, which needs the selected text", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, block);
+    writeFileSync(file, original.replace("three", "THREE"));
+    expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
+    expect(() => store.resolveOrdered(reference, directory)).toThrow(/expired/u);
+    await expect(store.resolveCurrent(reference, directory)).resolves.toBeDefined();
+  });
+
+  test("stay usable through later edits, and unchanged ones are not marked", async () => {
+    const store = new ResultTargetStore();
+    const edited = select(store, block);
+    const untouched = select(store, {
+      start: { lineNumber: 5, column: 0 },
+      end: { lineNumber: 5, column: 4 },
+    });
+    writeFileSync(file, original.replace("three", "THREE"));
+    await store.resolveCurrent(edited, directory);
+    writeFileSync(file, `zero\n${original.replace("three", "THREE").replace("four", "4\n4")}`);
+    const current = await store.resolveCurrent(edited, directory);
+    expect(current.targets[0]?.ranges[0]).toMatchObject({
+      start: { lineNumber: 3, column: 0 },
+      end: { lineNumber: 7, column: 0 },
+      adjusted: true,
+    });
+    const moved = await store.resolveCurrent(untouched, directory);
+    expect(moved.targets[0]?.ranges[0]).toEqual({
+      start: { lineNumber: 7, column: 0 },
+      end: { lineNumber: 7, column: 4 },
+    });
+    expect(describeAdjustedRanges(moved, directory)).toBeUndefined();
+  });
+
+  test("follow a write that lands after the result was resolved", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, block);
+    const resolved = store.resolve(reference, directory);
+    const content = `zero\n${original.replace("three", "THREE")}`;
+    writeFileSync(file, content);
+    const current = await currentResultTargets(resolved);
+    expect(current.targets[0]?.expectedContent).toBe(content);
+    expect(current.targets[0]?.ranges[0]).toMatchObject({
+      start: { lineNumber: 3, column: 0 },
+      adjusted: true,
+    });
+  });
+
+  test("fail only when no line of the region is left", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, {
+      start: { lineNumber: 3, column: 0 },
+      end: { lineNumber: 3, column: 5 },
+    });
+    writeFileSync(file, original.replace("three", "thr33"));
+    await expect(store.resolveCurrent(reference, directory)).rejects.toThrow(/expired/u);
+    const other = select(store, block);
+    const resolved = store.resolve(other, directory);
+    writeFileSync(file, "unrelated\n");
+    await expect(currentResultTargets(resolved)).rejects.toThrow(/no longer be found/u);
+  });
+
+  test("keep published results usable for readers", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, block);
+    const published = store.publish(
+      { status: "success", data: { target: reference } },
+      "Read",
+      directory,
+      [file],
+    );
+    writeFileSync(file, original.replace("three", "THREE"));
+    const current = await store.resolveCurrent(published, directory);
+    expect(current.targets[0]?.ranges[0]).toMatchObject({ adjusted: true });
   });
 });

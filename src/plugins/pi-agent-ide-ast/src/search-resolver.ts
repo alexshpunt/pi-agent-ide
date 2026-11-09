@@ -6,8 +6,17 @@ import { requiredValue } from "pi-agent-invariant";
 import type { SearchPluginApi, SearchSelectionMatch } from "pi-agent-search/api/search";
 
 import type { SearchEnvironment, SearchRequest, SearchResolver } from "pi-agent-search/api/search";
-import { selectionData, containsSearchMatch, splitGlobList } from "pi-agent-search/api/search";
-import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import {
+  selectionData,
+  containsSearchMatch,
+  currentScope,
+  splitGlobList,
+} from "pi-agent-search/api/search";
+import {
+  verifyResultTargets,
+  type ResolvedResultTargets,
+  type ResultSourceTarget,
+} from "pi-agent-resource";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
 
 import { localAstGrepCommand } from "./ast-grep-binary.ts";
@@ -124,27 +133,40 @@ export function createAstSearchResolver(
       // Bytes ast-grep parsed, by file, so results and captures map onto the same text even
       // when another process writes the file meanwhile.
       let snapshots = new Map<string, Buffer>();
-      const search = async (searched: SearchRequest, signal?: AbortSignal) => {
+      // A scope is searched as the text it holds: its ranges are positions in that text, and a
+      // file other sessions keep writing has moved on by the time ast-grep would read it.
+      const search = async (
+        searched: SearchRequest,
+        signal?: AbortSignal,
+        scoped?: ResultSourceTarget,
+      ) => {
         const environment = owner(searched.path ?? ".");
         const snapshot =
           environment === undefined
-            ? await runAstGrepOnSnapshot(pattern, searched, context.cwd, signal)
+            ? await runAstGrepOnSnapshot(pattern, searched, context.cwd, signal, scoped)
             : undefined;
-        if (snapshot === undefined)
-          return runAstGrep(pattern, searched, context.cwd, signal, environment);
+        if (snapshot === undefined) {
+          const matches = await runAstGrep(pattern, searched, context.cwd, signal, environment);
+          // ast-grep read the file itself, so the scope must still describe it.
+          if (scoped !== undefined)
+            await verifyResultTargets({ targets: [scoped], complete: true }, signal);
+          return matches;
+        }
         snapshots.set(snapshot.source, snapshot.bytes);
         return snapshot.matches;
       };
-      const collect = async (signal?: AbortSignal) => {
+      // The first attempt uses the scope as resolved; a retry resolves it again.
+      let scope = context.scope;
+      const collect = async (signal?: AbortSignal, again = true) => {
         snapshots = new Map();
-        if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
+        if (again && scope !== undefined) scope = await currentScope(context, signal);
         const found: AstGrepMatch[] = [];
-        if (context.scope === undefined) {
+        if (scope === undefined) {
           found.push(...(await search(request, signal)));
         } else {
-          for (const source of new Set(context.scope.targets.map((target) => target.source))) {
+          for (const scoped of scope.targets) {
             signal?.throwIfAborted();
-            found.push(...(await search({ ...request, path: source }, signal)));
+            found.push(...(await search({ ...request, path: scoped.source }, signal, scoped)));
           }
         }
         const mapped = found.map((match) => ({
@@ -163,12 +185,7 @@ export function createAstSearchResolver(
             await selectionMatches([match], context.cwd, signal, owner(match.file), snapshots)
           )[0];
           if (selection === undefined) throw new Error("Missing AST selection snapshot");
-          if (
-            !enclosing &&
-            context.scope !== undefined &&
-            !containsSearchMatch(context.scope, selection)
-          )
-            continue;
+          if (!enclosing && scope !== undefined && !containsSearchMatch(scope, selection)) continue;
           eligible.push({
             selection,
             raw: {
@@ -185,24 +202,21 @@ export function createAstSearchResolver(
           });
         }
         const candidates =
-          enclosing && context.scope !== undefined
-            ? innermostEnclosing(eligible, context.scope.targets)
-            : eligible;
+          enclosing && scope !== undefined ? innermostEnclosing(eligible, scope.targets) : eligible;
         const kept = candidates.slice(0, request.limit ?? 100);
-        if (context.scope !== undefined) await verifyResultTargets(context.scope, signal);
         // The search session keeps this result and its refresh closure for as long as its anchors
         // live. A copy keeps only the matched text, not each file the text was cut from.
         return structuredClone({
           raw: kept.map((item) => item.raw),
           matches: kept.map((item) => item.selection),
-          complete:
-            (context.scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
+          complete: (scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
         });
       };
       // Anchors register only while the file still has the searched text; another process may
-      // write it in between, so search again.
+      // write it in between, so search again, with the scope resolved against the new text.
+      let attempts = 0;
       const { selected, session } = await collectWhileSourceChanges(async () => {
-        const selected = await collect(context.signal);
+        const selected = await collect(context.signal, attempts++ > 0);
         try {
           const session = await registerSelection(
             { request, matches: selected.matches, complete: selected.complete, refresh: collect },
@@ -284,7 +298,6 @@ export function createAstSearchResolver(
         captures.push(Object.fromEntries(projected));
         captureGroups.push(groupsForMatch);
       }
-      if (context.scope !== undefined) await verifyResultTargets(context.scope, context.signal);
       return {
         kind: "resolved",
         payload: {
@@ -546,7 +559,8 @@ async function collectWhileSourceChanges<T>(
 }
 
 /**
- * Searches one local file through ast-grep's standard input, with the bytes read here. Returns
+ * Searches one local file through ast-grep's standard input, with the bytes read here, or the
+ * text of its scope when it has one. Returns
  * undefined when the path is not one file or ast-grep cannot take the language from the request
  * or the file extension; the caller then lets ast-grep read the path.
  */
@@ -555,6 +569,7 @@ async function runAstGrepOnSnapshot(
   request: SearchRequest,
   cwd: string,
   signal: AbortSignal | undefined,
+  scoped?: ResultSourceTarget,
 ): Promise<{ source: string; bytes: Buffer; matches: AstGrepMatch[] } | undefined> {
   // Globs filter files by path, which standard input does not have.
   if (
@@ -566,15 +581,19 @@ async function runAstGrepOnSnapshot(
   )
     return undefined;
   const source = path.resolve(cwd, request.path);
-  const isFile = await stat(source).then(
-    (info) => info.isFile(),
-    () => false,
-  );
+  const isFile =
+    scoped !== undefined ||
+    (await stat(source).then(
+      (info) => info.isFile(),
+      () => false,
+    ));
   if (!isFile) return undefined;
   const { rule, language } = astOptions(request) ?? {};
   const lang = language ?? path.extname(source).slice(1);
   if (lang.length === 0) return undefined;
-  const bytes = await readFile(source, { signal });
+  // A scope holds the text its ranges describe; any other path is read now.
+  const bytes =
+    scoped === undefined ? await readFile(source, { signal }) : Buffer.from(scoped.expectedContent);
   const arguments_ =
     rule === undefined
       ? ["run", "--pattern", pattern, "--lang", lang, "--stdin", "--json=compact"]

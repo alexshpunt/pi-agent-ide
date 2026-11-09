@@ -101,3 +101,136 @@ test("include globs keep comma-separated brace alternatives", async () => {
   const data = resolver.toScriptData?.(result.payload, {}) as { matches: unknown[] };
   expect(data.matches).toHaveLength(1);
 });
+
+test("AST search of a result whose lines changed searches the current text of its region", async () => {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "changed-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.ts");
+  const lines = [
+    "const above = 1;",
+    "const first = 1;",
+    "const second = 2;",
+    "const third = 3;",
+    "const below = 4;",
+  ];
+  await writeFile(source, `${lines.join("\n")}\n`);
+  const targets = new ResultTargetStore();
+  const sessions = new SearchSessionStore(undefined, targets, (file) => readFile(file, "utf8"));
+  const resolver = createAstSearchResolver((selection, context) =>
+    sessions.register(
+      selection.request.query,
+      selection.matches,
+      selection.complete,
+      context.cwd,
+      context.signal,
+      selection.request,
+      selection.refresh,
+      undefined,
+      context.environment,
+    ),
+  );
+  // A Read of the three middle lines.
+  const reference = targets.register(
+    [
+      {
+        source,
+        expectedContent: `${lines.join("\n")}\n`,
+        ranges: [{ start: { lineNumber: 2, column: 0 }, end: { lineNumber: 5, column: 0 } }],
+      },
+    ],
+    cwd,
+  );
+  // Other sessions edit a line inside the range and add lines above it.
+  const changed = ["const new = 0;", ...lines];
+  changed[3] = "const second = 22;";
+  await writeFile(source, `${changed.join("\n")}\n`);
+  expect(() => targets.resolve(reference, cwd)).toThrow("expired");
+
+  const rescope = (signal?: AbortSignal) => targets.resolveCurrent(reference, cwd, signal);
+  const request = {
+    query: "const $NAME = $VALUE;",
+    options: { ast: { pattern: "const $NAME = $VALUE;" } },
+  };
+  const result = await resolver.tryResolve(request, { cwd, scope: await rescope(), rescope });
+  if (result.kind !== "resolved") throw new Error("AST discovery failed");
+  const data = resolver.toScriptData?.(result.payload, {}) as {
+    matches: {
+      range: { startLine: number };
+      matchedText: string;
+      target?: string;
+      references?: { match: string };
+    }[];
+  };
+  expect(data.matches.map((match) => match.matchedText)).toEqual([
+    "const first = 1;",
+    "const second = 22;",
+    "const third = 3;",
+  ]);
+  expect(data.matches.map((match) => match.range.startLine)).toEqual([3, 4, 5]);
+
+  // A match is anchored to the file as it is now, so an edit built from it passes its checks.
+  const [match] = data.matches;
+  const anchored = targets.resolve(data.matches[1]?.target, cwd);
+  expect(anchored.targets[0]?.expectedContent).toBe(`${changed.join("\n")}\n`);
+  await targets.verify(anchored);
+  expect(match?.references?.match).toMatch(/^SEARCH#/u);
+});
+
+test("AST search retries with the scope resolved again when the file changes before anchoring", async () => {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "retry-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.ts");
+  const content = "const a = 1;\nconst b = 2;\n";
+  await writeFile(source, content);
+  const targets = new ResultTargetStore();
+  const sessions = new SearchSessionStore(undefined, targets, (file) => readFile(file, "utf8"));
+  let rescoped = 0;
+  const resolver = createAstSearchResolver(async (selection, context) => {
+    if (rescoped === 0) {
+      // Another session writes between the search and the registration of its anchors.
+      await writeFile(source, `// header\n${content}`);
+    }
+    return sessions.register(
+      selection.request.query,
+      selection.matches,
+      selection.complete,
+      context.cwd,
+      context.signal,
+      selection.request,
+      selection.refresh,
+      undefined,
+      context.environment,
+    );
+  });
+  const reference = targets.register(
+    [
+      {
+        source,
+        expectedContent: content,
+        ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 3, column: 0 } }],
+      },
+    ],
+    cwd,
+  );
+  const rescope = (signal?: AbortSignal) => {
+    rescoped += 1;
+    return targets.resolveCurrent(reference, cwd, signal);
+  };
+  const result = await resolver.tryResolve(
+    {
+      query: "const $NAME = $VALUE;",
+      options: { ast: { pattern: "const $NAME = $VALUE;" } },
+    },
+    { cwd, scope: await targets.resolveCurrent(reference, cwd), rescope },
+  );
+  if (result.kind !== "resolved") throw new Error("AST discovery failed");
+  const data = resolver.toScriptData?.(result.payload, {}) as {
+    matches: { range: { startLine: number } }[];
+  };
+  expect(rescoped).toBeGreaterThan(0);
+  expect(data.matches.map((match) => match.range.startLine)).toEqual([2, 3]);
+});

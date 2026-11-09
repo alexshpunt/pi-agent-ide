@@ -56,3 +56,5 @@ const fn = await tools.ast_search({
 ```
 
 Without `relation`, a result scope keeps only matches wholly inside its ranges; matches are never clipped.
+
+If other sessions changed lines inside the result since it was issued, `ast_search` searches the current text of the same region and says so; it fails only when no line of the region is left. Its matches are anchored to the current file.

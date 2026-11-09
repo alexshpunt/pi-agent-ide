@@ -98,3 +98,63 @@ export function rebaseRange(range: ResultRange, map: LineMap): ResultRange | und
     end: { lineNumber: endsAfterLine ? previous + 1 : previous, column: end.column },
   };
 }
+
+/**
+ * Find the same region of the new text when some of the range's own lines changed. An edge line
+ * that is unchanged keeps its exact position; a changed edge reaches out to the nearest unchanged
+ * line beyond it, so the region covers whatever replaced the old text. At least one line inside
+ * the range must be unchanged: without one, nothing tells the region from other text. The result
+ * is marked `adjusted`: its text is not the text that was selected.
+ *
+ * `newLines` is the new text split at `\n`; the range may then end on a line that is not the last.
+ */
+export function relocateRange(
+  range: ResultRange,
+  map: LineMap,
+  newLines: readonly string[],
+): ResultRange | undefined {
+  const { start, end } = range;
+  const endsAfterLine = end.column === 0 && end.lineNumber > start.lineNumber;
+  const lastLine = endsAfterLine ? end.lineNumber - 1 : end.lineNumber;
+  let survives = false;
+  for (let line = start.lineNumber; line <= lastLine && !survives; line += 1)
+    survives = map.newLine(line) !== undefined;
+  if (!survives) return undefined;
+
+  const first = map.newLine(start.lineNumber);
+  let from: ResultRange["start"];
+  if (first !== undefined) from = { lineNumber: first, column: start.column };
+  else {
+    let previous = 0;
+    for (let line = start.lineNumber - 1; line >= 1; line -= 1) {
+      const moved = map.newLine(line);
+      if (moved === undefined) continue;
+      previous = moved;
+      break;
+    }
+    from = { lineNumber: previous + 1, column: 0 };
+  }
+
+  const last = map.newLine(lastLine);
+  let to: ResultRange["end"];
+  if (last !== undefined) to = { lineNumber: endsAfterLine ? last + 1 : last, column: end.column };
+  else {
+    let next: number | undefined;
+    for (let line = lastLine + 1; line < map.table.length && next === undefined; line += 1)
+      next = map.newLine(line);
+    to =
+      next === undefined
+        ? { lineNumber: newLines.length, column: newLines.at(-1)?.length ?? 0 }
+        : { lineNumber: next, column: 0 };
+  }
+  return { ...range, start: from, end: to, adjusted: true };
+}
+
+/** Move a range to the new text, keeping its text when it is unchanged and its region when not. */
+export function moveRange(
+  range: ResultRange,
+  map: LineMap,
+  newLines: () => readonly string[],
+): ResultRange | undefined {
+  return rebaseRange(range, map) ?? relocateRange(range, map, newLines());
+}
