@@ -61,7 +61,7 @@ Request coordinates are relative to the origin:
 
 - `offset: 1` (default), `offset: 0`, and an omitted offset all start the window at the origin line.
 - A positive offset greater than one moves the window forward from the origin; a negative offset widens it upward, clamped at line one.
-- `limit` caps the window as usual; output keeps absolute line numbers and the line anchors of the whole file, so later edits can use them.
+- `limit` caps the window as usual; output keeps absolute line numbers and real line hashes so later edit anchors stay valid.
 - Continuation hints state the next offset in request coordinates, ready to copy into the same anchored request.
 
 Anchored reads on non-textual content return `UNSUPPORTED_RANGE`; an anchor nobody resolves returns `NO_FRAGMENT_RESOLVER`.

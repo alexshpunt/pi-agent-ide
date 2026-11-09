@@ -69,7 +69,7 @@ When known, `completion.parentToolCallId` identifies the visible tool call that 
 
 A direct mutation produces one completion per changed file. A successful coalesced batch also produces one completion per changed file, with the state before and after the complete batch. A write-phase failure produces no completions, including when rollback is incomplete. Presenters run after notification and do not alter the raw final document seen by listeners.
 
-An edit result shows presenter output only for the lines it displays. The operation selects those lines with `presentedLines`, and presenters receive them as `context.lineNumbers` with purpose `edit-diff`. A presenter may leave other lines unpresented. Without a selection, presenters do not run. Built-in tools select the final-state lines of edits that used line anchors, so the result carries fresh anchors for the next edit.
+An edit result shows presenter output only for the lines it displays. The operation selects those lines with `presentedLines`, and presenters receive them as `context.lineNumbers` with purpose `edit-diff`. A presenter may leave other lines unpresented. Without a selection, presenters do not run. Built-in tools select the final-state lines of edits that used `LINE#HASH` anchors, so the result carries fresh anchors for the next edit.
 
 The editor does not retain completions or provide history. Listener failures do not turn a successful write into a failed tool result.
 

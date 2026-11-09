@@ -22,7 +22,7 @@ The prompt recommends explicit `ast:<path>` when the agent needs structure to lo
 
 Use `read` with `ast:<path>` to read a compressed outline of one source file. The path may be relative to the session directory or absolute. `ast:` does not accept a symbol fragment.
 
-The result keeps declarations, signatures, imports, and structural boundaries while collapsing implementation bodies and data values. Every visible source line keeps its original line anchor and available scope markers, so it can be used in later edit calls.
+The result keeps declarations, signatures, imports, and structural boundaries while collapsing implementation bodies and data values. Every visible source line keeps its original line hash and available scope markers, so it can be used in later edit calls.
 
 Malformed sources, unsupported file types, missing files, and unavailable parsers return a failed `read` result. They never fall back to the filesystem resolver.
 
@@ -44,9 +44,9 @@ The AST provider may identify classes, functions, methods, blocks, declarations,
 Markers are attached to the source lines that define the scope boundaries:
 
 ```text
-K7M2QX4|export function main() {  <!-- scope-begin-ABCD -->
-B4NR9T2|    work();
-C8P3V5W|}  <!-- scope-end-12AA -->
+1#ABCD|export function main() {  <!-- scope-begin-ABCD -->
+2#55EF|    work();
+3#12AA|}  <!-- scope-end-12AA -->
 ```
 
 The marker format is part of the anchor protocol. Scope markers must remain distinguishable from ordinary line anchors and must preserve occurrence information when two scopes have the same hash.

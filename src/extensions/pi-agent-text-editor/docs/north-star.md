@@ -81,7 +81,7 @@ Per-result values remain tied to the search-time snapshots and reject changed fi
 
 Standard anchor formats are optional extensions:
 
-- `pi-agent-text-anchor-line-hash` registers the major line-anchor resolver and matching read prefix;
+- `pi-agent-text-anchor-line-hash` registers the major `LINE#HASH` resolver and matching read prefix;
 - `pi-agent-text-anchor-constant` registers `begin` and `end` as constant line selectors;
 - `pi-agent-text-anchor-exact` is the final fallback and selects any unique non-empty exact text span;
 - `pi-agent-ide-ast` registers auxiliary scope anchors and matching sparse read markers.
