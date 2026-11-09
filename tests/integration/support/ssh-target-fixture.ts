@@ -72,7 +72,8 @@ function run(command: string, args: readonly string[], options: RunOptions = {})
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
+      // Like the SSH channel: Windows OpenSSH can block on synchronous pipes outside a desktop.
+      stdio: "overlapped",
       windowsHide: true,
     });
     const stdout: Buffer[] = [];
