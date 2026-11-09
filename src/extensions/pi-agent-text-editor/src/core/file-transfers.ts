@@ -55,7 +55,8 @@ export async function prepareObjectTransfer(
       signal,
     );
     guards.push(sourceGuard);
-    if (before.target.entries.length > 0)
+    // A case-only rename's target is the source itself; it is never removed.
+    if (before.target.entries.length > 0 && !before.caseRename)
       guards.push(
         await prepareDeletionGuard(
           target.path,
@@ -123,8 +124,14 @@ async function inspectTransfer(
   if (sourceRoot === undefined) fail("ENOENT", "Transfer source does not exist.");
   const targetRoot = targetSnapshot.entries[0];
   const sameOwner = source.files.owner === target.files.owner;
-  validatePair(sourceRoot, targetRoot, sameOwner);
   const paths = source.files.pathStyle === "native" ? path : path.posix;
+  // On a case-insensitive volume, renaming to another spelling of the same name is a real move.
+  const caseRename =
+    operation === "move" &&
+    sameOwner &&
+    source.files.caseInsensitive === true &&
+    isCaseRename(sourceSnapshot.path, targetSnapshot.path, paths);
+  validatePair(sourceRoot, targetRoot, sameOwner, caseRename);
   if (sameOwner && sourceSnapshot.path === targetSnapshot.path)
     fail("SAME_FILE", "Source and target are the same filesystem object.");
   if (
@@ -145,7 +152,20 @@ async function inspectTransfer(
   }
   if (sourceRoot.kind === "other")
     fail("INVALID_FILE_TYPE", "Transfers support regular files, directories, and symlinks only.");
-  return { source: sourceSnapshot, target: targetSnapshot, sourceKind: sourceRoot.kind };
+  return {
+    source: sourceSnapshot,
+    target: targetSnapshot,
+    sourceKind: sourceRoot.kind,
+    caseRename,
+  };
+}
+
+function isCaseRename(from: string, to: string, paths: typeof path): boolean {
+  return (
+    from !== to &&
+    from.toLowerCase() === to.toLowerCase() &&
+    paths.basename(from) !== paths.basename(to)
+  );
 }
 
 function validateSnapshot(snapshot: FileObjectSnapshot, source: boolean): void {
@@ -178,10 +198,12 @@ function validatePair(
   source: FileObjectEntry,
   target: FileObjectEntry | undefined,
   sameOwner: boolean,
+  caseRename = false,
 ) {
   if (target === undefined) return;
   if (
     sameOwner &&
+    !caseRename &&
     source.identity.device === target.identity.device &&
     source.identity.inode === target.identity.inode
   )

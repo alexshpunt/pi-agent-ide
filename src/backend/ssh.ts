@@ -7,6 +7,7 @@ import { Value } from "typebox/value";
 import { remoteLocation, type SshTargetOs } from "./identity.ts";
 import type { SshProcessChannel, SshProcessContext } from "./ssh-channel.ts";
 import {
+  neutralDirectory,
   remotePython,
   sshWorkerBundle,
   targetOs,
@@ -582,8 +583,7 @@ export class SshBackend {
     const program = await sshWorkerBundle(targetOs(this.target), "file");
     // Filesystem operands are absolute. A neutral existing cwd must not turn the workspace
     // into a sandbox or prevent creation beneath a missing parent.
-    const neutral =
-      targetOs(this.target) === "windows" ? `${this.target.workspace.slice(0, 3)}/` : "/";
+    const neutral = neutralDirectory(this.target);
     const result = await runOwnedSshCommand(
       { ...this.target, workspace: input.operation === "gitIndex" ? filePath : neutral },
       remotePython(program),

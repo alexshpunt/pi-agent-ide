@@ -19,7 +19,13 @@ import { SshBackendError } from "./ssh.ts";
 interface Endpoint extends FileTransferEndpoint {
   readonly remote?: ResolvedSshSource;
   readonly source: string;
+  /** A Windows target cannot hold every name a POSIX tree can. */
+  readonly windows?: boolean;
 }
+
+// Characters Windows forbids in names, and device names it reserves in every extension.
+const windowsForbiddenName =
+  /[<>:"\\|?*\u0000-\u001f]|[. ]$|^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/iu;
 
 /** Resolve each endpoint on its selected owner; never interpret SSH paths on the controller. */
 function endpoint(
@@ -42,7 +48,9 @@ function endpoint(
     source: remote.location.source,
     path: remote.location.path,
     cwd,
+    windows: remote.backend.target.os === "windows",
     files: {
+      ...(remote.backend.target.os === "windows" && { caseInsensitive: true }),
       owner: JSON.stringify([remote.backend.target.host, remote.backend.target.configFile ?? null]),
       realpath: (file) => remote.backend.realpath(file, context),
       inspect: (file) => remote.backend.lstat(file, context),
@@ -62,6 +70,8 @@ function leaf(owner: Endpoint, root: string, relative: string): string {
     paths.sep === "\\" &&
     relative.split("/").some((name) => name.includes("\\") || name.includes(":"))
   )
+    throw new SshBackendError("INVALID_TARGET", owner.source, "not-applied");
+  if (owner.windows === true && relative.split("/").some((name) => windowsForbiddenName.test(name)))
     throw new SshBackendError("INVALID_TARGET", owner.source, "not-applied");
   return paths.join(root, ...relative.split("/"));
 }

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";
-import { lstat, mkdir, open, readFile, rename, rm, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, rename, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FileOperationInput } from "pi-agent-text-editor/api/plugin-protocol";
@@ -9,10 +9,9 @@ import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { checkCapturedRevision } from "./file-revision.ts";
 import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
-import { remotePython } from "./ssh-transport.ts";
+import { neutralDirectory, remotePython, sshTransferProgram, targetOs } from "./ssh-transport.ts";
 
 const CHUNK_BYTES = 1024 * 1024;
-const worker = readFile(new URL("./ssh-transfer-worker.py", import.meta.url), "utf8");
 
 /** Resolve an explicit local transfer endpoint, rejecting unowned URI schemes. */
 export function localTransferSource(source: string, cwd: string): string {
@@ -168,7 +167,7 @@ export async function transferFile(
     if (remoteTarget) {
       channel = await startSshProcess(
         remoteTarget.backend.target,
-        remotePython(await worker),
+        remotePython(await sshTransferProgram(targetOs(remoteTarget.backend.target))),
         [
           JSON.stringify({
             destination: remoteTarget.location.path,
@@ -177,7 +176,7 @@ export async function transferFile(
             expected: targetRevision,
           }),
         ],
-        "/",
+        neutralDirectory(remoteTarget.backend.target),
         context,
       );
       channel.completion.catch(() => {});

@@ -1009,6 +1009,15 @@ function wholeFileFailureCause(code: string): string {
     case "EPERM": {
       return "permission denied";
     }
+    case "FILE_IN_USE": {
+      return "file is open in another process";
+    }
+    case "FILE_READ_ONLY": {
+      return "file is read-only";
+    }
+    case "LOCK_TIMEOUT": {
+      return "another operation holds the file";
+    }
     case "INVALID_FILE_TYPE": {
       return "a regular file is required";
     }

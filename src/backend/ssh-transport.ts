@@ -7,6 +7,11 @@ export function targetOs(target: Pick<SshTarget, "os">): SshTargetOs {
   return target.os ?? "linux";
 }
 
+/** A directory that always exists and restricts nothing: the root of the workspace's drive. */
+export function neutralDirectory(target: Pick<SshTarget, "os" | "workspace">): string {
+  return targetOs(target) === "windows" ? `${target.workspace.slice(0, 3)}/` : "/";
+}
+
 /** Validate configured aliases without reading credentials or probing the host. */
 export function validateSshTarget(target: SshTarget): void {
   remoteLocation(target.id, target.workspace, targetOs(target));
@@ -72,6 +77,9 @@ const workers = {
   file: { entry: "ssh-worker.py", common: "ssh_worker_common", platform: "ssh_worker" },
 } as const;
 
+/** Windows file primitives, used by the file worker and the transfer worker. */
+const windowsFiles = "ssh_windows_files";
+
 const bundles = new Map<string, Promise<string>>();
 /** The channel or file-operation worker, bundled with the target platform's module. */
 export function sshWorkerBundle(os: SshTargetOs, kind: keyof typeof workers): Promise<string> {
@@ -80,18 +88,50 @@ export function sshWorkerBundle(os: SshTargetOs, kind: keyof typeof workers): Pr
   if (!bundle) {
     const worker = workers[kind];
     const platform = `${worker.platform}_${os === "windows" ? "windows" : "posix"}.py`;
+    // Only the Windows file worker needs the shared Windows primitives.
+    const files =
+      os === "windows" && kind === "file" ? workerSource(`${windowsFiles}.py`) : undefined;
     bundle = Promise.all([
       workerSource(worker.entry),
       workerSource(`${worker.common}.py`),
       workerSource("ssh_paths.py"),
       workerSource(platform),
-    ]).then(([entry, common, paths, native]) =>
+      files,
+    ]).then(([entry, common, paths, native, windows]) =>
       bundlePython(entry, {
         [worker.common]: common,
         ssh_paths: paths,
         [`${worker.platform}_platform`]: native,
+        ...(windows === undefined ? {} : { [windowsFiles]: windows }),
       }),
     );
+    bundles.set(key, bundle);
+  }
+  return bundle;
+}
+
+/** The program that receives a streamed file on a target and publishes it after its checksum.
+ * Linux runs the standalone worker; Windows bundles it with the shared file primitives.
+ */
+export function sshTransferProgram(os: SshTargetOs): Promise<string> {
+  const key = `${os}:transfer`;
+  let bundle = bundles.get(key);
+  if (!bundle) {
+    bundle =
+      os === "windows"
+        ? Promise.all([
+            workerSource("ssh-transfer-worker-windows.py"),
+            workerSource("ssh_worker_common.py"),
+            workerSource("ssh_paths.py"),
+            workerSource(`${windowsFiles}.py`),
+          ]).then(([entry, common, paths, files]) =>
+            bundlePython(entry, {
+              ssh_worker_common: common,
+              ssh_paths: paths,
+              [windowsFiles]: files,
+            }),
+          )
+        : workerSource("ssh-transfer-worker.py");
     bundles.set(key, bundle);
   }
   return bundle;
