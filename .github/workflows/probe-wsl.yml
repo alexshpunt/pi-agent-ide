@@ -1,0 +1,60 @@
+# Throwaway probe for LPT-1288; removed before the PR.
+name: Probe WSL
+on:
+  push:
+    branches: [lpt-1288-ssh-coverage-all-directions]
+    paths: [.github/workflows/probe-wsl.yml]
+jobs:
+  probe:
+    name: Probe (${{ matrix.wsl }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        wsl: ["1", "2"]
+    steps:
+      - name: Runner image
+        shell: pwsh
+        run: |
+          "$env:ImageOS $env:ImageVersion"
+          (Get-CimInstance Win32_ComputerSystem) | Format-List Manufacturer,Model,HypervisorPresent
+          Get-WindowsOptionalFeature -Online | Where-Object { $_.FeatureName -match 'Linux|VirtualMachine|Hyper-V$' } | Format-Table FeatureName,State
+          wsl --status
+          Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH*' | Format-Table Name,State
+      - name: Set default WSL version
+        shell: pwsh
+        run: wsl --set-default-version ${{ matrix.wsl }}
+      - name: Install Ubuntu
+        id: wsl
+        continue-on-error: true
+        uses: Vampire/setup-wsl@e707f0b61a07f8ea48a64d83edfcbd4a7af45926 # v7.2.0
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: ${{ matrix.wsl }}
+          additional-packages: openssh-server python3
+      - name: Inspect WSL
+        if: always()
+        shell: pwsh
+        run: |
+          "setup outcome: ${{ steps.wsl.outcome }}"
+          wsl --list --verbose
+          wsl -d Ubuntu-24.04 -u root -- bash -c 'uname -a; which sshd; python3 --version; id'
+      - name: Time sshd in WSL
+        if: steps.wsl.outcome == 'success'
+        shell: pwsh
+        run: |
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          wsl -d Ubuntu-24.04 -u root -- bash -c 'mkdir -p /run/sshd && ssh-keygen -q -t ed25519 -N "" -f /tmp/h && /usr/sbin/sshd -f /dev/null -h /tmp/h -p 2222 -o ListenAddress=127.0.0.1 && sleep 1 && ss -ltn | grep 2222'
+          "sshd start: $($sw.Elapsed.TotalSeconds)s"
+          Test-NetConnection 127.0.0.1 -Port 2222 | Format-List TcpTestSucceeded
+      - name: Windows OpenSSH server
+        shell: pwsh
+        run: |
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          Get-Service sshd -ErrorAction SilentlyContinue | Format-List Name,Status,StartType
+          Get-Command sshd.exe -ErrorAction SilentlyContinue | Format-List Source
+          Test-Path C:\Windows\System32\OpenSSH\sshd.exe
+          Get-Command py -ErrorAction SilentlyContinue | Format-List Source
+          py -3 --version
+          "elapsed: $($sw.Elapsed.TotalSeconds)s"
