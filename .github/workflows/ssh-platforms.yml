@@ -59,7 +59,7 @@ jobs:
         with:
           distribution: Ubuntu-24.04
           wsl-version: 2
-          additional-packages: openssh-server python3 git curl ca-certificates xz-utils
+          additional-packages: openssh-server python3 git curl ca-certificates xz-utils build-essential
 
       - name: Prepare the unprivileged SSH account in WSL
         shell: wsl-bash {0}
