@@ -90,7 +90,7 @@ for (const mode of ["default", "config", "flags"] as const) {
       });
       expect(getToolExecution(result, "anchors").isError).toBe(false);
 
-      expect(getToolResultText(result, "anchors")).toMatch(/1#[A-Z0-9]+\|new/u);
+      expect(getToolResultText(result, "anchors")).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|new/u);
       // Save the real effective prompt for human review; do not assert its prose.
       await writeFile(
         path.join(result.artifacts.directory, "system-prompt.txt"),

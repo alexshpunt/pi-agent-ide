@@ -139,7 +139,7 @@ export async function readLspSymbolGraph(
 }
 
 /**
- * Graph lines carry anchors of the current file at the server's line numbers. When another
+ * Graph lines carry the server's line numbers of the current file. When another
  * process edited the file while the server answered, those numbers can name other lines.
  */
 async function assertAnsweredForCurrentText(

@@ -122,7 +122,7 @@ async function rejected(action, label) {
 const local=await tools.read({path:"note.txt"});
 check(local.includes("local same basename"),"Local routing changed");
 const note=await tools.read({path:root+"/note.txt",offset:2,limit:1,views:["anchors"]});
-check(note.includes("café second") && !note.includes("first") && /2#[A-F0-9]+/.test(note),"Anchored text window changed");
+check(note.includes("café second") && !note.includes("first") && /[0-9A-HJKMNP-TV-Z]{7}\\|/.test(note),"Anchored text window changed");
 const raw=await tools.read({path:"raw:"+root+"/bytes.bin",offset:-2,limit:2});
 check(raw.includes("Bytes 3..5") && raw.includes("0a 0d"),"Raw tail was decoded");
 const eof=await tools.read({path:"raw:"+root+"/bytes.bin",offset:100,limit:2});

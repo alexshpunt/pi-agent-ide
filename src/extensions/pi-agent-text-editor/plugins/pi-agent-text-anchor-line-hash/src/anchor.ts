@@ -108,6 +108,11 @@ function resolveLineHashAnchor(
   }
 
   if (numbers.length === 0) {
+    // A value that no line produces but the file contains is exact text that happens to have the
+    // shape of an anchor, such as `PACKAGE`; a stale anchor never occurs in the text it was for.
+    if (context.content.includes(value)) {
+      return { kind: "not-handled" };
+    }
     return {
       kind: "rejected",
       rejection: {

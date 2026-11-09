@@ -855,6 +855,11 @@ function renderAnchorRange(
       return undefined;
     }
     const raw = stringValue(input[field]);
+    const state = anchorRenderPatch?.[field];
+    // An anchor names a line by content, so the user sees the line number it resolved to.
+    if (raw !== undefined && !expanded && isLineAnchor(raw) && state?.kind === "resolved") {
+      return singleLine(state.compact);
+    }
     if (raw !== undefined) {
       const displayed = singleLine(raw);
       const structured =
@@ -864,7 +869,6 @@ function renderAnchorRange(
         ? displayed
         : `${displayed.slice(0, 60)}…${displayed.slice(-30)} (${raw.length} chars)`;
     }
-    const state = anchorRenderPatch?.[field];
     return state?.kind === "resolved"
       ? singleLine(expanded ? state.full : state.compact)
       : undefined;

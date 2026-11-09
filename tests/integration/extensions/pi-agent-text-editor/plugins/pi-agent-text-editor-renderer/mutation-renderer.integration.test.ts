@@ -295,7 +295,7 @@ describe("text mutation renderer", () => {
       const panelStart = rendered.indexOf("╭─", rendered.indexOf("replace stable.txt · "));
       const panelEnd = rendered.indexOf("╯", panelStart);
       const panel = rendered.slice(panelStart, panelEnd + 1);
-      expect(rendered).toMatch(/replace stable\.txt · [0-9A-HJKMNP-TV-Z]{7}/u);
+      expect(rendered).toMatch(/replace stable\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/u);
       expect(rendered).toContain("+0 ~1 -0");
       expect(rendered.match(/╭─{40,}╮/gu)).toHaveLength(1);
       expect(panel).toMatch(/27\s+~\s+latest visible change/u);
@@ -607,7 +607,7 @@ describe("text mutation renderer", () => {
       const finalContent = await readFile(path.resolve(directory, "post-edit-viewport.ts"), "utf8");
 
       expect(
-        rendered.match(/replace post-edit-viewport\.ts · [0-9A-HJKMNP-TV-Z]{7}/gu),
+        rendered.match(/replace post-edit-viewport\.ts · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/gu),
       ).toHaveLength(2);
       expect(rendered.match(/\+0 ~1 -0/gu)).toHaveLength(2);
       expect(panels).toHaveLength(2);
@@ -886,7 +886,7 @@ describe("text mutation renderer", () => {
       const panel = mutationPanels(rendered, "copy source.txt · ");
 
       expect(rendered).toMatch(
-        /copy source\.txt · [0-9A-HJKMNP-TV-Z]{7} -> target\.txt · [0-9A-HJKMNP-TV-Z]{7}/u,
+        /copy source\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7}) -> target\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/u,
       );
       expect(rendered).toContain("+1 ~0 -0");
       expect(panel).toHaveLength(1);
@@ -903,7 +903,7 @@ describe("text mutation renderer", () => {
       const panels = mutationPanels(rendered, "move source.txt · ");
 
       expect(rendered).toMatch(
-        /move source\.txt · [0-9A-HJKMNP-TV-Z]{7} -> target\.txt · [0-9A-HJKMNP-TV-Z]{7}/u,
+        /move source\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7}) -> target\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/u,
       );
       expect(rendered).toContain("+1 ~0 -1");
       expect(panels).toHaveLength(2);

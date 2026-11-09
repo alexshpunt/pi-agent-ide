@@ -119,7 +119,7 @@ test("TypeScript push diagnostics appear in focused, annotated, and combined rea
       expect(output).toContain("Type 'string' is not assignable to type 'number'.");
     }
     const combined = getToolResultText(result, "combined");
-    expect(combined).toMatch(/2#[A-Z0-9]{4}\|/u);
+    expect(combined).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|/u);
     expect(combined).toContain("scope-begin-");
     expect(await readFile(file, "utf8")).toBe(source);
   } finally {
