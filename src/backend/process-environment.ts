@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { SshBackend } from "./ssh.ts";
 import { SshBackendError } from "./ssh.ts";
+import { remotePython } from "./ssh-transport.ts";
 
 /** Read only remote PATH and prepend the existing project executable directories. */
 export async function sshProjectEnvironment(
@@ -15,8 +16,8 @@ export async function sshProjectEnvironment(
       throw new TypeError("Invalid remote process environment key");
   }
   const remotePath = await backend.execute(
-    "python3",
-    ["-c", 'import os; print(os.environ.get("PATH", os.defpath), end="")'],
+    remotePython('import os; print(os.environ.get("PATH", os.defpath), end="")'),
+    [],
     cwd,
     { signal },
   );
@@ -54,13 +55,10 @@ export async function sshProjectExecutableAvailability(
     };
   });
   const result = await backend.execute(
-    "python3",
-    [
-      "-c",
+    remotePython(
       "import json,os,shutil,sys; candidates=json.loads(sys.argv[1]); root=sys.argv[2]; prefixes=[os.path.join(root,p) for p in ['node_modules/.bin','.venv/bin','venv/bin','vendor/bin']]; print(json.dumps([bool(shutil.which(c['command'],path=os.pathsep.join(prefixes+[c.get('path',os.environ.get('PATH',os.defpath))]))) for c in candidates]))",
-      JSON.stringify(candidates),
-      cwd,
-    ],
+    ),
+    [JSON.stringify(candidates), cwd],
     cwd,
     { signal },
   );

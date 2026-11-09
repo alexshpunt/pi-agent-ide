@@ -13,6 +13,7 @@ import type { SshProcessChannel } from "./ssh-channel.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { remoteLocation } from "./identity.ts";
 import { SshBackendError } from "./ssh.ts";
+import { remotePython } from "./ssh-transport.ts";
 
 const messageSchema = Type.Union([
   Type.Object({ kind: Type.Literal("ready") }),
@@ -101,13 +102,8 @@ export function createSshLspFileWatchers(
         const worker = await readFile(new URL("./file-watch-worker.py", import.meta.url), "utf8");
         if (closed(record)) throw new SshBackendError("WATCH_DISPOSED", rootUri, "not-applied");
         const channel = await owner.backend.startProcess(
-          "python3",
-          [
-            "-u",
-            "-c",
-            worker,
-            JSON.stringify([...new Set(bindings.map((binding) => binding.root))]),
-          ],
+          remotePython(worker),
+          [JSON.stringify([...new Set(bindings.map((binding) => binding.root))])],
           owner.location.path,
         );
         record.channel = channel;

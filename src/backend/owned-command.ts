@@ -1,5 +1,6 @@
 import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
 import { SshBackendError, type SshTarget } from "./ssh.ts";
+import type { SshCommand } from "./ssh-transport.ts";
 
 /** Bounds for one owned, buffered command. Both output streams share the byte budget. */
 export interface OwnedCommandOptions {
@@ -18,7 +19,7 @@ export interface OwnedCommandOptions {
 /** Run only the owning target's service and await native cleanup on success, refusal or cancellation. */
 export async function runOwnedSshCommand(
   target: SshTarget,
-  command: string,
+  command: SshCommand,
   args: readonly string[],
   source: string,
   options: OwnedCommandOptions,

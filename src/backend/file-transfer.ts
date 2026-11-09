@@ -9,6 +9,7 @@ import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { checkCapturedRevision } from "./file-revision.ts";
 import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
+import { remotePython } from "./ssh-transport.ts";
 
 const CHUNK_BYTES = 1024 * 1024;
 const worker = readFile(new URL("./ssh-transfer-worker.py", import.meta.url), "utf8");
@@ -167,10 +168,8 @@ export async function transferFile(
     if (remoteTarget) {
       channel = await startSshProcess(
         remoteTarget.backend.target,
-        "python3",
+        remotePython(await worker),
         [
-          "-c",
-          await worker,
           JSON.stringify({
             destination: remoteTarget.location.path,
             size,
