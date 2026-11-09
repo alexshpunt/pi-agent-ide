@@ -175,7 +175,7 @@ describe("Agent IDE process registry", () => {
     ui.dispose();
     vi.useRealTimers();
   });
-  test("closes the overlay when the pointer is pressed outside it, without stopping anything", async () => {
+  test("closes the overlay on a left press outside it, without stopping anything", async () => {
     let commandHandler: ((args: string, context: never) => Promise<void>) | undefined;
     const stop = vi.fn(async () => undefined);
     const registry = new AgentIdeProcessRegistry();
@@ -189,17 +189,12 @@ describe("Agent IDE process registry", () => {
         commandHandler = command.handler;
       },
     } as never);
-    const backdrops: { component: Component; options: unknown; hide: ReturnType<typeof vi.fn> }[] =
-      [];
-    const tui = {
-      requestRender() {},
-      getScreenLines: () => ["chat line one", "chat line two"],
-      showOverlay(component: Component, options: unknown) {
-        const hide = vi.fn();
-        backdrops.push({ component, options, hide });
-        return { hide };
-      },
-    };
+    const originalDispatch = vi.fn((event: { x: number }) => ({ hit: event.x >= 10 }));
+    const tui: {
+      requestRender(): void;
+      dispatchMouseToOverlay?: (event: never) => { hit: boolean };
+    } = { requestRender() {}, dispatchMouseToOverlay: originalDispatch as never };
+    let focused = true;
     let overlay: Component | undefined;
     const context = {
       mode: "tui",
@@ -216,45 +211,40 @@ describe("Agent IDE process registry", () => {
               keys: unknown,
               done: (v: null) => void,
             ) => Component,
+            options: { onHandle?: (handle: { isFocused(): boolean }) => void },
           ) =>
             new Promise<null>((resolve) => {
               overlay = factory(tui, theme(), undefined, resolve);
+              options.onHandle?.({ isFocused: () => focused });
             }),
         ),
       },
     };
-    const press = (
-      type: TuiMouseEvent["type"],
-      button: TuiMouseEvent["button"],
-    ): TuiMouseEvent => ({
-      type,
-      button,
-      x: 1,
-      y: 1,
-      screenX: 1,
-      screenY: 1,
-      width: 80,
-      height: 2,
-      shift: false,
-      alt: false,
-      ctrl: false,
-    });
+    const mouse = (type: string, button: string, x: number) => ({ type, button, x }) as never;
 
     const running = commandHandler?.("", context as never);
     overlay?.handleInput?.("\r");
     overlay?.handleInput?.("d");
     expect(overlay?.render(80).join("\n")).toContain("Stop this process?");
-    const backdrop = backdrops[0];
-    expect(backdrop?.component.render(40)).toEqual(["chat line one", "chat line two"]);
-    expect(backdrop?.options).toMatchObject({ width: "100%", nonCapturing: true });
+    const dispatch = tui.dispatchMouseToOverlay;
 
-    backdrop?.component.handleMouse?.(press("press", "right"));
-    backdrop?.component.handleMouse?.(press("click", "left"));
-    expect(backdrop?.hide).not.toHaveBeenCalled();
-    backdrop?.component.handleMouse?.(press("press", "left"));
+    expect(dispatch?.(mouse("press", "left", 20))).toEqual({ hit: true });
+    expect(dispatch?.(mouse("press", "right", 1))).toEqual({ hit: false });
+    expect(dispatch?.(mouse("click", "left", 1))).toEqual({ hit: false });
+    focused = false;
+    expect(dispatch?.(mouse("press", "left", 1))).toEqual({ hit: false });
+    focused = true;
+    let settled = false;
+    void running?.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    expect(dispatch?.(mouse("press", "left", 1))).toEqual({ hit: true });
     await running;
-    expect(backdrop?.hide).toHaveBeenCalledTimes(1);
     expect(stop).not.toHaveBeenCalled();
+    expect(tui.dispatchMouseToOverlay).toBe(originalDispatch);
     ui.dispose();
   });
   test.each([

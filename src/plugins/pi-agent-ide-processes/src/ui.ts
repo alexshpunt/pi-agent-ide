@@ -12,8 +12,10 @@ import {
   Text,
   truncateToWidth,
   visibleWidth,
+  type OverlayHandle,
   type SelectItem,
   type TUI,
+  type TuiMouseEvent,
 } from "@earendil-works/pi-tui";
 
 import type { AgentIdeProcess, AgentIdeProcessRegistry } from "./registry.ts";
@@ -118,7 +120,8 @@ export class AgentIdeProcessesUi {
       }
 
       let disposeRefresh: () => void = () => undefined;
-      let hideBackdrop: () => void = () => undefined;
+      let stopDismissOnOutsidePress: () => void = () => undefined;
+      let overlayHandle: OverlayHandle | undefined;
       let refreshTimer: ReturnType<typeof setInterval> | undefined;
       let action: { readonly source: string } | null;
       try {
@@ -163,7 +166,11 @@ export class AgentIdeProcessesUi {
               tui.requestRender();
             };
             disposeRefresh = this.registry.onDidChange(refresh);
-            hideBackdrop = showClickAwayBackdrop(tui, () => done(null));
+            stopDismissOnOutsidePress = dismissOnOutsidePress(
+              tui,
+              () => overlayHandle?.isFocused() === true,
+              () => done(null),
+            );
             refreshTimer = setInterval(refresh, 1_000);
 
             return {
@@ -237,11 +244,17 @@ export class AgentIdeProcessesUi {
               },
             };
           },
-          { overlay: true, overlayOptions: { width: "75%", maxHeight: "80%", minWidth: 52 } },
+          {
+            overlay: true,
+            overlayOptions: { width: "75%", maxHeight: "80%", minWidth: 52 },
+            onHandle: (handle) => {
+              overlayHandle = handle;
+            },
+          },
         );
       } finally {
         disposeRefresh();
-        hideBackdrop();
+        stopDismissOnOutsidePress();
         if (refreshTimer !== undefined) clearInterval(refreshTimer);
       }
       if (action === null) return;
@@ -251,31 +264,43 @@ export class AgentIdeProcessesUi {
   }
 }
 
-/** Only the fullscreen renderer can snapshot the last frame. */
-function hasScreenLines(tui: TUI): tui is TUI & { getScreenLines(): string[] } {
-  return "getScreenLines" in tui && typeof tui.getScreenLines === "function";
+type OverlayMouseDispatch = (event: TuiMouseEvent) => { hit: boolean };
+type MouseDispatchHost = { dispatchMouseToOverlay?: OverlayMouseDispatch };
+
+function isDispatchHost(value: TUI): value is TUI & MouseDispatchHost {
+  return "dispatchMouseToOverlay" in value && typeof value.dispatchMouseToOverlay === "function";
 }
 
 /**
- * Fullscreen mode never delivers a click outside an overlay to that overlay, so put a full-screen
- * layer under it that shows the frozen screen and reports presses. Call it before the overlay
- * is shown; it returns the cleanup. Regular mode has no mouse input, so no layer is shown there.
+ * Fullscreen mode sends a click outside an overlay to the layout underneath and never to the
+ * overlay, and the renderer consumes mouse reports before extension input listeners see them.
+ * Wrap the renderer's overlay dispatch instead: a left press that hits no overlay while ours has
+ * focus runs `onPress`. Returns the cleanup that restores the original dispatch.
  */
-function showClickAwayBackdrop(tui: TUI, onPress: () => void): () => void {
-  if (!hasScreenLines(tui)) return () => undefined;
-  const screen = tui.getScreenLines();
-  const handle = tui.showOverlay(
-    {
-      invalidate() {},
-      render: (width) => screen.map((line) => truncateToWidth(line, width, "")),
-      handleMouse(event) {
-        if (event.type === "press" && event.button === "left") onPress();
-        return { handled: true };
-      },
-    },
-    { width: "100%", maxHeight: "100%", anchor: "top-left", nonCapturing: true },
-  );
-  return () => handle.hide();
+function dismissOnOutsidePress(
+  tui: TUI,
+  isFocused: () => boolean,
+  onPress: () => void,
+): () => void {
+  if (!isDispatchHost(tui)) return () => undefined;
+  const host = tui;
+  const original = host.dispatchMouseToOverlay;
+  if (original === undefined) return () => undefined;
+  const hadOwn = Object.hasOwn(host, "dispatchMouseToOverlay");
+  const wrapped: OverlayMouseDispatch = (event) => {
+    const result = original.call(host, event);
+    if (!result.hit && event.type === "press" && event.button === "left" && isFocused()) {
+      onPress();
+      return { hit: true };
+    }
+    return result;
+  };
+  host.dispatchMouseToOverlay = wrapped;
+  return () => {
+    if (host.dispatchMouseToOverlay !== wrapped) return;
+    if (hadOwn) host.dispatchMouseToOverlay = original;
+    else delete host.dispatchMouseToOverlay;
+  };
 }
 
 /** Render all active process kinds in one stable shared widget. */
