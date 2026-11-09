@@ -38,13 +38,17 @@ jobs:
           LogLevel DEBUG1
           "@ -split "`n" | ForEach-Object { $_.Trim() } | Set-Content "$root\sshd_config"
           Get-Content "$root\sshd_config"
-          $p = Start-Process -PassThru -FilePath C:\Windows\System32\OpenSSH\sshd.exe -ArgumentList '-D','-e','-f',"$root\sshd_config" -RedirectStandardError "$root\sshd.err"
+          Whoami /priv | Select-String 'Tcb|Impersonate|AssignPrimary'
+          $job = Start-Job { & C:\Windows\System32\OpenSSH\sshd.exe -d -e -f $using:root\sshd_config 2>&1 }
           Start-Sleep 3
-          "alive: $(-not $p.HasExited)"
+          "job state: $($job.State)"
+          Receive-Job $job -Keep | Select-Object -First 30
           ssh -i "$root\client" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2223 "$env:USERNAME@127.0.0.1" 'py -3 -c "import sys;print(sys.version)"'
           "ssh exit: $LASTEXITCODE"
-          Get-Content "$root\sshd.err" -Tail 40
-          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep 1
+          "job state: $($job.State)"
+          Receive-Job $job | Select-Object -Last 40
+          Stop-Job $job
 
       - name: Windows sshd as a private service
         shell: pwsh
@@ -67,8 +71,9 @@ jobs:
           LogLevel DEBUG1
           SyslogFacility LOCAL0
           "@ -split "`n" | ForEach-Object { $_.Trim() } | Set-Content "$root\sshd_config"
-          sc.exe create pi-ide-sshd-probe binPath= "\`"C:\Windows\System32\OpenSSH\sshd.exe\`" -f $root\sshd_config" start= demand
-          sc.exe start pi-ide-sshd-probe
+          $bin = '"C:\Windows\System32\OpenSSH\sshd.exe" -f "' + $root + '\sshd_config"'
+          New-Service -Name pi-ide-sshd-probe -BinaryPathName $bin -StartupType Manual | Format-List Name,Status
+          Start-Service pi-ide-sshd-probe
           Start-Sleep 3
           sc.exe query pi-ide-sshd-probe
           ssh -i "$root\client" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2224 "$env:USERNAME@127.0.0.1" 'py -3 -c "import sys;print(sys.version)"'
@@ -86,7 +91,6 @@ jobs:
           wsl -d Ubuntu-24.04 -u root -- bash -c "ip route show default; cat /etc/resolv.conf | head -3; cat /proc/version; wslinfo --networking-mode 2>&1"
           $gw = (wsl -d Ubuntu-24.04 -u root -- bash -c "ip route show default | awk '{print \$3}'").Trim()
           "gateway: $gw"
-          wsl -d Ubuntu-24.04 -u root -- bash -c "cp /mnt/d/a/../$key /tmp/k 2>/dev/null; echo skip"
           $wslKey = (wsl -d Ubuntu-24.04 -u root -- wslpath -a "$key").Trim()
           wsl -d Ubuntu-24.04 -u root -- bash -c "install -m600 '$wslKey' /tmp/k && ssh -i /tmp/k -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10 -p 2224 '$env:USERNAME@$gw' 'py -3 -c \`"import sys;print(sys.version)\`"'; echo ssh exit \$?"
 
