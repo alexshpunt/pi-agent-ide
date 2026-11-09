@@ -26,13 +26,20 @@ const started = new Error("remote start reached");
 
 function register(platform: NodeJS.Platform, targets: readonly SshTarget[]) {
   const tools = new Map<string, ToolDefinition>();
+  const hidden = new Map<string, ToolDefinition>();
   const manager = new TerminalSessionManager();
   const startRemote = vi.spyOn(manager, "startRemote").mockRejectedValue(started);
   const start = vi.spyOn(manager, "start").mockImplementation(() => {
     throw new Error("local start reached");
   });
   registerTerminalTools(
-    { registerTool: (definition) => void tools.set(definition.name, definition as ToolDefinition) },
+    {
+      registerTool: (definition) =>
+        void (definition.exposure === "hidden" ? hidden : tools).set(
+          definition.name,
+          definition as ToolDefinition,
+        ),
+    },
     manager,
     resolveShellProfile(platform, platform === "win32" ? {} : { SHELL: "/bin/bash" }),
     { bind: vi.fn(), notifyWaitTransition: vi.fn() },
@@ -52,7 +59,7 @@ function register(platform: NodeJS.Platform, targets: readonly SshTarget[]) {
       { cwd: "/workspace" } as ExtensionToolContext & ExtensionContext,
     );
   };
-  return { tools, startRemote, start, run };
+  return { tools, hidden, startRemote, start, run };
 }
 
 describe("remote shell tool exposure", () => {

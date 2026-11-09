@@ -40,6 +40,20 @@ const osLabel: Readonly<Record<SshTargetOs, string>> = { linux: "Linux", windows
 const remoteToolName = (os: SshTargetOs): string =>
   os === "windows" ? "remote_powershell" : "remote_bash";
 
+/** Replace Pi's built-in `bash` with a hidden placeholder that never executes. */
+function hideBuiltinBash(pi: Pick<ExtensionAPI, "registerTool">): void {
+  pi.registerTool({
+    name: "bash",
+    label: "bash",
+    description: "",
+    exposure: "hidden",
+    parameters: Type.Object({}, { additionalProperties: false }),
+    execute() {
+      throw new Error("Hidden bash must never execute.");
+    },
+  });
+}
+
 /** One shell tool: the local tool also serves same-OS targets, a remote tool only its OS. */
 interface ShellToolScope {
   readonly name: string;
@@ -135,6 +149,9 @@ export function registerTerminalTools(
     { name: hostOs === "windows" ? "powershell" : "bash", targetOs: hostOs, remoteOnly: false },
     profile,
   );
+  // Pi's built-in `bash` is active by default and runs Git Bash on Windows. Withdraw it, as
+  // `edit` is withdrawn, so a native Windows session offers PowerShell and nothing else local.
+  if (hostOs === "windows") hideBuiltinBash(pi);
   const otherOs: SshTargetOs = hostOs === "windows" ? "linux" : "windows";
   if (targets.hasTargetOs(otherOs)) {
     registerShellTool(
