@@ -21,6 +21,13 @@ export function isWindowsRemotePath(filePath: string): boolean {
   return windowsDrivePath.test(filePath);
 }
 
+/** Parent directory of a canonical remote path, or undefined at `/` or a Windows drive root. */
+export function remoteParent(directory: string): string | undefined {
+  if (/^\/[A-Z]:\/?$/u.test(directory)) return undefined;
+  const parent = path.posix.dirname(directory);
+  return parent === directory ? undefined : parent;
+}
+
 /** Build a canonical reference without treating filename characters as URI selectors.
  * With `os: "windows"`, drive paths in `C:/x`, `C:\x` or `/c:/x` form become `/C:/x`;
  * other Windows path forms are rejected.

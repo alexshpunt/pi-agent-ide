@@ -3,7 +3,7 @@ import type { ToolConfigLayerAccess } from "#src/api/tool-config.ts";
 import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
-import { remotePython } from "./ssh-transport.ts";
+import { remotePython, targetOs } from "./ssh-transport.ts";
 
 /** Read project and user-global tool settings on the selected target; no startup connection. */
 export function createSshToolConfigAccess(
@@ -15,10 +15,11 @@ export function createSshToolConfigAccess(
       requestSignal?.throwIfAborted();
       const owner = registry.resolve(projectRoot);
       if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", projectRoot, "not-applied");
-      // Query only configuration-directory inputs, never the whole process environment.
+      // Query only configuration-directory inputs, never the whole process environment. The
+      // target resolves them with its own path rules: Windows has no HOME by default.
       const result = await owner.backend.execute(
         remotePython(
-          "import json,os;print(json.dumps({'home':os.environ.get('HOME',''),'agent':os.environ.get('PI_CODING_AGENT_DIR','')}))",
+          "import json,os\nagent=os.environ.get('PI_CODING_AGENT_DIR','').strip()\nprint(json.dumps({'home':os.path.expanduser('~'),'agent':os.path.abspath(agent) if agent else ''}))",
         ),
         [],
         owner.location.path,
@@ -33,13 +34,15 @@ export function createSshToolConfigAccess(
         !("home" in value) ||
         !("agent" in value) ||
         typeof value.home !== "string" ||
-        typeof value.agent !== "string" ||
-        !value.home.startsWith("/")
+        typeof value.agent !== "string"
       )
         throw new TypeError("Invalid remote configuration environment");
-      const directory = value.agent.trim()
-        ? path.posix.resolve(owner.location.path, value.agent.trim())
-        : path.posix.join(value.home, ".pi", "agent");
+      const os = targetOs(owner.backend.target);
+      const native = (directory: string) =>
+        remoteLocation(owner.location.target, directory, os).path;
+      const directory = value.agent
+        ? native(value.agent)
+        : path.posix.join(native(value.home), ".pi", "agent");
       return {
         project: remoteLocation(
           owner.location.target,

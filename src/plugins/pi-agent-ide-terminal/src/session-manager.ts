@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
-import { stripVTControlCharacters } from "node:util";
 import { StringDecoder } from "node:string_decoder";
 import type { ResolvedSshSource } from "#src/backend/registry.ts";
 import { targetOs } from "#src/backend/ssh-transport.ts";
 import { remoteShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { TerminalTextStream } from "#src/plugins/pi-agent-ide-terminal/src/terminal-text.ts";
 
 import type { Terminal as XtermTerminal } from "@xterm/headless";
 import type { IPty, IPtyForkOptions, IWindowsPtyForkOptions } from "node-pty";
@@ -38,6 +38,8 @@ export class TerminalSessionManager {
   readonly #changeListeners = new Set<SessionListener>();
   readonly #completionListeners = new Set<SessionListener>();
   readonly #outputLogs = new Map<string, number>();
+  /** Each session's text follows its own cursor; sessions kept across reload start a new one. */
+  readonly #outputText = new WeakMap<TerminalSession, TerminalTextStream>();
   readonly #pendingStarts = new Map<
     string,
     { readonly abort: AbortController; readonly completion: Promise<TerminalSession> }
@@ -581,7 +583,13 @@ export class TerminalSessionManager {
 
   #appendOutput(session: TerminalSession, data: string): void {
     session.lastActivityAt = Date.now();
-    const plain = stripVTControlCharacters(data);
+    let text = this.#outputText.get(session);
+    if (!text) {
+      const { screen } = session;
+      text = new TerminalTextStream(() => ({ cols: screen.cols, rows: screen.rows }));
+      this.#outputText.set(session, text);
+    }
+    const plain = text.write(data);
     const descriptor = this.#outputLogs.get(session.id);
     if (descriptor !== undefined) writeSync(descriptor, plain);
     session.output += plain;
