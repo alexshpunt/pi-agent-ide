@@ -5,6 +5,7 @@ keeps the replaced file's attributes, ACL, alternate streams and creation time.
 """
 import contextlib
 import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -54,6 +55,10 @@ kernel32.ReplaceFileW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.L
 kernel32.ReplaceFileW.restype = wintypes.BOOL
 kernel32.SetFileAttributesW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
 kernel32.SetFileAttributesW.restype = wintypes.BOOL
+kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                                 wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+kernel32.CreateFileW.restype = wintypes.HANDLE
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
 
 def native(path):
@@ -113,9 +118,24 @@ def link_text(path):
     return target[4:] if target.startswith("\\\\?\\") and not target.startswith("\\\\?\\UNC\\") else target
 
 
+def open_error(path):
+    """The Windows error that opening `path` gives now, or None if it opens.
+
+    The C runtime's open reports a sharing violation only as EACCES; a probe that shares every
+    access mode tells a file held open elsewhere apart from one this account may not read.
+    """
+    handle = kernel32.CreateFileW(path, 0x80000000, 0x7, None, 3, 0x02000000, None)
+    if handle in (None, INVALID_HANDLE_VALUE):
+        return ctypes.get_last_error()
+    kernel32.CloseHandle(handle)
+    return None
+
+
 def error_code(error):
     """Public code for an OSError; sharing violations and read-only files get their own."""
     winerror = getattr(error, "winerror", None)
+    if winerror is None and error.errno == errno.EACCES and isinstance(error.filename, str):
+        winerror = open_error(error.filename) or ERROR_ACCESS_DENIED
     if winerror in (ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION):
         return "FILE_IN_USE"
     if winerror == ERROR_ACCESS_DENIED:

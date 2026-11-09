@@ -4,6 +4,8 @@ import os
 import sys
 
 root, request = sys.argv[1], json.loads(sys.argv[2])
+if os.name == "nt" and root[:1] == "/" and root[2:3] == ":":
+    root = root[1:]  # The host names Windows paths /C:/...; Windows APIs need C:/...
 content = {}
 for name in request["files"]:
     try:

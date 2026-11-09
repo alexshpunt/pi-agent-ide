@@ -56,7 +56,7 @@ export async function sshProjectExecutableAvailability(
   });
   const result = await backend.execute(
     remotePython(
-      "import json,os,shutil,sys; candidates=json.loads(sys.argv[1]); root=sys.argv[2]; prefixes=[os.path.join(root,p) for p in ['node_modules/.bin','.venv/bin','venv/bin','vendor/bin']]; print(json.dumps([bool(shutil.which(c['command'],path=os.pathsep.join(prefixes+[c.get('path',os.environ.get('PATH',os.defpath))]))) for c in candidates]))",
+      "import json,os,shutil,sys; candidates=json.loads(sys.argv[1]); root=sys.argv[2]; root=root[1:] if os.name=='nt' and root[:1]=='/' and root[2:3]==':' else root; prefixes=[os.path.join(root,p) for p in ['node_modules/.bin','.venv/bin','venv/bin','vendor/bin']]; print(json.dumps([bool(shutil.which(c['command'],path=os.pathsep.join(prefixes+[c.get('path',os.environ.get('PATH',os.defpath))]))) for c in candidates]))",
     ),
     [JSON.stringify(candidates), cwd],
     cwd,
