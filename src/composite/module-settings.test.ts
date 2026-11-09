@@ -51,7 +51,7 @@ test.each([
       return new Promise((resolve, reject) => {
         const invoke = async () => {
           const panel = await factory(
-            { requestRender() {} } as Parameters<typeof factory>[0],
+            { requestRender() {}, terminal: { rows: 40 } } as Parameters<typeof factory>[0],
             {} as Parameters<typeof factory>[1],
             {} as Parameters<typeof factory>[2],
             resolve,
@@ -124,7 +124,7 @@ test.each(["Project", "Global"] as const)(
       new Promise((resolve, reject) => {
         const invoke = async () => {
           const panel = await factory(
-            { requestRender() {} } as Parameters<typeof factory>[0],
+            { requestRender() {}, terminal: { rows: 40 } } as Parameters<typeof factory>[0],
             {} as Parameters<typeof factory>[1],
             {} as Parameters<typeof factory>[2],
             resolve,
@@ -155,7 +155,7 @@ function customDialog(save: boolean): ExtensionCommandContext["ui"]["custom"] {
     return new Promise((resolve, reject) => {
       const invoke = async () => {
         const panel = await factory(
-          { requestRender() {} } as Parameters<typeof factory>[0],
+          { requestRender() {}, terminal: { rows: 40 } } as Parameters<typeof factory>[0],
           {} as Parameters<typeof factory>[1],
           {} as Parameters<typeof factory>[2],
           resolve,
@@ -228,7 +228,7 @@ test.each([0, 3])(
       new Promise((resolve, reject) => {
         void Promise.resolve(
           factory(
-            { requestRender() {} } as Parameters<typeof factory>[0],
+            { requestRender() {}, terminal: { rows: 40 } } as Parameters<typeof factory>[0],
             {} as Parameters<typeof factory>[1],
             {} as Parameters<typeof factory>[2],
             resolve,
@@ -369,7 +369,7 @@ test("external settings registered after command creation save through the exist
     new Promise((resolve, reject) => {
       void Promise.resolve(
         factory(
-          { requestRender() {} } as Parameters<typeof factory>[0],
+          { requestRender() {}, terminal: { rows: 40 } } as Parameters<typeof factory>[0],
           {} as Parameters<typeof factory>[1],
           {} as Parameters<typeof factory>[2],
           resolve,
