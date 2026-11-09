@@ -519,7 +519,7 @@ test.each([false, true])(
       const payload = 'text":"BLOCKED"}';
       const result = await run(cwd, `streamed-insert-before-payload-${queuedPayload}`, [
         call("original", "read", { path: "note.txt", views: ["anchors"] }),
-        call("shift", "replace", { path: "note.txt", start: "beta", text: "beta\nadded" }),
+        call("shift", "replace", { path: "note.txt", start: "gamma", text: "gamma2\nadded" }),
         assistantMessage(
           [
             toolCall({
@@ -553,7 +553,7 @@ test.each([false, true])(
         getToolResultText(result, "recovery"),
       ).toBe(false);
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
-        "alpha\nbeta\nadded\ngamma\nrecovered",
+        "alpha\nbeta\ngamma2\nadded\nrecovered",
       );
     });
   },

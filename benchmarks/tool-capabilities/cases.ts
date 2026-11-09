@@ -2268,13 +2268,13 @@ add(
 add(
   "stale-insert-recovery",
   ["edit.stale-insert-feedback", "edit.bounded-stale-feedback"],
-  "Read task.txt with anchors. Replace OLD with OLD plus a newline and ADDED. Attempt Insert with the OLD Read's line-3 hash anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-4 hash. Keep the other bytes.",
+  "Read task.txt with anchors. Replace OLD with NEW. Attempt Insert with the OLD Read's line-2 hash anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-2 hash. Keep the other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "OLD\nADDED" } },
+    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: /^3#[A-F\d]+$/u },
+      args: { path: "task.txt", anchor: /^2#[A-F\d]+$/u },
       reuse: reuse(0, "anchor", "anchor"),
       error: true,
       finalContains: "is stale",
@@ -2288,7 +2288,7 @@ add(
       reuse: reuse(3, "anchor", "anchor"),
     },
   ],
-  { modes: ["direct"], expected: { "task.txt": "keep\nOLD\nADDED\nlast\nRECOVERED\n" } },
+  { modes: ["direct"], expected: { "task.txt": "keep\nNEW\nRECOVERED\nlast\n" } },
 );
 
 add(

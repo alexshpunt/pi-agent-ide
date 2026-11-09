@@ -486,13 +486,15 @@ test("resource-owning search anchors keep their normal stale-snapshot protection
       'const found = await tools.search({path:"note.txt",query:"beta"}).then(value => value.result);\n' +
         "const selection = found.match(/SEARCH#[A-F0-9]+:1:match/)?.[0];\n" +
         'if (!selection) throw new Error("missing search selection");\n' +
-        'text(await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"}));\n' +
+        'text(await tools.replace({path:"note.txt",start:"beta",text:"changed"}));\n' +
         'await tools.replace({path:selection,text:"wrong"});',
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toMatch(/stale|changed/iu);
+    expect(getToolResultText(run, "script-0")).toMatch(/stale|changed|expired/iu);
     expect(batchDetails(run).editorBatches).toHaveLength(1);
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("added\n" + initial);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      initial.replace("beta", "changed"),
+    );
   });
 });
 

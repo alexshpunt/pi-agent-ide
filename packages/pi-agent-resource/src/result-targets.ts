@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { composeLineMaps, createLineMap, rebaseRange, type LineMap } from "./line-map.ts";
 
 /** Serializable source coordinates. Lines are one-based; columns are UTF-16 offsets. */
 export interface ResultRange {
@@ -34,6 +35,18 @@ export const resultInputSchema = Type.Union([Type.String(), Type.Array(Type.Stri
 const prefix = "RESULT#";
 const event = "pi-agent-resource:result-targets";
 const liveResource = /^(?:shell|debug):/u;
+/** Larger files are never reread on a change; their selections are retired instead. */
+const maxRebasedBytes = 16 * 1024 * 1024;
+/** Earlier versions of one file whose lines can still be located, and files tracked this way. */
+const maxLineMapsPerFile = 32;
+const maxTrackedFiles = 64;
+
+/** Where the lines of earlier versions of a local file sit in its latest known text. */
+interface VersionChain {
+  latest: string;
+  /** One table per earlier version, newest first, each indexed by that version's line number. */
+  maps: Int32Array[];
+}
 
 type ResultEntry = { readonly cwd: string } & (
   | (ResolvedResultTargets & { readonly state: "ready" })
@@ -55,9 +68,11 @@ export class ResultTargetStore {
   >();
   /** One retained copy of each current source text, shared by every entry that snapshots it. */
   readonly #contents = new Map<string, { identity: string; content: string }>();
+  readonly #chains = new Map<string, VersionChain>();
 
   /** Forget results when the session closes or the extensions reload. */
   public clear(): void {
+    this.#chains.clear();
     this.#entries.clear();
     this.#matchReferences.clear();
     this.#snapshots.clear();
@@ -122,10 +137,12 @@ export class ResultTargetStore {
         throw new Error("Result target is pending; its write has not been confirmed.");
       if (entry.state === "rejected") throw new Error(entry.reason);
       for (const target of entry.targets) this.refresh(target.source, cwd);
-      if (!this.#entries.has(reference))
+      // A changed file moves the entry's selections, so read it again after the refresh.
+      const current = this.#entries.get(reference);
+      if (current?.state !== "ready")
         throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
-      complete &&= entry.complete;
-      targets.push(...entry.targets);
+      complete &&= current.complete;
+      targets.push(...current.targets);
     }
     return { targets: combineTargets(targets), complete };
   }
@@ -297,13 +314,36 @@ export class ResultTargetStore {
    */
   public refresh(source: string, cwd: string, changed = false): void {
     const identity = sourcePath(source, cwd);
-    // Live session results stay current by design, so input sent to them never retires the result.
-    if (changed && !liveResource.test(source)) this.invalidate(identity);
     const key = JSON.stringify([path.resolve(cwd), identity]);
     const stamp = fileStamp(source, cwd);
     const previous = this.#snapshots.get(key);
-    if (previous && previous.stamp !== stamp) this.invalidate(identity);
+    // Live session results stay current by design, so input sent to them never retires the result.
+    const edited = changed && !liveResource.test(source);
+    if (edited || (previous && previous.stamp !== stamp)) this.#retire(identity, stamp);
     this.#snapshots.set(key, { source, cwd, stamp });
+  }
+
+  /**
+   * Current line numbers of a line that existed in an earlier version of a local file and has not
+   * changed since. Several earlier versions can disagree, so every candidate is returned; the
+   * caller must check each against the text it is looking for. `content` is the text being edited.
+   */
+  public relocatedLines(
+    source: string,
+    cwd: string,
+    content: string,
+    lineNumber: number,
+  ): number[] {
+    this.refresh(source, cwd);
+    const identity = sourcePath(source, cwd);
+    if (!this.#chains.has(identity)) return [];
+    this.#advance(identity, content);
+    const lines = new Set<number>();
+    for (const table of this.#chains.get(identity)?.maps ?? []) {
+      const moved = table[lineNumber];
+      if (moved !== undefined && moved !== 0) lines.add(moved);
+    }
+    return [...lines];
   }
 
   /** Check surviving snapshots at a script boundary, including final formatting. */
@@ -311,6 +351,96 @@ export class ResultTargetStore {
     for (const snapshot of [...this.#snapshots.values()])
       this.refresh(snapshot.source, snapshot.cwd);
   }
+  /**
+   * A source changed. A local file keeps every selection whose lines are all unchanged and moves it
+   * to its new position; any other source, or a selection whose text changed, is retired.
+   */
+  #retire(identity: string, stamp: string | undefined): void {
+    const next = stamp === undefined ? undefined : readLocalText(identity);
+    if (next === undefined) {
+      this.#chains.delete(identity);
+      this.invalidate(identity);
+      return;
+    }
+    this.#advance(identity, next);
+    const maps = new Map<string, LineMap | undefined>();
+    const removed = new Set<string>();
+    const rebased = new Set<string>();
+    for (const [reference, entry] of this.#entries) {
+      if (entry.state !== "ready") continue;
+      let touches = false;
+      let survives = true;
+      const targets: ResultSourceTarget[] = [];
+      for (const target of entry.targets) {
+        if (sourcePath(target.source, entry.cwd) !== identity) {
+          targets.push(target);
+          continue;
+        }
+        touches = true;
+        if (target.expectedContent === next) {
+          targets.push(target);
+          continue;
+        }
+        if (!maps.has(target.expectedContent))
+          maps.set(target.expectedContent, createLineMap(target.expectedContent, next));
+        const map = maps.get(target.expectedContent);
+        const ranges = target.ranges.map((range) =>
+          map === undefined ? undefined : rebaseRange(range, map),
+        );
+        if (ranges.some((range) => range === undefined)) {
+          survives = false;
+          break;
+        }
+        targets.push({
+          ...target,
+          expectedContent: next,
+          ranges: ranges.filter((range) => range !== undefined),
+        });
+      }
+      if (!touches) continue;
+      if (survives) {
+        this.#entries.set(reference, { ...entry, targets: combineTargets(targets) });
+        rebased.add(reference);
+      } else {
+        this.#entries.delete(reference);
+        removed.add(reference);
+      }
+    }
+    for (const [key, shared] of this.#contents)
+      if (shared.identity === identity) this.#contents.set(key, { identity, content: next });
+    for (const [id, result] of this.#results)
+      if (
+        result.references.some((reference) => removed.has(reference)) ||
+        (result.resources.some((resource) => sourcePath(resource, result.cwd) === identity) &&
+          !result.references.some((reference) => rebased.has(reference)))
+      )
+        this.#results.delete(id);
+  }
+
+  /** Record that a local file now reads `next`, keeping where its earlier lines went. */
+  #advance(identity: string, next: string): void {
+    if (!path.isAbsolute(identity)) return;
+    const chain = this.#chains.get(identity);
+    if (chain === undefined) {
+      this.#chains.set(identity, { latest: next, maps: [] });
+      while (this.#chains.size > maxTrackedFiles) {
+        const oldest = this.#chains.keys().next().value;
+        if (oldest === undefined) break;
+        this.#chains.delete(oldest);
+      }
+      return;
+    }
+    if (chain.latest === next) return;
+    const step = createLineMap(chain.latest, next);
+    if (step === undefined) {
+      this.#chains.set(identity, { latest: next, maps: [] });
+      return;
+    }
+    chain.maps = [step.table, ...chain.maps.map((table) => composeLineMaps(table, step.table))];
+    chain.maps.length = Math.min(chain.maps.length, maxLineMapsPerFile);
+    chain.latest = next;
+  }
+
   /** Replace equal snapshot text with the copy already retained, so repeated results add no copy. */
   #shareContents(
     targets: readonly ResultSourceTarget[],
@@ -322,6 +452,7 @@ export class ResultTargetStore {
       const shared = this.#contents.get(key);
       if (shared?.content === target.expectedContent)
         return { ...target, expectedContent: shared.content };
+      this.#advance(identity, target.expectedContent);
       this.#contents.set(key, { identity, content: target.expectedContent });
       return target;
     });
@@ -357,6 +488,14 @@ function sourcePath(source: string, cwd: string): string {
     }
   }
   return path.resolve(cwd, file);
+}
+function readLocalText(file: string): string | undefined {
+  try {
+    if (statSync(file).size > maxRebasedBytes) return undefined;
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(readFileSync(file));
+  } catch {
+    return undefined;
+  }
 }
 function fileStamp(source: string, cwd: string): string | undefined {
   try {
