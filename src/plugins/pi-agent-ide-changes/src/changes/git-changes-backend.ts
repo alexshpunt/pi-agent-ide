@@ -220,6 +220,31 @@ export class GitChangesBackend {
     };
   }
 
+  /** Report whether Git turns CRLF in this worktree file into LF when it stores the file.
+   * That happens with `core.autocrlf` true or input, or with a `text` or `eol` attribute, unless
+   * the path is `-text`. Only then does a CRLF worktree match an LF index entry.
+   */
+  async normalizesLineEndings(repoPath: string, signal?: AbortSignal): Promise<boolean> {
+    const info = await this.git(
+      ["--literal-pathspecs", "ls-files", "--eol", "--", repoPath],
+      signal,
+    );
+    const columns = /^i\/(?<index>\S+)\s+w\/(?<worktree>\S+)\s+attr\/(?<attributes>[^\t]*)\t/u.exec(
+      info.stdout,
+    )?.groups;
+    // An index entry that already holds CRLF is compared as it is.
+    if (info.code !== 0 || columns === undefined || /crlf|mixed/u.test(columns["index"] ?? ""))
+      return false;
+    const attributes = (columns["attributes"] ?? "").trim().split(/\s+/u);
+    if (attributes.includes("-text") || attributes.includes("text=unset")) return false;
+    if (attributes.some((value) => /^(?:text(?:=(?!unset)\S+)?|eol=\S+)$/u.test(value)))
+      return true;
+    const configured = await this.git(["config", "--get", "core.autocrlf"], signal);
+    return (
+      configured.code === 0 && ["true", "input"].includes(configured.stdout.trim().toLowerCase())
+    );
+  }
+
   async writeIndexFile(
     repoPath: string,
     mode: string,

@@ -5,6 +5,20 @@ import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 
+/** Name the missing program on the target and how to install it. Nothing is installed for the user. */
+function missingToolMessage(command: string, target: string, windows: boolean): string {
+  const install =
+    command === "ast-grep"
+      ? "npm install --global @ast-grep/cli"
+      : command === "rg"
+        ? windows
+          ? "winget install BurntSushi.ripgrep.MSVC"
+          : "install the `ripgrep` package"
+        : undefined;
+  const hint = install === undefined ? "" : ` Install it, for example: ${install}.`;
+  return `${command} is not installed on SSH target ${target}, or is not on the PATH of its SSH sessions.${hint} Then start a new search.`;
+}
+
 /** Adapt configured SSH scopes to the existing search recipes, without startup probes. */
 export function createSshSearchEnvironmentProvider(
   registry: SshBackendRegistry,
@@ -13,6 +27,24 @@ export function createSshSearchEnvironmentProvider(
     const scope = registry.resolve(request.path ?? ".", context.cwd);
     if (scope === undefined) return undefined;
     const { backend, location } = scope;
+    const windows = backend.target.os === "windows";
+    /** A command that cannot start in an existing directory is not installed on the target. */
+    const explainMissing = async (
+      error: unknown,
+      command: string,
+      cwd: string,
+    ): Promise<unknown> => {
+      if (!(error instanceof SshBackendError) || error.code !== "ENOENT") return error;
+      let directory = false;
+      try {
+        directory = (await backend.stat(cwd)).kind === "directory";
+      } catch {
+        // A missing working directory keeps the original failure.
+      }
+      return directory
+        ? new Error(missingToolMessage(command, backend.target.id, windows), { cause: error })
+        : error;
+    };
     const own = (source: string, cwd = location.source) => {
       const resolved = registry.resolve(source, cwd);
       if (resolved === undefined || resolved.backend !== backend)
@@ -30,7 +62,13 @@ export function createSshSearchEnvironmentProvider(
       readText: async (source, signal) =>
         (await backend.read(own(source).path, { signal })).bytes.toString("utf8"),
       async execute(command, arguments_, cwd, signal) {
-        const result = await backend.execute(command, arguments_, own(cwd).path, { signal });
+        const directory = own(cwd).path;
+        let result;
+        try {
+          result = await backend.execute(command, arguments_, directory, { signal });
+        } catch (error) {
+          throw await explainMissing(error, command, directory);
+        }
         return {
           code: result.exitCode,
           stdout: result.stdout.toString("utf8"),
@@ -38,7 +76,17 @@ export function createSshSearchEnvironmentProvider(
         };
       },
       async runLines(arguments_, cwd, onLine, signal) {
-        const channel = await backend.startProcess("rg", arguments_, own(cwd).path, { signal });
+        const directory = own(cwd).path;
+        let channel;
+        try {
+          // ripgrep prints `.\dir\file` on Windows; callers expect the `/` form of canonical paths.
+          const separator = windows ? ["--path-separator=/"] : [];
+          channel = await backend.startProcess("rg", [...separator, ...arguments_], directory, {
+            signal,
+          });
+        } catch (error) {
+          throw await explainMissing(error, "rg", directory);
+        }
         const decoder = new StringDecoder("utf8");
         const pending: string[] = [];
         let pendingBytes = 0;

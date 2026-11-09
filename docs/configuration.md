@@ -59,6 +59,8 @@ Tools use fixed native exposure; there are no IDE exposure overrides or named pr
 | `ide_git`      | `stage`, `unstage`               | `deferred` |
 | `ide_debug`    | `debug`                          | `deferred` |
 
+`ide_terminal` also registers `remote_powershell` on Linux and macOS hosts, or `remote_bash` on Windows hosts, when an SSH target of the other OS is configured. It runs only on remote targets; the local tool keeps its name and also covers same-OS targets.
+
 Direct tools keep their normal calls and can also run through Codemode while active. Edits consume the snapshot-bound targets that Read and Search return.
 
 Git staging and debugger tools are not declared ahead of time. Short agent guidance names the enabled capabilities and tells the agent to find them through native `tool_search`. IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
