@@ -1,5 +1,8 @@
-import { describe, expect, test } from "vitest";
-import { ResultTargetStore, type ResultSourceTarget } from "./result-targets.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { ResultTargetStore, type ResultRange, type ResultSourceTarget } from "./result-targets.ts";
 
 const target: ResultSourceTarget = {
   source: "/workspace/a.txt",
@@ -180,5 +183,167 @@ describe("source result targets", () => {
     };
     const reference = store.register([position], "/workspace");
     expect(store.resolve(reference, "/workspace").targets).toEqual([position]);
+  });
+});
+
+describe("selections of a local file edited elsewhere", () => {
+  let directory: string;
+  let file: string;
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+  const line = (lineNumber: number): ResultRange => ({
+    start: { lineNumber, column: 0 },
+    end: { lineNumber, column: 3 },
+  });
+  const select = (store: ResultTargetStore, ...ranges: ResultRange[]): string =>
+    store.register([{ source: file, expectedContent: original, ranges }], directory);
+
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "result-targets-"));
+    file = path.join(directory, "a.txt");
+    writeFileSync(file, original);
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function edit(content: string): void {
+    writeFileSync(file, content);
+  }
+
+  test("follow the text when lines were added above", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    const content = `zero\nzero\n${original}`;
+    edit(content);
+    const [moved] = store.resolve(reference, directory).targets;
+    expect(moved).toMatchObject({ source: file, expectedContent: content, ranges: [line(5)] });
+  });
+
+  test("stay in place when lines below changed", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    const content = original.replace("four\nfive", "4\n5\n6");
+    edit(content);
+    const [kept] = store.resolve(reference, directory).targets;
+    expect(kept).toMatchObject({ expectedContent: content, ranges: [line(3)] });
+  });
+
+  test("expire when an edit overlaps the selected text", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    edit(original.replace("three", "thr33"));
+    expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
+  });
+
+  test("expire as a whole when one of several ranges changed", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(1), line(4));
+    edit(original.replace("four", "FOUR"));
+    expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
+  });
+
+  test("expire when a line is inserted inside a multi-line selection", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, {
+      start: { lineNumber: 2, column: 0 },
+      end: { lineNumber: 4, column: 4 },
+    });
+    edit(original.replace("three\n", "three\nnew\n"));
+    expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
+  });
+
+  test("keep Search references and published results usable", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(4));
+    store.registerSearchReference("SEARCH#ABCD:1:line", reference, directory);
+    const published = store.publish(
+      { status: "success", data: { target: reference } },
+      "Search result",
+      directory,
+      [file],
+    );
+    edit(`zero\n${original}`);
+    expect(store.resolve("SEARCH#ABCD:1:line", directory).targets[0]?.ranges).toEqual([line(5)]);
+    expect(store.source(published, directory)).toBe(reference);
+  });
+
+  test("keep selections across several edits and drop only the ones that changed", () => {
+    const store = new ResultTargetStore();
+    const stable = select(store, line(5));
+    const doomed = select(store, line(2));
+    edit(`zero\n${original}`);
+    expect(store.resolve(stable, directory).targets[0]?.ranges).toEqual([line(6)]);
+    edit(`zero\n${original}`.replace("five", "last\nfive"));
+    expect(store.resolve(stable, directory).targets[0]?.ranges).toEqual([line(7)]);
+    edit(`zero\n${original}`.replace("five", "last\nfive").replace("two", "2"));
+    expect(() => store.resolve(doomed, directory)).toThrow(/expired/u);
+    expect(store.resolve(stable, directory).targets[0]?.ranges).toEqual([line(7)]);
+  });
+
+  test("survive a known edit of other lines and report the edited ones as expired", () => {
+    const store = new ResultTargetStore();
+    const edited = select(store, line(2));
+    const other = select(store, line(4));
+    edit(original.replace("two", "2\n2"));
+    store.refresh(file, directory, true);
+    expect(() => store.resolve(edited, directory)).toThrow(/expired/u);
+    expect(store.resolve(other, directory).targets[0]?.ranges).toEqual([line(5)]);
+  });
+
+  test("verify against the moved text", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    edit(`zero\n${original}`);
+    await expect(store.verify(store.resolve(reference, directory))).resolves.toBeUndefined();
+  });
+
+  test("expire when the file is deleted", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    rmSync(file);
+    expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
+  });
+
+  test("expire when the file was rewritten beyond recognition", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    edit(Array.from({ length: 9000 }, (_, index) => `row ${index}`).join("\n"));
+    expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
+  });
+
+  describe("relocated lines", () => {
+    test("lead from an earlier version to the current line", () => {
+      const store = new ResultTargetStore();
+      select(store, line(3));
+      const first = `zero\n${original}`;
+      edit(first);
+      expect(store.relocatedLines(file, directory, first, 3)).toEqual([4]);
+      const second = first.replace("five", "last\nfive");
+      edit(second);
+      // Line 3 held "two" in the first version and "three" in the original.
+      expect(store.relocatedLines(file, directory, second, 3).sort()).toEqual([3, 4]);
+      expect(store.relocatedLines(file, directory, second, 5).sort()).toEqual([5, 7]);
+    });
+
+    test("do not exist for a line that changed or a file the store never saw", () => {
+      const store = new ResultTargetStore();
+      select(store, line(3));
+      const content = original.replace("three", "thr33");
+      edit(content);
+      expect(store.relocatedLines(file, directory, content, 3)).toEqual([]);
+      expect(store.relocatedLines(path.join(directory, "b.txt"), directory, "x", 1)).toEqual([]);
+    });
+
+    test("report each earlier version that disagrees", () => {
+      const store = new ResultTargetStore();
+      select(store, line(1));
+      const first = `}\n${original}`;
+      edit(first);
+      store.refresh(file, directory);
+      // Line 1 held "}" in one earlier version and "one" in another.
+      const second = `}\n}\n${original}`;
+      edit(second);
+      expect(store.relocatedLines(file, directory, second, 1).sort()).toEqual([1, 3]);
+    });
   });
 });

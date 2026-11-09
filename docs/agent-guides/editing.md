@@ -9,7 +9,7 @@
 - Insert adds text at the start or end of a selection. Whole-line selections add needed line breaks; exact selections keep their character boundaries. New Replace/Insert payloads follow the target's line-ending style.
 - With `start` and `end`, the selection runs from the start of `start` to the end of `end`. Exact text keeps character boundaries; line anchors take whole lines. When both `start` and `end` match complete lines, such as BEGIN/END marker lines, the selection takes those lines whole.
 - After an exact-text selector fails, exact text is blocked for that file until an anchor-based edit succeeds. Use one of the anchors the error returns; don't guess another string.
-- Anchors and results go stale when their file changes. Read or search again before reusing them.
+- Anchors and results keep working when other lines of their file change. Once their own lines change they go stale: read or search again before reusing them.
 
 ## Pass results between tools
 

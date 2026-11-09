@@ -23,6 +23,13 @@ class LineHashTextAnchor extends TextAnchor {
   }
 }
 
+/** An anchor issued for an earlier position of an unchanged line; it keeps the text the agent sent. */
+class RelocatedLineHashTextAnchor extends TextAnchor {
+  public constructor(value: string, lineNumber: number) {
+    super(value, lineNumber);
+  }
+}
+
 export function hashLine(line: string): string {
   return createHash("sha1").update(line).digest("hex").slice(0, 4).toUpperCase();
 }
@@ -112,6 +119,20 @@ function resolveLineHashAnchor(
   const line = context.lines[lineNumber - 1];
 
   if (line === undefined || hashLine(line) !== match[2]) {
+    // The text may have moved because lines elsewhere in the file changed; the line itself is the
+    // same only if exactly one earlier-known position leads to a line with this hash.
+    const moved = [
+      ...new Set(
+        (context.relocateLine?.(lineNumber) ?? []).filter((candidate) => {
+          const text = context.lines[candidate - 1];
+          return text !== undefined && hashLine(text) === match[2];
+        }),
+      ),
+    ];
+    const relocated = moved.length === 1 ? moved[0] : undefined;
+    if (relocated !== undefined) {
+      return { kind: "resolved", anchor: new RelocatedLineHashTextAnchor(value, relocated) };
+    }
     const nearbyLineCount = 5;
     const first = Math.max(1, lineNumber - nearbyLineCount);
     const last = Math.min(context.lines.length, lineNumber + nearbyLineCount);

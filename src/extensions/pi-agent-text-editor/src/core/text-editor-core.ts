@@ -485,7 +485,12 @@ export function createTextEditorCore(
 ): TextEditorCore {
   const projectConfig = loadTextEditorConfig(process.cwd());
   const resolvers: RegisteredResolver[] = [];
-  const anchorRegistry = new TextAnchorRegistry();
+  const anchorRegistry = new TextAnchorRegistry(
+    resultTargets === undefined
+      ? undefined
+      : (context, lineNumber) =>
+          resultTargets.relocatedLines(context.source, context.cwd, context.content, lineNumber),
+  );
   const handlers: RegisteredHandler[] = [];
   const semanticHandlers: RegisteredSemanticHandler[] = [];
   const presenters: RegisteredPresenter[] = [];
