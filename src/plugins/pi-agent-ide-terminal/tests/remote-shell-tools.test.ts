@@ -63,6 +63,27 @@ function register(platform: NodeJS.Platform, targets: readonly SshTarget[]) {
 }
 
 describe("remote shell tool exposure", () => {
+  test.each([[[]], [[windowsTarget]], [[linuxTarget]], [[linuxTarget, windowsTarget]]] as const)(
+    "a Windows host withdraws Pi's built-in bash with targets %j",
+    (targets) => {
+      const { tools, hidden } = register("win32", targets);
+      expect(tools.has("bash")).toBe(false);
+      expect(hidden.get("bash")).toMatchObject({ exposure: "hidden" });
+      expect(() =>
+        hidden.get("bash")?.execute("call", {}, undefined, undefined, {} as ExtensionToolContext),
+      ).toThrow("must never execute");
+    },
+  );
+
+  test.each([[[]], [[linuxTarget]], [[linuxTarget, windowsTarget]]] as const)(
+    "a Linux host keeps bash visible and hides nothing with targets %j",
+    (targets) => {
+      const { tools, hidden } = register("linux", targets);
+      expect(tools.has("bash")).toBe(true);
+      expect(hidden.size).toBe(0);
+    },
+  );
+
   test("a Linux host without Windows targets has only bash", () => {
     expect([...register("linux", [linuxTarget]).tools.keys()]).toEqual(["bash"]);
   });
