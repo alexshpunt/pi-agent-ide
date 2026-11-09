@@ -40,10 +40,20 @@ test.skipIf(process.platform !== "win32" || !host)(
       const created = await cleanup.execute("mkdir", ["-p", "--", remoteDirectory], "/tmp");
       expect(created.exitCode).toBe(0);
       await writeFile(upload, bytes);
+      const tree = path.join(cwd, "tree");
+      const treeDown = path.join(cwd, "tree-down");
+      const nested = Buffer.concat([randomBytes(70_000), Buffer.from([0, 13, 10, 255])]);
+      await mkdir(path.join(tree, "sub dir"), { recursive: true });
+      await writeFile(path.join(tree, "a b.txt"), "needle-lpt1287 alpha\r\nsecond\r\n");
+      await writeFile(path.join(tree, "sub dir", "ünï-çødé.bin"), nested);
+      await writeFile(path.join(tree, "empty.txt"), "");
+      const moveSource = path.join(cwd, "to-move.txt");
+      await writeFile(moveSource, "moved needle\n");
       await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
       await writeFile(
         path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
         JSON.stringify({
+          flags: { "pi-agent-ide-filesystem-yolo": true },
           noAnimations: true,
           noPostProcessing: true,
           disabled: [
@@ -75,8 +85,8 @@ test.skipIf(process.platform !== "win32" || !host)(
         rawMode: false,
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: ["read", "write", "copy", "delete", "powershell", "remote_bash"],
-        timeoutMs: 180_000,
+        tools: ["read", "write", "copy", "move", "delete", "search", "powershell", "remote_bash"],
+        timeoutMs: 600_000,
         conversation: [
           call("mkdir", "remote_bash", {
             command: "uname -s && pwd",
@@ -101,6 +111,12 @@ test.skipIf(process.platform !== "win32" || !host)(
           }),
           call("read-remote", "read", { path: `${remoteRoot}/note.txt` }),
           call("list-remote", "read", { path: remoteRoot }),
+          call("copy-dir-up", "copy", { path: tree, target: `${remoteRoot}/tree` }),
+          call("copy-dir-down", "copy", { path: `${remoteRoot}/tree`, target: treeDown }),
+          call("move-up", "move", { path: moveSource, target: `${remoteRoot}/moved.txt` }),
+          call("search-remote", "search", { query: "needle-lpt1287", path: remoteRoot }),
+          call("delete-remote", "delete", { path: `${remoteRoot}/moved.txt` }),
+          call("list-after-delete", "read", { path: remoteRoot }),
           call("windows-cwd", "remote_bash", {
             command: "echo MUST-NOT-RUN",
             cwd: "ssh://win/C:/x",
@@ -131,6 +147,26 @@ test.skipIf(process.platform !== "win32" || !host)(
       expect(getToolExecution(run, "write-remote").isError).toBe(false);
       expect(getToolResultText(run, "read-remote")).toContain("line two");
       expect(getToolResultText(run, "list-remote")).toContain("upload.bin");
+      for (const id of [
+        "copy-dir-up",
+        "copy-dir-down",
+        "move-up",
+        "search-remote",
+        "delete-remote",
+        "list-after-delete",
+      ])
+        expect(getToolExecution(run, id).isError, id).toBe(false);
+      expect((await readFile(path.join(treeDown, "a b.txt"), "utf8")).split("\r\n")).toHaveLength(
+        3,
+      );
+      expect((await readFile(path.join(treeDown, "sub dir", "ünï-çødé.bin"))).equals(nested)).toBe(
+        true,
+      );
+      expect((await readFile(path.join(treeDown, "empty.txt"))).length).toBe(0);
+      await expect(readFile(moveSource)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(getToolResultText(run, "search-remote")).toContain("needle-lpt1287");
+      expect(getToolResultText(run, "list-after-delete")).not.toContain("moved.txt");
+      expect(getToolResultText(run, "list-after-delete")).toContain("tree");
 
       expect(getToolExecution(run, "windows-cwd").isError).toBe(true);
       expect(getToolResultText(run, "windows-cwd")).toContain("is a Windows target");
@@ -151,5 +187,120 @@ test.skipIf(process.platform !== "win32" || !host)(
       await rm(cwd, { recursive: true, force: true });
     }
   },
-  240_000,
+  700_000,
+);
+
+async function withWindowsWorkspace<T>(
+  targets: readonly Record<string, unknown>[],
+  body: (cwd: string) => Promise<T>,
+): Promise<T> {
+  const base = path.resolve(".tmp/ssh-windows-source-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "workspace-"));
+  try {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({
+        noAnimations: true,
+        noPostProcessing: true,
+        disabled: [
+          "ide.ast",
+          "ide.lsp",
+          "ide.formatter",
+          "ide.lint",
+          "ide.changes",
+          "ide.diagnostics",
+          "ide.debugger",
+        ],
+      }),
+    );
+    await writeFile(path.join(cwd, ".pi/pi-agent-ide/ssh.json"), JSON.stringify({ targets }));
+    return await body(cwd);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}
+
+const windowsTarget = {
+  id: "win",
+  host: "unused-windows-host",
+  workspace: "C:/Users/unused",
+  os: "windows",
+};
+
+test.skipIf(process.platform !== "win32" || !host)(
+  "remote_bash stays exposed and scoped after a reload on native Windows",
+  async () => {
+    await withWindowsWorkspace(
+      [{ id: "linux", host, workspace: "/tmp" }, windowsTarget],
+      async (cwd) => {
+        const call = (id: string, name: string, args: Record<string, unknown>) =>
+          assistantMessage([toolCall({ id, name, arguments: args })]);
+        const run = await new PiIntegrationTest({
+          testName: "ssh-windows-source-reload",
+          artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
+          cwd,
+          rawMode: false,
+          isolateUserResources: true,
+          extensions: [
+            path.resolve("src/pi-agent-ide.ts"),
+            path.resolve("tests/integration/support/tool-exposure-reload-extension.ts"),
+          ],
+          tools: ["powershell", "remote_bash"],
+          timeoutMs: 120_000,
+          conversation: [
+            call("before", "remote_bash", { command: "uname -s", cwd: "ssh://linux/tmp" }),
+            assistantMessage([text("First turn done.")]),
+            call("after", "remote_bash", { command: "uname -s", cwd: "ssh://linux/tmp" }),
+            call("after-local", "remote_bash", { command: "echo MUST-NOT-RUN" }),
+            assistantMessage([text("Second turn done.")]),
+          ],
+        }).run("/reload-check");
+        expect(getToolResultText(run, "before")).toContain("Linux");
+        expect(getToolResultText(run, "after")).toContain("Linux");
+        expect(getToolExecution(run, "after-local").isError).toBe(true);
+        const requests = run.providerRequests.map((request) => JSON.stringify(request));
+        expect(requests.length).toBeGreaterThanOrEqual(5);
+        for (const request of requests) {
+          expect(request).toContain('"remote_bash"');
+          expect(request).toContain('"powershell"');
+        }
+      },
+    );
+  },
+  180_000,
+);
+
+test.skipIf(process.platform !== "win32")(
+  "remote_bash is absent on native Windows without a Linux target",
+  async () => {
+    await withWindowsWorkspace([windowsTarget], async (cwd) => {
+      const run = await new PiIntegrationTest({
+        testName: "ssh-windows-source-no-linux-target",
+        artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
+        cwd,
+        rawMode: false,
+        isolateUserResources: true,
+        extensions: [path.resolve("src/pi-agent-ide.ts")],
+        tools: ["powershell", "remote_bash"],
+        timeoutMs: 60_000,
+        conversation: [
+          assistantMessage([
+            toolCall({
+              id: "missing",
+              name: "remote_bash",
+              arguments: { command: "echo MUST-NOT-RUN", cwd: "ssh://win/C:/x" },
+            }),
+          ]),
+          assistantMessage([text("Done.")]),
+        ],
+      }).run("Try remote_bash without a Linux target.");
+      expect(getToolExecution(run, "missing").isError).toBe(true);
+      const request = JSON.stringify(run.providerRequests[0]);
+      expect(request).toContain('"powershell"');
+      expect(request).not.toContain('"remote_bash"');
+    });
+  },
+  120_000,
 );
