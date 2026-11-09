@@ -1,0 +1,135 @@
+# yamllint disable rule:line-length rule:comments rule:document-start rule:truthy
+name: SSH platforms
+
+# Runs the four Linux/Windows SSH directions on one Windows runner:
+# Linux and Windows Pi, each against a Linux sshd in WSL 2 and the Windows OpenSSH server.
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - src/backend/**
+      - tests/integration/ssh-platform-matrix.integration.test.ts
+      - tests/integration/support/ssh-target-fixture.ts
+      - tests/integration/support/ssh-fixture.ts
+      - .github/workflows/ssh-platforms.yml
+  pull_request:
+    branches: [main, develop, "release/*"]
+    paths:
+      - src/backend/**
+      - tests/integration/ssh-platform-matrix.integration.test.ts
+      - tests/integration/support/ssh-target-fixture.ts
+      - tests/integration/support/ssh-fixture.ts
+      - .github/workflows/ssh-platforms.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ssh-platforms-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24.19.0"
+  NPM_VERSION: "11.19.0"
+  PNPM_VERSION: "11.22.0"
+
+jobs:
+  ssh-platforms:
+    name: SSH from ${{ matrix.source }} (${{ matrix.directions }})
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - source: windows
+            directions: windows>windows,windows>linux
+          - source: linux
+            directions: linux>linux,linux>windows
+    env:
+      PI_SSH_COVERAGE_DIRECTIONS: ${{ matrix.directions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      # WSL 2 provides the Linux side: the Linux SSH server for a Windows source, and the Linux Pi for a Linux source.
+      - name: Install Ubuntu in WSL 2
+        uses: Vampire/setup-wsl@e707f0b61a07f8ea48a64d83edfcbd4a7af45926 # v7.2.0
+        with:
+          distribution: Ubuntu-24.04
+          wsl-version: 2
+          additional-packages: openssh-server python3 git curl ca-certificates xz-utils build-essential
+
+      - name: Prepare the unprivileged SSH account in WSL
+        shell: wsl-bash {0}
+        run: |
+          set -euo pipefail
+          useradd --create-home --shell /bin/bash agent
+          passwd --delete agent
+          install --directory --mode=0755 /run/sshd
+
+      - name: Setup Node
+        if: matrix.source == 'windows'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
+
+      - name: Install dependencies on Windows
+        if: matrix.source == 'windows'
+        run: |
+          npm install --global "npm@$env:NPM_VERSION" "pnpm@$env:PNPM_VERSION"
+          pnpm install --frozen-lockfile
+
+      - name: Run SSH direction tests from Windows
+        if: matrix.source == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .agents/tmp/test-results
+          env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs \
+            tests/integration/ssh-platform-matrix.integration.test.ts \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=.agents/tmp/test-results/integration-ssh-platforms-windows.xml
+
+      - name: Install Node and a Linux checkout in WSL
+        if: matrix.source == 'linux'
+        shell: wsl-bash {0}
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            "https://nodejs.org/dist/v${{ env.NODE_VERSION }}/node-v${{ env.NODE_VERSION }}-linux-x64.tar.xz" \
+            --output /tmp/node.tar.xz
+          tar --extract --xz --file /tmp/node.tar.xz --directory /usr/local --strip-components=1
+          npm install --global "npm@${{ env.NPM_VERSION }}" "pnpm@${{ env.PNPM_VERSION }}"
+          git config --global --add safe.directory '*'
+          git clone --quiet "$(wslpath -u '${{ github.workspace }}')" "$HOME/pi-agent-ide"
+          cd "$HOME/pi-agent-ide"
+          pnpm install --frozen-lockfile
+
+      - name: Run SSH direction tests from Linux in WSL
+        if: matrix.source == 'linux'
+        shell: wsl-bash {0}
+        run: |
+          set -euo pipefail
+          cd "$HOME/pi-agent-ide"
+          mkdir -p .agents/tmp/test-results
+          status=0
+          env -u PI_INTEGRATION_TEST_RUNNER pnpm exec vitest run --config vitest.integration.config.mjs \
+            tests/integration/ssh-platform-matrix.integration.test.ts \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=.agents/tmp/test-results/integration-ssh-platforms-linux.xml || status=$?
+          destination="$(wslpath -u '${{ github.workspace }}')/.agents/tmp/test-results"
+          mkdir -p "$destination"
+          cp .agents/tmp/test-results/*.xml "$destination/" || true
+          exit "$status"
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: ssh-platforms-results-${{ matrix.source }}
+          path: .agents/tmp/test-results/integration-*.xml
+          if-no-files-found: warn
+          retention-days: 30
