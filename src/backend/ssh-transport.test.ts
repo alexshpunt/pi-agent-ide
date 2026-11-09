@@ -1,12 +1,49 @@
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import {
   bundlePython,
+  neutralDirectory,
   sshBootstrapCommand,
   sshBootstrapInput,
   sshFailureCode,
+  sshTransferProgram,
+  sshWorkerBundle,
   WORKER_HANDSHAKE,
 } from "./ssh-transport.ts";
+
+test("the Windows file and transfer workers carry their primitives; Linux workers do not", async () => {
+  for (const program of [
+    await sshWorkerBundle("windows", "file"),
+    await sshTransferProgram("windows"),
+  ])
+    expect(program).toContain('"ssh_windows_files"');
+  expect(await sshWorkerBundle("windows", "channel")).not.toContain("ssh_windows_files");
+  expect(await sshWorkerBundle("linux", "file")).not.toContain("ssh_windows_files");
+  expect(await sshTransferProgram("linux")).not.toContain("ssh_windows_files");
+});
+
+test("every Windows worker source is valid Python", () => {
+  const sources = [
+    "ssh_windows_files.py",
+    "ssh_worker_windows.py",
+    "ssh-transfer-worker-windows.py",
+  ].map((name) => fileURLToPath(new URL(name, import.meta.url)));
+  for (const source of sources) {
+    const result = spawnSync("python3", [
+      "-c",
+      "import sys;compile(open(sys.argv[1], encoding='utf8').read(), sys.argv[1], 'exec')",
+      source,
+    ]);
+    expect(result.stderr.toString(), source).toBe("");
+    expect(result.status, source).toBe(0);
+  }
+});
+
+test("the neutral directory is the root of the target's drive", () => {
+  expect(neutralDirectory({ workspace: "/root" })).toBe("/");
+  expect(neutralDirectory({ os: "windows", workspace: "/D:/Users/name" })).toBe("/D:/");
+});
 
 test("exit status alone cannot diagnose a missing remote Python dependency", () => {
   expect(sshFailureCode(127, "")).toBe("TRANSPORT_FAILED");
