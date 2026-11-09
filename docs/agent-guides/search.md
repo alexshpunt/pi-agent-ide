@@ -11,7 +11,7 @@
 ## Results
 
 - Each match has `SEARCH#HASH:N:line` (its line) and `SEARCH#HASH:N:match` (the exact match). `:all:line` and `:all:match` select every match, across files. Pass them to `read` or an edit tool as they are.
-- A single reference keeps working when other lines of its file change and goes stale when its own lines change; search again. An `:all` reference re-runs its query instead.
+- A match reference keeps working when other lines of its file change, including other parts of its own line, and goes stale when the matched text or its direct neighbours change; search again. Every number N behaves the same, and a reference to one match stays usable when the search hit its limit. An `:all` reference re-runs its query instead.
 - In Codemode, search returns `{ result, hasMatches, complete }`: pass `result` on. `hasMatches: false` proves absence only when `complete` is `true`.
 - A failed or interrupted search is not zero matches.
 

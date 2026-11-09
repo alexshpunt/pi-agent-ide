@@ -6,7 +6,7 @@
 
 Pass `pattern` in source-code syntax. `$NAME` captures one node and `$$$ARGS` captures several, including their punctuation. A pattern must parse as code in the file's language.
 
-Each match shows a `SEARCH#...:N:match` reference and a `capture NAME: RESULT#...` reference per capture. Pass either to Read, Search or an edit tool; a capture selects exactly its nodes, such as a function body or an argument list. `SEARCH#...:all:match` selects every match of a complete result. A single-match reference keeps working when other lines of its file change and goes stale when its own lines change; repeat the search.
+Each match shows a `SEARCH#...:N:match` reference and a `capture NAME: RESULT#...` reference per capture. Pass either to Read, Search or an edit tool; a capture selects exactly its nodes, such as a function body or an argument list. `SEARCH#...:all:match` selects every match of a complete result. A single-match reference keeps working when other lines of its file change, including other parts of its own line, and goes stale when the matched text or its direct neighbours change; repeat the search.
 
 ```js
 const calls = await tools.ast_search({ path: "client.ts", pattern: "request($OPTIONS)" });
