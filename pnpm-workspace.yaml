@@ -19,6 +19,7 @@ allowedDeprecatedVersions:
   node-domexception: "1.0.0"
 
 allowBuilds:
+  "@ast-grep/cli": true
   "@ast-grep/lang-bash": true
   "@ast-grep/lang-csharp": true
   "@ast-grep/lang-dart": true

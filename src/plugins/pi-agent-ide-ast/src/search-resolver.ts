@@ -10,6 +10,7 @@ import { selectionData, containsSearchMatch, splitGlobList } from "pi-agent-sear
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import { renderSearchResult } from "pi-agent-search-text/rendering";
 
+import { localAstGrepCommand } from "./ast-grep-binary.ts";
 import { createAstSearchPresentation } from "./search-presentation.ts";
 
 interface AstGrepMatch {
@@ -445,7 +446,7 @@ function runAstGrep(
   resolveSource(cwd, request.path ?? ".");
   arguments_.push(request.path ?? ".");
   return new Promise((resolve, reject) => {
-    const child = spawn("ast-grep", arguments_, {
+    const child = spawn(localAstGrepCommand(), arguments_, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;
@@ -598,7 +599,7 @@ function spawnAstGrep(
 ): Promise<AstGrepMatch[] | undefined> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const child = spawn("ast-grep", [...arguments_], {
+    const child = spawn(localAstGrepCommand(), [...arguments_], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams;

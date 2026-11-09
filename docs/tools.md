@@ -139,7 +139,7 @@ Per-result forms keep the search-time snapshot and fail as stale after their mat
 
 ## Syntax search
 
-`ast_search` runs [ast-grep](https://ast-grep.github.io/) in files or inside a returned Read, Search or edit result, for every language ast-grep supports. It takes either a `pattern` in source-code syntax, with `$NAME` and `$$$ARGS` captures, or an ast-grep `rule` object with a `language`. Rules add relations such as `inside`, `has`, `not`, `follows` and `precedes`. With a result as `path`, `relation: "enclosing"` returns the innermost match that contains each range, for example the function around a text match. Matches and captures are guarded `SEARCH#` and `RESULT#` selections like text search results. The agent guide is `docs:ast-search`.
+`ast_search` runs [ast-grep](https://ast-grep.github.io/) in files or inside a returned Read, Search or edit result, for every language ast-grep supports. It takes either a `pattern` in source-code syntax, with `$NAME` and `$$$ARGS` captures, or an ast-grep `rule` object with a `language`. Rules add relations such as `inside`, `has`, `not`, `follows` and `precedes`. With a result as `path`, `relation: "enclosing"` returns the innermost match that contains each range, for example the function around a text match. Matches and captures are guarded `SEARCH#` and `RESULT#` selections like text search results. Pi Agent IDE ships its own ast-grep for local projects, so no system-wide install is needed; SSH targets still use the `ast-grep` on their own PATH. If the bundled ast-grep cannot start, the tool is not offered and the doctor names the reason. The agent guide is `docs:ast-search`.
 
 ## Language-server search
 

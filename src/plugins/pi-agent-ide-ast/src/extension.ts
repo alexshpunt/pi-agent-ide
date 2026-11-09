@@ -18,6 +18,7 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
+import { probeLocalAstGrep } from "./ast-grep-binary.ts";
 import { AstScopeManager } from "./ast/manager.ts";
 import { astDoctorPlugin } from "./doctor-plugin.ts";
 import { createAstOutlineResolver } from "./outline-resolver.ts";
@@ -95,6 +96,8 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
     },
   } satisfies TextEditorPlugin;
 
+  // Agents must never see a tool that cannot run; `doctor` reports why ast-grep cannot start.
+  const astGrep = await probeLocalAstGrep(process.cwd());
   await Promise.all([
     connectReadPlugin(pi, readPlugin),
     connectDoctorPlugin(pi, astDoctorPlugin),
@@ -108,6 +111,6 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         resolveSearchApi({ api, resolver: createAstSearchResolver(api.registerSelection) });
       },
     }),
-    registerAstSearchTool(pi, () => searchApi),
+    ...(astGrep.ok ? [registerAstSearchTool(pi, () => searchApi)] : []),
   ]);
 }
