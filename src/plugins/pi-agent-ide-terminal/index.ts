@@ -34,6 +34,8 @@ export default async function registerTerminal(
       triggers: [
         { tool: "bash" },
         { tool: "powershell" },
+        { tool: "remote_bash" },
+        { tool: "remote_powershell" },
         ...["read", "write", "insert", "delete"].map((tool) => ({
           tool,
           resourcePrefixes: ["shell:"],
@@ -67,7 +69,7 @@ export default async function registerTerminal(
   registerIdeCapability(pi, {
     version: 1,
     id: "terminal",
-    tools: ["bash", "powershell"],
+    tools: ["bash", "powershell", "remote_bash", "remote_powershell"],
     schemas: {
       read: {
         parameters: {
