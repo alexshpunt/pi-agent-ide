@@ -77,7 +77,7 @@ import {
 } from "./source-aliases.ts";
 import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import { isResultInput, prepareResultTransfer } from "./result-transfer.ts";
-import { hasSearchReference, resolveSearchReferenceList } from "./search-reference-list.ts";
+import { expandReferenceList } from "./reference-list.ts";
 import {
   contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
@@ -197,22 +197,24 @@ export function createTextTool<TParameters extends TSchema>(
                       throw new Error("Result targets are unavailable.");
                     if (input.start !== undefined || input.end !== undefined)
                       throw new Error("Do not combine result targets with start/end.");
-                    const sourceList: unknown = input[definition.source.field];
-                    const listed = hasSearchReference(sourceList);
-                    const selected = listed
-                      ? await resolveSearchReferenceList(
-                          core,
-                          resultTargets,
-                          sourceList,
-                          context.cwd,
-                          signal,
-                        )
-                      : resultTargets.resolve(sourceList, context.cwd);
+                    const sourceInput: unknown = input[definition.source.field];
+                    const selected = resultTargets.resolve(
+                      Array.isArray(sourceInput)
+                        ? await expandReferenceList(
+                            core,
+                            resultTargets,
+                            sourceInput,
+                            context.cwd,
+                            signal,
+                          )
+                        : sourceInput,
+                      context.cwd,
+                    );
                     if (!selected.complete)
                       throw new Error(
                         "Incomplete result targets cannot establish a complete edit. Run Search again with a higher limit or a narrower query, then use the complete result.",
                       );
-                    if (!listed) await resultTargets.verify(selected, signal);
+                    await resultTargets.verify(selected, signal);
                     if (definition.name === "write" || definition.name === "undo")
                       wholeFileResultSource(selected, definition.name);
                     if (selected.targets.length === 0)
@@ -251,9 +253,21 @@ export function createTextTool<TParameters extends TSchema>(
                   try {
                     if (resultTargets === undefined)
                       throw new Error("Result targets are unavailable.");
+                    const expanded: Record<string, unknown> = { ...input };
+                    for (const field of ["path", "target"]) {
+                      const value = expanded[field];
+                      if (Array.isArray(value))
+                        expanded[field] = await expandReferenceList(
+                          core,
+                          resultTargets,
+                          value,
+                          context.cwd,
+                          signal,
+                        );
+                    }
                     const prepared = await prepareResultTransfer(
                       definition.name,
-                      input,
+                      expanded,
                       resultTargets,
                       context.cwd,
                       signal,

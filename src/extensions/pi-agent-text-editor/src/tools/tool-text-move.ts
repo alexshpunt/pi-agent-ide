@@ -19,7 +19,7 @@ import type { TextChange } from "#src/core/text-change-engine.ts";
 export const moveSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Source: a path, an unchanged Read/Search result or its UUID, or an array of them. A path without start moves the whole file, directory or symlink. Omit to use the file of the start anchor.",
+      "Source: a path, an unchanged Read/Search result or its UUID, or an array of SEARCH# references and results (never paths). A path without start moves the whole file, directory or symlink. Omit to use the file of the start anchor.",
     ),
     ...sourceRangeProperties(),
     ...targetProperties("Moving a directory replaces the target directory."),

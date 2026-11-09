@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { resultInputSchema } from "pi-agent-resource";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import {
@@ -14,9 +15,9 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 export const insertSchema = Type.Object(
   {
     path: Type.Optional(
-      Type.String({
+      Type.Union(resultInputSchema.anyOf, {
         description:
-          "File path, resource reference, unchanged Read/Search/edit result or its UUID; a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
+          "File path, resource reference, unchanged Read/Search/edit result or its UUID, or an array of SEARCH# references and results (never paths), which may come from different searches (one expired reference rejects the call); a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
       }),
     ),
     anchor: Type.Optional(
@@ -46,7 +47,7 @@ export const insertSchema = Type.Object(
 );
 
 interface InsertParameters {
-  readonly path?: string;
+  readonly path?: unknown;
   readonly anchor?: string;
   readonly text: string;
   readonly separation?: "line" | "blank-line";

@@ -355,7 +355,17 @@
             "type": "boolean"
           },
           "path": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
           },
           "separation": {
             "anyOf": [

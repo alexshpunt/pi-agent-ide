@@ -18,7 +18,7 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 export const deleteSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Path, unchanged Read/Search result or its UUID, or an array of them. A path without start deletes the file or directory (a symlink only as a link); a result removes only its selected text. Omit to use the file of the start anchor.",
+      "Path, unchanged Read/Search result or its UUID, or an array of SEARCH# references and results (never paths). A path without start deletes the file or directory (a symlink only as a link); a result removes only its selected text. Omit to use the file of the start anchor.",
     ),
     ...sourceRangeProperties(),
   },
