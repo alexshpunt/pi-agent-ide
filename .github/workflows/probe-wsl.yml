@@ -6,55 +6,96 @@ on:
     paths: [.github/workflows/probe-wsl.yml]
 jobs:
   probe:
-    name: Probe (${{ matrix.wsl }})
+    name: Probe
     runs-on: windows-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        wsl: ["1", "2"]
     steps:
-      - name: Runner image
-        shell: pwsh
-        run: |
-          "$env:ImageOS $env:ImageVersion"
-          (Get-CimInstance Win32_ComputerSystem) | Format-List Manufacturer,Model,HypervisorPresent
-          Get-WindowsOptionalFeature -Online | Where-Object { $_.FeatureName -match 'Linux|VirtualMachine|Hyper-V$' } | Format-Table FeatureName,State
-          wsl --status
-          Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH*' | Format-Table Name,State
-      - name: Set default WSL version
-        shell: pwsh
-        run: wsl --set-default-version ${{ matrix.wsl }}
-      - name: Install Ubuntu
-        id: wsl
-        continue-on-error: true
+      - name: Install Ubuntu (WSL 2)
         uses: Vampire/setup-wsl@e707f0b61a07f8ea48a64d83edfcbd4a7af45926 # v7.2.0
         with:
           distribution: Ubuntu-24.04
-          wsl-version: ${{ matrix.wsl }}
-          additional-packages: openssh-server python3
-      - name: Inspect WSL
-        if: always()
+          wsl-version: 2
+          additional-packages: openssh-server python3 git curl ca-certificates
+
+      - name: Windows sshd as a plain process
         shell: pwsh
+        continue-on-error: true
         run: |
-          "setup outcome: ${{ steps.wsl.outcome }}"
-          wsl --list --verbose
-          wsl -d Ubuntu-24.04 -u root -- bash -c 'uname -a; which sshd; python3 --version; id'
-      - name: Time sshd in WSL
-        if: steps.wsl.outcome == 'success'
+          $root = Join-Path $env:RUNNER_TEMP 'sshd-a'
+          New-Item -ItemType Directory $root | Out-Null
+          ssh-keygen -q -t ed25519 -N '""' -f "$root\host"
+          ssh-keygen -q -t ed25519 -N '""' -f "$root\client"
+          Copy-Item "$root\client.pub" "$root\authorized_keys"
+          $fwd = $root -replace '\\','/'
+          @"
+          Port 2223
+          ListenAddress 127.0.0.1
+          HostKey $fwd/host
+          PidFile $fwd/sshd.pid
+          AuthorizedKeysFile $fwd/authorized_keys
+          StrictModes no
+          PasswordAuthentication no
+          LogLevel DEBUG1
+          "@ -split "`n" | ForEach-Object { $_.Trim() } | Set-Content "$root\sshd_config"
+          Get-Content "$root\sshd_config"
+          $p = Start-Process -PassThru -FilePath C:\Windows\System32\OpenSSH\sshd.exe -ArgumentList '-D','-e','-f',"$root\sshd_config" -RedirectStandardError "$root\sshd.err"
+          Start-Sleep 3
+          "alive: $(-not $p.HasExited)"
+          ssh -i "$root\client" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2223 "$env:USERNAME@127.0.0.1" 'py -3 -c "import sys;print(sys.version)"'
+          "ssh exit: $LASTEXITCODE"
+          Get-Content "$root\sshd.err" -Tail 40
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+
+      - name: Windows sshd as a private service
         shell: pwsh
+        continue-on-error: true
         run: |
-          $sw = [Diagnostics.Stopwatch]::StartNew()
-          wsl -d Ubuntu-24.04 -u root -- bash -c 'mkdir -p /run/sshd && ssh-keygen -q -t ed25519 -N "" -f /tmp/h && /usr/sbin/sshd -f /dev/null -h /tmp/h -p 2222 -o ListenAddress=127.0.0.1 && sleep 1 && ss -ltn | grep 2222'
-          "sshd start: $($sw.Elapsed.TotalSeconds)s"
-          Test-NetConnection 127.0.0.1 -Port 2222 | Format-List TcpTestSucceeded
-      - name: Windows OpenSSH server
+          $root = Join-Path $env:RUNNER_TEMP 'sshd-b'
+          New-Item -ItemType Directory $root | Out-Null
+          ssh-keygen -q -t ed25519 -N '""' -f "$root\host"
+          ssh-keygen -q -t ed25519 -N '""' -f "$root\client"
+          Copy-Item "$root\client.pub" "$root\authorized_keys"
+          $fwd = $root -replace '\\','/'
+          @"
+          Port 2224
+          ListenAddress 0.0.0.0
+          HostKey $fwd/host
+          PidFile $fwd/sshd.pid
+          AuthorizedKeysFile $fwd/authorized_keys
+          StrictModes no
+          PasswordAuthentication no
+          LogLevel DEBUG1
+          SyslogFacility LOCAL0
+          "@ -split "`n" | ForEach-Object { $_.Trim() } | Set-Content "$root\sshd_config"
+          sc.exe create pi-ide-sshd-probe binPath= "\`"C:\Windows\System32\OpenSSH\sshd.exe\`" -f $root\sshd_config" start= demand
+          sc.exe start pi-ide-sshd-probe
+          Start-Sleep 3
+          sc.exe query pi-ide-sshd-probe
+          ssh -i "$root\client" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2224 "$env:USERNAME@127.0.0.1" 'py -3 -c "import sys;print(sys.version)"'
+          "ssh exit: $LASTEXITCODE"
+          New-NetFirewallRule -DisplayName pi-ide-sshd-probe -Direction Inbound -Protocol TCP -LocalPort 2224 -Action Allow | Out-Null
+          "$env:USERNAME"; whoami
+          ipconfig | Select-String 'IPv4|adapter'
+          "SSHDIR=$root" >> $env:GITHUB_ENV
+
+      - name: WSL reaches Windows sshd
         shell: pwsh
+        continue-on-error: true
         run: |
-          $sw = [Diagnostics.Stopwatch]::StartNew()
-          Get-Service sshd -ErrorAction SilentlyContinue | Format-List Name,Status,StartType
-          Get-Command sshd.exe -ErrorAction SilentlyContinue | Format-List Source
-          Test-Path C:\Windows\System32\OpenSSH\sshd.exe
-          Get-Command py -ErrorAction SilentlyContinue | Format-List Source
-          py -3 --version
-          "elapsed: $($sw.Elapsed.TotalSeconds)s"
+          $key = "$env:SSHDIR\client" -replace '\\','/'
+          wsl -d Ubuntu-24.04 -u root -- bash -c "ip route show default; cat /etc/resolv.conf | head -3; cat /proc/version; wslinfo --networking-mode 2>&1"
+          $gw = (wsl -d Ubuntu-24.04 -u root -- bash -c "ip route show default | awk '{print \$3}'").Trim()
+          "gateway: $gw"
+          wsl -d Ubuntu-24.04 -u root -- bash -c "cp /mnt/d/a/../$key /tmp/k 2>/dev/null; echo skip"
+          $wslKey = (wsl -d Ubuntu-24.04 -u root -- wslpath -a "$key").Trim()
+          wsl -d Ubuntu-24.04 -u root -- bash -c "install -m600 '$wslKey' /tmp/k && ssh -i /tmp/k -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10 -p 2224 '$env:USERNAME@$gw' 'py -3 -c \`"import sys;print(sys.version)\`"'; echo ssh exit \$?"
+
+      - name: Windows reaches WSL sshd (non-root fixture style)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          wsl -d Ubuntu-24.04 -u root -- bash -c 'id agent || useradd -m -s /bin/bash agent; passwd -d agent; node --version 2>&1 | head -1; which node'
+          wsl -d Ubuntu-24.04 -u root -- bash -c 'mkdir -p /run/sshd /tmp/w && ssh-keygen -q -t ed25519 -N "" -f /tmp/w/host && ssh-keygen -q -t ed25519 -N "" -f /tmp/w/client && cp /tmp/w/client.pub /tmp/w/ak && chmod 644 /tmp/w/ak && (/usr/sbin/sshd -f /dev/null -h /tmp/w/host -p 2222 -o ListenAddress=127.0.0.1 -o AuthorizedKeysFile=/tmp/w/ak -o StrictModes=no -o AllowUsers=agent -o PasswordAuthentication=no -o UsePAM=yes >/dev/null 2>&1) && sleep 1 && cat /tmp/w/client' > "$env:RUNNER_TEMP\wsl-client"
+          icacls "$env:RUNNER_TEMP\wsl-client" /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
+          ssh -i "$env:RUNNER_TEMP\wsl-client" -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2222 agent@127.0.0.1 'uname -a; python3 --version'
+          "ssh exit: $LASTEXITCODE"
