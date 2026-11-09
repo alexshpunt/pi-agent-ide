@@ -18,6 +18,9 @@ export interface LineMap {
   readonly newLine: (oldLine: number) => number | undefined;
   /** The map as a table indexed by old line number; 0 marks a changed line. */
   readonly table: Int32Array;
+  /** Lines of both texts with their line endings, zero-based; used to look inside changed lines. */
+  readonly oldLines: readonly string[];
+  readonly newLines: readonly string[];
 }
 
 /** Split like the editors do (`\n` ends a line), keeping each line ending so endings compare too. */
@@ -67,6 +70,8 @@ export function createLineMap(before: string, after: string): LineMap | undefine
   }
   return {
     table,
+    oldLines: old,
+    newLines: next,
     newLine: (oldLine) => {
       const line = table[oldLine];
       return line === undefined || line === 0 ? undefined : line;
@@ -150,11 +155,119 @@ export function relocateRange(
   return { ...range, start: from, end: to, adjusted: true };
 }
 
-/** Move a range to the new text, keeping its text when it is unchanged and its region when not. */
+/**
+ * Move a range to the new text. Its text is kept exactly when it is unchanged, also when only
+ * other parts of its line changed; otherwise the region that replaced it is found and marked
+ * `adjusted`.
+ */
 export function moveRange(
   range: ResultRange,
   map: LineMap,
   newLines: () => readonly string[],
 ): ResultRange | undefined {
-  return rebaseRange(range, map) ?? relocateRange(range, map, newLines());
+  return rebaseOrRelocateRange(range, map) ?? relocateRange(range, map, newLines());
+}
+
+/** A changed stretch larger than this is not searched for a moved match; it counts as ambiguous. */
+const maxHunkLines = 200;
+
+/** The changed stretch around an old line: its lines in both texts, one-based and inclusive. */
+function hunkAround(
+  map: LineMap,
+  line: number,
+):
+  | {
+      readonly oldFrom: number;
+      readonly oldTo: number;
+      readonly newFrom: number;
+      readonly newTo: number;
+    }
+  | undefined {
+  const count = map.oldLines.length;
+  let before = line - 1;
+  while (before >= 1 && map.newLine(before) === undefined) before -= 1;
+  let after = line + 1;
+  while (after <= count && map.newLine(after) === undefined) after += 1;
+  if (after - before > maxHunkLines) return undefined;
+  const newBefore = before < 1 ? 0 : (map.newLine(before) ?? 0);
+  const newAfter = after > count ? map.newLines.length + 1 : (map.newLine(after) ?? 0);
+  return { oldFrom: before + 1, oldTo: after - 1, newFrom: newBefore + 1, newTo: newAfter - 1 };
+}
+
+function lineText(lines: readonly string[], line: number): string {
+  const token = lines[line - 1] ?? "";
+  return token.endsWith("\n") ? token.slice(0, -1) : token;
+}
+
+/** Every start of `text` in the given lines, overlapping starts included, in reading order. */
+function occurrences(
+  lines: readonly string[],
+  from: number,
+  to: number,
+  text: string,
+): { line: number; column: number }[] {
+  const found: { line: number; column: number }[] = [];
+  for (let line = from; line <= to; line += 1) {
+    const content = lineText(lines, line);
+    for (let at = content.indexOf(text); at !== -1; at = content.indexOf(text, at + 1))
+      found.push({ line, column: at });
+  }
+  return found;
+}
+
+/**
+ * Move a one-line match whose line changed around it. The match keeps its identity only when the
+ * changed stretch holds the same number of copies of the matched text, the same copy comes first
+ * in the new stretch, and the characters on both sides of it are unchanged. Anything else is
+ * ambiguous and has no safe position.
+ */
+export function relocateInChangedLine(range: ResultRange, map: LineMap): ResultRange | undefined {
+  const { start, end } = range;
+  if (range.linewise === true || start.lineNumber !== end.lineNumber || start.column >= end.column)
+    return undefined;
+  const hunk = hunkAround(map, start.lineNumber);
+  if (hunk === undefined || hunk.newTo < hunk.newFrom) return undefined;
+  const content = lineText(map.oldLines, start.lineNumber);
+  const matched = content.slice(start.column, end.column);
+  const old = occurrences(map.oldLines, hunk.oldFrom, hunk.oldTo, matched);
+  const next = occurrences(map.newLines, hunk.newFrom, hunk.newTo, matched);
+  const index = old.findIndex(
+    (item) => item.line === start.lineNumber && item.column === start.column,
+  );
+  const moved = next[index];
+  if (index === -1 || moved === undefined || old.length !== next.length) return undefined;
+  const target = lineText(map.newLines, moved.line);
+  if (
+    content.slice(start.column - 1, start.column) !==
+      target.slice(moved.column - 1, moved.column) ||
+    content.slice(end.column, end.column + 1) !==
+      target.slice(moved.column + matched.length, moved.column + matched.length + 1)
+  )
+    return undefined;
+  return {
+    ...range,
+    start: { lineNumber: moved.line, column: moved.column },
+    end: { lineNumber: moved.line, column: moved.column + matched.length },
+  };
+}
+
+/** Rebase a range through unchanged lines, or through a changed line that leaves its text intact. */
+export function rebaseOrRelocateRange(range: ResultRange, map: LineMap): ResultRange | undefined {
+  return rebaseRange(range, map) ?? relocateInChangedLine(range, map);
+}
+
+/** Say where a range that could not be moved stands now, so the caller can pick a new target. */
+export function describeLostRange(range: ResultRange, map: LineMap | undefined): string {
+  const line = range.start.lineNumber;
+  if (map === undefined) return `line ${String(line)}: the file changed too much to follow it`;
+  const original = lineText(map.oldLines, line).trim();
+  const hunk = hunkAround(map, line);
+  const shown = (text: string) => (text.length > 120 ? `${text.slice(0, 120)}…` : text);
+  const head = `line ${String(line)} \`${shown(original)}\``;
+  if (hunk === undefined) return `${head}: changed or moved`;
+  if (hunk.newTo < hunk.newFrom) return `${head}: deleted`;
+  const now = [];
+  for (let at = hunk.newFrom; at <= Math.min(hunk.newTo, hunk.newFrom + 2); at += 1)
+    now.push(`${String(at)}| ${shown(lineText(map.newLines, at).trim())}`);
+  return `${head}: now ${now.join(" / ")}${hunk.newTo - hunk.newFrom > 2 ? " …" : ""}`;
 }

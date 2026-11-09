@@ -36,8 +36,10 @@ function resultTarget(target: TextTarget): ResultSourceTarget {
 
 /**
  * Turn a source array into registered `RESULT#` handles, one group per item and in the given order.
- * Items are references only: a Search reference, a `RESULT#` handle or an issued result. The first
- * item that is expired, unknown, stale or a plain path rejects the whole list and is named.
+ * Items are references only: a Search reference, a `RESULT#` handle or an issued result. Every
+ * edit tool with a list of targets follows one rule: every item that is expired, unknown, stale or
+ * a plain path is collected, and one error names all of them with their reasons and current
+ * lines. The call then changes nothing, so the agent repeats it once without the listed items.
  */
 export async function expandReferenceList(
   core: Pick<TextEditorCore, "resolveTextAnchorResources">,
@@ -47,6 +49,7 @@ export async function expandReferenceList(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const handles: string[] = [];
+  const failures: string[] = [];
   for (const item of list) {
     if (typeof item !== "string")
       throw new Error("A reference list holds strings only: Search references or issued results.");
@@ -73,10 +76,17 @@ export async function expandReferenceList(
       }
     } catch (error) {
       signal?.throwIfAborted();
-      throw new Error(`Reference ${named(item)} cannot be used: ${describe(error)}`, {
-        cause: error,
-      });
+      failures.push(
+        `Reference ${named(store.referenceName(item))} cannot be used: ${describe(error).replaceAll("\n", "\n  ")}`,
+      );
     }
   }
+  if (failures.length > 0)
+    throw new Error(
+      [
+        `${String(failures.length)} of ${String(list.length)} references cannot be used; nothing was changed. Repeat the call without them, or with fresh references for them:`,
+        ...failures.map((failure) => `- ${failure}`),
+      ].join("\n"),
+    );
   return handles;
 }

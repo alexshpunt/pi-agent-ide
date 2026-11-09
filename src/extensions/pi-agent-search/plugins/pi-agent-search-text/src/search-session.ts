@@ -424,6 +424,26 @@ export class SearchSessionStore {
     }
     const current = await readCurrent(source, signal, session.environment, session.read);
     if (current === undefined) return staleAnchor(firstMatch.lineNumber);
+    if (parsed.selector !== "all") {
+      const bound = this.#resolveBound(value, session.cwd);
+      if (bound?.kind === "rejected") return bound;
+      if (bound?.kind === "resolved") {
+        const target = bound.targets.find(
+          (candidate) => canonicalSource(candidate.source) === source,
+        );
+        if (target?.ranges === undefined)
+          return {
+            kind: "rejected",
+            rejection: { code: "missing", reason: "search anchor does not select this resource" },
+          };
+        if (target.expectedContent !== current)
+          return staleAnchor(target.ranges[0]?.start.lineNumber ?? firstMatch.lineNumber);
+        return {
+          kind: "resolved",
+          anchor: new TextSelectionAnchor(value, source, [...target.ranges]),
+        };
+      }
+    }
     const currentDigest = digestContent(current);
     if (parsed.selector === "all" && currentDigest !== snapshot.digestBySource.get(source)) {
       ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
@@ -468,6 +488,10 @@ export class SearchSessionStore {
     const session = this.#sessions.get(parsed.id);
     if (session === undefined || session.cwd !== canonicalSource(cwd)) return staleAnchor();
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
+    if (parsed.selector !== "all") {
+      const bound = this.#resolveBound(value, session.cwd);
+      if (bound !== undefined) return bound;
+    }
     let snapshot: SearchSnapshot = session;
     // Text of every selected source, verified against the snapshot digest or freshly refreshed.
     let contents = new Map<string, string>();
@@ -535,6 +559,41 @@ export class SearchSessionStore {
       : { kind: "resolved", targets };
   }
 
+  /**
+   * A numbered reference is bound to the result store when its search registers. The store moves
+   * it through edits elsewhere in the file and says what changed when it cannot. Undefined when
+   * no store owns the reference.
+   */
+  #resolveBound(
+    value: string,
+    cwd: string,
+  ):
+    | { readonly kind: "resolved"; readonly targets: readonly TextTarget[] }
+    | Extract<TextTargetResolutionAttempt, { readonly kind: "rejected" }>
+    | undefined {
+    if (this.resultTargets === undefined) return undefined;
+    try {
+      const resolved = this.resultTargets.resolveSearchReference(value, cwd);
+      if (resolved === undefined) return undefined;
+      return {
+        kind: "resolved",
+        targets: resolved.targets.map((target) => ({
+          source: target.source,
+          ranges: target.ranges,
+          expectedContent: target.expectedContent,
+        })),
+      };
+    } catch (error) {
+      return {
+        kind: "rejected",
+        rejection: {
+          code: "stale",
+          reason: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }
+
   async #refresh(
     session: StoredSearchSession,
     signal?: AbortSignal,
@@ -590,7 +649,11 @@ function registerResultReferences(
     ranges: [matchRange(match)],
     readCurrent: sourceReader(read, match.source),
   }));
-  for (const [index, match] of matches.slice(0, 100).entries()) {
+  // Every match gets both references, whatever its number. A reference names exactly one range,
+  // so it is complete for that range even when the search hit its limit; only `target`, which
+  // stands for the whole search, carries the search's own completeness.
+  const matchTargets: string[] = [];
+  for (const [index, match] of matches.entries()) {
     const lineTarget = store.register(
       [
         {
@@ -601,11 +664,11 @@ function registerResultReferences(
       cwd,
     );
     store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:line`, lineTarget, cwd);
+    const matchTarget = store.register([requiredValue(targets[index])], cwd);
+    store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:match`, matchTarget, cwd);
+    matchTargets.push(matchTarget);
   }
-  return {
-    target: store.register(targets, cwd, complete),
-    matchTargets: targets.slice(0, 100).map((target) => store.register([target], cwd, complete)),
-  };
+  return { target: store.register(targets, cwd, complete), matchTargets };
 }
 function parseSearchAnchor(value: string): ParsedSearchAnchor | undefined {
   const match = searchAnchorPattern.exec(value);

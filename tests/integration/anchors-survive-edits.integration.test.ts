@@ -67,6 +67,58 @@ text(changedResult); text(changedAnchor);`;
   });
 });
 
+test("A list of match references from a limited search survives other sessions' edits and reports every unusable item at once", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/settings.json"),
+      JSON.stringify({ codemode: { mode: "on" } }),
+    );
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+    );
+    const source = ".tmp/shared/rename.cpp";
+    const code =
+      textResultChecks +
+      String.raw`
+const file=${JSON.stringify(source)};
+const lines=Array.from({length:160},(_,i)=>"v_"+i+" = rename_me(a_"+i+") + other(a_"+i+");");
+await tools.write({path:file,content:lines.join("\n")+"\n"});
+// The search hits its limit, so references beyond the 100th and an incomplete result are both in play.
+const found=String(await tools.search({path:file,query:"rename_me",limit:120}).then(value=>value.result));
+const ref=(n)=>{const hit=matches(found).find(item=>item.endsWith(":"+n+":match")); check(hit,"No reference "+n+" in "+found.slice(0,400)); return hit;};
+const [r3,r110,r112,r115,r117,r120]=[3,110,112,115,117,120].map(ref);
+// Another session shifts the file and edits other parts of every second line.
+await tools.bash({command:"sed -i '2~2s/other(/different(/' "+file+" && sed -i '1i top' "+file});
+await tools.replace({path:[r3,r110,r112],text:"renamed"});
+const after=await tools.read({path:file});
+check(body(String(after)).includes("v_2 = renamed(a_2)")&&body(String(after)).includes("v_109 = renamed(a_109)")&&body(String(after)).includes("v_111 = renamed(a_111)"),"Targets were not applied at their new lines: "+String(after).slice(0,500));
+// Two matches change their own text: one call names both and leaves the file untouched.
+await tools.bash({command:"sed -i '116s/rename_me/x_me/;118s/rename_me/y_me/' "+file});
+const message=await rejects(()=>tools.replace({path:[r115,r117,r120],text:"renamed"}),/2 of 3 references/);
+check(message.includes(r115)&&message.includes(r117)&&!message.includes(r120),"Error did not name exactly the unusable items: "+message);
+text(message);`;
+    const run = await new PiIntegrationTest({
+      testName: "anchors-list-concurrent",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["write", "read", "search", "replace", "bash", "codemode"],
+      conversation: [
+        assistantMessage([toolCall({ id: "composed", name: "codemode", arguments: { code } })], {
+          stopReason: "toolUse",
+        }),
+        assistantMessage([text("Targets checked.")]),
+      ],
+    }).run("Rename matches by a list of references while another session edits the file");
+    expect(getToolExecution(run, "composed").isError, getToolResultText(run, "composed")).toBe(
+      false,
+    );
+  });
+});
+
 test("Anchors of repeated lines stay exact when other sessions insert lines above", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });

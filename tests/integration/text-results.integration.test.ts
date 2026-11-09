@@ -164,7 +164,8 @@ const moved = await tools.move({path:copied,target:"moved.txt"});
 text(await tools.read({path:moved}));
 for (const old of [oldCopy,oldMove]) {
   let rejected = false;
-  try { await tools.read({path:old}); }
+  // A retired result is refused either before the read runs or as a failed read.
+  try { rejected = /expired|unknown/.test(JSON.stringify(await tools.read({path:old}))); }
   catch (error) { rejected = /expired|unknown/.test(String(error)); }
   if (!rejected) throw Error("Old destination result survived replacement");
 }

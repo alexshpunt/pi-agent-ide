@@ -17,7 +17,7 @@ export const insertSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "File path, resource reference, unchanged Read/Search/edit result or its UUID, or an array of SEARCH# references and results (never paths), which may come from different searches (one expired reference rejects the call); a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
+          "File path, resource reference, unchanged Read/Search/edit result or its UUID, or an array of SEARCH# references and results (never paths), which may come from different searches (if any item cannot be used, the call changes nothing and its error lists all of them); a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
       }),
     ),
     anchor: Type.Optional(

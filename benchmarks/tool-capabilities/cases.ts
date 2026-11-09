@@ -952,6 +952,37 @@ add(
     expected: { "task.txt": "keep1\nNEW\nkeep2\nOLD\nkeep3\nNEW\n" },
   },
 );
+add(
+  "replace-search-anchor-list-unusable",
+  ["edit.search-anchor-list-unusable"],
+  "Search task.txt for OLD. Replace its first :match reference alone with ONE. Then make ONE Replace call whose path is an array of the first and the second :match references of that same search, replacing both with TWO. The first reference was just changed, so the call must fail, name that reference and change nothing. Then call Replace once with only the second reference and TWO. Do not search again and do not retype the file path. Keep every other byte.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "OLD" } },
+    {
+      tool: "replace",
+      args: { path: /^SEARCH#[A-F0-9]+:1:match$/u, text: "ONE" },
+      reuse: reuse(0),
+    },
+    {
+      tool: "replace",
+      args: {
+        path: [/^SEARCH#[A-F0-9]+:1:match$/u, /^SEARCH#[A-F0-9]+:2:match$/u],
+        text: "TWO",
+      },
+      error: true,
+      reuse: [reuse(0), reuse(0)],
+    },
+    {
+      tool: "replace",
+      args: { path: /^SEARCH#[A-F0-9]+:2:match$/u, text: "TWO" },
+      reuse: reuse(0),
+    },
+  ],
+  {
+    files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\n" },
+    expected: { "task.txt": "keep1\nONE\nkeep2\nTWO\nkeep3\n" },
+  },
+);
 for (const operation of ["delete", "insert"] as const) {
   add(
     `read-window-${operation}`,

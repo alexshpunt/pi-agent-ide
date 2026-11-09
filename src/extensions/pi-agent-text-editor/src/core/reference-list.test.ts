@@ -77,6 +77,22 @@ test("names the first unusable item and changes nothing", async () => {
   );
 });
 
+test("reports every unusable item in one error and changes nothing", async () => {
+  const { core, store } = fixture();
+  const error = await expandReferenceList(
+    core,
+    store,
+    ["SEARCH#ZZZZ:1:match", "SEARCH#AAAA:1:match", "src/a.txt", "SEARCH#CCCC:1:match"],
+    cwd,
+  ).catch((caught: unknown) => caught);
+  const message = error instanceof Error ? error.message : "";
+  expect(message).toContain("3 of 4 references cannot be used; nothing was changed");
+  expect(message).toContain("Reference SEARCH#ZZZZ:1:match cannot be used");
+  expect(message).toContain("Reference src/a.txt cannot be used");
+  expect(message).toContain("Reference SEARCH#CCCC:1:match cannot be used");
+  expect(message).not.toContain("SEARCH#AAAA:1:match");
+});
+
 test("rejects a plain path in an array and says how to pass one", async () => {
   const { core, store } = fixture();
   await expect(

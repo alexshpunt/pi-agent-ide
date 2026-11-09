@@ -58,7 +58,8 @@ test("AST matches and captures stay inside one exact scope with their source aut
   expect(data.matches).toHaveLength(1);
   expect(data.matches[0]?.source).toBe(source);
   const named = targets.resolve(data.matches[0]?.captures?.NAME, cwd);
-  expect(named.complete).toBe(false);
+  // A capture names exactly one range, so it is complete even when its search was limited.
+  expect(named.complete).toBe(true);
   expect(named.targets[0]?.ranges).toEqual([
     { start: { lineNumber: 1, column: 9 }, end: { lineNumber: 1, column: 14 } },
   ]);

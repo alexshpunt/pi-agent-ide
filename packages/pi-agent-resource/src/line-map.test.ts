@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { createLineMap, moveRange, rebaseRange, relocateRange } from "./line-map.ts";
+import {
+  createLineMap,
+  describeLostRange,
+  moveRange,
+  rebaseOrRelocateRange,
+  rebaseRange,
+  relocateRange,
+} from "./line-map.ts";
 import type { ResultRange } from "./result-targets.ts";
 
 const before = "one\ntwo\nthree\nfour\nfive\n";
@@ -133,5 +140,75 @@ describe("relocating a range whose lines changed", () => {
     const map = createLineMap(before, `zero\n${before}`);
     if (map === undefined) throw new Error("No line map");
     expect(moveRange(range, map, () => [])).toEqual(span(3, 0, 5, 4));
+  });
+});
+
+describe("matches inside changed lines", () => {
+  const code = [
+    "int a = 1;",
+    "if (call_dot(pNrm, pIn) * call_dot(pNrm, pOut) <= 0) return 0;",
+    "int b = 2;",
+    "",
+  ].join("\n");
+  const first = span(2, 4, 2, 12);
+  const second = span(2, 26, 2, 34);
+
+  function relocated(after: string, range: ResultRange): ResultRange | undefined {
+    const map = createLineMap(code, after);
+    return map === undefined ? undefined : rebaseOrRelocateRange(range, map);
+  }
+
+  test("follows a match when another part of its line changed", () => {
+    const after = code.replace("pNrm, pIn", "pNormal, pIn").replace("pNrm, pOut", "pNormal, pOut");
+    expect(relocated(after, first)).toEqual(span(2, 4, 2, 12));
+    expect(relocated(after, second)).toEqual(span(2, 29, 2, 37));
+  });
+
+  test("follows a match when its line moved and changed at once", () => {
+    const after = `new\n${code.replace("pIn", "p_incoming")}`;
+    expect(relocated(after, first)).toEqual(span(3, 4, 3, 12));
+  });
+
+  test("follows a match into the lines that replaced its line", () => {
+    const after = code.replace("if (call_dot(pNrm, pIn)", "// note\nif (call_dot(pNrm, pIn)");
+    expect(relocated(after, first)).toEqual(span(3, 4, 3, 12));
+  });
+
+  test("keeps the same copy when several copies share the line", () => {
+    const after = code.replace("<= 0", "< 1");
+    expect(relocated(after, second)).toEqual(span(2, 26, 2, 34));
+  });
+
+  test("drops a match when the number of copies of its text changed", () => {
+    expect(
+      relocated(code.replace("call_dot(pNrm, pOut)", "other(pNrm, pOut)"), first),
+    ).toBeUndefined();
+    expect(relocated(code.replace("if (", "call_dot(x); if ("), first)).toBeUndefined();
+  });
+
+  test("drops a match when the text next to it changed", () => {
+    expect(
+      relocated(code.replace("call_dot(pNrm, pIn)", "call_dot2(pNrm, pIn)"), first),
+    ).toBeUndefined();
+    expect(relocated(code.replace("if (call_dot", "if (!call_dot"), first)).toBeUndefined();
+  });
+
+  test("drops a match whose line was deleted and reports where it stood", () => {
+    const after = code.replace(/if .*\n/u, "");
+    const map = createLineMap(code, after);
+    expect(map === undefined ? undefined : rebaseOrRelocateRange(first, map)).toBeUndefined();
+    expect(describeLostRange(first, map)).toContain("line 2");
+    expect(describeLostRange(first, map)).toContain("deleted");
+  });
+
+  test("reports the lines that replaced a changed line", () => {
+    const map = createLineMap(code, code.replace("call_dot", "CallDot"));
+    expect(describeLostRange(first, map)).toContain("2| if (CallDot(pNrm, pIn)");
+  });
+
+  test("never moves a linewise or a multi-line range by its text", () => {
+    const after = code.replace("pIn", "p_incoming");
+    expect(relocated(after, { ...span(2, 0, 3, 0), linewise: true })).toBeUndefined();
+    expect(relocated(after, span(2, 4, 3, 3))).toBeUndefined();
   });
 });

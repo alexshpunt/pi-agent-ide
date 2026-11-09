@@ -254,9 +254,12 @@ export function createTextTool<TParameters extends TSchema>(
                     if (resultTargets === undefined)
                       throw new Error("Result targets are unavailable.");
                     const expanded: Record<string, unknown> = { ...input };
+                    // Source and destination lists report together, so one call shows every problem.
+                    const problems: string[] = [];
                     for (const field of ["path", "target"]) {
                       const value = expanded[field];
-                      if (Array.isArray(value))
+                      if (!Array.isArray(value)) continue;
+                      try {
                         expanded[field] = await expandReferenceList(
                           core,
                           resultTargets,
@@ -264,7 +267,12 @@ export function createTextTool<TParameters extends TSchema>(
                           context.cwd,
                           signal,
                         );
+                      } catch (error) {
+                        signal?.throwIfAborted();
+                        problems.push(`${field}: ${errorMessage(error)}`);
+                      }
                     }
+                    if (problems.length > 0) throw new Error(problems.join("\n"));
                     const prepared = await prepareResultTransfer(
                       definition.name,
                       expanded,
