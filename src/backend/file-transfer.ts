@@ -4,6 +4,7 @@ import { lstat, mkdir, open, rename, rm, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FileOperationInput } from "pi-agent-text-editor/api/plugin-protocol";
+import { localObjectMode } from "pi-agent-text-editor/api/plugin-protocol";
 import type { ResourceResolverContext } from "pi-agent-resource";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
@@ -81,7 +82,7 @@ async function prepareTransfer(
   if ("kind" in sourceInfo && sourceInfo.kind !== "file")
     throw new SshBackendError("INVALID_FILE_TYPE", source, "not-applied");
   const size = Number(sourceInfo.size);
-  const mode = Number(sourceInfo.mode);
+  const mode = "kind" in sourceInfo ? sourceInfo.mode : localObjectMode(sourceInfo);
   const sourceRevision = "revision" in sourceInfo ? sourceInfo.revision : localRevision(sourceInfo);
   checkCapturedRevision(source, sourceRevision, captured);
   let targetInfo;
