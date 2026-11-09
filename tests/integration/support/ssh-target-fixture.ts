@@ -392,6 +392,8 @@ async function startWindowsTarget(): Promise<SshTargetFixture> {
       );
     }
     server = spawn(sshd, ["-D", "-e", "-f", `${windowsDirectory}\\sshd_config`], {
+      // sshd re-executes itself and needs a Windows absolute path as argv[0], also through WSL interop.
+      argv0: fromLinux ? "C:\\Windows\\System32\\OpenSSH\\sshd.exe" : sshd,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
