@@ -16,11 +16,11 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 for (const mode of ["standalone", "codemode"] as const) {
   test.each([
-    // Presenters run only for results that show fresh LINE#HASH anchors.
+    // Presenters run only for results that show fresh line anchors.
     {
       name: "presenter.txt",
       tool: "replace",
-      edit: { start: formatLineHashAnchor(1, "before"), text: "changed" },
+      edit: { start: formatLineHashAnchor("before\n", 1), text: "changed" },
       effect: "applied",
       status: "Saved · post-write step failed",
     },

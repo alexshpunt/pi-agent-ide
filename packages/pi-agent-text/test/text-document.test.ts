@@ -41,18 +41,18 @@ test("aligns change markers, presented prefixes, and synthetic rows", () => {
         ? {
             ...line,
             presentation: {
-              prefix: " 1#AAAA|",
+              prefix: " K7M2QX4|",
               marker: "+" as const,
               before: [{ marker: "-" as const, prefix: "|", content: "old value" }],
               suffix: "  <!-- change -->",
             },
           }
-        : { ...line, presentation: { prefix: " 2#BBBB|" } },
+        : { ...line, presentation: { prefix: " B4NR9T2|" } },
     ),
   };
 
   expect(renderPresentedTextDocument(presented)).toBe(
-    ["-|       |old value", "+| 1#AAAA|new value  <!-- change -->", " | 2#BBBB|context", ""].join(
+    ["-|        |old value", "+| K7M2QX4|new value  <!-- change -->", " | B4NR9T2|context", ""].join(
       "\n",
     ),
   );

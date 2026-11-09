@@ -13,11 +13,14 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const extensions = createExtensionSet();
+/** The anchor of the first line of subject.txt in the blocked-insert scenarios. */
+const fresh = formatLineHashAnchor("alpha\nbeta", 1);
 const staleAnchorExtension = path.join(
   process.cwd(),
   "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-stale-anchor/index.ts",
@@ -89,18 +92,18 @@ test("reuses blocked context reads and clears them on abort, content end, and ag
     expect(await readFile(path.join(directory, "subject.txt"), "utf8")).toBe("one\ntwo\n");
   });
 });
-const staleArgumentsJson = '{"path":"subject.txt","text":"inserted","anchor":"1#AAAA"}';
+const staleArgumentsJson = '{"path":"subject.txt","text":"inserted","anchor":"ZZZZZZZ"}';
 const largeStaleText = Array.from(
   { length: 12 },
   (_, index) => `stale streamed line ${String(index + 1).padStart(2, "0")}`,
 ).join("\n");
-const largeStaleArgumentsJson = `{"path":"subject.txt","text":${JSON.stringify(largeStaleText)},"anchor":"1#AAAA"}`;
+const largeStaleArgumentsJson = `{"path":"subject.txt","text":${JSON.stringify(largeStaleText)},"anchor":"ZZZZZZZ"}`;
 const largeStaleChunks: ChunkSpec = {
   kind: "explicit",
   chunks: [
     '{"path":"subject.txt","text":',
     `${JSON.stringify(largeStaleText)},`,
-    '"anchor":"1#AAAA"',
+    '"anchor":"ZZZZZZZ"',
     "}",
   ],
 };
@@ -109,7 +112,7 @@ const staleDeliveries: readonly { readonly name: string; readonly chunks: ChunkS
     name: "while arguments are still streaming",
     chunks: {
       kind: "explicit",
-      chunks: ['{"path":"subject.txt","text":"inserted",', '"anchor":"1#AAAA"', "}"],
+      chunks: ['{"path":"subject.txt","text":"inserted",', '"anchor":"ZZZZZZZ"', "}"],
     },
   },
   {
@@ -137,7 +140,7 @@ async function runBlockedInsert(directory: string, callId: string, chunks: Chunk
           toolCall({
             id: `${callId}-sentinel`,
             name: "insert",
-            arguments: { path: "subject.txt", anchor: "1#BE76", text: "must-not-run" },
+            arguments: { path: "subject.txt", anchor: fresh, text: "must-not-run" },
           }),
         ],
         { stopReason: "toolUse" },
@@ -148,7 +151,7 @@ async function runBlockedInsert(directory: string, callId: string, chunks: Chunk
           toolCall({
             id: `${callId}-recovery`,
             name: "insert",
-            arguments: { path: "subject.txt", anchor: "1#BE76", text: "recovered" },
+            arguments: { path: "subject.txt", anchor: fresh, text: "recovered" },
           }),
         ],
         { stopReason: "toolUse" },
@@ -166,7 +169,7 @@ function toolCallDeltaCount(
     throw new Error("This scenario requires explicit chunks");
   }
 
-  const expected = new Set(chunks.chunks.filter((chunk) => chunk.includes("1#AAAA")));
+  const expected = new Set(chunks.chunks.filter((chunk) => chunk.includes("ZZZZZZZ")));
   return result.traceEvents.filter((trace) => {
     if (
       trace.type !== "message_update" ||
@@ -187,11 +190,11 @@ function toolCallDeltaCount(
 }
 
 describe("pi-agent-text-editor stale anchor", () => {
-  test("allows a fresh dynamic line-hash anchor", async () => {
+  test("allows a fresh line anchor", async () => {
     await withTempWorkspace(async (directory) => {
       const file = path.join(directory, "subject.txt");
       await writeFile(file, "alpha\nbeta", "utf8");
-      const result = await runInsert(directory, "fresh-anchor", "1#BE76");
+      const result = await runInsert(directory, "fresh-anchor", fresh);
 
       expect(getToolExecution(result, "fresh-anchor").isError).toBe(false);
       await expect(readFile(file, "utf8")).resolves.toBe("alpha\ninserted\nbeta");
@@ -207,9 +210,11 @@ describe("pi-agent-text-editor stale anchor", () => {
 
       expect(getToolExecution(result, callId).isError).toBe(true);
       expect(getToolResultText(result, callId)).toContain(
-        'insert blocked: anchor "1#AAAA" is stale',
+        'insert blocked: anchor "ZZZZZZZ" is stale',
       );
-      expect(getToolResultText(result, callId)).toContain("1#BE76");
+      expect(getToolResultText(result, callId)).toContain(
+        'Reread only the relevant section of "subject.txt"',
+      );
       expect(getToolCallNames(result).filter((tool) => tool === "insert")).toEqual([
         "insert",
         "insert",
@@ -272,7 +277,7 @@ describe("pi-agent-text-editor stale anchor", () => {
               toolCall({
                 id: recoveryCallId,
                 name: "insert",
-                arguments: { path: "subject.txt", anchor: "1#BE76", text: "recovered" },
+                arguments: { path: "subject.txt", anchor: fresh, text: "recovered" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -288,14 +293,14 @@ describe("pi-agent-text-editor stale anchor", () => {
         .filter(Boolean);
       expect(reboundCalls).toHaveLength(1);
       expect(getToolExecution(result, firstCallId).isError).toBe(true);
-      expect(firstBlockedResult).toContain("1#BE76");
+      expect(firstBlockedResult).toContain('Reread only the relevant section of "subject.txt"');
       expect(firstBlockedResult).not.toContain("Validation failed");
       expect(firstBlockedResult).not.toContain("Received arguments");
       expect(getToolExecution(result, readCallId).isError).toBe(false);
       expect(result.providerRequests.length).toBeGreaterThanOrEqual(5);
       expect(getToolExecution(result, recoveryCallId).isError).toBe(false);
       expect(getToolExecution(result, largeCallId).isError).toBe(true);
-      expect(largeBlockedResult).toContain("1#BE76");
+      expect(largeBlockedResult).toContain('Reread only the relevant section of "subject.txt"');
       expect(largeBlockedResult).not.toContain("Validation failed");
       expect(largeBlockedResult).not.toContain("Received arguments");
       expect(toolCallDeltaCount(result, largeStaleChunks)).toBe(1);
@@ -341,10 +346,10 @@ describe("pi-agent-text-editor stale anchor", () => {
               toolCall({
                 id: nextCallId,
                 name: "insert",
-                argumentsJson: '{"path":"subject.txt","anchor":"1#BE76","text":"patched"}',
+                argumentsJson: `{"path":"subject.txt","anchor":"${fresh}","text":"patched"}`,
                 chunks: {
                   kind: "explicit",
-                  chunks: ['{"path":"subject.txt","anchor":"1#BE76",', '"text":"patched"}'],
+                  chunks: [`{"path":"subject.txt","anchor":"${fresh}",`, '"text":"patched"}'],
                 },
               }),
             ],
@@ -355,7 +360,7 @@ describe("pi-agent-text-editor stale anchor", () => {
       }).run("Insert after a mid-stream blocked insert");
 
       expect(getToolResultText(result, blockedCallId)).toContain(
-        'insert blocked: anchor "1#AAAA" is stale',
+        'insert blocked: anchor "ZZZZZZZ" is stale',
       );
       expect(getToolExecution(result, nextCallId).isError).toBe(false);
       await expect(readFile(file, "utf8")).resolves.toBe("alpha\npatched\nbeta");

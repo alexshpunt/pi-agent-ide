@@ -1,61 +1,94 @@
-import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, test } from "vitest";
 
-import { createLineHashAnchor, createLineHashAnchorResolver } from "#src/anchor.ts";
+import { formatLineHashAnchor, createLineHashAnchorResolver } from "#src/anchor.ts";
 
 const resolver = createLineHashAnchorResolver();
-const context = {
-  source: "notes.md",
-  content: "first\nsecond",
-  lines: ["first", "second"],
-  cwd: "/workspace",
-};
 
-describe("line hash text anchors", () => {
+function contextFor(content: string) {
+  return { source: "notes.md", content, lines: content.split("\n"), cwd: "/workspace" };
+}
+
+const content = "first\nsecond\n}\nthird\n}\nfourth";
+const context = contextFor(content);
+
+describe("line anchors", () => {
   test("extracts one unambiguous anchor from surrounding text", async () => {
-    const anchor = createLineHashAnchor(2, requiredValue(context.lines[1]));
-    const variants = [
-      anchor.value,
-      `${anchor.value}|`,
-      `setup.ts:${anchor.value}|`,
-      `use \`${anchor.value}|\` here`,
-      `prefix ${anchor.value} suffix`,
-    ];
+    const anchor = formatLineHashAnchor(content, 2);
+    const variants = [anchor, ` ${anchor} `, `${anchor}|second`, `  ${anchor}|`];
 
     for (const value of variants) {
       const normalized = resolver.normalize?.(value) ?? value;
-      expect(normalized).toBe(anchor.value);
+      expect(normalized).toBe(anchor);
       await expect(resolver.tryResolve(normalized, context)).resolves.toMatchObject({
         kind: "resolved",
-        anchor: { value: anchor.value, lineNumber: 2 },
+        anchor: { value: anchor, lineNumber: 2 },
       });
     }
   });
 
   test("does not guess when extraction is missing or ambiguous", () => {
-    const anchor = createLineHashAnchor(2, requiredValue(context.lines[1])).value;
+    const anchor = formatLineHashAnchor(content, 2);
 
-    for (const value of ["no anchor", `x${anchor}y`, `${anchor} ${anchor}`]) {
+    for (const value of ["no anchor", `x${anchor}y`, `${anchor} ${anchor}`, `use ${anchor} here`]) {
       expect(resolver.normalize?.(value)).toBe(value);
     }
   });
 
-  test("rejects stale and out-of-range anchors", async () => {
-    const stale = await resolver.tryResolve("2#ZZZZ", context);
-    expect(stale).toMatchObject({
-      kind: "rejected",
-      rejection: { code: "stale", reason: "line hash anchor is stale" },
-    });
-
-    const outOfRange = await resolver.tryResolve("3#FFFF", context);
-    expect(outOfRange).toMatchObject({
-      kind: "rejected",
-      rejection: { code: "missing", reason: "line hash anchor is out of range" },
+  test("resolves a unique line wherever it sits", async () => {
+    const anchor = formatLineHashAnchor(content, 4);
+    const edited = contextFor(`new 1\nnew 2\n${content}\nlast`);
+    await expect(resolver.tryResolve(anchor, edited)).resolves.toMatchObject({
+      kind: "resolved",
+      anchor: { value: anchor, lineNumber: 6 },
     });
   });
 
-  test("ignores values outside the line hash format", async () => {
+  test("resolves each repeated line to its own position", async () => {
+    const first = formatLineHashAnchor(content, 3);
+    const second = formatLineHashAnchor(content, 5);
+    await expect(resolver.tryResolve(first, context)).resolves.toMatchObject({
+      anchor: { lineNumber: 3 },
+    });
+    await expect(resolver.tryResolve(second, context)).resolves.toMatchObject({
+      anchor: { lineNumber: 5 },
+    });
+  });
+
+  test("rejects an anchor no line produces", async () => {
+    const stale = await resolver.tryResolve("ZZZZZZZ", context);
+    expect(stale).toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
+  });
+
+  test("rejects an anchor whose line changed", async () => {
+    const anchor = formatLineHashAnchor(content, 4);
+    const edited = contextFor(content.replace("third", "THIRD"));
+    await expect(resolver.tryResolve(anchor, edited)).resolves.toMatchObject({
+      kind: "rejected",
+      rejection: { code: "stale" },
+    });
+  });
+
+  test("ignores values outside the anchor format", async () => {
     await expect(resolver.tryResolve("second", context)).resolves.toEqual({ kind: "not-handled" });
-    await expect(resolver.tryResolve("2#abcd", context)).resolves.toEqual({ kind: "not-handled" });
+    await expect(resolver.tryResolve("ZZZZZZ", context)).resolves.toEqual({ kind: "not-handled" });
+    await expect(resolver.tryResolve("zzzzzzz", context)).resolves.toEqual({
+      kind: "not-handled",
+    });
+  });
+
+  test("renders the line number for the user", () => {
+    const anchor = formatLineHashAnchor(content, 2);
+    expect(
+      resolver.renderCompact(anchor, {
+        source: context.source,
+        anchor: { value: anchor, lineNumber: 2 } as never,
+      }),
+    ).toBe("line 2");
+    expect(
+      resolver.renderFull(anchor, {
+        source: context.source,
+        anchor: { value: anchor, lineNumber: 2 } as never,
+      }),
+    ).toBe(anchor);
   });
 });

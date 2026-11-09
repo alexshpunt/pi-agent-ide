@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { composeLineMaps, createLineMap, rebaseRange } from "./line-map.ts";
+import { createLineMap, rebaseRange } from "./line-map.ts";
 import type { ResultRange } from "./result-targets.ts";
 
 const before = "one\ntwo\nthree\nfour\nfive\n";
@@ -85,13 +85,5 @@ describe("line maps", () => {
     const repeated = "}\n}\n}\nx\n";
     const map = createLineMap(repeated, `y\n${repeated}`);
     expect([1, 2, 3, 4].map((line) => map?.newLine(line))).toEqual([2, 3, 4, 5]);
-  });
-
-  test("composes maps and drops lines lost on the way", () => {
-    const first = createLineMap("a\nb\nc\n", "z\na\nb\nc\n");
-    const second = createLineMap("z\na\nb\nc\n", "z\na\nB\nc\n");
-    if (first === undefined || second === undefined) throw new Error("maps expected");
-    const composed = composeLineMaps(first.table, second.table);
-    expect([1, 2, 3].map((line) => composed[line])).toEqual([2, 0, 4]);
   });
 });

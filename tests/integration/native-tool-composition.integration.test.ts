@@ -728,8 +728,8 @@ test("Copy does not deny actual writes when receipt creation fails", async () =>
       cwd,
       "copy-execution-failure",
       [
-        // Edit results present lines, and so build their receipt, only for LINE#HASH edits.
-        `const failure=await rejects(()=>tools.copy({path:"c09-probe:source",start:"alpha",target:"c09-probe:target",targetStart:${JSON.stringify(formatLineHashAnchor(1, "head"))}}),/Probe receipt failed after write/);
+        // Edit results present lines, and so build their receipt, only for line anchor edits.
+        `const failure=await rejects(()=>tools.copy({path:"c09-probe:source",start:"alpha",target:"c09-probe:target",targetStart:${JSON.stringify(formatLineHashAnchor("head\ntail\n", 1))}}),/Probe receipt failed after write/);
 text(failure);
 const state=await tools.fixture_copy_execution_state({});
 check(state.values["c09-probe:source"]==="alpha\\n","Copy changed its source");

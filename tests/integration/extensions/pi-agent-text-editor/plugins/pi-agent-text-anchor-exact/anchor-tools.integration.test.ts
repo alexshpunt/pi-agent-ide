@@ -173,7 +173,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-line-range",
       "replace",
-      { start: "rav", end: formatLineHashAnchor(3, "charlie"), text: "X" },
+      { start: "rav", end: formatLineHashAnchor(content, 3), text: "X" },
       ["alpha", "bX", "delta", "echo"].join("\n"),
     );
   });

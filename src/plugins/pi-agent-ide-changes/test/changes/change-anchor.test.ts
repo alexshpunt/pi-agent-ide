@@ -115,7 +115,7 @@ describe("Git change anchors", () => {
   test("passes through wrong formats and unsupported resource sources", async () => {
     const registration = createChangeAnchorRegistration(createExecutor());
 
-    await expect(registration.resolver.tryResolve("12#ABCD", context())).resolves.toEqual({
+    await expect(registration.resolver.tryResolve("D9Q4X6Y", context())).resolves.toEqual({
       kind: "not-handled",
     });
     await expect(

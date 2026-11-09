@@ -1755,7 +1755,7 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "copy",
-      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: /^\d+#[A-F\d]+$/u },
+      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: reuse(1, "targetStart", "anchor"),
     },
   ],

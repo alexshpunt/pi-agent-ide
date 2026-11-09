@@ -96,7 +96,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       { path: file, offset: lineOf(files, unit), limit: readLimit(files), views: ["anchors"] },
       (result) =>
         expectAll(result, [`|${unitMarker(spec, agent, unit)}`]) ??
-        (/\d+#[0-9A-F]{4}\|/.test(result) ? undefined : "no LINE#HASH anchors"),
+        (/^[0-9A-HJKMNP-TV-Z]{7}\|/mu.test(result) ? undefined : "no line anchors"),
     ),
     {
       ...step("read-outline", "read", { path: `ast:${file}`, limit: 40 }, (result) =>
@@ -257,7 +257,7 @@ function codemodeBatch(
 const stepLine = ${JSON.stringify(stepLine)};
 const page = String(await tools.read({ path: file, offset: ${lineOf(files, index)}, limit: ${readLimit(files)}, views: ["anchors"] }));
 const line = page.split("\\n").find((candidate) => candidate.includes(stepLine));
-const match = line && /^\\s*(\\d+#[0-9A-F]{4})\\|(.*)$/.exec(line);
+const match = line && /^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|(.*)$/.exec(line);
 if (!match) throw new Error("no anchored line with " + stepLine);
 await tools.replace({ path: file, start: match[1], text: match[2].replace(stepLine, stepLine + " + ${cycle}") });
 const [found, calls, diagnostics] = await Promise.all([

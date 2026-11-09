@@ -2,14 +2,14 @@
 
 ## Select text
 
-- `LINE#HASH` from `read` with `views: ["anchors"]` selects a line. `scope-begin-HASH` / `scope-end-HASH` from the `ast` view select a syntax block. `SEARCH#…:line` selects a search match's line, `SEARCH#…:match` the match itself. `begin` and `end` select the first and last line.
+- A line anchor from `read` with `views: ["anchors"]`, such as `K7M2QX4`, selects a line. It names the line by its content, so it keeps working while lines above it move. `scope-begin-HASH` / `scope-end-HASH` from the `ast` view select a syntax block. `SEARCH#…:line` selects a search match's line, `SEARCH#…:match` the match itself. `begin` and `end` select the first and last line.
 - Without an anchor, use the shortest unique exact text.
 - A whole line includes its own LF or CRLF, when present. An unterminated final line never includes the preceding separator. Empty Replace removes the same range as Delete.
 - Copy and Move transfer the selected source text unchanged, including its line endings. Select the source independently of the destination.
 - Insert adds text at the start or end of a selection. Whole-line selections add needed line breaks; exact selections keep their character boundaries. New Replace/Insert payloads follow the target's line-ending style.
 - With `start` and `end`, the selection runs from the start of `start` to the end of `end`. Exact text keeps character boundaries; line anchors take whole lines. When both `start` and `end` match complete lines, such as BEGIN/END marker lines, the selection takes those lines whole.
 - After an exact-text selector fails, exact text is blocked for that file until an anchor-based edit succeeds. Use one of the anchors the error returns; don't guess another string.
-- Anchors and results keep working when other lines of their file change. Once their own lines change they go stale: read or search again before reusing them.
+- A line anchor stays valid when other lines of its file change, until its own line changes or, for a line whose text occurs once, a copy of it appears. An anchor for a repeated line such as `}` also depends on the unique line above it and its place among the repeats after that line. If no line produces an anchor, or several do, the edit fails and the error says so: read or search again for current anchors. Search selections and results keep working when other lines of their file change and go stale when their own lines change.
 
 ## Pass results between tools
 

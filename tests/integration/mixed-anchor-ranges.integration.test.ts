@@ -67,7 +67,7 @@ const cases: {
   },
   {
     name: "replace",
-    args: { start: "999#ABCD", end: anchor, text: "BAD" },
+    args: { start: "ZZZZZZZ", end: anchor, text: "BAD" },
     expected: original,
     error: true,
   },

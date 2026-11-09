@@ -50,7 +50,7 @@ export default async function registerBlockCacheProbe(pi: ExtensionAPI): Promise
         type: "toolcall_delta",
         contentIndex: 0,
         partial,
-        delta: '{"path":"subject.txt","anchor":"1#AAAA","text":"unused"',
+        delta: '{"path":"subject.txt","anchor":"ZZZZZZZ","text":"unused"',
       },
       context,
     );
@@ -90,7 +90,7 @@ export default async function registerBlockCacheProbe(pi: ExtensionAPI): Promise
           partial: second.partial,
           toolCall: {
             ...second.call,
-            arguments: { path: "subject.txt", anchor: "1#AAAA", text: "unused" },
+            arguments: { path: "subject.txt", anchor: "ZZZZZZZ", text: "unused" },
           },
         },
         context,

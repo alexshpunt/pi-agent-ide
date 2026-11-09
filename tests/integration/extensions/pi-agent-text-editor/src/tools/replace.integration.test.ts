@@ -23,7 +23,7 @@ describe("pi-agent-text-editor replace", () => {
         tool: "replace",
         arguments: {
           path: relativeFile,
-          start: formatLineHashAnchor(2, "replace-me"),
+          start: formatLineHashAnchor("before\nreplace-me\nafter\n", 2),
           text: "replaced",
         },
       });
@@ -32,7 +32,7 @@ describe("pi-agent-text-editor replace", () => {
     });
   });
 
-  test("shows the same fresh anchors as Read around a LINE#HASH edit", async () => {
+  test("shows the same fresh anchors as Read around a line anchor edit", async () => {
     await withTempWorkspace(async (directory) => {
       const lines = Array.from({ length: 1200 }, (_, index) => `value ${index + 1}`);
       const file = await createFixture(directory, "large.txt", `${lines.join("\n")}\n`);
@@ -44,7 +44,7 @@ describe("pi-agent-text-editor replace", () => {
         tool: "replace",
         arguments: {
           path: relativeFile,
-          start: formatLineHashAnchor(600, "value 600"),
+          start: formatLineHashAnchor(`${lines.join("\n")}\n`, 600),
           text: "changed 600",
         },
       });
@@ -57,9 +57,12 @@ describe("pi-agent-text-editor replace", () => {
       const shown = edited.slice(header + 1, header + 12);
 
       expect(header).toBeGreaterThan(-1);
-      expect(shown).toContain(` ${formatLineHashAnchor(600, "changed 600")}|changed 600`);
+      const changed = [...lines.slice(0, 599), "changed 600", ...lines.slice(600)];
+      expect(shown).toContain(
+        `${formatLineHashAnchor(`${changed.join("\n")}\n`, 600)}|changed 600`,
+      );
       for (const row of shown) expect(read).toContain(row);
-      expect(edited.filter((row) => /^\s*\d+#[0-9A-F]{4}\|/u.test(row))).toHaveLength(11);
+      expect(edited.filter((row) => /^[0-9A-HJKMNP-TV-Z]{7}\|/u.test(row))).toHaveLength(11);
     });
   });
 });

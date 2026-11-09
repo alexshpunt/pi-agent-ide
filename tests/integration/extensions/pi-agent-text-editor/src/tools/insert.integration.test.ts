@@ -26,7 +26,7 @@ describe("pi-agent-text-editor insert", () => {
         tool: "insert",
         arguments: {
           path: relativeFile,
-          anchor: formatLineHashAnchor(2, "anchor"),
+          anchor: formatLineHashAnchor("before\nanchor\nafter\n", 2),
           text: "inserted",
         },
       });
@@ -56,7 +56,7 @@ describe("pi-agent-text-editor insert", () => {
         tool: "insert",
         arguments: {
           path: relativeFile,
-          anchor: formatLineHashAnchor(2, "anchor"),
+          anchor: formatLineHashAnchor("before\nanchor\nafter\n", 2),
           text: "inserted",
           before: true,
         },

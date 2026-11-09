@@ -384,7 +384,7 @@ describe("semantic text mutation diff", () => {
     panel.setHeader(
       "\u001B[1minsert\u001B[22m \u001B[4mtests/integration/agent/src/extensions/pi-agent-ide/" +
         "plugins/pi-agent-ide-changes/last-transaction/undo-last-transaction.integration.test.ts\u001B[24m" +
-        ":216#233E +1 ~0 -0",
+        ":K7M2QX4 +1 ~0 -0",
     );
 
     const [header] = panel.render(80);

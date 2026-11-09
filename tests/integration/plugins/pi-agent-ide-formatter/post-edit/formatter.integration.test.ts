@@ -47,7 +47,7 @@ test("an installed built-in does not format without project evidence", async () 
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(3, "var Value = 1"),
+        start: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
         text: "var Value=2",
       },
     });
@@ -79,7 +79,7 @@ test("an installed built-in formats when the project has matching evidence", asy
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(3, "var Value = 1"),
+        start: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
         text: "var Value=2",
       },
     });
@@ -153,7 +153,7 @@ test("an edit returns the formatter result instead of the requested intermediate
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(1, "export const value = 1;"),
+        start: formatLineHashAnchor(before, 1),
         text: requestedLine,
       },
     });

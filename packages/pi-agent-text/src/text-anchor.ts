@@ -50,12 +50,6 @@ export interface TextAnchorResolverContext {
   readonly lines: readonly string[];
   readonly cwd: string;
   readonly signal?: AbortSignal;
-  /**
-   * Current line numbers of a line that held `lineNumber` in an earlier version of this source and
-   * has not changed since. Several earlier versions can disagree, so check every candidate against
-   * what the anchor names. Absent when the source has no known history.
-   */
-  readonly relocateLine?: (lineNumber: number) => readonly number[];
 }
 
 /** Legacy line window used by anchor inspection. */

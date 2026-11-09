@@ -106,7 +106,7 @@ export default async function registerTextEditorCore(
       api.addFragmentResolver(createReadFragmentResolver(core));
 
       api.describe({
-        path: "path#anchor — text around a returned anchor, e.g. notes.txt#12#A4F0; SEARCH#… and RESULT#… go in as they are.",
+        path: "path#anchor — text around a returned anchor, e.g. notes.txt#K7M2QX4; SEARCH#… and RESULT#… go in as they are.",
         offset: "For an anchor or result selection, counts from its line.",
         limit: "For a selection, per selected window.",
       });

@@ -22,6 +22,9 @@ import {
   toolBackgroundTheme,
 } from "#integration/support/tui-background.ts";
 
+/** The anchor of a line that occurs once in its file: it names the line's text alone. */
+const uniqueLineAnchor = (lineText: string): string => formatLineHashAnchor(lineText, 1);
+
 const extensions = createExtensionSet();
 const defaultTextEditorExtension = path.resolve(
   process.cwd(),
@@ -272,7 +275,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: relativeFile,
-                  start: formatLineHashAnchor(27, "line 27"),
+                  start: uniqueLineAnchor("line 27"),
                   text: "latest visible change",
                 },
               }),
@@ -292,7 +295,7 @@ describe("text mutation renderer", () => {
       const panelStart = rendered.indexOf("╭─", rendered.indexOf("replace stable.txt · "));
       const panelEnd = rendered.indexOf("╯", panelStart);
       const panel = rendered.slice(panelStart, panelEnd + 1);
-      expect(rendered).toMatch(/replace stable\.txt · 27#[0-9A-F]+/u);
+      expect(rendered).toMatch(/replace stable\.txt · [0-9A-HJKMNP-TV-Z]{7}/u);
       expect(rendered).toContain("+0 ~1 -0");
       expect(rendered.match(/╭─{40,}╮/gu)).toHaveLength(1);
       expect(panel).toMatch(/27\s+~\s+latest visible change/u);
@@ -305,7 +308,7 @@ describe("text mutation renderer", () => {
       expect(panel).not.toContain("line 30");
       expect(panel).not.toContain("stable.txt");
       expect(panel).not.toMatch(/\+\d+ ~\d+ -\d+/u);
-      expect(panel).not.toMatch(/scope-(?:begin|end)|\d+#[A-Z0-9]{3,4}/u);
+      expect(panel).not.toMatch(/scope-(?:begin|end)|(?<![0-9A-Z])[0-9A-HJKMNP-TV-Z]{7}\|/u);
     });
   });
 
@@ -524,7 +527,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "inherited-path.ts",
-                  start: formatLineHashAnchor(4, "const value4 = 4;"),
+                  start: uniqueLineAnchor("const value4 = 4;"),
                   text: "const value4 = loadPrimaryValue();",
                 },
                 delayMs: 0,
@@ -533,7 +536,7 @@ describe("text mutation renderer", () => {
                 id: "replace-inherited-second",
                 name: "replace",
                 arguments: {
-                  start: formatLineHashAnchor(18, "const value18 = 18;"),
+                  start: uniqueLineAnchor("const value18 = 18;"),
                   text: "const value18 = loadStreamedInheritedValue();",
                 },
                 chunks: { kind: "fixed", size: 3 },
@@ -580,7 +583,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "post-edit-viewport.ts",
-                  start: formatLineHashAnchor(7, "const value7 = 7;"),
+                  start: uniqueLineAnchor("const value7 = 7;"),
                   text: "const value7 = loadPrimaryValue();",
                 },
               }),
@@ -589,7 +592,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "post-edit-viewport.ts",
-                  start: formatLineHashAnchor(25, "const value25 = 25;"),
+                  start: uniqueLineAnchor("const value25 = 25;"),
                   text: "const value25 = loadSecondaryValue();",
                 },
               }),
@@ -603,7 +606,9 @@ describe("text mutation renderer", () => {
       const panels = mutationPanels(rendered, "replace post-edit-viewport.ts · ");
       const finalContent = await readFile(path.resolve(directory, "post-edit-viewport.ts"), "utf8");
 
-      expect(rendered.match(/replace post-edit-viewport\.ts · \d+#[0-9A-F]+/gu)).toHaveLength(2);
+      expect(
+        rendered.match(/replace post-edit-viewport\.ts · [0-9A-HJKMNP-TV-Z]{7}/gu),
+      ).toHaveLength(2);
       expect(rendered.match(/\+0 ~1 -0/gu)).toHaveLength(2);
       expect(panels).toHaveLength(2);
       expect(panels[0]).toContain("loadPrimaryValue");
@@ -639,8 +644,8 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "streaming.ts", before);
       const arguments_ = {
         path: "streaming.ts",
-        start: formatLineHashAnchor(3, "    const retries = resolveRetries();"),
-        end: formatLineHashAnchor(6, "    const service = new Service(transport);"),
+        start: uniqueLineAnchor("    const retries = resolveRetries();"),
+        end: uniqueLineAnchor("    const service = new Service(transport);"),
         text: ["    const retryLimit = 3;", "    const timeoutMs = 5_000;"].join("\n"),
       };
       const argumentsJson = JSON.stringify(arguments_);
@@ -709,7 +714,7 @@ describe("text mutation renderer", () => {
       const file = await createFixture(directory, "post-edit-viewport.ts", before);
       const result = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
-        start: formatLineHashAnchor(20, "const value20 = 20;"),
+        start: uniqueLineAnchor("const value20 = 20;"),
         text: "const value20 = computeValue();",
       });
       const rendered = result.tuiRenderedOutput;
@@ -718,7 +723,9 @@ describe("text mutation renderer", () => {
       await expect(readFile(file, "utf8")).resolves.toContain(
         "// formatted outside generated viewport",
       );
-      expect(rendered).toMatch(/replace post-edit-viewport\.ts · (?:line 20|20#[0-9A-F]+)/u);
+      expect(rendered).toMatch(
+        /replace post-edit-viewport\.ts · (?:line 20|[0-9A-HJKMNP-TV-Z]{7})/u,
+      );
       expect(rendered).toContain("+0 ~2 -0");
       expect(panel).toContain("19 ~ const value19 = formattedContext();");
       expect(panel).toContain("20 ~ const value20 = computeValue();");
@@ -738,7 +745,7 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "post-edit-viewport.ts", before);
       const firstRun = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
-        start: formatLineHashAnchor(20, "const value20 = 20;"),
+        start: uniqueLineAnchor("const value20 = 20;"),
         text: "const value20 = computeValue();",
       });
       const sessionData = await readSessionArtifact(firstRun.artifacts.run);
@@ -781,7 +788,9 @@ describe("text mutation renderer", () => {
       const rendered = resumed.tuiRenderedOutput;
       const [panel] = mutationPanels(rendered, "replace post-edit-viewport.ts · ");
 
-      expect(rendered).toMatch(/replace post-edit-viewport\.ts · (?:line 20|20#[0-9A-F]+)/u);
+      expect(rendered).toMatch(
+        /replace post-edit-viewport\.ts · (?:line 20|[0-9A-HJKMNP-TV-Z]{7})/u,
+      );
       expect(rendered).toContain("+0 ~2 -0");
       expect(panel).toContain("19 ~ const value19 = formattedContext();");
       expect(panel).toContain("20 ~ const value20 = computeValue();");
@@ -834,7 +843,7 @@ describe("text mutation renderer", () => {
       tool: "insert",
       arguments: {
         path: "subject.ts",
-        anchor: formatLineHashAnchor(3, "    return value;"),
+        anchor: uniqueLineAnchor("    return value;"),
         text: "    audit(value);",
       },
       stats: "+1 ~0 -0",
@@ -844,7 +853,7 @@ describe("text mutation renderer", () => {
       tool: "delete",
       arguments: {
         path: "subject.ts",
-        start: formatLineHashAnchor(2, "    const value = load();"),
+        start: uniqueLineAnchor("    const value = load();"),
       },
       stats: "+0 ~0 -1",
       row: /2\s+-\s+const value = load\(\);/u,
@@ -876,7 +885,9 @@ describe("text mutation renderer", () => {
       const rendered = result.tuiRenderedOutput;
       const panel = mutationPanels(rendered, "copy source.txt · ");
 
-      expect(rendered).toMatch(/copy source\.txt · 2#[0-9A-F]+ -> target\.txt · 1#[0-9A-F]+/u);
+      expect(rendered).toMatch(
+        /copy source\.txt · [0-9A-HJKMNP-TV-Z]{7} -> target\.txt · [0-9A-HJKMNP-TV-Z]{7}/u,
+      );
       expect(rendered).toContain("+1 ~0 -0");
       expect(panel).toHaveLength(1);
       expect(panel[0]).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
@@ -891,7 +902,9 @@ describe("text mutation renderer", () => {
       const rendered = result.tuiRenderedOutput;
       const panels = mutationPanels(rendered, "move source.txt · ");
 
-      expect(rendered).toMatch(/move source\.txt · 2#[0-9A-F]+ -> target\.txt · 1#[0-9A-F]+/u);
+      expect(rendered).toMatch(
+        /move source\.txt · [0-9A-HJKMNP-TV-Z]{7} -> target\.txt · [0-9A-HJKMNP-TV-Z]{7}/u,
+      );
       expect(rendered).toContain("+1 ~0 -1");
       expect(panels).toHaveLength(2);
       expect(panels.join("\n")).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
@@ -919,12 +932,12 @@ describe("text mutation renderer", () => {
                 id: "blocked-stale-anchor",
                 name: "insert",
                 argumentsJson:
-                  '{"path":"blocked-stale.txt","text":"content that must never be rendered","anchor":"1#AAAA"}',
+                  '{"path":"blocked-stale.txt","text":"content that must never be rendered","anchor":"ZZZZZZZ"}',
                 chunks: {
                   kind: "explicit",
                   chunks: [
                     '{"path":"blocked-stale.txt","text":"content that must never be rendered",',
-                    '"anchor":"1#AAAA"',
+                    '"anchor":"ZZZZZZZ"',
                     "}",
                   ],
                 },
@@ -990,9 +1003,9 @@ async function runCrossFileMutation(
             name: tool,
             arguments: {
               path: "source.txt",
-              start: formatLineHashAnchor(2, selectedText),
+              start: uniqueLineAnchor(selectedText),
               target: "target.txt",
-              targetStart: formatLineHashAnchor(1, "target-start"),
+              targetStart: uniqueLineAnchor("target-start"),
             },
           }),
         ],

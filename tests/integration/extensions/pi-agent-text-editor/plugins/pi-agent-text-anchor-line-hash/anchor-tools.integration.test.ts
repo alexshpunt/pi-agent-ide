@@ -17,8 +17,7 @@ afterAll(() => extensions.dispose());
 
 const lines = ["alpha", "bravo", "charlie", "delta", "echo"] as const;
 const content = lines.join("\n");
-const anchor = (lineNumber: number): string =>
-  createLineHashAnchor(lineNumber, lines[lineNumber - 1]).value;
+const anchor = (lineNumber: number): string => createLineHashAnchor(content, lineNumber).value;
 
 describe("line-hash anchors through text editor tools", () => {
   test("inserts after a line-hash anchor", async () => {
@@ -36,9 +35,8 @@ describe("line-hash anchors through text editor tools", () => {
     const canonical = anchor(2);
     const variants = [
       { name: "separator", value: `${canonical}|` },
-      { name: "file-prefix", value: `insert.txt:${canonical}|` },
-      { name: "code-span", value: `use \`${canonical}|\` here` },
-      { name: "surrounded", value: `prefix ${canonical} suffix` },
+      { name: "padded", value: `  ${canonical}|bravo` },
+      { name: "spaced", value: ` ${canonical} ` },
     ] as const;
 
     for (const variant of variants) {
@@ -134,11 +132,13 @@ async function runLineHashScenario(
     expect(getToolExecution(result, mutationCallId).isError).toBe(false);
     expectTextToolDiff(scenario, relativeFile, content, expectedContent);
     const finalState = postflightCallIds.map((id) => getToolResultText(result, id)).join("\n");
-    expect(finalState).toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
+    expect(finalState).toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|/mu);
     expect(finalState).not.toMatch(/^[+ -]\|/mu);
 
     for (const [index, line] of expectedContent.replace(/\n$/u, "").split("\n").entries()) {
-      expect(finalState).toContain(`${createLineHashAnchor(index + 1, line).value}|${line}`);
+      expect(finalState).toContain(
+        `${createLineHashAnchor(expectedContent, index + 1).value}|${line}`,
+      );
     }
     await expect(readFile(file, "utf8")).resolves.toBe(expectedContent);
   });

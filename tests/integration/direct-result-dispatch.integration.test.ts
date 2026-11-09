@@ -87,7 +87,7 @@ for (const [form, token] of tokens) {
         {
           id: "bad-anchor",
           name: "replace",
-          arguments: { path: "note.txt", start: "2#FFFF", text: "DAMAGED" },
+          arguments: { path: "note.txt", start: "ZZZZZZZ", text: "DAMAGED" },
         },
       ]);
       expect(run.state?.model).toMatchObject({ provider: "scripted", id: "scripted-model" });

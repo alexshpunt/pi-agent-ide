@@ -1,6 +1,9 @@
-import { getTextSourceLine, type TextLine, type TextLinePresenter } from "pi-agent-text";
-
-import { createLineHashAnchor } from "./anchor.ts";
+import {
+  documentLineAnchors,
+  getTextSourceLine,
+  type TextLine,
+  type TextLinePresenter,
+} from "pi-agent-text";
 
 export function createLineHashPresenter(): TextLinePresenter {
   return {
@@ -10,16 +13,17 @@ export function createLineHashPresenter(): TextLinePresenter {
         (context.resolvedBy === "filesystem" || context.resolvedBy === "ssh") &&
         ((context.purpose === "edit-diff" && context.sourceText === undefined) ||
           context.sourceText === document.content);
+      // Anchors name content, so a physical document needs the whole text, not only shown lines.
+      const physicalAnchors = physical ? documentLineAnchors(document.lines) : undefined;
       const anchorFor = (line: TextLine) => {
-        const sourceLine = physical
-          ? { lineNumber: line.lineNumber, content: line.content }
-          : getTextSourceLine(line);
-        return sourceLine === undefined
+        if (physicalAnchors !== undefined) {
+          const anchor = physicalAnchors[line.lineNumber - 1];
+          return anchor === undefined ? undefined : { anchor, lineNumber: line.lineNumber };
+        }
+        const sourceLine = getTextSourceLine(line);
+        return sourceLine?.anchor === undefined
           ? undefined
-          : {
-              anchor: createLineHashAnchor(sourceLine.lineNumber, sourceLine.content),
-              lineNumber: sourceLine.lineNumber,
-            };
+          : { anchor: sourceLine.anchor, lineNumber: sourceLine.lineNumber };
       };
       const shown = context.lineNumbers;
       const presented = document.lines.map((line) =>
@@ -28,10 +32,6 @@ export function createLineHashPresenter(): TextLinePresenter {
       // Pad shown lines as if the whole document were presented, so they match Read.
       const lastLine = shown === undefined ? undefined : document.lines.at(-1);
       const last = lastLine === undefined ? undefined : anchorFor(lastLine);
-      const anchorWidth = Math.max(
-        last?.anchor.value.length ?? 0,
-        ...presented.map((item) => item?.anchor.value.length ?? 0),
-      );
       const lineWidth = Math.max(
         String(last?.lineNumber ?? "").length,
         ...presented.map((item) => String(item?.lineNumber ?? "").length),
@@ -45,10 +45,10 @@ export function createLineHashPresenter(): TextLinePresenter {
 
         return {
           ...line,
-          anchors: [...new Set([...(line.anchors ?? []), item.anchor.value])],
+          anchors: [...new Set([...(line.anchors ?? []), item.anchor])],
           presentation: {
             ...line.presentation,
-            prefix: `${item.anchor.value.padStart(anchorWidth)}|${line.presentation?.prefix ?? ""}`,
+            prefix: `${item.anchor}|${line.presentation?.prefix ?? ""}`,
             compactPrefix:
               line.presentation?.compactPrefix ??
               `${String(item.lineNumber).padStart(lineWidth)} │ `,

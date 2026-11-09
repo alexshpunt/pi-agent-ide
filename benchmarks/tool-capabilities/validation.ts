@@ -243,7 +243,7 @@ function reuses(value: unknown, output: string, kind = "result"): boolean {
                   ? /debug:[a-z0-9-]+/gi
                   : kind === "change"
                     ? /CHANGE#[A-F0-9]+/g
-                    : /(?:SEARCH|RESULT)#[A-F0-9]+(?::[a-z0-9:]+)?|\b\d+#[A-F0-9]+|scope-(?:begin|end)-[A-F0-9]+/g,
+                    : /(?:SEARCH|RESULT)#[A-F0-9]+(?::[a-z0-9:]+)?|[0-9A-HJKMNP-TV-Z]{7}(?=\|)|scope-(?:begin|end)-[A-F0-9]+/g,
           ),
         ].map((match) => match[0]);
   return values(value).some((candidate) => candidate === output || ids.includes(candidate));

@@ -62,16 +62,8 @@ export class TextAnchorResolutionError extends Error {
   }
 }
 
-/** Where the lines of earlier versions of a source are now; see `TextAnchorResolverContext`. */
-export type TextLineRelocator = (
-  context: TextAnchorResolverContext,
-  lineNumber: number,
-) => readonly number[];
-
 export class TextAnchorRegistry {
   readonly #resolvers: RegisteredTextAnchorResolver[] = [];
-
-  public constructor(private readonly relocator?: TextLineRelocator) {}
 
   public add(registration: TextAnchorResolverRegistration): void {
     if (typeof registration.kind !== "string" || registration.kind.trim().length === 0) {
@@ -129,7 +121,6 @@ export class TextAnchorRegistry {
       [...this.#resolvers].sort(
         (left, right) => left.priority - right.priority || left.order - right.order,
       ),
-      this.relocator,
     );
   }
 
@@ -151,10 +142,7 @@ export class TextAnchorRegistry {
 }
 
 export class TextAnchorRegistrySnapshot {
-  public constructor(
-    private readonly resolvers: readonly RegisteredTextAnchorResolver[],
-    private readonly relocator?: TextLineRelocator,
-  ) {}
+  public constructor(private readonly resolvers: readonly RegisteredTextAnchorResolver[]) {}
 
   public async inspect(
     anchors: readonly [string] | readonly [string, string],
@@ -252,12 +240,6 @@ export class TextAnchorRegistrySnapshot {
     if (context.lines.length === 0) {
       throw new TextAnchorResolutionError(`Anchor "${value}" cannot resolve in an empty file`);
     }
-    const relocator = this.relocator;
-    const resolving: TextAnchorResolverContext =
-      relocator === undefined || context.relocateLine !== undefined
-        ? context
-        : { ...context, relocateLine: (lineNumber) => relocator(context, lineNumber) };
-
     for (const { kind, resolver, type } of this.resolvers) {
       if (allowedKinds !== undefined && !allowedKinds.has(kind)) {
         continue;
@@ -273,7 +255,7 @@ export class TextAnchorRegistrySnapshot {
           throw new TypeError("Text anchor normalization must return non-empty text");
         }
 
-        attempt = await resolver.tryResolve(normalizedValue, resolving);
+        attempt = await resolver.tryResolve(normalizedValue, context);
       } catch (error) {
         throw new TextAnchorResolutionError(
           `Text anchor resolver ${resolver.id} failed for "${value}"`,

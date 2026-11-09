@@ -310,40 +310,4 @@ describe("selections of a local file edited elsewhere", () => {
     edit(Array.from({ length: 9000 }, (_, index) => `row ${index}`).join("\n"));
     expect(() => store.resolve(reference, directory)).toThrow(/expired/u);
   });
-
-  describe("relocated lines", () => {
-    test("lead from an earlier version to the current line", () => {
-      const store = new ResultTargetStore();
-      select(store, line(3));
-      const first = `zero\n${original}`;
-      edit(first);
-      expect(store.relocatedLines(file, directory, first, 3)).toEqual([4]);
-      const second = first.replace("five", "last\nfive");
-      edit(second);
-      // Line 3 held "two" in the first version and "three" in the original.
-      expect(store.relocatedLines(file, directory, second, 3).sort()).toEqual([3, 4]);
-      expect(store.relocatedLines(file, directory, second, 5).sort()).toEqual([5, 7]);
-    });
-
-    test("do not exist for a line that changed or a file the store never saw", () => {
-      const store = new ResultTargetStore();
-      select(store, line(3));
-      const content = original.replace("three", "thr33");
-      edit(content);
-      expect(store.relocatedLines(file, directory, content, 3)).toEqual([]);
-      expect(store.relocatedLines(path.join(directory, "b.txt"), directory, "x", 1)).toEqual([]);
-    });
-
-    test("report each earlier version that disagrees", () => {
-      const store = new ResultTargetStore();
-      select(store, line(1));
-      const first = `}\n${original}`;
-      edit(first);
-      store.refresh(file, directory);
-      // Line 1 held "}" in one earlier version and "one" in another.
-      const second = `}\n}\n${original}`;
-      edit(second);
-      expect(store.relocatedLines(file, directory, second, 1).sort()).toEqual([1, 3]);
-    });
-  });
 });
