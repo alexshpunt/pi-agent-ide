@@ -6,6 +6,7 @@ import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 import { inspectRecipeEvidence, type RecipeEvidence } from "pi-agent-doctor/api/evidence";
 import type { SshBackend } from "./ssh.ts";
 import { SshBackendError } from "./ssh.ts";
+import { remotePython } from "./ssh-transport.ts";
 
 const snapshotSchema = Type.Object({
   content: Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()])),
@@ -40,10 +41,8 @@ export async function inspectSshRecipeEvidence(
     signal,
   });
   const result = await backend.execute(
-    "python3",
+    remotePython(script),
     [
-      "-c",
-      script,
       cwd,
       JSON.stringify({
         files,

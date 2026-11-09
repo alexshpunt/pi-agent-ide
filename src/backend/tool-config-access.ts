@@ -3,6 +3,7 @@ import type { ToolConfigLayerAccess } from "#src/api/tool-config.ts";
 import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
+import { remotePython } from "./ssh-transport.ts";
 
 /** Read project and user-global tool settings on the selected target; no startup connection. */
 export function createSshToolConfigAccess(
@@ -16,11 +17,10 @@ export function createSshToolConfigAccess(
       if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", projectRoot, "not-applied");
       // Query only configuration-directory inputs, never the whole process environment.
       const result = await owner.backend.execute(
-        "python3",
-        [
-          "-c",
+        remotePython(
           "import json,os;print(json.dumps({'home':os.environ.get('HOME',''),'agent':os.environ.get('PI_CODING_AGENT_DIR','')}))",
-        ],
+        ),
+        [],
         owner.location.path,
         { signal: requestSignal },
       );

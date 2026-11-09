@@ -6,12 +6,20 @@ import { Value } from "typebox/value";
 import { remoteLocation } from "./identity.ts";
 import { SshBackendError, type SshTarget, type BackendOperationContext } from "./ssh.ts";
 import {
+  interpreterCandidates,
+  sshBootstrapCommand,
+  sshBootstrapInput,
   sshFailureCode,
-  sshWorkerCommand,
+  sshWorkerBundle,
   systemSshArguments,
+  targetOs,
   validateSshTarget,
+  WORKER_HANDSHAKE,
+  type SshCommand,
 } from "./ssh-transport.ts";
 
+const handshakeMarker = Buffer.from(WORKER_HANDSHAKE, "ascii");
+const handshakeSchema = Type.Object({ platform: Type.String(), accepted: Type.Boolean() });
 const frameSchema = Type.Union([
   Type.Object({
     kind: Type.Literal("ready"),
@@ -56,25 +64,31 @@ export interface SshProcessChannel {
   stop(): Promise<{ readonly exitCode: number }>;
 }
 
-/** Start a transient framed channel. timeoutMs bounds startup, not the service lifetime. */
+// Interpreter that last reached the worker handshake, per OpenSSH destination.
+const interpreters = new Map<string, string>();
+
+/** Start a transient framed channel. timeoutMs bounds startup, not the service lifetime.
+ * A string command runs an executable; a Python program runs with the worker's interpreter.
+ */
 export async function startSshProcess(
   target: SshTarget,
-  command: string,
+  command: SshCommand,
   args: readonly string[],
   cwd: string,
   context: SshProcessContext = {},
 ): Promise<SshProcessChannel> {
   validateSshTarget(target);
   if (context.pty) validateDimensions(context.pty.cols, context.pty.rows);
-  const source = remoteLocation(target.id, cwd).source;
+  const os = targetOs(target);
+  const source = remoteLocation(target.id, cwd, os).source;
   const timeout = context.timeoutMs ?? 30_000;
   if (!Number.isFinite(timeout) || timeout <= 0)
     throw new TypeError("SSH startup deadline must be positive");
   context.signal?.throwIfAborted();
-  const bootstrap = await sshWorkerCommand(new URL("./ssh-channel-worker.py", import.meta.url));
+  const bootstrap = sshBootstrapInput(os, await sshWorkerBundle(os, "channel"));
   context.signal?.throwIfAborted();
   const request = JSON.stringify({
-    command,
+    ...(typeof command === "string" ? { command } : { python: command.python }),
     args,
     cwd,
     ...(context.pty ? { pty: context.pty } : {}),
@@ -82,16 +96,40 @@ export async function startSshProcess(
   // Initial argv is separate from the small interactive control frames.
   if (Buffer.byteLength(request) > 48 * 1024 * 1024)
     throw new SshBackendError("FRAME_LIMIT", source, "not-applied");
-  const child = spawn("ssh", systemSshArguments(target, bootstrap), { stdio: "pipe" });
-  const channel = new ProcessChannel(child, source, context.pty !== undefined, context.signal);
-  const timer = setTimeout(() => channel.cancel("TIMEOUT"), timeout);
-  try {
-    await channel.sendInitial(request);
-    await channel.ready;
-    return channel;
-  } finally {
-    clearTimeout(timer);
+  const destination = `${target.host}\0${target.configFile ?? ""}`;
+  const known = interpreters.get(destination);
+  const candidates = [
+    ...(known === undefined ? [] : [known]),
+    ...interpreterCandidates(os).filter((candidate) => candidate !== known),
+  ];
+  for (const [index, interpreter] of candidates.entries()) {
+    const child = spawn("ssh", systemSshArguments(target, sshBootstrapCommand(interpreter)), {
+      stdio: "pipe",
+    });
+    const channel = new ProcessChannel(
+      child,
+      source,
+      context.pty !== undefined,
+      interpreter,
+      context.signal,
+    );
+    const timer = setTimeout(() => channel.cancel("TIMEOUT"), timeout);
+    try {
+      const sent = channel.sendInitial(bootstrap, request);
+      void sent.catch(() => {});
+      // A failed write is reported through startup, which carries the classified close.
+      await channel.ready;
+      await sent;
+      interpreters.set(destination, interpreter);
+      return channel;
+    } catch (error) {
+      // Nothing ran before the handshake, so another interpreter cannot repeat an effect.
+      if (!channel.interpreterMissing || index === candidates.length - 1) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw new SshBackendError("DEPENDENCY_UNAVAILABLE", source, "not-applied");
 }
 
 function validateDimensions(cols: number, rows: number): void {
@@ -114,6 +152,8 @@ class ProcessChannel implements SshProcessChannel {
   #failure: string | undefined;
   #failureEffect: SshBackendError["effect"] | undefined;
   #requested = false;
+  #handshake = false;
+  #transportCode: string | undefined;
   #started = false;
   #pid = 0;
   #identity: string | undefined;
@@ -131,6 +171,7 @@ class ProcessChannel implements SshProcessChannel {
     readonly child: ChildProcessWithoutNullStreams,
     readonly source: string,
     readonly pty: boolean,
+    readonly interpreter: string,
     signal?: AbortSignal,
   ) {
     this.ready = new Promise((resolve, reject) => {
@@ -163,13 +204,15 @@ class ProcessChannel implements SshProcessChannel {
       this.#transportExit = exitCode;
       clearTimeout(this.#stopTimer);
       signal?.removeEventListener("abort", abort);
+      const transportCode =
+        exitCode !== 0 ? sshFailureCode(exitCode, this.#diagnostics, this.interpreter) : undefined;
       const code =
         this.#failure ??
-        (exitCode !== 0
-          ? sshFailureCode(exitCode, this.#diagnostics)
-          : this.#exitCode === undefined
-            ? "TRANSPORT_FAILED"
-            : undefined);
+        // A running worker proves the interpreter; later shell text cannot disprove it.
+        (transportCode === "DEPENDENCY_UNAVAILABLE" && this.#handshake
+          ? "TRANSPORT_FAILED"
+          : (transportCode ?? (this.#exitCode === undefined ? "TRANSPORT_FAILED" : undefined)));
+      this.#transportCode = transportCode;
       this.stdout.end();
       this.stderr.end();
       const inputError = this.error(code ?? "INPUT_CLOSED");
@@ -201,8 +244,13 @@ class ProcessChannel implements SshProcessChannel {
   get identity(): string | undefined {
     return this.#identity;
   }
-  async sendInitial(request: string): Promise<void> {
+  /** True when the remote shell could not start this interpreter; nothing ran on the target. */
+  get interpreterMissing(): boolean {
+    return this.#closed && !this.#handshake && this.#transportCode === "DEPENDENCY_UNAVAILABLE";
+  }
+  async sendInitial(bootstrap: Buffer, request: string): Promise<void> {
     this.#requested = true;
+    await this.sendBytes(bootstrap);
     await this.sendLine(request);
   }
 
@@ -277,10 +325,12 @@ class ProcessChannel implements SshProcessChannel {
       "HOST_KEY_FAILED",
       "AUTH_FAILED",
       "DEPENDENCY_UNAVAILABLE",
+      "TARGET_OS_MISMATCH",
     ].includes(code);
+    // Before the handshake no worker code has run on the target.
     const effect =
       this.#failureEffect ??
-      (!this.#requested || knownPreflightFailure ? "not-applied" : "unknown");
+      (!this.#requested || !this.#handshake || knownPreflightFailure ? "not-applied" : "unknown");
     return new SshBackendError(code, this.source, effect);
   }
 
@@ -301,16 +351,50 @@ class ProcessChannel implements SshProcessChannel {
     await this.sendLine(JSON.stringify(event));
   }
   private sendLine(line: string): Promise<void> {
+    return this.sendBytes(Buffer.from(`${line}\n`, "utf8"));
+  }
+  private sendBytes(bytes: Buffer): Promise<void> {
     if (this.#closed) return Promise.reject(this.error("INPUT_CLOSED"));
     return new Promise((resolve, reject) => {
-      this.child.stdin.write(`${line}\n`, (error) => {
+      this.child.stdin.write(bytes, (error) => {
         if (error) reject(this.error("INPUT_CLOSED"));
         else resolve();
       });
     });
   }
 
+  /** Skip shell startup output, then accept the loader's platform report. */
+  private handshake(): boolean {
+    const marker = this.#buffer.indexOf(handshakeMarker);
+    const end = marker < 0 ? -1 : this.#buffer.indexOf(10, marker);
+    if (end < 0) {
+      if (this.#buffer.length > 65536) this.cancel("INVALID_RESPONSE");
+      return false;
+    }
+    let report: unknown;
+    try {
+      report = JSON.parse(
+        this.#buffer.subarray(marker + handshakeMarker.length, end).toString("utf8"),
+      );
+    } catch {
+      this.cancel("INVALID_RESPONSE");
+      return false;
+    }
+    this.#buffer = this.#buffer.subarray(end + 1);
+    if (!Value.Check(handshakeSchema, report)) {
+      this.cancel("INVALID_RESPONSE");
+      return false;
+    }
+    if (!report.accepted) {
+      this.cancel("TARGET_OS_MISMATCH");
+      return false;
+    }
+    this.#handshake = true;
+    return true;
+  }
+
   private parse(): void {
+    if (!this.#handshake && !this.handshake()) return;
     while (this.#blocked.size === 0) {
       const end = this.#buffer.indexOf(10);
       if (end < 0) {

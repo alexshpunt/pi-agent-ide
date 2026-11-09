@@ -9,6 +9,7 @@ import { createSshToolConfigAccess } from "./tool-config-access.ts";
 import { createSshConfiguredProcessAccess } from "./configured-process.ts";
 import { createSshLspTransport } from "./lsp-transport.ts";
 import { sshProjectExecutableAvailability } from "./process-environment.ts";
+import { remotePython } from "./ssh-transport.ts";
 import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
 import { remoteLocation } from "./identity.ts";
 import { readOwnedSshCommand } from "./owned-read-command.ts";
@@ -54,12 +55,10 @@ export async function createSshDoctorWorkspace(
   };
   const pathReceipt = await readOwnedSshCommand(
     { ...backend.target, workspace: root.path },
-    "python3",
-    [
-      "-c",
+    remotePython(
       "import json,os,sys; keys=json.loads(sys.argv[1]); print(json.dumps({k:os.environ[k] for k in keys if k in os.environ}))",
-      JSON.stringify(DOCTOR_TOOL_PATH_KEYS),
-    ],
+    ),
+    [JSON.stringify(DOCTOR_TOOL_PATH_KEYS)],
     root.source,
     { signal, timeoutMs: 5_000, maxBytes: 128 * 1024 },
   );
@@ -89,8 +88,8 @@ export async function createSshDoctorWorkspace(
     });
     const result = await readOwnedSshCommand(
       backend.target,
-      "python3",
-      ["-c", script, ...args],
+      remotePython(script),
+      args,
       root.source,
       { signal: requestSignal, timeoutMs: 30000, maxBytes: 32 * 1024 * 1024 },
     );
@@ -124,8 +123,8 @@ export async function createSshDoctorWorkspace(
     try {
       channel = await startSshProcess(
         backend.target,
-        "python3",
-        ["-c", script, JSON.stringify({ operation: "create", source: file })],
+        remotePython(script),
+        [JSON.stringify({ operation: "create", source: file })],
         backend.target.workspace,
         { signal: operationSignal },
       );

@@ -4,9 +4,15 @@ import type { FileObjectSnapshot } from "pi-agent-text-editor/api/plugin-protoco
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 
-import { remoteLocation } from "./identity.ts";
+import { remoteLocation, type SshTargetOs } from "./identity.ts";
 import type { SshProcessChannel, SshProcessContext } from "./ssh-channel.ts";
-import { sshWorkerProgram, validateSshTarget } from "./ssh-transport.ts";
+import {
+  remotePython,
+  sshWorkerBundle,
+  targetOs,
+  validateSshTarget,
+  type SshCommand,
+} from "./ssh-transport.ts";
 
 /** One explicitly configured host alias. Authentication stays in the user's OpenSSH environment. */
 export interface SshTarget {
@@ -14,6 +20,8 @@ export interface SshTarget {
   readonly host: string;
   readonly workspace: string;
   readonly configFile?: string;
+  /** Target operating system family; Linux when omitted. */
+  readonly os?: SshTargetOs;
 }
 
 /** The expected Git entry and HEAD used to guard one index publication. */
@@ -130,7 +138,9 @@ export class SshBackend {
 
   constructor(target: SshTarget) {
     validateSshTarget(target);
-    this.target = { ...target };
+    // Windows workspaces become `/C:/...` once, so every later path uses one form.
+    const workspace = remoteLocation(target.id, target.workspace, targetOs(target)).path;
+    this.target = { ...target, workspace };
   }
 
   /** Inspect remote type and permissions without downloading content. */
@@ -505,7 +515,7 @@ export class SshBackend {
    * Nonzero program exits are results; interrupted commands may already have changed files.
    */
   async execute(
-    command: string,
+    command: SshCommand,
     args: readonly string[],
     cwd: string,
     context: BackendOperationContext = {},
@@ -529,7 +539,7 @@ export class SshBackend {
 
   /** Open remote service stdio with ordered input, bounded buffers and owned-process cleanup. */
   async startProcess(
-    command: string,
+    command: SshCommand,
     args: readonly string[],
     cwd: string,
     context: SshProcessContext = {},
@@ -569,13 +579,15 @@ export class SshBackend {
       throw new TypeError("SSH operation deadline must be positive");
     context.signal?.throwIfAborted();
     const { runOwnedSshCommand } = await import("./owned-command.ts");
-    const program = await sshWorkerProgram(new URL("./ssh-worker.py", import.meta.url));
+    const program = await sshWorkerBundle(targetOs(this.target), "file");
     // Filesystem operands are absolute. A neutral existing cwd must not turn the workspace
     // into a sandbox or prevent creation beneath a missing parent.
+    const neutral =
+      targetOs(this.target) === "windows" ? `${this.target.workspace.slice(0, 3)}/` : "/";
     const result = await runOwnedSshCommand(
-      { ...this.target, workspace: input.operation === "gitIndex" ? filePath : "/" },
-      "python3",
-      ["-c", program],
+      { ...this.target, workspace: input.operation === "gitIndex" ? filePath : neutral },
+      remotePython(program),
+      [],
       source,
       {
         signal: context.signal,

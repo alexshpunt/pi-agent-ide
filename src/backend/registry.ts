@@ -20,7 +20,11 @@ export class SshBackendRegistry {
 
   /** Claim SSH resources, reject unknown targets, and leave local/protocol sources alone. */
   resolve(source: string, cwd?: string): ResolvedSshSource | undefined {
-    const location = resolveRemoteLocation(source, cwd);
+    const location = resolveRemoteLocation(
+      source,
+      cwd,
+      (target) => this.#backends.get(target)?.target.os,
+    );
     if (!location) return undefined;
     const backend = this.#backends.get(location.target);
     if (!backend) throw new SshBackendError("UNKNOWN_TARGET", location.source, "not-applied");

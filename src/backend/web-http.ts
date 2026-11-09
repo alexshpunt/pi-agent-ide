@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { SshBackendError, type SshTarget } from "./ssh.ts";
 import { readOwnedSshCommand } from "./owned-read-command.ts";
+import { remotePython } from "./ssh-transport.ts";
 
 const responseSchema = Type.Object({
   url: Type.String(),
@@ -26,8 +27,8 @@ export async function fetchSshWebResponse(
   try {
     const result = await readOwnedSshCommand(
       target,
-      "python3",
-      ["-c", await worker, JSON.stringify({ url: url.href, timeoutSeconds: 30 })],
+      remotePython(await worker),
+      [JSON.stringify({ url: url.href, timeoutSeconds: 30 })],
       source,
       { signal, timeoutMs: 30_000, maxBytes: 32 * 1024 * 1024 },
     );

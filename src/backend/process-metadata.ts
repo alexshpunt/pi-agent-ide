@@ -3,6 +3,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
+import { remotePython } from "./ssh-transport.ts";
 
 const rowSchema = Type.Object({
   pid: Type.Integer({ minimum: 1 }),
@@ -33,8 +34,8 @@ export async function findSshProcessMetadata(
   if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", scope, "not-applied");
   worker ??= readFile(new URL("./process-metadata-worker.py", import.meta.url), "utf8");
   const result = await owner.backend.execute(
-    "python3",
-    ["-c", await worker, String(pid)],
+    remotePython(await worker),
+    [String(pid)],
     owner.location.path,
     { signal },
   );
