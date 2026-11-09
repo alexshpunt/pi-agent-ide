@@ -833,3 +833,141 @@ test("mutates the complete selection retained by compacted search results", asyn
     await expect(readFile(source, "utf8")).resolves.toBe("changed one\nchanged two\n");
   });
 }, 180_000);
+
+test("replaces a list of match anchors from different searches in one call", async () => {
+  await withTempWorkspace(async (directory) => {
+    const first = path.join(directory, "first.txt");
+    const second = path.join(directory, "second.txt");
+    await writeFile(first, "alpha one\nalpha two\nalpha three\n", "utf8");
+    await writeFile(second, "beta one\n", "utf8");
+    const result = await new PiIntegrationTest({
+      testName: "search-anchor-replace-list",
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", "replace"],
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "search-alpha", name: "search", arguments: { query: "alpha" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [toolCall({ id: "search-beta", name: "search", arguments: { query: "beta" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-list",
+              name: "replace",
+              arguments: {
+                path: [
+                  "SEARCH#RUNTIME:1:1:match",
+                  "SEARCH#RUNTIME:1:3:match",
+                  "SEARCH#RUNTIME:2:1:match",
+                ],
+                text: "gamma",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("done")]),
+      ],
+    }).run("Search two words, then replace chosen matches from both results in one call");
+
+    expect(getToolExecution(result, "replace-list").isError).toBe(false);
+    await expect(readFile(first, "utf8")).resolves.toBe("gamma one\nalpha two\ngamma three\n");
+    await expect(readFile(second, "utf8")).resolves.toBe("gamma one\n");
+  });
+}, 180_000);
+
+test("rejects a whole anchor list without changes and names the unknown anchor", async () => {
+  await withTempWorkspace(async (directory) => {
+    const source = path.join(directory, "source.txt");
+    await writeFile(source, "alpha one\nalpha two\n", "utf8");
+    const result = await new PiIntegrationTest({
+      testName: "search-anchor-replace-list-unknown",
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", "replace"],
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "search", name: "search", arguments: { query: "alpha" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-unknown",
+              name: "replace",
+              arguments: {
+                path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#FFFF:1:match"],
+                text: "gamma",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("done")]),
+      ],
+    }).run("Replace a list that holds one anchor that was never issued");
+
+    expect(getToolExecution(result, "replace-unknown").isError).toBe(true);
+    expect(getToolResultText(result, "replace-unknown")).toContain("SEARCH#FFFF:1:match");
+    await expect(readFile(source, "utf8")).resolves.toBe("alpha one\nalpha two\n");
+  });
+}, 180_000);
+
+test("rejects a whole anchor list without changes when one search result is stale", async () => {
+  await withTempWorkspace(async (directory) => {
+    const first = path.join(directory, "first.txt");
+    const second = path.join(directory, "second.txt");
+    await writeFile(first, "alpha one\n", "utf8");
+    await writeFile(second, "beta one\n", "utf8");
+    const result = await new PiIntegrationTest({
+      testName: "search-anchor-replace-list-stale",
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", "replace"],
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "search-alpha", name: "search", arguments: { query: "alpha" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [toolCall({ id: "search-beta", name: "search", arguments: { query: "beta" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "change-second",
+              name: "replace",
+              arguments: { path: "SEARCH#RUNTIME:2:1:match", text: "delta" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-stale",
+              name: "replace",
+              arguments: {
+                path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#RUNTIME:2:1:match"],
+                text: "gamma",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("done")]),
+      ],
+    }).run("Replace a list after one of its source files changed");
+
+    expect(getToolExecution(result, "change-second").isError).toBe(false);
+    expect(getToolExecution(result, "replace-stale").isError).toBe(true);
+    await expect(readFile(first, "utf8")).resolves.toBe("alpha one\n");
+    await expect(readFile(second, "utf8")).resolves.toBe("delta one\n");
+  });
+}, 180_000);

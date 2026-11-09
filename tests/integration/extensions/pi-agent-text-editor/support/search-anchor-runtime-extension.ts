@@ -66,7 +66,7 @@ export default function registerSearchAnchorRuntimeExtension(pi: ExtensionAPI): 
 }
 
 function rewriteInput(
-  input: Record<string, unknown>,
+  input: Record<string, unknown> | unknown[],
   sessionIds: readonly string[],
   lineAnchors: readonly string[],
 ): void {
@@ -83,11 +83,11 @@ function rewriteInput(
         LINE_PLACEHOLDER,
         (_full, index: string) => lineAnchors.at(Number(index) - 1) ?? _full,
       );
-      input[key] = resolved;
+      (input as Record<string, unknown>)[key] = resolved;
       continue;
     }
 
-    if (isRecord(value)) {
+    if (isRecord(value) || Array.isArray(value)) {
       rewriteInput(value, sessionIds, lineAnchors);
     }
   }
