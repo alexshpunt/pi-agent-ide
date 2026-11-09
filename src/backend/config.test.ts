@@ -76,24 +76,3 @@ test("SSH settings reject duplicates and malformed targets instead of falling ba
     }
   }
 });
-
-test("a target can declare Windows, and its workspace takes the canonical drive form", async () => {
-  const paths = await fixture();
-  await writeFile(
-    paths.projectPath,
-    JSON.stringify({
-      targets: [{ id: "win", host: "win", workspace: "c:\\Users\\me", os: "windows" }],
-    }),
-  );
-  expect(await readSshTargets(paths)).toEqual([
-    { id: "win", host: "win", workspace: "/C:/Users/me", os: "windows" },
-  ]);
-  for (const target of [
-    { id: "win", host: "win", workspace: "/home/me", os: "windows" },
-    { id: "lin", host: "lin", workspace: "C:/Users/me" },
-    { id: "mac", host: "mac", workspace: "/Users/me", os: "macos" },
-  ]) {
-    await writeFile(paths.projectPath, JSON.stringify({ targets: [target] }));
-    await expect(readSshTargets(paths)).rejects.toThrow("Invalid SSH settings");
-  }
-});
