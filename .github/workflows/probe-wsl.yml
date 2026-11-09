@@ -23,8 +23,8 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'sshd-a'
           New-Item -ItemType Directory $root | Out-Null
-          ssh-keygen -q -t ed25519 -N '""' -f "$root\host"
-          ssh-keygen -q -t ed25519 -N '""' -f "$root\client"
+          ssh-keygen -q -t ed25519 -N "" -f "$root\host"
+          ssh-keygen -q -t ed25519 -N "" -f "$root\client"
           Copy-Item "$root\client.pub" "$root\authorized_keys"
           $fwd = $root -replace '\\','/'
           @"
@@ -37,12 +37,9 @@ jobs:
           PasswordAuthentication no
           LogLevel DEBUG1
           "@ -split "`n" | ForEach-Object { $_.Trim() } | Set-Content "$root\sshd_config"
-          Get-Content "$root\sshd_config"
-          Whoami /priv | Select-String 'Tcb|Impersonate|AssignPrimary'
           $job = Start-Job { & C:\Windows\System32\OpenSSH\sshd.exe -d -e -f $using:root\sshd_config 2>&1 }
           Start-Sleep 3
           "job state: $($job.State)"
-          Receive-Job $job -Keep | Select-Object -First 30
           ssh -i "$root\client" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2223 "$env:USERNAME@127.0.0.1" 'py -3 -c "import sys;print(sys.version)"'
           "ssh exit: $LASTEXITCODE"
           Start-Sleep 1
@@ -56,8 +53,8 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'sshd-b'
           New-Item -ItemType Directory $root | Out-Null
-          ssh-keygen -q -t ed25519 -N '""' -f "$root\host"
-          ssh-keygen -q -t ed25519 -N '""' -f "$root\client"
+          ssh-keygen -q -t ed25519 -N "" -f "$root\host"
+          ssh-keygen -q -t ed25519 -N "" -f "$root\client"
           Copy-Item "$root\client.pub" "$root\authorized_keys"
           $fwd = $root -replace '\\','/'
           @"
@@ -71,6 +68,7 @@ jobs:
           LogLevel DEBUG1
           SyslogFacility LOCAL0
           "@ -split "`n" | ForEach-Object { $_.Trim() } | Set-Content "$root\sshd_config"
+          "SSHDIR=$root" >> $env:GITHUB_ENV
           $bin = '"C:\Windows\System32\OpenSSH\sshd.exe" -f "' + $root + '\sshd_config"'
           New-Service -Name pi-ide-sshd-probe -BinaryPathName $bin -StartupType Manual | Format-List Name,Status
           Start-Service pi-ide-sshd-probe
@@ -79,27 +77,16 @@ jobs:
           ssh -i "$root\client" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2224 "$env:USERNAME@127.0.0.1" 'py -3 -c "import sys;print(sys.version)"'
           "ssh exit: $LASTEXITCODE"
           New-NetFirewallRule -DisplayName pi-ide-sshd-probe -Direction Inbound -Protocol TCP -LocalPort 2224 -Action Allow | Out-Null
-          "$env:USERNAME"; whoami
-          ipconfig | Select-String 'IPv4|adapter'
-          "SSHDIR=$root" >> $env:GITHUB_ENV
+          "user: $env:USERNAME"
 
       - name: WSL reaches Windows sshd
         shell: pwsh
         continue-on-error: true
         run: |
           $key = "$env:SSHDIR\client" -replace '\\','/'
-          wsl -d Ubuntu-24.04 -u root -- bash -c "ip route show default; cat /etc/resolv.conf | head -3; cat /proc/version; wslinfo --networking-mode 2>&1"
-          $gw = (wsl -d Ubuntu-24.04 -u root -- bash -c "ip route show default | awk '{print \$3}'").Trim()
+          $gw = (wsl -d Ubuntu-24.04 -u root -- ip route show default).Split(' ')[2]
           "gateway: $gw"
           $wslKey = (wsl -d Ubuntu-24.04 -u root -- wslpath -a "$key").Trim()
-          wsl -d Ubuntu-24.04 -u root -- bash -c "install -m600 '$wslKey' /tmp/k && ssh -i /tmp/k -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10 -p 2224 '$env:USERNAME@$gw' 'py -3 -c \`"import sys;print(sys.version)\`"'; echo ssh exit \$?"
-
-      - name: Windows reaches WSL sshd (non-root fixture style)
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          wsl -d Ubuntu-24.04 -u root -- bash -c 'id agent || useradd -m -s /bin/bash agent; passwd -d agent; node --version 2>&1 | head -1; which node'
-          wsl -d Ubuntu-24.04 -u root -- bash -c 'mkdir -p /run/sshd /tmp/w && ssh-keygen -q -t ed25519 -N "" -f /tmp/w/host && ssh-keygen -q -t ed25519 -N "" -f /tmp/w/client && cp /tmp/w/client.pub /tmp/w/ak && chmod 644 /tmp/w/ak && (/usr/sbin/sshd -f /dev/null -h /tmp/w/host -p 2222 -o ListenAddress=127.0.0.1 -o AuthorizedKeysFile=/tmp/w/ak -o StrictModes=no -o AllowUsers=agent -o PasswordAuthentication=no -o UsePAM=yes >/dev/null 2>&1) && sleep 1 && cat /tmp/w/client' > "$env:RUNNER_TEMP\wsl-client"
-          icacls "$env:RUNNER_TEMP\wsl-client" /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
-          ssh -i "$env:RUNNER_TEMP\wsl-client" -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o BatchMode=yes -p 2222 agent@127.0.0.1 'uname -a; python3 --version'
+          wsl -d Ubuntu-24.04 -u root -- install -m600 "$wslKey" /tmp/k
+          wsl -d Ubuntu-24.04 -u root -- ssh -i /tmp/k -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10 -p 2224 "$env:USERNAME@$gw" 'py -3 -c "import sys;print(sys.version)"'
           "ssh exit: $LASTEXITCODE"
