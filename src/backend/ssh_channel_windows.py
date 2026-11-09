@@ -5,9 +5,12 @@ main thread owns all framing. PTY sessions are not available on Windows targets 
 """
 import base64
 import ctypes
+import errno
 import json
 import os
 import queue
+import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -94,6 +97,38 @@ class Job:
 process = None
 job = None
 
+# npm, pnpm and Yarn shims end with: "%_prog%"  "%dp0%\node_modules\pkg\bin\tool" %*
+SHIM_TARGET = re.compile(r'"%_prog%"\s+(?:\S+\s+)*?"%dp0%\\(?P<script>[^"]+)"\s+%\*', re.IGNORECASE)
+BATCH_UNSAFE = re.compile(r'[%^&|<>"!\r\n]')
+
+
+def resolve_argv(argv):
+    """Find the executable the way a shell does: PATH and PATHEXT, without the current directory.
+
+    CreateProcess only starts `.exe` files by bare name, so tools installed as `.cmd` shims
+    (npm packages) would be missing. A shim that just starts a Node script runs that script
+    directly. Any other batch file goes through cmd.exe, which cannot quote arguments safely,
+    so arguments with batch metacharacters are refused.
+    """
+    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
+    found = shutil.which(argv[0])
+    if found is None:
+        raise FileNotFoundError(errno.ENOENT, "command not found", argv[0])
+    if not found.lower().endswith((".cmd", ".bat")):
+        return [found, *argv[1:]]
+    directory = os.path.dirname(found)
+    with open(found, "r", encoding="utf8", errors="replace") as shim:
+        match = SHIM_TARGET.search(shim.read())
+    if match is not None:
+        script = os.path.join(directory, match.group("script"))
+        node = os.path.join(directory, "node.exe")
+        node = node if os.path.exists(node) else shutil.which("node")
+        if node is not None and os.path.exists(script):
+            return [node, script, *argv[1:]]
+    if any(BATCH_UNSAFE.search(argument) for argument in argv[1:]):
+        raise ChannelError("INVALID_REQUEST")
+    return [found, *argv[1:]]
+
 
 def drain(stream, name, events):
     try:
@@ -152,6 +187,8 @@ def run():
     except InvalidPath:
         raise ChannelError("INVALID_PATH")
     job = Job()
+    if "python" not in request:
+        argv = resolve_argv(argv)
     process = subprocess.Popen(
         argv, cwd=cwd,
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
