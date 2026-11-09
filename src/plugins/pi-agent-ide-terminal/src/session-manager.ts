@@ -7,7 +7,8 @@ import { randomUUID } from "node:crypto";
 import { stripVTControlCharacters } from "node:util";
 import { StringDecoder } from "node:string_decoder";
 import type { ResolvedSshSource } from "#src/backend/registry.ts";
-import { remoteBashProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { targetOs } from "#src/backend/ssh-transport.ts";
+import { remoteShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 
 import type { Terminal as XtermTerminal } from "@xterm/headless";
 import type { IPty, IPtyForkOptions, IWindowsPtyForkOptions } from "node-pty";
@@ -244,7 +245,7 @@ export class TerminalSessionManager {
     readonly rows?: number;
     readonly signal?: AbortSignal;
   }): Promise<TerminalSession> {
-    const shell = remoteBashProfile;
+    const shell = remoteShellProfile(targetOs(options.remote.backend.target));
     const base = this.#createSession({ ...options, cwd: options.remote.location.source, shell });
     const startupAbort = new AbortController();
     this.#pendingStarts.set(base.id, { abort: startupAbort, completion: base.completion });
