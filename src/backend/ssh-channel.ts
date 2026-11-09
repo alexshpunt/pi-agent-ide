@@ -103,8 +103,11 @@ export async function startSshProcess(
     ...interpreterCandidates(os).filter((candidate) => candidate !== known),
   ];
   for (const [index, interpreter] of candidates.entries()) {
+    // Windows OpenSSH blocks on synchronous pipes when it runs outside an interactive desktop
+    // session, for example under another SSH server: it stalls at startup or never exits.
+    // Overlapped pipes avoid that; on other platforms they are ordinary pipes.
     const child = spawn("ssh", systemSshArguments(target, sshBootstrapCommand(interpreter)), {
-      stdio: "pipe",
+      stdio: "overlapped",
     });
     const channel = new ProcessChannel(
       child,
