@@ -215,89 +215,98 @@ export function createAstSearchResolver(
       // Anchors register only while the file still has the searched text; another process may
       // write it in between, so search again, with the scope resolved against the new text.
       let attempts = 0;
-      const { selected, session } = await collectWhileSourceChanges(async () => {
-        const selected = await collect(context.signal, attempts++ > 0);
+      const register = async (selection: Parameters<typeof registerSelection>[0]) => {
         try {
-          const session = await registerSelection(
-            { request, matches: selected.matches, complete: selected.complete, refresh: collect },
-            context,
-          );
-          return { selected, session };
+          return await registerSelection(selection, context);
         } catch (error) {
           if (error instanceof Error && error.name === "SearchSnapshotChangedError")
             throw sourceChanged(error.message);
           throw error;
         }
-      }, context.signal);
-      const data = selectionData(selected.matches, selected.complete, session.id, session);
-      const captures: Record<string, ReturnType<typeof selectionData>["matches"]>[] = [];
-      const captureGroups: Record<string, { target: string; nodes: number }>[] = [];
-      for (const raw of selected.raw.slice(0, data.matches.length)) {
-        const groups = Object.entries({
-          ...Object.fromEntries(
-            Object.entries(raw.metaVariables?.single ?? {}).map(([name, node]) => [name, [node]]),
-          ),
-          // `scan` reports relational rule labels as a `secondary` group; they are not captures.
-          ...Object.fromEntries(
-            Object.entries(raw.metaVariables?.multi ?? {}).filter(([name]) => name !== "secondary"),
-          ),
-        });
-        const projected = [];
-        const groupsForMatch: Record<string, { target: string; nodes: number }> = {};
-        for (const [name, nodes] of groups) {
-          for (const node of nodes) {
-            if (
-              node.range.byteOffset.start < raw.range.byteOffset.start ||
-              node.range.byteOffset.end > raw.range.byteOffset.end
-            )
-              throw new Error("AST capture lies outside its parent match.");
-          }
-          const matches = await selectionMatches(
-            nodes.map((node) => ({ ...raw, ...node })),
-            context.cwd,
-            context.signal,
-            owner(raw.file),
-            snapshots,
-          );
-          const group = await registerSelection(
-            {
-              request,
-              matches,
-              complete: selected.complete,
-              refresh: async () => {
-                throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
-              },
-            },
-            context,
-          );
-          groupsForMatch[name] = {
-            target: requiredValue(
-              selectionData(matches, selected.complete, undefined, group).target,
-            ),
-            nodes: matches.length,
-          };
-          const nodesData: ReturnType<typeof selectionData>["matches"] = [];
-          // Shared Search previews hold 100 nodes. Register every capture chunk without dropping nodes.
-          for (let offset = 0; offset < matches.length; offset += 100) {
-            const chunk = matches.slice(offset, offset + 100);
-            const captured = await registerSelection(
-              {
+      };
+      const { selected, session, data, captures, captureGroups } = await collectWhileSourceChanges(
+        async () => {
+          const selected = await collect(context.signal, attempts++ > 0);
+          const session = await register({
+            request,
+            matches: selected.matches,
+            complete: selected.complete,
+            refresh: collect,
+          });
+          const data = selectionData(selected.matches, selected.complete, session.id, session);
+          const captures: Record<string, ReturnType<typeof selectionData>["matches"]>[] = [];
+          const captureGroups: Record<string, { target: string; nodes: number }>[] = [];
+          for (const raw of selected.raw.slice(0, data.matches.length)) {
+            const groups = Object.entries({
+              ...Object.fromEntries(
+                Object.entries(raw.metaVariables?.single ?? {}).map(([name, node]) => [
+                  name,
+                  [node],
+                ]),
+              ),
+              // `scan` reports relational rule labels as a `secondary` group; they are not captures.
+              ...Object.fromEntries(
+                Object.entries(raw.metaVariables?.multi ?? {}).filter(
+                  ([name]) => name !== "secondary",
+                ),
+              ),
+            });
+            const projected = [];
+            const groupsForMatch: Record<string, { target: string; nodes: number }> = {};
+            for (const [name, nodes] of groups) {
+              for (const node of nodes) {
+                if (
+                  node.range.byteOffset.start < raw.range.byteOffset.start ||
+                  node.range.byteOffset.end > raw.range.byteOffset.end
+                )
+                  throw new Error("AST capture lies outside its parent match.");
+              }
+              const matches = await selectionMatches(
+                nodes.map((node) => ({ ...raw, ...node })),
+                context.cwd,
+                context.signal,
+                owner(raw.file),
+                snapshots,
+              );
+              const group = await register({
                 request,
-                matches: chunk,
+                matches,
                 complete: selected.complete,
                 refresh: async () => {
                   throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
                 },
-              },
-              context,
-            );
-            nodesData.push(...selectionData(chunk, selected.complete, undefined, captured).matches);
+              });
+              groupsForMatch[name] = {
+                target: requiredValue(
+                  selectionData(matches, selected.complete, undefined, group).target,
+                ),
+                nodes: matches.length,
+              };
+              const nodesData: ReturnType<typeof selectionData>["matches"] = [];
+              // Shared Search previews hold 100 nodes. Register every capture chunk without dropping nodes.
+              for (let offset = 0; offset < matches.length; offset += 100) {
+                const chunk = matches.slice(offset, offset + 100);
+                const captured = await register({
+                  request,
+                  matches: chunk,
+                  complete: selected.complete,
+                  refresh: async () => {
+                    throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
+                  },
+                });
+                nodesData.push(
+                  ...selectionData(chunk, selected.complete, undefined, captured).matches,
+                );
+              }
+              projected.push([name, nodesData] as const);
+            }
+            captures.push(Object.fromEntries(projected));
+            captureGroups.push(groupsForMatch);
           }
-          projected.push([name, nodesData] as const);
-        }
-        captures.push(Object.fromEntries(projected));
-        captureGroups.push(groupsForMatch);
-      }
+          return { selected, session, data, captures, captureGroups };
+        },
+        context.signal,
+      );
       return {
         kind: "resolved",
         payload: {
