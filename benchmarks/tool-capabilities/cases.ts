@@ -909,6 +909,27 @@ for (const operation of ["replace", "delete", "insert"] as const) {
     },
   );
 }
+add(
+  "replace-search-anchor-list",
+  ["edit.replace-search-anchor-list"],
+  "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Replace call whose path is an array of two actual issued references: the first :match reference of the OLD search and the first :match reference of the TAIL search. Replace both selected matches with NEW. Do not retype the file path, do not use start/end and do not retry. Keep every other byte.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "OLD" } },
+    { tool: "search", args: { path: "task.txt", query: "TAIL" } },
+    {
+      tool: "replace",
+      args: {
+        path: [/^SEARCH#[A-F0-9]+:1:match$/u, /^SEARCH#[A-F0-9]+:1:match$/u],
+        text: "NEW",
+      },
+      reuse: [reuse(0), reuse(1)],
+    },
+  ],
+  {
+    files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nTAIL\n" },
+    expected: { "task.txt": "keep1\nNEW\nkeep2\nOLD\nkeep3\nNEW\n" },
+  },
+);
 for (const operation of ["delete", "insert"] as const) {
   add(
     `read-window-${operation}`,

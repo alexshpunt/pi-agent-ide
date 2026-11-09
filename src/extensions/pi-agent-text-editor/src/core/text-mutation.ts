@@ -71,6 +71,7 @@ import {
 import { wholeFileResultSource } from "./result-input.ts";
 import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import { isResultInput, prepareResultTransfer } from "./result-transfer.ts";
+import { hasSearchReference, resolveSearchReferenceList } from "./search-reference-list.ts";
 import {
   contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
@@ -190,15 +191,22 @@ export function createTextTool<TParameters extends TSchema>(
                       throw new Error("Result targets are unavailable.");
                     if (input.start !== undefined || input.end !== undefined)
                       throw new Error("Do not combine result targets with start/end.");
-                    const selected = resultTargets.resolve(
-                      input[definition.source.field],
-                      context.cwd,
-                    );
+                    const sourceList: unknown = input[definition.source.field];
+                    const listed = hasSearchReference(sourceList);
+                    const selected = listed
+                      ? await resolveSearchReferenceList(
+                          core,
+                          resultTargets,
+                          sourceList,
+                          context.cwd,
+                          signal,
+                        )
+                      : resultTargets.resolve(sourceList, context.cwd);
                     if (!selected.complete)
                       throw new Error(
                         "Incomplete result targets cannot establish a complete edit. Run Search again with a higher limit or a narrower query, then use the complete result.",
                       );
-                    await resultTargets.verify(selected, signal);
+                    if (!listed) await resultTargets.verify(selected, signal);
                     if (definition.name === "write" || definition.name === "undo")
                       wholeFileResultSource(selected, definition.name);
                     if (selected.targets.length === 0)

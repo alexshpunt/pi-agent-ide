@@ -18,7 +18,7 @@ export const replaceSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "File path, SEARCH# reference, unchanged Read/Search/edit result or its UUID, or an array of them; a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
+          "File path, SEARCH# reference, unchanged Read/Search/edit result or its UUID, or an array of SEARCH# references and results, which may come from different searches and replace exactly those ranges (one expired reference rejects the call); a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
       }),
     ),
     ...sourceRangeProperties(),
