@@ -75,4 +75,4 @@ Automatic batch boundaries save pending edits, not their final formatting. Write
 
 After an exact-text selector fails, the tool returns current anchors and blocks further exact-text edits for that file. Use a current anchor for the next successful edit. Exact text is then available again.
 
-See [editing](./agent-guides/editing.md) and [Search](./agent-guides/search.md) for their source and boundary contracts.
+Edit tools share one selection rule in the system prompt: anchor kinds, whole-line and exact-text boundaries, and line endings. Search explains Boolean parsing and broadened queries in the result where they apply.

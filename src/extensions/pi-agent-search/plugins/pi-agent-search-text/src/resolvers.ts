@@ -4,7 +4,12 @@ import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.ts";
 
 import { searchFiles } from "#src/file-search.ts";
-import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.ts";
+import {
+  booleanQueryNotice,
+  createSearchRecipe,
+  runSearchRecipe,
+  type SearchRecipe,
+} from "#src/search-recipe.ts";
 import { renderSearchResult } from "#src/search-renderer.ts";
 import { createFuzzyPresentation, createSearchToolDetails } from "#src/search-result.ts";
 import { planSearchPresentation } from "#src/search-presentation.ts";
@@ -193,6 +198,7 @@ function createMatchResolver(
         payload: {
           request: { ...request, query: result.query },
           ...result,
+          notices: [booleanQueryNotice(recipe) ?? [], result.notices].flat(),
           recipe: { ...recipe, originalQuery: request.query },
           ...(fuzzy === undefined ? {} : { fuzzy }),
         } satisfies TextPayload,

@@ -159,6 +159,9 @@ export async function executeWholeFileTool(
           outcome.error === undefined
             ? undefined
             : `${outcome.error.code}: ${outcome.error.message}`,
+          outcome.effect === "unknown"
+            ? "Part of the operation may have been applied and is not rolled back. Check the affected paths before retrying."
+            : undefined,
         ]
           .filter((line) => line !== undefined)
           .join("\n"),

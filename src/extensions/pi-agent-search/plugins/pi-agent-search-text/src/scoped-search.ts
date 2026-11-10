@@ -2,7 +2,7 @@ import type { ResolvedResultTargets } from "pi-agent-resource";
 import { createTextDocument } from "pi-agent-text";
 import { searchTextContent } from "#src/search-backend.ts";
 import type { TextSearchBackendResult } from "#src/search-backend.ts";
-import type { SearchRecipe } from "#src/search-recipe.ts";
+import { fallbackNotice, type SearchRecipe } from "#src/search-recipe.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
 
 /**
@@ -90,11 +90,7 @@ export async function runScopedSearch(
     try {
       result = await search(fallback.query, fallback.condition);
       query = fallback.query;
-      notices.push(
-        fallback.mode === "regex"
-          ? "Search fallback: no literal matches; tried unquoted terms as regex."
-          : "Search fallback: no matches in earlier modes; tried separate words. Use these matches as location hints; refine the query before editing.",
-      );
+      notices.push(fallbackNotice(fallback.mode));
     } catch (error) {
       if (
         signal?.aborted ||

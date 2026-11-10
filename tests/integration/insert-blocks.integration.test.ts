@@ -32,10 +32,6 @@ for (const [name, original, payload, mode, expected] of [
         tools: ["read", "insert"],
         conversation: [
           assistantMessage(
-            [toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } })],
-            { stopReason: "toolUse" },
-          ),
-          assistantMessage(
             [
               toolCall({
                 id: "insert",
@@ -69,10 +65,6 @@ test("real Pi rejects empty insert without changing EOF bytes", async () => {
       extensions: [extension],
       tools: ["read", "insert"],
       conversation: [
-        assistantMessage(
-          [toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } })],
-          { stopReason: "toolUse" },
-        ),
         assistantMessage(
           [
             toolCall({

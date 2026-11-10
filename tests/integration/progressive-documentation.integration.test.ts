@@ -17,6 +17,7 @@ import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-te
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const extension = process.env.PI_AGENT_IDE_TEST_EXTENSION ?? path.resolve("src/pi-agent-ide.ts");
+const guides = path.resolve("tests/integration/fixtures/tool-guides.ts");
 const workspaces: string[] = [];
 const restoreRuntime = forceStandaloneIntegrationFile();
 afterAll(restoreRuntime);
@@ -31,7 +32,7 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
   const workspace = await createWorkspace();
   const result = await run(workspace, [
     { id: "list", name: "read", arguments: { path: "docs:" } },
-    { id: "guide", name: "read", arguments: { path: "docs:editing" } },
+    { id: "guide", name: "read", arguments: { path: "docs:terminal" } },
     { id: "ssh-guide", name: "read", arguments: { path: "docs:ssh" } },
     { id: "unknown", name: "read", arguments: { path: "docs:missing" } },
   ]);
@@ -41,9 +42,10 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
     readonly ids: readonly string[];
   };
   expect(listDetails.kind).toBe("list");
-  expect(listDetails.ids).toEqual(expect.arrayContaining(["editing", "search", "ssh"]));
+  expect(listDetails.ids).toEqual(expect.arrayContaining(["ssh", "terminal"]));
+  for (const id of ["editing", "search"]) expect(listDetails.ids).not.toContain(id);
   expect(getToolResultMessage(result, "guide").details).toMatchObject({
-    documentation: { kind: "document", id: "editing" },
+    documentation: { kind: "document", id: "terminal" },
   });
   expect(getToolExecution(result, "ssh-guide").isError).toBe(false);
   expect(getToolResultMessage(result, "ssh-guide").details).toMatchObject({
@@ -54,7 +56,7 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
     documentation: { kind: "error", code: "UNKNOWN_DOCUMENTATION", id: "missing" },
   });
   const prompt = getProviderSystemPrompt(result);
-  for (const id of ["editing", "search"]) expect(prompt).toContain(`  - ${id} — `);
+  for (const id of ["ssh", "terminal"]) expect(prompt).toContain(`  - ${id} — `);
 });
 
 test("attaches each relevant guide once and keeps guides independent", async () => {
@@ -101,13 +103,16 @@ test("an explicit guide read allows the first matching tool call", async () => {
   const result = await run(
     workspace,
     [
-      { id: "guide", name: "read", arguments: { path: "docs:search" } },
+      { id: "guide", name: "read", arguments: { path: "docs:fixture-search-guide" } },
       { id: "search", name: "search", arguments: { query: "marker", path: "example.ts" } },
     ],
     ["read", "search"],
   );
 
-  expect(documentationDetails(result, "guide")).toMatchObject({ kind: "document", id: "search" });
+  expect(documentationDetails(result, "guide")).toMatchObject({
+    kind: "document",
+    id: "fixture-search-guide",
+  });
   expect(documentationDetails(result, "search")).toBeUndefined();
   expect(getToolExecution(result, "search").isError).toBe(false);
 });
@@ -118,7 +123,7 @@ test("claims a guide once across parallel tool calls", async () => {
     testName: "progressive-docs-parallel-claim",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd: workspace,
-    extensions: [extension],
+    extensions: [extension, guides],
     tools: ["search"],
     environment: {
       PI_AGENT_IDE_TEST_SKIP_GUIDE_PRELOAD: "1",
@@ -158,14 +163,14 @@ test("adds the full guide to an error without changing failure status", async ()
   expect(message.isError).toBe(true);
   expect(documentationDetails(result, "missing-file")).toMatchObject({
     kind: "attachment",
-    ids: ["search"],
+    ids: ["fixture-search-guide"],
   });
   expect(
     message.content
       .filter((part) => part.type === "text")
       .map((part) => part.text)
       .join("\n"),
-  ).toContain("# Guide: search");
+  ).toContain("# Guide: fixture-search-guide");
   expect(documentationDetails(result, "after-error")).toBeUndefined();
   expect(getToolExecution(result, "after-error").isError).toBe(false);
 });
@@ -175,7 +180,11 @@ test("a partial guide read does not consume the full document", async () => {
   const result = await run(
     workspace,
     [
-      { id: "partial-guide", name: "read", arguments: { path: "docs:search", limit: 1 } },
+      {
+        id: "partial-guide",
+        name: "read",
+        arguments: { path: "docs:fixture-search-guide", limit: 1 },
+      },
       { id: "after-partial", name: "search", arguments: { query: "marker", path: "example.ts" } },
     ],
     ["read", "search"],
@@ -201,7 +210,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
     testName: "progressive-docs-native-codemode",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd: workspace,
-    extensions: [extension, "builtin:codemode"],
+    extensions: [extension, guides, "builtin:codemode"],
     tools: ["read", "search", "insert", "codemode"],
     environment: { PI_AGENT_IDE_TEST_SKIP_GUIDE_PRELOAD: "1" },
     conversation: [
@@ -238,7 +247,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
       .map((part) => part.text)
       .join("\n");
   expect(getToolExecution(result, "nested-first").isError).toBe(false);
-  for (const id of ["search", "editing"])
+  for (const id of ["fixture-search-guide", "fixture-insert-guide"])
     expect(output("nested-first")).toContain(`# Guide: ${id}`);
   expect(output("nested-again")).not.toContain("# Guide:");
   expect(output("nested-again")).toContain("changed");
@@ -270,14 +279,14 @@ test("filters documents with their disabled owner modules", async () => {
   await mkdir(path.join(workspace, ".pi", "pi-agent-ide"), { recursive: true });
   await writeFile(
     path.join(workspace, ".pi", "pi-agent-ide", "extensions.json"),
-    JSON.stringify({ disabled: ["search.core"] }),
+    JSON.stringify({ disabled: ["ide.ast"] }),
   );
   const result = await run(workspace, [
     { id: "list-filtered", name: "read", arguments: { path: "docs:" } },
   ]);
   const details = documentationDetails(result, "list-filtered") as { readonly ids: string[] };
-  expect(details.ids).toContain("editing");
-  expect(details.ids).not.toContain("search");
+  expect(details.ids).toContain("ssh");
+  expect(details.ids).not.toContain("ast-search");
 });
 
 test.each(["resume", "tree", "nested"] as const)(
@@ -316,7 +325,11 @@ test.each(["resume", "tree", "nested"] as const)(
       testName: "progressive-docs-restored",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd: workspace,
-      extensions: [extension, path.resolve("tests/integration/fixtures/restore-tool-history.ts")],
+      extensions: [
+        extension,
+        guides,
+        path.resolve("tests/integration/fixtures/restore-tool-history.ts"),
+      ],
       environment: {
         IDE_RESTORE_SESSION: session,
         IDE_RESTORE_TREE_ROOT: mode === "tree" ? "1" : "0",
@@ -472,7 +485,7 @@ async function run(
     testName: calls[0]?.id ?? "progressive-docs",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd,
-    extensions: [extension, ...(tools.includes("codemode") ? ["builtin:codemode"] : [])],
+    extensions: [extension, guides, ...(tools.includes("codemode") ? ["builtin:codemode"] : [])],
     tools,
     environment: {
       PI_AGENT_IDE_TEST_SKIP_GUIDE_PRELOAD: "1",

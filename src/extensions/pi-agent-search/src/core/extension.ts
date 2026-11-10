@@ -5,7 +5,6 @@ import {
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   ResultPanel,
   toolCallHeader,
@@ -85,13 +84,6 @@ export default async function registerSearchCore(
   context?: { readonly preferences: Readonly<Record<string, string>> },
 ): Promise<void> {
   const presentation = () => parsePresentation(context?.preferences["ui.search"]);
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "search",
-      description: "Text and regex search in files, guides, web pages and terminal output",
-      triggers: [{ tool: "search" }],
-    }),
-  ]);
   const targets = connectResultTargets(pi);
   const core = createSearchCore(targets);
   const interceptionRendering = new ToolCallInterceptionRenderStore();
