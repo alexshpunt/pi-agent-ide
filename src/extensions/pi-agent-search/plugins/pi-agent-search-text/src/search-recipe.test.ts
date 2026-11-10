@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
+import { booleanQueryNotice, createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -38,7 +38,20 @@ describe("hybrid search through ripgrep", () => {
     const result = await search("foo.bar", "fooXbar\n");
     expect(result.matches.map((match) => match.matchedText)).toEqual(["fooXbar"]);
     expect(result.notices.join(" ")).toContain("unquoted terms as regex");
+    expect(result.notices.join(" ")).toContain("location hints");
   });
+  test.each(["flags | MASK", "alpha AND beta", "alpha OR beta", "alpha NOT beta", "a || b"])(
+    "explains Boolean parsing of %s",
+    (query) => {
+      expect(booleanQueryNotice(createSearchRecipe({ query }))).toBeDefined();
+    },
+  );
+  test.each(['"flags | MASK"', "flags|MASK", "plain words", "and or not"])(
+    "adds no Boolean notice to %s",
+    (query) => {
+      expect(booleanQueryNotice(createSearchRecipe({ query }))).toBeUndefined();
+    },
+  );
   test.each(['"foo.bar"', "'foo.bar'"])("keeps %s literal", async (query) => {
     const result = await search(query, "fooXbar\n");
     expect(result.matches).toEqual([]);
