@@ -266,6 +266,8 @@ export default function register(pi: ExtensionAPI): void | Promise<void> {
 
 The search core validates the plugin and owns resolver ordering. Keep network clients and source-specific formatting inside your plugin.
 
+`api.describe()` adds one short description of the plugin's sources to the description of the search `path` field, after the core text. It appears only while the plugin is active. Say which sources the plugin searches and what to pass; explain a specific situation in the result instead.
+
 ## Read plugin
 
 A read plugin usually contributes a `ResourceResolver`. The resolver recognizes a source and returns a Resource with explicit capabilities.
