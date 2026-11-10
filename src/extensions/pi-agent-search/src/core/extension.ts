@@ -33,7 +33,7 @@ import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
 
 import type { SearchToolDetails } from "#src/api/search.ts";
 
-import { searchSchema } from "#src/api/search-parameters.ts";
+import { describeSearchParameters, type searchSchema } from "#src/api/search-parameters.ts";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.ts";
 import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
 
@@ -116,7 +116,9 @@ export default async function registerSearchCore(
         get promptGuidelines(): string[] {
           return [...core.renderPromptGuidelines()];
         },
-        parameters: searchSchema,
+        get parameters() {
+          return describeSearchParameters(core.renderDescriptions());
+        },
         outputSchema: searchOutputSchema,
         renderCall(arguments_, theme, renderContext): Component {
           const mode = renderContext.expanded ? "full" : presentation();
