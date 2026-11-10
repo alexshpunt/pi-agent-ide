@@ -70,6 +70,7 @@ const groups: [string[], string[]][] = [
   [["compose.overview-store-load"], ["read-overview-store"]],
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
+  [["search.literal-operators"], ["search-literal-operators"]],
   [
     // Engine switching is a settings-menu lifecycle, checked in real Pi rather than a model route.
     ["search.semantic", "search.semantic-scope-filters", "compose.semantic-read"],

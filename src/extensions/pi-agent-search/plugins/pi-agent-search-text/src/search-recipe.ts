@@ -68,17 +68,28 @@ export async function runSearchRecipe(
       );
       result = next;
       query = fallback.query;
-      notices.push(
-        fallback.mode === "regex"
-          ? "Search fallback: no literal matches; tried unquoted terms as regex."
-          : "Search fallback: no matches in earlier modes; tried separate words. Use these matches as location hints; refine the query before editing.",
-      );
+      notices.push(fallbackNotice(fallback.mode));
     } catch (error) {
       if (fallback.mode !== "regex" || !isRegexSyntaxError(error) || signal?.aborted) throw error;
       notices.push("Search fallback: invalid regex skipped; literal search found no matches.");
     }
   }
   return { ...result, query, notices };
+}
+
+/** Tell the agent how a broadened search may be used, because its matches can differ from the query. */
+export function fallbackNotice(mode: SearchFallback["mode"]): string {
+  const hint = "Use these matches as location hints; refine the query before editing.";
+  return mode === "regex"
+    ? `Search fallback: no literal matches; tried unquoted terms as regex. ${hint}`
+    : `Search fallback: no matches in earlier modes; tried separate words. ${hint}`;
+}
+
+/** Name the operators when a plain query was parsed as a Boolean expression. */
+export function booleanQueryNotice(recipe: SearchRecipe): string | undefined {
+  return recipe.condition === undefined || recipe.condition.kind === "term"
+    ? undefined
+    : "Boolean query: uppercase AND, OR, NOT, || and a spaced | are operators. Quote text to search for it literally.";
 }
 
 function isRegexSyntaxError(error: unknown): boolean {

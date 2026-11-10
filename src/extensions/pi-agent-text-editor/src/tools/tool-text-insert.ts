@@ -23,17 +23,18 @@ export const insertSchema = Type.Object(
     anchor: Type.Optional(
       Type.String({
         description:
-          "Line anchor or unique exact text. Insert at the selection boundary: whole lines include their own separator; partial or multiline exact matches keep character boundaries. Omit when path already selects text.",
+          "Selection whose start or end receives the text. Omit when path already selects text.",
       }),
     ),
     text: Type.String({
       minLength: 1,
       description:
-        "Non-empty text to insert, using the target line-ending style. Whole-line selections add needed separators; exact fragments do not.",
+        "Non-empty text to insert. Whole-line selections add needed separators; exact fragments do not.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
-        description: "line (default) or blank-line: add blank lines around the insertion.",
+        description:
+          "line (default) or blank-line: put the text in its own paragraph, with blank lines around it.",
       }),
     ),
     before: Type.Optional(

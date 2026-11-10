@@ -501,9 +501,6 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 1.5.0
         version: 1.5.0
-      pi-agent-documentation:
-        specifier: workspace:^
-        version: link:../../../packages/pi-agent-documentation
       pi-agent-resource:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-resource
@@ -598,9 +595,6 @@ importers:
       partial-json:
         specifier: ^0.1.7
         version: 0.1.7
-      pi-agent-documentation:
-        specifier: workspace:^
-        version: link:../../../packages/pi-agent-documentation
       pi-agent-invariant:
         specifier: workspace:^
         version: link:../../../packages/pi-agent-invariant

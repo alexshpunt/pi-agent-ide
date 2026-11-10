@@ -51,7 +51,7 @@ test.each(["on", "only"] as const)(
                 id: "nested-alias",
                 name: "codemode",
                 arguments: {
-                  code: 'text(await tools.mcp__fixture__read({path:"docs:editing"})); text(await tools.mcp__fixture__read({path:"note.txt"}));',
+                  code: 'text(await tools.mcp__fixture__read({path:"docs:terminal"})); text(await tools.mcp__fixture__read({path:"note.txt"}));',
                 },
               }),
             ],
@@ -59,7 +59,7 @@ test.each(["on", "only"] as const)(
           ),
           assistantMessage([text("Done")]),
         ],
-      }).run("Use the local aliases directly and from Codemode, including their editing guide");
+      }).run("Use the local aliases directly and from Codemode, including a guide");
       const messages = run.providerRequests[0]?.messages as Message[];
       const declared = getCurrentTools(messages);
       expect(getProviderSystemPrompt(run)).not.toContain("mcp__fixture__");
@@ -85,7 +85,7 @@ test.each(["on", "only"] as const)(
         getToolResultText(run, "nested-alias"),
       ).toBe(false);
       const guide = await readFile(
-        path.join(process.cwd(), "docs", "agent-guides", "editing.md"),
+        path.join(process.cwd(), "docs", "agent-guides", "terminal.md"),
         "utf8",
       );
       expect(getToolResultText(run, "nested-alias")).toContain(guide.split("\n")[0]);

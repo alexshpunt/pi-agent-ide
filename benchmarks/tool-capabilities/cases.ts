@@ -156,25 +156,25 @@ add(
 add(
   "docs-search",
   ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
-  "Read docs:editing. Choose one unquoted word from that guide's body and search docs:editing for that exact word with caseSensitive true, wholeWord true, and limit 10. The result must contain guide-body locations under docs:editing, not editable Search references. Then search all guide bodies with path docs:all, query regex:^#, and limit 1000. Confirm it finds docs:editing body headings rather than just the guide listing. Do not change files.",
+  "Read docs:terminal. Choose one unquoted word from that guide's body and search docs:terminal for that exact word with caseSensitive true, wholeWord true, and limit 10. The result must contain guide-body locations under docs:terminal, not editable Search references. Then search all guide bodies with path docs:all, query regex:^#, and limit 1000. Confirm it finds docs:terminal body headings rather than just the guide listing. Do not change files.",
   [
-    { tool: "read", args: { path: "docs:editing" } },
+    { tool: "read", args: { path: "docs:terminal" } },
     {
       tool: "search",
       args: {
-        path: "docs:editing",
+        path: "docs:terminal",
         query: /^[\p{L}\p{N}_-]+$/u,
         caseSensitive: true,
         wholeWord: true,
         limit: 10,
       },
-      contains: "docs:editing:",
+      contains: "docs:terminal:",
       excludes: "SEARCH#",
     },
     {
       tool: "search",
       args: { path: "docs:all", query: "regex:^#", limit: 1000 },
-      contains: "docs:editing:",
+      contains: "docs:terminal:",
       excludes: "RESULT#",
     },
   ],
@@ -183,7 +183,7 @@ add(
 add(
   "docs-search-status",
   ["search.docs-limit", "search.docs-empty", "search.docs-unknown", "search.docs-bare"],
-  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:editing with query regex:(?!) and confirm a successful empty result. Search bare docs: and observe an error directing you to docs:all. Finally search docs:lpt-723-missing and observe an unknown-documentation-ID error, not a filesystem search or zero matches. Catch the expected error in Codemode. Do not change files.",
+  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:terminal with query regex:(?!) and confirm a successful empty result. Search bare docs: and observe an error directing you to docs:all. Finally search docs:lpt-723-missing and observe an unknown-documentation-ID error, not a filesystem search or zero matches. Catch the expected error in Codemode. Do not change files.",
   [
     {
       tool: "search",
@@ -192,7 +192,7 @@ add(
     },
     {
       tool: "search",
-      args: { path: "docs:editing", query: "regex:(?!)" },
+      args: { path: "docs:terminal", query: "regex:(?!)" },
       contains: "No matches",
     },
     {
@@ -1159,6 +1159,27 @@ add(
   {
     files: { "task.txt": "alpha beta PASS-MARKER\nalpha beta skip\nAlpha BETAMAX\n" },
     answer: "alpha beta PASS-MARKER",
+  },
+);
+
+add(
+  "search-literal-operators",
+  ["search.literal-operators"],
+  "Search task.txt for the exact C++ text `flags | MASK`, including the spaced vertical bar, and report the only line that contains it. Do not change files.",
+  [
+    {
+      tool: "search",
+      args: { path: "task.txt", query: /^"flags \| MASK"$/ },
+      contains: "PASS-MARKER",
+      excludes: "flags only",
+    },
+  ],
+  {
+    files: {
+      "task.txt":
+        "int x = flags | MASK; // PASS-MARKER\nint y = flags; // flags only\nint z = MASK;\n",
+    },
+    answer: "int x = flags | MASK; // PASS-MARKER",
   },
 );
 
