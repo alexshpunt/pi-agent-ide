@@ -69,7 +69,7 @@ export class LspSharedServers {
 
   constructor(options: { readonly directory?: string } = {}) {
     this._directory =
-      options.directory ?? path.join(os.tmpdir(), `pi-agent-ide-lsp-${os.userInfo().uid}`);
+      options.directory ?? path.join(os.tmpdir(), `pi-agent-ide-lsp-${currentUid()}`);
   }
 
   /** Connect to the host for this configuration, starting it when none runs. */
@@ -112,11 +112,11 @@ export class LspSharedServers {
   private async _socketPath(key: string): Promise<string> {
     await mkdir(this._directory, { recursive: true, mode: 0o700 });
     if (process.platform === "win32")
-      return `\\\\.\\pipe\\pi-agent-ide-lsp-${hash(os.userInfo().username)}-${key}`;
+      return `\\\\.\\pipe\\pi-agent-ide-lsp-${hash(currentUserName())}-${key}`;
     const directory = await lstat(this._directory);
     if (
       !directory.isDirectory() ||
-      directory.uid !== os.userInfo().uid ||
+      directory.uid !== currentUid() ||
       (directory.mode & 0o077) !== 0
     )
       throw new Error(`Shared language server directory is not private: ${this._directory}`);
@@ -137,6 +137,20 @@ function sharedServerKey(request: LspSharedServerRequest): string {
       request.settings ?? null,
     ]),
   );
+}
+
+/** Numeric id of the process's user; it needs no account entry, unlike `os.userInfo()`. */
+function currentUid(): number {
+  return process.getuid?.() ?? -1;
+}
+
+/** Name of the process's user, with a stable fallback when the account entry is missing. */
+function currentUserName(): string {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return process.env.USERNAME || process.env.USER || "unknown";
+  }
 }
 
 function hash(value: string): string {
