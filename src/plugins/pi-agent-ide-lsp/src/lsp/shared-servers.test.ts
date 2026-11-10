@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 
 import os from "node:os";
 import path from "node:path";
 import { URI } from "vscode-uri";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { LspClient } from "./client.ts";
 import { requestDiagnostics } from "./diagnostics.ts";
@@ -25,6 +25,8 @@ const servers = new Set<number>();
 const directories: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await Promise.allSettled(clients.splice(0).map((client) => client.shutdown()));
   // Shared servers outlive their sessions for the linger time.
   await Promise.all([...servers].map((pid) => until(() => !alive(pid))));
@@ -98,6 +100,21 @@ test("sessions with the same configuration share one server; other settings get 
   expect((await status(second)).pid).toBe(first.pid);
   expect(first.diagnosticMode).toBe("push");
   expect(second.diagnosticMode).toBe("push");
+});
+
+test("sessions share one server when the user has no account entry", async () => {
+  const { cwd, sockets } = await workspace();
+  vi.spyOn(os, "userInfo").mockImplementation(() => {
+    throw new Error("A system error occurred: uv_os_get_passwd returned ENOENT");
+  });
+  // The default socket directory lives in the temporary directory and is named by the numeric uid.
+  vi.stubEnv("TMPDIR", sockets);
+  const first = await session(cwd, new LspSharedServers());
+  const second = await session(cwd, new LspSharedServers());
+
+  expect(first.shared).toBe(true);
+  expect(second.pid).toBe(first.pid);
+  expect(await readdir(sockets)).toContain(`pi-agent-ide-lsp-${process.getuid?.()}`);
 });
 
 test("each session gets diagnostics under its own document versions", async () => {

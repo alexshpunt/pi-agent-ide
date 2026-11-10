@@ -50,7 +50,7 @@ export function resolveShellProfile(
 
   const executable =
     environment.SHELL?.trim() ||
-    os.userInfo().shell ||
+    accountShell() ||
     (platform === "darwin" ? "/bin/zsh" : "/bin/bash");
   const basename = path.basename(executable);
   return {
@@ -59,6 +59,15 @@ export function resolveShellProfile(
     family: "posix",
     commandArgs: (command) => ["-c", command],
   };
+}
+
+/** The login shell of the current user, or `/bin/sh` when the account entry is missing. */
+function accountShell(): string | undefined {
+  try {
+    return os.userInfo().shell ?? undefined;
+  } catch {
+    return "/bin/sh";
+  }
 }
 
 /** Return concise syntax guidance for the shell exposed to the agent. */
