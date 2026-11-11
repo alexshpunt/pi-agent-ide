@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
@@ -10,10 +10,15 @@ import {
 /** A test writes this file to make the next edit's pre-edit stage write another file once. */
 const marker = ".tmp/edit-window/write.json";
 
+/** Written when the window write followed the plan of a planned semantic edit, such as a rename. */
+const afterPlanMarker = ".tmp/edit-window/after-plan";
+
 interface WindowWrite {
   readonly file: string;
   /** Text inserted at the start of the file, like another session adding lines above. */
   readonly prepend?: string;
+  /** Text added at the end of the file, like another session adding a new line. */
+  readonly append?: string;
   /** Exact text replaced in the file, like another session editing a selected line. */
   readonly replace?: readonly [string, string];
 }
@@ -21,6 +26,7 @@ interface WindowWrite {
 /**
  * Plays another session that writes the file after an edit checked its references and before the
  * edit takes the file lock. The pre-edit stage runs exactly there, and the marker makes it one-shot.
+ * A planned semantic edit is planned inside the edit, so the write follows its first plan instead.
  */
 export default async function writeInEditWindow(pi: ExtensionAPI): Promise<void> {
   await connectTextEditorPlugin(pi, {
@@ -40,15 +46,37 @@ export default async function writeInEditWindow(pi: ExtensionAPI): Promise<void>
               return state;
             }
             await rm(request);
-            const file = path.resolve(state.cwd, write.file);
-            let content = await readFile(file, "utf8");
-            if (write.replace !== undefined) {
-              const [from, to] = write.replace;
-              if (!content.includes(from)) throw new Error(`Window write found no ${from}`);
-              content = content.replace(from, to);
+            const writeFileOnce = async () => {
+              const file = path.resolve(state.cwd, write.file);
+              let content = await readFile(file, "utf8");
+              if (write.replace !== undefined) {
+                const [from, to] = write.replace;
+                if (!content.includes(from)) throw new Error(`Window write found no ${from}`);
+                content = content.replace(from, to);
+              }
+              await writeFile(file, `${write.prepend ?? ""}${content}${write.append ?? ""}`);
+            };
+            const plan = state.planEdit;
+            if (plan === undefined) {
+              await writeFileOnce();
+              return state;
             }
-            await writeFile(file, `${write.prepend ?? ""}${content}`);
-            return state;
+            let pending = true;
+            return {
+              ...state,
+              async planEdit() {
+                const planned = await plan();
+                if (pending) {
+                  pending = false;
+                  await writeFileOnce();
+                  await mkdir(path.dirname(path.join(state.cwd, afterPlanMarker)), {
+                    recursive: true,
+                  });
+                  await writeFile(path.join(state.cwd, afterPlanMarker), "");
+                }
+                return planned;
+              },
+            };
           },
         });
     },
