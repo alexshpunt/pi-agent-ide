@@ -12,6 +12,7 @@ afterEach(() => {
 
 /** Run the launcher in a shell with `home`, printing the config clangd would read. */
 function launch(home: string, environment: Record<string, string> = {}): string {
+  // The launcher is `sh -c <script> pi-agent-ide-clangd clangd`; the program replaces the last item.
   const [shell, ...arguments_] = launchCommand(["clangd"], true);
   // The launched program stands in for clangd and prints the config it would read.
   const show = [
@@ -19,7 +20,7 @@ function launch(home: string, environment: Record<string, string> = {}): string 
     "-c",
     'printf "%s\\n" "$XDG_CONFIG_HOME"; cat "$XDG_CONFIG_HOME/clangd/config.yaml"',
   ];
-  return execFileSync(shell!, [...arguments_.slice(0, -1), ...show], {
+  return execFileSync(shell ?? "sh", [...arguments_.slice(0, -1), ...show], {
     env: { PATH: process.env.PATH, HOME: home, ...environment },
     encoding: "utf8",
   });
@@ -58,7 +59,7 @@ test.skipIf(process.platform === "win32")(
       path.join(directory, ".config/clangd/config.yaml"),
       "CompileFlags:\n  Add: [-ferror-limit=5]\n",
     );
-    const [config, ...lines] = launch(directory).trimEnd().split("\n");
+    const [config = "", ...lines] = launch(directory).trimEnd().split("\n");
     expect(config).toBe(path.join(directory, ".cache/pi-agent-ide/clangd-config"));
     expect(lines.filter((line) => !line.startsWith("#"))).toEqual([
       "CompileFlags:",
@@ -70,7 +71,7 @@ test.skipIf(process.platform === "win32")(
     // A second start rewrites the same file instead of appending to it.
     launch(directory);
     expect(
-      readFileSync(path.join(config!, "clangd/config.yaml"), "utf8").match(/---/gu),
+      readFileSync(path.join(config, "clangd/config.yaml"), "utf8").match(/---/gu),
     ).toHaveLength(1);
   },
 );
@@ -82,9 +83,9 @@ test.skipIf(process.platform === "win32")(
     // A home that is a file has no cache directory, even for root.
     const file = path.join(temporary, "home-file");
     writeFileSync(file, "");
-    const [config, ...lines] = launch(file, { TMPDIR: temporary }).trimEnd().split("\n");
-    expect(path.dirname(config!)).toBe(temporary);
+    const [config = "", ...lines] = launch(file, { TMPDIR: temporary }).trimEnd().split("\n");
+    expect(path.dirname(config)).toBe(temporary);
     expect(lines).toContain("  Add: [-ferror-limit=0]");
-    expect(execFileSync("stat", ["-c", "%a", config!], { encoding: "utf8" }).trim()).toBe("700");
+    expect(execFileSync("stat", ["-c", "%a", config], { encoding: "utf8" }).trim()).toBe("700");
   },
 );

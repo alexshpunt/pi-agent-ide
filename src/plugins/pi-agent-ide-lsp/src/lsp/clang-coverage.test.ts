@@ -101,7 +101,8 @@ test("an owner without a text search reports that files could not be listed", as
     "name",
   );
   expect(reach).toMatchObject({ opened: [], unlisted: true });
-  expect(coverageNotes(await clangCoverage(reach!, [], errorsOf, (uri) => uri), String)).toEqual([
+  if (!reach) throw new Error("expected a reach");
+  expect(coverageNotes(await clangCoverage(reach, [], errorsOf, (uri) => uri), String)).toEqual([
     expect.stringContaining("could not be listed"),
   ]);
 });
