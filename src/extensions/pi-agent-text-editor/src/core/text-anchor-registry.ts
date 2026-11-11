@@ -62,6 +62,20 @@ export class TextAnchorResolutionError extends Error {
   }
 }
 
+/**
+ * A reference such as `SEARCH#…:all:match` that names resources rather than a position in one
+ * text could not resolve. It has no lines to show around it, so its reason must say what to do.
+ */
+export class TextAnchorResourceResolutionError extends TextAnchorResolutionError {}
+
+/** The resolver's own reason; resolvers word it for the agent, with the next step. */
+function resourceFailureReason(error: unknown): string {
+  const reason = error instanceof Error ? error.message.trim() : "";
+  return reason.length > 0
+    ? reason
+    : "the reference could not be resolved because of an internal error; repeat the Read or Search that produced it";
+}
+
 export class TextAnchorRegistry {
   readonly #resolvers: RegisteredTextAnchorResolver[] = [];
 
@@ -191,15 +205,13 @@ export class TextAnchorRegistrySnapshot {
       try {
         attempt = await resources.tryResolve(value, context);
       } catch (error) {
-        throw new TextAnchorResolutionError(
-          `Text anchor resource resolver ${resolver.id} failed for "${value}"`,
-          resolver.id,
-          { cause: error },
-        );
+        throw new TextAnchorResourceResolutionError(resourceFailureReason(error), resolver.id, {
+          cause: error,
+        });
       }
 
       if (!isTextAnchorResourceResolutionAttempt(attempt)) {
-        throw new TextAnchorResolutionError(
+        throw new TextAnchorResourceResolutionError(
           `Text anchor resource resolver ${resolver.id} returned an invalid result for "${value}"`,
           resolver.id,
           { cause: attempt },
@@ -211,15 +223,15 @@ export class TextAnchorRegistrySnapshot {
       }
 
       if (attempt.kind === "failed") {
-        throw new TextAnchorResolutionError(
-          `Text anchor resource resolver ${resolver.id} failed for "${value}"`,
+        throw new TextAnchorResourceResolutionError(
+          resourceFailureReason(attempt.error),
           resolver.id,
           { cause: attempt.error },
         );
       }
 
       if (attempt.kind === "rejected") {
-        throw new TextAnchorResolutionError(
+        throw new TextAnchorResourceResolutionError(
           attempt.rejection.reason,
           resolver.id,
           undefined,

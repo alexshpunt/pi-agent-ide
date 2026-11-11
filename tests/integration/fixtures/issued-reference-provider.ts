@@ -57,12 +57,14 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
                       ? /(SEARCH#[A-F\d]+:all:line)/u
                       : kind === "searchallmatch"
                         ? /(SEARCH#[A-F\d]+:all:match)/u
+                        : kind === "searchid"
+                          ? /(SEARCH#[A-F\d]+):/u
                   : new RegExp(`(?:^|\\n)\\s*(${line}#[A-F\\d]{4,64})`, "u");
           const value = expression.exec(shown)?.[1];
           if (!value) throw new Error(`Missing ${kind} reference in ${id}`);
           return value;
         };
-        const pattern = /\$issued-(uuid|result|item|search(?:match|allline|allmatch)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu;
+        const pattern = /\$issued-(uuid|result|item|search(?:match|allline|allmatch|id)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu;
         void (async () => {
           try {
             for await (const event of delegate(currentModel, transcript, options)) {

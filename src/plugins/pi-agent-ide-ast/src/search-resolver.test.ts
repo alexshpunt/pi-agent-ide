@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, onTestFinished, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
+import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
 import { SearchSessionStore } from "pi-agent-search-text/search-session";
 import { createAstSearchResolver } from "./search-resolver.ts";
 
@@ -234,4 +235,63 @@ test("AST search retries with the scope resolved again when the file changes bef
   };
   expect(rescoped).toBeGreaterThan(0);
   expect(data.matches.map((match) => match.range.startLine)).toEqual([2, 3]);
+});
+
+test("AST matches map to UTF-16 columns and lines, and a refresh returns the text it searched", async () => {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "positions-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.ts");
+  const content = 'const café = "ü😀"; const b = 1;\r\nfunction f() {\r\n  return "é";\r\n}\r\n';
+  await writeFile(source, content);
+  // The match selection registers first, then one selection per capture.
+  const refreshes: SearchSelectionRegistration["refresh"][] = [];
+  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+  const resolver = createAstSearchResolver((selection, context) => {
+    refreshes.push(selection.refresh);
+    return sessions.register(
+      selection.request.query,
+      selection.matches,
+      selection.complete,
+      context.cwd,
+      context.signal,
+      selection.request,
+      selection.refresh,
+    );
+  });
+  const search = async (pattern: string) => {
+    refreshes.length = 0;
+    const result = await resolver.tryResolve(
+      { query: pattern, path: "note.ts", options: { ast: { pattern } } },
+      { cwd },
+    );
+    if (result.kind !== "resolved") throw new Error("AST discovery failed");
+    return (result.payload as { matches: { selection: SearchSelectionMatch }[] }).matches.map(
+      (match) => match.selection,
+    );
+  };
+
+  const [constant] = await search("const b = $V;");
+  const firstLine = 'const café = "ü😀"; const b = 1;';
+  expect(constant).toMatchObject({
+    lineNumber: 1,
+    endLineNumber: 1,
+    startColumn: firstLine.indexOf("const b"),
+    endColumn: firstLine.length,
+    lineText: firstLine,
+  });
+  const [declaration] = await search("function $N() { $$$B }");
+  expect(declaration).toMatchObject({
+    lineNumber: 2,
+    endLineNumber: 4,
+    startColumn: 0,
+    endColumn: 1,
+    lineText: "function f() {",
+  });
+
+  const refresh = refreshes[0];
+  if (refresh === undefined) throw new Error("No refresh was registered");
+  const refreshed = await refresh();
+  expect(refreshed.contents?.get(source)).toBe(content);
 });

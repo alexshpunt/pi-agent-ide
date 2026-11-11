@@ -213,7 +213,21 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
             if (scope === undefined) continue;
             if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
             if (targets !== undefined) await targets.verify(scope, context.signal);
-            context = { ...context, scope };
+            const scopeInput = input.path;
+            const scopeContext = context;
+            // A refresh of this search, such as for an all-anchor after other edits, runs on the
+            // scope as its file is now. A numbered Search match follows its region like RESULT#.
+            const rescope = async (signal?: AbortSignal): Promise<ResolvedResultTargets> => {
+              if (targets?.hasSearchReference(scopeInput) === true)
+                return targets.resolveCurrent(scopeInput, scopeContext.cwd, signal);
+              const current = await provider(scopeInput, {
+                ...scopeContext,
+                ...(signal !== undefined && { signal }),
+              });
+              if (current === undefined) throw new Error("its reference is no longer available");
+              return current;
+            };
+            context = { ...context, scope, rescope };
             request = Object.assign({}, request, { path: undefined });
             break;
           }
