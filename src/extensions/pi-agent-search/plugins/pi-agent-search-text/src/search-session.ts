@@ -1,6 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import {
   createLineMap,
+  rangesInText,
   rebaseOrRelocateRange,
   type ResultTargetStore,
   type ResolvedResultTargets,
@@ -373,7 +374,8 @@ export class SearchSessionStore {
           ? `match ${String(anchor.selector)}`
           : `line ${String(anchor.selector)}`;
       },
-      tryResolve: (value, context) => this.#resolveAnchor(value, context.source, context.signal),
+      tryResolve: (value, context) =>
+        this.#resolveAnchor(value, context.source, context.content, context.signal),
     };
   }
 
@@ -421,9 +423,16 @@ export class SearchSessionStore {
     };
   }
 
+  /**
+   * `callerContent` is the text the caller reads and edits. A numbered reference the result store
+   * holds resolves in that text: another session may write the file meanwhile, and a selection
+   * the store already moved to a newer text moves back onto the caller's text through unchanged
+   * lines. Other references compare the owner's current text with the search snapshot.
+   */
   async #resolveAnchor(
     value: string,
     contextSource: string,
+    callerContent: string,
     signal?: AbortSignal,
   ): Promise<TextAnchorResolutionAttempt> {
     const parsed = parseSearchAnchor(value);
@@ -451,8 +460,6 @@ export class SearchSessionStore {
         rejection: { code: "missing", reason: "search anchor does not select this resource" },
       };
     }
-    const current = await readCurrent(source, signal, session.environment, session.read);
-    if (current === undefined) return staleAnchor(firstMatch.lineNumber);
     if (parsed.selector !== "all") {
       const bound = this.#resolveBound(value, session.cwd);
       if (bound?.kind === "rejected") return bound;
@@ -465,14 +472,22 @@ export class SearchSessionStore {
             kind: "rejected",
             rejection: { code: "missing", reason: "search anchor does not select this resource" },
           };
-        if (target.expectedContent !== current)
+        const ranges =
+          target.expectedContent === callerContent
+            ? target.ranges
+            : target.expectedContent === undefined
+              ? undefined
+              : rangesInText(target.ranges, target.expectedContent, callerContent);
+        if (ranges === undefined)
           return staleAnchor(target.ranges[0]?.start.lineNumber ?? firstMatch.lineNumber);
         return {
           kind: "resolved",
-          anchor: new TextSelectionAnchor(value, source, [...target.ranges]),
+          anchor: new TextSelectionAnchor(value, source, [...ranges]),
         };
       }
     }
+    // The caller's text, the same text numbered references resolve in above.
+    const current = callerContent;
     const currentDigest = digestContent(current);
     if (parsed.selector === "all" && currentDigest !== snapshot.digestBySource.get(source)) {
       ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
@@ -495,14 +510,18 @@ export class SearchSessionStore {
     }
     if (parsed.selector !== "all" && currentDigest !== session.digestBySource.get(source))
       return staleAnchor(requiredValue(sourceMatches[0]).lineNumber);
-    const document = createTextDocument(source, current);
+    // A search run again here read the file itself; its matches move onto the caller's text.
+    const found = refreshedContents?.get(source) ?? current;
+    const document = createTextDocument(source, found);
+    const ranges = rangesInText(
+      sourceMatches.map((match) => selectionRange(document, match, parsed.mode)),
+      found,
+      current,
+    );
+    if (ranges === undefined) return staleAnchor(requiredValue(sourceMatches[0]).lineNumber);
     return {
       kind: "resolved",
-      anchor: new TextSelectionAnchor(
-        value,
-        source,
-        sourceMatches.map((match) => selectionRange(document, match, parsed.mode)),
-      ),
+      anchor: new TextSelectionAnchor(value, source, ranges),
     };
   }
 

@@ -1,4 +1,4 @@
-import type { ResultTargetStore } from "pi-agent-resource";
+import { rangesInText, type ResultTargetStore } from "pi-agent-resource";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import {
   TEXT_SEARCH_ANCHOR_KIND,
@@ -29,14 +29,17 @@ export function createResultTargetAnchors(
               kind: "rejected",
               rejection: { code: "missing", reason: "Result does not select this source." },
             };
-          if (target.expectedContent !== context.content)
+          // Resolve in the caller's text: the store may already hold this selection on a newer
+          // text, or the caller may have read the file before another session wrote it.
+          const ranges = rangesInText(target.ranges, target.expectedContent, context.content);
+          if (ranges === undefined)
             return {
               kind: "rejected",
               rejection: { code: "stale", reason: "Result target is stale; repeat Read/Search." },
             };
           return {
             kind: "resolved",
-            anchor: new TextSelectionAnchor(value, target.source, target.ranges),
+            anchor: new TextSelectionAnchor(value, target.source, ranges),
           };
         } catch (error) {
           return {

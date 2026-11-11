@@ -209,10 +209,22 @@ export class ResultTargetStore {
     } catch (error) {
       if (!signal?.aborted)
         for (const target of result.targets)
-          if (fileStamp(target.source, path.parse(target.source).root || ".") === undefined)
-            this.invalidate(target.source);
+          if (!followsChanges(target.source)) this.invalidate(target.source);
       throw error;
     }
+  }
+
+  /**
+   * Verify only the selections the store cannot follow: sources without a filesystem stamp. A
+   * local file's selections already follow its changes, so a difference there means another
+   * session wrote it a moment ago, and the edit's own check under the file lock decides.
+   */
+  public async verifyUnfollowed(
+    result: ResolvedResultTargets,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const unfollowed = result.targets.filter((target) => !followsChanges(target.source));
+    if (unfollowed.length > 0) await this.verify({ ...result, targets: unfollowed }, signal);
   }
 
   /** Bind a numbered Search selector to its owner's registered snapshot; all-selectors keep refreshing. */
@@ -608,6 +620,13 @@ function adjustedRegions(targets: readonly ResultSourceTarget[]): string[] {
       return `lines ${String(range.start.lineNumber)}–${String(range.end.lineNumber)} changed: now ${String(range.start.lineNumber)}| ${shown}`;
     });
   });
+}
+
+/** Whether the store moves a source's selections when it changes: a local file with a stamp. */
+function followsChanges(source: string): boolean {
+  return (
+    !liveResource.test(source) && fileStamp(source, path.parse(source).root || ".") !== undefined
+  );
 }
 
 function sourcePath(source: string, cwd: string): string {
