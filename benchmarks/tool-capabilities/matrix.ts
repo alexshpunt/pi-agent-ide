@@ -64,6 +64,7 @@ const groups: [string[], string[]][] = [
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [["edit.repeated-line-anchor-shift"], ["repeated-line-anchor-after-shift"]],
+  [["edit.repeated-line-anchor-block-change"], ["repeated-line-anchor-after-block-delete"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],
