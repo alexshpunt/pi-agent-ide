@@ -84,6 +84,16 @@ describe("line anchors", () => {
     expect(linesWithAnchor(lineAnchors(edited), anchor)).toEqual([edited.length - 1]);
   });
 
+  test("never let a repeated line's anchor name a copy inserted next to it", () => {
+    const lines = ["#endif", "  }", "void f();", "template <typename T>", "#endif", "  }"];
+    const brace = anchorOf(lines, "  }", 2);
+    // Another session inserts a `  }` between the landmark above and the brace.
+    const inserted = [...lines.slice(0, 4), "  }", ...lines.slice(4)];
+    const found = linesWithAnchor(lineAnchors(inserted), brace);
+    // The brace is now line 7; the inserted one at line 5 must not take its anchor.
+    expect([[], [7]]).toContainEqual(found);
+  });
+
   test("move a repeated line's anchor with its landmark, not with the file", () => {
     const first = anchorOf(sampling, "template <typename T>", 1);
     const second = anchorOf(sampling, "template <typename T>", 2);
@@ -97,9 +107,9 @@ describe("line anchors", () => {
     const lines = ["x", "x", "x", "x"];
     const anchors = lineAnchors(lines);
     expect(new Set(anchors).size).toBe(4);
-    // The occurrence number from the top, like a line number: an inserted copy shifts it.
+    // The occurrences are counted from both edges, so an inserted copy makes the anchors stale.
     const inserted = ["x", ...lines];
-    expect(linesWithAnchor(lineAnchors(inserted), anchors[1] as string)).toEqual([2]);
+    expect(linesWithAnchor(lineAnchors(inserted), anchors[1] as string)).toEqual([]);
   });
 
   test("keep a template line's anchor when the definition above it moves or goes away", () => {

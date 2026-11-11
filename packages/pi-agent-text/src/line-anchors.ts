@@ -10,12 +10,17 @@ import { createTextDocument, type TextLine } from "./text-document.ts";
  *   any edit elsewhere until the line itself changes or a copy of it appears.
  * - A repeated line is named by a landmark, the nearest unique line above or below it, the number
  *   of times its text occurs between the landmark and the line, and its text. Edits outside the
- *   stretch between the landmark and the line leave the anchor intact.
+ *   stretch between the landmark and the line leave the anchor intact, as long as they don't add
+ *   or remove a copy of its text before the next unique line on the other side.
  * - The landmark comes from the line's own block, so moving a neighbouring block keeps it: a
  *   column-0 `}` or `};` ends a block, and the side reached without crossing a block end wins.
  *   A `template <typename T>` line takes the declaration below it, a closing brace the line above.
  *   When both sides or neither qualify, the nearer side wins; with no unique line on a side, the
  *   edge of the file stands in.
+ * - A repeated line also counts its text on the other side, up to the nearest unique line there,
+ *   but not which line that is. A copy inserted or removed on either side then makes the anchor
+ *   stale instead of handing it to a neighbouring copy, and moving the neighbouring block still
+ *   keeps it.
  * - A blank line is named by its landmarks on both sides. A blank line between two blocks then
  *   stops matching when either block moves, instead of matching a blank line next to the moved
  *   block in its new place.
@@ -159,8 +164,8 @@ export function lineAnchors(lines: readonly string[]): readonly string[] {
     anchors.push(
       encode(
         sideOf(index, line, up, down, blockEndsIn) === "above"
-          ? `a\0${up.anchor}\0${up.nth}\0${line}`
-          : `b\0${down.anchor}\0${down.nth}\0${line}`,
+          ? `a\0${up.anchor}\0${up.nth}\0${down.nth}\0${line}`
+          : `b\0${down.anchor}\0${down.nth}\0${up.nth}\0${line}`,
       ),
     );
   }
