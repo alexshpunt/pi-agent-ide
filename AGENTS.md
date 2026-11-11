@@ -9,6 +9,8 @@ CI may run automatically on `develop`, but it is not a merge requirement. Do not
 
 During feature development, run only relevant unit tests, typecheck/lint, a targeted integration case, or a small live smoke check locally. Full integration suites and other broad, heavy test runs belong only in CI/CD. Do not run them locally, including through an umbrella check command. Keep live tool and TUI verification for changed behavior; it is an internal check, not a separate user acceptance gate.
 
+To find a slow code path, profile a focused vitest file: `npx vitest run <file> --pool=forks --execArgv=--cpu-prof --execArgv=--cpu-prof-dir=<dir>` writes one `.cpuprofile` per test worker. Keep the profile directory outside the repository or in `.tmp/`.
+
 # Tool capability checks
 
 When changing an IDE tool or its supported composition with another tool, review and update the paid capability matrix and affected executable cases in `benchmarks/tool-capabilities/`. This is required even when the tool schema stays the same.
