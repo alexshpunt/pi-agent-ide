@@ -341,6 +341,65 @@ test("a rejected combined write fails the parent and blocks the next read", asyn
   });
 });
 
+test("accepted edits are replanned on the text another writer changed", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-replan-external-change", [
+      'text(await tools.replace({path:"note.txt",start:"alpha",text:"RACE_APPEND"}));' +
+        'text(await tools.replace({path:"note.txt",start:"beta",text:"B"}));',
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(getToolResultText(run, "script-0")).toContain("Editor batches: 1 committed");
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      "RACE_APPEND\nB\ngamma\nomega\nexternal\n",
+    );
+    expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+  });
+});
+
+test("a call whose anchor another writer removed fails alone at commit", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-replan-partial", [
+      'text(await tools.replace({path:"note.txt",start:"gamma",text:"G"}));' +
+        'text(await tools.replace({path:"note.txt",start:"beta",text:"RACE_REMOVE_GAMMA"}));',
+    ]);
+    const output = getToolResultText(run, "script-0");
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(output).toContain("Editor batch partly applied: 1 of 2 calls written.");
+    expect(output).toContain('Call 1 (replace) was not applied: start "gamma"');
+    expect(output).not.toContain("Call 2");
+    expect(batchDetails(run).editorBatches).toEqual([
+      {
+        applied: true,
+        calls: [
+          { id: "script-0/1", state: "failed-not-applied" },
+          { id: "script-0/2", state: "completed" },
+        ],
+      },
+    ]);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      "alpha\nRACE_REMOVE_GAMMA\nomega\n",
+    );
+  });
+});
+
+test("an accepted exact-text edit still commits after a later exact-text failure", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-codemode-exact-text-block", [
+      'text(await tools.replace({path:"note.txt",start:"gamma",text:"G"}));' +
+        'await tools.replace({path:"note.txt",start:"a",text:"ambiguous"});',
+    ]);
+    const output = getToolResultText(run, "script-0");
+    expect(output).toContain("Editor batches: 1 committed");
+    expect(output).not.toContain("Call 1");
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\nG\nomega\n");
+  });
+});
+
 test("a batch whose every anchor is gone says that no file was changed", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
