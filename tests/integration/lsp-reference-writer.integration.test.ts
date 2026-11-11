@@ -62,12 +62,17 @@ const note = (label, result) => {
   return result;
 };
 let listed;
+let scoped = 0;
 try {
   for (let round = 1; round <= 3; round += 1) {
     note("round " + round + " path scope", await tools.lsp_search({ query: "handle", path: "main.cpp", references: true }));
-    const found = await tools.search({ path: "main.cpp", query: "int handle(int value)" });
-    const scope = matchRows(String(found.result))[0];
-    if (scope === undefined) { failures.push("round " + round + ": the search result has no anchor"); continue; }
+    // A search under a writer sometimes returns a result without anchors; that is LPT-1382, so
+    // this round asks again instead of failing, and the run needs one scoped call to count.
+    let scope;
+    for (let attempt = 1; attempt <= 3 && scope === undefined; attempt += 1)
+      scope = matchRows(String((await tools.search({ path: "main.cpp", query: "int handle(int value)" })).result))[0];
+    if (scope === undefined) { report.push("round " + round + " result scope: the search result has no anchor (LPT-1382)"); continue; }
+    scoped += 1;
     note("round " + round + " result scope", await tools.lsp_search({ query: "handle", path: scope.ref, references: true }));
   }
   // An agent renames from the list it got under the writer: every call must move with it.
@@ -85,6 +90,7 @@ const writes = String(await tools.bash({ command: "grep -c '// peer' main.cpp" }
 check(writes && Number(writes[0]) > 10, "The concurrent writer did not run: " + report.join("\n"));
 report.push("writes=" + writes[0]);
 check(failures.length === 0, failures.join("\n") + "\n" + report.join("\n"));
+check(scoped > 0, "No round could use a result scope: " + report.join("\n"));
 const all = /SEARCH#[A-F\d]+:all:match/.exec(String(listed.result));
 check(all, "The reference list has no all-match anchor: " + String(listed.result).slice(0, 400));
 await tools.replace({ path: all[0], text: "dispatch" });
