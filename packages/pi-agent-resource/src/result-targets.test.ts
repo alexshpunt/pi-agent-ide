@@ -372,6 +372,17 @@ describe("selections registered from a text the file no longer has", () => {
     await expect(store.verify(resolved)).resolves.toBeUndefined();
   });
 
+  test("a write between resolving a selection and verifying it leaves the file's other selections usable", async () => {
+    const store = new ResultTargetStore();
+    const checked = match(store, 2);
+    const other = match(store, 4);
+    const resolved = store.resolve(checked, directory);
+    writeFileSync(file, `zero\n${original}`);
+    await expect(store.verify(resolved)).rejects.toThrow(/stale/u);
+    expect(store.resolve(other, directory).targets[0]?.ranges).toEqual([line(5)]);
+    expect(store.resolve(checked, directory).targets[0]?.ranges).toEqual([line(3)]);
+  });
+
   test("a match whose own text changed before it was registered is refused with its current line", () => {
     const store = new ResultTargetStore();
     writeFileSync(file, original.replace("three", "thr33"));

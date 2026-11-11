@@ -18,6 +18,26 @@ afterEach(async () => {
   );
 });
 
+test("a source written while its snapshot is read is reported as a changed source, so the request runs again", async () => {
+  const root = path.resolve(".agents/tmp/lsp-source-snapshot");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "case-"));
+  directories.push(cwd);
+  const source = path.join(cwd, "main.cpp");
+  await writeFile(source, "int a;\n");
+  const manager = LspManager.init(LspServerRegistry.fromConfig({ version: 1, servers: {} }, cwd));
+  const read = manager.readSourceText.bind(manager);
+  vi.spyOn(manager, "readSourceText").mockImplementation(async (file, signal) => {
+    const content = await read(file, signal);
+    // Another session appends a line while the snapshot is being read.
+    await writeFile(source, "int a;\nint b;\n");
+    return content;
+  });
+  await expect(manager.readSourceSnapshot(source)).rejects.toMatchObject({
+    code: "SOURCE_CHANGED",
+  });
+});
+
 test.each([false, true])(
   "workspace symbols start only servers for present source files (source=%s)",
   async (present) => {

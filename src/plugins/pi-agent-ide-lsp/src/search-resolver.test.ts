@@ -33,7 +33,8 @@ const request = (
 });
 
 afterEach(async () => {
-  vi.clearAllMocks();
+  // Also drops queued answers a test did not consume, so they cannot reach the next test.
+  vi.resetAllMocks();
   registered = undefined;
 });
 
@@ -156,6 +157,81 @@ test("follows references only when requested", async () => {
 
   const scopes: unknown[] = backend.searchSymbols.mock.calls.map((call) => call[4]);
   expect(scopes).toEqual([{ path: "src" }, { path: "src", navigation: "references" }]);
+});
+
+/** A search session that refuses the first registration, like a file written in between. */
+function resolverWithOneChangedRegistration() {
+  const sessions: SearchSelectionRegistration[] = [];
+  let refused = false;
+  const changing = createLspSearchResolver(
+    async () => manager,
+    async (selection) => {
+      if (!refused) {
+        refused = true;
+        throw Object.assign(
+          new Error(
+            "Search result in /workspace/app.ts changed before its anchors were registered.",
+          ),
+          { name: "SearchSnapshotChangedError" },
+        );
+      }
+      sessions.push(selection);
+      return { id: "LSP2", matches: selection.matches, complete: selection.complete };
+    },
+    backend,
+  );
+  return { changing, sessions };
+}
+
+test("searches again when the file changes before a symbol search registers its anchors", async () => {
+  const source = path.join(cwd, "app.ts");
+  const hit = (lineNumber: number) => ({
+    source,
+    lineNumber,
+    startColumn: 6,
+    endColumn: 11,
+    matchedText: "label",
+    lineText: "const label = 1;",
+    role: "definition" as const,
+    symbol: {
+      id: "label",
+      name: "label",
+      kind: "variable",
+      source,
+      range: { startLine: lineNumber, startColumn: 6, endLine: lineNumber, endColumn: 11 },
+    },
+  });
+  backend.searchSymbols
+    .mockResolvedValueOnce({ hits: [hit(1)], complete: true })
+    .mockResolvedValueOnce({ hits: [hit(2)], complete: true });
+  const { changing, sessions } = resolverWithOneChangedRegistration();
+
+  const result = await changing.tryResolve(request({ query: "label" }), { cwd });
+
+  expect(result.kind).toBe("resolved");
+  expect(backend.searchSymbols).toHaveBeenCalledTimes(2);
+  expect(sessions.map((session) => session.matches)).toEqual([[hit(2)]]);
+});
+
+test("resolves a declaration again when the file changes before its anchor is registered", async () => {
+  const source = path.join(cwd, "app.ts");
+  backend.resolveLspDeclaration
+    .mockResolvedValueOnce({
+      source,
+      content: "class App {}\n",
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 12 } },
+    })
+    .mockResolvedValueOnce({
+      source,
+      content: "// peer\nclass App {}\n",
+      range: { start: { line: 1, character: 0 }, end: { line: 1, character: 12 } },
+    });
+  const { changing, sessions } = resolverWithOneChangedRegistration();
+
+  const result = await changing.tryResolve(request({ declaration: "app.ts#App" }), { cwd });
+
+  expect(result.kind).toBe("resolved");
+  expect(sessions[0]?.matches).toMatchObject([{ lineNumber: 2, matchedText: "class App {}\n" }]);
 });
 
 test("names the fatal compiler errors that can hide references", async () => {
