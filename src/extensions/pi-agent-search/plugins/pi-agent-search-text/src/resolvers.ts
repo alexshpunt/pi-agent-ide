@@ -242,8 +242,8 @@ function createMatchResolver(
       const captured = await captureCurrentMatches(result, context.cwd, {
         request: effectiveRequest(result),
         inContent: scope === undefined,
+        read: sessions.snapshotReader(context.cwd, context.environment),
         ...(refresh === undefined ? {} : { rerun: refresh }),
-        ...(context.environment === undefined ? {} : { environment: context.environment }),
         ...(context.signal === undefined ? {} : { signal: context.signal }),
       });
       const notices = [...result.notices, ...captured.notices];

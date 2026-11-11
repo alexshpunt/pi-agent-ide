@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -89,6 +89,51 @@ test("a search reports the matches of the text it registers when a match disappe
     "4:rename_me",
   ]);
   expect(details.matchCount).toBe(1);
+});
+
+test("a search in a result scope registers the matches of the current scope text", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-registration-scope-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "main.cpp");
+  await writeFile(source, text(...original));
+  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+  const resolver = createTextResolver(sessions);
+  const scopeOf = (content: string) => ({
+    complete: true,
+    targets: [
+      {
+        source,
+        expectedContent: content,
+        readCurrent: async () => readFile(source, "utf8"),
+        ranges: [
+          {
+            start: { lineNumber: 1, column: 0 },
+            end: {
+              lineNumber: content.split("\n").length - 1,
+              column: (content.split("\n").at(-2) ?? "").length,
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const context = {
+    cwd,
+    signal: new AbortController().signal,
+    scope: scopeOf(text(...original)),
+    rescope: async () => scopeOf(await readFile(source, "utf8")),
+  };
+  const resolved = await resolver.tryResolve({ query: "rename_me", path: "main.cpp" }, context);
+  if (resolved.kind !== "resolved") throw new Error(`Expected matches, got ${resolved.kind}`);
+  await writeFile(source, text("// peer 1", ...original));
+  const output = await resolver.format(resolved.payload, context);
+  const details = output.details as SearchToolDetails & { readonly target?: string };
+
+  expect(details.target).toBeDefined();
+  expect(await selected(sessions, `SEARCH#${String(details.sessionId)}:all:match`, cwd)).toEqual([
+    "3:rename_me",
+    "4:rename_me",
+  ]);
 });
 
 test("a search fails with a reason when the matched file cannot be read any more", async () => {

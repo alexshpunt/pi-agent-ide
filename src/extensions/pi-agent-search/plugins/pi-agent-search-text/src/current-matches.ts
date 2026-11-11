@@ -1,7 +1,5 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { SearchEnvironment } from "pi-agent-search/api/search";
 import { createTextDocument } from "pi-agent-text";
 
 import { searchTextContent, type TextSearchRequest } from "#src/search-backend.ts";
@@ -32,7 +30,8 @@ export interface CaptureOptions {
     readonly matches: readonly TextSearchMatch[];
     readonly complete: boolean;
   }>;
-  readonly environment?: SearchEnvironment;
+  /** Reads a source the way the registration snapshot does; see `SearchSessionStore.snapshotReader`. */
+  readonly read: (source: string, signal?: AbortSignal) => Promise<string>;
   readonly signal?: AbortSignal;
 }
 
@@ -104,17 +103,7 @@ async function readSources(
       ): Promise<{ source: string; content?: string; error?: unknown; failed: boolean }> => {
         options.signal?.throwIfAborted();
         try {
-          return {
-            source,
-            failed: false,
-            content:
-              options.environment === undefined
-                ? await readFile(source, {
-                    encoding: "utf8",
-                    ...(options.signal !== undefined && { signal: options.signal }),
-                  })
-                : await options.environment.readText(source, options.signal),
-          };
+          return { source, failed: false, content: await options.read(source, options.signal) };
         } catch (error) {
           options.signal?.throwIfAborted();
           return { source, failed: true, error };

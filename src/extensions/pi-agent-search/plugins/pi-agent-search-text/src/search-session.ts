@@ -359,6 +359,21 @@ export class SearchSessionStore {
     return observations;
   }
 
+  /**
+   * Reads a source exactly as a registration snapshot does, through the owner Read provides. A
+   * caller that captures text to register with its matches must read it the same way, or its
+   * snapshot would differ from what this store reads later.
+   */
+  public snapshotReader(
+    cwd: string,
+    environment?: SearchEnvironment,
+  ): (source: string, signal?: AbortSignal) => Promise<string> {
+    const readSource = this.readSource;
+    const read: SnapshotReader | undefined =
+      readSource === undefined ? undefined : (source, abort) => readSource(source, cwd, abort);
+    return (source, signal) => readOwnedText(source, signal, environment, read);
+  }
+
   public anchorResolver(): TextAnchorResolver {
     return {
       id: "search",
