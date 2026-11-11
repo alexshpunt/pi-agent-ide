@@ -203,6 +203,11 @@ export class ResultTargetStore {
     this.#referenceNames.set(target, reference);
   }
 
+  /** Whether `registerSearchReference` bound this numbered Search reference to a snapshot. */
+  public hasSearchReference(reference: string): boolean {
+    return this.#matchReferences.has(reference);
+  }
+
   /** The Search reference a handle was issued for, so messages name what the agent passed. */
   public referenceName(handle: string): string {
     return this.#referenceNames.get(handle) ?? handle;

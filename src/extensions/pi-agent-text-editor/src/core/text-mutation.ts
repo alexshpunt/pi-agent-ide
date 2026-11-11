@@ -54,7 +54,10 @@ import { imageWriteResult, planImageWrite } from "#src/core/image-write.ts";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
-import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
+import {
+  resolvedTextAnchorType,
+  TextAnchorResourceResolutionError,
+} from "#src/core/text-anchor-registry.ts";
 import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.ts";
 import { retryWhenSourceChanged, SOURCE_CHANGED } from "#src/core/source-change-retry.ts";
 import {
@@ -1811,17 +1814,22 @@ async function anchorFailureToolResult(
     return undefined;
   });
 
+  // A reference such as SEARCH#…:all:match names resources, not a position: reading it as a path
+  // would only resolve it again, and the first lines of a file say nothing about it.
+  const reference = resolution instanceof TextAnchorResourceResolutionError;
   const windows =
-    recovery?.kind === "candidates"
-      ? recoveryWindows(
-          recovery.candidates.map(({ range }) => range),
-          core.recoveryContextLines(),
-        )
-      : resolution.rejection?.contextRange === undefined
-        ? []
-        : [resolution.rejection.contextRange];
+    reference && contextual.source === contextual.anchor
+      ? []
+      : recovery?.kind === "candidates"
+        ? recoveryWindows(
+            recovery.candidates.map(({ range }) => range),
+            core.recoveryContextLines(),
+          )
+        : resolution.rejection?.contextRange === undefined
+          ? []
+          : [resolution.rejection.contextRange];
   // An anchor no line produces has no position to show lines around; the first lines would only mislead.
-  if (windows.length === 0 && resolution.rejection?.code !== "stale") {
+  if (windows.length === 0 && !reference && resolution.rejection?.code !== "stale") {
     windows.push({ offset: 1, limit: 40 });
   }
 
@@ -1927,7 +1935,11 @@ function formatRejectedAnchorMessage(
         : "Exact-text edits are blocked for this file. Use a current anchor below for the intended edit, or get one with Read/Search. Exact text is available again after that edit succeeds."
       : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
-  return `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} "${failure.anchor}" ${state}. ${guidance} (${reason})${context}`;
+  const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} "${failure.anchor}" ${state}`;
+  // Nothing is shown below a reference without a position; its reason carries the next step.
+  if (failure.resolution instanceof TextAnchorResourceResolutionError && context.length === 0)
+    return `${subject}: ${reason}`;
+  return `${subject}. ${guidance} (${reason})${context}`;
 }
 
 function recoveryWindows(

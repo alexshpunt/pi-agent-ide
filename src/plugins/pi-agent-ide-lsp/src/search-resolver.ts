@@ -2,6 +2,7 @@ import { ResultPanel } from "pi-agent-tool-ui";
 import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import {
+  currentScope,
   renderSearchMatches,
   selectionData,
   type SearchPluginApi,
@@ -166,21 +167,32 @@ export function createLspSearchResolver(
         if (query.length === 0)
           return { kind: "failed", error: new Error("query must not be empty") };
         const references = options.references === true;
-        const scope = context.scope;
-        const groups = new Map<LspManager, ResolvedResultTargets["targets"][number][]>();
-        if (scope !== undefined) {
-          await verifyResultTargets(scope, context.signal);
+        const initialScope = context.scope;
+        const groupScope = async (
+          scope: ResolvedResultTargets | undefined,
+          signal?: AbortSignal,
+        ) => {
+          const groups = new Map<LspManager, ResolvedResultTargets["targets"][number][]>();
+          if (scope === undefined) {
+            groups.set(await managerFor(context.cwd, request.path, signal), []);
+            return groups;
+          }
           for (const target of scope.targets) {
-            const manager = await managerFor(context.cwd, target.source, context.signal);
+            const manager = await managerFor(context.cwd, target.source, signal);
             const group = groups.get(manager) ?? [];
             group.push(target);
             groups.set(manager, group);
           }
-        } else {
-          groups.set(await managerFor(context.cwd, request.path, context.signal), []);
-        }
+          return groups;
+        };
+        if (initialScope !== undefined) await verifyResultTargets(initialScope, context.signal);
+        const initialGroups = await groupScope(initialScope, context.signal);
         const limit = request.limit ?? 100;
-        const collect = async (signal?: AbortSignal) => {
+        // A refresh, such as for an all-anchor after other edits, finds the scope in the current
+        // text first, like text and AST search; the scope as first resolved is stale by then.
+        const collect = async (signal?: AbortSignal, refresh = false) => {
+          const scope = refresh ? await currentScope(context, signal) : initialScope;
+          const groups = refresh ? await groupScope(scope, signal) : initialGroups;
           const hits: SymbolHit[] = [];
           let complete = scope?.complete ?? true;
           for (const [manager, targets] of groups) {
@@ -203,7 +215,19 @@ export function createLspSearchResolver(
             hits.push(...found.hits);
             complete = complete && found.complete;
           }
-          if (scope !== undefined) await verifyResultTargets(scope, signal);
+          if (scope !== undefined) {
+            try {
+              await verifyResultTargets(scope, signal);
+            } catch (error) {
+              // During a refresh the scope was current a moment ago: another writer changed the
+              // file meanwhile, which an edit retries on the new text.
+              if (!refresh || signal?.aborted === true) throw error;
+              throw Object.assign(
+                new Error("The file changed while the LSP search ran again.", { cause: error }),
+                { code: "SOURCE_CHANGED" },
+              );
+            }
+          }
           // The search session keeps these hits and its refresh closure for as long as its anchors
           // live. A copy keeps only the matched text, not each file the text was cut from.
           return structuredClone({
@@ -219,7 +243,7 @@ export function createLspSearchResolver(
             complete: found.complete,
             refresh: (signal) =>
               withLspDocuments(async () => {
-                const next = await collect(signal);
+                const next = await collect(signal, true);
                 return { matches: next.hits, complete: next.complete };
               }),
           },
