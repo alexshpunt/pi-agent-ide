@@ -84,6 +84,16 @@ describe("line anchors", () => {
     expect(linesWithAnchor(lineAnchors(edited), anchor)).toEqual([edited.length - 1]);
   });
 
+  test("never let a repeated line's anchor name a copy inserted next to it", () => {
+    const lines = ["#endif", "  }", "void f();", "template <typename T>", "#endif", "  }"];
+    const brace = anchorOf(lines, "  }", 2);
+    // Another session inserts a `  }` between the landmark above and the brace.
+    const inserted = [...lines.slice(0, 4), "  }", ...lines.slice(4)];
+    const found = linesWithAnchor(lineAnchors(inserted), brace);
+    // The brace is now line 7; the inserted one at line 5 must not take its anchor.
+    expect([[], [7]]).toContainEqual(found);
+  });
+
   test("move a repeated line's anchor with its landmark, not with the file", () => {
     const first = anchorOf(sampling, "template <typename T>", 1);
     const second = anchorOf(sampling, "template <typename T>", 2);
