@@ -1,4 +1,7 @@
 import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  truncateHead,
   ToolExecutionComponent,
   type ExtensionAPI,
   type ToolDefinition,
@@ -96,6 +99,40 @@ export function formatToolDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${totalSeconds % 60}s`;
 }
 
+/**
+ * A display copy of a result whose text exceeds the shared output limit: the head of its text and
+ * only its scalar details, since line records describe the whole text. Undefined when it fits.
+ */
+function shortenedDisplay(
+  result: NonNullable<ChildPanel["result"]>,
+): NonNullable<ChildPanel["result"]> | undefined {
+  const content = result.content.map((block) => {
+    if (block.type !== "text") return block;
+    // The composition reference line is not part of the result's own text.
+    const reference = /^<system-result\b[^>]*><uuid>[a-f\d-]{36}<\/uuid><\/system-result>\n/u.exec(
+      block.text,
+    )?.[0];
+    const body = reference ? block.text.slice(reference.length) : block.text;
+    const head = truncateHead(body, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
+    if (!head.truncated) return block;
+    const notice = `[Showing ${head.outputLines} of ${head.totalLines} lines in this panel; the calling tool received the whole result.]`;
+    return {
+      ...block,
+      text: (reference ?? "") + (head.content ? `${head.content}\n\n${notice}` : notice),
+    };
+  });
+  if (content.every((block, index) => block === result.content[index])) return undefined;
+  const details =
+    result.details !== null && typeof result.details === "object"
+      ? Object.fromEntries(
+          Object.entries(result.details).filter(([, value]) =>
+            ["string", "number", "boolean"].includes(typeof value),
+          ),
+        )
+      : result.details;
+  return { ...result, content, details };
+}
+
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
 export function createNestedIdeRendering(
   pi: ExtensionAPI,
@@ -147,16 +184,21 @@ export function createNestedIdeRendering(
     result: NonNullable<ChildPanel["result"]>,
   ) => {
     // Bound in-memory display data as each call finishes, not only at persistence.
-    call.result = result;
     call.resultOmitted = false;
-    try {
-      const serialized = JSON.stringify(group);
-      if (Buffer.byteLength(serialized) <= MAX_BYTES) {
-        call.result = JSON.parse(JSON.stringify(result)) as NonNullable<ChildPanel["result"]>;
-        return;
+    // A script can receive a whole large file from Read; its panel needs only the head. Other
+    // renderers depend on complete details, so their oversized results stay omitted.
+    for (const candidate of [result, call.name === "read" ? shortenedDisplay(result) : undefined]) {
+      if (candidate === undefined) continue;
+      call.result = candidate;
+      try {
+        const serialized = JSON.stringify(group);
+        if (Buffer.byteLength(serialized) <= MAX_BYTES) {
+          call.result = JSON.parse(JSON.stringify(candidate)) as NonNullable<ChildPanel["result"]>;
+          return;
+        }
+      } catch {
+        // A renderer payload that cannot be serialized must not break tool execution.
       }
-    } catch {
-      // A renderer payload that cannot be serialized must not break tool execution.
     }
     const references =
       result.details && typeof result.details === "object"

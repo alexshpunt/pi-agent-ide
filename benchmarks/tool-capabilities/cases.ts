@@ -1093,20 +1093,21 @@ for (const { name, rows, files } of overviewFixtures) {
         contains: "No matches found",
       },
     ],
-    { files, expected: files },
+    // The overview is model-facing only: a Codemode script reads the exact text.
+    { modes: ["direct"], files, expected: files },
   );
 }
 const storedOverview = overviewFixtures[0];
 if (storedOverview === undefined) throw new Error("Missing overview fixture");
 add(
-  "read-overview-store",
-  ["compose.overview-store-load"],
-  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged overview result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. Finally try Search using the saved overview again and confirm stale-input rejection.",
+  "read-large-store",
+  ["compose.large-read-store-load"],
+  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged Read result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. Finally search the saved result for NEEDLE again and report whether the edited region still contains it.",
   [
     {
       tool: "read",
       args: { path: "large.ts", offset: 2, limit: 2103 },
-      contains: "Some source text is omitted.",
+      contains: 'consume("NEEDLE")',
     },
     {
       tool: "search",
@@ -1115,13 +1116,39 @@ add(
       contains: "large.ts:103:12-18",
     },
     { tool: "replace", args: { text: "FOUND" }, reuse: reuse(1) },
-    { tool: "search", args: { query: "NEEDLE" }, reuse: reuse(0), error: true },
+    { tool: "search", args: { query: "NEEDLE" }, reuse: reuse(0), contains: "No matches found" },
   ],
   {
     modes: ["codemode"],
     files: storedOverview.files,
     expected: {
       "large.ts": storedOverview.files["large.ts"].replace('consume("NEEDLE")', 'consume("FOUND")'),
+    },
+  },
+);
+
+const largeJsonRows = Array.from({ length: 2500 }, (_, id) => ({
+  id,
+  name: `row ${id}`,
+  status: "open",
+}));
+add(
+  "read-large-json-script",
+  ["codemode.read-exact-text"],
+  "In one Codemode script, read data.json, a file larger than the model output limit, and parse its text with JSON.parse. Set status to done for the record with id 2499, then write the whole file back with JSON.stringify(rows, null, 2). Do not use Bash or the raw: prefix.",
+  [
+    { tool: "read", args: { path: "data.json" }, contains: '"name": "row 1250"' },
+    { tool: "write", args: { path: "data.json" } },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "data.json": JSON.stringify(largeJsonRows, null, 2) },
+    expected: {
+      "data.json": JSON.stringify(
+        largeJsonRows.map((row) => (row.id === 2499 ? { ...row, status: "done" } : row)),
+        null,
+        2,
+      ),
     },
   },
 );

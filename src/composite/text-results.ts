@@ -312,6 +312,8 @@ export function createIdeTextResults(
         writable: true,
       };
     const execute: typeof definition.execute = async (...args) => {
+      // A Read issued by another tool, such as a Codemode script, returns its whole text there.
+      const limitText = !(definition.name === "read" && parents.has(args[0]));
       const result = await definition.execute(...args).catch(async (error: unknown) => {
         const limited = await limitIdeOutput(
           [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
@@ -325,6 +327,7 @@ export function createIdeTextResults(
         result.content,
         outputNotices(result.details),
         saveFullOutput,
+        { limitText },
       );
       const text = limited.text + limited.metadataSuffix;
       return {

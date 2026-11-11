@@ -49,10 +49,13 @@ test("overview preserves source-window data attached by an earlier transform", a
   expect(result.script).toBe(script);
   expect(result.content).not.toEqual(input.result.content);
 });
-test("script data is never replaced with an overflow outline", async () => {
-  const input: ReadPipelineContext = { ...context(), audience: "script" };
-  expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
-});
+test.each<Partial<ReadPipelineContext>>([{ audience: "script" }, { outputLimit: "none" }])(
+  "text for a program is never replaced with an overflow outline (%o)",
+  async (caller) => {
+    const input: ReadPipelineContext = { ...context(), ...caller };
+    expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
+  },
+);
 test.each(["sample.ts", "ssh://fixture/work/sample.ts"])(
   "overflow returns the compact tree from the %s snapshot",
   async (file) => {

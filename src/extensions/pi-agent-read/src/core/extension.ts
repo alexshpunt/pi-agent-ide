@@ -28,7 +28,19 @@ export default async function registerReadCore(
   pi: ExtensionAPI,
   context?: { readonly preferences: Readonly<Record<string, string>> },
 ): Promise<void> {
-  const core = createReadCore(() => parsePresentation(context?.preferences["ui.read"]));
+  // Codemode scripts and other tools call Read through Pi; their results skip the model budget.
+  const nestedCalls = new Set<string>();
+  pi.on("tool_execution_start", (event) => {
+    if (event.toolName === "read" && event.parentToolCallId !== undefined)
+      nestedCalls.add(event.toolCallId);
+  });
+  pi.on("tool_execution_end", (event) => {
+    nestedCalls.delete(event.toolCallId);
+  });
+  const core = createReadCore(
+    () => parsePresentation(context?.preferences["ui.read"]),
+    (toolCallId) => nestedCalls.has(toolCallId),
+  );
   const targets = connectResultTargets(pi);
   await core.registerPlugin({
     protocol: READ_PROTOCOL,
