@@ -40,6 +40,12 @@ export const resultInputSchema = Type.Union([Type.String(), Type.Array(Type.Stri
 
 const prefix = "RESULT#";
 const event = "pi-agent-resource:result-targets";
+/**
+ * Version of the shared store's behavior. Raise it with any change that a store from an older
+ * copy of this package must not provide, such as a new method or different resolution rules.
+ * Extensions bundle their own copy, so one session can load several versions.
+ */
+export const RESULT_TARGET_STORE_VERSION = 1;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -64,6 +70,8 @@ type ResultEntry = { readonly cwd: string } & (
 
 /** Stores immutable source selections for one extension runtime, isolated by worktree. */
 export class ResultTargetStore {
+  /** Behavior version, compared when copies of this package share one store. */
+  public readonly version: number = RESULT_TARGET_STORE_VERSION;
   readonly #entries = new Map<string, ResultEntry>();
   readonly #matchReferences = new Map<string, string>();
   readonly #referenceNames = new Map<string, string>();
@@ -765,16 +773,26 @@ function combineTargets(targets: readonly ResultSourceTarget[]): ResultSourceTar
       ),
     }));
 }
-/** Share one backend store through Pi's extension event bus, without process-global state. */
+/**
+ * Share one backend store through Pi's extension event bus, without process-global state.
+ *
+ * Extensions bundle their own copy of this package, and the first copy to load creates the store.
+ * A copy uses an existing store only when it is as new as itself. Otherwise it creates its own and
+ * sends every call of the older stores to it, so all extensions keep sharing one store and older
+ * copies get the newer behavior.
+ */
 export function connectResultTargets(pi: ExtensionAPI): ResultTargetStore {
-  let existing: ResultTargetStore | undefined;
+  const offered: OfferedStore[] = [];
   pi.events.emit(event, {
-    accept: (store: ResultTargetStore) => {
-      existing = store;
+    accept: (store: unknown) => {
+      if (store !== null && typeof store === "object" && !offered.includes(store as OfferedStore))
+        offered.push(store as OfferedStore);
     },
   });
-  if (existing !== undefined) return existing;
+  const current = offered.find(isCurrentStore);
+  if (current !== undefined) return current;
   const store = new ResultTargetStore();
+  for (const older of offered) forwardStore(older, store);
   const unsubscribe = pi.events.on(event, (request) => {
     if (
       request !== null &&
@@ -792,4 +810,43 @@ export function connectResultTargets(pi: ExtensionAPI): ResultTargetStore {
     unsubscribe();
   });
   return store;
+}
+
+/** A store another copy of this package offered on the event bus; its version is unknown. */
+type OfferedStore = Record<string, unknown>;
+
+/** Methods a shared store must provide; a store from an older copy can lack some of them. */
+function storeMethods(): (keyof ResultTargetStore)[] {
+  return Object.getOwnPropertyNames(ResultTargetStore.prototype).filter(
+    (name): name is keyof ResultTargetStore =>
+      name !== "constructor" &&
+      typeof Object.getOwnPropertyDescriptor(ResultTargetStore.prototype, name)?.value ===
+        "function",
+  );
+}
+
+/** A store, possibly from another copy of this package, that is at least as new as this one. */
+function isCurrentStore(store: OfferedStore): store is OfferedStore & ResultTargetStore {
+  return (
+    typeof store.version === "number" &&
+    store.version >= RESULT_TARGET_STORE_VERSION &&
+    storeMethods().every((name) => typeof store[name] === "function")
+  );
+}
+
+/**
+ * Send the calls of an older store to `store`. Its holders keep their reference, and what they
+ * register or resolve lands in the store every newer copy uses. A method this version does not
+ * have stays as it was.
+ */
+function forwardStore(older: OfferedStore, store: ResultTargetStore): void {
+  for (const name of storeMethods()) {
+    if (typeof older[name] !== "function") continue;
+    const method = store[name] as (...arguments_: unknown[]) => unknown;
+    Object.defineProperty(older, name, {
+      configurable: true,
+      writable: true,
+      value: (...arguments_: unknown[]): unknown => method.apply(store, arguments_),
+    });
+  }
 }
