@@ -26,7 +26,8 @@ const tools = [
   "write",
   "codemode",
 ];
-const anchor = formatLineHashAnchor;
+// Fixture lines are unique, so a line's anchor depends only on its text.
+const anchor = (_line: number, text: string): string => formatLineHashAnchor(text, 1);
 
 interface BatchEvent {
   type: string;
@@ -340,14 +341,16 @@ test("a rejected combined write fails the parent and blocks the next read", asyn
   });
 });
 
-test("commit rejects an external content change without replay", async () => {
+test("a batch whose every anchor is gone says that no file was changed", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-external-content", [
       'text(await tools.replace({path:"note.txt",start:"alpha",text:"RACE"}));',
     ]);
+    const output = getToolResultText(run, "script-0");
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toContain("changed before the edit batch");
+    expect(output).toContain("Editor batch not applied: no file was changed.");
+    expect(output).toContain('Call 1 (replace) was not applied: start "alpha"');
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("external\n");
     expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
   });

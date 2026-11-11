@@ -387,7 +387,8 @@ export async function executeRegisteredTextBatch(
   context: ExtensionContext,
   reporter: BatchExecutionReporter,
   renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
-  planned?: PlannedTextBatch,
+  /** Receives the plan of the last attempt and the texts it was planned on. */
+  onPlanned?: (plan: PlannedTextBatch, snapshots: ReadonlyMap<string, string>) => void,
   resultTargets?: ResultTargetStore,
 ): Promise<AgentToolResult<TextBatchDetails>> {
   const prepared = parameters.edits.map((entry) => {
@@ -427,34 +428,26 @@ export async function executeRegisteredTextBatch(
   }
 
   let outcome: TextResourcesEditOutcome<PlannedTextBatch>;
-  let executionPlan = planned;
+  let executionPlan: PlannedTextBatch | undefined;
   const guardedSnapshots = new Map<string, string>();
 
-  // A batch planned inside the transaction can run again when another process wrote one of its
-  // files first; a batch planned outside it or bound to snapshots cannot.
-  const replannable = planned === undefined && parameters.expectedContent === undefined;
+  // Planning inside the transaction lets the batch run again on the current text when another
+  // process wrote one of its files first, as content anchors still find their text there.
   const edit = () =>
     core.editTexts(
       [...requests.values()],
       { cwd: context.cwd, intent, ...(signal !== undefined && { signal }) },
       async (texts, resolveAnchor) => {
         for (const [source, content] of texts) guardedSnapshots.set(source, content);
-        for (const [source, expected] of parameters.expectedContent ?? []) {
-          if (!texts.has(source) || texts.get(source) !== expected) {
-            throw new Error(`Snapshot source ${source} changed before the edit batch.`);
-          }
-        }
-        const result =
-          planned ??
-          (await planRegisteredTextBatch(
-            registrations,
-            parameters,
-            texts,
-            resolveAnchor,
-            context,
-            signal,
-            renderArguments,
-          ));
+        const result = await planRegisteredTextBatch(
+          registrations,
+          parameters,
+          texts,
+          resolveAnchor,
+          context,
+          signal,
+          renderArguments,
+        );
         executionPlan = result;
         return {
           changes: result.changes,
@@ -466,7 +459,7 @@ export async function executeRegisteredTextBatch(
       },
     );
   try {
-    outcome = replannable ? await retryWhenSourceChanged(edit) : await edit();
+    outcome = await retryWhenSourceChanged(edit);
   } catch (error) {
     return failTextBatch(
       core,
@@ -476,6 +469,7 @@ export async function executeRegisteredTextBatch(
       reporter,
     );
   }
+  if (executionPlan !== undefined) onPlanned?.(executionPlan, guardedSnapshots);
 
   if (outcome.kind === "failed") {
     const mutationResults = new Map<string, AgentToolResult<FileMutationBatchResult>>();
