@@ -5,7 +5,7 @@ import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/ed
 import type { LspManagerProvider } from "./manager-provider.ts";
 import { resolveLspRenameTarget } from "./lsp/code-views.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
-import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
+import { sourceChanged } from "./lsp/source-changes.ts";
 import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.ts";
 import type { LspClient } from "./lsp/client.ts";
 import type { LspPosition } from "./lsp/types.ts";
@@ -62,24 +62,15 @@ function offset(content: string, position: LspPosition): number {
 }
 
 /**
- * Prepare server rename edits for the shared guarded editor, never a textual rename fallback.
- * Another process may write a participant while the server answers; the rename is then planned
+ * Prepare a server rename for the shared guarded editor, never a textual rename fallback. The
+ * editor plans the rename in each attempt of the edit, as it resolves the targets of other edits.
+ * When another process writes a participant before the edit writes it, the rename is planned
  * again on the current text, and a symbol that is gone fails as before.
  */
 export function prepareSymbolRename(
   state: TextPreEditState,
   managerFor: LspManagerProvider,
-): Promise<TextPreEditState | undefined> {
-  return retryWhileSourceChanges(
-    () => withLspDocuments(() => prepareRename(state, managerFor)),
-    state.signal,
-  );
-}
-
-async function prepareRename(
-  state: TextPreEditState,
-  managerFor: LspManagerProvider,
-): Promise<TextPreEditState | undefined> {
+): TextPreEditState | undefined {
   const input = state.input as Record<string, unknown>;
   if (
     typeof input.path !== "string" ||
@@ -99,15 +90,35 @@ async function prepareRename(
   const reference = parseCodeViewReference(input.path.slice(0, -5), "symbol");
   if (reference?.selector === undefined)
     throw new Error("Rename needs an exact symbol selector before #name.");
-  const source = resolveCodeViewPath(reference.path, state.cwd);
+  const request: RenameRequest = {
+    source: resolveCodeViewPath(reference.path, state.cwd),
+    selector: reference.selector,
+    newName: input.text,
+  };
+  return {
+    ...state,
+    planEdit: () => withLspDocuments(() => planRename(state, request, managerFor)),
+    metadata: {
+      ...state.metadata,
+      semanticEdit: { mode: "lsp-rename", referencesUpdated: true },
+      diffStatuses: [{ text: "Renamed through LSP", tone: "success" }],
+    },
+  };
+}
+
+interface RenameRequest {
+  readonly source: string;
+  readonly selector: readonly string[];
+  readonly newName: string;
+}
+
+async function planRename(
+  state: TextPreEditState,
+  { source, selector, newName }: RenameRequest,
+  managerFor: LspManagerProvider,
+): Promise<TextEditPlan> {
   const manager = await managerFor(state.cwd, source, state.signal);
-  const target = await resolveLspRenameTarget(
-    manager,
-    source,
-    reference.selector,
-    state.cwd,
-    state.signal,
-  );
+  const target = await resolveLspRenameTarget(manager, source, selector, state.cwd, state.signal);
   await loadQueryProject(target.client, target.uri, state.signal);
   const fileOf = (uri: string) => (uri.startsWith("ssh://") ? uri : fileURLToPath(uri));
   const errorsOf = diagnosticErrors(
@@ -131,7 +142,7 @@ async function prepareRename(
   // The first request discovers participants; only the second request can supply applied edits.
   // Capture and synchronize every participant first, so unopened files have a guarded revision.
   const preview = renameEntries(
-    await requestRename(target.client, target.uri, target.position, input.text),
+    await requestRename(target.client, target.uri, target.position, newName),
     target.client,
   );
   const snapshots = new Map<string, { file: string; content: string; version: string }>();
@@ -154,7 +165,7 @@ async function prepareRename(
     snapshots.set(uri, { file, ...snapshot });
   }
   const entries = renameEntries(
-    await requestRename(target.client, target.uri, target.position, input.text),
+    await requestRename(target.client, target.uri, target.position, newName),
     target.client,
   );
   state.signal?.throwIfAborted();
@@ -200,13 +211,5 @@ async function prepareRename(
       })),
     });
   }
-  return {
-    ...state,
-    editPlan: { files },
-    metadata: {
-      ...state.metadata,
-      semanticEdit: { mode: "lsp-rename", server: target.client.serverId, referencesUpdated: true },
-      diffStatuses: [{ text: "Renamed through LSP", tone: "success" }],
-    },
-  };
+  return { files };
 }

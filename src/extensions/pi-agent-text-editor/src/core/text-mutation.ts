@@ -1249,8 +1249,10 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
     state: TextPreEditState<Static<TParameters>>,
   ): Promise<TextResourcesEditOutcome<TextMutation>> {
     try {
-      if (state.editPlan !== undefined) {
-        const plan = state.editPlan;
+      if (state.planEdit !== undefined) {
+        // Planned in each attempt, like the targets of other edits: when another process wrote a
+        // planned file first, the comparison below fails and the next attempt plans again.
+        const plan = await state.planEdit();
         if (
           plan.files.length === 0 ||
           new Set(plan.files.map((file) => file.source)).size !== plan.files.length
@@ -1266,8 +1268,9 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
           (texts) => {
             for (const file of plan.files) {
               if (texts.get(file.source) !== file.expectedContent)
-                throw new Error(
-                  "A semantic edit source changed. Resolve the symbol again before retrying.",
+                throw Object.assign(
+                  new Error("A planned file changed before the semantic edit wrote it."),
+                  { code: SOURCE_CHANGED },
                 );
             }
             const edits = new Map(

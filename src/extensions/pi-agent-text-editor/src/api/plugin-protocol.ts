@@ -51,7 +51,7 @@ export {
 } from "#src/api/native-files.ts";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 32;
+export const TEXT_EDITOR_API_VERSION = 33;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 

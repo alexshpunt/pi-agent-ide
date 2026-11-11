@@ -234,7 +234,7 @@ export async function registerLspWithOwner(
             stage: "text-pre-edit",
             async handler(state) {
               if (operation === "replace") {
-                const renamed = await prepareSymbolRename(state, managerForFile);
+                const renamed = prepareSymbolRename(state, managerForFile);
                 if (renamed !== undefined) return renamed;
               }
               const input = state.input as Record<string, unknown>;
