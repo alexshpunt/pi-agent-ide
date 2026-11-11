@@ -1,9 +1,15 @@
 import type { FileMutationResult } from "./file-mutation-result.ts";
+import { describeAlreadyDone, type AlreadyDoneTarget } from "#src/core/already-done.ts";
 
 /** Exact applied replacement pairs and complete per-file counts, before formatting. */
 export interface GroupedReplacements {
   readonly groups: readonly { removedText: string; insertedText: string; count: number }[];
-  readonly files: readonly { path: string; groups: readonly number[]; formatting: string }[];
+  readonly files: readonly {
+    path: string;
+    groups: readonly number[];
+    formatting: string;
+    alreadyDone: readonly AlreadyDoneTarget[];
+  }[];
   readonly changes: number;
 }
 
@@ -14,7 +20,10 @@ export function groupReplacements(
   if (results.length === 0) return;
   const groups: { removedText: string; insertedText: string; count: number }[] = [];
   const indexes = new Map<string, number>();
-  const files = new Map<string, { path: string; groups: number[]; formatting: Set<string> }>();
+  const files = new Map<
+    string,
+    { path: string; groups: number[]; formatting: Set<string>; alreadyDone: AlreadyDoneTarget[] }
+  >();
   let changes = 0;
   for (const result of results) {
     const operations = result.data.operations;
@@ -37,7 +46,9 @@ export function groupReplacements(
       path: result.path,
       groups: [],
       formatting: new Set<string>(),
+      alreadyDone: [],
     };
+    file.alreadyDone.push(...(result.data.alreadyDone ?? []));
     const counts = file.groups;
     for (const change of raw) {
       const key = JSON.stringify([change.removedText, change.insertedText]);
@@ -86,5 +97,9 @@ export function renderGroupedReplacements(receipt: GroupedReplacements): string 
       (file) =>
         `${file.path}: ${file.groups.flatMap((count, index) => (count ? [`G${index + 1} x ${count}`] : [])).join(", ")}; formatting: ${file.formatting}`,
     ),
+    ...receipt.files.flatMap((file) => {
+      const alreadyDone = describeAlreadyDone(file.alreadyDone);
+      return alreadyDone === undefined ? [] : [`${file.path}: ${alreadyDone}`];
+    }),
   ].join("\n");
 }

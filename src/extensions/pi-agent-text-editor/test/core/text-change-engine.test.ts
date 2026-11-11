@@ -38,10 +38,13 @@ describe("text change engine", () => {
     ).toThrow("overlap");
   });
 
-  test("rejects a change that leaves its selected text unchanged", () => {
-    expect(() => applyTextChanges("alpha", [{ from: 0, to: 5, insert: "alpha" }])).toThrow(
-      "must change",
-    );
+  test("keeps a change whose range already has its text", () => {
+    const result = applyTextChanges("alpha beta", [
+      { from: 0, to: 5, insert: "alpha" },
+      { from: 6, to: 10, insert: "BETA" },
+    ]);
+    expect(result.content).toBe("alpha BETA");
+    expect(result.changes.map((change) => change.removedText)).toEqual(["alpha", "beta"]);
   });
 
   test("reports coordinates and text before and after the change", () => {

@@ -10,9 +10,10 @@ import { isResultInput } from "./result-transfer.ts";
 import {
   committedMutationTargets,
   describeUnavailableCopyTarget,
-  unchangedCopySources,
+  isAlreadyDoneMutation,
   verifyMutationTargets,
 } from "./mutation-result-targets.ts";
+import { alreadyDoneToolResult } from "./already-done.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { postWriteFailureEffect } from "./text-mutation.ts";
 import { renderTextAnchor } from "pi-agent-text";
@@ -554,12 +555,7 @@ export async function executeRegisteredTextBatch(
         return [];
       }
 
-      // The core already validated the write; a created empty resource has no text delta.
-      const ownAfter = applyTextChanges(
-        resource.before.content,
-        edit.changes,
-        resource.before.content.length === 0,
-      ).content;
+      const ownAfter = applyTextChanges(resource.before.content, edit.changes).content;
       return [
         buildSuccessfulTextMutationResult(
           resource,
@@ -587,12 +583,9 @@ export async function executeRegisteredTextBatch(
     displayResults.push(...callDisplayResults);
     callIdsByDisplayResult.push(...callDisplayResults.map(() => callId));
 
-    const unchangedCopy =
-      mutation.operation === "copy" &&
-      mutation.edits.size > 0 &&
-      unchangedCopySources(mutation, guardedSnapshots).size === mutation.edits.size;
+    const unchanged = isAlreadyDoneMutation(mutation, guardedSnapshots);
     for (const source of mutation.edits.keys()) {
-      if (unchangedCopy && finalCallIdBySource.has(source)) continue;
+      if (unchanged && finalCallIdBySource.has(source)) continue;
       finalCallIdBySource.set(source, callId);
       finalPresentationBySource.set(source, mutation.resultPresentations.get(source) ?? "plain");
     }
@@ -678,8 +671,7 @@ export async function executeRegisteredTextBatch(
         metadata = { targetUnavailable: errorMessage(error) };
       }
       const copy = mutation.operation === "copy";
-      const unchanged =
-        copy && unchangedCopySources(mutation, guardedSnapshots).size === mutation.edits.size;
+      const unchanged = isAlreadyDoneMutation(mutation, guardedSnapshots);
       const ownResults = resultsByCallId.get(callId) ?? [];
       const displayed = displayResultsByCallId.get(callId) ?? [];
       const receipt = textBatchResult(
@@ -691,11 +683,7 @@ export async function executeRegisteredTextBatch(
       const ownReceipt = {
         ...receipt,
         ...(unchanged
-          ? {
-              content: [
-                { type: "text" as const, text: "No changes: destination already has this text." },
-              ],
-            }
+          ? { content: alreadyDoneToolResult([mutation], guardedSnapshots).content }
           : !copy && ownResults.length === 0
             ? {
                 content: [

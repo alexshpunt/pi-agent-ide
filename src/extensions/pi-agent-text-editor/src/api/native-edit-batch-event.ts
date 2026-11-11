@@ -5,8 +5,8 @@ import type { FileMutationBatchResult } from "./mutation-result.ts";
 export interface NativeEditBatchEvent {
   readonly parentToolCallId: string;
   readonly calls: readonly string[];
-  /** Successful Copy calls that retained identical destination text without a write. */
-  readonly unchangedCopyCalls?: readonly string[];
+  /** Successful calls whose every target already had the requested text, without a write. */
+  readonly unchangedCalls?: readonly string[];
   /** Per-call receipts keep only their own output selection and failure evidence. */
   readonly mutationResults?: ReadonlyMap<string, AgentToolResult<FileMutationBatchResult>>;
   readonly result: AgentToolResult<FileMutationBatchResult>;

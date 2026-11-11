@@ -199,8 +199,8 @@ test.each(["structured", "legacy"] as const)(
         route === "structured"
           ? `const source=await tools.search({path:"source.txt",query:"format_me"}).then(value => value.result);
 const destination=await tools.search({path:"format.txt",query:"format_me"}).then(value => value.result);
-await rejects(()=>tools.replace({path:matches(destination)[0],text:"format_me"}),/must change/);
-await rejects(()=>tools.move({path:source,target:matches(destination)[0]}),/must change/);
+const same=await tools.replace({path:matches(destination)[0],text:"format_me"});
+check(same.includes("No changes: every target already has this text."),"Identical Replace did not explain its outcome: "+same);
 const copied=await tools.copy({path:source,target:matches(destination)[0]});`
           : `const copied=await tools.copy({path:"source.txt",start:"format_me",target:"format.txt",targetStart:"format_me\\n",targetEnd:"format_me\\n"});`;
       const run = await runComposition(

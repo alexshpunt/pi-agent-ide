@@ -1,6 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import type { ResourceErrorMetadata } from "pi-agent-resource";
 import type { TextAnchorRecoveryCandidateRange, TextDocument } from "pi-agent-text";
+import type { AlreadyDoneTarget } from "#src/core/already-done.ts";
 
 export interface MutationAnchor {
   readonly lineNumber: number;
@@ -193,6 +194,8 @@ export interface FileMutationData {
   operations?: readonly MutationOperationReceipt[] | undefined;
   /** Formatter outcome reported by the post-edit integration. */
   formatting?: MutationFormatting | undefined;
+  /** Targets that already had the requested text and were left as they were. */
+  alreadyDone?: readonly AlreadyDoneTarget[] | undefined;
 
   /** Display-only status contributions from post-edit handlers, in registration order. */
   diffStatuses?: readonly MutationDiffStatus[] | undefined;

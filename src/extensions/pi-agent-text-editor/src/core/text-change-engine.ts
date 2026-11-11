@@ -8,8 +8,6 @@ export interface TextRange {
 
 export interface TextChange extends TextRange {
   readonly insert: string;
-  /** Copy may retain a destination range even when its text is already identical. */
-  readonly allowUnchanged?: true;
 }
 
 export interface AppliedTextChange {
@@ -194,25 +192,16 @@ export class TextChangeDocument {
   }
 }
 
-/** Apply validated ranges; creation may have empty text but still creates a resource. */
-export function applyTextChanges(
-  source: string,
-  changes: readonly TextChange[],
-  creating = false,
-): TextChangeResult {
+/**
+ * Apply validated ranges. A change whose range already has its text is kept: the edit treats
+ * that target as already done.
+ */
+export function applyTextChanges(source: string, changes: readonly TextChange[]): TextChangeResult {
   const ordered = changes
     .map((change, index) => ({ change, index }))
     .sort((left, right) => left.change.from - right.change.from || left.index - right.index)
     .map(({ change }) => change);
   validateChanges(source.length, ordered);
-  if (
-    !(creating && source.length === 0) &&
-    ordered.some(
-      (change) => !change.allowUnchanged && source.slice(change.from, change.to) === change.insert,
-    )
-  ) {
-    throw new Error("Text changes must change the document.");
-  }
   const document = Text.of([source]);
   const changeSet = ChangeSet.of(
     ordered.map((change) => ({ ...change, insert: Text.of([change.insert]) })),
