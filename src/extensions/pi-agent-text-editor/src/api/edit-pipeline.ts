@@ -18,11 +18,20 @@ export interface TextEditPlan {
     }[];
   }[];
 }
+/**
+ * Plans native semantic edits on the current text. The editor calls it at the start of each
+ * attempt of the edit, as it resolves the targets of other edits there. When another process
+ * writes a planned file before the edit writes it, the edit runs again and is planned again. A
+ * planner that finds its own source changed throws an error with code `SOURCE_CHANGED` to get the
+ * same new attempt.
+ */
+export type TextEditPlanner = () => Promise<TextEditPlan>;
+
 export interface TextPreEditState<Input = unknown> {
   readonly cwd: string;
   readonly input: Input;
   /** Optional native semantic edits supplied by the owning plugin, not by tool arguments. */
-  readonly editPlan?: TextEditPlan;
+  readonly planEdit?: TextEditPlanner;
   readonly signal?: AbortSignal;
   /** A validated diffStatuses contribution is added to each completed file's presentation. */
   readonly metadata?: Readonly<Record<string, unknown>>;
