@@ -1,5 +1,5 @@
 import path from "node:path";
-import { LinePositionMap } from "./position-map.ts";
+import { followRange, LinePositionMap } from "./position-map.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./source-changes.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { URI } from "vscode-uri";
@@ -15,7 +15,7 @@ import {
 import { LspManager } from "./manager.ts";
 import type { LspClient } from "./client.ts";
 import { requestReferences, type LspLocation } from "./navigation.ts";
-import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./corrected-names.ts";
+import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import type { LspPosition } from "./types.ts";
 import {
   clangCoverage,
@@ -286,8 +286,13 @@ async function searchSymbolsOnce(
         character: declaration.endColumn,
       },
     };
-    const mapped = lineDiff(declaration.source, served, snapshot, "toServed").mapRange(range);
-    if (mapped === undefined || textInRange(served, mapped) !== declaration.matchedText)
+    const mapped = followRange(
+      lineDiff(declaration.source, served, snapshot, "toServed"),
+      range,
+      served,
+      declaration.matchedText,
+    );
+    if (mapped === undefined)
       throw sourceChanged(
         `The line of declaration "${declaration.matchedText}" changed before the server was asked for its references.`,
       );
