@@ -16,6 +16,8 @@ Raw LSP DocumentSymbol, as returned by the server.
 export interface LspDocumentSymbol {
   name: string;
   kind: number;
+  /** Extra information, such as clangd's signature `int (int, int) const`. */
+  detail?: string;
   /**
     Range may be missing from some LSP servers (incomplete data).
     */

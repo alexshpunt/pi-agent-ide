@@ -84,15 +84,18 @@ export function formatCodeViewReference(
   selector?: readonly string[],
 ): string {
   const encodedPath = filePath.replaceAll("%", "%25").replaceAll("#", "%23");
-  const fragment =
-    selector === undefined
-      ? ""
-      : `#${selector.map((segment) => encodeURIComponent(segment)).join("/")}`;
+  const fragment = selector === undefined ? "" : `#${formatSymbolSelector(selector)}`;
   return `${scheme}:${encodedPath}${fragment}`;
 }
 
+/**
+ * A selector as it is written in a reference. Only the characters that would end or split a
+ * segment are encoded, so signatures stay readable: `clamp(const Vec&, float)`.
+ */
 export function formatSymbolSelector(selector: readonly string[]): string {
-  return selector.map((segment) => encodeURIComponent(segment)).join("/");
+  return selector
+    .map((segment) => segment.replaceAll("%", "%25").replaceAll("/", "%2F").replaceAll("#", "%23"))
+    .join("/");
 }
 
 function decodePart(value: string, label: string): string {

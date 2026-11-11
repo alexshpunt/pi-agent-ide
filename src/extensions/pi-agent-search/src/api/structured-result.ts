@@ -38,6 +38,8 @@ const match = Type.Object(
           id: Type.String(),
           name: Type.String(),
           kind: Type.String(),
+          /** Selector segments that name the declaration alone in its file. */
+          selector: Type.Optional(Type.Array(Type.String())),
           source: Type.String(),
           range: position,
         },
