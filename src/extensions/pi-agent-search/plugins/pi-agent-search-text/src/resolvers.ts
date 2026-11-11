@@ -13,7 +13,11 @@ import {
   type SearchRecipe,
 } from "#src/search-recipe.ts";
 import { renderSearchResult } from "#src/search-renderer.ts";
-import { createFuzzyPresentation, createSearchToolDetails } from "#src/search-result.ts";
+import {
+  createFuzzyPresentation,
+  createSearchToolDetails,
+  displaySource,
+} from "#src/search-result.ts";
 import { planSearchPresentation } from "#src/search-presentation.ts";
 
 import type {
@@ -478,14 +482,6 @@ function previewMatch(match: TextSearchMatch): string {
 function previewLine(text: string): string {
   const context = 129;
   return `${text.slice(0, context)}${text.length > context ? "…" : ""}`;
-}
-function displaySource(source: string, cwd: string): string {
-  if (source.includes("://")) return source;
-  const relative = path.relative(cwd, source);
-  // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
-  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
-    ? relative
-    : source;
 }
 
 function plural(count: number, singular: string, pluralForm: string): string {

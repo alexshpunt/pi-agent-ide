@@ -60,7 +60,8 @@ async function selected(sessions: SearchSessionStore, reference: string, cwd: st
   const attempt = await sessions.resourceResolver().tryResolve(reference, { cwd });
   if (attempt.kind !== "resolved") throw new Error(JSON.stringify(attempt));
   return attempt.targets.flatMap((target) => {
-    const rows = (target.expectedContent ?? "").split("\n");
+    // Lines end at a line feed, a carriage return, or both, as a text document splits them.
+    const rows = (target.expectedContent ?? "").split(/\r\n|\r|\n/u);
     return (target.ranges ?? []).map((range) =>
       [
         String(range.start.lineNumber),
@@ -185,4 +186,27 @@ test("a search fails with a reason when the matched file cannot be read any more
   await expect(format()).rejects.toThrow(
     /main\.cpp could not be read while the search registered its results: .*ENOENT/u,
   );
+});
+
+test("a search registers anchors in a file whose lines a lone carriage return splits", async () => {
+  // Ripgrep ends a line at a line feed only, so its matches sit on other lines than the ones the
+  // registration splits this text into. The anchors must still describe the file.
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-registration-cr-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "main.cpp");
+  await writeFile(source, 'const char* sep = "a\rb";\nvoid first() { rename_me(1); }\n');
+  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+  const resolver = createTextResolver(sessions);
+  const context = { cwd, signal: new AbortController().signal };
+  const resolved = await resolver.tryResolve({ query: "rename_me", path: "main.cpp" }, context);
+  if (resolved.kind !== "resolved") throw new Error(`Expected matches, got ${resolved.kind}`);
+
+  const output = await resolver.format(resolved.payload, context);
+  const details = output.details as SearchToolDetails & { readonly target?: string };
+
+  expect(details.target).toBeDefined();
+  expect(details.matchCount).toBe(1);
+  expect(await selected(sessions, `SEARCH#${String(details.sessionId)}:all:match`, cwd)).toEqual([
+    "3:rename_me",
+  ]);
 });

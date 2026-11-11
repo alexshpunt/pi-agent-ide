@@ -1,8 +1,7 @@
-import path from "node:path";
-
-import { createTextDocument } from "pi-agent-text";
+import { createTextDocument, type TextDocument } from "pi-agent-text";
 
 import { searchTextContent, type TextSearchRequest } from "#src/search-backend.ts";
+import { displaySource } from "#src/search-result.ts";
 import { canonicalSource, matchDescribesText, type TextSearchMatch } from "#src/search-session.ts";
 
 /** Matches with the text they describe, ready to register without reading the files again. */
@@ -67,7 +66,7 @@ export async function captureCurrentMatches(
     if (options.inContent) {
       const current = await matchesInCapturedText(kept, contents, changed, cwd, options);
       const stale = changedSources(current, contents);
-      if (stale.size > 0) throw sourceChanged(stale, cwd);
+      if (stale.size > 0) throw notDescribed(stale, cwd);
       return { matches: current, complete: covered, contents, notices };
     }
     if (options.rerun === undefined || attempt >= rerunAttempts) throw sourceChanged(changed, cwd);
@@ -155,15 +154,81 @@ async function matchesInCapturedText(
     if (content === undefined) continue;
     const found = await searchTextContent(options.request, content, searchCwd, options.signal);
     const document = createTextDocument(source, content);
+    const searchedLines = lineFeedStarts(content);
+    const documentLines = documentStarts(document);
     for (const match of found.matches)
-      current.push({
-        ...match,
-        source,
-        lineText: document.lines[match.lineNumber - 1]?.content ?? match.lineText,
-      });
+      current.push(
+        inDocument(
+          source,
+          document,
+          documentLines,
+          content,
+          (searchedLines[match.lineNumber - 1] ?? 0) + match.startColumn,
+          (searchedLines[(match.endLineNumber ?? match.lineNumber) - 1] ?? 0) + match.endColumn,
+        ),
+      );
   }
   // Unordered: the registration sorts the matches it stores.
   return current;
+}
+
+/**
+ * A match of the captured text, placed on the lines the registration splits that text into.
+ *
+ * Ripgrep ends a line at a line feed; a text document also ends one at a lone carriage return,
+ * which a file can hold anywhere. Describing a found match by its position in the text, instead
+ * of by the line ripgrep counted, keeps the two from disagreeing about such a file.
+ */
+function inDocument(
+  source: string,
+  document: TextDocument,
+  starts: readonly number[],
+  content: string,
+  from: number,
+  to: number,
+): TextSearchMatch {
+  const start = positionAt(starts, from);
+  const end = positionAt(starts, to);
+  return {
+    source,
+    lineNumber: start.lineNumber,
+    startColumn: start.column,
+    ...(end.lineNumber === start.lineNumber ? {} : { endLineNumber: end.lineNumber }),
+    endColumn: end.column,
+    matchedText: content.slice(from, to),
+    lineText: document.lines[start.lineNumber - 1]?.content ?? "",
+  };
+}
+
+/** Offset each line-feed-separated line starts at, as ripgrep counts the lines of this text. */
+function lineFeedStarts(content: string): number[] {
+  const starts = [0];
+  for (let index = content.indexOf("\n"); index !== -1; index = content.indexOf("\n", index + 1))
+    starts.push(index + 1);
+  return starts;
+}
+
+/** Offset each document line starts at. */
+function documentStarts(document: TextDocument): number[] {
+  const starts = [0];
+  for (const line of document.lines)
+    starts.push((starts.at(-1) ?? 0) + line.content.length + line.lineEnding.length);
+  return starts;
+}
+
+/** The line and column an offset falls on, with lines numbered from 1. */
+function positionAt(
+  starts: readonly number[],
+  offset: number,
+): { readonly lineNumber: number; readonly column: number } {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if ((starts[middle] ?? 0) <= offset) low = middle;
+    else high = middle - 1;
+  }
+  return { lineNumber: low + 1, column: offset - (starts[low] ?? 0) };
 }
 
 /** One notice per source the capture could not read, each with the reason its read gave. */
@@ -171,7 +236,7 @@ function unreadableNotices(unreadable: ReadonlyMap<string, unknown>, cwd: string
   const shown = [...unreadable].slice(0, 3);
   const notices = shown.map(
     ([source, error]) =>
-      `Search notice: ${display(source, cwd)} could not be read while the search registered its results: ${reason(error)}. Its matches are not shown; search again for it once it can be read.`,
+      `Search notice: ${displaySource(source, cwd)} could not be read while the search registered its results: ${reason(error)}. Its matches are not shown; search again for it once it can be read.`,
   );
   const rest = unreadable.size - shown.length;
   if (rest > 0)
@@ -196,19 +261,19 @@ function sourceChanged(sources: ReadonlySet<string>, cwd: string): Error {
   );
 }
 
+/** The matches found in the captured text do not describe it; no anchors can be registered. */
+function notDescribed(sources: ReadonlySet<string>, cwd: string): Error {
+  return new Error(
+    `The matches in ${describeSources([...sources], cwd)} could not be placed in the text the search read, so no anchors were registered. Read the file and edit it by its own text.`,
+  );
+}
+
 function reason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 function describeSources(sources: readonly string[], cwd: string): string {
-  const shown = sources.slice(0, 3).map((source) => display(source, cwd));
+  const shown = sources.slice(0, 3).map((source) => displaySource(source, cwd));
   const rest = sources.length - shown.length;
   return rest > 0 ? `${shown.join(", ")} and ${String(rest)} more` : shown.join(", ");
-}
-
-function display(source: string, cwd: string): string {
-  if (source.includes("://") || cwd.includes("://")) return source;
-  const relative = path.relative(cwd, source);
-  // oxlint-disable-next-line repo/no-parent-paths -- display only, never used as a path
-  return relative.startsWith("..") || path.isAbsolute(relative) ? source : relative;
 }
