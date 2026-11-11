@@ -2,7 +2,7 @@ import { renderAgentDiff } from "./agent-diff.ts";
 import { groupReplacements, renderGroupedReplacements } from "./grouped-replacements.ts";
 import { renderFinalStateFragment } from "./final-state-fragment.ts";
 import { type FileMutationResult } from "./file-mutation-result.ts";
-import { describeAlreadyDone } from "#src/core/already-done.ts";
+import { describeAlreadyDone, describeAlreadyDoneFile } from "#src/core/already-done.ts";
 
 // ─── Agent-facing result formatter ───────────────────────────────────────
 
@@ -51,7 +51,9 @@ export class FileMutationAgentResult {
 
     // ok, but no actual changes — e.g. new FileMutationResult(undefined)
     if (fmr.diffs.length === 0 && fmr.files.length === 0) {
-      return "<empty-result>";
+      return (fmr.data.alreadyDone?.length ?? 0) > 0
+        ? describeAlreadyDoneFile(fmr)
+        : "<empty-result>";
     }
 
     return this.formatSuccess(fmr);

@@ -68,7 +68,12 @@ import {
   describeUnavailableCopyTarget,
   isAlreadyDoneMutation,
 } from "./mutation-result-targets.ts";
-import { alreadyDoneTargets, alreadyDoneToolResult, isAlreadyDone } from "./already-done.ts";
+import {
+  alreadyDoneFileResult,
+  alreadyDoneTargets,
+  alreadyDoneToolResult,
+  isAlreadyDone,
+} from "./already-done.ts";
 import { wholeFileResultSource } from "./result-input.ts";
 import {
   bindContextAliases,
@@ -1718,7 +1723,20 @@ async function buildToolResult(
         ];
   });
 
-  const presented = results.map((result) => withPipelineStatuses(result, pipeline.state.metadata));
+  // A source whose every target already had its text is not written but is still reported.
+  const untouched = [...mutation.edits].flatMap(([editSource, edit]) => {
+    const content = mutation.snapshots?.get(editSource);
+    if (
+      content === undefined ||
+      outcome.resources.some((resource) => resource.source === editSource)
+    )
+      return [];
+    const result = alreadyDoneFileResult(editSource, content, edit.changes);
+    return result === undefined ? [] : [result];
+  });
+  const presented = [...results, ...untouched].map((result) =>
+    withPipelineStatuses(result, pipeline.state.metadata),
+  );
   return {
     content: [new FileMutationAgentResult(presented).toTextContent()],
     details: { results: presented },

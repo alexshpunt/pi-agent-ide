@@ -13,7 +13,7 @@ import {
   isAlreadyDoneMutation,
   verifyMutationTargets,
 } from "./mutation-result-targets.ts";
-import { alreadyDoneToolResult } from "./already-done.ts";
+import { alreadyDoneFileResult, alreadyDoneToolResult } from "./already-done.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { postWriteFailureEffect } from "./text-mutation.ts";
 import { renderTextAnchor } from "pi-agent-text";
@@ -552,7 +552,10 @@ export async function executeRegisteredTextBatch(
     const callDisplayResults = [...mutation.edits].flatMap(([source, edit]) => {
       const resource = outcome.resources.find((candidate) => candidate.source === source);
       if (resource === undefined) {
-        return [];
+        const before = guardedSnapshots.get(source);
+        const untouched =
+          before === undefined ? undefined : alreadyDoneFileResult(source, before, edit.changes);
+        return untouched === undefined ? [] : [untouched];
       }
 
       const ownAfter = applyTextChanges(resource.before.content, edit.changes).content;
@@ -598,7 +601,24 @@ export async function executeRegisteredTextBatch(
       return edit === undefined ? [] : [edit];
     });
 
-    if (resource === undefined || edits.length === 0) {
+    if (edits.length === 0) {
+      continue;
+    }
+    if (resource === undefined) {
+      // A source whose every target already had its text is not written but is still reported.
+      const before = guardedSnapshots.get(source);
+      const untouched =
+        before === undefined
+          ? undefined
+          : alreadyDoneFileResult(
+              source,
+              before,
+              edits.flatMap((edit) => edit.changes),
+            );
+      if (untouched === undefined) continue;
+      resultsByCallId.get(finalCallId)?.push(untouched);
+      results.push(untouched);
+      callIdsByResult.push(finalCallId);
       continue;
     }
 

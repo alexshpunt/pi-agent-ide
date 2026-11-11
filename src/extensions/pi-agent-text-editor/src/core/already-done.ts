@@ -71,34 +71,45 @@ export function alreadyDoneToolResult(
   for (const mutation of mutations)
     for (const [source, edit] of mutation.edits)
       changes.set(source, [...(changes.get(source) ?? []), ...edit.changes]);
-  const files = [...changes].map(([source, sourceChanges]) => {
-    const content = requiredValue(snapshots.get(source));
-    return { source, content, alreadyDone: alreadyDoneTargets(content, sourceChanges) };
+  const results = [...changes].flatMap(([source, sourceChanges]) => {
+    const result = alreadyDoneFileResult(
+      source,
+      requiredValue(snapshots.get(source)),
+      sourceChanges,
+    );
+    return result === undefined ? [] : [result];
   });
   return {
     content: [
       {
         type: "text",
-        text: [
-          ALREADY_DONE_TEXT,
-          ...files.map((file) => `${file.source}: ${describeAlreadyDone(file.alreadyDone) ?? ""}`),
-        ].join("\n"),
+        text: [ALREADY_DONE_TEXT, ...results.map(describeAlreadyDoneFile)].join("\n"),
       },
     ],
-    details: {
-      effect: "not-applied",
-      results: files.map(
-        (file) =>
-          new FileMutationResult({
-            ok: true,
-            path: file.source,
-            afterContent: file.content,
-            rawChanges: [],
-            alreadyDone: file.alreadyDone,
-          }),
-      ),
-    },
+    details: { effect: "not-applied", results },
   };
+}
+
+/** Result of a source that was not written because every change of it was already done. */
+export function alreadyDoneFileResult(
+  source: string,
+  content: string,
+  changes: readonly TextChange[],
+): FileMutationResult | undefined {
+  if (changes.length === 0 || !changes.every((change) => isAlreadyDone(content, change)))
+    return undefined;
+  return new FileMutationResult({
+    ok: true,
+    path: source,
+    afterContent: content,
+    rawChanges: [],
+    alreadyDone: alreadyDoneTargets(content, changes),
+  });
+}
+
+/** One line naming a source and its targets that already had the requested text. */
+export function describeAlreadyDoneFile(result: FileMutationResult): string {
+  return `${result.path ?? ""}: ${describeAlreadyDone(result.data.alreadyDone ?? []) ?? ""}`;
 }
 
 function applyOrdered(before: string, ordered: readonly TextChange[]): string {

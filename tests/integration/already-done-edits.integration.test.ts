@@ -34,7 +34,7 @@ async function run(
     rawMode: false,
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-    tools: ["read", "search", "replace", "delete", "codemode"],
+    tools: ["read", "search", "replace", "delete", "move", "codemode"],
     conversation: [
       ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
       assistantMessage([text("Rename finished.")]),
@@ -100,6 +100,25 @@ text(renamed);`,
     expect(await readFile(path.join(cwd, "names.cpp"), "utf8")).toBe(
       "FuncB(x);\nFuncB(y);\nFuncB(z); FuncB(w);\n",
     );
+  });
+});
+
+test("a move onto a destination that already has the text still removes its source", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "spare.txt"), "keep FuncA keep\n");
+    const result = await run(cwd, "already-done-move", [
+      codemode(
+        "move",
+        `const source = (await tools.search({path:"spare.txt",query:"FuncA"})).result;
+const target = matches((await tools.search({path:"names.cpp",query:"FuncA"})).result)[0];
+text(await tools.move({path:source,target}));`,
+      ),
+    ]);
+    const output = getToolResultText(result, "move");
+    expect(getToolExecution(result, "move").isError, output).toBe(false);
+    expect(output).toContain("Already had this text, left as is: 1 target at line:column 2:1.");
+    expect(await readFile(path.join(cwd, "spare.txt"), "utf8")).toBe("keep  keep\n");
+    expect(await readFile(path.join(cwd, "names.cpp"), "utf8")).toBe(SOURCE);
   });
 });
 
