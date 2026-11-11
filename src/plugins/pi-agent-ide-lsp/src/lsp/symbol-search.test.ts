@@ -214,6 +214,62 @@ test("uses a provider selectionRange when workspace symbols span a whole declara
     undefined,
   );
 });
+
+test("lists each overload with its selector when the symbol index lags behind the file", async () => {
+  const { cwd, manager, sendRequest } = await fixture();
+  const lines = [
+    "int clamp(int v);",
+    "int clamp(float v);",
+    "int clamp(int v) { return v; }",
+    "int clamp(float v) { return clamp(1); }",
+  ];
+  await writeFile(path.join(cwd, "a.ts"), `${lines.join("\n")}\n`);
+  const uri = pathToFileURL(path.join(cwd, "a.ts")).href;
+  const at = (line: number, from: number) => ({
+    start: { line, character: from },
+    end: { line, character: from + 5 },
+  });
+  const entry = (line: number, detail: string) => ({
+    name: "clamp",
+    kind: 12,
+    detail,
+    range: { start: { line, character: 0 }, end: { line, character: lines[line]?.length ?? 0 } },
+    selectionRange: at(line, 4),
+  });
+  sendRequest.mockImplementation(async (method, parameters) => {
+    // The index still has the definitions one column to the right of the current text.
+    if (method === "workspace/symbol")
+      return [
+        { name: "clamp", kind: 12, location: { uri, range: at(2, 5) } },
+        { name: "clamp", kind: 12, location: { uri, range: at(3, 5) } },
+      ];
+    if (method === "textDocument/documentSymbol")
+      return [
+        entry(0, "int (int)"),
+        entry(1, "int (float)"),
+        entry(2, "int (int)"),
+        entry(3, "int (float)"),
+      ];
+    if (method === "textDocument/references") {
+      const { line } = (parameters as { position: { line: number } }).position;
+      return line % 2 === 0
+        ? [at(0, 4), at(2, 4), at(3, 28)].map((range) => ({ uri, range }))
+        : [at(1, 4), at(3, 4)].map((range) => ({ uri, range }));
+    }
+    throw Error(`Unexpected request ${method}`);
+  });
+  const result = await searchSymbols("clamp", cwd, 100, undefined, { path: "a.ts" }, manager);
+  expect(
+    result.hits.map((hit) => [hit.role, hit.lineNumber, hit.startColumn, hit.symbol.selector]),
+  ).toEqual([
+    ["reference", 1, 4, ["clamp(int)"]],
+    ["reference", 2, 4, ["clamp(float)"]],
+    ["definition", 3, 4, ["clamp(int)"]],
+    ["definition", 4, 4, ["clamp(float)"]],
+    ["reference", 4, 28, ["clamp(int)"]],
+  ]);
+});
+
 test("does not treat failed reference requests or missing providers as no matches", async () => {
   const { cwd, manager, sendRequest } = await fixture();
   sendRequest.mockImplementation(async (method) => {
