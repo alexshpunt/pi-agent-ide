@@ -26,14 +26,7 @@ test.runIf(process.platform !== "win32")(
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         isolateUserResources: true,
-        extensions: [
-          "src/extensions/pi-agent-read/index.ts",
-          "src/extensions/pi-agent-search/index.ts",
-          "src/extensions/pi-agent-text-editor/index.ts",
-          "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-constant/index.ts",
-          "src/extensions/pi-agent-text-editor/plugins/pi-agent-text-anchor-exact/index.ts",
-          "tests/integration/fixtures/terminal-catalog.ts",
-        ].map((extension) => path.resolve(extension)),
+        extensions: [path.resolve("src/pi-agent-ide.ts")],
         tools: ["bash", "read", "search", "move", "delete"],
         conversation: [
           call("start-named", "bash", {
