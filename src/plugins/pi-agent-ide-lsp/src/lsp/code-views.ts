@@ -122,7 +122,7 @@ export async function resolveLspRenameTarget(
   const document = await openCodeDocument(manager, filePath, cwd, signal);
   const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
   if (content !== (await manager.readSourceText(filePath, signal)))
-    throw new Error("The rename source changed during resolution.");
+    throw sourceChanged("The rename source changed during resolution.");
   throwIfAborted(signal);
   return {
     client: document.client,

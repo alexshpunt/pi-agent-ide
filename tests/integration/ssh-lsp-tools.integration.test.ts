@@ -188,11 +188,16 @@ test.each(["diagnostics", "rename", "race"] as const)(
         expect(getToolResultText(run, "renamed")).toContain('const renamed = "café";');
         expect(getToolResultText(run, "reference-renamed")).toContain('const renamed = "second";');
       } else {
-        expect(getToolExecution(run, "race").isError).toBe(true);
-        expect(getToolResultText(run, "race")).toContain("changed during the server request");
+        // The server's second request lets another session rewrite reference.ts; the rename is
+        // planned again on the current text, and the rewritten file keeps the other session's text.
+        expect(getToolExecution(run, "race").isError, getToolResultText(run, "race")).toBe(false);
       }
       expect((await backend.read(`${project}/note.ts`)).bytes.toString("utf8")).toBe(
-        mode === "rename" ? 'const renamed = "café";\n' : 'const label = "café";\n',
+        mode === "rename"
+          ? 'const renamed = "café";\n'
+          : mode === "race"
+            ? 'const raced = "café";\n'
+            : 'const label = "café";\n',
       );
       expect((await backend.read(`${project}/reference.ts`)).bytes.toString("utf8")).toBe(
         mode === "race"

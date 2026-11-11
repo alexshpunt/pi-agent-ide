@@ -85,8 +85,11 @@ while True:
         result = {"changes": {uri: [change]}}
         reference_uri = uri.rsplit("/", 1)[0] + "/reference.ts"
         reference_path = unquote(urlparse(reference_uri).path)
+        # Like a real server, rename only where the old name still stands.
         if os.path.isfile(reference_path):
-            result["changes"][reference_uri] = [change]
+            with open(reference_path, encoding="utf-8") as reference:
+                if reference.read()[6:11] == "label":
+                    result["changes"][reference_uri] = [change]
         name = params["newName"]
         rename_counts[name] = rename_counts.get(name, 0) + 1
         if name == "raced" and rename_counts[name] == 2:

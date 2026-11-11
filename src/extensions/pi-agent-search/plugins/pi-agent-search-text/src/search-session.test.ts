@@ -63,6 +63,8 @@ test("numbered line aliases keep complete containing lines and expire after sour
   await targets.verify(selected);
   await writeFile(source, "changed\r\n");
   await expect(targets.verify(selected)).rejects.toThrow(/stale/u);
+  // Its own lines are gone, so the next use retires it; the old bytes do not bring it back.
+  expect(() => targets.resolve(reference, cwd)).toThrow(/expired/u);
   await writeFile(source, original);
   expect(() => targets.resolve(reference, cwd)).toThrow(/expired/u);
 });

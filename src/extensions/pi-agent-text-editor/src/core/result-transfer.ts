@@ -7,6 +7,7 @@ import type {
 import { TextChangeDocument, type TextChange } from "./text-change-engine.ts";
 import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
 import { wholeFileResultSource } from "./result-input.ts";
+import { SOURCE_CHANGED } from "./source-change-retry.ts";
 
 /** Distinguish structured source authority from ordinary paths and legacy anchors. */
 export function isResultInput(value: unknown): boolean {
@@ -37,7 +38,9 @@ export async function prepareResultTransfer(
   signal?: AbortSignal,
 ): Promise<PreparedTransfer> {
   const input = { ...parameters };
-  const resolve = async (field: "path" | "target", start: string, end: string) => {
+  /** One handle per selected range, in declared order, so every attempt can resolve them again. */
+  const handles = new Map<"path" | "target", readonly string[]>();
+  const resolve = (field: "path" | "target", start: string, end: string) => {
     if (!isResultInput(input[field])) return undefined;
     if (input[start] !== undefined || input[end] !== undefined)
       throw new Error(`Do not combine structured ${field} with ${start}/${end}.`);
@@ -46,12 +49,15 @@ export async function prepareResultTransfer(
       throw new Error(
         "Incomplete result targets cannot establish a complete transfer. Run Search again with a higher limit or a narrower query, then use the complete result.",
       );
-    await store.verify(selected, signal);
     input[field] = store.register(selected.targets, cwd);
+    handles.set(
+      field,
+      selected.targets.map((target) => store.register([target], cwd)),
+    );
     return selected;
   };
-  const source = await resolve("path", "start", "end");
-  const destination = await resolve("target", "targetStart", "targetEnd");
+  const source = resolve("path", "start", "end");
+  const destination = resolve("target", "targetStart", "targetEnd");
   if (source === undefined && destination === undefined) return { input, empty: false };
   if (
     source !== undefined &&
@@ -60,6 +66,8 @@ export async function prepareResultTransfer(
     input.targetEnd === undefined
   ) {
     // A structured source may use the byte-preserving file operation only when it really selects a whole file.
+    // A file operation uses the selected file right away, so its text is checked here.
+    await store.verify(source, signal);
     input.path = wholeFileResultSource(store.resolve(parameters.path, cwd));
     return { input, empty: false, verifyFileSource: () => store.verify(source, signal) };
   }
@@ -90,6 +98,9 @@ export async function prepareResultTransfer(
     const sources = spans(source);
     const destinations = spans(destination);
     if ([...sources, ...destinations].every((span) => span.from === span.to)) {
+      // Nothing is written, so the positions are checked against the file here.
+      await store.verify(source, signal);
+      await store.verify(destination, signal);
       assertMoveTargets(sources, destinations);
       return { input, empty: false, noOpTarget: store.register(destination.targets, cwd) };
     }
@@ -98,11 +109,21 @@ export async function prepareResultTransfer(
     input,
     empty,
     async mutate(context) {
+      // Each attempt takes the selections as the store has them now: moved to the file's current
+      // text when another process wrote it, or refused with their current lines when their own
+      // text changed.
+      const current = (field: "path" | "target"): ResolvedResultTargets => ({
+        targets: (handles.get(field) ?? []).flatMap((handle) => store.resolve(handle, cwd).targets),
+        complete: true,
+      });
       const spans = (selected: ResolvedResultTargets): TransferSpan[] =>
         selected.targets.map((target) => {
           const document = context.documentFor(target.source);
           if (document.content !== target.expectedContent)
-            throw new Error("Transfer result target is stale; repeat Read/Search.");
+            throw Object.assign(
+              new Error("The selected text's file changed before the transfer; run it again."),
+              { code: SOURCE_CHANGED },
+            );
           const range = target.ranges[0];
           if (range === undefined) throw new Error("Transfer selection has no range.");
           return {
@@ -128,8 +149,8 @@ export async function prepareResultTransfer(
                     "end",
                   ),
             ]
-          : spans(source);
-      const destinations = destination === undefined ? undefined : spans(destination);
+          : spans(current("path"));
+      const destinations = destination === undefined ? undefined : spans(current("target"));
       if (sources.length !== (destinations?.length ?? 1))
         throw new Error(
           "Transfer source and destination selection counts must match; no broadcast or concatenation.",

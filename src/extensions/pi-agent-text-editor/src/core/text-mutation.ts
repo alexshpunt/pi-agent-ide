@@ -223,9 +223,13 @@ export function createTextTool<TParameters extends TSchema>(
                       throw new Error(
                         "Incomplete result targets cannot establish a complete edit. Run Search again with a higher limit or a narrower query, then use the complete result.",
                       );
-                    await resultTargets.verify(selected, signal);
-                    if (definition.name === "write" || definition.name === "undo")
+                    // A whole-file write needs the selected text now. Other edits compare it with
+                    // the file under the file lock, and a write by another process in between
+                    // runs the edit again on the current text instead of failing here.
+                    if (definition.name === "write" || definition.name === "undo") {
+                      await resultTargets.verify(selected, signal);
                       wholeFileResultSource(selected, definition.name);
+                    }
                     if (selected.targets.length === 0)
                       return {
                         content: [{ type: "text", text: "Empty result target set; no changes." }],

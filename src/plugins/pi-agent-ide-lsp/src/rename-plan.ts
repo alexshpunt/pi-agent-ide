@@ -5,6 +5,7 @@ import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/ed
 import type { LspManagerProvider } from "./manager-provider.ts";
 import { resolveLspRenameTarget } from "./lsp/code-views.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
+import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
 import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.ts";
 import type { LspClient } from "./lsp/client.ts";
 import type { LspPosition } from "./lsp/types.ts";
@@ -60,12 +61,19 @@ function offset(content: string, position: LspPosition): number {
   );
 }
 
-/** Prepare server rename edits for the shared guarded editor, never a textual rename fallback. */
+/**
+ * Prepare server rename edits for the shared guarded editor, never a textual rename fallback.
+ * Another process may write a participant while the server answers; the rename is then planned
+ * again on the current text, and a symbol that is gone fails as before.
+ */
 export function prepareSymbolRename(
   state: TextPreEditState,
   managerFor: LspManagerProvider,
 ): Promise<TextPreEditState | undefined> {
-  return withLspDocuments(() => prepareRename(state, managerFor));
+  return retryWhileSourceChanges(
+    () => withLspDocuments(() => prepareRename(state, managerFor)),
+    state.signal,
+  );
 }
 
 async function prepareRename(
@@ -135,14 +143,14 @@ async function prepareRename(
     const file = canonical.startsWith("ssh://") ? canonical : fileURLToPath(canonical);
     const snapshot = await manager.readSourceSnapshot(file, state.signal);
     if (file === source && snapshot.content !== target.content)
-      throw new Error("The rename source changed. Read the symbol again before retrying.");
+      throw sourceChanged("The rename source changed. Read the symbol again before retrying.");
     const opened = await manager.openFile(file, state.cwd, "symbols", state.signal);
     if (opened?.client !== target.client || opened.uri !== uri)
       throw new Error(
         "A rename participant has a different language server owner. No edits applied.",
       );
     if (target.client.documentContent(uri) !== snapshot.content)
-      throw new Error("A rename participant changed during synchronization. No edits applied.");
+      throw sourceChanged("A rename participant changed during synchronization. No edits applied.");
     snapshots.set(uri, { file, ...snapshot });
   }
   const entries = renameEntries(
@@ -154,7 +162,9 @@ async function prepareRename(
     state.signal?.throwIfAborted();
     const after = await manager.readSourceSnapshot(before.file, state.signal);
     if (before.version !== after.version || target.client.documentContent(uri) !== before.content)
-      throw new Error("A rename participant changed during the server request. No edits applied.");
+      throw sourceChanged(
+        "A rename participant changed during the server request. No edits applied.",
+      );
   }
   if (reach !== undefined) {
     const refusal = renameRefusal(

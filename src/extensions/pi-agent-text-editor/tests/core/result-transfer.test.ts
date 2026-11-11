@@ -112,7 +112,7 @@ test("moves reject destinations touching any source before returning effects", a
   expect(f.texts.get(f.source)).toBe("first café last");
 });
 
-test("a prepared transfer refuses a snapshot changed after resolution", async () => {
+test("a prepared transfer refuses a snapshot changed after resolution as a changed source, so the edit runs again", async () => {
   const f = fixture();
   const prepared = await prepareResultTransfer(
     "copy",
@@ -121,7 +121,7 @@ test("a prepared transfer refuses a snapshot changed after resolution", async ()
     f.cwd,
   );
   f.texts.set(f.source, "external café last");
-  await expect(prepared.mutate?.(f.context)).rejects.toThrow(/stale/u);
+  await expect(prepared.mutate?.(f.context)).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
 });
 
 test("empty paired selections are no-ops, not whole-file fallback", async () => {

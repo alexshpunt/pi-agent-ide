@@ -20,6 +20,7 @@ import { coverageNotes, mergeCoverage, type ClangCoverage } from "./lsp/clang-co
 import type { LspManager } from "./lsp/manager.ts";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
+import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
 
 /** Options the `lsp_search` tool passes in `SearchRequest.options.lsp`; their presence selects this resolver. */
 export interface LspSearchOptions {
@@ -94,6 +95,17 @@ export function createLspSearchResolver(
         : result.data;
     },
     tryResolve(request, context) {
+      // Anchors register only while the file still has the text the server answered for; another
+      // process may write it in between, and the search then runs again on the new text.
+      const register = async (selection: Parameters<typeof registerSelection>[0]) => {
+        try {
+          return await registerSelection(selection, context);
+        } catch (error) {
+          if (error instanceof Error && error.name === "SearchSnapshotChangedError")
+            throw sourceChanged(error.message);
+          throw error;
+        }
+      };
       // Documents opened for this request close when it finishes.
       return withLspDocuments(async () => {
         const options = lspOptions(request);
@@ -145,9 +157,9 @@ export function createLspSearchResolver(
             // Keep only the declaration text, not the whole file it was cut from.
             return structuredClone(declarationMatch(found.source, found.content, found.range));
           };
-          const match = await resolve(context.signal);
-          const session = await registerSelection(
-            {
+          const { match, session } = await retryWhileSourceChanges(async () => {
+            const match = await resolve(context.signal);
+            const session = await register({
               request,
               matches: [match],
               complete: true,
@@ -156,9 +168,9 @@ export function createLspSearchResolver(
                   matches: [await resolve(signal)],
                   complete: true,
                 })),
-            },
-            context,
-          );
+            });
+            return { match, session };
+          }, context.signal);
           return {
             kind: "resolved",
             payload: {
@@ -253,9 +265,11 @@ export function createLspSearchResolver(
             ...(coverage && { coverage }),
           });
         };
-        const found = await collect(context.signal);
-        const session = await registerSelection(
-          {
+        let attempts = 0;
+        const { found, session } = await retryWhileSourceChanges(async () => {
+          // A later attempt finds the scope in the current text, like a refresh.
+          const found = await collect(context.signal, attempts++ > 0);
+          const session = await register({
             request,
             matches: found.hits,
             complete: found.complete,
@@ -264,9 +278,9 @@ export function createLspSearchResolver(
                 const next = await collect(signal, true);
                 return { matches: next.hits, complete: next.complete };
               }),
-          },
-          context,
-        );
+          });
+          return { found, session };
+        }, context.signal);
         const data = selectionData(found.hits, found.complete, session.id, session);
         return {
           kind: "resolved",
