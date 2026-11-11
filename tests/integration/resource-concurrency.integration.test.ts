@@ -55,14 +55,25 @@ test("native Codemode prepares and commits disjoint edits at the same time", asy
     expect(getToolExecution(result, "concurrent-edits").isError).toBe(false);
     expect(await readFile(path.join(cwd, "first.txt"), "utf8")).toBe("updated:first.txt");
     expect(await readFile(path.join(cwd, "second.txt"), "utf8")).toBe("updated:second.txt");
-    const events: unknown = JSON.parse(
+    const events = JSON.parse(
       await readFile(path.join(cwd, "concurrency-events.json"), "utf8"),
-    );
-    expect(events).toEqual([
+    ) as string[];
+    expect(events).toHaveLength(12);
+    // The calls are prepared together: neither finishes planning before both entered.
+    expect(events.slice(0, 4)).toEqual([
       expect.stringMatching(/^enter:(first|second)\.txt$/u),
       expect.stringMatching(/^enter:(first|second)\.txt$/u),
       "plan:second.txt",
       "plan:first.txt",
+    ]);
+    // Commit plans the batch again on the current text inside the write, then writes both.
+    expect(events.slice(4, 8).toSorted()).toEqual([
+      "enter:first.txt",
+      "enter:second.txt",
+      "plan:first.txt",
+      "plan:second.txt",
+    ]);
+    expect(events.slice(8)).toEqual([
       expect.stringMatching(/^write:enter:(first|second)\.txt$/u),
       expect.stringMatching(/^write:enter:(first|second)\.txt$/u),
       expect.stringMatching(/^write:complete:(first|second)\.txt$/u),
