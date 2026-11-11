@@ -103,7 +103,7 @@ await tools.read({path:"pixel.png",views:["anchors"]});`,
     expect(run.tuiRenderedOutput).toContain("anchors");
   });
 });
-test("oversized Read lines offer recovery for original bytes and transformed jq values", async () => {
+test("scripts read oversized lines and jq values whole while raw bytes stay bounded", async () => {
   await withTempWorkspace(async (cwd) => {
     const source = "é".repeat(30000) + "\nlast\n";
     const json = JSON.stringify({ payload: "y".repeat(60000) }) + "\n";
@@ -111,40 +111,23 @@ test("oversized Read lines offer recovery for original bytes and transformed jq 
     await writeFile(path.join(cwd, "values.txt"), json);
     const run = await runText(cwd, "oversized-line-recovery", [
       String.raw`
-const capped = await tools.read({path:"long.txt",views:["anchors"]});
-if(typeof capped !== "string" || capped.includes("é".repeat(30000))) throw new Error(capped);
-const action = /("(?:[^"\\\r\n]|\\.)*")[^\n]*?offset=(\d+)[^\n]*?limit=(\d+)/u.exec(capped);
-if(action === null) throw new Error("No bounded raw recovery: " + capped);
-const raw = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),limit:Number(action[3])});
+const strip = (value) => value.replace(/^<system-result[^\n]*\n/u, "");
+const whole = strip(await tools.read({path:"long.txt"}));
+if(whole !== "é".repeat(30000) + "\nlast\n") throw new Error("Expected the whole oversized line: " + whole.slice(-200));
+const raw = await tools.read({path:"raw:long.txt",offset:0,limit:4096});
 if(!raw.includes("Bytes 0..4096 (end exclusive), 60006 bytes total") || raw.includes("Output limited")) throw new Error(raw);
 const nextLine = await tools.read({path:"long.txt",offset:2});
 if(!nextLine.endsWith("last\n")) throw new Error(nextLine);
-const transformed = await tools.read({path:"values.txt",views:["jq:.payload"]});
-if(!transformed.includes("Output line 1") || !transformed.includes("jq") || transformed.includes("y".repeat(60000)) || transformed.includes("raw:")) throw new Error(transformed);
-const saved = /Full output: ("(?:[^"\\]|\\.)*"|temp:[^. ]+)/u.exec(transformed);
-if(saved === null) throw new Error("Full jq output reference lost: " + transformed);
-store("oversizedJqOutput",saved[1].startsWith('"') ? JSON.parse(saved[1]) : saved[1]);
-store("oversizedJqSource","values.txt");
+const transformed = strip(await tools.read({path:"values.txt",views:["jq:.payload"]}));
+if(transformed !== JSON.stringify("y".repeat(60000)) + "\n") throw new Error("Expected the whole jq value: " + transformed.slice(-200));
 const smaller = await tools.read({path:"values.txt",views:["jq:.payload[0:64]"]});
 if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
-text(capped); text(transformed); text(smaller);
-`,
-      String.raw`
-const saved = await tools.read({path:load("oversizedJqOutput")});
-if(!saved.includes("58.6KB") || !saved.includes("original bytes")) throw new Error("Full saved output was not retained: " + saved);
-const action = /Read ("(?:[^"\\]|\\.)*") with offset=(\d+) and limit=(\d+) to inspect the original bytes/u.exec(saved);
-if(action === null) throw new Error("Saved output lost bounded byte recovery: " + saved);
-const bytes = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),limit:Number(action[3])});
-if(!bytes.includes("60003 bytes total") || !bytes.includes("Bytes 0..4096")) throw new Error(bytes);
-const tail = await tools.read({path:JSON.parse(action[1]),offset:-16,limit:16});
-if(!tail.includes("60003 bytes total") || !tail.includes("79 79 79 79") || !tail.includes("22 0a")) throw new Error("Saved jq tail was lost: " + tail);
-const smaller = await tools.read({path:load("oversizedJqSource"),views:["jq:.payload[0:64]"]});
-if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
-text(smaller);
+text(JSON.stringify({ line: whole.length, value: transformed.length }));
 `,
     ]);
-    for (const id of ["script-0", "script-1"])
-      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
     expect(await readFile(path.join(cwd, "long.txt"), "utf8")).toBe(source);
     expect(await readFile(path.join(cwd, "values.txt"), "utf8")).toBe(json);
   });
@@ -294,7 +277,7 @@ text(found);
   });
 });
 
-test("automatic Read caps give executable text, view and byte continuations", async () => {
+test("scripts read whole windows with explicit-limit continuations and bounded raw bytes", async () => {
   await withTempWorkspace(async (cwd) => {
     const lines = Array.from({ length: 2105 }, (_, i) => `row ${i + 1}`).join("\n") + "\n";
     await writeFile(path.join(cwd, "lines.txt"), lines);
@@ -305,23 +288,23 @@ test("automatic Read caps give executable text, view and byte continuations", as
     );
     const run = await runText(cwd, "automatic-read-continuation", [
       String.raw`
-async function followText(result, nextLine, expectedPrefix, views) {
-  const action = /\[Showing lines \d+-\d+ of \d+ \((?:\d+-line|[\d.]+KB) limit\)\. Read ("(?:[^"\\]|\\.)*") with offset=(\d+)(?: and views=(\[[^\n]*\]))? to continue\./.exec(result);
-  if (!action || Number(action[2]) !== nextLine) throw Error("Missing automatic-cap action: "+result.slice(-600));
-  const requestedViews = action[3] ? JSON.parse(action[3]) : undefined;
-  if (JSON.stringify(requestedViews) !== JSON.stringify(views)) throw Error("Continuation lost views");
-  const next = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),...(requestedViews ? {views:requestedViews} : {})});
-  if (!next.split("\n").slice(1).join("\n").startsWith(expectedPrefix)) throw Error("Wrong continuation: "+next.slice(0,600));
-  text(result.split("\n").find(line=>line.startsWith("[Showing lines")));
-}
+const strip = (value) => value.replace(/^<system-result[^\n]*\n/u, "");
+const rows = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => "row " + (from + i)).join("\n");
 const limited = await tools.read({path:"lines.txt",limit:2010});
-await followText(limited,2001,"row 2001\n");
+const continuation = /\[95 more lines in source\. Read ("(?:[^"\\]|\\.)*") with offset=(\d+) to continue\.\]$/.exec(limited);
+if (!continuation || Number(continuation[2]) !== 2011) throw Error("Missing explicit-limit action: " + limited.slice(-600));
+if (!strip(limited).startsWith(rows(1, 2010) + "\n\n[95 more")) throw Error("Expected the whole requested window");
+const next = strip(await tools.read({path:JSON.parse(continuation[1]),offset:Number(continuation[2])}));
+if (next !== rows(2011, 2105) + "\n") throw Error("Wrong continuation: " + next.slice(0, 600));
 const anchors = await tools.read({path:"lines.txt",limit:5,views:["anchors"]});
 const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|row 5$/m.exec(anchors)?.[1];
 if (!anchor) throw Error("No current line-5 anchor");
-await followText(await tools.read({path:"lines.txt#"+anchor}),2005,"row 2005\n");
-await followText(await tools.read({path:"bytes.txt"}),51,"row 51 ");
-await followText(await tools.read({path:"counts.txt",views:["jq:range(1; .count + 1)"]}),2001,"2001\n",["jq:range(1; .count + 1)"]);
+const anchored = strip(await tools.read({path:"lines.txt#"+anchor}));
+if (anchored !== rows(5, 2105) + "\n") throw Error("Expected the whole anchored remainder");
+const heavy = Array.from({ length: 60 }, (_, i) => "row " + (i + 1) + " " + "x".repeat(1000)).join("\n") + "\n";
+if (strip(await tools.read({path:"bytes.txt"})) !== heavy) throw Error("Expected every byte-heavy row");
+const counted = strip(await tools.read({path:"counts.txt",views:["jq:range(1; .count + 1)"]}));
+if (counted !== Array.from({ length: 2105 }, (_, i) => String(i + 1)).join("\n") + "\n") throw Error("Expected every jq output line");
 const context = await tools.read({path:limited,offset:2001});
 const outside = await tools.search({path:context,query:"regex:row 2011|Showing lines|offset="}).then(value => value.result);
 if (!outside.includes("No matches found")) throw Error("Cap or continuation widened the requested selection");

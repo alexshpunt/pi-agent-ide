@@ -26,7 +26,7 @@ const retained: Retention = {
   resultsUnavailable: false,
 };
 
-function display() {
+function display(toolName = "write") {
   type Handler = (event: unknown, context: unknown) => unknown;
   const handlers = new Map<string, Handler>();
   let saved: SavedGroup | undefined;
@@ -47,8 +47,8 @@ function display() {
   };
   const rendering = createNestedIdeRendering(stub as ExtensionAPI);
   rendering.api.registerTool({
-    name: "write",
-    label: "write",
+    name: toolName,
+    label: toolName,
     description: "fixture",
     parameters: Type.Object({}),
     execute: async () => ({ content: [], details: undefined }),
@@ -58,7 +58,7 @@ function display() {
     emit("tool_execution_start", {
       parentToolCallId: "parent",
       toolCallId: id,
-      toolName: "write",
+      toolName,
       args,
     });
   const end = (
@@ -152,22 +152,66 @@ test("the call cap records missing panels without claiming missing results in ke
   expect(saved.retention).toEqual({ ...retained, callsOmitted: true });
 });
 
-test.each(["oversize", "unsupported"])("%s results keep an honest bounded fallback", (kind) => {
+test("unsupported results keep an honest bounded fallback", () => {
   const run = display();
   run.start("result");
   const circular: { self?: unknown } = {};
   circular.self = circular;
-  run.end(
-    "result",
-    kind === "oversize" ? "x".repeat(600 * 1024) : "done",
-    true,
-    kind === "unsupported" ? circular : { fullOutputPath: "/tmp/full-output" },
-  );
+  run.end("result", "done", true, circular);
   const saved = run.finish();
   expect(saved.retention).toEqual({ ...retained, resultsOmitted: true });
   expect(saved.calls[0]?.result?.isError).toBe(true);
   expect(Buffer.byteLength(JSON.stringify(saved))).toBeLessThanOrEqual(512 * 1024);
-  if (kind === "oversize") expect(JSON.stringify(saved)).toContain("/tmp/full-output");
+});
+
+test.each([
+  { name: "one long line", text: "x".repeat(600 * 1024), shown: 0 },
+  {
+    name: "many lines",
+    text: Array.from({ length: 40_000 }, (_, index) => `row ${index}`).join("\n"),
+    shown: 2000,
+  },
+  {
+    name: "composition reference",
+    text:
+      ["<system-", 'result note="Internal reference"><uuid>', "0".repeat(8), "-0000-0000-0000-"]
+        .concat("0".repeat(12), "</uuid></system-", "result>\n")
+        .join("") + Array.from({ length: 40_000 }, (_, index) => `row ${index}`).join("\n"),
+    shown: 2000,
+  },
+])(
+  "an oversized Read result shows its head instead of being omitted ($name)",
+  ({ text, shown }) => {
+    const run = display("read");
+    run.start("result");
+    run.end("result", text, false, {
+      fullOutputPath: "/tmp/full-output",
+      storedLines: Array.from({ length: 40_000 }, (_, index) => [index + 1, [0, 1], "\n"]),
+    });
+    const saved = run.finish();
+    expect(saved.retention).toEqual(retained);
+    const result = saved.calls[0]?.result as
+      | { content: { text: string }[]; details: Record<string, unknown> }
+      | undefined;
+    const block = result?.content[0]?.text ?? "";
+    expect(block.endsWith("the calling tool received the whole result.]")).toBe(true);
+    expect(block).toContain(`[Showing ${shown} of ${shown > 0 ? "40000" : "1"} lines`);
+    const reference = text.startsWith("<system-result") ? `${text.split("\n")[0]}\n` : "";
+    if (shown > 0) expect(block.startsWith(`${reference}row 0\nrow 1\n`)).toBe(true);
+    expect(result?.details).toEqual({ fullOutputPath: "/tmp/full-output" });
+    expect(Buffer.byteLength(JSON.stringify(saved))).toBeLessThanOrEqual(512 * 1024);
+  },
+);
+
+test("other oversized results stay omitted because their renderers need full details", () => {
+  const run = display();
+  run.start("result");
+  run.end("result", "x".repeat(600 * 1024), true, { fullOutputPath: "/tmp/full-output" });
+  const saved = run.finish();
+  expect(saved.retention).toEqual({ ...retained, resultsOmitted: true });
+  expect(saved.calls[0]?.result?.isError).toBe(true);
+  expect(JSON.stringify(saved)).toContain("/tmp/full-output");
+  expect(Buffer.byteLength(JSON.stringify(saved))).toBeLessThanOrEqual(512 * 1024);
 });
 
 test("argument and saved group budgets hold across many retained calls", () => {

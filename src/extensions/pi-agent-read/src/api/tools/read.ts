@@ -156,6 +156,11 @@ export interface ReadPipelineContext {
   readonly sourceTarget?: string;
   /** Data execution keeps full requested content; presentation handlers must not compact it. */
   readonly audience?: "agent" | "script";
+  /**
+   * `none` when another tool, such as a Codemode script, issued the call: its text stays whole
+   * instead of fitting the model's output budget, so handlers must not compact it.
+   */
+  readonly outputLimit?: "model" | "none";
   readonly request: ReadRequest;
   readonly resolverContext: ResourceResolverContext;
   readonly state?: ReadState;

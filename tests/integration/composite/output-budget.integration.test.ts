@@ -371,7 +371,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
   },
   210000,
 );
-test("stresses write-result scopes, verified anchors and annotation views without widening limits", async () => {
+test("stresses write-result scopes, verified anchors and annotation views without widening explicit limits", async () => {
   const cwd = await workspace();
   try {
     for (const name of ["a", "b"])
@@ -388,20 +388,22 @@ test("stresses write-result scopes, verified anchors and annotation views withou
       const b = await tools.write({path:"b.ts",content:source("b")});
       if (source("a").length <= 51200) throw new Error("Scope fixture is too small");
       let checked = 0;
-      const verify = (value, limit, resources) => {
-        const body = value.replace(/^<system-result[^\\n]*>\\n/u,"").split("\\n\\n[Output truncated:")[0];
-        const bytes = [...body].reduce((sum,char) => { const point=char.codePointAt(0); return sum+(point<=127?1:point<=2047?2:point<=65535?3:4); },0);
-        if (bytes > 51200 || body.split("\\n").length > 2000) throw new Error("Useful output overflow");
-        if ((body.match(/needle_[ab]_\\d+/gu)??[]).length > limit*resources) throw new Error("Explicit range overflow");
+      const verify = (value, limit, resources, whole = false) => {
+        // Scripts get the whole requested text; only explicit ranges bound it.
+        if (/\\[Output truncated:|Showing lines|Code overview/u.test(value)) throw new Error("Script text was cut");
+        const body = value.replace(/^<system-result[^\\n]*>\\n/u,"");
+        const needles = (body.match(/needle_[ab]_\\d+/gu)??[]).length;
+        if (needles > limit*resources) throw new Error("Explicit range overflow");
+        if (whole && needles < 300) throw new Error("Script text is incomplete");
         checked++;
       };
       for (const offset of [-1,1,2]) for (const limit of [0,1,1000000]) {
         for (const views of [["anchors"],["ast"],["anchors","ast"],["diagnostics"],["breakpoints"]]) {
-          for (const source of [a,b]) verify(await tools.read({path:source,offset,limit,views}),limit,1);
+          for (const source of [a,b]) verify(await tools.read({path:source,offset,limit,views}),limit,1,offset===1&&limit===1000000);
         }
       }
       const selected = await tools.read({path:"a.ts",offset:299,limit:1,views:["anchors"]});
-      const anchor = /299#[A-F\\d]+/u.exec(selected)?.[0];
+      const anchor = /^([A-Z\\d]+)\\|const needle_a_298 /mu.exec(selected)?.[1];
       if (!anchor) throw new Error("Verified source anchor is missing");
       for (const offset of [-1,0,1,2]) for (const limit of [0,1,1000000]) {
         verify(await tools.read({path:"a.ts#"+anchor,offset,limit,views:["anchors","ast"]}),limit,1);

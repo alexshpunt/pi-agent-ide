@@ -18,11 +18,15 @@ export const IDE_OUTPUT_LIMITS = {
   imageBytes: 20 * 1024 * 1024,
 } as const;
 
-/** Bound the complete useful payload, not each individual content block. */
+/**
+ * Bound the complete useful payload, not each individual content block. `limitText: false` keeps
+ * the text whole for a program, such as a Codemode script; media stays bounded.
+ */
 export async function limitIdeOutput(
   content: Content,
   metadata: string | readonly string[] = "",
   saveFullOutput?: (text: string) => Promise<string>,
+  options: { readonly limitText?: boolean } = {},
 ) {
   const suffixes = typeof metadata === "string" ? [metadata] : metadata;
   const retained: string[] = [];
@@ -38,10 +42,13 @@ export async function limitIdeOutput(
     })
     .join("\n");
   const metadataSuffix = retained.join("");
-  const truncated = truncateHead(text, {
-    maxBytes: IDE_OUTPUT_LIMITS.bytes,
-    maxLines: IDE_OUTPUT_LIMITS.lines,
-  });
+  const truncated =
+    options.limitText === false
+      ? { truncated: false, content: text, firstLineExceedsLimit: false }
+      : truncateHead(text, {
+          maxBytes: IDE_OUTPUT_LIMITS.bytes,
+          maxLines: IDE_OUTPUT_LIMITS.lines,
+        });
   const notices: string[] = [];
   let fullOutput: string | undefined;
   if (truncated.truncated && saveFullOutput !== undefined) {

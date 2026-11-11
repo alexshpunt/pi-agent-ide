@@ -76,14 +76,17 @@ test.each([
   { name: "lines", body: "  consume(value);\n".repeat(2100) },
   { name: "bytes", body: `  consume("${"界".repeat(30)}");\n`.repeat(1000) },
 ])(
-  "overflow keeps exact structured source data ($name)",
+  "Codemode reads the exact text while direct reads keep the overflow outline ($name)",
   async ({ name, body }) => {
     const root = path.resolve(".tmp/ast-overflow");
     await mkdir(root, { recursive: true });
     const cwd = await mkdtemp(path.join(root, "contract-"));
     const source = `function checkout() {\n${body}}\n`;
+    const rows = Array.from({ length: 2500 }, (_, id) => ({ id, name: `row ${id}` }));
+    const window = source.split("\n").slice(1, 4).join("\n");
     try {
       await writeFile(path.join(cwd, "large.ts"), source);
+      await writeFile(path.join(cwd, "large.json"), JSON.stringify(rows, null, 2));
       await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
       await writeFile(
         path.join(cwd, ".pi/settings.json"),
@@ -102,21 +105,23 @@ test.each([
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["read", "codemode"],
+        tools: ["read", "write", "codemode"],
         conversation: [
           call("full", "read", { path: "large.ts" }),
+          call("json", "read", { path: "large.json" }),
           call("bounded", "read", { path: "large.ts", offset: 2, limit: 3 }),
           call("script", "codemode", {
             code: String.raw`
-const result = await tools.read({ path: "large.ts" });
-if (typeof result !== "string") throw Error("Expected readable overview");
-const action = /("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*offset[^\n]*limit)/u.exec(result);
-if (!action) throw Error("Missing original-source recovery action");
-const recovered = await tools.read({ path: JSON.parse(action[1]), offset: 2, limit: 3 });
-if (!recovered.includes(${JSON.stringify(source.split("\n").slice(1, 4).join("\n"))}))
-  throw Error("Recovery did not return the exact source window");
-text(result);
-text(recovered);
+const strip = (value) => value.replace(/^<system-result[^\n]*\n/u, "");
+const source = strip(await tools.read({ path: "large.ts" }));
+await tools.write({ path: "copy.ts", content: source });
+const json = strip(await tools.read({ path: "large.json" }));
+const rows = JSON.parse(json);
+await tools.write({ path: "copy.json", content: json });
+const page = await tools.read({ path: "large.ts", offset: 2, limit: 3 });
+if (!page.includes(${JSON.stringify(window)}) || !page.includes("more lines in source"))
+  throw Error("Expected an explicit page with its continuation");
+text(JSON.stringify({ sourceLength: source.length, rows: rows.length }));
 `,
           }),
           assistantMessage([text("Done")]),
@@ -124,19 +129,24 @@ text(recovered);
       }).run(
         "Read the large file directly and with Codemode, then inspect the exact bounded source.",
       );
-      expect(getToolExecutionDetails(getToolExecution(run, "full"))).toMatchObject({
-        resolvedBy: "ast-overflow",
-      });
+      for (const id of ["full", "json"])
+        expect(getToolExecutionDetails(getToolExecution(run, id))).toMatchObject({
+          resolvedBy: "ast-overflow",
+        });
       expect(getToolResultText(run, "full")).toContain("function checkout");
       expect(getToolExecutionResult(run, "full")).not.toHaveProperty("structuredContent");
       const bounded = getToolResultText(run, "bounded");
-      expect(bounded).toContain(source.split("\n").slice(1, 4).join("\n"));
+      expect(bounded).toContain(window);
       expect(getToolExecutionResult(run, "bounded")).not.toHaveProperty("structuredContent");
       expect(getToolExecution(run, "script").isError).toBe(false);
       const scriptText = getToolResultText(run, "script");
-      expect(scriptText).toContain(source.split("\n").slice(1, 4).join("\n"));
-      expect(scriptText).toContain("function checkout");
-      expect(scriptText).not.toContain('"kind":"text"');
+      expect(scriptText).toContain(`"sourceLength":${source.length}`);
+      expect(scriptText).toContain(`"rows":${rows.length}`);
+      expect(scriptText).not.toContain("Code overview");
+      expect((await readFile(path.join(cwd, "copy.ts"), "utf8")) === source).toBe(true);
+      expect(
+        (await readFile(path.join(cwd, "copy.json"), "utf8")) === JSON.stringify(rows, null, 2),
+      ).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

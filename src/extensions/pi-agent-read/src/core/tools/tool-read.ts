@@ -136,6 +136,8 @@ export function createReadTool(
     | "disabled"
     | (() => "full" | "compact" | "disabled") = "compact",
   parameterDescriptions?: () => ReadParameterText,
+  /** Whether another tool, such as a Codemode script, issued this tool call. */
+  isNestedCall?: (toolCallId: string) => boolean,
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
   let outputSaver: ((text: string) => Promise<string>) | undefined;
@@ -222,7 +224,7 @@ export function createReadTool(
           context,
         );
       },
-      async execute(_toolCallId, parameters, signal, _onUpdate, context) {
+      async execute(toolCallId, parameters, signal, _onUpdate, context) {
         const resolverContext: ResourceResolverContext = {
           cwd: context.cwd,
           ...(signal !== undefined && { signal }),
@@ -240,6 +242,7 @@ export function createReadTool(
             resourceGuards,
             "agent",
             outputSaver,
+            isNestedCall?.(toolCallId) === true ? "none" : "model",
           );
           return withoutScriptData(
             structuredRead(withReadCancellation(result, parameters.path, signal)),
@@ -389,6 +392,7 @@ async function executeRead(
   resourceGuards: readonly RegisteredResourceGuard[],
   audience: "agent" | "script" = "agent",
   outputSaver?: (text: string) => Promise<string>,
+  outputLimit: "model" | "none" = "model",
 ): Promise<ReadToolResult> {
   if (request.path?.startsWith("raw:"))
     return readRaw(
@@ -401,11 +405,7 @@ async function executeRead(
         .map(({ resolver }) => resolver),
     );
   resolverContext = { ...resolverContext, audience };
-  const limitOutput: typeof limitReadOutput =
-    audience === "script"
-      ? async (result) => result
-      : (result, request, fallback, options) =>
-          limitReadOutput(result, request, outputSaver ?? fallback, options);
+  const limitOutput = readOutputLimiter(audience, outputLimit, outputSaver);
   const resolverSnapshot = [...resolvers].sort(
     (left, right) => left.priority - right.priority || left.order - right.order,
   );
@@ -449,6 +449,7 @@ async function executeRead(
       audience,
       resourceGuards,
       outputSaver,
+      outputLimit,
     );
     if (targeted !== undefined) return targeted;
   }
@@ -457,6 +458,7 @@ async function executeRead(
     request: { ...request },
     resolverContext,
     audience,
+    outputLimit,
   };
 
   if (!pipeline.request.path?.startsWith("temp:")) {
@@ -616,12 +618,9 @@ async function resolveTextTargets(
   audience: "agent" | "script",
   resourceGuards: readonly RegisteredResourceGuard[],
   outputSaver?: (text: string) => Promise<string>,
+  outputLimit: "model" | "none" = "model",
 ): Promise<ReadToolResult | undefined> {
-  const limitOutput: typeof limitReadOutput =
-    audience === "script"
-      ? async (result) => result
-      : (result, request, fallback, options) =>
-          limitReadOutput(result, request, outputSaver ?? fallback, options);
+  const limitOutput = readOutputLimiter(audience, outputLimit, outputSaver);
   for (const { resolver } of targetResolvers) {
     let rawAttempt: unknown;
     try {
@@ -687,6 +686,7 @@ async function resolveTextTargets(
           },
           resolverContext,
           audience,
+          outputLimit,
         };
         if (!target.source.startsWith("temp:")) {
           const preRead = await runPreReadHandlers(rangePipeline, handlers);
@@ -765,6 +765,23 @@ async function resolveTextTargets(
     );
   }
   return undefined;
+}
+
+/**
+ * Script data stays whole. A Read that another tool issued keeps its window notices but not the
+ * model's output budget, because its text reaches that tool rather than the model.
+ */
+function readOutputLimiter(
+  audience: "agent" | "script",
+  outputLimit: "model" | "none",
+  outputSaver: ((text: string) => Promise<string>) | undefined,
+): typeof limitReadOutput {
+  if (audience === "script") return async (result) => result;
+  if (outputLimit === "none")
+    return async (result, request, _fallback, options) =>
+      explainReadWindow(result, request, options);
+  return (result, request, fallback, options) =>
+    limitReadOutput(result, request, outputSaver ?? fallback, options);
 }
 
 /**

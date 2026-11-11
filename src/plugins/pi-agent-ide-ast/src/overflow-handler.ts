@@ -59,6 +59,7 @@ export function createAstOverflowHandler(): ReadPostReadHandler {
     const block = result?.content.length === 1 ? result.content[0] : undefined;
     if (
       context.audience === "script" ||
+      context.outputLimit === "none" ||
       result === undefined ||
       state?.contentKind !== "text" ||
       (state.resolvedBy !== "filesystem" && !state.source.startsWith("ssh://")) ||
