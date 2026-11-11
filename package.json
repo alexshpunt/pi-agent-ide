@@ -258,6 +258,7 @@
     "@earendil-works/pi-ai": "1.5.0",
     "@earendil-works/pi-coding-agent": "1.5.0",
     "@earendil-works/pi-tui": "1.5.0",
+    "@oxc-node/core": "0.0.34",
     "@oxlint/plugins": "^1.87.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "esbuild": "0.25.12",

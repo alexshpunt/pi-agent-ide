@@ -84,6 +84,9 @@ importers:
       '@earendil-works/pi-tui':
         specifier: 1.5.0
         version: 1.5.0
+      '@oxc-node/core':
+        specifier: 0.0.34
+        version: 0.0.34(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
       '@oxlint/plugins':
         specifier: ^1.87.0
         version: 1.87.0
