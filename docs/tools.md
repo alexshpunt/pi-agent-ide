@@ -12,6 +12,8 @@ IDE tools return readable text in direct calls and Codemode. A leading system-re
 
 Every IDE tool, including nested calls and the combined Codemode result, shares a useful-text limit of 50 KiB or 2,000 lines. Images share a limit of 20 frames, 4,000,000 pixels and 20 MiB of image bytes per result. Notices, guides and composition references are added afterward and are not part of these budgets.
 
+A text Read inside a Codemode script is the exception: the script receives the whole requested text, so it can parse a large file or write it back. Explicit `offset` and `limit` still select a page with its continuation notice, and large files are not replaced with a code overview. The script's own output is still bounded: the combined Codemode result shares the limit above. The Read panel inside the Codemode card shows the first 2,000 lines or 50 KiB of such a result and says that the script received all of it.
+
 When the shared text limit truncates a result, the complete useful text is saved to a private temporary file. The result names that file. Use Read with `offset` and `limit` to continue, or `raw:` byte windows for a line that is too large. The file is removed when its owning runtime is disposed. Media is resized or omitted, not archived.
 
 An explicit request limit still selects what the tool produces; the saved file does not undo that filter. Truncation does not shorten private source selections or change file-edit effects. Terminal results also link to their complete session log.
