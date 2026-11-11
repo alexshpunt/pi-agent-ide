@@ -14,11 +14,14 @@ import {
 
 import { LspManager } from "./manager.ts";
 import { requestReferences, type LspLocation } from "./navigation.ts";
+import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import {
-  diagnosticErrors,
-  documentsPastErrorLimit,
-  withoutCorrectedNames,
-} from "./corrected-names.ts";
+  clangCoverage,
+  coverageComplete,
+  createClangReach,
+  mergeCoverage,
+  type ClangCoverage,
+} from "./clang-coverage.ts";
 import {
   requestWorkspaceSymbols,
   requestDocumentSymbols,
@@ -55,7 +58,8 @@ export interface SymbolHit extends SearchSelectionMatch {
   readonly symbol: SearchSymbol;
 }
 
-function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boolean {
+/** Whether `file` is inside the workspace `cwd` and the path, include and exclude of `scope`. */
+export function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boolean {
   const remote = cwd.startsWith("ssh://");
   const filesystem = remote ? path.posix : path;
   const native = (source: string) =>
@@ -123,8 +127,8 @@ function declarationsNamed(symbols: readonly LspDocumentSymbol[], name: string):
 export interface SymbolSearchResult {
   readonly hits: SymbolHit[];
   readonly complete: boolean;
-  /** Searched files where the compiler stopped at its error limit, so references can be missing. */
-  readonly pastErrorLimit?: readonly string[];
+  /** Why C/C++ references can be missing; present only when they can. */
+  readonly coverage?: ClangCoverage;
 }
 
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
@@ -253,7 +257,20 @@ async function searchSymbolsOnce(
     (uri) => manager.openFile(sourceOf(uri, cwd), cwd, "symbols", signal),
     signal,
   );
-  const pastErrorLimit = new Set<string>();
+  // A search with references can leave its scope; without them it lists only hits inside it.
+  const reachOf = createClangReach({
+    manager,
+    cwd,
+    errorsOf,
+    accepts: (source) =>
+      scope.navigation === "references"
+        ? withinScope(source, cwd, {})
+        : withinScope(source, cwd, scope) &&
+          (resultScope === undefined ||
+            resultScope.targets.some((target) => target.source === source)),
+    ...(signal && { signal }),
+  });
+  const coverages: (ClangCoverage | undefined)[] = [];
   for (const client of clients) {
     signal?.throwIfAborted();
     const definitions = await requestWorkspaceSymbols(
@@ -304,6 +321,7 @@ async function searchSymbolsOnce(
           endColumn: declared.endColumn,
         },
       };
+      const reach = await reachOf(opened.client, opened.languageId, definition.name);
       const references = await requestReferences(
         opened.client,
         opened.uri,
@@ -336,16 +354,19 @@ async function searchSymbolsOnce(
         [definition.name, declared.matchedText],
         errorsOf,
       );
-      // The server answers from the syntax trees of the declaration file and of files it has
-      // open; one past the compiler's error limit can lack references.
-      for (const uri of documentsPastErrorLimit(opened.client, [
-        opened.uri,
-        ...reported.map(({ location }) => location.uri),
-      ]))
-        pastErrorLimit.add(sourceOf(uri, cwd));
       for (const { reference } of named)
         candidates.push({ ...reference, role: "reference", symbol });
-      if (scope.navigation === "references" && !candidates.some(included)) continue;
+      if (!candidates.some(included)) continue;
+      // Only symbols that contribute hits decide what the result can be missing.
+      if (reach !== undefined)
+        coverages.push(
+          await clangCoverage(
+            reach,
+            [opened.uri, ...reported.map(({ location }) => location.uri)],
+            errorsOf,
+            (uri) => sourceOf(uri, cwd),
+          ),
+        );
       for (const hit of candidates) {
         if (scope.navigation !== "references" && !included(hit)) continue;
         // Navigation can leave the seed region, never the workspace source-access boundary.
@@ -391,9 +412,10 @@ async function searchSymbolsOnce(
       left.endColumn - right.endColumn ||
       left.symbol.id.localeCompare(right.symbol.id),
   );
+  const coverage = mergeCoverage(coverages);
   return {
     hits: hits.slice(0, limit),
-    complete: (resultScope?.complete ?? true) && hits.length <= limit && pastErrorLimit.size === 0,
-    ...(pastErrorLimit.size > 0 && { pastErrorLimit: [...pastErrorLimit].sort() }),
+    complete: (resultScope?.complete ?? true) && hits.length <= limit && coverageComplete(coverage),
+    ...(coverage !== undefined && !coverageComplete(coverage) && { coverage }),
   };
 }

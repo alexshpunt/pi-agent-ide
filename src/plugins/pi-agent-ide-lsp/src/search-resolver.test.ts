@@ -1,7 +1,7 @@
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SearchRequest, SearchSelectionRegistration } from "pi-agent-search/api/search";
-import { errorLimitNote } from "./lsp/corrected-names.ts";
+import { coverageNotes } from "./lsp/clang-coverage.ts";
 import { LspManager } from "./lsp/manager.ts";
 import { LspServerRegistry } from "./lsp/registry.ts";
 import { createLspSearchResolver, type LspSearchBackend } from "./search-resolver.ts";
@@ -158,19 +158,22 @@ test("follows references only when requested", async () => {
   expect(scopes).toEqual([{ path: "src" }, { path: "src", navigation: "references" }]);
 });
 
-test("names the searched files past the compiler's error limit", async () => {
-  backend.searchSymbols.mockResolvedValue({
-    hits: [],
-    complete: false,
-    pastErrorLimit: [path.join(cwd, "src/main.cpp")],
-  });
+test("names the fatal compiler errors that can hide references", async () => {
+  const coverage = {
+    fatal: [{ source: path.join(cwd, "src/main.cpp"), line: 3, message: "'x.h' file not found" }],
+    unchecked: 2,
+    unlisted: false,
+  };
+  backend.searchSymbols.mockResolvedValue({ hits: [], complete: false, coverage });
 
   const result = await resolver.tryResolve(request({ query: "label" }), { cwd });
 
   if (result.kind !== "resolved") throw Error("search failed");
   const formatted = await resolver.format(result.payload, { cwd });
   const text = formatted.content.map((block) => (block.type === "text" ? block.text : "")).join("");
-  expect(text).toContain(errorLimitNote([path.join("src", "main.cpp")]));
+  for (const note of coverageNotes(coverage, (source) => path.relative(cwd, source)))
+    expect(text).toContain(note);
+  expect(text).toContain(`${path.join("src", "main.cpp")}:3 'x.h' file not found`);
   expect(registered?.complete).toBe(false);
   await expect(registered?.refresh()).resolves.toMatchObject({ complete: false });
 });

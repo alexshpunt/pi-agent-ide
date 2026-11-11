@@ -11,6 +11,7 @@ import { documentUri } from "./document-uri.ts";
 import type { LspWorkspaceOwner } from "./workspace-owner.ts";
 import { prepareProjectQuery } from "./project.ts";
 import { retainForCurrentOperation } from "./document-leases.ts";
+import { localFilesContaining } from "./files-containing.ts";
 
 import { resolveInitializationOptions } from "./initialization-options.ts";
 import { toDiagnostic } from "./diagnostics.ts";
@@ -280,6 +281,26 @@ export class LspManager {
     const file = await stat(path.resolve(cwd, source));
     signal?.throwIfAborted();
     return file.isFile();
+  }
+
+  /**
+   * Sources under the workspace root of `client` whose text has `word` as a whole word, among
+   * files of the given languages. Undefined when the workspace owner has no text search.
+   */
+  async filesContaining(
+    client: LspClient,
+    word: string,
+    languageIds: ReadonlySet<string>,
+    signal?: AbortSignal,
+  ): Promise<readonly string[] | undefined> {
+    signal?.throwIfAborted();
+    const extensions = [...this._registry.knownExtensions].filter((extension) =>
+      languageIds.has(this._registry.languageId(extension)),
+    );
+    if (extensions.length === 0) return [];
+    if (client.rootUri.startsWith("ssh://"))
+      return this.requireOwner().filesContaining?.(client.rootUri, word, extensions, signal);
+    return localFilesContaining(URI.parse(client.rootUri).fsPath, word, extensions, signal);
   }
 
   /** Start symbol servers only for language families with files in this workspace. */

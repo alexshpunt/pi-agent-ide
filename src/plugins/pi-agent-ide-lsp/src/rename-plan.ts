@@ -1,3 +1,4 @@
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/edit-pipeline";
@@ -10,6 +11,7 @@ import type { LspPosition } from "./lsp/types.ts";
 import { documentUri } from "./lsp/document-uri.ts";
 import { loadQueryProject } from "./lsp/navigation.ts";
 import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./lsp/corrected-names.ts";
+import { clangCoverage, createClangReach, renameRefusal } from "./lsp/clang-coverage.ts";
 
 /** The identifier that contains `position`, or an empty string. */
 function identifierAt(content: string, position: LspPosition): string {
@@ -99,6 +101,25 @@ async function prepareRename(
     state.signal,
   );
   await loadQueryProject(target.client, target.uri, state.signal);
+  const fileOf = (uri: string) => (uri.startsWith("ssh://") ? uri : fileURLToPath(uri));
+  const errorsOf = diagnosticErrors(
+    (uri) => manager.openFile(fileOf(uri), state.cwd, "symbols", state.signal),
+    state.signal,
+  );
+  const oldNames = [reference.selector.at(-1) ?? "", identifierAt(target.content, target.position)];
+  // clangd renames unopened files from its index; opened files become participants with edits
+  // from a fresh parse.
+  const reach = await createClangReach({
+    manager,
+    cwd: state.cwd,
+    errorsOf,
+    ...(state.signal && { signal: state.signal }),
+  })(
+    target.client,
+    manager.languageId(path.extname(source)),
+    // A selector can end with an overload signature; the name at the declaration has none.
+    oldNames[1] || oldNames[0] || "",
+  );
   // The first request discovers participants; only the second request can supply applied edits.
   // Capture and synchronize every participant first, so unopened files have a guarded revision.
   const preview = renameEntries(
@@ -135,14 +156,14 @@ async function prepareRename(
     if (before.version !== after.version || target.client.documentContent(uri) !== before.content)
       throw new Error("A rename participant changed during the server request. No edits applied.");
   }
+  if (reach !== undefined) {
+    const refusal = renameRefusal(
+      await clangCoverage(reach, [target.uri, ...entries.keys()], errorsOf, fileOf),
+      (file) => (file.startsWith("ssh://") ? file : path.relative(state.cwd, file)),
+    );
+    if (refusal !== undefined) throw new Error(refusal);
+  }
   // Clang renames names it corrected from a misspelling; those places keep their own text.
-  const errorsOf = diagnosticErrors(async (uri) => {
-    const file = snapshots.get(uri)?.file;
-    return file === undefined
-      ? undefined
-      : await manager.openFile(file, state.cwd, "symbols", state.signal);
-  }, state.signal);
-  const oldNames = [reference.selector.at(-1) ?? "", identifierAt(target.content, target.position)];
   const files: TextEditPlan["files"][number][] = [];
   for (const [uri, serverEdits] of entries) {
     const before = snapshots.get(uri);

@@ -1,4 +1,10 @@
-import type { LspWorkspaceOwner } from "#src/plugins/pi-agent-ide-lsp/index.ts";
+import path from "node:path";
+import {
+  filesContainingArguments,
+  filesContainingOutput,
+  type LspWorkspaceOwner,
+} from "#src/plugins/pi-agent-ide-lsp/index.ts";
+import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { createSshLspTransport } from "./lsp-transport.ts";
@@ -45,6 +51,24 @@ export function createSshLspWorkspaceOwner(registry: SshBackendRegistry): LspWor
         name: entry.name,
         kind: entry.kind === "symlink" ? "other" : entry.kind,
       }));
+    },
+    async filesContaining(root, word, extensions, signal) {
+      const owner = resolve(root);
+      const result = await owner.backend.execute(
+        "rg",
+        [...filesContainingArguments(word, extensions)],
+        owner.location.path,
+        { signal },
+      );
+      // ripgrep exits with 1 when no file matches.
+      if (result.exitCode !== 0 && result.exitCode !== 1)
+        throw new Error(
+          `Listing files that contain ${word} on ${owner.location.target} failed: ${result.stderr.toString("utf8")}`,
+        );
+      return filesContainingOutput(result.stdout.toString("utf8")).map(
+        (file) =>
+          remoteLocation(owner.location.target, path.posix.join(owner.location.path, file)).source,
+      );
     },
   };
 }

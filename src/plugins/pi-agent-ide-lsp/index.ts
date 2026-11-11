@@ -38,6 +38,7 @@ import type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.ts";
 import { SharedStartup, waitWithSignal } from "./src/lsp/abort.ts";
 import { LspSharedServers } from "./src/lsp/shared-servers.ts";
 export type { LspWorkspaceOwner } from "./src/lsp/workspace-owner.ts";
+export { filesContainingArguments, filesContainingOutput } from "./src/lsp/files-containing.ts";
 export type {
   LspFileWatcherSubscriptions,
   WatchPattern,
