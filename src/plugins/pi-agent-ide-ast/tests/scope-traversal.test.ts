@@ -16,3 +16,32 @@ test("finds every scope of a deeply nested file in linear time", async () => {
     Array.from({ length: depth + 1 }, (_, index) => index + 1),
   );
 }, 10_000);
+
+test("a scope's depth is the number of scopes around it", async () => {
+  const body = ["    a();", "    b();", "    c();"];
+  const lines = [
+    "function outer() {",
+    "  function inner() {",
+    ...body,
+    "  }",
+    "  function sibling() {",
+    ...body,
+    "  }",
+    "  d();",
+    "}",
+    "function next() {",
+    ...body,
+    "}",
+  ];
+
+  const scopes = await new AstScopeManager().getDocumentScopes("nested.js", process.cwd(), lines);
+
+  expect(
+    Object.fromEntries(scopes.map((scope) => [lines[scope.startLine - 1]?.trim(), scope.depth])),
+  ).toEqual({
+    "function outer() {": 0,
+    "function inner() {": 1,
+    "function sibling() {": 1,
+    "function next() {": 0,
+  });
+});
