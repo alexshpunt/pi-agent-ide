@@ -118,6 +118,11 @@ interface ProjectedLine {
   readonly sourceLine?: number;
 }
 
+interface SourceViewContext {
+  readonly markersByLine: ReadonlyMap<number, readonly string[]>;
+  readonly anchors: readonly string[];
+}
+
 export function isSupportedOutlinePath(filePath: string): boolean {
   return SUPPORTED_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
@@ -182,22 +187,28 @@ export class AstOutlineManager {
       }
 
       const content = lines.join("\n");
+      const extension = path.extname(absolutePath).toLowerCase();
+      // Walk the syntax tree and its scopes once; each depth candidate only selects replacements.
+      const staged = stageReplacements(tree.rootNode, extension, this.maxDepth);
+      const stagedDepths = new Set(staged.map((item) => item.depth));
+      const view = this.prepareSourceView(tree.rootNode, lines);
+      let outline: SourceViewBlock | undefined;
       for (let depth = this.maxDepth; ; depth -= 1) {
-        const outline = await this.createSourceViewBlock(
-          tree.rootNode,
-          absolutePath,
-          displayPath,
-          cwd,
-          lines,
-          content,
-          path.extname(absolutePath).toLowerCase(),
-          undefined,
-          undefined,
-          depth,
-        );
-        if (fits === undefined || fits(outline) || depth <= 0 || !Number.isFinite(depth)) {
-          return outline;
+        // The selection changes only through items at this depth or one level deeper.
+        // Otherwise the candidate would render the previous outline again.
+        if (outline === undefined || stagedDepths.has(depth) || stagedDepths.has(depth + 1)) {
+          outline = this.createSourceViewBlock(
+            tree.rootNode,
+            absolutePath,
+            displayPath,
+            lines,
+            content,
+            selectReplacements(staged, depth),
+            view,
+          );
+          if (fits === undefined || fits(outline)) return outline;
         }
+        if (depth <= 0 || !Number.isFinite(depth)) return outline;
       }
     });
   }
@@ -256,14 +267,17 @@ export class AstOutlineManager {
           }
 
           const displayPath = path.relative(cwd, filePath) || filePath;
-          return await this.createSourceViewBlock(
+          return this.createSourceViewBlock(
             match,
             filePath,
             displayPath,
-            cwd,
             snapshot.lines,
             snapshot.content,
-            path.extname(filePath).toLowerCase(),
+            selectReplacements(
+              stageReplacements(match, path.extname(filePath).toLowerCase(), this.maxDepth),
+              this.maxDepth,
+            ),
+            this.prepareSourceView(tree.rootNode, snapshot.lines),
             symbol,
             [`defined in: ${displayPath}:${match.startPosition.row + 1}`],
           );
@@ -287,22 +301,27 @@ export class AstOutlineManager {
     );
   }
 
-  private async createSourceViewBlock(
+  /** Scope markers and line anchors depend only on the parsed document, not on the outline depth. */
+  private prepareSourceView(root: SyntaxNode, sourceLines: readonly string[]): SourceViewContext {
+    const anchors = lineAnchors(sourceLines);
+    return {
+      markersByLine: buildScopeMarkers(this.fallbackScopeManager.getTreeScopes(root, anchors)),
+      anchors,
+    };
+  }
+
+  private createSourceViewBlock(
     node: SyntaxNode,
     filePath: string,
     displayPath: string,
-    cwd: string,
     sourceLines: readonly string[],
     source: string,
-    extension: string,
+    replacements: readonly Replacement[],
+    { markersByLine, anchors }: SourceViewContext,
     heading?: string,
     details?: readonly string[],
-    maxDepth = this.maxDepth,
-  ): Promise<SourceViewBlock> {
-    const projectedLines = renderNodeLines(node, source, extension, maxDepth);
-    const scopes = await getOutlineScopes(this.fallbackScopeManager, filePath, cwd, sourceLines);
-    const markersByLine = buildScopeMarkers(scopes);
-    const anchors = lineAnchors(sourceLines);
+  ): SourceViewBlock {
+    const projectedLines = renderNodeLines(node, source, replacements);
     const renderedLines = projectedLines.map((line) => {
       const sourceLineNumber = line.sourceLine;
       const sourceContent =
@@ -375,15 +394,6 @@ function failedSourceViewBlock(path: string, error: string, code = "PEEK_FAILED"
     error,
     code,
   };
-}
-
-function getOutlineScopes(
-  fallback: AstScopeManager,
-  filePath: string,
-  cwd: string,
-  lines: readonly string[],
-): Promise<ScopeEntry[]> {
-  return fallback.getDocumentScopes(filePath, cwd, lines);
 }
 
 function buildScopeMarkers(scopes: readonly ScopeEntry[]): Map<number, string[]> {
@@ -491,60 +501,67 @@ function unwrapDeclaration(node: SyntaxNode): SyntaxNode {
   return node;
 }
 
-interface MappedCharacter {
-  readonly char: string;
+/** Text without line breaks from one source line, or from no source line. */
+interface LinePiece {
+  readonly text: string;
   readonly sourceLine?: number;
 }
 
+/** Project a node's source lines with the replacements applied. A projected line maps to a source
+ * line when all its text comes from that one line. A replacement that overlaps an applied one is
+ * skipped. Tree-sitter offsets use UTF-16 code units, just like String indexing.
+ */
 function renderNodeLines(
   node: SyntaxNode,
   source: string,
-  extension: string,
-  maxDepth: number,
+  replacements: readonly Replacement[],
 ): ProjectedLine[] {
-  const replacements: Replacement[] = [];
-
-  if (DATA_EXTENSIONS.has(extension)) {
-    collectDataReplacements(node, extension, replacements, maxDepth);
-  } else {
-    collectReplacements(node, extension, replacements, false, maxDepth);
-  }
-
   const start = lineStartAt(source, node.startIndex);
   const end = lineEndAt(source, node.endIndex);
   const relevant = replacements
     .filter((replacement) => replacement.start >= start && replacement.end <= end)
-    .sort((a, b) => b.start - a.start);
-  const mapped = mapSourceRange(source, start, end);
-
-  for (const replacement of relevant) {
-    const relativeStart = replacement.start - start;
-    const relativeEnd = replacement.end - start;
-    const inserted = mapReplacement(replacement);
-    mapped.splice(relativeStart, relativeEnd - relativeStart, ...inserted);
-  }
-
-  while (mapped.length > 0 && /\s/u.test(requiredValue(mapped.at(-1)).char)) {
-    mapped.pop();
-  }
-
-  const lines: MappedCharacter[][] = [[]];
-
-  for (const item of mapped) {
-    if (item.char === "\n") {
+    .sort((a, b) => a.start - b.start);
+  const lines: LinePiece[][] = [[]];
+  const appendText = (text: string, sourceLineAt: (lineIndex: number) => number | undefined) => {
+    let lineIndex = 0;
+    for (let from = 0; ; lineIndex += 1) {
+      const newline = text.indexOf("\n", from);
+      const piece = text.slice(from, newline === -1 ? text.length : newline);
+      const sourceLine = sourceLineAt(lineIndex);
+      if (piece.length > 0) {
+        requiredValue(lines.at(-1)).push(
+          sourceLine === undefined ? { text: piece } : { text: piece, sourceLine },
+        );
+      }
+      if (newline === -1) return lineIndex;
       lines.push([]);
-    } else {
-      requiredValue(lines.at(-1)).push(item);
+      from = newline + 1;
     }
-  }
+  };
 
-  return lines.map((line) => {
-    const sourceLines = [
-      ...new Set(line.flatMap((item) => (item.sourceLine === undefined ? [] : [item.sourceLine]))),
-    ];
+  let sourceLine = countLines(source, 0, start);
+  let cursor = start;
+  const appendSource = (to: number) => {
+    const firstLine = sourceLine;
+    sourceLine += appendText(source.slice(cursor, to), (lineIndex) => firstLine + lineIndex);
+    cursor = to;
+  };
+  for (const replacement of relevant) {
+    if (replacement.start < cursor) continue;
+    appendSource(replacement.start);
+    const lineSources = replacement.lineSourceLines ?? [];
+    appendText(replacement.text, (lineIndex) => lineSources[lineIndex]);
+    sourceLine += countLines(source, replacement.start, replacement.end) - 1;
+    cursor = replacement.end;
+  }
+  appendSource(end);
+
+  trimTrailingWhitespace(lines);
+  return lines.map((pieces) => {
+    const sourceLines = new Set(pieces.flatMap((piece) => piece.sourceLine ?? []));
     return {
-      content: line.map((item) => item.char).join(""),
-      ...(sourceLines.length === 1 && { sourceLine: sourceLines[0] }),
+      content: pieces.map((piece) => piece.text).join(""),
+      ...(sourceLines.size === 1 && { sourceLine: requiredValue([...sourceLines][0]) }),
     };
   });
 }
@@ -559,81 +576,127 @@ function lineEndAt(source: string, index: number): number {
   return newline === -1 ? source.length : newline;
 }
 
-function mapSourceRange(source: string, start: number, end: number): MappedCharacter[] {
-  let sourceLine = source.slice(0, start).split("\n").length;
-  const mapped: MappedCharacter[] = [];
-
-  // Tree-sitter offsets use UTF-16 code units, just like String.slice/splice offsets.
-  // Iterating code points would shift replacements after supplementary characters.
-  for (let index = start; index < end; index += 1) {
-    const char = requiredValue(source[index]);
-    mapped.push({ char, sourceLine });
-
-    if (char === "\n") {
-      sourceLine += 1;
-    }
+/** One plus the number of line breaks in `source` between `start` and `end`. */
+function countLines(source: string, start: number, end: number): number {
+  let count = 1;
+  for (let index = source.indexOf("\n", start); index !== -1 && index < end;) {
+    count += 1;
+    index = source.indexOf("\n", index + 1);
   }
-
-  return mapped;
+  return count;
 }
 
-function mapReplacement(replacement: Replacement): MappedCharacter[] {
-  const lineSources = replacement.lineSourceLines ?? [];
-  let lineIndex = 0;
-
-  const mapped: MappedCharacter[] = [];
-
-  for (let index = 0; index < replacement.text.length; index += 1) {
-    const char = requiredValue(replacement.text[index]);
-    const sourceLine = lineSources[lineIndex];
-    mapped.push(sourceLine === undefined ? { char } : { char, sourceLine });
-
-    if (char === "\n") {
-      lineIndex += 1;
+/** Remove trailing whitespace, including line breaks, from the projected text. */
+function trimTrailingWhitespace(lines: LinePiece[][]): void {
+  for (;;) {
+    const pieces = requiredValue(lines.at(-1));
+    const last = pieces.at(-1);
+    if (last === undefined) {
+      if (lines.length === 1) return;
+      lines.pop();
+      continue;
+    }
+    const text = last.text.trimEnd();
+    if (text.length === last.text.length) return;
+    pieces.pop();
+    if (text.length > 0) {
+      pieces.push({ ...last, text });
+      return;
     }
   }
-
-  return mapped;
 }
 
-function collapseDeepNode(
+/** A replacement found by one tree walk, tagged so that each depth limit can select its own set. */
+interface StagedReplacement {
+  readonly replacement: Replacement;
+  /** Depth of the visited node that produced the replacement. */
+  readonly depth: number;
+  /** The node itself collapses into "…" when the depth limit equals its depth. */
+  readonly collapse: boolean;
+  /** The visited node has no named children, so a depth limit never collapses it. */
+  readonly leaf: boolean;
+}
+
+/** Walk the tree once up to `maxDepth`. For any limit at or below it, selectReplacements returns
+ * what a separate walk limited to that depth would produce.
+ */
+function stageReplacements(
   node: SyntaxNode,
-  replacements: Replacement[],
+  extension: string,
+  maxDepth: number,
+): StagedReplacement[] {
+  const staged: StagedReplacement[] = [];
+  if (DATA_EXTENSIONS.has(extension)) {
+    collectDataReplacements(node, extension, staged, maxDepth);
+  } else {
+    collectReplacements(node, extension, staged, false, maxDepth);
+  }
+  return staged;
+}
+
+/** A walk limited to `maxDepth` collapses each node with children at that depth and stops there.
+ * It keeps the other replacements of nodes above that depth and of childless nodes at it.
+ */
+function selectReplacements(staged: readonly StagedReplacement[], maxDepth: number): Replacement[] {
+  return staged
+    .filter(({ depth, collapse, leaf }) =>
+      collapse ? depth === maxDepth : depth < maxDepth || (depth === maxDepth && leaf),
+    )
+    .map(({ replacement }) => replacement);
+}
+
+/** Stage the collapse of a node with children; return true when the walk stops at it. */
+function stageCollapse(
+  node: SyntaxNode,
+  leaf: boolean,
+  staged: StagedReplacement[],
   depth: number,
   maxDepth: number,
 ): boolean {
-  if (depth < maxDepth || node.namedChildCount === 0) return false;
-  replacements.push({
-    start: node.startIndex,
-    end: node.endIndex,
-    text: "…",
-    lineSourceLines: [node.startPosition.row + 1],
+  if (leaf || !Number.isFinite(maxDepth)) return false;
+  staged.push({
+    replacement: {
+      start: node.startIndex,
+      end: node.endIndex,
+      text: "…",
+      lineSourceLines: [node.startPosition.row + 1],
+    },
+    depth,
+    collapse: true,
+    leaf,
   });
-  return true;
+  return depth >= maxDepth;
 }
+
 function collectDataReplacements(
   node: SyntaxNode,
   extension: string,
-  replacements: Replacement[],
+  staged: StagedReplacement[],
   maxDepth: number,
   depth = 0,
 ): void {
-  if (collapseDeepNode(node, replacements, depth, maxDepth)) return;
+  const leaf = node.namedChildCount === 0;
+  if (stageCollapse(node, leaf, staged, depth, maxDepth)) return;
   for (const child of node.namedChildren) {
     if (isDataScalar(child, extension)) {
       if (!isDataKey(child)) {
-        replacements.push({
-          start: child.startIndex,
-          end: child.endIndex,
-          text: "…",
-          lineSourceLines: [child.startPosition.row + 1],
+        staged.push({
+          replacement: {
+            start: child.startIndex,
+            end: child.endIndex,
+            text: "…",
+            lineSourceLines: [child.startPosition.row + 1],
+          },
+          depth,
+          collapse: false,
+          leaf,
         });
       }
 
       continue;
     }
 
-    collectDataReplacements(child, extension, replacements, maxDepth, depth + 1);
+    collectDataReplacements(child, extension, staged, maxDepth, depth + 1);
   }
 }
 
@@ -684,15 +747,19 @@ function isDataKey(node: SyntaxNode): boolean {
 function collectReplacements(
   node: SyntaxNode,
   extension: string,
-  replacements: Replacement[],
+  staged: StagedReplacement[],
   topLevel: boolean,
   maxDepth: number,
   depth = 0,
 ): void {
-  if (collapseDeepNode(node, replacements, depth, maxDepth)) return;
+  const leaf = node.namedChildCount === 0;
+  if (stageCollapse(node, leaf, staged, depth, maxDepth)) return;
+  const stage = (replacement: Replacement): void => {
+    staged.push({ replacement, depth, collapse: false, leaf });
+  };
   const keepCall = Number.isFinite(maxDepth) && node.type === "expression_statement";
   if (topLevel && !isTopLevelInterfaceNode(node) && !keepCall) {
-    replacements.push({
+    stage({
       start: node.startIndex,
       end: node.endIndex,
       text: "…",
@@ -706,7 +773,7 @@ function collectReplacements(
 
     if (body) {
       const placeholder = renderBodyPlaceholder(body, extension);
-      replacements.push({
+      stage({
         start: body.startIndex,
         end: body.endIndex,
         text: placeholder.text,
@@ -720,7 +787,7 @@ function collectReplacements(
     const value = node.childForFieldName("value");
 
     if (value && !FUNCTION_TYPES.has(value.type)) {
-      replacements.push({
+      stage({
         start: value.startIndex,
         end: value.endIndex,
         text: "…",
@@ -731,14 +798,7 @@ function collectReplacements(
   }
 
   for (const child of node.namedChildren) {
-    collectReplacements(
-      child,
-      extension,
-      replacements,
-      ROOT_TYPES.has(node.type),
-      maxDepth,
-      depth + 1,
-    );
+    collectReplacements(child, extension, staged, ROOT_TYPES.has(node.type), maxDepth, depth + 1);
   }
 }
 

@@ -205,16 +205,16 @@ export class AstScopeManager {
       return [];
     }
 
-    return await withParsedDocument(filePath, cwd, lines, (tree) => {
-      if (!tree) {
-        return [];
-      }
+    return await withParsedDocument(filePath, cwd, lines, (tree) =>
+      tree ? this.getTreeScopes(tree.rootNode, lineAnchors(lines)) : [],
+    );
+  }
 
-      const candidates: ScopeCandidate[] = [];
-      this.collectCandidates(tree.rootNode, candidates);
-
-      return this.buildEntries(candidates, lines);
-    });
+  /** Scopes of an already parsed document with the given line anchors. */
+  public getTreeScopes(root: SyntaxNode, anchors: readonly string[]): ScopeEntry[] {
+    const candidates: ScopeCandidate[] = [];
+    this.collectCandidates(root, candidates);
+    return this.buildEntries(candidates, anchors);
   }
 
   private collectCandidates(
@@ -303,7 +303,7 @@ export class AstScopeManager {
 
   private buildEntries(
     candidates: readonly ScopeCandidate[],
-    lines: readonly string[],
+    anchors: readonly string[],
   ): ScopeEntry[] {
     const byStart = new Map<number, ScopeCandidate>();
 
@@ -327,22 +327,20 @@ export class AstScopeManager {
     // The outermost scope with a given endLine wins.
     const deduped: ScopeCandidate[] = [];
 
+    // Every earlier candidate starts on an earlier line, so only the shared endLine matters.
+    const dedupedEnds = new Set<number>();
     for (const candidate of ordered) {
-      const hasOuterWithSameEnd = deduped.some(
-        (existing) =>
-          existing.startLine < candidate.startLine && existing.endLine === candidate.endLine,
-      );
-
-      if (!hasOuterWithSameEnd) {
+      if (!dedupedEnds.has(candidate.endLine)) {
+        dedupedEnds.add(candidate.endLine);
         deduped.push(candidate);
       }
     }
 
+    const depths = containingScopeCounts(deduped);
+
     // A scope is named by the line anchor of its first line, so it keeps its name through edits
     // inside it and moves of other code. No two scopes start on the same line (see byStart).
-    const anchors = lineAnchors(lines);
-
-    return deduped.map((candidate) => {
+    return deduped.map((candidate, index) => {
       const firstLineAnchor = anchors[candidate.startLine - 1] ?? "";
 
       return {
@@ -350,13 +348,7 @@ export class AstScopeManager {
         kind: candidate.kind,
         startLine: candidate.startLine,
         endLine: candidate.endLine,
-        depth: deduped.filter(
-          (parent) =>
-            parent !== candidate &&
-            parent.startLine <= candidate.startLine &&
-            parent.endLine >= candidate.endLine &&
-            (parent.startLine < candidate.startLine || parent.endLine > candidate.endLine),
-        ).length,
+        depth: depths[index] ?? 0,
         hash: firstLineAnchor,
         blockHash: firstLineAnchor,
         beginAnchor: createScopeAnchor("begin", firstLineAnchor, candidate.startLine),
@@ -366,4 +358,28 @@ export class AstScopeManager {
       } satisfies ScopeEntry;
     });
   }
+}
+
+/** For scopes ordered by distinct ascending start lines, count the earlier scopes that reach at
+ * least each scope's end line, which are the scopes containing it. A Fenwick tree over end lines
+ * keeps this O(n log n) for files with thousands of scopes.
+ */
+function containingScopeCounts(
+  scopes: readonly { readonly startLine: number; readonly endLine: number }[],
+): number[] {
+  const size = scopes.reduce((max, scope) => Math.max(max, scope.endLine), 0);
+  const tree = Array.from({ length: size + 1 }, () => 0);
+  const countEndingBefore = (line: number): number => {
+    let count = 0;
+    for (let index = line - 1; index > 0; index -= index & -index) count += tree[index] ?? 0;
+    return count;
+  };
+
+  return scopes.map((scope, inserted) => {
+    const containing = inserted - countEndingBefore(scope.endLine);
+    for (let index = scope.endLine; index <= size; index += index & -index) {
+      tree[index] = (tree[index] ?? 0) + 1;
+    }
+    return containing;
+  });
 }
