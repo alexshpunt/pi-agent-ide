@@ -200,7 +200,7 @@ Common built-in forms include:
 
 ```text
 K7M2QX4                a line, named by its content
-scope-begin-7C21       a structural boundary
+scope-begin-K7M2QX4    a structural boundary
 SEARCH#19AF:3:line    one result's full line
 SEARCH#19AF:3:match   one exact match
 SEARCH#19AF:all:line  each unique containing line
