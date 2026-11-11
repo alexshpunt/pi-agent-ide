@@ -31,6 +31,7 @@ import { TransportWriter } from "./transport-writer.ts";
 import { documentUri } from "./document-uri.ts";
 import { delayWithSignal, waitWithSignal } from "./abort.ts";
 import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.ts";
+import { launchCommand, localXdgConfig } from "./clangd-launch.ts";
 
 /** Latest push observation for an open document, without a completion guarantee. */
 export interface LspDiagnosticPublication {
@@ -101,6 +102,8 @@ export class LspClient {
   readonly serverId: string;
   readonly rootUri: string;
   private readonly _command: string[];
+  /** The command that starts the server, which can wrap the configured one. */
+  private readonly _launch: string[];
   private readonly _args: string[];
   private readonly _env: Record<string, string>;
   private readonly _initOptions: Record<string, unknown> | undefined;
@@ -125,7 +128,12 @@ export class LspClient {
     this.serverId = parameters.serverId;
     this.rootUri = parameters.rootUri;
     this._command = parameters.command;
-    this._args = parameters.command.slice(1);
+    // A server on an SSH owner runs on a Linux target.
+    this._launch = launchCommand(
+      parameters.command,
+      parameters.ownerTransport !== undefined || localXdgConfig(),
+    );
+    this._args = this._launch.slice(1);
     this._env = parameters.env ?? {};
     this._initOptions = parameters.initOptions;
     this._settings = parameters.settings;
@@ -318,7 +326,7 @@ export class LspClient {
     // Shutdown can dispose this client while watcher cleanup is awaited.
     // eslint-disable-next-line typescript/no-unnecessary-condition
     if (this._disposed) throw new Error(`[lsp] ${this.serverId}: disposed`);
-    const bin = requiredValue(this._command[0]);
+    const bin = requiredValue(this._launch[0]);
     const projectRoot = this._ownerTransport
       ? decodeURIComponent(new URL(this.rootUri).pathname)
       : URI.parse(this.rootUri).fsPath;
@@ -368,7 +376,7 @@ export class LspClient {
 
     this._ownedStartup = this._ownerTransport?.start({
       rootUri: this.rootUri,
-      command: this._command,
+      command: this._launch,
       env: this._env,
       signal,
     });
@@ -680,7 +688,7 @@ export class LspClient {
     try {
       return await this._sharedServers.attach({
         serverId: this.serverId,
-        command: this._command,
+        command: this._launch,
         cwd: projectRoot,
         configuredEnv: this._env,
         env: createConfiguredProcessEnvironment(
