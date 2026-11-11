@@ -13,7 +13,11 @@ export const SOURCE_CHANGED = "SOURCE_CHANGED";
  */
 const RETRY_DELAYS_MS = [0, 50, 100, 200, 400, 800, 1600];
 
-/** No new attempt starts once this much time has passed since the first one. */
+/**
+ * No new attempt starts once this much time has passed since the first attempt found newer text.
+ * The budget measures how long another process keeps writing the file, so the first attempt's own
+ * duration, such as a language server still starting, does not count.
+ */
 export const RETRY_BUDGET_MS = 10_000;
 
 /** Clock and pause, replaceable in tests. */
@@ -47,12 +51,13 @@ export async function retryWhenSourceChanged<Result>(
   const sleep =
     timing.sleep ??
     ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
-  const started = now();
+  let started: number | undefined;
   const run: { attempt: number } = { attempt: 0 };
   for (let attempt = 0; ; attempt += 1) {
     run.attempt = attempt;
     const outcome = await editRunScope.run(run, apply);
     if (!changedBeforeWrite(outcome)) return outcome;
+    started ??= now();
     const delay = RETRY_DELAYS_MS[attempt];
     const elapsed = now() - started;
     if (delay === undefined || elapsed + delay >= RETRY_BUDGET_MS)

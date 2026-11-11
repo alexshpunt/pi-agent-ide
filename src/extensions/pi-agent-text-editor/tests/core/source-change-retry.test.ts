@@ -60,7 +60,9 @@ test("slow attempts stop at the time budget with a reason that names the other w
     return Promise.resolve(changed);
   }, clock.timing);
   expect(attempts).toBeLessThan(8);
-  expect(clock.timing.now()).toBeLessThanOrEqual(RETRY_BUDGET_MS + 3_000);
+  // The budget runs from the first attempt that found newer text; the last attempt may start
+  // just before it ends.
+  expect(clock.timing.now()).toBeLessThanOrEqual(3_000 + RETRY_BUDGET_MS + 3_000);
   if (outcome.kind !== "failed") throw new Error("Expected a failure");
   expect(outcome.failure.cause).toBeInstanceOf(SourceKeptChangingError);
   expect(outcome.failure.cause).toMatchObject({ attempts, cause: changed.failure.cause });
