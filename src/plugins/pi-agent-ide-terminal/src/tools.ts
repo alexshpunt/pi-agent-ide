@@ -10,7 +10,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Text } from "@earendil-works/pi-tui";
+import { Container, Text } from "@earendil-works/pi-tui";
 
 import { COMPACT_READ_ROWS } from "#src/extensions/pi-agent-read/src/core/tools/read/read-renderer.ts";
 import {
@@ -69,6 +69,12 @@ const createRunParameters = (profile: ShellProfile, scope: ShellToolScope) =>
         minLength: 1,
         description: `Command for ${profile.displayName} (${profile.executable}). ${shellSyntaxGuidance(profile)}`,
       }),
+      name: Type.Optional(
+        Type.String({
+          description:
+            "Session name that becomes its address: dev-server gives shell:dev-server. Use 1 to 48 letters, digits, '.', '_' or '-', starting with a letter or digit, and a name no other session uses. Defaults to a generated ID.",
+        }),
+      ),
       background: Type.Optional(
         Type.Boolean({
           description:
@@ -194,8 +200,15 @@ export function registerTerminalTools(
           const origin = executionOrigin?.(toolCallId, context);
           const remote = targets.resolve(input.cwd ?? context.cwd, context.cwd);
           assertScope(scope, remote, hostOs);
+          // An empty name means the caller meant to omit it.
+          const requestedName = input.name === "" ? undefined : input.name;
+          const nameProblem =
+            requestedName === undefined ? undefined : manager.nameProblem(requestedName);
           const options = {
             command: input.command,
+            ...(requestedName === undefined || nameProblem !== undefined
+              ? {}
+              : { name: requestedName }),
             background: input.background ?? false,
             ...(input.cols === undefined ? {} : { cols: input.cols }),
             ...(input.rows === undefined ? {} : { rows: input.rows }),
@@ -213,6 +226,19 @@ export function registerTerminalTools(
               });
           // Set once at launch, including when the manager was retained from older code.
           session.origin ??= origin;
+          // A concurrent start can take the name between the check and the launch.
+          const nameRejection =
+            requestedName === undefined || session.name === requestedName
+              ? undefined
+              : {
+                  name: requestedName,
+                  reason:
+                    nameProblem ??
+                    manager.nameProblem(requestedName) ??
+                    `shell:${requestedName} is already used by another session.`,
+                };
+          const terminalResult = (snapshot: TerminalSessionSnapshot) =>
+            shellToolResult(snapshot, nameRejection);
           if (input.background === true && session.status !== "failed") {
             await captureInitialBackgroundPreview(manager, session, onUpdate);
             if (session.status !== "running") session.completionDelivered = true;
@@ -259,6 +285,7 @@ export function registerTerminalTools(
             cwd,
             remote ? remoteShellProfile(scope.targetOs) : toolProfile,
             theme,
+            typeof args.name === "string" ? args.name : undefined,
           );
         },
         renderResult(result, options, theme, context) {
@@ -270,7 +297,7 @@ export function registerTerminalTools(
             const refusal = message?.text.split("\n\n")[0] ?? "Command was not started.";
             return new Text(theme.fg("error", refusal), 0, 0);
           }
-          return renderRunResult(
+          const card = renderRunResult(
             details ?? {},
             options.expanded
               ? "full"
@@ -279,6 +306,19 @@ export function registerTerminalTools(
                 : presentation,
             theme,
           );
+          const rejection = (result.details as { nameRejection?: NameRejection } | undefined)
+            ?.nameRejection;
+          if (rejection === undefined) return card;
+          const container = new Container();
+          container.addChild(
+            new Text(
+              theme.fg("warning", `! name ${rejection.name} not applied: ${rejection.reason}`),
+              0,
+              0,
+            ),
+          );
+          container.addChild(card);
+          return container;
         },
       }),
     );
@@ -289,24 +329,45 @@ export function registerTerminalTools(
   };
 }
 
-function terminalPreview(snapshot: TerminalSessionSnapshot) {
+/** A requested session name that could not be used; the session keeps a generated address. */
+interface NameRejection {
+  readonly name: string;
+  readonly reason: string;
+}
+
+function nameRejectionNotice(rejection: NameRejection, source: string): string {
+  return `Name ${rejection.name} was not applied: ${rejection.reason} The session runs as ${source}. Rename it with move, path ${source} and target shell:<name>, using a valid name no other session uses.`;
+}
+
+function terminalPreview(snapshot: TerminalSessionSnapshot, rejection?: NameRejection) {
   const output = terminalOutputTail(snapshot.output).content;
+  const text = formatAgentTerminalSnapshot(snapshot);
+  const notice =
+    rejection === undefined ? undefined : nameRejectionNotice(rejection, snapshot.source);
   return {
-    content: [{ type: "text" as const, text: formatAgentTerminalSnapshot(snapshot) }],
+    content: [
+      { type: "text" as const, text: notice === undefined ? text : `${notice}\n\n${text}` },
+    ],
     details: {
       ...snapshot,
       output,
       outputStart: snapshot.outputEnd - output.length,
       truncated: snapshot.truncated || output.length < snapshot.output.length,
+      ...(rejection === undefined ? {} : { nameRejection: rejection }),
     },
     isError: snapshot.status === "failed" || snapshot.status === "lost",
   };
 }
 
-async function terminalResult(snapshot: TerminalSessionSnapshot) {
+async function shellToolResult(snapshot: TerminalSessionSnapshot, rejection?: NameRejection) {
   return {
-    ...terminalPreview(snapshot),
-    structuredContent: await structuredShellResult(snapshot),
+    ...terminalPreview(snapshot, rejection),
+    structuredContent: {
+      ...(await structuredShellResult(snapshot)),
+      ...(rejection === undefined
+        ? {}
+        : { notice: nameRejectionNotice(rejection, snapshot.source) }),
+    },
   };
 }
 async function captureInitialBackgroundPreview(

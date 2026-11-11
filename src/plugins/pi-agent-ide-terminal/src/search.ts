@@ -14,74 +14,104 @@ import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/
 import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 interface TerminalSearchPayload {
-  readonly snapshot: TerminalSessionSnapshot;
+  /** Requested scope: one session or `shell:` for every listed session. */
+  readonly source: string;
+  /** Searched sessions with the status each had at search time. */
+  readonly sessions: readonly { readonly source: string; readonly status: string }[];
   readonly query: string;
   readonly matches: readonly SearchSelectionMatch[];
+  readonly complete: boolean;
 }
 
 /** Register retained terminal output as a searchable resource. */
 export async function registerTerminalSearch(
   pi: ExtensionAPI,
   manager: TerminalSessionManager,
+  ownerSessionId: () => string | undefined = () => undefined,
 ): Promise<void> {
   const plugin = {
     protocol: SEARCH_PROTOCOL,
     apiVersion: SEARCH_API_VERSION,
     id: "terminal",
     setup(api) {
-      api.addResolver({ resolver: terminalSearchResolver(manager), priority: 100 });
+      api.addResolver({
+        resolver: terminalSearchResolver(manager, ownerSessionId),
+        priority: 100,
+      });
     },
   } satisfies SearchPlugin;
   await connectSearchPlugin(pi, plugin);
 }
 
-function terminalSearchResolver(manager: TerminalSessionManager) {
+function terminalSearchResolver(
+  manager: TerminalSessionManager,
+  ownerSessionId: () => string | undefined,
+) {
   return {
     readResources: (request: SearchRequest) =>
       request.path?.startsWith("shell:") ? [request.path] : [],
     id: "terminal",
     toScriptData(payload: unknown) {
       const result = parsePayload(payload);
-      return selectionData(result.matches, false);
+      return selectionData(result.matches, result.complete);
     },
     async tryResolve(request: SearchRequest) {
       if (request.path === undefined || !request.path.startsWith("shell:")) {
         return { kind: "not-handled" as const };
       }
-      const session = manager.get(request.path);
-      if (session === undefined) {
-        return {
-          kind: "failed" as const,
-          error: new Error(`Unknown terminal session ${request.path}`),
-        };
+      let snapshots: readonly TerminalSessionSnapshot[];
+      if (request.path === "shell:") {
+        snapshots = manager.listOwnedBy(ownerSessionId());
+      } else {
+        const session = manager.get(request.path);
+        if (session === undefined) {
+          return {
+            kind: "failed" as const,
+            error: new Error(
+              `Unknown terminal session ${request.path}. Read shell: to list your terminal sessions.`,
+            ),
+          };
+        }
+        snapshots = [manager.snapshot(session)];
       }
-      const snapshot = manager.snapshot(session);
-      const matches = findTerminalMatches(snapshot, request);
+      const maximum = request.limit ?? 100;
+      const matches: SearchSelectionMatch[] = [];
+      for (const snapshot of snapshots) {
+        if (matches.length >= maximum) break;
+        matches.push(
+          ...findTerminalMatches(snapshot, { ...request, limit: maximum - matches.length }),
+        );
+      }
       return {
         kind: "resolved" as const,
         payload: {
-          snapshot,
+          source: request.path,
+          sessions: snapshots.map(({ source, status }) => ({ source, status })),
           query: request.query,
           matches,
-        },
+          // Output keeps growing and older output may be dropped, so a match set is never final.
+          complete: false,
+        } satisfies TerminalSearchPayload,
       };
     },
     format(payload: unknown) {
       const result = parsePayload(payload);
       const lines = result.matches.map(
-        (match) => `${result.snapshot.source}:${match.lineNumber}: ${match.lineText}`,
+        (match) => `${match.source}:${match.lineNumber}: ${match.lineText}`,
       );
+      const scope =
+        result.source === "shell:"
+          ? `${result.sessions.length} terminal session${result.sessions.length === 1 ? "" : "s"}`
+          : result.source;
+      const text =
+        result.source === "shell:" && result.sessions.length === 0
+          ? "No terminal sessions in this Pi session to search."
+          : lines.length === 0
+            ? `No matches in ${scope}`
+            : `${lines.join("\n")}\n\n${lines.length} match${lines.length === 1 ? "" : "es"} in ${scope}`;
       return {
-        content: [
-          {
-            type: "text" as const,
-            text:
-              lines.length === 0
-                ? `No matches in ${result.snapshot.source}`
-                : `${lines.join("\n")}\n\n${lines.length} match${lines.length === 1 ? "" : "es"} in ${result.snapshot.source}`,
-          },
-        ],
-        details: { source: result.snapshot.source, payload: result },
+        content: [{ type: "text" as const, text }],
+        details: { source: result.source, payload: result },
       };
     },
     renderResult(
@@ -97,7 +127,11 @@ function terminalSearchResolver(manager: TerminalSessionManager) {
         theme,
         options.expanded === true,
         undefined,
-        [`Retained terminal output · ${payload.snapshot.status} · read-only`],
+        [
+          payload.source === "shell:"
+            ? `Retained terminal output · ${payload.sessions.length} sessions · read-only`
+            : `Retained terminal output · ${payload.sessions[0]?.status ?? "unknown"} · read-only`,
+        ],
       );
     },
   };
@@ -150,10 +184,10 @@ function parsePayload(value: unknown): TerminalSearchPayload {
 function isTerminalSearchPayload(value: unknown): value is TerminalSearchPayload {
   return (
     isRecord(value) &&
+    typeof value.source === "string" &&
     typeof value.query === "string" &&
     Array.isArray(value.matches) &&
-    isRecord(value.snapshot) &&
-    typeof value.snapshot.source === "string"
+    Array.isArray(value.sessions)
   );
 }
 

@@ -9,6 +9,8 @@ import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/
 export function terminalProcessProvider(manager: TerminalSessionManager): AgentIdeProcessProvider {
   return {
     id: "terminal",
+    compactionGuidance:
+      "Read shell: to list every terminal session of this Pi session, including finished ones.",
     onDidChange: (listener) => manager.onDidChange(listener),
     list: () =>
       manager
@@ -20,6 +22,7 @@ export function terminalProcessProvider(manager: TerminalSessionManager): AgentI
             kind: "terminal",
             title: snapshot.shell.toLocaleLowerCase(),
             description: snapshot.command,
+            ...(snapshot.origin === undefined ? {} : { sessionId: snapshot.origin.sessionId }),
             status: snapshot.status === "stopping" ? ("stopping" as const) : ("running" as const),
             ...(snapshot.pid === undefined ? {} : { pid: snapshot.pid, owned: true }),
             ...(snapshot.remote === undefined ? {} : { remote: snapshot.remote, owned: true }),

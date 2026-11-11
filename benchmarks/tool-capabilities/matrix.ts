@@ -249,6 +249,8 @@ const groups: [string[], string[]][] = [
     ["shell-roundtrip"],
   ],
   [["shell.image", "shell.sequence"], ["shell-screen"]],
+  // The process list sent after compaction has deterministic registry and live checks.
+  [["shell.name", "shell.list", "shell.search-all", "shell.rename"], ["shell-catalog"]],
   [
     [
       "debug.create",

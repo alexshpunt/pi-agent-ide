@@ -36,7 +36,7 @@ export default async function registerTerminal(
         { tool: "powershell" },
         { tool: "remote_bash" },
         { tool: "remote_powershell" },
-        ...["read", "write", "insert", "delete"].map((tool) => ({
+        ...["read", "search", "write", "insert", "delete", "move"].map((tool) => ({
           tool,
           resourcePrefixes: ["shell:"],
         })),
@@ -52,7 +52,16 @@ export default async function registerTerminal(
   const ui = new TerminalUi(pi, manager);
   const removeProcessProvider = agentIdeProcessRegistry(pi).add(terminalProcessProvider(manager));
 
-  await Promise.all([registerTerminalResources(pi, manager), registerTerminalSearch(pi, manager)]);
+  // Listing and searching `shell:` cover the sessions this Pi session started.
+  let ownerSessionId: string | undefined;
+  const currentSessionId = (): string | undefined => ownerSessionId;
+  pi.on("session_start", (_event, context) => {
+    ownerSessionId = context.sessionManager.getSessionId();
+  });
+  await Promise.all([
+    registerTerminalResources(pi, manager, currentSessionId),
+    registerTerminalSearch(pi, manager, currentSessionId),
+  ]);
   const presentation = () => toolPresentation(context?.preferences["ui.terminal"]);
   const releaseForegroundWaits = registerTerminalTools(
     pi,
@@ -73,14 +82,14 @@ export default async function registerTerminal(
     schemas: {
       read: {
         parameters: {
-          path: "shell:<session> — status and output tail.",
+          path: "shell: — terminal sessions started in this Pi session; shell:<session> — status and output tail.",
           views:
             "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time, up to 10 s and 20 frames.",
         },
       },
       search: {
         promptGuidelines: [
-          "path shell:<session> searches the retained text output of that terminal, including rows outside its current screen.",
+          "path shell:<session> searches the retained text output of that terminal, including rows outside its current screen; path shell: searches every terminal session of this Pi session.",
         ],
       },
       write: {
@@ -101,6 +110,11 @@ export default async function registerTerminal(
       delete: {
         parameters: { path: "shell:<session> ends that session." },
         promptGuidelines: [editingGuideline],
+      },
+      move: {
+        parameters: {
+          path: "shell:<session> with target shell:<name> renames that terminal session.",
+        },
       },
     },
   });
