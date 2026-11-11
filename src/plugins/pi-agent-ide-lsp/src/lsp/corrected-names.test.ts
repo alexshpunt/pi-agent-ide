@@ -1,5 +1,7 @@
 import { expect, test, vi } from "vitest";
+import { DiagnosticSeverity } from "./types.ts";
 import {
+  documentsPastErrorLimit,
   positionKey,
   textInRange,
   withinTypoDistance,
@@ -75,4 +77,39 @@ test("range text spans lines and rejects ranges outside the content", () => {
   expect(
     textInRange(content, { start: { line: 5, character: 0 }, end: { line: 5, character: 1 } }),
   ).toBe("");
+});
+
+test("documents whose published errors include the error limit are past it", () => {
+  const error = (code: string | undefined, message: string) => ({
+    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+    severity: DiagnosticSeverity.Error,
+    ...(code === undefined ? {} : { code }),
+    message,
+  });
+  const publications = new Map<string, { diagnostics: ReturnType<typeof error>[] }>([
+    [
+      "file:///main.cpp",
+      {
+        diagnostics: [
+          error("undeclared_var_use_suggest", "Use of undeclared identifier 'x'"),
+          error("fatal_too_many_errors", "Too many errors emitted, stopping now"),
+        ],
+      },
+    ],
+    ["file:///other.cpp", { diagnostics: [error("undeclared_var_use", "Use of undeclared 'y'")] }],
+    [
+      "file:///plain.c",
+      { diagnostics: [error(undefined, "too many errors emitted, stopping now")] },
+    ],
+  ]);
+  const client = { diagnosticPublication: (uri: string) => publications.get(uri) };
+  expect(
+    documentsPastErrorLimit(client, [
+      "file:///main.cpp",
+      "file:///other.cpp",
+      "file:///main.cpp",
+      "file:///header.h",
+      "file:///plain.c",
+    ]),
+  ).toEqual(["file:///main.cpp", "file:///plain.c"]);
 });
