@@ -43,6 +43,19 @@ const event = "pi-agent-resource:result-targets";
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
+/** What the store knows about one file of one worktree. */
+interface FileSnapshot {
+  readonly source: string;
+  readonly cwd: string;
+  /** Filesystem generation; `undefined` for a missing file or a source without one. */
+  readonly stamp: string | undefined;
+  /** The file's text at `stamp`, once read. Every selection of the file is kept on this text. */
+  content?: string;
+  /** Another string object with the same text as `content`, so repeated comparisons stay cheap. */
+  alias?: string;
+  /** The last older text a new selection came from, with its map onto `content`. */
+  older?: { readonly text: string; readonly map: LineMap | undefined };
+}
 type ResultEntry = { readonly cwd: string } & (
   | (ResolvedResultTargets & { readonly state: "ready" })
   | { readonly state: "pending" }
@@ -54,10 +67,7 @@ export class ResultTargetStore {
   readonly #entries = new Map<string, ResultEntry>();
   readonly #matchReferences = new Map<string, string>();
   readonly #referenceNames = new Map<string, string>();
-  readonly #snapshots = new Map<
-    string,
-    { source: string; cwd: string; stamp: string | undefined }
-  >();
+  readonly #snapshots = new Map<string, FileSnapshot>();
   readonly #results = new Map<
     string,
     { cwd: string; digest: string; consumable: boolean; references: string[]; resources: string[] }
@@ -79,12 +89,18 @@ export class ResultTargetStore {
   public register(targets: readonly ResultSourceTarget[], cwd: string, complete = true): string {
     for (const target of targets) this.refresh(target.source, cwd);
     const reference = `${prefix}${randomUUID()}`;
-    this.#entries.set(reference, {
-      state: "ready",
-      targets: combineTargets(this.#shareContents(targets, cwd)),
-      complete,
-      cwd: path.resolve(cwd),
-    });
+    const aligned = this.#align(targets, cwd);
+    this.#entries.set(
+      reference,
+      aligned.lost.length > 0
+        ? { state: "rejected", cwd: path.resolve(cwd), reason: retiredReason(aligned.lost) }
+        : {
+            state: "ready",
+            targets: combineTargets(this.#shareContents(aligned.targets, cwd)),
+            complete,
+            cwd: path.resolve(cwd),
+          },
+    );
     return reference;
   }
 
@@ -101,12 +117,18 @@ export class ResultTargetStore {
     if (entry?.state !== "pending" || entry.cwd !== path.resolve(cwd))
       throw new Error("Only a pending result in this worktree can be confirmed.");
     for (const target of targets) this.refresh(target.source, cwd);
-    this.#entries.set(reference, {
-      state: "ready",
-      cwd: entry.cwd,
-      targets: combineTargets(this.#shareContents(targets, cwd)),
-      complete: true,
-    });
+    const aligned = this.#align(targets, cwd);
+    this.#entries.set(
+      reference,
+      aligned.lost.length > 0
+        ? { state: "rejected", cwd: entry.cwd, reason: retiredReason(aligned.lost) }
+        : {
+            state: "ready",
+            cwd: entry.cwd,
+            targets: combineTargets(this.#shareContents(aligned.targets, cwd)),
+            complete: true,
+          },
+    );
   }
 
   /** Failed or cancelled operations cannot turn their reserved handle into live text. */
@@ -124,27 +146,11 @@ export class ResultTargetStore {
   ): ResolvedResultTargets {
     input = this.source(input, cwd);
     const references = this.#references(input);
+    this.#refreshEntries(references, cwd);
     const targets: ResultSourceTarget[] = [];
     let complete = true;
     for (const reference of references) {
-      const entry = this.#entries.get(reference);
-      if (entry === undefined)
-        throw new Error("Result target expired or unknown; repeat Read/Search.");
-      if (entry.cwd !== path.resolve(cwd))
-        throw new Error("Result target belongs to another worktree.");
-      if (entry.state === "pending")
-        throw new Error("Result target is pending; its write has not been confirmed.");
-      if (entry.state === "rejected") throw new Error(entry.reason);
-      for (const target of entry.targets) this.refresh(target.source, cwd);
-      // A changed file moves the entry's selections, so read it again after the refresh.
-      const current = this.#entries.get(reference);
-      if (current?.state === "rejected") throw new Error(current.reason);
-      if (current?.state !== "ready")
-        throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
-      if (options.allowAdjusted !== true) {
-        const adjusted = adjustedRegions(current.targets);
-        if (adjusted.length > 0) throw new Error(retiredReason(adjusted));
-      }
+      const current = this.#current(reference, options.allowAdjusted === true);
       complete &&= current.complete;
       targets.push(...current.targets);
     }
@@ -156,13 +162,15 @@ export class ResultTargetStore {
     const resolved = this.resolve(input, cwd);
     const targets: ResultSourceTarget[] = [];
     const seen = new Set<string>();
+    // The files were refreshed once above; collect without another refresh so a write landing
+    // now cannot put the pairs on two texts.
     for (const reference of new Set(this.#references(this.source(input, cwd)))) {
-      for (const target of this.resolve(reference, cwd).targets) {
+      for (const target of this.#current(reference, false).targets) {
         for (const range of target.ranges) {
           const identity = JSON.stringify([target.source, range]);
           if (seen.has(identity)) continue;
           seen.add(identity);
-          targets.push({ ...target, ranges: [range] });
+          targets.push({ ...target, ranges: [structuredClone(range)] });
         }
       }
     }
@@ -327,6 +335,13 @@ export class ResultTargetStore {
   public invalidate(source: string): void {
     for (const [key, shared] of this.#contents)
       if (shared.identity === source) this.#contents.delete(key);
+    for (const [key, snapshot] of this.#snapshots)
+      if (sourcePath(snapshot.source, snapshot.cwd) === source)
+        this.#snapshots.set(key, {
+          source: snapshot.source,
+          cwd: snapshot.cwd,
+          stamp: snapshot.stamp,
+        });
     const removed = new Set<string>();
     for (const [reference, entry] of this.#entries) {
       if (
@@ -356,8 +371,15 @@ export class ResultTargetStore {
     const previous = this.#snapshots.get(key);
     // Live session results stay current by design, so input sent to them never retires the result.
     const edited = changed && !liveResource.test(source);
-    if (edited || (previous && previous.stamp !== stamp)) this.#retire(identity, stamp);
-    this.#snapshots.set(key, { source, cwd, stamp });
+    if (edited || (previous && previous.stamp !== stamp)) {
+      const content = this.#retire(identity, stamp);
+      this.#snapshots.set(key, {
+        source,
+        cwd,
+        stamp,
+        ...(content === undefined ? {} : { content }),
+      });
+    } else this.#snapshots.set(key, { ...previous, source, cwd, stamp });
   }
 
   /** Check surviving snapshots at a script boundary, including final formatting. */
@@ -371,11 +393,11 @@ export class ResultTargetStore {
    * is marked `adjusted`: Search may use it, an edit may not. It is retired when none of its lines
    * survive, and so is any selection of another kind of source.
    */
-  #retire(identity: string, stamp: string | undefined): void {
+  #retire(identity: string, stamp: string | undefined): string | undefined {
     const next = stamp === undefined ? undefined : readLocalText(identity);
     if (next === undefined) {
       this.invalidate(identity);
-      return;
+      return undefined;
     }
     const maps = new Map<string, LineMap | undefined>();
     let lines: readonly string[] | undefined;
@@ -432,6 +454,84 @@ export class ResultTargetStore {
         !result.references.some((reference) => rebased.has(reference) || removed.has(reference))
       )
         this.#results.delete(id);
+    return next;
+  }
+
+  /**
+   * Put new selections of a local file on the text its other selections use: the file's text at
+   * its current stamp. A caller may register a selection from a text it read earlier, such as a
+   * search whose matches are registered one by one while another session writes the file. Such a
+   * selection is moved like on a file change; `lost` describes the ranges whose own text changed.
+   */
+  #align(
+    targets: readonly ResultSourceTarget[],
+    cwd: string,
+  ): { readonly targets: ResultSourceTarget[]; readonly lost: string[] } {
+    const lost: string[] = [];
+    const aligned = targets.map((target) => {
+      const identity = sourcePath(target.source, cwd);
+      const snapshot = this.#snapshots.get(JSON.stringify([path.resolve(cwd), identity]));
+      if (snapshot?.stamp === undefined || liveResource.test(target.source)) return target;
+      snapshot.content ??= readLocalText(identity);
+      const current = snapshot.content;
+      if (current === undefined) return target;
+      // Equal strings compare in constant time only when they are the same object.
+      if (target.expectedContent === snapshot.alias || target.expectedContent === current) {
+        snapshot.alias = target.expectedContent;
+        return { ...target, expectedContent: current };
+      }
+      if (snapshot.older?.text !== target.expectedContent)
+        snapshot.older = {
+          text: target.expectedContent,
+          map: createLineMap(target.expectedContent, current),
+        };
+      const map = snapshot.older.map;
+      let lines: readonly string[] | undefined;
+      const ranges: ResultRange[] = [];
+      for (const range of target.ranges) {
+        const moved =
+          map === undefined
+            ? undefined
+            : moveRange(range, map, () => (lines ??= current.split("\n")));
+        if (moved === undefined) lost.push(describeLostRange(range, map));
+        else ranges.push(moved);
+      }
+      return { ...target, expectedContent: current, ranges };
+    });
+    return { targets: aligned, lost };
+  }
+
+  /**
+   * Check every file of the given entries once, before any of them is read. Refreshing per entry
+   * would let a write that lands between two entries put them on different texts.
+   */
+  #refreshEntries(references: readonly string[], cwd: string): void {
+    const sources = new Set<string>();
+    for (const reference of references) {
+      const entry = this.#entries.get(reference);
+      if (entry === undefined)
+        throw new Error("Result target expired or unknown; repeat Read/Search.");
+      if (entry.cwd !== path.resolve(cwd))
+        throw new Error("Result target belongs to another worktree.");
+      if (entry.state === "pending")
+        throw new Error("Result target is pending; its write has not been confirmed.");
+      if (entry.state === "rejected") throw new Error(entry.reason);
+      for (const target of entry.targets) sources.add(target.source);
+    }
+    for (const source of sources) this.refresh(source, cwd);
+  }
+
+  /** A refreshed entry; a changed file has moved its selections or retired it. */
+  #current(reference: string, allowAdjusted: boolean): ResolvedResultTargets {
+    const current = this.#entries.get(reference);
+    if (current?.state === "rejected") throw new Error(current.reason);
+    if (current?.state !== "ready")
+      throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
+    if (!allowAdjusted) {
+      const adjusted = adjustedRegions(current.targets);
+      if (adjusted.length > 0) throw new Error(retiredReason(adjusted));
+    }
+    return current;
   }
 
   /** Replace equal snapshot text with the copy already retained, so repeated results add no copy. */
@@ -483,14 +583,15 @@ function retiredReason(lost: readonly string[]): string {
 /** Where the text of each adjusted range stands now, for the error of an edit that needs the old text. */
 function adjustedRegions(targets: readonly ResultSourceTarget[]): string[] {
   return targets.flatMap((target) => {
+    const adjusted = target.ranges.filter((range) => range.adjusted === true);
+    // Splitting a large file costs about a millisecond; most selections are not adjusted.
+    if (adjusted.length === 0) return [];
     const lines = target.expectedContent.split("\n");
-    return target.ranges
-      .filter((range) => range.adjusted === true)
-      .map((range) => {
-        const first = (lines[range.start.lineNumber - 1] ?? "").trim();
-        const shown = first.length > 120 ? `${first.slice(0, 120)}…` : first;
-        return `lines ${String(range.start.lineNumber)}–${String(range.end.lineNumber)} changed: now ${String(range.start.lineNumber)}| ${shown}`;
-      });
+    return adjusted.map((range) => {
+      const first = (lines[range.start.lineNumber - 1] ?? "").trim();
+      const shown = first.length > 120 ? `${first.slice(0, 120)}…` : first;
+      return `lines ${String(range.start.lineNumber)}–${String(range.end.lineNumber)} changed: now ${String(range.start.lineNumber)}| ${shown}`;
+    });
   });
 }
 
