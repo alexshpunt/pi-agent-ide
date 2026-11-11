@@ -1,4 +1,6 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { ResourceError } from "pi-agent-resource";
+import type { TextEditRun } from "pi-agent-text";
 
 import type { TextResourcesEditOutcome } from "#src/core/text-editor-core.ts";
 
@@ -46,8 +48,10 @@ export async function retryWhenSourceChanged<Result>(
     timing.sleep ??
     ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
   const started = now();
+  const run: { attempt: number } = { attempt: 0 };
   for (let attempt = 0; ; attempt += 1) {
-    const outcome = await apply();
+    run.attempt = attempt;
+    const outcome = await editRunScope.run(run, apply);
     if (!changedBeforeWrite(outcome)) return outcome;
     const delay = RETRY_DELAYS_MS[attempt];
     const elapsed = now() - started;
@@ -55,6 +59,16 @@ export async function retryWhenSourceChanged<Result>(
       return keptChanging(outcome, attempt + 1, elapsed);
     if (delay > 0) await sleep(delay * (0.5 + Math.random()));
   }
+}
+
+const editRunScope = new AsyncLocalStorage<TextEditRun>();
+
+/**
+ * The edit whose attempt is running now: one object for all of its retries, so a resolver can
+ * reuse what an earlier attempt of the same edit resolved. Undefined outside a retried edit.
+ */
+export function currentTextEditRun(): TextEditRun | undefined {
+  return editRunScope.getStore();
 }
 
 function keptChanging<Result>(

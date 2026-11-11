@@ -67,6 +67,7 @@ export {
   type TextTargetResolutionAttempt,
   type TextTargetResolver,
   type TextTargetResolverContext,
+  type TextEditRun,
 } from "./text-target.ts";
 
 export { storeText, restoreText, type StoredText } from "./stored-text.ts";

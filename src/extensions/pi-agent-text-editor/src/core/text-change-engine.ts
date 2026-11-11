@@ -1,5 +1,4 @@
 import { requiredValue } from "pi-agent-invariant";
-import { ChangeSet, Text } from "@codemirror/state";
 
 export interface TextRange {
   readonly from: number;
@@ -202,25 +201,40 @@ export function applyTextChanges(source: string, changes: readonly TextChange[])
     .sort((left, right) => left.change.from - right.change.from || left.index - right.index)
     .map(({ change }) => change);
   validateChanges(source.length, ordered);
-  const document = Text.of([source]);
-  const changeSet = ChangeSet.of(
-    ordered.map((change) => ({ ...change, insert: Text.of([change.insert]) })),
-    document.length,
-  );
+  // One pass over the source: each change copies only the text up to it, so many changes in a
+  // large file cost the file's length once, not once per change.
+  const parts: string[] = [];
   const applied: AppliedTextChange[] = [];
-
-  changeSet.iterChanges((fromBefore, toBefore, fromAfter, toAfter, inserted) => {
-    applied.push({
-      fromBefore,
-      toBefore,
-      fromAfter,
-      toAfter,
-      removedText: source.slice(fromBefore, toBefore),
-      insertedText: inserted.toString(),
-    });
-  });
-
-  return { content: changeSet.apply(document).toString(), changes: applied };
+  let copied = 0;
+  let shift = 0;
+  for (const change of ordered) {
+    if (change.from === change.to && change.insert.length === 0) continue;
+    parts.push(source.slice(copied, change.from), change.insert);
+    copied = change.to;
+    const previous = applied.at(-1);
+    // Changes that touch are reported as one, with their removed and inserted text joined.
+    if (previous !== undefined && previous.toBefore === change.from) {
+      applied[applied.length - 1] = {
+        ...previous,
+        toBefore: change.to,
+        toAfter: previous.toAfter + change.insert.length,
+        removedText: previous.removedText + source.slice(change.from, change.to),
+        insertedText: previous.insertedText + change.insert,
+      };
+    } else {
+      applied.push({
+        fromBefore: change.from,
+        toBefore: change.to,
+        fromAfter: change.from + shift,
+        toAfter: change.from + shift + change.insert.length,
+        removedText: source.slice(change.from, change.to),
+        insertedText: change.insert,
+      });
+    }
+    shift += change.insert.length - (change.to - change.from);
+  }
+  parts.push(source.slice(copied));
+  return { content: parts.join(""), changes: applied };
 }
 
 function validateChanges(length: number, changes: readonly TextChange[]): void {

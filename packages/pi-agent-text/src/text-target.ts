@@ -20,9 +20,20 @@ export interface TextTarget {
   readonly ranges?: readonly TextSelectionRange[];
 }
 
+/**
+ * One edit across its retries after other processes changed its file: the same object for every
+ * attempt. A resolver may reuse what it resolved for an earlier attempt of the same edit.
+ */
+export interface TextEditRun {
+  /** Zero for the first attempt. */
+  readonly attempt: number;
+}
+
 export interface TextTargetResolverContext {
   readonly cwd: string;
   readonly signal?: AbortSignal;
+  /** Set while an edit resolves its targets; absent for reads and searches. */
+  readonly edit?: TextEditRun;
 }
 
 export type TextTargetResolutionAttempt =

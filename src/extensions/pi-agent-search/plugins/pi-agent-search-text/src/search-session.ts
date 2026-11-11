@@ -1,5 +1,10 @@
 import { requiredValue } from "pi-agent-invariant";
-import type { ResultTargetStore, ResolvedResultTargets } from "pi-agent-resource";
+import {
+  createLineMap,
+  rebaseOrRelocateRange,
+  type ResultTargetStore,
+  type ResolvedResultTargets,
+} from "pi-agent-resource";
 import type {
   SearchSelectionMatch,
   SearchSelectionRegistration,
@@ -14,6 +19,7 @@ import {
   createTextDocument,
   type TextAnchorResolutionAttempt,
   type TextAnchorResolver,
+  type TextEditRun,
   type TextTarget,
   type TextTargetResolutionAttempt,
 } from "pi-agent-text";
@@ -186,6 +192,11 @@ export class SearchRefreshError extends Error {
 export class SearchSessionStore {
   readonly #sessions = new Map<string, StoredSearchSession>();
   readonly #idsByIdentity = new Map<string, string>();
+  /**
+   * The all-selection snapshot each running edit found current, with the text it described, by
+   * search session. It lives only as long as that edit; a session itself keeps no file text.
+   */
+  readonly #confirmed = new WeakMap<TextEditRun, Map<string, CapturedSearchSnapshot>>();
 
   public constructor(
     private readonly createIdentity: typeof createSearchSessionIdentity = createSearchSessionIdentity,
@@ -404,7 +415,8 @@ export class SearchSessionStore {
   public resourceResolver(): TextAnchorResourceResolver {
     return {
       id: "search-targets",
-      tryResolve: (value, context) => this.#resolveResources(value, context.cwd, context.signal),
+      tryResolve: (value, context) =>
+        this.#resolveResources(value, context.cwd, context.signal, false, context.edit),
     };
   }
 
@@ -498,6 +510,7 @@ export class SearchSessionStore {
     cwd: string,
     signal?: AbortSignal,
     allowEmpty = false,
+    edit?: TextEditRun,
   ): Promise<TextTargetResolutionAttempt> {
     const parsed = parseSearchAnchor(value);
     if (parsed === undefined) return { kind: "not-handled" };
@@ -518,6 +531,8 @@ export class SearchSessionStore {
         ({ snapshot } = await this.#refresh(session, signal));
         if (!snapshot.complete) return missingCompleteAnchor(true);
       }
+      // What an earlier attempt of this edit found current; see `#moveConfirmed`.
+      const confirmed = edit === undefined ? undefined : this.#confirmed.get(edit)?.get(session.id);
       const sources = new Set(
         selectMatches(snapshot, parsed.selector, "match").map((match) => match.source),
       );
@@ -527,13 +542,22 @@ export class SearchSessionStore {
           current === undefined ||
           digestContent(current) !== snapshot.digestBySource.get(source)
         ) {
-          const refreshed = await this.#refresh(session, signal);
-          snapshot = refreshed.snapshot;
-          contents = new Map(refreshed.contents);
+          const next =
+            (confirmed === undefined
+              ? undefined
+              : await this.#moveConfirmed(session, confirmed, signal)) ??
+            (await this.#refresh(session, signal));
+          snapshot = next.snapshot;
+          contents = new Map(next.contents);
           if (!snapshot.complete) return missingCompleteAnchor(true);
           break;
         }
         contents.set(source, current);
+      }
+      if (edit !== undefined) {
+        const bySession = this.#confirmed.get(edit) ?? new Map<string, CapturedSearchSnapshot>();
+        bySession.set(session.id, { snapshot, contents });
+        this.#confirmed.set(edit, bySession);
       }
     } else {
       const first = selectMatches(snapshot, parsed.selector, parsed.mode)[0];
@@ -608,6 +632,45 @@ export class SearchSessionStore {
         },
       };
     }
+  }
+
+  /**
+   * A retry of an edit whose file another process changed: move the matches its earlier attempt
+   * found current onto the newer text instead of searching again, which would take long enough
+   * for the next write to come in. Only matches whose lines are all unchanged move, and only
+   * when no added or changed line contains a matched text, so the result is what a new search
+   * would find. Undefined when that cannot be shown; the caller then searches again.
+   */
+  async #moveConfirmed(
+    session: StoredSearchSession,
+    confirmed: CapturedSearchSnapshot,
+    signal?: AbortSignal,
+  ): Promise<CapturedSearchSnapshot | undefined> {
+    const bySource = new Map<string, TextSearchMatch[]>();
+    for (const match of confirmed.snapshot.matches)
+      bySource.set(match.source, [...(bySource.get(match.source) ?? []), match]);
+    const matches: TextSearchMatch[] = [];
+    const contents = new Map<string, string>();
+    for (const [source, sourceMatches] of bySource) {
+      const before = confirmed.contents.get(source);
+      const now = await readCurrent(source, signal, session.environment, session.read);
+      if (before === undefined || now === undefined) return undefined;
+      contents.set(source, now);
+      if (now === before) {
+        matches.push(...sourceMatches);
+        continue;
+      }
+      const moved = moveMatches(source, sourceMatches, before, now);
+      if (moved === undefined) return undefined;
+      matches.push(...moved);
+    }
+    const snapshot: SearchSnapshot = {
+      matches: matches.sort(compareMatches),
+      complete: confirmed.snapshot.complete,
+      digestBySource: digestContents(contents),
+    };
+    this.#sessions.set(session.id, { ...session, refreshedComplete: snapshot });
+    return { snapshot, contents };
   }
 
   async #refresh(
@@ -804,6 +867,52 @@ function matchRange(match: TextSearchMatch): TextSelectionRange {
     start: { lineNumber: match.lineNumber, column: match.startColumn },
     end: { lineNumber: match.endLineNumber ?? match.lineNumber, column: match.endColumn },
   };
+}
+
+/**
+ * Matches of one source moved from the text they were found in onto its newer text through
+ * unchanged lines. Undefined when a match cannot move with its exact text, or when an added or
+ * changed line holds a matched text and so may hold a match that searching again would find.
+ */
+function moveMatches(
+  source: string,
+  matches: readonly TextSearchMatch[],
+  before: string,
+  after: string,
+): TextSearchMatch[] | undefined {
+  const map = createLineMap(before, after);
+  if (map === undefined) return undefined;
+  const texts = new Set(matches.map((match) => match.matchedText.split("\n")[0] ?? ""));
+  if (texts.has("")) return undefined;
+  const kept = new Set(map.table);
+  for (let line = 1; line <= map.newLines.length; line += 1) {
+    if (kept.has(line)) continue;
+    const text = map.newLines[line - 1] ?? "";
+    for (const matched of texts) if (text.includes(matched)) return undefined;
+  }
+  const document = createTextDocument(source, after);
+  const moved: TextSearchMatch[] = [];
+  for (const match of matches) {
+    const range = rebaseOrRelocateRange(
+      {
+        start: { lineNumber: match.lineNumber, column: match.startColumn },
+        end: { lineNumber: match.endLineNumber ?? match.lineNumber, column: match.endColumn },
+      },
+      map,
+    );
+    if (range === undefined) return undefined;
+    const next: TextSearchMatch = {
+      ...match,
+      lineNumber: range.start.lineNumber,
+      ...(match.endLineNumber !== undefined && { endLineNumber: range.end.lineNumber }),
+      startColumn: range.start.column,
+      endColumn: range.end.column,
+      lineText: document.lines[range.start.lineNumber - 1]?.content ?? "",
+    };
+    if (matchedSourceText(document, next) !== match.matchedText) return undefined;
+    moved.push(next);
+  }
+  return moved;
 }
 
 function matchedSourceText(

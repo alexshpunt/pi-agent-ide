@@ -88,6 +88,7 @@ import {
   TextAnchorRegistry,
   type TextAnchorRegistrySnapshot,
 } from "#src/core/text-anchor-registry.ts";
+import { currentTextEditRun } from "#src/core/source-change-retry.ts";
 import {
   applyTextChanges,
   type TextChange,
@@ -852,13 +853,17 @@ export function createTextEditorCore(
       return inspectTextResource(request, [...resolvers], anchorRegistry.snapshot(), resultTargets);
     },
     resolveTextAnchorResources(value, kinds, context): Promise<readonly TextTarget[] | undefined> {
-      return anchorRegistry.snapshot().resolveResources(value, context, new Set(kinds));
+      return anchorRegistry
+        .snapshot()
+        .resolveResources(value, withEditRun(context), new Set(kinds));
     },
     textTargetResolver(): TextTargetResolver {
       return {
         id: "text-editor-anchors",
         tryResolve: async (value, context) => {
-          const targets = await anchorRegistry.snapshot().resolveResources(value, context);
+          const targets = await anchorRegistry
+            .snapshot()
+            .resolveResources(value, withEditRun(context));
           return targets === undefined ? { kind: "not-handled" } : { kind: "resolved", targets };
         },
       };
@@ -3094,6 +3099,12 @@ function replayMutationTools(
   for (const registration of mutationTools.values()) {
     listener(registration);
   }
+}
+
+/** Resolution context with the edit whose attempt is running, so retries can reuse its results. */
+function withEditRun<Context extends TextAnchorResourceResolverContext>(context: Context): Context {
+  const edit = context.edit ?? currentTextEditRun();
+  return edit === undefined ? context : { ...context, edit };
 }
 
 function addMutationRegistration(
