@@ -19,8 +19,14 @@ import {
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
 
-/** Rounds of search and edit; each round searches twice while the peer keeps writing. */
-const rounds = 15;
+/** Searches of a large file a peer rewrites every 150 ms; each one must bring usable anchors. */
+const searchRounds = 10;
+/**
+ * Rounds of search and edit on a smaller file with a calmer peer. An edit gives up after 8
+ * attempts on newer text, so the peer must leave windows an edit of that file can win; the
+ * registration of its search anchors has no such retry and is checked in every round.
+ */
+const editRounds = 8;
 
 async function runStress(cwd: string, name: string, code: string) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -38,7 +44,7 @@ async function runStress(cwd: string, name: string, code: string) {
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd,
     rawMode: true,
-    // The rounds run in one scripted call; the peer keeps writing while they do.
+    // The rounds run in one scripted call; the peers keep writing while they do.
     timeoutMs: 110_000,
     traceToolDetails: false,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
@@ -58,25 +64,36 @@ async function runStress(cwd: string, name: string, code: string) {
       ),
       assistantMessage([text("Rounds finished.", { delayMs: 0 })]),
     ],
-  }).run("Search and edit the file while another session keeps writing it.");
+  }).run("Search and edit the files while other sessions keep writing them.");
 }
 
 test("every search keeps usable anchors while another session writes the file", async () => {
   await withTempWorkspace(async (cwd) => {
-    const source = createConcurrentWriterSource();
-    await writeFile(path.join(cwd, "main.cpp"), source.content);
-    const peer = await installConcurrentWriter(cwd, {
-      file: "main.cpp",
-      intervalMs: 150,
-      lifetimeMs: 90_000,
-    });
+    const searched = createConcurrentWriterSource();
+    const edited = createConcurrentWriterSource({ lines: 400, markers: 20 });
+    await writeFile(path.join(cwd, "search.cpp"), searched.content);
+    await writeFile(path.join(cwd, "edit.cpp"), edited.content);
+    const peers = {
+      searched: await installConcurrentWriter(cwd, {
+        file: "search.cpp",
+        script: "peer-search.mjs",
+        intervalMs: 150,
+        lifetimeMs: 90_000,
+      }),
+      edited: await installConcurrentWriter(cwd, {
+        file: "edit.cpp",
+        script: "peer-edit.mjs",
+        intervalMs: 600,
+        lifetimeMs: 90_000,
+      }),
+    };
 
     const run = await runStress(
       cwd,
       "search-concurrent-writer",
       `// @options: {"timeout_ms": 150000}
-await tools.bash({command:${JSON.stringify(peer.command)},background:true,name:${JSON.stringify(peer.session)}});
-const rounds = ${String(rounds)};
+for (const peer of ${JSON.stringify([peers.searched, peers.edited].map((peer) => ({ command: peer.command, session: peer.session })))})
+  await tools.bash({command:peer.command,background:true,name:peer.session});
 let searches = 0;
 // Every match a result shows must carry its anchors; a result without them cannot be edited.
 function anchored(result, round, what) {
@@ -86,38 +103,51 @@ function anchored(result, round, what) {
     "Round " + round + ": the " + what + " result shows " + shown + " matches with " + rows.length + " match anchors: " + result);
   return rows;
 }
-for (let round = 1; round <= rounds; round += 1) {
-  // The whole result as an edit source: every occurrence of the identifier is renamed at once.
-  const whole = await tools.search({path:"main.cpp",query:"regex:alpha_token_\\\\d+"}).then(value=>value.result);
+async function found(file, query, round, what, expected) {
+  const result = await tools.search({path:file,query}).then(value=>value.result);
   searches += 1;
-  check(anchored(whole, round, "identifier").length === ${String(source.tokenOccurrences)},
-    "Round " + round + ": the identifier result lost matches: " + whole);
-  const renamed = await tools.replace({path:whole,text:"alpha_token_" + String(round)});
+  const rows = anchored(result, round, what);
+  check(expected === undefined || rows.length === expected,
+    "Round " + round + ": the " + what + " result of " + file + " shows " + rows.length + " matches instead of " + expected + ": " + result);
+  return { result, rows };
+}
+// A large file a peer rewrites while every search of it runs.
+for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
+  await found("search.cpp", "regex:alpha_token_\\\\d+", round, "identifier", ${String(searched.tokenOccurrences)});
+  await found("search.cpp", ${JSON.stringify(searched.markerQuery)}, round, "marker", ${String(searched.markers)});
+}
+// Edits from those results, on a file whose peer leaves windows an edit can win.
+for (let round = 1; round <= ${String(editRounds)}; round += 1) {
+  // The whole result as an edit source: every occurrence of the identifier is renamed at once.
+  const whole = await found("edit.cpp", "regex:alpha_token_\\\\d+", round, "identifier", ${String(edited.tokenOccurrences)});
+  const renamed = await tools.replace({path:whole.result,text:"alpha_token_" + String(round)});
   check(typeof renamed === "string", "Round " + round + ": whole-result rename returned " + JSON.stringify(renamed));
   // Numbered anchors of a result with many matches: one marker of each round is retired.
-  const numbered = await tools.search({path:"main.cpp",query:${JSON.stringify(source.markerQuery)}}).then(value=>value.result);
-  searches += 1;
-  const rows = anchored(numbered, round, "marker");
-  const retired = await tools.replace({path:rows[0].ref,text:"beta_done_" + String(round)});
+  // The count is left open: the peer rewrites what it last read, so it can drop a retired marker.
+  const markers = await found("edit.cpp", ${JSON.stringify(edited.markerQuery)}, round, "marker");
+  const retired = await tools.replace({path:markers.rows[0].ref,text:"beta_done_" + String(round)});
   check(typeof retired === "string", "Round " + round + ": numbered rename returned " + JSON.stringify(retired));
 }
-await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
+for (const session of ${JSON.stringify([peers.searched.session, peers.edited.session])})
+  await tools.delete({path:"shell:" + session});
 text("searches " + searches);`,
     );
 
     expect(getToolExecution(run, "stress").isError, getToolResultText(run, "stress")).toBe(false);
-    expect(getToolResultText(run, "stress")).toContain(`searches ${String(rounds * 2)}`);
-    // The peer really wrote the file throughout the rounds.
-    const written = await peer.writes();
-    expect(written).toBeGreaterThan(rounds);
-    const content = await readFile(path.join(cwd, "main.cpp"), "utf8");
-    const peerLines = content.split("\n").filter((line) => line.startsWith("// peer")).length;
-    expect(peerLines).toBeGreaterThan(0);
-    expect(peerLines).toBeLessThanOrEqual(written);
+    expect(getToolResultText(run, "stress")).toContain(
+      `searches ${String(searchRounds * 2 + editRounds * 2)}`,
+    );
+    // Both peers really wrote their file throughout the rounds.
+    expect(await peers.searched.writes()).toBeGreaterThan(searchRounds);
+    expect(await peers.edited.writes()).toBeGreaterThan(editRounds);
+    const content = await readFile(path.join(cwd, "edit.cpp"), "utf8");
+    expect(content.split("\n").filter((line) => line.startsWith("// peer")).length).toBeGreaterThan(
+      0,
+    );
     // The edits landed. The peer rewrites what it last read, so it can drop the newest edit of
     // either side; the rounds themselves must not lose a match or an anchor.
-    expect(content.match(/alpha_token_\d+/gu)).toHaveLength(source.tokenOccurrences);
+    expect(content.match(/alpha_token_\d+/gu)).toHaveLength(edited.tokenOccurrences);
     expect(content.match(/beta_done_\d+/gu)?.length ?? 0).toBeGreaterThan(0);
-    expect(content.match(/beta_\d{4}/gu)?.length ?? 0).toBeLessThan(source.markers);
+    expect(content.match(/beta_\d{4}/gu)?.length ?? 0).toBeLessThan(edited.markers);
   });
 }, 150_000);

@@ -25,7 +25,7 @@ export interface ConcurrentWriterOptions {
   readonly marker?: string;
   /** The peer stops by itself after this long, so no run leaks a process. Default 120 s. */
   readonly lifetimeMs?: number;
-  /** Workspace-relative script path. Default `peer-writer.mjs`. */
+  /** Workspace-relative script path. Default `peer-writer.mjs`. Give each peer its own. */
   readonly script?: string;
 }
 
@@ -58,7 +58,8 @@ export async function installConcurrentWriter(
   await writeFile(path.join(cwd, script), peerScript(settings), "utf8");
   return {
     command: `node ${script}`,
-    session: "peer-writer",
+    // One terminal session per peer, named after its script.
+    session: path.basename(script, path.extname(script)),
     async writes() {
       try {
         return Number.parseInt(await readFile(path.join(cwd, progress), "utf8"), 10) || 0;
@@ -81,6 +82,7 @@ function peerScript(settings: {
 const settings = ${JSON.stringify(settings, undefined, 2)};
 const deadline = Date.now() + settings.lifetimeMs;
 let writes = 0;
+let missing = 0;
 
 while (Date.now() < deadline) {
   try {
@@ -90,10 +92,13 @@ while (Date.now() < deadline) {
     await writeFile(temporary, settings.marker + " " + String(writes + 1) + "\\n" + content);
     await rename(temporary, settings.file);
     writes += 1;
+    missing = 0;
     await writeFile(settings.progress, String(writes));
   } catch (error) {
-    // The file may be missing for an instant while another session replaces it.
     if (error?.code !== "ENOENT") throw error;
+    // The file can be missing for an instant; a workspace that stays gone ends the peer.
+    missing += 1;
+    if (missing > 3) break;
   }
   await new Promise((resolve) => setTimeout(resolve, settings.intervalMs));
 }
