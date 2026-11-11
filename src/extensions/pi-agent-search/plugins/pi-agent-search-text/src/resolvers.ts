@@ -51,6 +51,13 @@ interface FilePayload {
   readonly complete: boolean;
 }
 
+/** What a search registered its anchors for; a concurrent writer can make it differ from the backend's matches. */
+interface RegisteredMatches {
+  readonly matches: readonly TextSearchMatch[];
+  readonly complete: boolean;
+  readonly notices: readonly string[];
+}
+
 /**
  * The query and options that produced these matches, including the broadening step a fallback
  * used, so the same matching can run again inside the text the matches are registered with.
@@ -167,6 +174,12 @@ function createMatchResolver(
   queryBody: (request: SearchRequest) => SearchRecipe | undefined,
   resultScopeOnly = false,
 ): SearchResolver {
+  /**
+   * What the registration made of each formatted payload. Registering can relocate or leave out
+   * matches another session wrote meanwhile, so a script must be shown those matches, in their
+   * order, and not the ones the backend returned: its anchors and targets belong to them.
+   */
+  const registered = new WeakMap<TextPayload, RegisteredMatches>();
   return {
     readResources: (request, context) =>
       queryBody(request) === undefined || (resultScopeOnly && context.scope === undefined)
@@ -184,9 +197,10 @@ function createMatchResolver(
         matchTargets?: readonly string[];
       };
       const sessionId = formatted.sessionId;
+      const shown = registered.get(result) ?? result;
       return {
-        ...selectionData(result.matches, result.complete, sessionId, formatted),
-        notices: [...result.notices],
+        ...selectionData(shown.matches, shown.complete, sessionId, formatted),
+        notices: [...shown.notices],
         ...(formatted.fuzzy === undefined ? {} : { fuzzy: formatted.fuzzy }),
       };
     },
@@ -259,6 +273,11 @@ function createMatchResolver(
         context.environment,
         captured.contents,
       );
+      registered.set(result, {
+        matches: session.matches,
+        complete: session.complete,
+        notices,
+      });
       if (result.fuzzy !== undefined) {
         const details = createSearchToolDetails(
           result.request.query,

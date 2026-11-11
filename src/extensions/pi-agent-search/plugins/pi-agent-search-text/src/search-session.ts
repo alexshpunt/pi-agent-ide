@@ -1080,7 +1080,8 @@ async function readCurrent(
   }
 }
 
-function canonicalSource(source: string): string {
+/** The key a source is stored under: an absolute path, or an owned URL as it is. */
+export function canonicalSource(source: string): string {
   return source.includes("://") ? source : path.resolve(source);
 }
 function resolveScope(cwd: string, source: string): string {

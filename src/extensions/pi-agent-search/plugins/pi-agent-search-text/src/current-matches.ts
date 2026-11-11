@@ -3,7 +3,7 @@ import path from "node:path";
 import { createTextDocument } from "pi-agent-text";
 
 import { searchTextContent, type TextSearchRequest } from "#src/search-backend.ts";
-import { matchDescribesText, type TextSearchMatch } from "#src/search-session.ts";
+import { canonicalSource, matchDescribesText, type TextSearchMatch } from "#src/search-session.ts";
 
 /** Matches with the text they describe, ready to register without reading the files again. */
 export interface CapturedMatches {
@@ -81,7 +81,10 @@ export async function captureCurrentMatches(
     }
     if (options.rerun === undefined || attempt >= rerunAttempts) throw sourceChanged(changed, cwd);
     const next = await options.rerun(options.signal);
-    matches = next.matches.map((match) => ({ ...match, source: canonical(match.source) }));
+    matches = next.matches.map((match) => ({
+      ...match,
+      source: canonicalSource(match.source),
+    }));
     complete = next.complete;
   }
 }
@@ -173,14 +176,8 @@ async function matchesInCapturedText(
         lineText: document.lines[match.lineNumber - 1]?.content ?? match.lineText,
       });
   }
-  return current.sort(
-    (left, right) =>
-      left.source.localeCompare(right.source) ||
-      left.lineNumber - right.lineNumber ||
-      left.startColumn - right.startColumn ||
-      (left.endLineNumber ?? left.lineNumber) - (right.endLineNumber ?? right.lineNumber) ||
-      left.endColumn - right.endColumn,
-  );
+  // Unordered: the registration sorts the matches it stores.
+  return current;
 }
 
 function sourceChanged(sources: ReadonlySet<string>, cwd: string): Error {
@@ -200,8 +197,4 @@ function display(source: string, cwd: string): string {
   const relative = path.relative(cwd, source);
   // oxlint-disable-next-line repo/no-parent-paths -- display only, never used as a path
   return relative.startsWith("..") || path.isAbsolute(relative) ? source : relative;
-}
-
-function canonical(source: string): string {
-  return source.includes("://") ? source : path.resolve(source);
 }
