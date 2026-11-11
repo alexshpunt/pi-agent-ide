@@ -117,7 +117,7 @@ Configure targets in the current project's `.pi/pi-agent-ide/ssh.json` by defaul
 
 Use `ssh://sandbox/srv/work/file.txt` with the existing read and text mutation tools. Workspace is the remote path base, not an access boundary; the account's permissions control access. Connections use batch mode and strict host-key verification. Python 3 must be available remotely; no permanent helper is installed.
 
-Remote command channels use Linux child-subreaper support and Python's standard `ctypes` module. The kernel keeps orphaned descendants with their owning channel, including children that open new sessions. Cleanup waits for those children to exit and be reaped; it does not scan or signal unrelated processes. A denied signal or a cleanup deadline remains an explicit unknown result, not proof that the whole tree stopped.
+Remote command channels use Linux child-subreaper support and Python's standard `ctypes` module. The kernel keeps orphaned descendants with their owning channel, including children that open new sessions. While the command runs, the channel collects adopted descendants that have exited, so none stays a zombie and a PID-namespace sandbox such as Bubblewrap can finish. Cleanup waits for those children to exit and be reaped; it does not scan or signal unrelated processes. A denied signal or a cleanup deadline remains an explicit unknown result, not proof that the whole tree stopped.
 
 The terminal module reads the same targets. Set `bash`'s `cwd` to `ssh://sandbox/srv/work` to run remote Bash with a PTY. Existing shell resources support input and session cleanup. Remote process identity includes its target; it is never treated as a local PID.
 
