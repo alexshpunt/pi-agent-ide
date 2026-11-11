@@ -414,10 +414,9 @@ describe("selections whose own lines were edited, for readers", () => {
       start: { lineNumber: 3, column: 0 },
       end: { lineNumber: 3, column: 5 },
     });
+    const resolved = store.resolve(select(store, block), directory);
     writeFileSync(file, original.replace("three", "thr33"));
     await expect(store.resolveCurrent(reference, directory)).rejects.toThrow(/expired/u);
-    const other = select(store, block);
-    const resolved = store.resolve(other, directory);
     writeFileSync(file, "unrelated\n");
     await expect(currentResultTargets(resolved)).rejects.toThrow(/no longer be found/u);
   });
