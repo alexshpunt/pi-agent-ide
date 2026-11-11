@@ -1,6 +1,7 @@
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
 import {
+  describePathArgument,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -37,7 +38,7 @@ export const lspSearchSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "For query: file, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
+          "For query: file, directory, unchanged Read/Search/edit result or its UUID, or an array of paths or of results.",
       }),
     ),
     references: Type.Optional(
@@ -106,10 +107,7 @@ export async function registerLspSearchTool(
                   ? []
                   : [
                       {
-                        text:
-                          typeof parameters.path === "string"
-                            ? `in ${parameters.path}`
-                            : "in result scope",
+                        text: `in ${describePathArgument(parameters.path)}`,
                         color: "accent" as const,
                         truncate: "start" as const,
                       },

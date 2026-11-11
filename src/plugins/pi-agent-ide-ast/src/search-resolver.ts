@@ -101,10 +101,12 @@ export function createAstSearchResolver(
   return {
     id: "ast",
     supportsResultScope: true,
+    supportsPathList: true,
     readResources: (request, context) =>
       astOptions(request) === undefined
         ? []
-        : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
+        : (context.scope?.targets.map((target) => target.source) ??
+          request.paths ?? [request.path ?? context.cwd]),
     renderResult: renderSearchResult as SearchResolver["renderResult"],
     async tryResolve(request, context) {
       const options = astOptions(request);
@@ -161,7 +163,29 @@ export function createAstSearchResolver(
         snapshots = new Map();
         if (again && scope !== undefined) scope = await currentScope(context, signal);
         const found: AstGrepMatch[] = [];
-        if (scope === undefined) {
+        if (scope === undefined && request.paths !== undefined) {
+          // Each listed path is searched on its own; a file found under an earlier one counts once.
+          const searched = new Set<string>();
+          for (const root of request.paths) {
+            signal?.throwIfAborted();
+            const files = new Set<string>();
+            const read = new Set(snapshots.keys());
+            for (const match of await search(
+              { ...request, paths: undefined, path: root },
+              signal,
+            )) {
+              const file = resolveSource(context.cwd, match.file, owner(match.file));
+              if (searched.has(file)) {
+                // The earlier path's matches keep the text ast-grep read for them.
+                if (!read.has(file)) snapshots.delete(file);
+                continue;
+              }
+              files.add(file);
+              found.push(match);
+            }
+            for (const file of files) searched.add(file);
+          }
+        } else if (scope === undefined) {
           found.push(...(await search(request, signal)));
         } else {
           for (const scoped of scope.targets) {

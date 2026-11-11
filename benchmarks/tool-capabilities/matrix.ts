@@ -73,6 +73,8 @@ const groups: [string[], string[]][] = [
   [["codemode.read-exact-text"], ["read-large-json-script"]],
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
+  [["search.path-list", "file_search.path-list", "ast_search.path-list"], ["search-path-list"]],
+  [["lsp_search.path-list"], ["lsp-path-list"]],
   [["search.literal-operators"], ["search-literal-operators"]],
   [
     // Engine switching is a settings-menu lifecycle, checked in real Pi rather than a model route.

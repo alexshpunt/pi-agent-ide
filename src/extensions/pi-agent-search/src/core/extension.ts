@@ -27,6 +27,7 @@ import {
   SEARCH_PROTOCOL,
 } from "#src/api/plugin-protocol.ts";
 import { createSearchCore } from "#src/core/search-core.ts";
+import { describePathArgument, plainPathList } from "#src/api/path-list.ts";
 
 import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
 import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
@@ -50,7 +51,7 @@ export function searchCallModel(
       ? []
       : [
           {
-            text: typeof arguments_.path === "string" ? `in ${arguments_.path}` : "in result scope",
+            text: `in ${describePathArgument(arguments_.path)}`,
             color: "accent" as const,
             underline: true,
             truncate: "start" as const,
@@ -163,8 +164,12 @@ export default async function registerSearchCore(
             );
             return await runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
               await core.waitForPendingPlugins();
+              // A list of plain paths goes to the core as it is; a list of results is a scope.
+              const pathList =
+                Array.isArray(parameters.path) && plainPathList(parameters.path) !== undefined;
               const scoped =
                 parameters.path !== undefined &&
+                !pathList &&
                 (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
               // Search only reads, so a result whose lines changed still selects the same region.
               const rescope = scoped
@@ -176,7 +181,9 @@ export default async function registerSearchCore(
                 {
                   ...parameters,
                   path:
-                    typeof parameters.path === "string" && !scoped ? parameters.path : undefined,
+                    pathList || (typeof parameters.path === "string" && !scoped)
+                      ? parameters.path
+                      : undefined,
                 },
                 {
                   cwd: context.cwd,
@@ -218,11 +225,7 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
     { label: "query", value: JSON.stringify(arguments_.query) },
     ...optionalDetail(
       "path",
-      arguments_.path === undefined
-        ? undefined
-        : typeof arguments_.path === "string"
-          ? arguments_.path
-          : "result scope",
+      arguments_.path === undefined ? undefined : describePathArgument(arguments_.path),
     ),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),

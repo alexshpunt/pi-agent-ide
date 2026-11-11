@@ -87,8 +87,9 @@ function fileOptions(request: SearchRequest): FileSearchOptions | undefined {
 export function createFileResolver(): SearchResolver {
   return {
     id: "files",
+    supportsPathList: true,
     readResources: (request, context) =>
-      fileOptions(request) === undefined ? [] : [request.path ?? context.cwd],
+      fileOptions(request) === undefined ? [] : (request.paths ?? [request.path ?? context.cwd]),
     toScriptData(payload) {
       const result = payload as FilePayload;
       return { kind: "files", files: [...result.files], complete: result.complete };
@@ -154,9 +155,11 @@ function createMatchResolver(
     readResources: (request, context) =>
       queryBody(request) === undefined || (resultScopeOnly && context.scope === undefined)
         ? []
-        : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
+        : (context.scope?.targets.map((target) => target.source) ??
+          request.paths ?? [request.path ?? context.cwd]),
     id,
     supportsResultScope: true,
+    supportsPathList: true,
     supportsMultiline: true,
     toScriptData(payload, details) {
       const result = payload as TextPayload;

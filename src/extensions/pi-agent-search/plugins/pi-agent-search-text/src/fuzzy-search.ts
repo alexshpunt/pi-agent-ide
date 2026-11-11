@@ -108,10 +108,24 @@ async function collectNames(
   cwd: string,
   signal: AbortSignal,
   environment?: SearchEnvironment,
+  vocabulary = new FuzzyVocabulary(),
 ): Promise<FuzzyVocabulary> {
+  if (request.paths !== undefined) {
+    // Each listed path adds its names to one vocabulary with one budget.
+    for (const root of request.paths) {
+      if (vocabulary.limited) break;
+      await collectNames(
+        { ...request, paths: undefined, path: root },
+        cwd,
+        signal,
+        environment,
+        vocabulary,
+      );
+    }
+    return vocabulary;
+  }
   const scope = await ripgrepScope(request, cwd, environment, signal);
   if (environment !== undefined) {
-    const vocabulary = new FuzzyVocabulary();
     const controller = new AbortController();
     const ownedSignal = AbortSignal.any([signal, controller.signal]);
     try {
@@ -156,7 +170,6 @@ async function collectNames(
       ],
       { cwd: scope.cwd, stdio: ["ignore", "pipe", "pipe"] },
     );
-    const vocabulary = new FuzzyVocabulary();
     let token = "";
     let oversized = false;
     let stderr = "";

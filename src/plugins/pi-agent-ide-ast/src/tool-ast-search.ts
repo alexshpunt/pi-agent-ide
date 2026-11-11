@@ -3,6 +3,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
 import {
+  describePathArgument,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -43,7 +44,7 @@ export const astSearchSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "File, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
+          "File, directory, unchanged Read/Search/edit result or its UUID, or an array of paths or of results.",
       }),
     ),
     relation: Type.Optional(
@@ -112,10 +113,7 @@ export async function registerAstSearchTool(
                   ? []
                   : [
                       {
-                        text:
-                          typeof parameters.path === "string"
-                            ? `in ${parameters.path}`
-                            : "in result scope",
+                        text: `in ${describePathArgument(parameters.path)}`,
                         color: "accent" as const,
                         truncate: "start" as const,
                       },
