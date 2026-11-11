@@ -66,7 +66,7 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
         name: "demo_write",
         arguments: {
           path: "memory://demo/note",
-          content: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" },
+          image: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" },
         },
       },
     ];

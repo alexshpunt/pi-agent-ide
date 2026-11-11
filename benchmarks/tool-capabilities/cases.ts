@@ -2831,12 +2831,22 @@ add(
 add(
   "read-image-write",
   ["compose.read-image-write"],
-  "Read pixel.png, then save the image that Read returned to copy.png with Write: pass that Read result as Write content (its UUID in a direct call, the returned image value in Codemode). Do not use Copy and do not change other files. Report the written path.",
+  "Read pixel.png, then save the image that Read returned to copy.png with Write: pass that Read result as Write image (its UUID in a direct call, the returned image value in Codemode). Do not use Copy and do not change other files. Report the written path.",
   [
     { tool: "read", args: { path: "pixel.png" }, image: true },
-    { tool: "write", args: { path: "copy.png" }, reuse: reuse(0, ["content", "content.note"]) },
+    { tool: "write", args: { path: "copy.png" }, reuse: reuse(0, ["image", "image.note"]) },
   ],
   { files: {}, setup: "pixel", expected: { "copy.png": pixelPng } },
+);
+
+const jsonText =
+  '{"name": "demo", "ratio": 1.0, "tags": ["a", "b"], "quote": "say \\"hi\\"", "none": null}\n';
+add(
+  "write-json-text",
+  ["write.json-text"],
+  `Use Write to create data.json with exactly this JSON text, byte for byte, ending with one newline. Keep the spacing, the key order and the number 1.0 as written; do not reformat it:\n\n${jsonText}\nReport when it is saved.`,
+  [{ tool: "write", args: { path: "data.json", content: jsonText } }],
+  { files: {}, expected: { "data.json": jsonText } },
 );
 
 add(

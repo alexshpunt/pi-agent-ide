@@ -9,19 +9,29 @@ export const writeSchema = Type.Object(
       ...resultInputSchema,
       description: "File path, or an unchanged whole-file result.",
     },
-    content: Type.Union(
-      [
-        Type.String(),
-        Type.Object({ type: Type.Literal("image"), data: Type.String(), mimeType: Type.String() }),
-        Type.Object({
-          type: Type.Literal("images"),
-          images: Type.Array(Type.Object({ data: Type.String(), mimeType: Type.String() })),
-        }),
-      ],
-      {
-        description:
-          "Complete file content. To save an image that read returned, pass that read result or its UUID and give path an image extension; several images become numbered files.",
-      },
+    // A string-only field keeps JSON-looking text intact; a union lets the tool-call layer parse it.
+    content: Type.Optional(
+      Type.String({ description: "Complete file content, saved exactly as given." }),
+    ),
+    image: Type.Optional(
+      Type.Union(
+        [
+          Type.String(),
+          Type.Object({
+            type: Type.Literal("image"),
+            data: Type.String(),
+            mimeType: Type.String(),
+          }),
+          Type.Object({
+            type: Type.Literal("images"),
+            images: Type.Array(Type.Object({ data: Type.String(), mimeType: Type.String() })),
+          }),
+        ],
+        {
+          description:
+            "Instead of content, an image that read returned: the result's UUID, or in Codemode the returned image value. Give path an image extension; several images become numbered files.",
+        },
+      ),
     ),
   },
   { additionalProperties: false },
@@ -29,7 +39,8 @@ export const writeSchema = Type.Object(
 
 interface WriteParameters {
   readonly path: unknown;
-  readonly content: unknown;
+  readonly content?: unknown;
+  readonly image?: unknown;
 }
 
 export const writeMutationTool: TextMutationToolRegistration<typeof writeSchema> = {
@@ -42,9 +53,9 @@ export const writeMutationTool: TextMutationToolRegistration<typeof writeSchema>
   source: { field: "path" },
   anchors: [],
   mutate: (context, parameters: WriteParameters) => {
-    // Image content is written as files before text mutation starts.
+    // Images are written as files before text mutation starts.
     if (typeof parameters.content !== "string")
-      throw new Error("Image content must name images a Read returned.");
+      throw new Error("Pass content with the text to write, or image with an image read returned.");
     const content = parameters.content;
     return {
       edits: new Map([

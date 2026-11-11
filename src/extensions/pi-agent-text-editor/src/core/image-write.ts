@@ -19,18 +19,30 @@ export interface ImageFile {
 }
 
 /**
- * Plan the files for Write content that names images: a Codemode Read image value, or an issued
- * Read result UUID/RESULT# reference. Returns undefined for ordinary text content.
+ * Plan the files for a Write `image`: a Codemode Read image value, or an issued Read result
+ * UUID/RESULT# reference. Returns undefined when the call writes text instead.
  * One image goes to the path itself; several go to `<name>-01.png`… beside it, or into a folder.
  */
 export async function planImageWrite(
   target: unknown,
+  image: unknown,
   content: unknown,
   store: ResultImageStore | undefined,
   cwd: string,
 ): Promise<readonly ImageFile[] | undefined> {
-  const images = typeof content === "string" ? store?.images(content, cwd) : contentImages(content);
-  if (images === undefined) return undefined;
+  if (image === undefined) {
+    if (typeof content === "string") return undefined;
+    throw Object.assign(
+      new Error("Pass content with the text to write, or image with an image read returned."),
+      { code: "WRITE_CONTENT_MISSING" },
+    );
+  }
+  if (content !== undefined) throw new Error("Pass either content or image, not both.");
+  const images = typeof image === "string" ? store?.images(image, cwd) : contentImages(image);
+  if (images === undefined)
+    throw new Error(
+      "image must be the UUID or RESULT# reference of a read that returned images, or in Codemode the image value read returned.",
+    );
   if (images.length === 0) throw new Error("The result contains no images to write.");
   if (typeof target !== "string" || target.length === 0)
     throw new Error("Name the file to write the image to.");
