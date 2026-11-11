@@ -1,6 +1,6 @@
 import type { LspClient } from "./client.ts";
 import { requestDiagnostics } from "./diagnostics.ts";
-import type { LspPosition, LspRange } from "./types.ts";
+import { DiagnosticSeverity, type LspPosition, type LspRange } from "./types.ts";
 
 /** A source position a server reported for a symbol, with the text written there. */
 export interface ReportedName {
@@ -98,6 +98,37 @@ export function textInRange(content: string, range: LspRange): string {
   const from = offset(range.start);
   const to = offset(range.end);
   return from === undefined || to === undefined || to < from ? "" : content.slice(from, to);
+}
+
+/**
+ * Documents among `uris` where the compiler stopped at its error limit, in their first order.
+ *
+ * After clang reports its error limit it stops instantiating templates and no longer builds a
+ * correct syntax tree. Code after the limit that needs a new instantiation, such as a loop over a
+ * container type first used there, then has no references, and clang reports no error there.
+ * References from such a document can be missing.
+ *
+ * Only the diagnostics the server already published for the current text are read, so the check
+ * waits for nothing. Clangd publishes them for a text before it answers requests on its tree;
+ * servers without an error limit never report one.
+ */
+export function documentsPastErrorLimit(
+  client: Pick<LspClient, "diagnosticPublication">,
+  uris: Iterable<string>,
+): string[] {
+  return [...new Set(uris)].filter((uri) =>
+    (client.diagnosticPublication(uri)?.diagnostics ?? []).some(
+      (diagnostic) =>
+        diagnostic.severity === DiagnosticSeverity.Error &&
+        (ERROR_LIMIT.test(String(diagnostic.code ?? "")) || ERROR_LIMIT.test(diagnostic.message)),
+    ),
+  );
+}
+
+/** Why a reference list from documents past the error limit can be incomplete. */
+export function errorLimitNote(paths: readonly string[]): string {
+  const files = paths.join(", ");
+  return `Incomplete: the compiler stopped at its error limit in ${files}, so references after its first errors can be missing. Fix the errors (Read diagnostics:${paths[0]}) and search again, or search the text.`;
 }
 
 /** Errors from the current diagnostics of each document that `open` synchronizes, read once. */
