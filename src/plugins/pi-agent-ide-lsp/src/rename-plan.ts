@@ -9,6 +9,16 @@ import type { LspClient } from "./lsp/client.ts";
 import type { LspPosition } from "./lsp/types.ts";
 import { documentUri } from "./lsp/document-uri.ts";
 import { loadQueryProject } from "./lsp/navigation.ts";
+import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./lsp/corrected-names.ts";
+
+/** The identifier that contains `position`, or an empty string. */
+function identifierAt(content: string, position: LspPosition): string {
+  const line = content.split("\n")[position.line] ?? "";
+  for (const match of line.matchAll(/[\p{L}\p{N}_$]+/gu))
+    if (match.index <= position.character && position.character < match.index + match[0].length)
+      return match[0];
+  return "";
+}
 
 function renameEntries(edit: LspWorkspaceEdit | null, client: LspClient) {
   if (edit === null)
@@ -125,11 +135,30 @@ async function prepareRename(
     if (before.version !== after.version || target.client.documentContent(uri) !== before.content)
       throw new Error("A rename participant changed during the server request. No edits applied.");
   }
+  // Clang renames names it corrected from a misspelling; those places keep their own text.
+  const errorsOf = diagnosticErrors(async (uri) => {
+    const file = snapshots.get(uri)?.file;
+    return file === undefined
+      ? undefined
+      : await manager.openFile(file, state.cwd, "symbols", state.signal);
+  }, state.signal);
+  const oldNames = [reference.selector.at(-1) ?? "", identifierAt(target.content, target.position)];
   const files: TextEditPlan["files"][number][] = [];
-  for (const [uri, edits] of entries) {
+  for (const [uri, serverEdits] of entries) {
     const before = snapshots.get(uri);
     if (!before)
       throw new Error("Rename discovered a new participant after preflight. No edits applied.");
+    const edits = await withoutCorrectedNames(
+      serverEdits,
+      (edit) => ({
+        uri,
+        start: edit.range.start,
+        text: textInRange(before.content, edit.range),
+      }),
+      oldNames,
+      errorsOf,
+    );
+    if (edits.length === 0) continue;
     files.push({
       source: before.file,
       expectedContent: before.content,

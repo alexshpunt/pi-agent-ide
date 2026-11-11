@@ -14,6 +14,7 @@ import {
 
 import { LspManager } from "./manager.ts";
 import { requestReferences, type LspLocation } from "./navigation.ts";
+import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import {
   requestWorkspaceSymbols,
   requestDocumentSymbols,
@@ -294,6 +295,7 @@ async function searchSymbolsOnce(
       );
       signal?.throwIfAborted();
       const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
+      const reported: { location: LspLocation; reference: SearchSelectionMatch }[] = [];
       for (const location of references) {
         if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
         const reference = await toMatch(location, opened.client);
@@ -305,8 +307,23 @@ async function searchSymbolsOnce(
           reference.endColumn === declared.endColumn
         )
           continue;
-        candidates.push({ ...reference, role: "reference", symbol });
+        reported.push({ location, reference });
       }
+      const named = await withoutCorrectedNames(
+        reported,
+        ({ location, reference }) => ({
+          uri: location.uri,
+          start: location.range.start,
+          text: reference.matchedText,
+        }),
+        [definition.name, declared.matchedText],
+        diagnosticErrors(
+          (uri) => manager.openFile(sourceOf(uri, cwd), cwd, "symbols", signal),
+          signal,
+        ),
+      );
+      for (const { reference } of named)
+        candidates.push({ ...reference, role: "reference", symbol });
       if (scope.navigation === "references" && !candidates.some(included)) continue;
       for (const hit of candidates) {
         if (scope.navigation !== "references" && !included(hit)) continue;
