@@ -40,6 +40,6 @@ Keep machine-specific targets out of shared Git history unless the user asks.
 - Run commands with an SSH `cwd`: `bash` for Linux targets and `remote_powershell` for Windows targets. On a Windows host, `powershell` runs on Windows targets and `remote_bash` on Linux targets. `remote_powershell` and `remote_bash` appear only when a target of that OS is configured and need an `ssh://` `cwd`. Debug with `debug` and an SSH `cwd`. Read `docs:terminal` or `docs:debugger` first.
 - `raw:ssh://…` reads original bytes. `web:ssh://<target>/https://…` fetches a page from the target; plain URLs are still fetched locally.
 - The workspace is only the base for relative paths, not a sandbox.
-- The target needs its own tools: Git for `changes` and `undo`, `ast-grep` for ast_search, the language servers for lsp_search, and Node, `playwright-core` and Chromium for rendered web pages. Nothing is installed automatically.
+- The target needs its own tools: Git for `changes` and `undo`, `ast-grep` for ast_search, the language servers for lsp_search (plus `rg` for C and C++ references and renames), and Node, `playwright-core` and Chromium for rendered web pages. Nothing is installed automatically.
 - Operations across two machines are not atomic. After a failure, check both sides before retrying; don't replay a write whose effect is unknown.
 - `/agent-ide-doctor ssh://<target>/<path>` checks that project's setup on the target.
