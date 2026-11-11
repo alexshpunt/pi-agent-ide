@@ -1,6 +1,16 @@
-import { convertToPng, formatDimensionNote, resizeImage } from "@earendil-works/pi-coding-agent";
-
+import type * as PiCodingAgentModule from "@earendil-works/pi-coding-agent";
 import type { AgentContent, ContentConverter } from "pi-agent-resource";
+
+type PiCodingAgent = typeof PiCodingAgentModule;
+
+// Loading the Pi package takes seconds, while recognizing a non-image takes microseconds.
+// Load its image helpers only once bytes are known to be a supported image.
+let piCodingAgent: Promise<PiCodingAgent> | undefined;
+
+function loadPiCodingAgent(): Promise<PiCodingAgent> {
+  piCodingAgent ??= import("@earendil-works/pi-coding-agent");
+  return piCodingAgent;
+}
 
 export type SupportedImageMimeType =
   | "image/bmp"
@@ -94,6 +104,7 @@ export async function createImageContent(
   bytes: Uint8Array,
   mimeType: SupportedImageMimeType,
 ): Promise<AgentContent> {
+  const { convertToPng, formatDimensionNote, resizeImage } = await loadPiCodingAgent();
   let normalizedBytes = bytes;
   let normalizedMimeType: string = mimeType;
   let convertedFrom: SupportedImageMimeType | undefined;

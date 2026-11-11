@@ -1,6 +1,6 @@
 ---
 name: configure-agent-ide
-description: Explain Pi Agent IDE settings and safely configure the IDE for the user's workflow. Use when the user asks how to use or configure Pi Agent IDE, enable or disable modules or behavior, show or hide Codemode tool results, change output presentation, or restore defaults. Not for Pi model selection, credentials, package installation, or unrelated extension settings.
+description: "Use when the user asks how to use or configure Pi Agent IDE: its modules, behavior, tool-result presentation or defaults."
 ---
 
 # Configure Agent IDE

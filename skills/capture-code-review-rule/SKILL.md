@@ -1,6 +1,6 @@
 ---
 name: capture-code-review-rule
-description: Turn a user's reusable code-review requirement into a proposed project Jev rule. Use after explicit code-review feedback only when Jev rule capture is enabled in the current Pi instructions. Do not save a rule without the user's confirmation.
+description: Use after the user's code-review feedback states a reusable requirement, when Jev rule capture is enabled.
 ---
 
 # Capture a code-review rule

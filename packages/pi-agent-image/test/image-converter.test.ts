@@ -1,10 +1,16 @@
-import { expect, test } from "vitest";
+import { beforeAll, expect, test } from "vitest";
 
 import { createImageContentConverter, detectSupportedImageMimeType } from "pi-agent-image";
 
 const pngBase64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const png = Buffer.from(pngBase64, "base64");
+
+// The first image conversion loads the Pi package, which takes seconds on a busy machine.
+// Load it once here so each test's timeout covers only its own conversions.
+beforeAll(async () => {
+  await createImageContentConverter().tryConvert({ source: "warm-up.png", bytes: png }, {});
+}, 60_000);
 
 test("classifies supported images from bytes instead of source or media type", () => {
   const webp = Buffer.alloc(12);
