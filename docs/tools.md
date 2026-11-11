@@ -134,7 +134,7 @@ A `:line` range includes its LF or CRLF line ending. A whole-line replacement pr
 
 Per-result forms keep the search-time snapshot and fail as stale after their matched file changes. Complete `:all` forms rerun the original search recipe when a matched file changes, then select the current complete result set. A search that ran inside a Read or Search result reruns inside that result as its file is now, also for `ast_search` and `lsp_search`. Limited or otherwise incomplete searches omit the `:all` forms. A forged `:all` value for an incomplete search is rejected.
 
-When an `:all` form cannot be used, the error says why and what to do: the search was limited, the rerun found more matches than its limit, the result it ran inside is no longer in the file, the file kept changing while the search ran again, or the rerun failed with its own reason. An edit retries a file that changed during the rerun, like any other change by another process.
+When an `:all` form cannot be used, the error says why and what to do: the search was limited, the rerun found more matches than its limit, the result it ran inside is no longer in the file, the file kept changing while the search ran again, or the rerun failed with its own reason. An edit retries a file that changed during the rerun, like any other change by another process. A retry of the same edit does not search again when it can avoid it: it moves the matches the earlier attempt found onto the newer text through unchanged lines. It searches again when a match's own line changed or moved, or when an added or changed line contains a matched text and so may hold a new match.
 
 ## File search
 
