@@ -11,7 +11,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
-import { MAX_OPENED_FILES } from "../../../../src/plugins/pi-agent-ide-lsp/src/lsp/clang-coverage.ts";
+import { MAX_OPENED_FILES } from "#src/plugins/pi-agent-ide-lsp/src/lsp/clang-coverage.ts";
 
 // After a fatal clang error, such as a missing #include, clang stops instantiating templates. The
 // loop over a container type first used after it then has no reference in clangd's background

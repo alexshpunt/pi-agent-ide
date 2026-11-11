@@ -193,7 +193,7 @@ describe("Agent IDE process registry", () => {
     const tui: {
       requestRender(): void;
       dispatchMouseToOverlay?: (event: never) => { hit: boolean };
-    } = { requestRender() {}, dispatchMouseToOverlay: originalDispatch as never };
+    } = { requestRender() {}, dispatchMouseToOverlay: originalDispatch };
     let focused = true;
     let overlay: Component | undefined;
     const context = {
