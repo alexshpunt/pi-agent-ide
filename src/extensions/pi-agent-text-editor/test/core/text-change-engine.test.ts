@@ -59,6 +59,45 @@ describe("text change engine", () => {
       },
     ]);
   });
+
+  test("reports positions after earlier changes, joins touching changes and skips empty ones", () => {
+    const result = applyTextChanges("abcdefgh", [
+      { from: 6, to: 7, insert: "G" },
+      { from: 1, to: 2, insert: "BB" },
+      { from: 2, to: 3, insert: "" },
+      { from: 4, to: 4, insert: "" },
+      { from: 4, to: 4, insert: "1" },
+      { from: 4, to: 4, insert: "2" },
+    ]);
+    expect(result.content).toBe("aBBd12efGh");
+    expect(result.changes).toEqual([
+      {
+        fromBefore: 1,
+        toBefore: 3,
+        fromAfter: 1,
+        toAfter: 3,
+        removedText: "bc",
+        insertedText: "BB",
+      },
+      { fromBefore: 4, toBefore: 4, fromAfter: 4, toAfter: 6, removedText: "", insertedText: "12" },
+      { fromBefore: 6, toBefore: 7, fromAfter: 8, toAfter: 9, removedText: "g", insertedText: "G" },
+    ]);
+  });
+
+  test("applies many changes to a large text in one pass", () => {
+    const line = "inline int size(const tVec4i& a);\n";
+    const source = line.repeat(30_000);
+    const changes = Array.from({ length: 30_000 }, (_, index) => ({
+      from: index * line.length + 22,
+      to: index * line.length + 28,
+      insert: "zzVec4",
+    }));
+    const started = performance.now();
+    const result = applyTextChanges(source, changes);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(result.content).toBe(source.replaceAll("tVec4i", "zzVec4"));
+    expect(result.changes).toHaveLength(30_000);
+  });
 });
 
 describe("text change document", () => {
