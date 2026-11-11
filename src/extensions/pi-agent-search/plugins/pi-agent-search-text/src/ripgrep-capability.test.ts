@@ -85,6 +85,8 @@ test.each(["native", "no-pcre2"] as const)(
       [7, 2, 7, "alpha"],
     ]);
   },
+  // The no-pcre2 shim spawns a wrapper script per search, which a loaded machine makes slow.
+  20_000,
 );
 test("reports a missing PCRE2 engine for an explicit regex and allows the next literal search", async () => {
   const cwd = await fixture("no-pcre2");
