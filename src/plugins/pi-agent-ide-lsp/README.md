@@ -32,6 +32,12 @@ Pi sessions on one machine share a local server when they use the same server, c
 
 File watches that servers request cover only the project: patterns based on a parent directory see only files inside the project, and patterns based elsewhere are ignored. `.git` is not watched, and `node_modules` is watched only for packages added or removed.
 
+## Text the server holds
+
+Opening a file for a request publishes the text that is on disk at that moment, and a single request opens files several times: a diagnostics or coverage check opens the same file again after its symbols were read. While another session writes that file, the server's text therefore moves ahead of the text a position was read from, inside one request.
+
+A position sent to the server is mapped onto the text the server holds and checked against it, and an answer is mapped back onto the text its hits are reported from. Both use the line diff that follows unchanged lines. When the line a position belongs to is gone from the other text, or the server replaces its text while it answers, the request fails with `SOURCE_CHANGED` and runs again on the current text. `lsp_search` with `references: true` maps its positions this way. A `symbol:` rename takes the other route: it requires the server's text to be the text it read, in the file and in every participant, and runs again when it is not. A new request that sends a position of its own needs one of the two.
+
 ## Failures
 
 Malformed selectors, missing symbols, missing files and unavailable LSP servers return failed results. They never fall back to text search.
