@@ -100,4 +100,6 @@ test("owned symbol search includes references and never treats a server error as
     await manager.shutdownAll();
     await fixture.stop();
   }
-});
+  // Measured at load average 37 with another integration suite running: 40-45 s. The cap is only
+  // there to stop a hung remote call.
+}, 120_000);

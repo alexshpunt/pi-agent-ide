@@ -93,7 +93,10 @@ test.each(["scope", "mutation"] as const)(
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
         tools: ["read", "search", "lsp_search", "replace", "codemode"],
-        timeoutMs: 90000,
+        // Pi starts here and every tool call reaches the fixture server through SSH. Measured at
+        // load average 37 with another integration suite running: 95-100 s for the whole case,
+        // so a step may take over 90 s. The cap stops a hung run, like the 150 s of ssh-lsp-tools.
+        timeoutMs: 150_000,
         conversation: [
           assistantMessage([
             toolCall({
@@ -162,5 +165,5 @@ if(${JSON.stringify(mode)} === "scope") {
       await rm(cwd, { recursive: true, force: true });
     }
   },
-  120000,
+  240_000,
 );
