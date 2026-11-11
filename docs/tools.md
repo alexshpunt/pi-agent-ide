@@ -146,7 +146,7 @@ When an `:all` form cannot be used, the error says why and what to do: the searc
 
 ## Language-server search
 
-`lsp_search` asks the project's language servers. `query` finds declarations and references by symbol name in the workspace, a path or a returned result; `references: true` follows symbols found inside that scope to references elsewhere in the workspace. `declaration: "file#selector"` returns one declaration as a guarded `SEARCH#` selection. `calls: "file"` or `calls: "file#selector"` lists references and incoming and outgoing calls. Editing tools keep accepting `symbol:<file>#<selector>` paths, and `symbol:<file>#<selector>#name` triggers a native rename.
+`lsp_search` asks the project's language servers. `query` finds declarations and references by symbol name in the workspace, a path or a returned result; `references: true` follows symbols found inside that scope to references elsewhere in the workspace. `declaration: "file#selector"` returns one declaration as a guarded `SEARCH#` selection; a selector segment with parameter types, such as `clamp(int, float)`, names one overload, and each definition in a `query` result shows its selector. `calls: "file"` or `calls: "file#selector"` lists references and incoming and outgoing calls. Editing tools keep accepting `symbol:<file>#<selector>` paths, and `symbol:<file>#<selector>#name` triggers a native rename.
 
 For C and C++, clangd needs extra handling. After a fatal clang error, clang stops instantiating templates. The 20-error limit is one such error and a missing `#include` is another. Code after it that needs a new instantiation then has no references, and clang reports nothing there.
 

@@ -6,11 +6,19 @@ This extension adds LSP diagnostics to normal filesystem reads, the `lsp_search`
 
 Pass exactly one mode:
 
-- `query`: workspace symbol search for declarations and references. `path` (file, directory or a returned result), `include` and `exclude` narrow it. `references: true` follows symbols found inside `path` to their references anywhere in the workspace.
-- `declaration: "<path>#<selector>"`: the full LSP document-symbol range as a guarded `SEARCH#` selection. A selector uses `/` for nesting, for example `UserService/getUser`. A one-part selector finds a nested symbol only when that name is unique in the file; a multi-part selector must match the document-symbol hierarchy exactly.
+- `query`: workspace symbol search for declarations and references. `path` (file, directory or a returned result), `include` and `exclude` narrow it. `references: true` follows symbols found inside `path` to their references anywhere in the workspace. Each definition line shows the selector of its declaration, so the overloads of a name are listed apart, for example `selector main.cpp#clamp(int, int, int)`. The server's workspace index can lag behind edits from other sessions; the declarations of a name are then taken from the file's current document symbols.
+- `declaration: "<path>#<selector>"`: the full LSP document-symbol range as a guarded `SEARCH#` selection. A selector uses `/` for nesting, for example `UserService/getUser`. A one-part selector finds a nested symbol only when that name is unique in the file; a multi-part selector must match the document-symbol hierarchy exactly. See [Selectors and overloads](#selectors-and-overloads).
 - `calls: "<path>#<selector>"`: the definition, references grouped by file, incoming calls and outgoing calls. `calls: "<path>"` reports every top-level declaration in source order with the same relations and lists direct members with their `calls` values. When the server does not implement a call direction, such as outgoing calls in clangd 18, that section says so and the other relations are still reported.
 
 `<path>` may be relative to the session directory or absolute. The tool runs its resolver through the shared Search execution core, so scopes, SSH owners and selections behave as in `search`; it is not registered as a `search` query form.
+
+### Selectors and overloads
+
+A selector segment is a name, or a name with parameter types that names one overload: `clamp(int, int, int)`, `Box/get() const`. Types are compared with the signature the server reports in the document symbol's `detail`, such as clangd's `int (int, int, int)`. Spacing does not matter (`const Vec&` and `const Vec &` are the same), parameter names and default values copied from a declaration are ignored, and `(void)` is `()`. Trailing qualifiers such as `const` tell methods apart; a segment without them prefers the unqualified overload.
+
+Entries with the same name, kind and signature in one scope are one declaration, such as a C++ prototype and its definition. References, calls and renames are the same from either entry. A `declaration` selection and a `symbol:` text edit take the entry with a body; when no single entry has one, the call fails and names the lines.
+
+When a selector names several declarations, the error lists a selector for each. Servers whose document symbols carry no signature, such as most TypeScript and Python servers, cannot tell overloads apart this way; their error says so.
 
 ## Editing targets
 
