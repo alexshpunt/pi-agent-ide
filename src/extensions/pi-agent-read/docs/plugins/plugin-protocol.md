@@ -213,3 +213,7 @@ Integration tests load real core and plugin entrypoints in both load orders. Cor
 Pipeline handlers receive `context.audience`. Presentation-only overflow handlers must keep script data intact; failures still apply to both audiences. The AST overflow handler therefore leaves script reads unchanged. Multi-target script results retain every selected result in `details.resources`, rather than exposing only the first target's details.
 
 This is the shared data path for native tool composition and Diff, not a new parameter on the model-facing read tool. Resource, bridge and execution limits remain separate from presentation truncation.
+
+## Reads issued by another tool
+
+A `read` tool call that another tool issued, such as `tools.read` in a Codemode script, reaches Read with Pi's `parentToolCallId`. Read keeps the agent audience and its window notices for that call, but sets `context.outputLimit` to `"none"` and returns the whole text instead of fitting it to the model's output budget. Overflow handlers must leave such results unchanged; the AST overflow handler does. Model-issued calls have `outputLimit` `"model"`. Raw byte reads keep their bounded hex view.
