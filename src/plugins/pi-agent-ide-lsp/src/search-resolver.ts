@@ -4,7 +4,7 @@ import {
   parseCodeViewReference,
   resolveCodeViewPath,
 } from "pi-agent-ide/api/code-view";
-import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import type { ResolvedResultTargets } from "pi-agent-resource";
 import {
   currentScope,
   renderSearchMatches,
@@ -210,11 +210,12 @@ export function createLspSearchResolver(
           for (const target of scope.targets) (await group(target.source)).targets.push(target);
           return groups;
         };
-        if (initialScope !== undefined) await verifyResultTargets(initialScope, context.signal);
         const initialGroups = await groupScope(initialScope, context.signal);
         const limit = request.limit ?? 100;
         // A refresh, such as for an all-anchor after other edits, finds the scope in the current
-        // text first, like text and AST search; the scope as first resolved is stale by then.
+        // text first, like text and AST search; the scope as first resolved is stale by then. A
+        // write while the server answers needs no new request: the backend follows the scope's
+        // region to the text it reads its hits from.
         const collect = async (signal?: AbortSignal, refresh = false) => {
           const scope = refresh ? await currentScope(context, signal) : initialScope;
           const groups = refresh ? await groupScope(scope, signal) : initialGroups;
@@ -242,19 +243,6 @@ export function createLspSearchResolver(
             hits.push(...found.hits);
             complete = complete && found.complete;
             coverages.push(found.coverage);
-          }
-          if (scope !== undefined) {
-            try {
-              await verifyResultTargets(scope, signal);
-            } catch (error) {
-              // During a refresh the scope was current a moment ago: another writer changed the
-              // file meanwhile, which an edit retries on the new text.
-              if (!refresh || signal?.aborted === true) throw error;
-              throw Object.assign(
-                new Error("The file changed while the LSP search ran again.", { cause: error }),
-                { code: "SOURCE_CHANGED" },
-              );
-            }
           }
           // The search session keeps these hits and its refresh closure for as long as its anchors
           // live. A copy keeps only the matched text, not each file the text was cut from.

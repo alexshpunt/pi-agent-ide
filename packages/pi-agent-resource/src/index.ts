@@ -102,6 +102,7 @@ export {
   connectResultTargets,
   verifyResultTargets,
   currentResultTargets,
+  resultTargetsInText,
   describeAdjustedRanges,
   ResultTargetStore,
   resultInputSchema,

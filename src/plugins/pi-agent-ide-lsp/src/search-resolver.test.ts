@@ -1,3 +1,4 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { SearchRequest, SearchSelectionRegistration } from "pi-agent-search/api/search";
@@ -157,6 +158,37 @@ test("follows references only when requested", async () => {
 
   const scopes: unknown[] = backend.searchSymbols.mock.calls.map((call) => call[4]);
   expect(scopes).toEqual([{ path: "src" }, { path: "src", navigation: "references" }]);
+});
+
+test("a result-scoped symbol search survives a write to its file while the server answers", async () => {
+  await mkdir(".tmp/lsp-search-resolver", { recursive: true });
+  const directory = await mkdtemp(path.resolve(".tmp/lsp-search-resolver/case-"));
+  try {
+    const source = path.join(directory, "app.ts");
+    const content = "const label = 1;\n";
+    await writeFile(source, content);
+    const scope = {
+      complete: true,
+      targets: [
+        {
+          source,
+          expectedContent: content,
+          ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 16 } }],
+        },
+      ],
+    };
+    backend.searchSymbols.mockImplementation(async () => {
+      // Another session writes elsewhere in the file before the server's answer arrives.
+      await writeFile(source, `// peer\n${content}`);
+      return { hits: [], complete: true };
+    });
+
+    const result = await resolver.tryResolve(request({ query: "label" }), { cwd, scope });
+
+    expect(result.kind).toBe("resolved");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 /** A search session that refuses the first registration, like a file written in between. */

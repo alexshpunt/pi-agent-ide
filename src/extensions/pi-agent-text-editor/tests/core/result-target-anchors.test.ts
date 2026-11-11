@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { onTestFinished, expect, test } from "vitest";
+import { requiredValue } from "pi-agent-invariant";
 import { ResultTargetStore } from "pi-agent-resource";
 import { createResultTargetAnchors } from "#src/core/result-target-anchors.ts";
 
@@ -49,4 +50,50 @@ test("a RESULT anchor whose own line changed in the caller's text is stale", asy
   const seen = original.replace("two", "TWO");
   await writeFile(source, `top\n${original}`);
   expect(await resolve(seen)).toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
+});
+
+/** A RESULT source whose file another session writes right after the store moved it to the file's text. */
+async function racedSource() {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "result-target-sources-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "a.txt");
+  await writeFile(source, original);
+  const store = new ResultTargetStore();
+  const written = `peer\n${original}`;
+  const reference = store.register(
+    [
+      {
+        source,
+        expectedContent: original,
+        // The check reads the file through this reader; the write lands just before it.
+        readCurrent: async () => {
+          await writeFile(source, written);
+          return written;
+        },
+        ranges: [{ start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 3 } }],
+      },
+    ],
+    cwd,
+  );
+  const resolve = (edit?: { attempt: number }) =>
+    requiredValue(createResultTargetAnchors(store).resources).tryResolve(reference, {
+      cwd,
+      ...(edit !== undefined && { edit }),
+    });
+  return { source, resolve };
+}
+
+test("an edit's RESULT source survives a write between its resolution and the file lock", async () => {
+  const { source, resolve } = await racedSource();
+  // The edit compares the target with the file under its lock and runs again on the newer text.
+  const attempt = await resolve({ attempt: 0 });
+  expect(attempt).toMatchObject({
+    kind: "resolved",
+    targets: [{ source, expectedContent: original }],
+  });
+});
+
+test("a RESULT source read outside an edit still has to match its file", async () => {
+  const { resolve } = await racedSource();
+  expect(await resolve()).toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
 });
