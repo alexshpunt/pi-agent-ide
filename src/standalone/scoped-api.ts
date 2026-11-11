@@ -324,12 +324,18 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
               description:
                 "Provider-owned resource URI, unchanged source result, or an issued reference.",
             };
-        if (name === "write")
-          properties.content = Type.String({
-            description:
-              "Complete text/Markdown or JSON payload for the selected provider resource.",
-          });
-        return Object.assign({}, definition.parameters, schema, { properties });
+        if (name !== "write")
+          return Object.assign({}, definition.parameters, schema, { properties });
+        // Provider resources take text only; images are written to local files.
+        delete properties.image;
+        properties.content = Type.String({
+          description: "Complete text/Markdown or JSON payload for the selected provider resource.",
+        });
+        const required: unknown[] = Array.isArray(schema.required) ? schema.required : [];
+        return Object.assign({}, definition.parameters, schema, {
+          properties,
+          required: [...new Set([...required, "content"])],
+        });
       },
       enumerable: true,
       configurable: true,

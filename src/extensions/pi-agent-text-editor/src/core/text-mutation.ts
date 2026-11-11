@@ -2055,7 +2055,7 @@ function semanticActionResult(
     },
   };
 }
-/** Write images named by Write content; returns undefined when the content is ordinary text. */
+/** Write the images named by Write `image`; returns undefined when the call writes text. */
 async function writeImageContent(
   core: TextEditorCore,
   store: ResultImageStore | undefined,
@@ -2065,7 +2065,7 @@ async function writeImageContent(
 ): Promise<AgentToolResult<FileMutationBatchResult> | undefined> {
   const target = typeof input.path === "string" ? input.path : "";
   try {
-    const files = await planImageWrite(input.path, input.content, store, cwd);
+    const files = await planImageWrite(input.path, input.image, input.content, store, cwd);
     if (files === undefined) return undefined;
     await core.enqueueFileOperation(
       () => core.writeFiles(files, { cwd, ...(signal !== undefined && { signal }) }),

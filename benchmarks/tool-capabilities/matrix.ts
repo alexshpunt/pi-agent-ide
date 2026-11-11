@@ -295,6 +295,7 @@ const groups: [string[], string[]][] = [
   [["read.image", "read.pdf"], ["read-media"]],
   [["compose.codemode-image-value"], ["codemode-image-value"]],
   [["compose.read-image-write"], ["read-image-write"]],
+  [["write.json-text"], ["write-json-text"]],
   [["web.read", "web.search"], ["web-read-search"]],
 ];
 

@@ -673,6 +673,9 @@
         "additionalProperties": false,
         "properties": {
           "content": {
+            "type": "string"
+          },
+          "image": {
             "anyOf": [
               {
                 "type": "string"
@@ -734,7 +737,7 @@
             ]
           }
         },
-        "required": ["path", "content"],
+        "required": ["path"],
         "type": "object"
       }
     }

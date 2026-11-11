@@ -26,6 +26,11 @@
       "thinking": "low"
     },
     {
+      "id": "haiku-5.5-low",
+      "model": "anthropic/claude-haiku-5-5",
+      "thinking": "low"
+    },
+    {
       "id": "haiku-4.5-cli-low",
       "model": "pi-claude-cli/claude-haiku-4-5",
       "servedModel": "claude-haiku-4-5-20251001",

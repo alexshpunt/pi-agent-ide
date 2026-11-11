@@ -60,30 +60,41 @@ const exists = (file: string) =>
     () => false,
   );
 
-test("Write saves the exact images of a Read named by its UUID or RESULT# reference", async () => {
+test("Write saves the exact images of a Read named in image by its UUID or RESULT# reference", async () => {
   await withTempWorkspace(async (cwd) => {
     const result = await run(cwd, "write-image-reference", [
       { id: "shot", name: "read", arguments: { path: "pixel.png" } },
-      { id: "uuid", name: "write", arguments: { path: "saved.png", content: "$issued-uuid:shot" } },
+      { id: "uuid", name: "write", arguments: { path: "saved.png", image: "$issued-uuid:shot" } },
       {
         id: "prefix",
         name: "write",
-        arguments: { path: "out/prefixed.png", content: "RESULT#$issued-uuid:shot" },
+        arguments: { path: "out/prefixed.png", image: "RESULT#$issued-uuid:shot" },
       },
       { id: "frames", name: "read", arguments: { path: "fixture-frames:" } },
-      { id: "folder", name: "write", arguments: { path: "run/", content: "$issued-uuid:frames" } },
+      { id: "folder", name: "write", arguments: { path: "run/", image: "$issued-uuid:frames" } },
       {
         id: "mismatch",
         name: "write",
-        arguments: { path: "shot.jpg", content: "$issued-uuid:shot" },
+        arguments: { path: "shot.jpg", image: "$issued-uuid:shot" },
       },
       { id: "text", name: "read", arguments: { path: "note.txt" } },
       {
         id: "no-images",
         name: "write",
-        arguments: { path: "text.png", content: "$issued-uuid:text" },
+        arguments: { path: "text.png", image: "$issued-uuid:text" },
       },
       { id: "plain", name: "write", arguments: { path: "plain.txt", content: "hello\n" } },
+      {
+        id: "uuid-text",
+        name: "write",
+        arguments: { path: "uuid.txt", content: "$issued-uuid:shot" },
+      },
+      {
+        id: "both",
+        name: "write",
+        arguments: { path: "both.png", content: "x", image: "$issued-uuid:shot" },
+      },
+      { id: "neither", name: "write", arguments: { path: "neither.txt" } },
     ]);
     for (const id of ["uuid", "prefix", "folder", "plain"])
       expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
@@ -101,6 +112,16 @@ test("Write saves the exact images of a Read named by its UUID or RESULT# refere
     expect(getToolResultText(result, "no-images")).toContain("no kept images");
     expect(await exists(path.join(cwd, "text.png"))).toBe(false);
     expect(await readFile(path.join(cwd, "plain.txt"), "utf8")).toBe("hello\n");
+    // Content is always text: an image result's UUID there is saved as written.
+    expect(getToolExecution(result, "uuid-text").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "uuid.txt"), "utf8")).toMatch(/^[a-f\d-]{36}$/u);
+    for (const [id, file] of [
+      ["both", "both.png"],
+      ["neither", "neither.txt"],
+    ] as const) {
+      expect(getToolExecution(result, id).isError, id).toBe(true);
+      expect(await exists(path.join(cwd, file)), file).toBe(false);
+    }
   });
 });
 
@@ -113,9 +134,9 @@ test("Codemode Write saves a Read image value and numbers several frames", async
         arguments: {
           code: String.raw`
 const shot = await tools.read({ path: "pixel.png" });
-const one = await tools.write({ path: "shot.png", content: shot });
+const one = await tools.write({ path: "shot.png", image: shot });
 const frames = await tools.read({ path: "fixture-frames:" });
-const many = await tools.write({ path: "clip.png", content: frames });
+const many = await tools.write({ path: "clip.png", image: frames });
 text("one:" + JSON.stringify(one));
 text("many:" + JSON.stringify(many));
 `,
