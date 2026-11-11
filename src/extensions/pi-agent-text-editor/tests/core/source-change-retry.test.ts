@@ -71,6 +71,20 @@ test("slow attempts stop at the time budget with a reason that names the other w
   expect(outcome.failure.message).toContain("nothing was written");
 });
 
+test("a first attempt slower than the time budget still runs again once its file changed", async () => {
+  // Like a rename planned on a language server that is still starting: one slow attempt is not
+  // another process that keeps writing the file.
+  const clock = timing(RETRY_BUDGET_MS + 5_000);
+  let attempts = 0;
+  const outcome = await retryWhenSourceChanged(() => {
+    attempts += 1;
+    if (attempts === 1) clock.tick();
+    return Promise.resolve(attempts === 1 ? changed : applied);
+  }, clock.timing);
+  expect(outcome).toBe(applied);
+  expect(attempts).toBe(2);
+});
+
 test("fast attempts stop after the last pause with the same reason", async () => {
   const clock = timing(10);
   let attempts = 0;

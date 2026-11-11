@@ -94,7 +94,9 @@ test.each(["diagnostics", "rename", "race"] as const)(
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts")],
         tools: ["read", "lsp_search", "replace", "write"],
-        timeoutMs: 60000,
+        // Every step reaches the fixture server through SSH; the race rename plans twice, the
+        // first time on a cold server, which takes up to about 70 s on a loaded machine.
+        timeoutMs: 150_000,
         conversation: [
           ...(mode === "diagnostics"
             ? [
@@ -211,5 +213,5 @@ test.each(["diagnostics", "rename", "race"] as const)(
       await rm(cwd, { recursive: true, force: true });
     }
   },
-  90000,
+  180_000,
 );
