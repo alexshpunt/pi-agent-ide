@@ -68,15 +68,25 @@ def enable_subreaper():
     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
 
 
-def stop_adopted_children():
+def adopted_children():
     # Read only our direct kernel children, not a system-wide ancestry snapshot.
     directory = "/proc/self/task/" + str(os.getpid()) + "/children"
     with open(directory, encoding="utf-8") as stream:
         children = [int(value) for value in stream.read().split()]
+    # The command's own status belongs to subprocess, so it is never collected here.
+    return [pid for pid in children if process is None or pid != process.pid]
+
+
+def reap_adopted_children():
+    # An exited orphan stays a zombie until its subreaper collects it; a PID-namespace init such as
+    # bwrap cannot finish while one of its former members waits here.
+    for pid in adopted_children():
+        os.waitpid(pid, os.WNOHANG)
+
+
+def stop_adopted_children():
     pending = False
-    for pid in children:
-        if process is not None and pid == process.pid:
-            continue
+    for pid in adopted_children():
         # A running child cannot reuse its PID before this single-threaded parent reaps it.
         reaped, _status = os.waitpid(pid, os.WNOHANG)
         if reaped == 0:
@@ -146,6 +156,7 @@ def run():
     pending_input = None
     stopping = None
     descendant_deadline = None
+    next_reap = 0
     input_open = True
     with selectors.DefaultSelector() as selected:
         os.set_blocking(0, False)
@@ -169,7 +180,11 @@ def run():
                 kill_group(signal.SIGKILL)
                 stopping = None
             descendants_pending = False
-            if process.poll() is not None:
+            if process.poll() is None:
+                if time.monotonic() >= next_reap:
+                    reap_adopted_children()
+                    next_reap = time.monotonic() + 0.25
+            else:
                 kill_group(signal.SIGKILL)
                 descendants_pending = stop_adopted_children()
                 if descendants_pending:
