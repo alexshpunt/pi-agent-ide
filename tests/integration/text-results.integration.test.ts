@@ -99,8 +99,36 @@ await tools.read({path:"pixel.png",views:["anchors"]});`,
       ]);
     }
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\ngamma\n");
-    expect(run.tuiRenderedOutput).toContain("ghost");
-    expect(run.tuiRenderedOutput).toContain("anchors");
+  });
+});
+
+test("requested-view warnings are shown in the native read panels", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
+    await writeFile(
+      path.join(cwd, "pixel.png"),
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    // An image result fills most of the 50-row test screen, so each panel gets its own run.
+    const textRun = await runText(cwd, "requested-view-warning-text-panel", [
+      `await tools.read({path:"note.txt",views:["ghost"]});`,
+    ]);
+    expect(
+      getToolExecution(textRun, "script-0").isError,
+      getToolResultText(textRun, "script-0"),
+    ).toBe(false);
+    expect(textRun.tuiRenderedOutput).toContain("ghost");
+    const imageRun = await runText(cwd, "requested-view-warning-image-panel", [
+      `await tools.read({path:"pixel.png",views:["anchors"]});`,
+    ]);
+    expect(
+      getToolExecution(imageRun, "script-0").isError,
+      getToolResultText(imageRun, "script-0"),
+    ).toBe(false);
+    expect(imageRun.tuiRenderedOutput).toContain("anchors");
   });
 });
 test("scripts read oversized lines and jq values whole while raw bytes stay bounded", async () => {
@@ -349,13 +377,13 @@ text(shown); text(found);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\n");
   });
 });
-test("store/load retains text and UUID composition until the file snapshot changes", async () => {
+test("store/load retains text and UUID composition; Search reads a changed file's current text but edits expire", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "text-result-store", [
       `store("source", await tools.read({path:"note.txt"}));`,
       `const source=load("source"); const uuid=/<uuid>([^<]+)<\\/uuid>/.exec(source)[1]; const found=await tools.search({path:uuid,query:"beta"}).then(value => value.result); text(await tools.replace({path:found,text:"BETA"}));`,
-      `let rejected=false; try { await tools.search({path:load("source"),query:"alpha"}); } catch(error) { rejected=String(error).includes("expired"); } if(!rejected) throw Error("Stored old result survived a write"); text("Old result rejected");`,
+      `const current=await tools.search({path:load("source"),query:"alpha"}).then(value => value.result); if(!current.includes("alpha")) throw Error("Search did not read the changed result's current text: "+current); let rejected=false, failure=""; try { await tools.replace({path:load("source"),text:"ALPHA\\nBETA\\n"}); } catch(error) { failure=String(error); rejected=failure.includes("expired"); } if(!rejected) throw Error("An edit on the stored old result survived a write: "+failure); text("Old result searched, edit rejected");`,
     ]);
     for (let i = 0; i < 3; i++)
       expect(
