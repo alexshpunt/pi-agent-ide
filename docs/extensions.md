@@ -348,7 +348,7 @@ An editor anchor registration can expose the same resolver through its `resource
 
 ## Anchor plugin
 
-Anchor resolvers recognize opaque values against the current text snapshot. This example adds a constant `middle` position.
+Anchor resolvers recognize opaque values against the current text snapshot. Resolve only in `context.content`, the text the caller reads and edits; do not read the source again, because another process may write it in between. A resolver that holds ranges of an earlier or later text of the source places them in `context.content` with `rangesInText` from `pi-agent-ide/api/resource`, and rejects the anchor as stale when that returns `undefined`. A Resource target in `resources` carries the text it was resolved on as `expectedContent`; when the edit finds a different text, it runs again and resolves the value anew. This example adds a constant `middle` position.
 
 ```ts
 import { TextAnchor, type TextAnchorResolver } from "pi-agent-ide/api/text";
