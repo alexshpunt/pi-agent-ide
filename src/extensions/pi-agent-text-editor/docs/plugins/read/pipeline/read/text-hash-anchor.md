@@ -14,8 +14,10 @@ The editor core and read core do not know this syntax.
 A line anchor is one token of seven characters from the alphabet `0-9A-HJKMNP-TV-Z` (35 bits), for example `K7M2QX4`. The token is computed from the current text of the whole file in one pass; no map is stored.
 
 - A line whose text occurs once in the file is named by a hash of that text alone. Its anchor stays valid however the file shifts, until the line itself changes or a copy of it appears.
-- A repeated line is named by a hash of its landmark (the nearest unique line above it), the number of times its text occurred since that landmark, and its text. The anchor stays valid after any change outside the stretch between the landmark and the line.
-- When no unique line is above, the start of the file is the landmark, so in a file of identical lines the anchor is in effect the occurrence number from the top.
+- A repeated line is named by a hash of its landmark (the nearest unique line above or below it), the number of times its text occurs between the landmark and the line, and its text. The anchor stays valid after any change outside the stretch between the landmark and the line.
+- The landmark comes from the line's own block, so moving or deleting a neighbouring block leaves the anchor valid. A column-0 `}` or `};` ends a block. The side whose nearest unique line is reached without crossing a block end is used; when both or neither are, the nearer side, above on a tie. So `template <typename T>` is named by the declaration below it, and a closing `}` by the line above it.
+- When no unique line is on a side, the edge of the file stands in. In a file of identical lines the anchor is in effect the occurrence number from the top.
+- A blank (whitespace-only) repeated line is named by its landmarks on both sides, each with its occurrence count. When a neighbouring block moves, the anchor of a blank line next to it either still names the same line or fails; it never matches a blank line next to the block in its new place.
 
 Lines are split as Read splits them: a line has no terminator, and a final line terminator does not add an empty line.
 
