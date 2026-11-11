@@ -256,6 +256,28 @@ export function rebaseOrRelocateRange(range: ResultRange, map: LineMap): ResultR
   return rebaseRange(range, map) ?? relocateInChangedLine(range, map);
 }
 
+/**
+ * Ranges selected in one text, placed in another text of the same source with their own text
+ * unchanged. Every reference and anchor that holds ranges of an earlier or later text uses this to
+ * resolve in the text its caller edits. Undefined when any range's own text changed.
+ */
+export function rangesInText(
+  ranges: readonly ResultRange[],
+  from: string,
+  to: string,
+): ResultRange[] | undefined {
+  if (from === to) return [...ranges];
+  const map = createLineMap(from, to);
+  if (map === undefined) return undefined;
+  const moved: ResultRange[] = [];
+  for (const range of ranges) {
+    const next = rebaseOrRelocateRange(range, map);
+    if (next === undefined) return undefined;
+    moved.push(next);
+  }
+  return moved;
+}
+
 /** Say where a range that could not be moved stands now, so the caller can pick a new target. */
 export function describeLostRange(range: ResultRange, map: LineMap | undefined): string {
   const line = range.start.lineNumber;

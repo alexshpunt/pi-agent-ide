@@ -4,6 +4,7 @@ import { searchFuzzy } from "#src/fuzzy-search.ts";
 import { SearchSessionStore } from "#src/search-session.ts";
 import { createTextResolver } from "#src/resolvers.ts";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
+import { TextSelectionAnchor } from "pi-agent-text-editor/api/text-selection-anchor";
 
 test("fuzzy alternatives collect names and verify exact matches on their original owner", async () => {
   const { environment, calls } = fixture();
@@ -144,12 +145,13 @@ test("SEARCH selections retain their owner for snapshots and stale checks", asyn
       cwd: context.cwd,
     }),
   ).toMatchObject({ kind: "resolved" });
+  // The caller reads the owner's changed text; the numbered match is no longer there.
   setText("external\n");
   expect(
     await store.anchorResolver().tryResolve(anchor, {
       source: "memory://owner/work/note.txt",
-      content: "café needle\n",
-      lines: ["café needle"],
+      content: "external\n",
+      lines: ["external"],
       cwd: context.cwd,
     }),
   ).toMatchObject({ kind: "rejected" });
@@ -165,13 +167,16 @@ test("a complete SEARCH selection refreshes through its original owner", async (
   const result = await resolver.format(attempt.payload, context);
   const id = (result.details as { sessionId: string }).sessionId;
   setText("prefix café needle\n");
-  expect(
-    await store.anchorResolver().tryResolve(`SEARCH#${id}:all:match`, {
-      source: "memory://owner/work/note.txt",
-      content: "café needle\n",
-      lines: ["café needle"],
-      cwd: context.cwd,
-    }),
-  ).toMatchObject({ kind: "resolved" });
+  const resolved = await store.anchorResolver().tryResolve(`SEARCH#${id}:all:match`, {
+    source: "memory://owner/work/note.txt",
+    content: "prefix café needle\n",
+    lines: ["prefix café needle"],
+    cwd: context.cwd,
+  });
+  expect(resolved).toMatchObject({ kind: "resolved" });
   expect(calls.length).toBeGreaterThan(1);
+  if (resolved.kind !== "resolved" || !(resolved.anchor instanceof TextSelectionAnchor))
+    throw new Error("Expected a selection anchor");
+  // The match is found again in the changed text, after "prefix café ".
+  expect(resolved.anchor.ranges).toMatchObject([{ start: { lineNumber: 1, column: 12 } }]);
 });

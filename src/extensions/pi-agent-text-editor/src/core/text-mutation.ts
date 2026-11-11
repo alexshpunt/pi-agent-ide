@@ -815,7 +815,12 @@ function mergeTargets(left: readonly TextTarget[], right: readonly TextTarget[])
       target.expectedContent !== undefined &&
       previous.expectedContent !== target.expectedContent
     )
-      throw new Error("Selections refer to different source revisions. Read the source again.");
+      // Two references were resolved moments apart while another session wrote the file. Like
+      // any changed source, the edit runs again and resolves both on the current text.
+      throw Object.assign(
+        new Error("Selections refer to different source revisions. Read the source again."),
+        { code: SOURCE_CHANGED },
+      );
     const ranges = [...(previous.ranges ?? []), ...(target.ranges ?? [])];
     merged.set(target.source, {
       source: target.source,

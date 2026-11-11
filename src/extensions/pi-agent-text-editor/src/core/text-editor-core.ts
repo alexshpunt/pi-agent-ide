@@ -1213,7 +1213,9 @@ async function inspectTextResource(
         const selected = resultTargets.resolve(source, request.cwd);
         if (!selected.complete)
           return { kind: "failed", reason: "Incomplete result selections cannot authorize edits." };
-        await resultTargets.verify(selected, request.signal);
+        // Like the edit itself: selections of a local file follow its changes, and the check under
+        // the file lock decides; only sources the store cannot follow are verified here.
+        await resultTargets.verifyUnfollowed(selected, request.signal);
         for (const target of selected.targets) {
           const inspected = await inspectTextResource(
             { ...request, source: target.source },
