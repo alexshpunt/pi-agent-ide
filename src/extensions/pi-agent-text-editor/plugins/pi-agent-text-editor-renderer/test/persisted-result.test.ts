@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { initTheme, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { MutationPanel } from "#src/mutation-panel.ts";
@@ -6,6 +6,17 @@ import { FileMutationResult } from "pi-agent-text-editor/api/mutation-result";
 import { createTextDocument } from "pi-agent-text";
 import { compactMutationDetails } from "#src/persisted-result.ts";
 import { resolveMutationResultResources } from "#src/mutation-result.ts";
+
+// The diff gives up after a wall-clock budget, so a loaded machine can build the live and the
+// restored model with different outcomes. These tests compare the two, not the budget: freeze
+// the clocks the diff reads so both models are always computed to completion.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date", "performance"] });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function result(lines: number) {
   const before = Array.from(
