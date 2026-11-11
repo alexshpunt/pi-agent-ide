@@ -15,7 +15,8 @@ import {
 import { LspManager } from "./manager.ts";
 import type { LspClient } from "./client.ts";
 import { requestReferences, type LspLocation } from "./navigation.ts";
-import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
+import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./corrected-names.ts";
+import type { LspPosition } from "./types.ts";
 import {
   clangCoverage,
   coverageComplete,
@@ -178,6 +179,27 @@ async function searchSymbolsOnce(
   // since the scope was resolved, before or while the server answered; the scope follows its
   // region through unchanged lines, and the call fails when the region is gone.
   const scopeIn = new Map<string, ResolvedResultTargets>();
+  // One line diff per file and served text: a pass maps many ranges of the same two texts.
+  const diffs = new Map<
+    string,
+    { served: string; toSnapshot?: LinePositionMap; toServed?: LinePositionMap }
+  >();
+  const lineDiff = (
+    source: string,
+    served: string,
+    snapshot: string,
+    direction: "toSnapshot" | "toServed",
+  ): LinePositionMap => {
+    let entry = diffs.get(source);
+    if (entry === undefined || entry.served !== served) {
+      entry = { served };
+      diffs.set(source, entry);
+    }
+    return (entry[direction] ??=
+      direction === "toSnapshot"
+        ? LinePositionMap.between(served, snapshot)
+        : LinePositionMap.between(snapshot, served));
+  };
   // A server answers for the text its client synced. Another Pi process may have written the
   // file since; ranges then move with their unchanged lines to the file text read here.
   const toMatch = async (
@@ -208,7 +230,7 @@ async function searchSymbolsOnce(
     const range =
       served === undefined || served === document.content
         ? location.range
-        : LinePositionMap.between(served, document.content).mapRange(location.range);
+        : lineDiff(source, served, document.content, "toSnapshot").mapRange(location.range);
     if (range === undefined) throw sourceChanged("LSP range does not match its source snapshot.");
     const { start, end } = range;
     const positions = [start, end];
@@ -240,6 +262,36 @@ async function searchSymbolsOnce(
       matchedText: document.content.slice(from, to),
       lineText: first.content,
     };
+  };
+  /**
+   * The declaration's position in the text the server holds now. Our own reads keep the server in
+   * step with the file, so a position of the text a declaration was read from can name another
+   * line in the server's text after another session wrote the file; the server then reports no
+   * references there. The position follows its unchanged line into the served text instead, and
+   * the call runs again when that line is gone.
+   */
+  const servedPosition = (
+    client: { documentContent(uri: string): string | undefined },
+    uri: string,
+    declaration: SearchSelectionMatch,
+  ): LspPosition => {
+    const start = { line: declaration.lineNumber - 1, character: declaration.startColumn };
+    const served = client.documentContent(uri);
+    const snapshot = contents.get(declaration.source)?.document.content;
+    if (served === undefined || snapshot === undefined || served === snapshot) return start;
+    const range = {
+      start,
+      end: {
+        line: (declaration.endLineNumber ?? declaration.lineNumber) - 1,
+        character: declaration.endColumn,
+      },
+    };
+    const mapped = lineDiff(declaration.source, served, snapshot, "toServed").mapRange(range);
+    if (mapped === undefined || textInRange(served, mapped) !== declaration.matchedText)
+      throw sourceChanged(
+        `The line of declaration "${declaration.matchedText}" changed before the server was asked for its references.`,
+      );
+    return mapped.start;
   };
   const included = (hit: SearchSelectionMatch) =>
     withinScope(hit.source, cwd, scope) &&
@@ -347,12 +399,17 @@ async function searchSymbolsOnce(
           },
         };
         const reach = await reachOf(opened.client, opened.languageId, symbol.name);
+        const servedBefore = opened.client.documentContent(opened.uri);
+        const requestPosition = servedPosition(opened.client, opened.uri, declared);
         const references = await requestReferences(
           opened.client,
           opened.uri,
-          location.range.start,
+          requestPosition,
           signal,
         );
+        // An answer for a text the server replaced while answering fits neither text.
+        if (opened.client.documentContent(opened.uri) !== servedBefore)
+          throw sourceChanged("The server's text changed while it answered a references request.");
         signal?.throwIfAborted();
         const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
         const reported: { location: LspLocation; reference: SearchSelectionMatch }[] = [];

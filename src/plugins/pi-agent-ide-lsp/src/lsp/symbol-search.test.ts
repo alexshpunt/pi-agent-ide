@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
@@ -363,6 +363,134 @@ type LspRange = {
   start: { line: number; character: number };
   end: { line: number; character: number };
 };
+
+test("asks for references at the position of the text the server holds, not of the text the declaration was read from", async () => {
+  const { cwd, manager, client, sendRequest } = await fixture();
+  const source = path.join(cwd, "a.ts");
+  const uri = pathToFileURL(source).href;
+  const original = '"😀"; same();\r\nsame();\r\n';
+  // Our own reads publish the file as it is now, so the server's text runs ahead of the text a
+  // declaration was read from while another session keeps writing.
+  let served = original;
+  vi.spyOn(client, "documentContent").mockImplementation((target) =>
+    target === uri ? served : undefined,
+  );
+  vi.mocked(manager.openFile).mockImplementation(async (file) => {
+    const target = pathToFileURL(path.resolve(cwd, file)).href;
+    if (target === uri) served = await readFile(source, "utf8");
+    return { client, uri: target, languageId: "cpp" };
+  });
+  vi.spyOn(manager, "filesContaining").mockResolvedValue([source]);
+  const name = {
+    start: { line: 0, character: 6 },
+    end: { line: 0, character: 10 },
+  };
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const input = parameters as { textDocument?: { uri: string }; position?: { line: number } };
+    if (method === "textDocument/documentSymbol" && input.textDocument?.uri === uri) {
+      // Another session inserts a line above the declaration after it was read; the coverage
+      // check's diagnostics read then publishes the new text to the server.
+      await writeFile(source, `// peer\r\n${original}`);
+      return [
+        {
+          name: "same",
+          kind: 12,
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 13 } },
+          selectionRange: name,
+        },
+      ];
+    }
+    if (method === "textDocument/diagnostic") return { kind: "full", items: [] };
+    if (method === "textDocument/references" && input.textDocument?.uri === uri)
+      // The server answers for its own text: a position of the older text names another line.
+      return input.position?.line === 1
+        ? shiftedLocations(await next?.(method, parameters), source)
+        : [];
+    return next?.(method, parameters);
+  });
+
+  const result = await searchSymbols(
+    "same",
+    cwd,
+    100,
+    undefined,
+    { path: "a.ts", navigation: "references" },
+    manager,
+  );
+
+  expect(result.hits.map((hit) => [hit.role, path.basename(hit.source), hit.lineNumber])).toEqual([
+    ["definition", "a.ts", 2],
+    ["reference", "a.ts", 3],
+    ["reference", "b.ts", 1],
+  ]);
+  expect(result.complete).toBe(true);
+});
+
+test("lists every reference when another session's write reaches the server while it answers", async () => {
+  const { cwd, manager, client, sendRequest } = await fixture();
+  const source = path.join(cwd, "a.ts");
+  const uri = pathToFileURL(source).href;
+  const original = '"😀"; same();\r\nsame();\r\n';
+  const advanced = `// peer\r\n${original}`;
+  let served = original;
+  vi.spyOn(client, "documentContent").mockImplementation((target) =>
+    target === uri ? served : undefined,
+  );
+  vi.mocked(manager.openFile).mockImplementation(async (file) => {
+    const target = pathToFileURL(path.resolve(cwd, file)).href;
+    if (target === uri) served = await readFile(source, "utf8");
+    return { client, uri: target, languageId: "typescript" };
+  });
+  const next = sendRequest.getMockImplementation();
+  // Every answer names the text the server holds: the file's own line moves down by one once
+  // another session's write reaches it.
+  const shift = () => (served === advanced ? 1 : 0);
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const input = parameters as { textDocument?: { uri: string }; position?: { line: number } };
+    if (input.textDocument?.uri !== uri && method !== "workspace/symbol")
+      return next?.(method, parameters);
+    if (method === "textDocument/documentSymbol")
+      return shift() === 0
+        ? []
+        : [
+            {
+              name: "same",
+              kind: 12,
+              range: { start: { line: 1, character: 0 }, end: { line: 1, character: 13 } },
+              selectionRange: {
+                start: { line: 1, character: 6 },
+                end: { line: 1, character: 10 },
+              },
+            },
+          ];
+    if (method === "textDocument/references") {
+      // The write and our read of it land between the request and its answer.
+      await writeFile(source, advanced);
+      served = advanced;
+      return input.position?.line === 1
+        ? shiftedLocations(await next?.(method, parameters), source)
+        : [];
+    }
+    const answer: unknown = await next?.(method, parameters);
+    return shift() === 0 ? answer : shiftedLocations(answer, source);
+  });
+
+  const result = await searchSymbols(
+    "same",
+    cwd,
+    100,
+    undefined,
+    { path: "a.ts", navigation: "references" },
+    manager,
+  );
+
+  expect(result.hits.map((hit) => [hit.role, path.basename(hit.source), hit.lineNumber])).toEqual([
+    ["definition", "a.ts", 2],
+    ["reference", "a.ts", 3],
+    ["reference", "b.ts", 1],
+  ]);
+});
 
 test("rejects a scope whose own text changed and cancelled searches before creating targets", async () => {
   const { cwd, manager, resultScope } = await fixture();
