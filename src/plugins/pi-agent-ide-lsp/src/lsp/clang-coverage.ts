@@ -1,7 +1,6 @@
 import { requiredValue } from "pi-agent-invariant";
 import type { LspClient } from "./client.ts";
 import type { DocumentErrorsProvider } from "./corrected-names.ts";
-import type { LspManager } from "./manager.ts";
 
 /** Languages clangd serves. */
 export const CLANG_LANGUAGES: ReadonlySet<string> = new Set([
@@ -11,12 +10,31 @@ export const CLANG_LANGUAGES: ReadonlySet<string> = new Set([
   "objective-cpp",
 ]);
 
+/** The parts of a language server client that coverage checks use. */
+export type ReachClient = Pick<LspClient, "serverId" | "rootUri" | "toUri" | "documentContent">;
+
+/** The parts of the language server manager that coverage checks use. */
+export interface ReachManager {
+  filesContaining(
+    client: ReachClient,
+    word: string,
+    languageIds: ReadonlySet<string>,
+    signal?: AbortSignal,
+  ): Promise<readonly string[] | undefined>;
+  openFile(
+    filePath: string,
+    cwd: string,
+    capability: "symbols",
+    signal?: AbortSignal,
+  ): Promise<{ readonly client: ReachClient } | null>;
+}
+
 /** Most files a query opens to read their references from a fresh parse. */
 export const MAX_OPENED_FILES = 32;
 
 /** Files a C/C++ query opened before asking for references. */
 export interface ClangReach {
-  readonly client: LspClient;
+  readonly client: ReachClient;
   /** URIs of the opened files and of files that were already open, with the name in their text. */
   readonly opened: readonly string[];
   /** Files with the name in their text that were not opened, because of the limit. */
@@ -46,7 +64,7 @@ function searchedWord(name: string): string | undefined {
 
 /** Opens the workspace files that write a name; see {@link createClangReach}. */
 export type ClangReachProvider = (
-  client: LspClient,
+  client: ReachClient,
   languageId: string,
   name: string,
 ) => Promise<ClangReach | undefined>;
@@ -64,7 +82,7 @@ export type ClangReachProvider = (
  * are counted. Each name is looked up once. The provider returns undefined for other languages.
  */
 export function createClangReach(input: {
-  readonly manager: LspManager;
+  readonly manager: ReachManager;
   readonly cwd: string;
   readonly errorsOf: DocumentErrorsProvider;
   /** Files the operation may open; others are ignored. */
@@ -74,7 +92,7 @@ export function createClangReach(input: {
   const { manager, cwd, errorsOf, signal } = input;
   const reached = new Map<string, Promise<ClangReach>>();
   let newlyOpened = 0;
-  const reach = async (client: LspClient, word: string): Promise<ClangReach> => {
+  const reach = async (client: ReachClient, word: string): Promise<ClangReach> => {
     const found = await manager.filesContaining(client, word, CLANG_LANGUAGES, signal);
     if (found === undefined) return { client, opened: [], unopened: 0, unlisted: true };
     const opened: string[] = [];
