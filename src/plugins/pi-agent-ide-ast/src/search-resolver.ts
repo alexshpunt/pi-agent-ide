@@ -135,6 +135,24 @@ export function createAstSearchResolver(
       // Bytes ast-grep parsed, by file, so results and captures map onto the same text even
       // when another process writes the file meanwhile.
       let snapshots = new Map<string, Buffer>();
+      // The same bytes as text, converted once per file: every anchor of this search registers
+      // from the text its matches were found in, with no second read another writer could change.
+      let snapshotTexts = new Map<string, string>();
+      const searchedText = (matches: readonly SearchSelectionMatch[]) => {
+        const contents = new Map<string, string>();
+        for (const match of matches) {
+          if (contents.has(match.source)) continue;
+          let text = snapshotTexts.get(match.source);
+          if (text === undefined) {
+            const bytes = snapshots.get(match.source);
+            if (bytes === undefined) continue;
+            text = bytes.toString("utf8");
+            snapshotTexts.set(match.source, text);
+          }
+          contents.set(match.source, text);
+        }
+        return contents;
+      };
       // A scope is searched as the text it holds: its ranges are positions in that text, and a
       // file other sessions keep writing has moved on by the time ast-grep would read it.
       const search = async (
@@ -161,6 +179,7 @@ export function createAstSearchResolver(
       let scope = context.scope;
       const collect = async (signal?: AbortSignal, again = true) => {
         snapshots = new Map();
+        snapshotTexts = new Map();
         if (again && scope !== undefined) scope = await currentScope(context, signal);
         const found: AstGrepMatch[] = [];
         if (scope === undefined && request.paths !== undefined) {
@@ -235,22 +254,22 @@ export function createAstSearchResolver(
           matches: kept.map((item) => item.selection),
           complete: (scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
         });
-        // The text the matches were found in, so a refresh needs no second read that another
-        // writer could change in between. It is used once and not retained.
-        const contents = new Map<string, string>();
-        for (const { selection } of kept) {
-          const bytes = snapshots.get(selection.source);
-          if (bytes !== undefined && !contents.has(selection.source))
-            contents.set(selection.source, bytes.toString("utf8"));
-        }
-        return { ...result, contents };
+        // The text the matches were found in, so registering their anchors and a later refresh
+        // need no second read that another writer could change in between. It is used once and
+        // not retained.
+        return { ...result, contents: searchedText(result.matches) };
       };
       // Anchors register only while the file still has the searched text; another process may
       // write it in between, so search again, with the scope resolved against the new text.
       let attempts = 0;
       const register = async (selection: Parameters<typeof registerSelection>[0]) => {
         try {
-          return await registerSelection(selection, context);
+          // Every selection of this search, matches and captures alike, registers from the text
+          // ast-grep parsed. A second read here would see what another writer did meanwhile.
+          return await registerSelection(
+            { contents: searchedText(selection.matches), ...selection },
+            context,
+          );
         } catch (error) {
           if (error instanceof Error && error.name === "SearchSnapshotChangedError")
             throw sourceChanged(error.message);
@@ -622,7 +641,10 @@ function sourceChanged(message: string): Error {
   return Object.assign(new Error(message), { code: "SOURCE_CHANGED" });
 }
 
-/** Another Pi process may write a file between ast-grep's parse and this snapshot. */
+/**
+ * Another Pi process may write a file between ast-grep's parse and this snapshot. Retries are
+ * bounded; a file that keeps changing fails with what changed and how many runs it took.
+ */
 async function collectWhileSourceChanges<T>(
   collect: () => Promise<T>,
   signal: AbortSignal | undefined,
@@ -633,7 +655,11 @@ async function collectWhileSourceChanges<T>(
     } catch (error) {
       const delay = SOURCE_CHANGE_DELAYS_MS[attempt];
       const changed = (error as { code?: unknown } | null)?.code === "SOURCE_CHANGED";
-      if (!changed || delay === undefined || signal?.aborted) throw error;
+      if (!changed || signal?.aborted) throw error;
+      if (delay === undefined)
+        throw sourceChanged(
+          `${error instanceof Error ? error.message : String(error)} The structural search ran ${String(attempt + 1)} times and another process wrote its files during every run. Repeat it when those writes stop.`,
+        );
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

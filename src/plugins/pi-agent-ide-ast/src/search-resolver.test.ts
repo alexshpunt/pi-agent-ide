@@ -3,7 +3,10 @@ import path from "node:path";
 import { expect, onTestFinished, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
-import { SearchSessionStore } from "pi-agent-search-text/search-session";
+import {
+  SearchSessionStore,
+  SearchSnapshotChangedError,
+} from "pi-agent-search-text/search-session";
 import { createAstSearchResolver } from "./search-resolver.ts";
 
 test("AST matches and captures stay inside one exact scope with their source authority", async () => {
@@ -294,4 +297,97 @@ test("AST matches map to UTF-16 columns and lines, and a refresh returns the tex
   if (refresh === undefined) throw new Error("No refresh was registered");
   const refreshed = await refresh();
   expect(refreshed.contents?.get(source)).toBe(content);
+});
+
+test("AST anchors register from the text the search read while another session writes the file", async () => {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "writer-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.ts");
+  const content = "const a = 1;\nconst b = 2;\n";
+  await writeFile(source, content);
+  const targets = new ResultTargetStore();
+  const sessions = new SearchSessionStore(undefined, targets, (file) => readFile(file, "utf8"));
+  let writes = 0;
+  const resolver = createAstSearchResolver(async (selection, context) => {
+    // Another session inserts a line at the top of the file before every registration; the
+    // matched lines keep their text and only move down.
+    writes += 1;
+    await writeFile(source, `${"// peer\n".repeat(writes)}${content}`);
+    return sessions.register(
+      selection.request.query,
+      selection.matches,
+      selection.complete,
+      context.cwd,
+      context.signal,
+      selection.request,
+      selection.refresh,
+      undefined,
+      context.environment,
+      selection.contents,
+    );
+  });
+  const result = await resolver.tryResolve(
+    {
+      query: "const $NAME = $VALUE;",
+      path: "note.ts",
+      options: { ast: { pattern: "const $NAME = $VALUE;" } },
+    },
+    { cwd },
+  );
+  if (result.kind !== "resolved") throw new Error("AST discovery failed");
+  const data = resolver.toScriptData?.(result.payload, {}) as {
+    matches: { matchedText: string; target?: string; captures?: Record<string, unknown> }[];
+  };
+  expect(data.matches.map((match) => match.matchedText)).toEqual(["const a = 1;", "const b = 2;"]);
+  // Both the match and its captures registered, through writes between every registration.
+  expect(writes).toBeGreaterThan(2);
+  // The anchors describe the file as it is now, with the matched lines where the writer put them.
+  const current = await readFile(source, "utf8");
+  const anchored = targets.resolve(data.matches[0]?.target, cwd);
+  expect(anchored.targets[0]?.expectedContent).toBe(current);
+  expect(anchored.targets[0]?.ranges).toEqual([
+    {
+      start: { lineNumber: writes + 1, column: 0 },
+      end: { lineNumber: writes + 1, column: "const a = 1;".length },
+    },
+  ]);
+  await targets.verify(anchored);
+  const named = targets.resolve(data.matches[0]?.captures?.NAME, cwd);
+  expect(named.targets[0]?.ranges).toEqual([
+    {
+      start: { lineNumber: writes + 1, column: 6 },
+      end: { lineNumber: writes + 1, column: 7 },
+    },
+  ]);
+  await targets.verify(named);
+});
+
+test("AST search fails with a bounded, named reason when its file keeps changing", async () => {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "unregistrable-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.ts");
+  await writeFile(source, "const a = 1;\n");
+  let attempts = 0;
+  const resolver = createAstSearchResolver(() => {
+    attempts += 1;
+    // A file that changes again during every single search, so no snapshot can be registered.
+    return Promise.reject(new SearchSnapshotChangedError(source));
+  });
+  await expect(
+    resolver.tryResolve(
+      {
+        query: "const $NAME = $VALUE;",
+        path: "note.ts",
+        options: { ast: { pattern: "const $NAME = $VALUE;" } },
+      },
+      { cwd },
+    ),
+  ).rejects.toThrow(
+    `Search result in ${source} changed before its anchors were registered. The structural search ran 5 times and another process wrote its files during every run. Repeat it when those writes stop.`,
+  );
+  expect(attempts).toBe(5);
 });
