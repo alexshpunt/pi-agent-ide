@@ -154,6 +154,11 @@ export interface SearchSelectionSnapshot {
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
   readonly notices?: readonly string[];
+  /**
+   * Text of each source as the backend searched it. A refresh that returns it is checked against
+   * this text instead of reading the file again, which another writer may change in between.
+   */
+  readonly contents?: ReadonlyMap<string, string>;
 }
 /** Keep the original backend when refreshing an all-selection or observing an edit. */
 export interface SearchSelectionRegistration extends SearchSelectionSnapshot {
@@ -228,7 +233,7 @@ export interface SearchToolDetails {
 
 export { searchSchema } from "#src/api/search-parameters.ts";
 export { renderSearchMatches } from "./presentation.ts";
-export { containsSearchMatch, currentScope } from "./search-scope.ts";
+export { containsSearchMatch, currentScope, SearchScopeChangedError } from "./search-scope.ts";
 export { splitGlobList } from "./glob-list.ts";
 export {
   fuzzyLimits,

@@ -160,9 +160,25 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
 
 /** Indicates that search output is still displayable, but no stable anchors can be registered. */
 export class SearchSnapshotChangedError extends Error {
-  public constructor(source: string) {
+  public constructor(readonly source: string) {
     super(`Search result in ${source} changed before its anchors were registered.`);
     this.name = "SearchSnapshotChangedError";
+  }
+}
+
+/**
+ * A repeated search for an all-anchor could not produce current matches. The message names the
+ * cause and the next step. `SOURCE_CHANGED` marks a file another writer changed meanwhile: an
+ * edit retries it on the current text.
+ */
+export class SearchRefreshError extends Error {
+  public constructor(
+    message: string,
+    readonly code: "SOURCE_CHANGED" | "SCOPE_CHANGED" | "REFRESH_FAILED",
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "SearchRefreshError";
   }
 }
 
@@ -388,7 +404,7 @@ export class SearchSessionStore {
   public resourceResolver(): TextAnchorResourceResolver {
     return {
       id: "search-targets",
-      tryResolve: (value, context) => this.#resolveResources(value, context.cwd),
+      tryResolve: (value, context) => this.#resolveResources(value, context.cwd, context.signal),
     };
   }
 
@@ -410,7 +426,7 @@ export class SearchSessionStore {
         snapshot = session.refreshedComplete;
       } else if (session.refreshedComplete !== undefined) {
         ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
-        if (!snapshot.complete) return missingCompleteAnchor();
+        if (!snapshot.complete) return missingCompleteAnchor(true);
       }
     }
     const firstMatch = selectMatches(snapshot, parsed.selector, "match").find(
@@ -447,7 +463,7 @@ export class SearchSessionStore {
     const currentDigest = digestContent(current);
     if (parsed.selector === "all" && currentDigest !== snapshot.digestBySource.get(source)) {
       ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
-      if (!snapshot.complete) return missingCompleteAnchor();
+      if (!snapshot.complete) return missingCompleteAnchor(true);
     }
     const contentOf = (candidate: string) =>
       refreshedContents === undefined
@@ -500,7 +516,7 @@ export class SearchSessionStore {
         snapshot = session.refreshedComplete;
       } else if (session.refreshedComplete !== undefined) {
         ({ snapshot } = await this.#refresh(session, signal));
-        if (!snapshot.complete) return missingCompleteAnchor();
+        if (!snapshot.complete) return missingCompleteAnchor(true);
       }
       const sources = new Set(
         selectMatches(snapshot, parsed.selector, "match").map((match) => match.source),
@@ -514,7 +530,7 @@ export class SearchSessionStore {
           const refreshed = await this.#refresh(session, signal);
           snapshot = refreshed.snapshot;
           contents = new Map(refreshed.contents);
-          if (!snapshot.complete) return missingCompleteAnchor();
+          if (!snapshot.complete) return missingCompleteAnchor(true);
           break;
         }
         contents.set(source, current);
@@ -598,23 +614,37 @@ export class SearchSessionStore {
     session: StoredSearchSession,
     signal?: AbortSignal,
   ): Promise<CapturedSearchSnapshot> {
-    const result =
-      session.refresh === undefined
-        ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
-        : await session.refresh(signal);
-    const matches = result.matches
-      .map((match) => ({ ...match, source: canonicalSource(match.source) }))
-      .sort(compareMatches);
-    const contents = await snapshotContents(
-      matches,
-      signal,
-      session.snapshotByteBudget,
-      session.environment,
-      session.read,
-    );
+    let matches: TextSearchMatch[];
+    let complete: boolean;
+    let contents: ReadonlyMap<string, string>;
+    try {
+      const result =
+        session.refresh === undefined
+          ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
+          : await session.refresh(signal);
+      complete = result.complete;
+      matches = result.matches
+        .map((match) => ({ ...match, source: canonicalSource(match.source) }))
+        .sort(compareMatches);
+      const searchedBy = (result as { readonly contents?: ReadonlyMap<string, string> }).contents;
+      const searched =
+        searchedBy === undefined
+          ? undefined
+          : new Map([...searchedBy].map(([source, text]) => [canonicalSource(source), text]));
+      contents = await snapshotContents(
+        matches,
+        signal,
+        session.snapshotByteBudget,
+        session.environment,
+        session.read,
+        searched,
+      );
+    } catch (error) {
+      throw refreshFailure(error, signal);
+    }
     const snapshot: SearchSnapshot = {
       matches,
-      complete: result.complete,
+      complete,
       digestBySource: digestContents(contents),
     };
     this.#sessions.set(session.id, { ...session, refreshedComplete: snapshot });
@@ -796,13 +826,18 @@ async function snapshotContents(
   byteBudget?: number,
   environment?: SearchEnvironment,
   read?: SnapshotReader,
+  searched?: ReadonlyMap<string, string>,
 ): Promise<ReadonlyMap<string, string>> {
   const sources = [...new Set(matches.map((match) => match.source))];
   if (byteBudget !== undefined) {
     const contents = new Map<string, string>();
     let remaining = byteBudget;
     for (const source of sources) {
-      const content = await readBoundedSnapshot(source, remaining, signal, environment, read);
+      const known = searched?.get(source);
+      if (known !== undefined && Buffer.byteLength(known) > remaining)
+        throw new Error("Candidate snapshot byte budget reached.");
+      const content =
+        known ?? (await readBoundedSnapshot(source, remaining, signal, environment, read));
       remaining -= Buffer.byteLength(content);
       validateSnapshot(source, content, matches);
       contents.set(source, content);
@@ -811,7 +846,8 @@ async function snapshotContents(
   }
   const snapshots = await Promise.allSettled(
     sources.map(async (source) => {
-      const content = await readOwnedText(source, signal, environment, read);
+      const content =
+        searched?.get(source) ?? (await readOwnedText(source, signal, environment, read));
       validateSnapshot(source, content, matches);
       return [source, content] as const;
     }),
@@ -918,17 +954,41 @@ function staleAnchor(
   };
 }
 
-function missingCompleteAnchor(): Extract<
-  TextAnchorResolutionAttempt,
-  { readonly kind: "rejected" }
-> {
+function missingCompleteAnchor(
+  refreshed = false,
+): Extract<TextAnchorResolutionAttempt, { readonly kind: "rejected" }> {
   return {
     kind: "rejected",
     rejection: {
       code: "missing",
-      reason: "search did not register an all anchor because its result was limited",
+      reason: refreshed
+        ? "the file changed and the repeated search found more matches than its limit, so the all anchor no longer selects every match; search again with a higher limit or a narrower path"
+        : "search did not register an all anchor because its result was limited; search again with a higher limit or a narrower path, or pass its numbered anchors",
     },
   };
+}
+
+/**
+ * Names why a repeated search failed and what to do next. Cancellation stays as it is; a file
+ * that changed while the search ran again is a source change, which an edit retries.
+ */
+function refreshFailure(error: unknown, signal: AbortSignal | undefined): unknown {
+  if (signal?.aborted === true || error instanceof SearchRefreshError) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  const code = (error as { code?: unknown } | null)?.code;
+  if (error instanceof SearchSnapshotChangedError || code === "SOURCE_CHANGED")
+    return new SearchRefreshError(
+      `${error instanceof SearchSnapshotChangedError ? error.source : "A searched file"} changed while its search ran again, because another process is writing it. Repeat the search and use its new anchors.`,
+      "SOURCE_CHANGED",
+      { cause: error },
+    );
+  if (code === "SCOPE_CHANGED")
+    return new SearchRefreshError(message, "SCOPE_CHANGED", { cause: error });
+  return new SearchRefreshError(
+    `The search could not run again: ${message}. Repeat the search; if it fails the same way, report it as a tool error.`,
+    "REFRESH_FAILED",
+    { cause: error },
+  );
 }
 
 function commonSourceDirectory(sources: readonly string[]): string {

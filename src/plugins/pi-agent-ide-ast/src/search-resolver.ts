@@ -206,11 +206,20 @@ export function createAstSearchResolver(
         const kept = candidates.slice(0, request.limit ?? 100);
         // The search session keeps this result and its refresh closure for as long as its anchors
         // live. A copy keeps only the matched text, not each file the text was cut from.
-        return structuredClone({
+        const result = structuredClone({
           raw: kept.map((item) => item.raw),
           matches: kept.map((item) => item.selection),
           complete: (scope?.complete ?? true) && candidates.length <= (request.limit ?? 100),
         });
+        // The text the matches were found in, so a refresh needs no second read that another
+        // writer could change in between. It is used once and not retained.
+        const contents = new Map<string, string>();
+        for (const { selection } of kept) {
+          const bytes = snapshots.get(selection.source);
+          if (bytes !== undefined && !contents.has(selection.source))
+            contents.set(selection.source, bytes.toString("utf8"));
+        }
+        return { ...result, contents };
       };
       // Anchors register only while the file still has the searched text; another process may
       // write it in between, so search again, with the scope resolved against the new text.
@@ -377,12 +386,17 @@ export function createAstSearchResolver(
   };
 }
 
+/**
+ * Maps ast-grep byte ranges onto lines and UTF-16 columns of the bytes it searched. A file this
+ * reads itself is added to `snapshots`, so one search reads each file once and every match of
+ * it describes the same text.
+ */
 async function selectionMatches(
   matches: readonly AstGrepMatch[],
   cwd: string,
   signal?: AbortSignal,
   environment?: SearchEnvironment,
-  snapshots?: ReadonlyMap<string, Buffer>,
+  snapshots?: Map<string, Buffer>,
 ): Promise<SearchSelectionMatch[]> {
   const sources = new Map<string, Buffer>();
   for (const match of matches) {
@@ -393,16 +407,18 @@ async function selectionMatches(
       sources.set(source, snapshot);
       continue;
     }
+    let bytes: Buffer;
     if (environment !== undefined) {
-      sources.set(source, Buffer.from(await environment.readText(source, signal)));
+      bytes = Buffer.from(await environment.readText(source, signal));
     } else {
       const before = await stat(source);
-      const bytes = await readFile(source, { signal });
+      bytes = await readFile(source, { signal });
       const after = await stat(source);
       if (before.mtimeMs !== after.mtimeMs || before.size !== after.size)
         throw sourceChanged("AST source changed during search. Run the structural query again.");
-      sources.set(source, bytes);
     }
+    sources.set(source, bytes);
+    snapshots?.set(source, bytes);
   }
   return matches.map((match) => {
     const source = resolveSource(cwd, match.file, environment);
@@ -418,19 +434,51 @@ async function selectionMatches(
       bytes.subarray(start, end).toString("utf8") !== match.text
     )
       throw sourceChanged("AST range does not match its source snapshot. Search again.");
-    const prefix = bytes.subarray(0, start).toString("utf8");
-    const throughEnd = bytes.subarray(0, end).toString("utf8");
-    const lineNumber = prefix.split("\n").length;
+    const starts = lineStarts(bytes);
+    const startLine = lineIndexAt(starts, start);
+    const endLine = lineIndexAt(starts, end);
+    const lineStart = requiredValue(starts[startLine]);
+    const nextLine = starts[startLine + 1];
     return {
       source,
-      lineNumber,
-      endLineNumber: throughEnd.split("\n").length,
-      startColumn: prefix.length - prefix.lastIndexOf("\n") - 1,
-      endColumn: throughEnd.length - throughEnd.lastIndexOf("\n") - 1,
+      lineNumber: startLine + 1,
+      endLineNumber: endLine + 1,
+      startColumn: bytes.subarray(lineStart, start).toString("utf8").length,
+      endColumn: bytes.subarray(requiredValue(starts[endLine]), end).toString("utf8").length,
       matchedText: match.text,
-      lineText: bytes.toString("utf8").split("\n")[lineNumber - 1]?.replace(/\r$/u, "") ?? "",
+      lineText: bytes
+        .subarray(lineStart, nextLine === undefined ? bytes.length : nextLine - 1)
+        .toString("utf8")
+        .replace(/\r$/u, ""),
     };
   });
+}
+
+/** Byte offsets where each line of a searched file starts, computed once per snapshot. */
+const lineStartsBySnapshot = new WeakMap<Buffer, readonly number[]>();
+
+function lineStarts(bytes: Buffer): readonly number[] {
+  let starts = lineStartsBySnapshot.get(bytes);
+  if (starts === undefined) {
+    const found = [0];
+    for (let index = bytes.indexOf(10); index !== -1; index = bytes.indexOf(10, index + 1))
+      found.push(index + 1);
+    starts = found;
+    lineStartsBySnapshot.set(bytes, starts);
+  }
+  return starts;
+}
+
+/** Zero-based line that contains the byte at `offset`. */
+function lineIndexAt(starts: readonly number[], offset: number): number {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (requiredValue(starts[middle]) <= offset) low = middle;
+    else high = middle - 1;
+  }
+  return low;
 }
 function runAstGrep(
   pattern: string,
