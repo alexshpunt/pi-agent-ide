@@ -190,12 +190,19 @@ export class ResultTargetStore {
     return currentResultTargets(this.resolve(input, cwd, { allowAdjusted: true }), signal);
   }
 
-  /** Reject changed source bytes before a consumer uses a retained selection. */
+  /**
+   * Reject changed source bytes before a consumer uses a retained selection. A local file that
+   * changed keeps its selections: the next use moves them to its new text, like any other write.
+   * Selections of a source without a filesystem stamp cannot follow it and are retired.
+   */
   public async verify(result: ResolvedResultTargets, signal?: AbortSignal): Promise<void> {
     try {
       await verifyResultTargets(result, signal);
     } catch (error) {
-      if (!signal?.aborted) for (const target of result.targets) this.invalidate(target.source);
+      if (!signal?.aborted)
+        for (const target of result.targets)
+          if (fileStamp(target.source, path.parse(target.source).root || ".") === undefined)
+            this.invalidate(target.source);
       throw error;
     }
   }

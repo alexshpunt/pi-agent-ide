@@ -8,6 +8,7 @@ import { LspClient } from "./client.ts";
 import type { LspSharedServers } from "./shared-servers.ts";
 import { SharedStartup, waitWithSignal } from "./abort.ts";
 import { documentUri } from "./document-uri.ts";
+import { sourceChanged } from "./source-changes.ts";
 import type { LspWorkspaceOwner } from "./workspace-owner.ts";
 import { prepareProjectQuery } from "./project.ts";
 import { retainForCurrentOperation } from "./document-leases.ts";
@@ -466,7 +467,7 @@ export class LspManager {
     const before = identity(await stat(source));
     const content = await this.readSourceText(source, signal);
     if (before !== identity(await stat(source)))
-      throw new Error("A rename source changed while reading it. No edits applied.");
+      throw sourceChanged("A rename source changed while reading it. No edits applied.");
     return {
       content,
       version: createHash("sha256").update(before).update("\0").update(content).digest("hex"),
