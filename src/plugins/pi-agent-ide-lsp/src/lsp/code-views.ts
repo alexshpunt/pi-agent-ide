@@ -1,5 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
-import { LinePositionMap } from "./position-map.ts";
+import { followRange, LinePositionMap } from "./position-map.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./source-changes.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,14 +37,8 @@ import {
 
 import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
-import type {
-  LspCallDirection,
-  LspCallHierarchyResult,
-  LspIncomingCall,
-  LspLocation,
-  LspOutgoingCall,
-} from "./navigation.ts";
-import type { LspRange } from "./types.ts";
+import type { LspCallDirection, LspCallHierarchyItem, LspLocation } from "./navigation.ts";
+import type { LspPosition, LspRange } from "./types.ts";
 
 const MAX_GROUPS = 10;
 const MAX_ITEMS_PER_GROUP = 5;
@@ -132,18 +126,36 @@ export async function resolveLspRenameTarget(
     content,
   };
 }
+
+/** A caller or callee where the graph shows it. */
+interface CallSite {
+  readonly name: string;
+  readonly kind: number;
+  readonly uri: string;
+  /** Zero-based line in the reported text of `uri`. */
+  readonly line: number;
+}
+
+/** A declaration's relations, with every position in the reported text of its file. */
 interface SymbolRelations {
+  /** Zero-based line of the declaration's name. */
+  readonly definitionLine: number;
   readonly references: readonly LspLocation[];
-  readonly calls: LspCallHierarchyResult;
+  /** Callers, each at its first call of the symbol. */
+  readonly incoming: readonly CallSite[];
+  readonly outgoing: readonly CallSite[];
+  /** Call directions the server does not implement. */
+  readonly unsupported: readonly LspCallDirection[];
   /** Why C/C++ references and callers can be missing. */
   readonly coverage: ClangCoverage | undefined;
 }
 
-/** Diagnostics and opened files shared by the queries of one graph. */
+/** Diagnostics, opened files and reported texts shared by the queries of one graph. */
 interface RelationContext {
   readonly errorsOf: DocumentErrorsProvider;
   /** Opens the files that write a name; omitted, only files already open are checked. */
   readonly reachOf?: ClangReachProvider;
+  readonly texts: ReportedTexts;
 }
 
 function relationContext(
@@ -158,6 +170,7 @@ function relationContext(
   );
   return {
     errorsOf,
+    texts: new ReportedTexts(manager, signal),
     ...(openFiles && {
       reachOf: createClangReach({
         manager,
@@ -186,32 +199,73 @@ export async function readLspSymbolGraph(
     const document = await openCodeDocument(manager, filePath, cwd, signal);
     const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
     const relations = await queryRelations(
-      manager,
       document,
       symbol,
       relationContext(manager, cwd, true, signal),
       signal,
     );
     const locations = new LocationPresenter(cwd);
-    const graph = await formatSymbolGraph(document, symbol, relations, locations);
-    await assertAnsweredForCurrentText(manager, document, signal);
-    return graph;
+    return formatSymbolGraph(document, symbol, relations, locations);
   }, signal);
 }
 
 /**
- * Graph lines carry the server's line numbers of the current file. When another
- * process edited the file while the server answered, those numbers can name other lines.
+ * The texts one graph reports its lines from. Every open of a file publishes the file as it is on
+ * disk to the server, and a graph opens files again after their symbols were read, so while
+ * another session writes a file, its symbols and each answer can belong to different texts. Each
+ * position follows its unchanged lines into one snapshot of its file, read once per graph.
  */
-async function assertAnsweredForCurrentText(
-  manager: LspManager,
-  document: LspCodeDocument,
-  signal: AbortSignal | undefined,
-): Promise<void> {
-  if (document.servedText === undefined) return;
-  const current = await manager.readSourceText(document.filePath, signal);
-  if (document.servedText !== current)
-    throw sourceChanged("The file changed while the language server answered. Read it again.");
+class ReportedTexts {
+  readonly #manager: LspManager;
+  readonly #signal: AbortSignal | undefined;
+  readonly #snapshots = new Map<string, Promise<string>>();
+  /** Line diffs by source and target text: a graph maps many ranges between the same two texts. */
+  readonly #maps = new Map<string, Map<string, LinePositionMap>>();
+
+  public constructor(manager: LspManager, signal: AbortSignal | undefined) {
+    this.#manager = manager;
+    this.#signal = signal;
+  }
+
+  /** The text of `uri` the graph reports from. */
+  public snapshot(uri: string): Promise<string> {
+    let snapshot = this.#snapshots.get(uri);
+    if (snapshot === undefined) {
+      snapshot = this.#manager.readSourceText(fileOf(uri), this.#signal);
+      this.#snapshots.set(uri, snapshot);
+    }
+    return snapshot;
+  }
+
+  public between(from: string, to: string): LinePositionMap {
+    let targets = this.#maps.get(from);
+    if (targets === undefined) {
+      targets = new Map();
+      this.#maps.set(from, targets);
+    }
+    let map = targets.get(to);
+    if (map === undefined) {
+      map = LinePositionMap.between(from, to);
+      targets.set(to, map);
+    }
+    return map;
+  }
+
+  /**
+   * `range` of `from`, the text a symbol or server answer belongs to, in the snapshot of `uri`.
+   * Without `from` the server answered from the file itself, as for a file it does not hold.
+   */
+  public async report(uri: string, from: string | undefined, range: LspRange): Promise<LspRange> {
+    if (from === undefined) return range;
+    const to = await this.snapshot(uri);
+    if (from === to) return range;
+    const moved = this.between(from, to).mapRange(range);
+    if (moved === undefined)
+      throw sourceChanged(
+        "A line the language server reported changed in the file. Read it again.",
+      );
+    return moved;
+  }
 }
 
 export async function readLspFileGraph(
@@ -235,7 +289,7 @@ export async function readLspFileGraph(
 
     for (const symbol of document.symbols) {
       throwIfAborted(signal);
-      const relations = await queryRelations(manager, document, symbol, context, signal);
+      const relations = await queryRelations(document, symbol, context, signal);
       coverages.push(relations.coverage);
       lines.push("", ...(await formatFileGraphSymbol(document, symbol, relations, locations)));
     }
@@ -245,7 +299,6 @@ export async function readLspFileGraph(
       ...coverageNotes(mergeCoverage(coverages), (source) => locations.display(source)),
     );
 
-    await assertAnsweredForCurrentText(manager, document, signal);
     return lines.join("\n");
   }, signal);
 }
@@ -290,14 +343,12 @@ async function openCodeDocument(
 }
 
 async function queryRelations(
-  manager: LspManager,
   document: LspCodeDocument,
   symbol: LspCodeSymbol,
   context: RelationContext,
   signal: AbortSignal | undefined,
 ): Promise<SymbolRelations> {
-  const position = symbol.selectionRange.start;
-  const { errorsOf } = context;
+  const { errorsOf, texts } = context;
   const reach = CLANG_LANGUAGES.has(document.languageId)
     ? ((await context.reachOf?.(document.client, document.languageId, symbol.name)) ?? {
         client: document.client,
@@ -306,24 +357,28 @@ async function queryRelations(
         unlisted: false,
       })
     : undefined;
+  // The coverage check opens the file again, which publishes it as it is on disk now.
+  const served = document.client.documentContent(document.uri);
+  const position = servedPosition(document, symbol, served, texts);
   const [references, calls] = await Promise.all([
     requestReferences(document.client, document.uri, position, signal),
     requestCallHierarchy(document.client, document.uri, position, signal),
   ]);
   throwIfAborted(signal);
-  const contents = new Map<string, Promise<string>>();
-  const contentOf = (uri: string) => {
-    let content = contents.get(uri);
-    if (content === undefined) {
-      const served = document.client.documentContent(uri);
-      content =
-        served === undefined
-          ? manager.readSourceText(fileOf(uri), signal)
-          : Promise.resolve(served);
-      contents.set(uri, content);
-    }
-    return content;
-  };
+  // An answer for a text the server replaced while answering fits neither text.
+  if (document.client.documentContent(document.uri) !== served)
+    throw sourceChanged("The server's text changed while it answered a call graph request.");
+  // The text each answer belongs to, taken before later diagnostics reads open its file again.
+  const answered = new Map<string, string | undefined>([[document.uri, served]]);
+  for (const uri of [
+    ...references.map((location) => location.uri),
+    ...calls.incoming.map((call) => call.from.uri),
+    ...calls.outgoing.map((call) => call.to.uri),
+  ])
+    if (!answered.has(uri)) answered.set(uri, document.client.documentContent(uri));
+  const contentOf = async (uri: string) => answered.get(uri) ?? texts.snapshot(uri);
+  const report = async (uri: string, range: LspRange) =>
+    texts.report(uri, answered.get(uri), range);
   const names = [symbol.name, textInRange(document.servedText ?? "", symbol.selectionRange)];
   const named = async <T>(items: readonly T[], locate: (item: T) => LspLocation) =>
     items.length === 0
@@ -352,8 +407,21 @@ async function queryRelations(
       fromRanges: await named(call.fromRanges, (range) => ({ uri: call.from.uri, range })),
     })),
   );
+  const site = async (item: LspCallHierarchyItem, range: LspRange): Promise<CallSite> => ({
+    name: item.name,
+    kind: item.kind,
+    uri: item.uri,
+    line: (await report(item.uri, range)).start.line,
+  });
   return {
-    references: await named(references, (location) => location),
+    definitionLine: (await texts.report(document.uri, document.servedText, symbol.selectionRange))
+      .start.line,
+    references: await Promise.all(
+      (await named(references, (location) => location)).map(async (location) => ({
+        uri: location.uri,
+        range: await report(location.uri, location.range),
+      })),
+    ),
     coverage:
       reach &&
       (await clangCoverage(
@@ -366,15 +434,42 @@ async function queryRelations(
         errorsOf,
         fileOf,
       )),
-    calls: {
-      ...calls,
-      // A caller is listed for the places it calls the symbol; one left without any is not.
-      incoming: incoming.filter(
-        (call, index) =>
-          call.fromRanges.length > 0 || calls.incoming[index]?.fromRanges.length === 0,
-      ),
-    },
+    incoming: await Promise.all(
+      incoming
+        // A caller is listed for the places it calls the symbol; one left without any is not.
+        .filter(
+          (call, index) =>
+            call.fromRanges.length > 0 || calls.incoming[index]?.fromRanges.length === 0,
+        )
+        .map((call) => site(call.from, call.fromRanges[0] ?? call.from.selectionRange)),
+    ),
+    outgoing: await Promise.all(
+      calls.outgoing.map((call) => site(call.to, call.to.selectionRange)),
+    ),
+    unsupported: calls.unsupported,
   };
+}
+
+/**
+ * The position of the declaration's name in the text the server holds. The symbols were read from
+ * an older text when another session wrote the file since; the position then follows its
+ * unchanged line, and the graph is taken again when that line is gone.
+ */
+function servedPosition(
+  document: LspCodeDocument,
+  symbol: LspCodeSymbol,
+  served: string | undefined,
+  texts: ReportedTexts,
+): LspPosition {
+  const read = document.servedText;
+  const range = symbol.selectionRange;
+  if (served === undefined || read === undefined || served === read) return range.start;
+  const moved = followRange(texts.between(read, served), range, served, textInRange(read, range));
+  if (moved === undefined)
+    throw sourceChanged(
+      `The line of declaration "${symbol.name}" changed before the server was asked for its calls.`,
+    );
+  return moved.start;
 }
 
 async function formatSymbolGraph(
@@ -384,7 +479,7 @@ async function formatSymbolGraph(
   locations: LocationPresenter,
 ): Promise<string> {
   const selector = formatSymbolSelector(symbol.selector);
-  const definitionAnchor = await locations.line(document.uri, symbol.selectionRange.start.line + 1);
+  const definitionAnchor = await locations.line(document.uri, relations.definitionLine + 1);
   const lines = [
     `## graph: ${selector}`,
     `Definition: ${document.displayPath} ${definitionAnchor} (${symbolKindName(symbol.kind)})`,
@@ -394,10 +489,10 @@ async function formatSymbolGraph(
     ...(await formatReferences(relations.references, locations)),
     "",
     ...(unsupportedCalls(document, relations, "incoming") ??
-      (await formatIncomingCalls(relations.calls.incoming, locations))),
+      (await formatIncomingCalls(relations.incoming, locations))),
     "",
     ...(unsupportedCalls(document, relations, "outgoing") ??
-      (await formatOutgoingCalls(relations.calls.outgoing, locations))),
+      (await formatOutgoingCalls(relations.outgoing, locations))),
   ];
   return lines.join("\n");
 }
@@ -434,13 +529,13 @@ function unsupportedCalls(
   relations: SymbolRelations,
   direction: LspCallDirection,
 ): string[] | undefined {
-  if (!relations.calls.unsupported.includes(direction)) return undefined;
+  if (!relations.unsupported.includes(direction)) return undefined;
   const label = direction === "incoming" ? "Incoming calls" : "Outgoing calls";
   return [`${label}: not supported by ${document.client.serverId}`];
 }
 
 async function formatIncomingCalls(
-  calls: readonly LspIncomingCall[],
+  calls: readonly CallSite[],
   locations: LocationPresenter,
 ): Promise<string[]> {
   const lines = [`Incoming calls: ${calls.length}`];
@@ -448,13 +543,7 @@ async function formatIncomingCalls(
   if (calls.length === 0)
     lines.push("- none found; the server's index can miss callers added in the last seconds");
 
-  for (const call of calls.slice(0, MAX_CALLS)) {
-    const line = call.fromRanges[0]?.start.line ?? call.from.selectionRange.start.line;
-    const anchor = await locations.line(call.from.uri, line + 1);
-    lines.push(
-      `- ${symbolKindName(call.from.kind)} ${call.from.name} — ${locations.display(call.from.uri)} ${anchor}`,
-    );
-  }
+  for (const call of calls.slice(0, MAX_CALLS)) lines.push(await formatCallSite(call, locations));
 
   if (calls.length > MAX_CALLS) {
     lines.push(`- ... ${calls.length - MAX_CALLS} more`);
@@ -464,23 +553,23 @@ async function formatIncomingCalls(
 }
 
 async function formatOutgoingCalls(
-  calls: readonly LspOutgoingCall[],
+  calls: readonly CallSite[],
   locations: LocationPresenter,
 ): Promise<string[]> {
   const lines = [`Outgoing calls: ${calls.length}`];
 
-  for (const call of calls.slice(0, MAX_CALLS)) {
-    const anchor = await locations.line(call.to.uri, call.to.selectionRange.start.line + 1);
-    lines.push(
-      `- ${symbolKindName(call.to.kind)} ${call.to.name} — ${locations.display(call.to.uri)} ${anchor}`,
-    );
-  }
+  for (const call of calls.slice(0, MAX_CALLS)) lines.push(await formatCallSite(call, locations));
 
   if (calls.length > MAX_CALLS) {
     lines.push(`- ... ${calls.length - MAX_CALLS} more`);
   }
 
   return lines;
+}
+
+async function formatCallSite(call: CallSite, locations: LocationPresenter): Promise<string> {
+  const anchor = await locations.line(call.uri, call.line + 1);
+  return `- ${symbolKindName(call.kind)} ${call.name} — ${locations.display(call.uri)} ${anchor}`;
 }
 
 async function formatFileGraphSymbol(
@@ -490,16 +579,14 @@ async function formatFileGraphSymbol(
   locations: LocationPresenter,
 ): Promise<string[]> {
   const kind = symbolKindName(symbol.kind);
-  const definitionAnchor = await locations.line(document.uri, symbol.selectionRange.start.line + 1);
+  const definitionAnchor = await locations.line(document.uri, relations.definitionLine + 1);
   const referenceFiles = groupLocationsByUri(relations.references).map(
     ([uri, items]) => `${locations.display(uri)} (${items.length})`,
   );
-  const incoming = relations.calls.incoming.map(
-    (call) => `${call.from.name} (${locations.display(call.from.uri)})`,
-  );
-  const outgoing = relations.calls.outgoing.map(
-    (call) => `${call.to.name} (${locations.display(call.to.uri)})`,
-  );
+  const named = (calls: readonly CallSite[]) =>
+    calls.map((call) => `${call.name} (${locations.display(call.uri)})`);
+  const incoming = named(relations.incoming);
+  const outgoing = named(relations.outgoing);
   const lines = [
     `### ${kind} ${symbol.name}`,
     `Selector: ${formatSymbolSelector(symbol.selector)}`,
