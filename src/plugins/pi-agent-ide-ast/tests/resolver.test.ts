@@ -1,4 +1,4 @@
-import { lineAnchors } from "pi-agent-text";
+import { lineAnchors, linesWithAnchor } from "pi-agent-text";
 import { requiredValue } from "pi-agent-invariant";
 import { describe, expect, test } from "vitest";
 
@@ -61,7 +61,8 @@ describe("AST scope text anchors", () => {
     });
   });
 
-  test("never names the other one of two identical scopes after one moves past the other", async () => {
+  test("resolves a scope wherever the line anchor of its first line resolves", async () => {
+    // Which edits keep a repeated line's anchor is up to the line anchors; a scope follows them.
     const repeated = [
       "function repeated() {",
       "    const first = 1;",
@@ -70,26 +71,54 @@ describe("AST scope text anchors", () => {
       "}",
     ];
     const alpha = ["function alpha() {", "    log('a');", "    log('b');", "    log('c');", "}"];
-    const original = context("repeated.js", [...repeated, "", ...alpha, "", ...repeated]);
-    const scopes = await manager.getDocumentScopes(original.source, original.cwd, original.lines);
-    const [first, second] = scopes.filter(
-      (scope) => scope.startLine === 1 || scope.startLine === 13,
-    );
-    expect(requiredValue(first).beginAnchor.value).not.toBe(
-      requiredValue(second).beginAnchor.value,
-    );
+    const beta = ["function beta() {", "    return 2;", "}"];
+    const original = [...repeated, "", ...alpha, "", ...repeated, "", ...beta];
+    const edits = {
+      "identical scope moved past its copy": [
+        ...alpha,
+        "",
+        ...repeated,
+        "",
+        ...repeated,
+        "",
+        ...beta,
+      ],
+      "copy inserted": [...repeated, "", ...repeated, "", ...alpha, "", ...repeated, "", ...beta],
+      "unique scope moved": [...beta, "", ...repeated, "", ...alpha, "", ...repeated],
+      "line added inside": [...repeated.slice(0, 1), "    log('x');", ...original.slice(1)],
+    };
+    const before = context("repeated.js", original);
+    const scopes = (
+      await manager.getDocumentScopes(before.source, before.cwd, before.lines)
+    ).filter((scope) => scope.depth === 0);
+    const firstLineAnchors = lineAnchors(original);
+    const outcomes = new Set<string>();
 
-    // Another session moves the first copy to the end, past the second, which now ends on line 11.
-    const moved = context("repeated.js", [...alpha, "", ...repeated, "", ...repeated]);
-
-    // The first lines are repeated, so each anchor either still names its own scope or is stale.
-    const kept = await resolver.tryResolve(requiredValue(second).endScopeAnchor.value, moved);
-    expect(kept.kind === "resolved" ? kept.anchor.lineNumber : "stale").toBeOneOf([11, "stale"]);
-    const movedCopy = await resolver.tryResolve(requiredValue(first).endScopeAnchor.value, moved);
-    expect(movedCopy.kind === "resolved" ? movedCopy.anchor.lineNumber : "stale").toBeOneOf([
-      17,
-      "stale",
-    ]);
+    for (const [edit, lines] of Object.entries(edits)) {
+      const after = context("repeated.js", lines);
+      const afterScopes = await manager.getDocumentScopes(after.source, after.cwd, after.lines);
+      for (const scope of scopes) {
+        const found = linesWithAnchor(
+          lineAnchors(lines),
+          requiredValue(firstLineAnchors[scope.startLine - 1]),
+        );
+        const outcome = await resolver.tryResolve(scope.endScopeAnchor.value, after);
+        const label = `${edit}: scope at line ${scope.startLine}`;
+        if (found.length === 1) {
+          const target = requiredValue(afterScopes.find((each) => each.startLine === found[0]));
+          expect(outcome, label).toMatchObject({
+            kind: "resolved",
+            anchor: { lineNumber: target.endLine },
+          });
+          outcomes.add("resolved");
+        } else {
+          expect(outcome, label).toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
+          outcomes.add("stale");
+        }
+      }
+    }
+    // The edits cover both outcomes, so the contract is checked in both directions.
+    expect([...outcomes].sort()).toEqual(["resolved", "stale"]);
   });
 
   test("rejects an anchor as stale once the scope's first line changes", async () => {

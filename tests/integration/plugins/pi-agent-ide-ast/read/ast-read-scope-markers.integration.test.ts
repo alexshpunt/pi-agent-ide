@@ -134,7 +134,8 @@ test("ast source returns a compressed outline with original file anchors", async
     const details = restoreReadDetails(message.details as ReadResultDetails, rendered) as {
       readonly source?: string;
     };
-    expect(details.source).toBe(file);
+    // The shared Pi process reads a staged copy of the workspace, so only the file is fixed.
+    expect(details.source).toMatch(/^\/.*\/outline\.ts$/u);
   });
 }, 60_000);
 
