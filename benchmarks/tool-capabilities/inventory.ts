@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFile, realpath, mkdtemp, rm, mkdir } from "node:fs/promises";
+import { readFile, realpath, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import type * as PiSdk from "@earendil-works/pi-coding-agent";
@@ -67,14 +68,22 @@ export async function toolInventory(repository: string, command = "pi"): Promise
   const runtime = await piRuntime(command);
   const sdk = (await import(pathToFileURL(runtime.sdk).href)) as typeof PiSdk;
   const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = sdk;
-  await mkdir(path.join(repository, ".tmp"), { recursive: true });
-  const root = await mkdtemp(path.join(repository, ".tmp/capability-inventory-"));
+  // Keep the session outside the checkout: semantic search treats a project inside an indexed
+  // parent as indexed and would add `semantic_search` on a machine where the checkout is indexed.
+  const root = await mkdtemp(path.join(tmpdir(), "capability-inventory-"));
   const settingsManager = SettingsManager.inMemory({
     defaultTools: ["read", "write", "bash"],
     codemode: { mode: "on" },
   });
   let api: ExtensionAPI | undefined;
   let session: AgentSession | undefined;
+  // The IDE reads its global and project settings, including `ssh.json`, from the environment
+  // and the process directory, not from the session options. Point both at the empty root so a
+  // developer's configured SSH targets cannot add tools such as `remote_powershell`.
+  const previousAgentDirectory = process.env.PI_CODING_AGENT_DIR;
+  const previousDirectory = process.cwd();
+  process.env.PI_CODING_AGENT_DIR = root;
+  process.chdir(root);
   try {
     const loader = new DefaultResourceLoader({
       cwd: root,
@@ -118,6 +127,9 @@ export async function toolInventory(repository: string, command = "pi"): Promise
         .sort((a, b) => a.name.localeCompare(b.name)),
     };
   } finally {
+    process.chdir(previousDirectory);
+    if (previousAgentDirectory === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDirectory;
     if (session) {
       await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
       session.dispose();
