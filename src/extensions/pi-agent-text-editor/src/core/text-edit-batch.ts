@@ -11,8 +11,6 @@ export interface TextBatchParams {
   readonly edits: readonly TextBatchEntry[];
   /** Backend-owned selections captured before any call in this batch writes. */
   readonly selections?: ReadonlyMap<string, ResultSourceTarget>;
-  /** Optional whole-file revisions that every affected source must still match. */
-  readonly expectedContent?: ReadonlyMap<string, string>;
   /** Reject creation or deletion by another writer while a batch is pending. */
   readonly expectedExistence?: ReadonlyMap<string, boolean>;
   /** Abort the complete plan when any entry is invalid instead of applying valid peers. */

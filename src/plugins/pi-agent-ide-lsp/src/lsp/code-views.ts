@@ -12,7 +12,13 @@ import {
 
 import { requestCallHierarchy, requestReferences } from "./navigation.ts";
 import { requestDocumentSymbols, symbolKindName } from "./symbols.ts";
-import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./corrected-names.ts";
+import {
+  diagnosticErrors,
+  documentsPastErrorLimit,
+  errorLimitNote,
+  textInRange,
+  withoutCorrectedNames,
+} from "./corrected-names.ts";
 
 import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
@@ -118,6 +124,8 @@ export async function resolveLspRenameTarget(
 interface SymbolRelations {
   readonly references: readonly LspLocation[];
   readonly calls: LspCallHierarchyResult;
+  /** Documents of the answer where the compiler stopped at its error limit. */
+  readonly pastErrorLimit: readonly string[];
 }
 
 export async function readLspSymbolGraph(
@@ -168,12 +176,16 @@ export async function readLspFileGraph(
       `## file graph: ${document.displayPath}`,
       `Top-level declarations: ${document.symbols.length}`,
     ];
+    const pastErrorLimit = new Set<string>();
 
     for (const symbol of document.symbols) {
       throwIfAborted(signal);
       const relations = await queryRelations(manager, cwd, document, symbol, signal);
+      for (const uri of relations.pastErrorLimit) pastErrorLimit.add(uri);
       lines.push("", ...(await formatFileGraphSymbol(document, symbol, relations, locations)));
     }
+    if (pastErrorLimit.size > 0)
+      lines.splice(2, 0, errorLimitNote([...pastErrorLimit].map((uri) => locations.display(uri))));
 
     await assertAnsweredForCurrentText(manager, document, signal);
     return lines.join("\n");
@@ -362,6 +374,13 @@ async function queryRelations(
   );
   return {
     references: await named(references, (location) => location),
+    // The server answers from the syntax trees of this file and of files it has open; one past
+    // the compiler's error limit can lack references and callers.
+    pastErrorLimit: documentsPastErrorLimit(document.client, [
+      document.uri,
+      ...references.map((location) => location.uri),
+      ...calls.incoming.map((call) => call.from.uri),
+    ]),
     calls: {
       ...calls,
       // A caller is listed for the places it calls the symbol; one left without any is not.
@@ -385,6 +404,9 @@ async function formatSymbolGraph(
     `## graph: ${selector}`,
     `Definition: ${document.displayPath} ${definitionAnchor} (${symbolKindName(symbol.kind)})`,
     `Source: calls ${callsReference(document.displayPath, symbol.selector)}`,
+    ...(relations.pastErrorLimit.length > 0
+      ? [errorLimitNote(relations.pastErrorLimit.map((uri) => locations.display(uri)))]
+      : []),
     "",
     ...(await formatReferences(relations.references, locations)),
     "",

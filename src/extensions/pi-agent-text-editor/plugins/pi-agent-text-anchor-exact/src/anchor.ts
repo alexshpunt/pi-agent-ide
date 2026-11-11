@@ -22,7 +22,7 @@ interface NormalizedText {
 /** Creates the catch-all resolver for unique exact text spans. */
 export function createExactTextAnchorResolver(
   config: ExactTextRecoveryConfig,
-  requiresAnchor: (source: string, cwd: string) => boolean = () => false,
+  requiresAnchor: (source: string, cwd: string, value: string) => boolean = () => false,
 ): TextAnchorResolver {
   return {
     id: "exact-text",
@@ -36,7 +36,7 @@ export function createExactTextAnchorResolver(
     },
     tryResolve(value, context) {
       return Promise.resolve(
-        requiresAnchor(context.source, context.cwd)
+        requiresAnchor(context.source, context.cwd, value)
           ? rejected(
               "invalid",
               "Exact-text editing is blocked for this file; use a current returned anchor for the next edit.",

@@ -15,7 +15,10 @@ import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutat
 import type { TextBatchEntry } from "./text-edit-batch.ts";
 import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import type { TextEditorCore, TextResourceEditRequest } from "./text-editor-core.ts";
-import { BatchExecutionJournal } from "./text-edit-batch-execution.ts";
+import {
+  BatchExecutionJournal,
+  type BatchCallExecutionEntry,
+} from "./text-edit-batch-execution.ts";
 import {
   executeRegisteredTextBatch,
   planRegisteredTextBatch,
@@ -44,6 +47,10 @@ import { ALREADY_DONE_TEXT, alreadyDoneToolResult } from "./already-done.ts";
 import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.ts";
 import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.ts";
 import { captureScriptMutation } from "./text-mutation.ts";
+import {
+  TextMutationAnchorAggregateError,
+  TextMutationAnchorResolutionError,
+} from "./text-mutation-anchor-error.ts";
 import {
   NATIVE_EDIT_BATCH_EVENT,
   type NativeEditBatchEvent,
@@ -93,6 +100,8 @@ interface ScriptBatch {
   tail: Promise<void>;
   readonly scheduler: ResourceScheduler;
   readonly callOrder: Map<string, number>;
+  /** One-based position of every child tool call, as the script made them. */
+  readonly ordinals: Map<string, number>;
   readonly unfinishedCalls: Map<string, string>;
   pending: PendingBatch;
   closed: boolean;
@@ -158,6 +167,63 @@ function receiptStatus(errors: readonly unknown[], operations: BatchMutationData
         )
       ? ("partial" as const)
       : ("error" as const);
+}
+
+/** One line naming each anchor that failed, or the first line of another error. */
+function failureReason(error: unknown): string {
+  const anchors =
+    error instanceof TextMutationAnchorAggregateError
+      ? error.failures
+      : error instanceof TextMutationAnchorResolutionError
+        ? [error]
+        : [];
+  if (anchors.length > 0)
+    return anchors
+      .map((failure) => {
+        const [first = ""] = failure.anchor.split("\n");
+        const shown =
+          first.length > 60 || first !== failure.anchor ? `${first.slice(0, 60)}…` : first;
+        return `${failure.field} ${JSON.stringify(shown)}: ${failure.resolution.message}`;
+      })
+      .join("; ");
+  const message = resultError(error).message;
+  return (
+    message
+      .split("\n")
+      .find((line) => line.trim().length > 0)
+      ?.trim() ?? ""
+  );
+}
+
+/** Say which calls of a failed commit wrote nothing, so the agent redoes only those. */
+function failedBatchSummary(
+  calls: readonly BatchCallExecutionEntry[],
+  entries: readonly TextBatchEntry[],
+  ordinals: ReadonlyMap<string, number>,
+): string {
+  const written = calls.filter(
+    (call) => call.state === "completed" || call.state === "failed-applied",
+  ).length;
+  const unknown = calls.some((call) => call.state === "failed-unknown" || call.state === "running");
+  const header = unknown
+    ? "Editor batch failed with unknown file effects. Read the affected files before retrying."
+    : written === 0
+      ? "Editor batch not applied: no file was changed."
+      : `Editor batch partly applied: ${written} of ${calls.length} calls written. Redo only the calls below.`;
+  const lines = calls
+    .filter((call) => call.state !== "completed")
+    .map((call) => {
+      const operation = entries.find((entry) => entry.callId === call.callId)?.op ?? "edit";
+      const outcome =
+        call.state === "failed-applied"
+          ? "was applied, but its final processing failed"
+          : call.state === "failed-unknown" || call.state === "running"
+            ? "has an unknown effect"
+            : "was not applied";
+      const reason = call.failure === undefined ? "" : failureReason(call.failure.error);
+      return `Call ${ordinals.get(call.callId) ?? "?"} (${operation}) ${outcome}${reason ? `: ${reason}` : "."}`;
+    });
+  return [header, ...lines].join("\n");
 }
 
 function assertOpen(script: ScriptBatch): void {
@@ -233,6 +299,7 @@ class NativeTextEditBatchCoordinator {
           tail: Promise.resolve(),
           scheduler: new ResourceScheduler(),
           callOrder: new Map(),
+          ordinals: new Map(),
           unfinishedCalls: new Map(),
           pending: pendingBatch(),
           closed: false,
@@ -242,6 +309,7 @@ class NativeTextEditBatchCoordinator {
       const script =
         event.parentToolCallId === undefined ? undefined : this.scripts.get(event.parentToolCallId);
       if (!script) return;
+      script.ordinals.set(event.toolCallId, script.ordinals.size + 1);
       const registration = this.core
         .getMutationTools()
         .find((tool) => tool.name === event.toolName);
@@ -671,7 +739,8 @@ class NativeTextEditBatchCoordinator {
       path: String(normalized[registration.source.field]),
     };
     const batch = script.pending;
-    const requests = new Map<string, TextResourceEditRequest>();
+    // Read every file of the batch: a change by another writer replans earlier calls too.
+    const requests = new Map(batch.requests);
     for (const source of mutationSources(registration, entry).values())
       requests.set(source, {
         source,
@@ -679,25 +748,45 @@ class NativeTextEditBatchCoordinator {
         ...(registration.name === "write" && { allowReadFailure: true }),
         ...(batch.existence.has(source) && { expectedExistence: batch.existence.get(source) }),
       });
-    const planning: { plan?: PlannedTextBatch; cause?: unknown } = {};
+    const order = (left: { callId: string }, right: { callId: string }) =>
+      requiredValue(script.callOrder.get(left.callId)) -
+      requiredValue(script.callOrder.get(right.callId));
+    const planning: { plan?: PlannedTextBatch; replanned?: boolean; cause?: unknown } = {};
     const preview = await this.core.previewTexts(
       [...requests.values()],
       { cwd: context.cwd, ...(signal !== undefined && { signal }) },
       async (texts, resolveAnchor) => {
         try {
-          for (const [source, expected] of batch.snapshots)
-            if (requests.has(source) && texts.get(source) !== expected)
-              throw new Error(`Snapshot source ${source} changed before the edit batch.`);
-          planning.plan = await planRegisteredTextBatch(
-            new Map([[registration.name, registration]]),
-            { edits: [entry], failureMode: "abort" },
-            texts,
-            resolveAnchor,
-            context,
-            signal,
-            () => {},
-            new Map([...batch.plan.changes].filter(([source]) => requests.has(source))),
+          const changed = [...batch.snapshots].some(
+            ([source, expected]) => texts.get(source) !== expected,
           );
+          if (changed) {
+            // Another writer changed a file of the batch. Content anchors find their text in the
+            // current file; a call whose anchor is gone stays accepted and fails at commit alone.
+            const plan = await planRegisteredTextBatch(
+              new Map(this.core.getMutationTools().map((tool) => [tool.name, tool])),
+              { edits: [...batch.entries, entry].sort(order) },
+              texts,
+              resolveAnchor,
+              context,
+              signal,
+              () => {},
+            );
+            const own = plan.failures.find((failure) => failure.callId === id);
+            if (own !== undefined) throw own.error;
+            planning.plan = plan;
+            planning.replanned = true;
+          } else
+            planning.plan = await planRegisteredTextBatch(
+              new Map([[registration.name, registration]]),
+              { edits: [entry], failureMode: "abort" },
+              texts,
+              resolveAnchor,
+              context,
+              signal,
+              () => {},
+              batch.plan.changes,
+            );
           return { changes: planning.plan.changes, result: planning.plan };
         } catch (error) {
           planning.cause = error;
@@ -727,22 +816,21 @@ class NativeTextEditBatchCoordinator {
     }
     for (const [source, request] of requests) batch.requests.set(source, request);
     batch.entries.push(entry);
-    const order = (left: { callId: string }, right: { callId: string }) =>
-      requiredValue(script.callOrder.get(left.callId)) -
-      requiredValue(script.callOrder.get(right.callId));
     batch.entries.sort(order);
-    batch.plan = {
-      changes: new Map([...batch.plan.changes, ...planning.plan.changes]),
-      mutations: [...batch.plan.mutations, ...planning.plan.mutations].sort(order),
-      failures: [...batch.plan.failures, ...planning.plan.failures],
-    };
+    batch.plan = planning.replanned
+      ? planning.plan
+      : {
+          changes: new Map([...batch.plan.changes, ...planning.plan.changes]),
+          mutations: [...batch.plan.mutations, ...planning.plan.mutations].sort(order),
+          failures: [...batch.plan.failures, ...planning.plan.failures],
+        };
     const target = ["replace", "insert", "write", "copy", "move"].includes(registration.name)
       ? this.resultTargets.reserve(context.cwd)
       : undefined;
     if (target) script.targets.set(id, target);
-    const unchanged = planning.plan.mutations.every(({ mutation }) =>
-      isAlreadyDoneMutation(mutation, batch.snapshots),
-    );
+    const unchanged = planning.plan.mutations
+      .filter((planned) => planned.callId === id)
+      .every(({ mutation }) => isAlreadyDoneMutation(mutation, batch.snapshots));
     const details = {
       results: [],
       source: entry.path,
@@ -821,15 +909,17 @@ class NativeTextEditBatchCoordinator {
       script.context.signal === undefined
         ? script.cancellation.signal
         : AbortSignal.any([script.context.signal, script.cancellation.signal]);
-    const unchangedCalls = new Map(
-      batch.plan.mutations.map(({ callId, mutation }) => {
-        const sources = unchangedSources(mutation, batch.snapshots);
-        return [
-          callId,
-          { sources, all: sources.size > 0 && sources.size === mutation.edits.size },
-        ] as const;
-      }),
-    );
+    const callsUnchanged = () =>
+      new Map(
+        batch.plan.mutations.map(({ callId, mutation }) => {
+          const sources = unchangedSources(mutation, batch.snapshots);
+          return [
+            callId,
+            { sources, all: sources.size > 0 && sources.size === mutation.edits.size },
+          ] as const;
+        }),
+      );
+    let unchangedCalls = callsUnchanged();
     let observedSources: string[] = [];
     const record = (
       outcome: StructuredResult<MutationData>,
@@ -909,10 +999,7 @@ class NativeTextEditBatchCoordinator {
           operations.some((operation) => operation.effect === "applied") ||
           observedSources.length > 0,
       });
-      if (!completed)
-        script.errors.push(
-          "Editor batch failed; inspect its final file results. Accepted edits were not replayed.",
-        );
+      if (!completed) script.errors.push(failedBatchSummary(calls, batch.entries, script.ordinals));
       return completed;
     };
     try {
@@ -923,17 +1010,19 @@ class NativeTextEditBatchCoordinator {
             executeRegisteredTextBatch(
               this.core,
               registrations,
-              {
-                edits: batch.entries,
-                expectedContent: batch.snapshots,
-                expectedExistence: batch.existence,
-              },
+              { edits: batch.entries, expectedExistence: batch.existence },
               signal,
               undefined,
               script.context,
               journal.reporter(),
               () => {},
-              batch.plan,
+              // Results and targets describe what was written: the plan of the last attempt.
+              (plan, snapshots) => {
+                batch.plan = plan;
+                batch.snapshots.clear();
+                for (const [source, content] of snapshots) batch.snapshots.set(source, content);
+                unchangedCalls = callsUnchanged();
+              },
             ),
           ),
         ),
