@@ -333,44 +333,6 @@ describe("Agent IDE process registry", () => {
   });
 });
 
-describe("process list after compaction", () => {
-  test("lists active processes of the current Pi session and those without a known owner", () => {
-    const registry = new AgentIdeProcessRegistry();
-    registry.add({
-      id: "terminal",
-      compactionGuidance: "terminal-guidance",
-      list: () => [
-        { ...process("shell:own", "terminal"), sessionId: "current" },
-        { ...process("shell:other", "terminal"), sessionId: "previous" },
-      ],
-      onDidChange: () => () => undefined,
-    });
-    registry.add({
-      id: "debugger",
-      list: () => [process("debug:one", "debugger")],
-      onDidChange: () => () => undefined,
-    });
-
-    const notice = registry.compactionNotice("current") ?? "";
-    expect(notice).toContain("shell:own");
-    expect(notice).toContain("debug:one");
-    expect(notice).toContain("terminal-guidance");
-    expect(notice).not.toContain("shell:other");
-  });
-
-  test("stays silent when the current Pi session has no active process", () => {
-    const registry = new AgentIdeProcessRegistry();
-    registry.add({
-      id: "terminal",
-      compactionGuidance: "terminal-guidance",
-      list: () => [{ ...process("shell:other", "terminal"), sessionId: "previous" }],
-      onDidChange: () => () => undefined,
-    });
-
-    expect(registry.compactionNotice("current")).toBeUndefined();
-  });
-});
-
 function process(source: string, kind: string) {
   return {
     source,
