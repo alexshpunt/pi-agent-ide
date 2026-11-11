@@ -45,8 +45,8 @@ const rerunAttempts = 3;
  * Another session may write a searched file between the backend search and this capture: the
  * matches then hold old line numbers, or old text. Such a source is searched again inside the
  * text this capture read, which gives the matches a search of that text would find. A source
- * that cannot be read at all is dropped with a notice, and the result becomes incomplete; a
- * capture that keeps nothing fails with the read error.
+ * that cannot be read at all is dropped with a notice naming the reason, and the result becomes
+ * incomplete; a capture that keeps nothing fails, naming the sources and that reason.
  */
 export async function captureCurrentMatches(
   snapshot: { readonly matches: readonly TextSearchMatch[]; readonly complete: boolean },
@@ -56,28 +56,19 @@ export async function captureCurrentMatches(
   let matches = snapshot.matches;
   let complete = snapshot.complete;
   for (let attempt = 1; ; attempt += 1) {
-    const { contents, unreadable, failure } = await readSources(matches, options);
+    const { contents, unreadable } = await readSources(matches, options);
     const kept = matches.filter((match) => !unreadable.has(match.source));
-    if (kept.length === 0 && unreadable.size > 0) throw failure;
-    const notices =
-      unreadable.size === 0
-        ? []
-        : [
-            `Search notice: ${describeSources(unreadable, cwd)} could not be read while the search registered its results, because another process is writing or removing ${unreadable.size === 1 ? "it" : "them"}. Matches of ${unreadable.size === 1 ? "that file" : "those files"} are not shown; search again for them.`,
-          ];
+    if (kept.length === 0 && unreadable.size > 0) throw unreadableSources(unreadable, cwd);
+    // A source left out can hold matches of its own, so the result no longer covers the search.
+    const covered = complete && unreadable.size === 0;
+    const notices = unreadableNotices(unreadable, cwd);
     const changed = changedSources(kept, contents);
-    if (changed.size === 0)
-      return { matches: kept, complete: complete && unreadable.size === 0, contents, notices };
+    if (changed.size === 0) return { matches: kept, complete: covered, contents, notices };
     if (options.inContent) {
       const current = await matchesInCapturedText(kept, contents, changed, cwd, options);
       const stale = changedSources(current, contents);
       if (stale.size > 0) throw sourceChanged(stale, cwd);
-      return {
-        matches: current,
-        complete: complete && unreadable.size === 0,
-        contents,
-        notices,
-      };
+      return { matches: current, complete: covered, contents, notices };
     }
     if (options.rerun === undefined || attempt >= rerunAttempts) throw sourceChanged(changed, cwd);
     const next = await options.rerun(options.signal);
@@ -89,14 +80,14 @@ export async function captureCurrentMatches(
   }
 }
 
-/** Reads every matched source once; a source that cannot be read is reported, not thrown. */
+/** Reads every matched source once; a source that cannot be read is reported with its error. */
 async function readSources(
   matches: readonly TextSearchMatch[],
   options: CaptureOptions,
 ): Promise<{
   readonly contents: ReadonlyMap<string, string>;
-  readonly unreadable: ReadonlySet<string>;
-  readonly failure?: unknown;
+  /** The error each unreadable source gave, by source. */
+  readonly unreadable: ReadonlyMap<string, unknown>;
 }> {
   const sources = [...new Set(matches.map((match) => match.source))];
   const read = await Promise.all(
@@ -115,17 +106,12 @@ async function readSources(
     ),
   );
   const contents = new Map<string, string>();
-  const unreadable = new Set<string>();
-  let failure: unknown;
+  const unreadable = new Map<string, unknown>();
   for (const entry of read) {
-    if (!entry.failed) {
-      contents.set(entry.source, entry.content ?? "");
-      continue;
-    }
-    unreadable.add(entry.source);
-    failure ??= entry.error;
+    if (entry.failed) unreadable.set(entry.source, entry.error);
+    else contents.set(entry.source, entry.content ?? "");
   }
-  return { contents, unreadable, ...(failure === undefined ? {} : { failure }) };
+  return { contents, unreadable };
 }
 
 /** Sources whose matches no longer describe the captured text. */
@@ -180,15 +166,43 @@ async function matchesInCapturedText(
   return current;
 }
 
-function sourceChanged(sources: ReadonlySet<string>, cwd: string): Error {
+/** One notice per source the capture could not read, each with the reason its read gave. */
+function unreadableNotices(unreadable: ReadonlyMap<string, unknown>, cwd: string): string[] {
+  const shown = [...unreadable].slice(0, 3);
+  const notices = shown.map(
+    ([source, error]) =>
+      `Search notice: ${display(source, cwd)} could not be read while the search registered its results: ${reason(error)}. Its matches are not shown; search again for it once it can be read.`,
+  );
+  const rest = unreadable.size - shown.length;
+  if (rest > 0)
+    notices.push(
+      `Search notice: ${String(rest)} more matched ${rest === 1 ? "file" : "files"} could not be read either, and ${rest === 1 ? "its" : "their"} matches are not shown.`,
+    );
+  return notices;
+}
+
+/** Nothing is left to register: name the sources and the reason the first read gave. */
+function unreadableSources(unreadable: ReadonlyMap<string, unknown>, cwd: string): Error {
+  const first = [...unreadable.values()][0];
   return new Error(
-    `${describeSources(sources, cwd)} kept changing while the search registered its results, because another process is writing ${sources.size === 1 ? "it" : "them"}. Repeat the search and use its new anchors.`,
+    `${describeSources([...unreadable.keys()], cwd)} could not be read while the search registered its results: ${reason(first)}. Repeat the search once ${unreadable.size === 1 ? "it" : "they"} can be read.`,
+    { cause: first },
   );
 }
 
-function describeSources(sources: ReadonlySet<string>, cwd: string): string {
-  const shown = [...sources].slice(0, 3).map((source) => display(source, cwd));
-  const rest = sources.size - shown.length;
+function sourceChanged(sources: ReadonlySet<string>, cwd: string): Error {
+  return new Error(
+    `${describeSources([...sources], cwd)} kept changing while the search registered its results, because another process is writing ${sources.size === 1 ? "it" : "them"}. Repeat the search and use its new anchors.`,
+  );
+}
+
+function reason(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function describeSources(sources: readonly string[], cwd: string): string {
+  const shown = sources.slice(0, 3).map((source) => display(source, cwd));
+  const rest = sources.length - shown.length;
   return rest > 0 ? `${shown.join(", ")} and ${String(rest)} more` : shown.join(", ");
 }
 

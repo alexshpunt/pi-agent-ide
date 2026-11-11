@@ -130,7 +130,9 @@ test("a search leaves out a source it cannot read any more and says so", async (
   expect(details.matchCount).toBe(2);
   expect(data.matches.map((match) => match.range.startLine)).toEqual([2, 3]);
   expect(data.complete).toBe(false);
+  // The notice names the file and the reason its read gave, not a guessed cause.
   expect(data.notices.join("\n")).toContain("gone.cpp");
+  expect(data.notices.join("\n")).toMatch(/ENOENT/u);
 });
 
 test("a search in a result scope registers the matches of the current scope text", async () => {
@@ -180,5 +182,7 @@ test("a search in a result scope registers the matches of the current scope text
 
 test("a search fails with a reason when the matched file cannot be read any more", async () => {
   const { format } = await searchWhileWriting((source) => rm(source));
-  await expect(format()).rejects.toThrow(/main\.cpp/u);
+  await expect(format()).rejects.toThrow(
+    /main\.cpp could not be read while the search registered its results: .*ENOENT/u,
+  );
 });
