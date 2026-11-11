@@ -84,6 +84,7 @@ export function createLspSearchResolver(
   return {
     id: "lsp",
     supportsResultScope: true,
+    supportsPathList: true,
     // Workspace symbol backends may read beyond the requested path.
     readResources: (request) => (lspOptions(request) === undefined ? [] : undefined),
     toScriptData(payload) {
@@ -179,17 +180,22 @@ export function createLspSearchResolver(
           scope: ResolvedResultTargets | undefined,
           signal?: AbortSignal,
         ) => {
-          const groups = new Map<LspManager, ResolvedResultTargets["targets"][number][]>();
+          const groups = new Map<
+            LspManager,
+            { targets: ResolvedResultTargets["targets"][number][]; paths: string[] }
+          >();
+          const group = async (source: string | undefined) => {
+            const manager = await managerFor(context.cwd, source, signal);
+            const found = groups.get(manager) ?? { targets: [], paths: [] };
+            groups.set(manager, found);
+            return found;
+          };
           if (scope === undefined) {
-            groups.set(await managerFor(context.cwd, request.path, signal), []);
+            if (request.paths === undefined) await group(request.path);
+            for (const source of request.paths ?? []) (await group(source)).paths.push(source);
             return groups;
           }
-          for (const target of scope.targets) {
-            const manager = await managerFor(context.cwd, target.source, signal);
-            const group = groups.get(manager) ?? [];
-            group.push(target);
-            groups.set(manager, group);
-          }
+          for (const target of scope.targets) (await group(target.source)).targets.push(target);
           return groups;
         };
         if (initialScope !== undefined) await verifyResultTargets(initialScope, context.signal);
@@ -203,7 +209,7 @@ export function createLspSearchResolver(
           const hits: SymbolHit[] = [];
           let complete = scope?.complete ?? true;
           const coverages: (ClangCoverage | undefined)[] = [];
-          for (const [manager, targets] of groups) {
+          for (const [manager, { targets, paths }] of groups) {
             const found = await backend.searchSymbols(
               query,
               manager.workspaceRoot,
@@ -211,6 +217,7 @@ export function createLspSearchResolver(
               signal,
               {
                 ...(request.path === undefined ? {} : { path: request.path }),
+                ...(request.paths === undefined ? {} : { paths }),
                 ...(request.include === undefined ? {} : { include: request.include }),
                 ...(request.exclude === undefined ? {} : { exclude: request.exclude }),
                 ...(references ? { navigation: "references" as const } : {}),

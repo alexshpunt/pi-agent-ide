@@ -152,6 +152,7 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
   return {
     query: recipe.query,
     path: resolveScope(cwd, recipe.path ?? "."),
+    paths: recipe.paths?.map((source) => resolveScope(cwd, source)) ?? [],
     include: recipe.include ?? "",
     exclude: recipe.exclude ?? "",
     caseSensitive: recipe.caseSensitive === true,

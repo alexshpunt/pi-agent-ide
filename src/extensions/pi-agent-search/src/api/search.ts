@@ -4,6 +4,12 @@ import type { ResolvedResultTargets } from "pi-agent-resource";
 export interface SearchRequest {
   readonly query: string;
   readonly path?: string;
+  /**
+   * Several listed files and directories, in place of `path`. Only resolvers that declare
+   * `supportsPathList` receive it; each root is searched like `path`, and a file found under
+   * several roots counts once.
+   */
+  readonly paths?: readonly string[];
   readonly include?: string;
   readonly exclude?: string;
   readonly caseSensitive?: boolean;
@@ -77,6 +83,8 @@ export type SearchResolutionAttempt =
 export interface SearchResolver {
   /** Handle exact source ranges instead of widening a structured input to a path. */
   readonly supportsResultScope?: boolean;
+  /** Accept `paths`, a list of files and directories searched together. */
+  readonly supportsPathList?: boolean;
   /** Accept `multiline: true`; other resolvers fail such requests instead of matching per line. */
   readonly supportsMultiline?: boolean;
   /** Complete read scope for resolving and formatting. Empty means no resource reads;
@@ -235,6 +243,13 @@ export { searchSchema } from "#src/api/search-parameters.ts";
 export { renderSearchMatches } from "./presentation.ts";
 export { containsSearchMatch, currentScope, SearchScopeChangedError } from "./search-scope.ts";
 export { splitGlobList } from "./glob-list.ts";
+export {
+  describePathArgument,
+  isResultReference,
+  pathMachine,
+  plainPathList,
+  uniquePaths,
+} from "./path-list.ts";
 export {
   fuzzyLimits,
   isFuzzyResultData,

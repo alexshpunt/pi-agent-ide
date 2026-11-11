@@ -37,29 +37,32 @@ export async function searchFiles(
     arguments_.push("--glob", `!${exclude}`);
   }
 
+  const roots = request.paths ?? (request.path === undefined ? [] : [request.path]);
   if (environment !== undefined) {
-    const target = environment.resolve(cwd, request.path ?? ".");
-    const directory = await environment.isDirectory(target, signal);
-    const searchCwd = directory ? target : environment.dirname(target);
-    arguments_.push("--", directory ? "." : `./${environment.basename(target)}`);
-    const found = firstFiles(limit);
-    const result = await environment.runLines(
-      arguments_,
-      searchCwd,
-      (file) => {
-        const relative = file.replace(/^\.\//u, "");
-        if (matchFile(relative, query)) found.add(environment.resolve(searchCwd, file));
-      },
-      signal,
-    );
-    signal?.throwIfAborted();
-    if (result.code !== 0 && result.code !== 1)
-      throw new Error(result.stderr || "File search failed.");
+    // Each root is listed from its own directory, so a glob with / matches relative to it.
+    const found = firstFiles(limit, roots.length > 1);
+    for (const root of roots.length === 0 ? ["."] : roots) {
+      const target = environment.resolve(cwd, root);
+      const directory = await environment.isDirectory(target, signal);
+      const searchCwd = directory ? target : environment.dirname(target);
+      const result = await environment.runLines(
+        [...arguments_, "--", directory ? "." : `./${environment.basename(target)}`],
+        searchCwd,
+        (file) => {
+          const relative = file.replace(/^\.\//u, "");
+          if (matchFile(relative, query)) found.add(environment.resolve(searchCwd, file));
+        },
+        signal,
+      );
+      signal?.throwIfAborted();
+      if (result.code !== 0 && result.code !== 1)
+        throw new Error(result.stderr || "File search failed.");
+    }
     return found.result();
   }
-  if (request.path?.includes("://") || cwd.includes("://"))
+  if (roots.some((root) => root.includes("://")) || cwd.includes("://"))
     throw new Error("No search environment owns this scope.");
-  if (request.path !== undefined) arguments_.push(request.path);
+  arguments_.push(...roots);
 
   return new Promise((resolve, reject) => {
     const child = spawn(resolveRipgrepExecutable(), arguments_, {
@@ -67,7 +70,7 @@ export async function searchFiles(
       stdio: ["ignore", "pipe", "pipe"],
     });
     // A large tree lists more paths than one string can hold, so lines are matched as they arrive.
-    const found = firstFiles(limit);
+    const found = firstFiles(limit, roots.length > 1);
     let failure: Error | undefined;
     let stderr = "";
     child.stderr.setEncoding("utf8");
@@ -116,15 +119,24 @@ export async function searchFiles(
 const maximumStderrLength = 64 * 1024;
 const collator = new Intl.Collator();
 
-/** Keep the first `limit` matches in sort order and count the rest, so memory stays bounded. */
-function firstFiles(limit: number): {
+/**
+ * Keep the first `limit` matches in sort order and count the rest, so memory stays bounded. With
+ * `unique`, for several listed paths that can overlap, a file listed again counts once.
+ */
+function firstFiles(
+  limit: number,
+  unique = false,
+): {
   add(file: string): void;
   result(): FileSearchResult;
 } {
   const files: string[] = [];
+  const seen = unique ? new Set<string>() : undefined;
   let count = 0;
   return {
     add(file) {
+      if (seen?.has(file) === true) return;
+      seen?.add(file);
       count += 1;
       const last = files.at(-1);
       if (files.length >= limit && (last === undefined || collator.compare(file, last) >= 0))

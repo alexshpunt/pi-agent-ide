@@ -12,6 +12,8 @@ import type { TextSearchMatch } from "#src/search-session.ts";
 export interface TextSearchRequest {
   readonly query: string;
   readonly path?: string;
+  /** Several files and directories, each searched like `path`; see {@link searchEachPath}. */
+  readonly paths?: readonly string[];
   readonly include?: string;
   readonly exclude?: string;
   readonly regex?: boolean;
@@ -72,6 +74,17 @@ export async function searchText(
 
   assertSupportedPattern(request);
 
+  if (request.paths !== undefined)
+    return searchEachPath(request.paths, budget, (root, rootBudget) =>
+      searchText(
+        { ...request, paths: undefined, path: root },
+        cwd,
+        signal,
+        rootBudget,
+        environment,
+      ),
+    );
+
   if (request.condition !== undefined)
     return searchBoolean(
       request,
@@ -81,6 +94,41 @@ export async function searchText(
   return searchPattern(request, cwd, signal, undefined, budget, environment);
 }
 
+/**
+ * Search each listed path as a search of that path alone, so ignore files and globs apply to it as
+ * they would on their own. A file found under an earlier path is not counted again.
+ */
+export async function searchEachPath(
+  paths: readonly string[],
+  budget: SearchCaptureBudget | undefined,
+  search: (
+    root: string,
+    budget: SearchCaptureBudget | undefined,
+  ) => Promise<TextSearchBackendResult>,
+): Promise<TextSearchBackendResult> {
+  const matches: TextSearchMatch[] = [];
+  const searched = new Set<string>();
+  let complete = true;
+  for (const root of paths) {
+    const remaining = budget && { ...budget, matches: budget.matches - matches.length };
+    if (remaining !== undefined && remaining.matches <= 0) {
+      complete = false;
+      break;
+    }
+    const result = await search(root, remaining);
+    const found = new Set<string>();
+    for (const match of result.matches) {
+      if (searched.has(match.source)) continue;
+      found.add(match.source);
+      matches.push(match);
+    }
+    for (const source of found) searched.add(source);
+    complete &&= result.complete;
+  }
+  matches.sort(compareMatches);
+  return { matches, complete };
+}
+
 /** Reuse ordinary text-search scope, ignores, and glob parsing for the extra scan. */
 export async function ripgrepScope(
   request: TextSearchRequest,
@@ -88,6 +136,7 @@ export async function ripgrepScope(
   environment?: SearchEnvironment,
   signal?: AbortSignal,
 ) {
+  if (request.paths !== undefined) throw new Error("Search each listed path on its own.");
   if (environment === undefined && (request.path?.includes("://") || cwd.includes("://")))
     throw new Error("No search environment owns this scope.");
   const target =

@@ -1,6 +1,9 @@
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
+  describePathArgument,
+  isResultReference,
+  searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
   type SearchResolver,
@@ -11,6 +14,7 @@ import {
   withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";
 import { toolCallHeader } from "pi-agent-tool-ui";
+import { resultError, withStructuredResult } from "pi-agent-resource";
 import { Type, type Static } from "typebox";
 
 import type { FileSearchOptions } from "#src/resolvers.ts";
@@ -23,7 +27,10 @@ export const fileSearchSchema = Type.Object(
         "Glob (*, **, ?, [abc], {a,b}) or plain text matched as a case-insensitive subsequence. A glob with / matches paths relative to path; one without / matches file names at any depth.",
     }),
     path: Type.Optional(
-      Type.String({ description: "Directory to search, local or ssh://; defaults to cwd." }),
+      Type.Union([Type.String(), Type.Array(Type.String())], {
+        description:
+          "Directory or file to search, or an array of them, local or ssh://; defaults to cwd.",
+      }),
     ),
     include: Type.Optional(Type.String({ description: "Include glob" })),
     exclude: Type.Optional(Type.String({ description: "Exclude glob" })),
@@ -71,7 +78,7 @@ export function registerFileSearchTool(
                   ? []
                   : [
                       {
-                        text: `in ${parameters.path}`,
+                        text: `in ${describePathArgument(parameters.path)}`,
                         color: "accent" as const,
                         truncate: "start" as const,
                       },
@@ -119,6 +126,10 @@ export function registerFileSearchTool(
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
           const options: FileSearchOptions = { pattern: parameters.pattern };
+          if (parameters.path !== undefined && [parameters.path].flat().some(isResultReference))
+            return fileSearchFailure(
+              "file_search takes file and directory paths, not Read/Search results. Pass the paths themselves.",
+            );
           return (await (
             await search
           ).searchWith(
@@ -142,5 +153,16 @@ export function registerFileSearchTool(
       },
       new ToolCallInterceptionRenderStore(),
     ),
+  );
+}
+
+function fileSearchFailure(message: string): AgentToolResult<SearchToolDetails> {
+  return withStructuredResult(
+    {
+      content: [{ type: "text", text: message }],
+      details: { failure: { code: "INVALID_REQUEST", message } },
+    },
+    searchDataSchema,
+    { status: "error", errors: [resultError(new Error(message), "SEARCH_FAILED")] },
   );
 }

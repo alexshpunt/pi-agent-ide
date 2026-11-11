@@ -3,7 +3,7 @@ import { resultInputSchema } from "pi-agent-resource";
 
 /** Core text of the path field; plugin source descriptions follow it. */
 export const searchPathDescription =
-  "File, directory, URL (no read needed first), docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/edit result, its UUID, or an array of such results. Use literal text or regex: for docs: sources. Results select only their registered ranges.";
+  "File, directory, URL (no read needed first), docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/edit result or its UUID, or an array of file and directory paths or of results. Use literal text or regex: for docs: sources. Results select only their registered ranges.";
 
 /** Canonical arguments shared by standalone and composed operations. */
 export const searchSchema = Type.Object(

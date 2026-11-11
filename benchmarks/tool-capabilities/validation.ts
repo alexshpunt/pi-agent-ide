@@ -193,7 +193,8 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
   if (Array.isArray(expected))
     return (
       Array.isArray(actual) &&
-      (expected as unknown[]).every((value, i) => matches(value, (actual as unknown[])[i]))
+      // Items of a list field, such as several paths, compare like the field itself.
+      (expected as unknown[]).every((value, i) => matches(value, (actual as unknown[])[i], field))
     );
   if (expected !== null && typeof expected === "object")
     return (

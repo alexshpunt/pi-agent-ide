@@ -1210,6 +1210,70 @@ add(
   },
 );
 
+const listedDirectories = [
+  { path: ["src/code-view", "src/api"] },
+  { path: ["src/api", "src/code-view"] },
+];
+const pathListFiles = {
+  "src/code-view/format.ts":
+    "export function formatSymbolSelector(name: string): string {\n  return name;\n}\n",
+  "src/api/use.ts":
+    'import { formatSymbolSelector } from "#format";\n\nexport const used = formatSymbolSelector("api"); // PASS-MARKER\n',
+  "src/other/skip.ts":
+    'import { formatSymbolSelector } from "#format";\n\nexport const skipped = formatSymbolSelector("other"); // OTHER-MARKER\n',
+  "tsconfig.json":
+    '{"compilerOptions":{"strict":true,"noEmit":true,"paths":{"#format":["./src/code-view/format.ts"]}},"include":["src"]}\n',
+};
+add(
+  "search-path-list",
+  ["search.path-list", "file_search.path-list", "ast_search.path-list"],
+  "Look only in the directories src/code-view and src/api, never in src/other. Pass both directories together as one path list in each call: search for formatSymbolSelector, file_search for *.ts files, and ast_search for the calls formatSymbolSelector($$$ARGS). Report the file that calls formatSymbolSelector. Do not change files.",
+  [
+    {
+      tool: "search",
+      args: { query: "formatSymbolSelector" },
+      argsAny: listedDirectories,
+      contains: "src/api/use.ts",
+      excludes: "src/other",
+    },
+    {
+      tool: "file_search",
+      args: { pattern: /\*\.ts|\.ts/ },
+      argsAny: listedDirectories,
+      contains: "src/code-view/format.ts",
+      excludes: "src/other",
+    },
+    {
+      tool: "ast_search",
+      args: { pattern: /^formatSymbolSelector\(\$\$\$\w+\)$/ },
+      argsAny: listedDirectories,
+      contains: "PASS-MARKER",
+      excludes: "OTHER-MARKER",
+    },
+  ],
+  { files: pathListFiles, answer: "src/api/use.ts" },
+);
+
+add(
+  "lsp-path-list",
+  ["lsp_search.path-list"],
+  "Use lsp_search with query formatSymbolSelector once, passing the directories src/code-view and src/api together as one path list. Never search src/other. Report the files in which it finds formatSymbolSelector. Do not change files.",
+  [
+    {
+      tool: "lsp_search",
+      args: { query: "formatSymbolSelector" },
+      argsAny: listedDirectories,
+      contains: "src/api/use.ts",
+      excludes: "src/other",
+    },
+  ],
+  {
+    files: pathListFiles,
+    answer: "src/api/use.ts",
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
 add(
   "search-literal-operators",
   ["search.literal-operators"],

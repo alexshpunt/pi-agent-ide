@@ -35,6 +35,8 @@ import {
 /** Strict discovery scope, or an explicit seed scope for reference navigation. */
 export interface SymbolSearchScope {
   readonly path?: string;
+  /** Several files and directories in place of `path`; a hit inside any of them is in scope. */
+  readonly paths?: readonly string[];
   readonly include?: string;
   readonly exclude?: string;
   readonly resultScope?: ResolvedResultTargets;
@@ -69,15 +71,17 @@ export function withinScope(file: string, cwd: string, scope: SymbolSearchScope)
   const filesystem = remote ? path.posix : path;
   const native = (source: string) =>
     remote ? decodeURIComponent(new URL(documentUri(source, cwd)).pathname) : source;
-  const base = remote ? native(scope.path ?? cwd) : path.resolve(cwd, scope.path ?? ".");
-  const relative = filesystem.relative(base, native(file));
-  if (
-    // oxlint-disable-next-line repo/no-parent-paths -- containment check only.
-    relative === ".." ||
-    relative.startsWith(`..${filesystem.sep}`) ||
-    filesystem.isAbsolute(relative)
-  )
-    return false;
+  const inside = (root: string | undefined) => {
+    const base = remote ? native(root ?? cwd) : path.resolve(cwd, root ?? ".");
+    const relative = filesystem.relative(base, native(file));
+    return !(
+      // oxlint-disable-next-line repo/no-parent-paths -- containment check only.
+      relative === ".." ||
+      relative.startsWith(`..${filesystem.sep}`) ||
+      filesystem.isAbsolute(relative)
+    );
+  };
+  if (!(scope.paths ?? [scope.path]).some(inside)) return false;
   const candidate = filesystem.relative(native(cwd), native(file)).split(filesystem.sep).join("/");
   const matches = (patterns: string) =>
     splitGlobList(patterns).some((glob) =>
@@ -149,7 +153,8 @@ async function searchSymbolsOnce(
     (await manager.isSourceFile(scope.path, cwd, signal))
   )
     return { hits: [], complete: true };
-  const roots = resultScope?.targets.map((target) => target.source) ?? [scope.path ?? cwd];
+  const roots = resultScope?.targets.map((target) => target.source) ??
+    scope.paths ?? [scope.path ?? cwd];
   const clients = new Set(
     (
       await Promise.all(

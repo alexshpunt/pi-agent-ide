@@ -8,6 +8,7 @@ import {
   type ResultTargetStore,
 } from "pi-agent-resource";
 import { searchDataSchema } from "#src/api/structured-result.ts";
+import { pathMachine, plainPathList, uniquePaths } from "#src/api/path-list.ts";
 
 import type { SearchPlugin } from "#src/api/plugin-protocol.ts";
 import type {
@@ -197,23 +198,42 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
       audience = "agent",
       only?: SearchResolver,
     ): Promise<SearchToolResult> {
-      let request: SearchRequest = {
-        ...input,
-        path: typeof input.path === "string" ? input.path : undefined,
-      };
-      if (request.query.trim().length === 0) {
+      if (input.query.trim().length === 0) {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
+      // A list of plain paths is searched root by root; a list of results is a result scope.
+      let pathInput = input.path;
+      let paths: readonly string[] | undefined;
+      try {
+        paths = Array.isArray(input.path) ? plainPathList(input.path) : undefined;
+        if (paths !== undefined) {
+          paths = uniquePaths(paths, context.cwd);
+          const machines = new Set(paths.map((item) => pathMachine(item, context.cwd)));
+          if (machines.size > 1)
+            throw new Error(
+              "The paths in a list must be on one machine: local paths, or ssh:// paths of one target. Search each machine in a separate call.",
+            );
+          pathInput = paths.length === 1 ? paths[0] : undefined;
+          if (paths.length === 1) paths = undefined;
+        }
+      } catch (error) {
+        return failure("INVALID_REQUEST", messageFor(error, "Invalid path list"), undefined, error);
+      }
+      let request: SearchRequest = {
+        ...input,
+        path: typeof pathInput === "string" ? pathInput : undefined,
+        ...(paths === undefined ? {} : { paths }),
+      };
 
       let latestScope: ResolvedResultTargets | undefined;
       try {
-        if (typeof input.path === "string") {
+        if (typeof pathInput === "string") {
           for (const provider of scopeProviders) {
-            const scope = await provider(input.path, context);
+            const scope = await provider(pathInput, context);
             if (scope === undefined) continue;
             if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
             if (targets !== undefined) await targets.verify(scope, context.signal);
-            const scopeInput = input.path;
+            const scopeInput = pathInput;
             const scopeContext = context;
             // A refresh of this search, such as for an all-anchor after other edits, runs on the
             // scope as its file is now. A numbered Search match follows its region like RESULT#.
@@ -233,13 +253,13 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
           }
         }
         const scoped =
-          input.path !== undefined &&
-          (typeof input.path !== "string" ||
-            (request.path === input.path && input.path.startsWith("RESULT#")));
+          pathInput !== undefined &&
+          (typeof pathInput !== "string" ||
+            (request.path === pathInput && pathInput.startsWith("RESULT#")));
         if (scoped) {
           if (targets === undefined) throw new Error("Result scopes are unavailable.");
           if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
-          const scopeInput = input.path;
+          const scopeInput = pathInput;
           const cwd = context.cwd;
           // Search only reads, so a result whose lines changed still selects the same region.
           const rescope = (signal?: AbortSignal) => targets.resolveCurrent(scopeInput, cwd, signal);
@@ -268,12 +288,23 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
             },
           };
         }
-        for (const provider of context.scope === undefined ? environments : []) {
-          const environment = provider(request, context);
-          if (environment !== undefined) {
-            context = { ...context, environment };
-            break;
-          }
+        if (context.scope === undefined) {
+          // Every listed path is owned like a single path; the list shares its first owner.
+          const owner = (source: string | undefined) => {
+            for (const provider of environments) {
+              const environment = provider({ ...request, path: source }, context);
+              if (environment !== undefined) return environment;
+            }
+            return undefined;
+          };
+          const [first, ...rest] = request.paths ?? [request.path];
+          const environment = owner(first);
+          for (const source of rest)
+            if ((owner(source) === undefined) !== (environment === undefined))
+              throw new Error(
+                `No search owner on the machine of ${first ?? "."} owns ${source ?? "."}.`,
+              );
+          if (environment !== undefined) context = { ...context, environment };
         }
       } catch (error) {
         return failure(
@@ -310,6 +341,7 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;
         if (context.scope !== undefined && resolver.supportsResultScope !== true) continue;
+        if (request.paths !== undefined && resolver.supportsPathList !== true) continue;
         // Unknown colon prefixes can be source text (for example, feature: "legacy").
         // The fallback still searches only the verified scope; structural protocols stay above.
 
@@ -470,7 +502,10 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         }
       }
 
-      const reason = `No search resolver handled ${request.query}`;
+      const reason =
+        request.paths === undefined
+          ? `No search resolver handled ${request.query}`
+          : `No search resolver handled ${request.query} in a path list. A path list applies to text, file, AST and LSP search in local or SSH files; search other sources one path at a time.`;
       return withBlockedToolResult(failure("NO_RESOLVER", reason), reason);
     },
     runAction(reference, capability, resolverId, input, context): Promise<unknown> {
