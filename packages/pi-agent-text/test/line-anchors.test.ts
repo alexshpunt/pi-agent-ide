@@ -13,6 +13,33 @@ const sampling = [
   "}",
 ];
 
+/** Three top-level definitions, as in a C++ file where every one starts with the same line. */
+const definitions = [
+  "#include <vector>",
+  "",
+  "template <typename T>",
+  "T lerp(T a, T b) {",
+  "  return a + b;",
+  "}",
+  "",
+  "template <typename T>",
+  "T mix(T a, T b) {",
+  "  return a * b;",
+  "}",
+  "",
+  "template <typename T>",
+  "T clamp(T a, T b) {",
+  "  return a < b ? a : b;",
+  "}",
+  "// end",
+];
+const lerp = { from: 2, to: 6 };
+const lerpBlock = definitions.slice(lerp.from, lerp.to);
+
+function without(lines: readonly string[], range: { from: number; to: number }): string[] {
+  return [...lines.slice(0, range.from), ...lines.slice(range.to)];
+}
+
 function anchorOf(lines: readonly string[], text: string, occurrence = 1): string {
   const index = lines.flatMap((line, at) => (line === text ? [at] : []))[occurrence - 1];
   if (index === undefined) throw new Error(`no line ${text}`);
@@ -73,6 +100,41 @@ describe("line anchors", () => {
     // The occurrence number from the top, like a line number: an inserted copy shifts it.
     const inserted = ["x", ...lines];
     expect(linesWithAnchor(lineAnchors(inserted), anchors[1] as string)).toEqual([2]);
+  });
+
+  test("keep a template line's anchor when the definition above it moves or goes away", () => {
+    const template = anchorOf(definitions, "template <typename T>", 2);
+    const moved = [...without(definitions, lerp).slice(0, -1), "", ...lerpBlock, "// end"];
+    expect(linesWithAnchor(lineAnchors(moved), template)).toEqual([
+      moved.indexOf("T mix(T a, T b) {"),
+    ]);
+    const deleted = without(definitions, lerp);
+    expect(linesWithAnchor(lineAnchors(deleted), template)).toEqual([
+      deleted.indexOf("T mix(T a, T b) {"),
+    ]);
+  });
+
+  test("keep a closing brace's anchor when the definitions around it move", () => {
+    const brace = anchorOf(definitions, "}", 2);
+    const reordered = [
+      ...definitions.slice(0, 2),
+      ...definitions.slice(12, 16),
+      "",
+      ...definitions.slice(7, 12),
+      ...lerpBlock,
+      "// end",
+    ];
+    expect(linesWithAnchor(lineAnchors(reordered), brace)).toEqual([
+      reordered.indexOf("  return a * b;") + 2,
+    ]);
+  });
+
+  test("never let a blank line's anchor follow a moved definition to its new place", () => {
+    const blank = anchorOf(definitions, "", 2);
+    const moved = [...without(definitions, lerp).slice(0, -1), "", ...lerpBlock, "", "// end"];
+    const found = linesWithAnchor(lineAnchors(moved), blank);
+    // The blank line stayed where it was, as line 3; the one after the moved definition is new.
+    expect([[], [3]]).toContainEqual(found);
   });
 
   test("stop naming a line whose own text changed", () => {

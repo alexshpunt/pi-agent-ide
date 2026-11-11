@@ -2433,6 +2433,37 @@ add(
 );
 
 add(
+  "repeated-line-anchor-after-block-delete",
+  ["edit.repeated-line-anchor-block-change"],
+  "Read task.txt with anchors. Delete the first definition, from its first template line through its first } line, using anchors from that Read. Then delete the remaining template line using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "delete",
+      args: {
+        path: "task.txt",
+        start: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        end: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+      },
+      reuse: reuse(0, ["start", "end"], "anchor"),
+    },
+    {
+      tool: "delete",
+      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(0, "start", "anchor"),
+    },
+  ],
+  {
+    modes: ["direct"],
+    files: {
+      "task.txt":
+        "template <typename T>\nT one(T v) {\n  return v;\n}\ntemplate <typename T>\nT two(T v) {\n  return v;\n}\n",
+    },
+    expected: { "task.txt": "T two(T v) {\n  return v;\n}\n" },
+  },
+);
+
+add(
   "result-selector-rejection",
   ["compose.result-selector-rejection"],
   "Read only line 2 of task.txt. Pass that issued result unchanged to Replace together with start OLD and text BAD; the unsupported result-plus-selector combination must fail without a filename lookup. Then reuse the same issued result in a valid result-only Replace with text NEW followed by a newline. Preserve all bytes outside the original Read selection.",
