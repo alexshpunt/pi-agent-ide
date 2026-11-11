@@ -131,3 +131,54 @@ text("REFUSED "+refused);`,
     expect(final).toBe(`${expected.join("\n")}\n`);
   });
 });
+
+test("A move whose source and destination references were resolved on different texts of the file runs again on the current text", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/settings.json"),
+      JSON.stringify({ codemode: { mode: "on" } }),
+    );
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+    );
+    const original =
+      "int keep_a;\n// __SLOT__\nint keep_b;\nint block_x() {\n  return 1;\n}\nint keep_c;\n";
+    await writeFile(path.join(cwd, "main.cpp"), original);
+    const code =
+      textResultChecks +
+      String.raw`
+const slot=String(await tools.search({path:"main.cpp",query:"__SLOT__"}).then((value)=>value.result));
+const ref=/SEARCH#[A-F\d]+:1:line/.exec(slot)?.[0];
+check(ref,"No slot reference: "+slot.slice(0,300));
+// The block is answered for the text before another session's write; the slot for the text after.
+// Two answers: the batch planner's and the edit's first attempt; the rerun reads the file.
+await tools.write({path:".tmp/block-targets/earlier.txt",content:JSON.stringify({text:${JSON.stringify(original)},times:2})});
+await tools.bash({command:"sed -i '1i // peer' main.cpp"});
+text(await tools.move({path:"BLOCK#block_x",target:"main.cpp",targetStart:ref,targetEnd:ref}));`;
+    const run = await new PiIntegrationTest({
+      testName: "edit-window-mixed-revisions",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        "builtin:codemode",
+        path.resolve("tests/integration/fixtures/block-targets-read-earlier.ts"),
+      ],
+      tools: ["write", "search", "move", "bash", "codemode"],
+      conversation: [
+        assistantMessage([toolCall({ id: "composed", name: "codemode", arguments: { code } })], {
+          stopReason: "toolUse",
+        }),
+        assistantMessage([text("Done.")]),
+      ],
+    }).run("Move a block whose references were resolved on different texts");
+    const output = getToolResultText(run, "composed");
+    expect(getToolExecution(run, "composed").isError, output).toBe(false);
+    expect(await readFile(path.join(cwd, "main.cpp"), "utf8")).toBe(
+      "// peer\nint keep_a;\nint block_x() {\n  return 1;\n}\nint keep_b;\nint keep_c;\n",
+    );
+  });
+});
