@@ -1,6 +1,6 @@
 import type { LspClient } from "./client.ts";
 import { requestDiagnostics } from "./diagnostics.ts";
-import { DiagnosticSeverity, type LspPosition, type LspRange } from "./types.ts";
+import type { LspPosition, LspRange } from "./types.ts";
 
 /** A source position a server reported for a symbol, with the text written there. */
 export interface ReportedName {
@@ -15,6 +15,8 @@ export interface DocumentErrors {
   readonly starts: ReadonlySet<string>;
   /** The compiler reached its error limit and stopped reporting errors. */
   readonly stopped: boolean;
+  /** Fatal compiler errors, after which clang builds no complete syntax tree. */
+  readonly fatal: readonly { readonly line: number; readonly message: string }[];
 }
 
 /** Errors of a document, or undefined when they are unavailable. */
@@ -22,6 +24,65 @@ export type DocumentErrorsProvider = (uri: string) => Promise<DocumentErrors | u
 
 const IDENTIFIER = /^[\p{L}\p{Nl}_$][\p{L}\p{N}\p{Mn}\p{Mc}\p{Pc}$]*$/u;
 const ERROR_LIMIT = /^fatal_too_many_errors$|too many errors emitted/iu;
+
+/**
+ * Clang 18 diagnostics that are fatal by default, as clangd names them: without the `err_` prefix.
+ * Most report a file or module that cannot be read; the error limit is one of them.
+ */
+const FATAL_CLANG_ERRORS = new Set([
+  "fatal_too_many_errors",
+  "module_not_found",
+  "module_not_built",
+  "module_build_disabled",
+  "module_shadowed",
+  "module_build_shadowed_submodule",
+  "module_cycle",
+  "module_prebuilt",
+  "module_rebuild_finalized",
+  "cannot_open_file",
+  "file_modified",
+  "sloc_space_too_large",
+  "unsupported_bom",
+  "module_format_unhandled",
+  "pp_file_not_found",
+  "pp_through_header_not_found",
+  "pp_through_header_not_seen",
+  "pp_pragma_hdrstop_not_seen",
+  "pp_error_opening_file",
+  "fe_error_backend",
+  "fe_linking_module",
+  "fe_invalid_code_complete_file",
+  "fe_remap_missing_to_file",
+  "fe_remap_missing_from_file",
+  "module_map_not_found",
+  "missing_module",
+  "modules_embed_file_not_found",
+  "module_header_file_not_found",
+  "missing_vfs_overlay_file",
+  "invalid_vfs_overlay",
+  "extract_api_ignores_file_not_found",
+  "fe_pch_malformed",
+  "fe_pch_malformed_block",
+  "fe_ast_file_modified",
+  "module_file_conflict",
+  "ast_file_not_found",
+  "ast_file_out_of_date",
+  "ast_file_invalid",
+  "module_file_not_module",
+  "module_file_missing_top_level_submodule",
+  "imported_module_modmap_changed",
+  "imported_module_relocated",
+  "function_scope_depth_exceeded",
+  "bracket_depth_exceeded",
+]);
+
+/**
+ * Whether a diagnostic is a fatal clang error. After one, clang stops instantiating templates, so
+ * code that needs a new instantiation has no references, and clang reports no error there.
+ */
+export function isFatalClangError(code: string, message: string): boolean {
+  return FATAL_CLANG_ERRORS.has(code.replace(/^err_/u, "")) || ERROR_LIMIT.test(message);
+}
 
 /** Key of a position in {@link DocumentErrors.starts}. */
 export function positionKey(position: LspPosition): string {
@@ -100,37 +161,6 @@ export function textInRange(content: string, range: LspRange): string {
   return from === undefined || to === undefined || to < from ? "" : content.slice(from, to);
 }
 
-/**
- * Documents among `uris` where the compiler stopped at its error limit, in their first order.
- *
- * After clang reports its error limit it stops instantiating templates and no longer builds a
- * correct syntax tree. Code after the limit that needs a new instantiation, such as a loop over a
- * container type first used there, then has no references, and clang reports no error there.
- * References from such a document can be missing.
- *
- * Only the diagnostics the server already published for the current text are read, so the check
- * waits for nothing. Clangd publishes them for a text before it answers requests on its tree;
- * servers without an error limit never report one.
- */
-export function documentsPastErrorLimit(
-  client: Pick<LspClient, "diagnosticPublication">,
-  uris: Iterable<string>,
-): string[] {
-  return [...new Set(uris)].filter((uri) =>
-    (client.diagnosticPublication(uri)?.diagnostics ?? []).some(
-      (diagnostic) =>
-        diagnostic.severity === DiagnosticSeverity.Error &&
-        (ERROR_LIMIT.test(String(diagnostic.code ?? "")) || ERROR_LIMIT.test(diagnostic.message)),
-    ),
-  );
-}
-
-/** Why a reference list from documents past the error limit can be incomplete. */
-export function errorLimitNote(paths: readonly string[]): string {
-  const files = paths.join(", ");
-  return `Incomplete: the compiler stopped at its error limit in ${files}, so references after its first errors can be missing. Fix the errors (Read diagnostics:${paths[0]}) and search again, or search the text.`;
-}
-
 /** Errors from the current diagnostics of each document that `open` synchronizes, read once. */
 export function diagnosticErrors(
   open: (
@@ -157,6 +187,9 @@ export function diagnosticErrors(
         stopped: errors.some(
           (error) => ERROR_LIMIT.test(error.code) || ERROR_LIMIT.test(error.message),
         ),
+        fatal: errors
+          .filter((error) => isFatalClangError(error.code, error.message))
+          .map(({ line, message }) => ({ line, message })),
       };
     } catch (error) {
       // Without diagnostics no place is known to be a guess, so every place is kept.

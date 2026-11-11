@@ -14,11 +14,20 @@ import { requestCallHierarchy, requestReferences } from "./navigation.ts";
 import { requestDocumentSymbols, symbolKindName } from "./symbols.ts";
 import {
   diagnosticErrors,
-  documentsPastErrorLimit,
-  errorLimitNote,
   textInRange,
   withoutCorrectedNames,
+  type DocumentErrorsProvider,
 } from "./corrected-names.ts";
+import {
+  CLANG_LANGUAGES,
+  clangCoverage,
+  coverageNotes,
+  createClangReach,
+  mergeCoverage,
+  type ClangCoverage,
+  type ClangReachProvider,
+} from "./clang-coverage.ts";
+import { withinScope } from "./symbol-search.ts";
 
 import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
@@ -53,6 +62,7 @@ interface LspCodeDocument {
   readonly symbols: readonly LspCodeSymbol[];
   /** Text the server answered for, or undefined when the client holds none. */
   readonly servedText: string | undefined;
+  readonly languageId: string;
 }
 
 /** Resolve a declaration's exact server range for guarded text operations. */
@@ -124,8 +134,43 @@ export async function resolveLspRenameTarget(
 interface SymbolRelations {
   readonly references: readonly LspLocation[];
   readonly calls: LspCallHierarchyResult;
-  /** Documents of the answer where the compiler stopped at its error limit. */
-  readonly pastErrorLimit: readonly string[];
+  /** Why C/C++ references and callers can be missing. */
+  readonly coverage: ClangCoverage | undefined;
+}
+
+/** Diagnostics and opened files shared by the queries of one graph. */
+interface RelationContext {
+  readonly errorsOf: DocumentErrorsProvider;
+  /** Opens the files that write a name; omitted, only files already open are checked. */
+  readonly reachOf?: ClangReachProvider;
+}
+
+function relationContext(
+  manager: LspManager,
+  cwd: string,
+  openFiles: boolean,
+  signal: AbortSignal | undefined,
+): RelationContext {
+  const errorsOf = diagnosticErrors(
+    (uri) => manager.openFile(fileOf(uri), cwd, "symbols", signal),
+    signal,
+  );
+  return {
+    errorsOf,
+    ...(openFiles && {
+      reachOf: createClangReach({
+        manager,
+        cwd,
+        errorsOf,
+        accepts: (source) => withinScope(source, cwd, {}),
+        ...(signal && { signal }),
+      }),
+    }),
+  };
+}
+
+function fileOf(uri: string): string {
+  return uri.startsWith("ssh://") ? uri : fileURLToPath(uri);
 }
 
 export async function readLspSymbolGraph(
@@ -139,7 +184,13 @@ export async function readLspSymbolGraph(
     throwIfAborted(signal);
     const document = await openCodeDocument(manager, filePath, cwd, signal);
     const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-    const relations = await queryRelations(manager, cwd, document, symbol, signal);
+    const relations = await queryRelations(
+      manager,
+      document,
+      symbol,
+      relationContext(manager, cwd, true, signal),
+      signal,
+    );
     const locations = new LocationPresenter(cwd);
     const graph = await formatSymbolGraph(document, symbol, relations, locations);
     await assertAnsweredForCurrentText(manager, document, signal);
@@ -176,16 +227,22 @@ export async function readLspFileGraph(
       `## file graph: ${document.displayPath}`,
       `Top-level declarations: ${document.symbols.length}`,
     ];
-    const pastErrorLimit = new Set<string>();
+    // A file graph queries every declaration; looking up each name in the workspace would take
+    // minutes in a large project, so it checks only the files that are already open.
+    const context = relationContext(manager, cwd, false, signal);
+    const coverages: (ClangCoverage | undefined)[] = [];
 
     for (const symbol of document.symbols) {
       throwIfAborted(signal);
-      const relations = await queryRelations(manager, cwd, document, symbol, signal);
-      for (const uri of relations.pastErrorLimit) pastErrorLimit.add(uri);
+      const relations = await queryRelations(manager, document, symbol, context, signal);
+      coverages.push(relations.coverage);
       lines.push("", ...(await formatFileGraphSymbol(document, symbol, relations, locations)));
     }
-    if (pastErrorLimit.size > 0)
-      lines.splice(2, 0, errorLimitNote([...pastErrorLimit].map((uri) => locations.display(uri))));
+    lines.splice(
+      2,
+      0,
+      ...coverageNotes(mergeCoverage(coverages), (source) => locations.display(source)),
+    );
 
     await assertAnsweredForCurrentText(manager, document, signal);
     return lines.join("\n");
@@ -265,6 +322,7 @@ async function openCodeDocument(
     displayPath: displayFilePath(absolutePath, cwd),
     symbols,
     servedText,
+    languageId: opened.languageId,
   };
 }
 
@@ -315,18 +373,26 @@ function symbolNotFound(selector: readonly string[], displayPath: string): Error
 
 async function queryRelations(
   manager: LspManager,
-  cwd: string,
   document: LspCodeDocument,
   symbol: LspCodeSymbol,
+  context: RelationContext,
   signal: AbortSignal | undefined,
 ): Promise<SymbolRelations> {
   const position = symbol.selectionRange.start;
+  const { errorsOf } = context;
+  const reach = CLANG_LANGUAGES.has(document.languageId)
+    ? ((await context.reachOf?.(document.client, document.languageId, symbol.name)) ?? {
+        client: document.client,
+        opened: [],
+        unopened: 0,
+        unlisted: false,
+      })
+    : undefined;
   const [references, calls] = await Promise.all([
     requestReferences(document.client, document.uri, position, signal),
     requestCallHierarchy(document.client, document.uri, position, signal),
   ]);
   throwIfAborted(signal);
-  const fileOf = (uri: string) => (uri.startsWith("ssh://") ? uri : fileURLToPath(uri));
   const contents = new Map<string, Promise<string>>();
   const contentOf = (uri: string) => {
     let content = contents.get(uri);
@@ -340,10 +406,6 @@ async function queryRelations(
     }
     return content;
   };
-  const errorsOf = diagnosticErrors(
-    (uri) => manager.openFile(fileOf(uri), cwd, "symbols", signal),
-    signal,
-  );
   const names = [symbol.name, textInRange(document.servedText ?? "", symbol.selectionRange)];
   const named = async <T>(items: readonly T[], locate: (item: T) => LspLocation) =>
     items.length === 0
@@ -374,13 +436,18 @@ async function queryRelations(
   );
   return {
     references: await named(references, (location) => location),
-    // The server answers from the syntax trees of this file and of files it has open; one past
-    // the compiler's error limit can lack references and callers.
-    pastErrorLimit: documentsPastErrorLimit(document.client, [
-      document.uri,
-      ...references.map((location) => location.uri),
-      ...calls.incoming.map((call) => call.from.uri),
-    ]),
+    coverage:
+      reach &&
+      (await clangCoverage(
+        reach,
+        [
+          document.uri,
+          ...references.map((location) => location.uri),
+          ...calls.incoming.map((call) => call.from.uri),
+        ],
+        errorsOf,
+        fileOf,
+      )),
     calls: {
       ...calls,
       // A caller is listed for the places it calls the symbol; one left without any is not.
@@ -404,9 +471,7 @@ async function formatSymbolGraph(
     `## graph: ${selector}`,
     `Definition: ${document.displayPath} ${definitionAnchor} (${symbolKindName(symbol.kind)})`,
     `Source: calls ${callsReference(document.displayPath, symbol.selector)}`,
-    ...(relations.pastErrorLimit.length > 0
-      ? [errorLimitNote(relations.pastErrorLimit.map((uri) => locations.display(uri)))]
-      : []),
+    ...coverageNotes(relations.coverage, (source) => locations.display(source)),
     "",
     ...(await formatReferences(relations.references, locations)),
     "",

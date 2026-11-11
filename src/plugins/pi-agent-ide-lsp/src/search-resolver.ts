@@ -12,7 +12,7 @@ import {
 } from "pi-agent-search/api/search";
 import path from "node:path";
 import { readLspFileGraph, readLspSymbolGraph, resolveLspDeclaration } from "./lsp/code-views.ts";
-import { errorLimitNote } from "./lsp/corrected-names.ts";
+import { coverageNotes, mergeCoverage, type ClangCoverage } from "./lsp/clang-coverage.ts";
 import type { LspManager } from "./lsp/manager.ts";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
@@ -37,8 +37,8 @@ type Payload =
       readonly sessionId: string;
       readonly hits: readonly SymbolHit[];
       readonly complete: boolean;
-      /** Searched files where the compiler stopped at its error limit. */
-      readonly pastErrorLimit: readonly string[];
+      /** Why C/C++ references can be missing. */
+      readonly coverage?: ClangCoverage;
       readonly references: boolean;
       readonly data: unknown;
     }
@@ -198,7 +198,7 @@ export function createLspSearchResolver(
           const groups = refresh ? await groupScope(scope, signal) : initialGroups;
           const hits: SymbolHit[] = [];
           let complete = scope?.complete ?? true;
-          const pastErrorLimit = new Set<string>();
+          const coverages: (ClangCoverage | undefined)[] = [];
           for (const [manager, targets] of groups) {
             const found = await backend.searchSymbols(
               query,
@@ -218,7 +218,7 @@ export function createLspSearchResolver(
             );
             hits.push(...found.hits);
             complete = complete && found.complete;
-            for (const source of found.pastErrorLimit ?? []) pastErrorLimit.add(source);
+            coverages.push(found.coverage);
           }
           if (scope !== undefined) {
             try {
@@ -235,10 +235,11 @@ export function createLspSearchResolver(
           }
           // The search session keeps these hits and its refresh closure for as long as its anchors
           // live. A copy keeps only the matched text, not each file the text was cut from.
+          const coverage = mergeCoverage(coverages);
           return structuredClone({
             hits: hits.slice(0, limit),
             complete: complete && hits.length <= limit,
-            pastErrorLimit: [...pastErrorLimit].sort(),
+            ...(coverage && { coverage }),
           });
         };
         const found = await collect(context.signal);
@@ -263,7 +264,7 @@ export function createLspSearchResolver(
             sessionId: session.id,
             hits: found.hits,
             complete: found.complete,
-            pastErrorLimit: found.pastErrorLimit,
+            ...(found.coverage && { coverage: found.coverage }),
             references,
             data: {
               ...data,
@@ -309,9 +310,7 @@ export function createLspSearchResolver(
         data.cwd,
         [
           ...(data.references ? ["LSP reference navigation · may leave input scope"] : []),
-          ...(data.pastErrorLimit.length > 0
-            ? [errorLimitNote(data.pastErrorLimit.map((source) => displaySource(source, data.cwd)))]
-            : []),
+          ...coverageNotes(data.coverage, (source) => displaySource(source, data.cwd)),
         ],
         data.hits.map((hit) => `${hit.role} ${hit.symbol.name}`),
       );
@@ -354,8 +353,7 @@ export function createLspSearchResolver(
       if (result.complete && result.hits.length)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
-      if (result.pastErrorLimit.length > 0)
-        lines.push(errorLimitNote(result.pastErrorLimit.map(display)));
+      lines.push(...coverageNotes(result.coverage, display));
       return {
         content: [{ type: "text", text: [heading, ...lines].join("\n") }],
         details: { ...result, cwd: context.cwd },

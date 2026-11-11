@@ -13,4 +13,14 @@ export interface LspWorkspaceOwner {
     source: string,
     signal?: AbortSignal,
   ): Promise<readonly { name: string; kind: "file" | "directory" | "other" }[]>;
+  /**
+   * Sources under the directory `root` whose text has `word` as a whole word, among files with
+   * one of `extensions`. Owners without a text search omit it.
+   */
+  filesContaining?(
+    root: string,
+    word: string,
+    extensions: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<readonly string[]>;
 }

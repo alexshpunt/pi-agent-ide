@@ -11,10 +11,10 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
-import { errorLimitNote } from "../../../../src/plugins/pi-agent-ide-lsp/src/lsp/corrected-names.ts";
 
 // After clang's error limit of 20 it stops instantiating templates. The loop over a container
-// type first used after the limit then gets no reference, and clang reports no error there.
+// type first used after the limit would then get no reference, and clang would report no error
+// there. Pi starts clangd without the limit.
 function source(misspelled: number): { text: string; loopLine: number } {
   const lines = [
     "struct Vec3fForm { float x, y, z; };",
@@ -76,23 +76,23 @@ const CALLS = [
   { name: "lsp_search", arguments: { calls: "main.cpp#call_normalize_routine" } },
   { name: "lsp_search", arguments: { query: "call_normalize_routine", path: "main.cpp" } },
 ];
-const NOTE = errorLimitNote(["main.cpp"]);
+const NOTE = "Incomplete:";
 // A complete result offers an anchor that selects every match.
 const ALL_MATCHES = /SEARCH#\w+:all:match/u;
 
-test("references from a file past the compiler's error limit are marked incomplete", async () => {
+test("a file with more errors than clang's limit still lists every reference", async () => {
   await withTempWorkspace(async (cwd) => {
     const { text: content, loopLine } = source(30);
     const result = await run(cwd, "past-error-limit", content, CALLS);
 
     const graph = output(result, 0);
-    expect(graph).toContain(NOTE);
+    expect(graph).toContain(`  - ${loopLine}\n`);
+    expect(graph).not.toContain(NOTE);
 
     const search = output(result, 1);
-    // clangd misses the loop call; the result says so instead of claiming every reference.
-    expect(search).not.toContain(`main.cpp:${loopLine}:`);
-    expect(search).toContain(NOTE);
-    expect(search).not.toMatch(ALL_MATCHES);
+    expect(search).toContain(`main.cpp:${loopLine}:`);
+    expect(search).not.toContain(NOTE);
+    expect(search).toMatch(ALL_MATCHES);
   });
 }, 120_000);
 
