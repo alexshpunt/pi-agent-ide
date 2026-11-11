@@ -25,9 +25,18 @@ import {
   renderTerminalActionResult,
   renderTerminalResult,
 } from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
-import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import {
+  isTerminalAddress,
+  type TerminalSessionManager,
+} from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
+import {
+  formatTerminalList,
+  renderTerminalList,
+} from "#src/plugins/pi-agent-ide-terminal/src/list.ts";
 import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
+/** Read lists the current Pi session's terminals; Search covers all of them. */
+export const TERMINAL_LIST_SOURCE = "shell:";
 const WRITE_PREFIX = "\u0000pi-terminal-write\u0000";
 const KEYS_PREFIX = "\u0000pi-terminal-keys\u0000";
 
@@ -96,7 +105,10 @@ interface TerminalActionDetails {
 export async function registerTerminalResources(
   pi: ExtensionAPI,
   manager: TerminalSessionManager,
+  ownerSessionId: () => string | undefined = () => undefined,
 ): Promise<void> {
+  /** Rename destinations of move calls in progress; they resolve before the session takes them. */
+  const pendingRenameTargets = new Set<string>();
   const pendingOutputEnd = new Map<string, number>();
   const pendingScreen = new Map<string, readonly string[]>();
   const readPlugin = {
@@ -105,10 +117,11 @@ export async function registerTerminalResources(
     id: "terminal",
     setup(api) {
       api.addResolver({
-        resolver: createReadResolver(manager),
+        resolver: createReadResolver(manager, ownerSessionId),
         preserveTruncatedOutput: true,
         renderResult(result, options, theme) {
           const details = result.details as { source?: string };
+          if (details.source === TERMINAL_LIST_SOURCE) return renderTerminalList(result, theme);
           const session = details.source === undefined ? undefined : manager.get(details.source);
           const snapshot = session === undefined ? {} : manager.snapshot(session);
           return renderTerminalResult(
@@ -125,7 +138,7 @@ export async function registerTerminalResources(
         stage: "pre-read",
         async handler(context) {
           const source = context.request.path;
-          if (source === undefined || !isShellSource(source)) {
+          if (source === undefined || !source.startsWith("shell:")) {
             return { kind: "continue", context };
           }
           let visual: TerminalVisualView | undefined;
@@ -138,12 +151,18 @@ export async function registerTerminalResources(
             };
           }
           if (visual === undefined) return { kind: "continue", context };
-          const session = manager.get(source);
-          if (session === undefined) {
+          if (source === TERMINAL_LIST_SOURCE) {
             return {
               kind: "return",
-              result: failure(source, `Unknown terminal session ${source}`),
+              result: failure(
+                source,
+                "Image and sequence views show one terminal screen. Read shell:<session> with the view; shell: lists sessions as text.",
+              ),
             };
+          }
+          const session = manager.get(source);
+          if (session === undefined) {
+            return { kind: "return", result: failure(source, unknownSessionMessage(source)) };
           }
           try {
             manager.markInspected(source);
@@ -193,7 +212,59 @@ export async function registerTerminalResources(
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: "terminal",
     setup(api) {
-      api.addResolver({ resolver: createInputResolver(manager) });
+      api.addResolver({ resolver: createInputResolver(manager, pendingRenameTargets) });
+      api.tool("move").addHandler({
+        stage: "text-pre-edit",
+        handler: (state) => {
+          if (
+            isRecord(state.input) &&
+            isShellSourceValue(state.input.path) &&
+            typeof state.input.target === "string" &&
+            state.input.target.startsWith("shell:") &&
+            manager.get(state.input.target) === undefined
+          )
+            pendingRenameTargets.add(state.input.target);
+          return state;
+        },
+      });
+      api.tool("move").addSemanticHandler({
+        matches: (input) =>
+          isRecord(input) && typeof input.path === "string" && input.path.startsWith("shell:"),
+        execute(_context, input) {
+          const request = input as Record<string, unknown>;
+          const source = String(request.path);
+          const target = request.target;
+          try {
+            if (
+              typeof target !== "string" ||
+              !target.startsWith("shell:") ||
+              ["start", "end", "targetStart", "targetEnd"].some(
+                (field) => request[field] !== undefined,
+              )
+            )
+              throw new Error(
+                `Terminal sessions support only renaming: move with path ${source} and target shell:<name>.`,
+              );
+            const from = manager.get(source)?.source ?? source;
+            const session = manager.rename(source, target.slice("shell:".length));
+            return {
+              source: session.source,
+              summary:
+                from === session.source
+                  ? `${from} already has this name.`
+                  : `Renamed ${from} to ${session.source}.`,
+              data: {
+                kind: "terminal-session",
+                renamed: from !== session.source,
+                from,
+                to: session.source,
+              },
+            };
+          } finally {
+            if (typeof target === "string") pendingRenameTargets.delete(target);
+          }
+        },
+      });
       api.tool("write").addHandler({
         stage: "text-pre-edit",
         handler: async (state) => {
@@ -240,6 +311,8 @@ export async function registerTerminalResources(
 
   pi.on("tool_result", async (event, context) => {
     if (!isRecord(event.input)) return;
+    if (event.toolName === "move" && typeof event.input.target === "string")
+      pendingRenameTargets.delete(event.input.target);
     const requestedSource = event.input.path;
     if (
       event.toolName === "replace" &&
@@ -365,14 +438,29 @@ export async function registerTerminalResources(
   });
 }
 
-function createReadResolver(manager: TerminalSessionManager): ResourceResolver {
+function createReadResolver(
+  manager: TerminalSessionManager,
+  ownerSessionId: () => string | undefined,
+): ResourceResolver {
   return {
     id: "terminal",
     async tryResolve(source) {
-      if (!isShellSource(source)) return { kind: "not-handled" };
+      if (!source.startsWith("shell:")) return { kind: "not-handled" };
+      if (source === TERMINAL_LIST_SOURCE)
+        return {
+          kind: "resolved",
+          resource: {
+            source,
+            async read() {
+              return [
+                { type: "text", text: formatTerminalList(manager.listOwnedBy(ownerSessionId())) },
+              ];
+            },
+          },
+        };
       const session = manager.get(source);
       if (session === undefined)
-        return { kind: "failed", error: new Error(`Unknown terminal session ${source}`) };
+        return { kind: "failed", error: new Error(unknownSessionMessage(source)) };
       return {
         kind: "resolved",
         resource: {
@@ -388,14 +476,28 @@ function createReadResolver(manager: TerminalSessionManager): ResourceResolver {
   };
 }
 
-function createInputResolver(manager: TerminalSessionManager): ResourceResolver {
+function createInputResolver(
+  manager: TerminalSessionManager,
+  pendingRenameTargets: ReadonlySet<string>,
+): ResourceResolver {
   return {
     id: "terminal-input",
     async tryResolve(source) {
-      if (!isShellSource(source)) return { kind: "not-handled" };
+      if (!source.startsWith("shell:")) return { kind: "not-handled" };
       const session = manager.get(source);
+      if (session === undefined && pendingRenameTargets.has(source))
+        return {
+          kind: "resolved",
+          resource: {
+            source,
+            skipPostEdit: true,
+            async read() {
+              return [{ type: "text", text: "terminal rename target" }];
+            },
+          },
+        };
       if (session === undefined)
-        return { kind: "failed", error: new Error(`Unknown terminal session ${source}`) };
+        return { kind: "failed", error: new Error(unknownSessionMessage(source)) };
       return {
         kind: "resolved",
         resource: {
@@ -478,7 +580,11 @@ function failure(source: string, message: string) {
 }
 
 function isShellSource(value: string): boolean {
-  return /^shell:[a-f\d]{12}$/u.test(value);
+  return value.startsWith("shell:") && isTerminalAddress(value.slice("shell:".length));
+}
+
+function unknownSessionMessage(source: string): string {
+  return `Unknown terminal session ${source}. Read shell: to list your terminal sessions.`;
 }
 
 function isShellSourceValue(value: unknown): value is string {
@@ -502,6 +608,7 @@ function terminalActionDetails(value: unknown): TerminalActionDetails {
       ? value.changedLines.filter((line): line is string => typeof line === "string")
       : [],
     snapshot: {
+      ...(typeof snapshot.name === "string" ? { name: snapshot.name } : {}),
       ...(typeof snapshot.shell === "string" ? { shell: snapshot.shell } : {}),
       ...(typeof snapshot.cwd === "string" ? { cwd: snapshot.cwd } : {}),
       ...(typeof snapshot.command === "string" ? { command: snapshot.command } : {}),

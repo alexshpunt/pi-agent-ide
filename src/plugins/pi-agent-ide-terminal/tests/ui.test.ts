@@ -367,8 +367,8 @@ function fakeManager() {
           completeListener = undefined;
         };
       },
-      get(id: string) {
-        return sessions.get(id.replace("shell:", ""));
+      getById(id: string) {
+        return sessions.get(id);
       },
       snapshot(session: TerminalSession): TerminalSessionSnapshot {
         return {

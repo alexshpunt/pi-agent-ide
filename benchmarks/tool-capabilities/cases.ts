@@ -2552,6 +2552,22 @@ add(
 );
 
 add(
+  "shell-catalog",
+  ["shell.name", "shell.list", "shell.search-all", "shell.rename"],
+  "Start a background Bash command named catalog-worker that prints CATALOG-ONE and then sleeps 30 seconds. Then run a Bash command without a name that prints CATALOG-TWO and exits. Read the list of your terminal sessions, then search all of them at once for CATALOG. Rename catalog-worker to catalog-renamed, read the renamed session at its new address, and delete it. Report the marker the renamed session printed. Do not edit files.",
+  [
+    { tool: "bash", args: { name: "catalog-worker", background: true } },
+    { tool: "bash", args: { command: /CATALOG-TWO/ } },
+    { tool: "read", args: { path: "shell:" }, contains: "shell:catalog-worker" },
+    { tool: "search", args: { path: "shell:", query: /CATALOG/ }, contains: "CATALOG-TWO" },
+    { tool: "move", args: { path: "shell:catalog-worker", target: "shell:catalog-renamed" } },
+    { tool: "read", args: { path: "shell:catalog-renamed" }, contains: "CATALOG-ONE" },
+    { tool: "delete", args: { path: "shell:catalog-renamed" } },
+  ],
+  { expected: textFile, answer: "CATALOG-ONE" },
+);
+
+add(
   "debug-roundtrip",
   [
     "debug.create",

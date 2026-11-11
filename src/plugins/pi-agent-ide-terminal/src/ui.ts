@@ -52,7 +52,7 @@ export class TerminalUi {
     this.#context = context;
     // A retained manager can finish work while the previous UI is being replaced.
     for (const snapshot of this.manager.list()) {
-      const session = this.manager.get(snapshot.id);
+      const session = this.manager.getById(snapshot.id);
       if (session === undefined || !session.background) continue;
       if (session.status === "running") this.#refreshStaleTimer(session);
       else if (session.status !== "stopping") this.#queueCompletion(session);
@@ -64,7 +64,7 @@ export class TerminalUi {
     this.#context = context;
     for (const id of [...this.#overdue]) {
       this.#overdue.delete(id);
-      const session = this.manager.get(id);
+      const session = this.manager.getById(id);
       if (session !== undefined) this.#refreshStaleTimer(session, true);
     }
   }

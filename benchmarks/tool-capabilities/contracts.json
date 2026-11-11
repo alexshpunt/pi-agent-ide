@@ -1,5 +1,5 @@
 {
-  "pi": "1.4.0",
+  "pi": "1.5.0",
   "tools": [
     {
       "name": "ast_search",
@@ -82,6 +82,9 @@
             "type": "string"
           },
           "cwd": {
+            "type": "string"
+          },
+          "name": {
             "type": "string"
           },
           "rows": {

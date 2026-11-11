@@ -24,8 +24,11 @@ export const shellOutputSchema = Type.Object({
   }),
   exit_code: Type.Optional(Type.Number({ description: "Process exit code, only when known." })),
   wall_time_seconds: Type.Number(),
-  session: Type.String({ description: "Session ID." }),
+  session: Type.String({ description: "Session name, or its generated ID when it has none." }),
   source: Type.String({ description: "Persistent shell: source for Read, input and termination." }),
+  notice: Type.Optional(
+    Type.String({ description: "Why the requested session name was not applied." }),
+  ),
   status: Type.Union(
     ["running", "completed", "failed", "stopping", "stopped", "cancelled", "lost"].map((value) =>
       Type.Literal(value),
@@ -92,7 +95,7 @@ export async function structuredShellResult(snapshot: TerminalSessionSnapshot) {
       output_ranges: outputRanges,
       ...(snapshot.exitCode === undefined ? {} : { exit_code: snapshot.exitCode }),
       wall_time_seconds: snapshot.elapsedMs / 1000,
-      session: snapshot.id,
+      session: snapshot.name ?? snapshot.id,
       source: snapshot.source,
       status: snapshot.status,
       background: snapshot.background,

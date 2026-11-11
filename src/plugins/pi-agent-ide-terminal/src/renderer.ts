@@ -23,9 +23,10 @@ export function renderRunCall(
   cwd: string,
   profile: ShellProfile,
   theme: TerminalTheme,
+  name?: string,
 ): Component {
   const mode = background ? "background" : "wait";
-  const heading = `${theme.fg("toolTitle", profile.displayName.toLocaleLowerCase())} ${theme.fg("muted", `· ${shortCwd(cwd)} · ${mode}`)}`;
+  const heading = `${theme.fg("toolTitle", profile.displayName.toLocaleLowerCase())}${nameLabel(name, theme)} ${theme.fg("muted", `· ${shortCwd(cwd)} · ${mode}`)}`;
   return new Text(
     `${heading}\n${theme.fg("accent", promptMarker(profile.family))} ${command}`,
     0,
@@ -115,7 +116,7 @@ export function renderActiveTerminal(
   theme?: TerminalTheme,
 ): string {
   const color = (name: ThemeColor, text: string): string => theme?.fg(name, text) ?? text;
-  const heading = `${color("accent", snapshot.shell.toLocaleLowerCase())} ${color("muted", `· ${shortCwd(snapshot.cwd)} · ${snapshot.background ? "background" : "wait"}`)}`;
+  const heading = `${color("accent", snapshot.shell.toLocaleLowerCase())}${snapshot.name === undefined ? "" : ` ${color("toolTitle", snapshot.name)}`} ${color("muted", `· ${shortCwd(snapshot.cwd)} · ${snapshot.background ? "background" : "wait"}`)}`;
   const lines = [
     heading,
     `${color("accent", promptMarker(snapshot.shellFamily))} ${oneLine(snapshot.command, 84)}`,
@@ -137,7 +138,7 @@ export function terminalCardLines(
   const cwd = snapshot.cwd === undefined ? "workspace" : shortCwd(snapshot.cwd);
   const family = snapshot.shellFamily ?? "posix";
   const lines = [
-    `${theme.fg("accent", shell)} ${theme.fg("muted", `· ${cwd} · ${mode}`)}`,
+    `${theme.fg("accent", shell)}${nameLabel(snapshot.name, theme)} ${theme.fg("muted", `· ${cwd} · ${mode}`)}`,
     `${theme.fg("accent", promptMarker(family))} ${snapshot.command ?? ""}`,
   ];
   const window = outputWindow(snapshot.output ?? "", outputLines);
@@ -208,7 +209,12 @@ function terminalIdentity(
   const cwd = snapshot.cwd === undefined ? "workspace" : shortCwd(snapshot.cwd);
   const mode = snapshot.background === true ? "background" : "wait";
   const command = oneLine(snapshot.command ?? "process", 48);
-  return `${theme.fg("toolTitle", shell)} ${theme.fg("muted", `· ${cwd} · ${mode} · ${command}`)}`;
+  return `${theme.fg("toolTitle", shell)}${nameLabel(snapshot.name, theme)} ${theme.fg("muted", `· ${cwd} · ${mode} · ${command}`)}`;
+}
+
+/** Show an agent-chosen session name beside the shell; generated IDs stay hidden. */
+function nameLabel(name: string | undefined, theme: TerminalTheme): string {
+  return name === undefined ? "" : ` ${theme.fg("accent", name)}`;
 }
 function shortCwd(cwd: string): string {
   const home = process.env.HOME;
