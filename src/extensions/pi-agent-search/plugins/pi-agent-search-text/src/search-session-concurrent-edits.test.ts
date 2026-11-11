@@ -6,6 +6,7 @@ import { expect, onTestFinished, test } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 
 import { SearchSessionStore, type TextSearchMatch } from "#src/search-session.ts";
+import { TextSelectionAnchor } from "pi-agent-text-editor/api/text-selection-anchor";
 
 // Another session edits the file between the agent's Search and its edit.
 const total = 250;
@@ -103,4 +104,75 @@ test("the anchor resolver follows a match to its new position in the current tex
   expect(attempt.kind).toBe("resolved");
   if (attempt.kind !== "resolved") return;
   expect(attempt.anchor.lineNumber).toBe(7);
+});
+
+test("the anchor resolver resolves an unchanged line in the caller's text when another session writes while it checks the file", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-anchor-race-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "main.cpp");
+  await writeFile(source, `${original.join("\n")}\n`);
+  let writeAfterRead: string | undefined;
+  // Another session writes the file right after this read, before the result store looks at it.
+  const read = async (file: string) => {
+    const content = await readFile(file, "utf8");
+    if (writeAfterRead !== undefined) {
+      await writeFile(file, writeAfterRead);
+      writeAfterRead = undefined;
+    }
+    return content;
+  };
+  const sessions = new SearchSessionStore(undefined, new ResultTargetStore(), read);
+  const matches: TextSearchMatch[] = original.map((lineText, index) => {
+    const startColumn = lineText.indexOf("rename_me");
+    return {
+      source,
+      lineNumber: index + 1,
+      startColumn,
+      endColumn: startColumn + "rename_me".length,
+      matchedText: "rename_me",
+      lineText,
+    };
+  });
+  const session = await sessions.register("rename_me", matches, true, cwd);
+  const seen = `// first writer\n${original.join("\n")}\n`;
+  await writeFile(source, seen);
+  writeAfterRead = `// second writer\n${seen}`;
+  const attempt = await sessions.anchorResolver().tryResolve(`SEARCH#${session.id}:6:line`, {
+    source,
+    content: seen,
+    lines: seen.split("\n"),
+    cwd,
+  });
+  expect(attempt.kind, JSON.stringify(attempt)).toBe("resolved");
+  if (attempt.kind !== "resolved") return;
+  // The caller edits the text it read, where the sixth result is on line 7.
+  expect(attempt.anchor.lineNumber).toBe(7);
+  // A caller whose text changed the selected line itself still gets a stale anchor.
+  const changed = seen.replace("rename_me(arg_5)", "renamed(arg_5)");
+  const refused = await sessions.anchorResolver().tryResolve(`SEARCH#${session.id}:6:line`, {
+    source,
+    content: changed,
+    lines: changed.split("\n"),
+    cwd,
+  });
+  expect(refused).toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
+});
+
+test("an all anchor resolves in the caller's text when another session wrote the file after the caller read it", async () => {
+  const { source, sessions, session } = await fixture(500);
+  const seen = `top\n${original.join("\n")}\n`;
+  // Another session adds a line after the caller read `seen`.
+  await writeFile(source, `peer\n${seen}`);
+  const attempt = await sessions.anchorResolver().tryResolve(`SEARCH#${session.id}:all:match`, {
+    source,
+    content: seen,
+    lines: seen.split("\n"),
+    cwd: path.dirname(source),
+  });
+  if (attempt.kind !== "resolved" || !(attempt.anchor instanceof TextSelectionAnchor))
+    throw new Error(JSON.stringify(attempt));
+  expect(attempt.anchor.ranges).toHaveLength(total);
+  // Positions belong to the caller's text: the first match is on its second line.
+  expect(attempt.anchor.ranges[0]?.start.lineNumber).toBe(2);
+  expect(attempt.anchor.ranges.at(-1)?.start.lineNumber).toBe(total + 1);
 });

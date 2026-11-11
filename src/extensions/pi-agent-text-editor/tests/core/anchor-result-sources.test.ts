@@ -1,5 +1,8 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { ResultTargetStore } from "pi-agent-resource";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import {
@@ -8,9 +11,7 @@ import {
   TEXT_SEARCH_ANCHOR_KIND,
 } from "#src/api/plugin-protocol.ts";
 
-async function fixture() {
-  const cwd = "/fixture";
-  const source = "/fixture/note.txt";
+async function fixture(cwd = "/fixture", source = "/fixture/note.txt") {
   let content = "OLD\n";
   const reads: string[] = [];
   const store = new ResultTargetStore();
@@ -58,9 +59,11 @@ async function fixture() {
       });
     },
   });
+  // Text a check of the selection reads; another session may write the file just before that.
+  let current: string | undefined;
   const issue = (owner = cwd, complete = true) => {
     const target = store.register(
-      [{ source, expectedContent: content, ranges, readCurrent: async () => content }],
+      [{ source, expectedContent: content, ranges, readCurrent: async () => current ?? content }],
       owner,
       complete,
     );
@@ -77,6 +80,9 @@ async function fixture() {
     issue,
     change: () => {
       content = "CHANGED\n";
+    },
+    writeBeforeCheck: (text: string) => {
+      current = text;
     },
   };
 }
@@ -109,3 +115,15 @@ test.each(["stale", "foreign", "invented", "incomplete"] as const)(
     expect(run.reads).toEqual([]);
   },
 );
+
+test("anchor inspection of a local file's result is not blocked when another session writes the file while it is checked", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "anchor-result-sources-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  await writeFile(source, "OLD\n");
+  const run = await fixture(cwd, source);
+  const reference = run.issue();
+  // The result store follows this file; the edit's check under the file lock decides.
+  run.writeBeforeCheck("peer\nOLD\n");
+  expect(await run.core.inspectTextAnchors(request(reference, cwd))).toEqual({ kind: "valid" });
+});
