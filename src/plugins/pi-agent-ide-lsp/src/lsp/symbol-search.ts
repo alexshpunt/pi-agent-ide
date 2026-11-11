@@ -13,6 +13,7 @@ import {
 } from "pi-agent-search/api/search";
 
 import { LspManager } from "./manager.ts";
+import type { LspClient } from "./client.ts";
 import { requestReferences, type LspLocation } from "./navigation.ts";
 import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import {
@@ -22,12 +23,14 @@ import {
   mergeCoverage,
   type ClangCoverage,
 } from "./clang-coverage.ts";
+import { requestWorkspaceSymbols, requestDocumentSymbols } from "./symbols.ts";
 import {
-  requestWorkspaceSymbols,
-  requestDocumentSymbols,
-  type LspDocumentSymbol,
-} from "./symbols.ts";
-import type { LspRange } from "./types.ts";
+  bodyEntry,
+  declarationAt,
+  declarationsNamed,
+  normalizeDocumentSymbols,
+  type LspCodeSymbol,
+} from "./symbol-selectors.ts";
 
 /** Strict discovery scope, or an explicit seed scope for reference navigation. */
 export interface SymbolSearchScope {
@@ -43,6 +46,8 @@ export interface SearchSymbol {
   readonly id: string;
   readonly name: string;
   readonly kind: string;
+  /** Selector segments that name this declaration alone in its file, such as `clamp(int, int)`. */
+  readonly selector?: readonly string[];
   readonly source: string;
   readonly range: {
     readonly startLine: number;
@@ -94,35 +99,6 @@ function sourceOf(uri: string, cwd: string): string {
   return path.resolve(parsed.fsPath);
 }
 
-function sameRange(left: LspRange, right: LspRange): boolean {
-  return (
-    left.start.line === right.start.line &&
-    left.start.character === right.start.character &&
-    left.end.line === right.end.line &&
-    left.end.character === right.end.character
-  );
-}
-function declarationNames(
-  symbols: readonly LspDocumentSymbol[],
-  name: string,
-  range: LspRange,
-): LspRange[] {
-  return symbols.flatMap((symbol) => [
-    ...(symbol.name === name &&
-    symbol.range !== undefined &&
-    sameRange(symbol.range, range) &&
-    symbol.selectionRange !== undefined
-      ? [symbol.selectionRange]
-      : []),
-    ...declarationNames(symbol.children ?? [], name, range),
-  ]);
-}
-function declarationsNamed(symbols: readonly LspDocumentSymbol[], name: string): LspRange[] {
-  return symbols.flatMap((symbol) => [
-    ...(symbol.name === name && symbol.selectionRange !== undefined ? [symbol.selectionRange] : []),
-    ...declarationsNamed(symbol.children ?? [], name),
-  ]);
-}
 /** Symbols found by {@link searchSymbols}. */
 export interface SymbolSearchResult {
   readonly hits: SymbolHit[];
@@ -271,6 +247,17 @@ async function searchSymbolsOnce(
     ...(signal && { signal }),
   });
   const coverages: (ClangCoverage | undefined)[] = [];
+  // Declarations already listed, by file and the name position of their first entry.
+  const listed = new Set<string>();
+  const outlines = new Map<string, Promise<LspCodeSymbol[]>>();
+  const outlineOf = (client: LspClient, uri: string) => {
+    let outline = outlines.get(uri);
+    if (outline === undefined) {
+      outline = requestDocumentSymbols(client, uri, signal).then(normalizeDocumentSymbols);
+      outlines.set(uri, outline);
+    }
+    return outline;
+  };
   for (const client of clients) {
     signal?.throwIfAborted();
     const definitions = await requestWorkspaceSymbols(
@@ -282,7 +269,6 @@ async function searchSymbolsOnce(
     for (const definition of definitions) {
       signal?.throwIfAborted();
       if (!withinScope(sourceOf(definition.location.uri, cwd), cwd, {})) continue;
-      // The server's symbol index can lag behind edits; a stale position is looked up by name.
       const workspaceMatch = await toMatch(definition.location, client).catch((error: unknown) => {
         if ((error as { code?: unknown } | null)?.code === "SOURCE_CHANGED") return undefined;
         throw error;
@@ -295,93 +281,116 @@ async function searchSymbolsOnce(
       );
       if (opened === null)
         throw new Error("LSP references are unavailable for a discovered declaration.");
-      let location = definition.location;
-      if (workspaceMatch?.matchedText !== definition.name) {
-        const symbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
-        let names = declarationNames(symbols, definition.name, definition.location.range);
-        // The server's symbol index can lag behind edits, so its range may belong to an older
-        // text. A name declared once in the file still identifies the declaration.
-        if (names.length !== 1) names = declarationsNamed(symbols, definition.name);
-        if (names.length !== 1)
-          throw sourceChanged(
-            "LSP declaration has no unique provider selectionRange; cannot search its references.",
-          );
-        location = { uri: opened.uri, range: requiredValue(names[0]) };
-      }
-      const declared = await toMatch(location, opened.client);
-      const symbol: SearchSymbol = {
-        id: JSON.stringify([client.serverId, declared.source, definition.location.range]),
-        name: definition.name,
-        kind: String(definition.kind),
-        source: declared.source,
-        range: {
-          startLine: declared.lineNumber,
-          startColumn: declared.startColumn,
-          endLine: declared.endLineNumber ?? declared.lineNumber,
-          endColumn: declared.endColumn,
-        },
-      };
-      const reach = await reachOf(opened.client, opened.languageId, definition.name);
-      const references = await requestReferences(
-        opened.client,
-        opened.uri,
-        location.range.start,
-        signal,
-      );
-      signal?.throwIfAborted();
-      const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
-      const reported: { location: LspLocation; reference: SearchSelectionMatch }[] = [];
-      for (const location of references) {
-        if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
-        const reference = await toMatch(location, opened.client);
-        if (
-          reference.source === declared.source &&
-          reference.lineNumber === declared.lineNumber &&
-          reference.startColumn === declared.startColumn &&
-          reference.endLineNumber === declared.endLineNumber &&
-          reference.endColumn === declared.endColumn
-        )
-          continue;
-        reported.push({ location, reference });
-      }
-      const named = await withoutCorrectedNames(
-        reported,
-        ({ location, reference }) => ({
-          uri: location.uri,
-          start: location.range.start,
-          text: reference.matchedText,
-        }),
-        [definition.name, declared.matchedText],
-        errorsOf,
-      );
-      for (const { reference } of named)
-        candidates.push({ ...reference, role: "reference", symbol });
-      if (!candidates.some(included)) continue;
-      // Only symbols that contribute hits decide what the result can be missing.
-      if (reach !== undefined)
-        coverages.push(
-          await clangCoverage(
-            reach,
-            [opened.uri, ...reported.map(({ location }) => location.uri)],
-            errorsOf,
-            (uri) => sourceOf(uri, cwd),
-          ),
+      // The server's symbol index can lag behind edits, so its range may belong to an older text.
+      // The file's current symbols then name every declaration with that name, each overload
+      // apart; a prototype and its definition are one declaration.
+      const outline = await outlineOf(opened.client, opened.uri);
+      const fresh = workspaceMatch?.matchedText === definition.name;
+      const declarations: (readonly LspCodeSymbol[] | undefined)[] = fresh
+        ? [declarationAt(outline, definition.location.range)]
+        : declarationsNamed(outline, definition.name);
+      if (declarations.length === 0)
+        throw sourceChanged(
+          `LSP declaration "${definition.name}" is not among the current symbols of its file.`,
         );
-      for (const hit of candidates) {
-        if (scope.navigation !== "references" && !included(hit)) continue;
-        // Navigation can leave the seed region, never the workspace source-access boundary.
-        if (scope.navigation === "references" && !withinScope(hit.source, cwd, {})) continue;
-        const key = JSON.stringify([
-          symbol.id,
-          hit.source,
-          hit.lineNumber,
-          hit.startColumn,
-          hit.endLineNumber,
-          hit.endColumn,
+      for (const entries of declarations) {
+        signal?.throwIfAborted();
+        // A declaration's references and renames are the same from each of its entries; its
+        // definition is the one listed.
+        const entry =
+          entries === undefined
+            ? undefined
+            : (bodyEntry(
+                entries,
+                opened.client.documentContent(opened.uri) ??
+                  (await manager.readSourceText(sourceOf(opened.uri, cwd), signal)),
+              ) ?? entries[0]);
+        const location =
+          entry === undefined
+            ? definition.location
+            : { uri: opened.uri, range: entry.selectionRange };
+        const identity = JSON.stringify([
+          opened.uri,
+          (entries?.[0]?.selectionRange ?? definition.location.range).start,
         ]);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        hits.push(hit);
+        if (listed.has(identity)) continue;
+        listed.add(identity);
+        const declared = await toMatch(location, opened.client);
+        const symbol: SearchSymbol = {
+          id: JSON.stringify([client.serverId, declared.source, location.range]),
+          name: entry?.name ?? definition.name,
+          kind: String(entry?.kind ?? definition.kind),
+          ...(entry !== undefined && { selector: entry.selector }),
+          source: declared.source,
+          range: {
+            startLine: declared.lineNumber,
+            startColumn: declared.startColumn,
+            endLine: declared.endLineNumber ?? declared.lineNumber,
+            endColumn: declared.endColumn,
+          },
+        };
+        const reach = await reachOf(opened.client, opened.languageId, symbol.name);
+        const references = await requestReferences(
+          opened.client,
+          opened.uri,
+          location.range.start,
+          signal,
+        );
+        signal?.throwIfAborted();
+        const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
+        const reported: { location: LspLocation; reference: SearchSelectionMatch }[] = [];
+        for (const location of references) {
+          if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
+          const reference = await toMatch(location, opened.client);
+          if (
+            reference.source === declared.source &&
+            reference.lineNumber === declared.lineNumber &&
+            reference.startColumn === declared.startColumn &&
+            reference.endLineNumber === declared.endLineNumber &&
+            reference.endColumn === declared.endColumn
+          )
+            continue;
+          reported.push({ location, reference });
+        }
+        const named = await withoutCorrectedNames(
+          reported,
+          ({ location, reference }) => ({
+            uri: location.uri,
+            start: location.range.start,
+            text: reference.matchedText,
+          }),
+          [symbol.name, declared.matchedText],
+          errorsOf,
+        );
+        for (const { reference } of named)
+          candidates.push({ ...reference, role: "reference", symbol });
+        if (!candidates.some(included)) continue;
+        // Only symbols that contribute hits decide what the result can be missing.
+        if (reach !== undefined)
+          coverages.push(
+            await clangCoverage(
+              reach,
+              [opened.uri, ...reported.map(({ location }) => location.uri)],
+              errorsOf,
+              (uri) => sourceOf(uri, cwd),
+            ),
+          );
+        for (const hit of candidates) {
+          if (scope.navigation !== "references" && !included(hit)) continue;
+          // Navigation can leave the seed region, never the workspace source-access boundary.
+          if (scope.navigation === "references" && !withinScope(hit.source, cwd, {})) continue;
+          const key = JSON.stringify([
+            symbol.id,
+            hit.source,
+            hit.lineNumber,
+            hit.startColumn,
+            hit.endLineNumber,
+            hit.endColumn,
+          ]);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          hits.push(hit);
+        }
       }
     }
   }

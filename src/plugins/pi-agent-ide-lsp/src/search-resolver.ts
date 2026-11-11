@@ -1,5 +1,9 @@
 import { ResultPanel } from "pi-agent-tool-ui";
-import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
+import {
+  formatSymbolSelector,
+  parseCodeViewReference,
+  resolveCodeViewPath,
+} from "pi-agent-ide/api/code-view";
 import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import {
   currentScope,
@@ -344,12 +348,15 @@ export function createLspSearchResolver(
       const lines =
         result.hits.length === 0
           ? ["No symbols found."]
-          : result.hits
-              .slice(0, 100)
-              .map(
-                (hit, index) =>
-                  `SEARCH#${result.sessionId}:${index + 1}:match ${display(hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · declared at ${display(hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`,
-              );
+          : result.hits.slice(0, 100).map(
+              (hit, index) =>
+                `SEARCH#${result.sessionId}:${index + 1}:match ${display(hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · ${
+                  // A definition names the selector of its declaration, which tells overloads apart.
+                  hit.role === "definition" && hit.symbol.selector !== undefined
+                    ? `selector ${display(hit.symbol.source)}#${formatSymbolSelector(hit.symbol.selector)}`
+                    : `declared at ${display(hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`
+                }`,
+            );
       if (result.complete && result.hits.length)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");

@@ -219,7 +219,7 @@ export async function registerLspWithOwner(
             .tool(operation)
             .describeField(
               "path",
-              "symbol:<file>#<selector> selects one declaration without start; imports and references are not updated." +
+              "symbol:<file>#<selector> selects one declaration without start; imports and references are not updated. A selector is a name or parent/child path; name one overload by its parameter types, such as clamp(int, float)." +
                 (operation === "replace"
                   ? " symbol:<file>#<selector>#name renames it, with the new name in text."
                   : ""),

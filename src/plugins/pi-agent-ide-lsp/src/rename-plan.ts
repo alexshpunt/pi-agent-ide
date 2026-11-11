@@ -106,7 +106,7 @@ async function prepareRename(
     (uri) => manager.openFile(fileOf(uri), state.cwd, "symbols", state.signal),
     state.signal,
   );
-  const oldNames = [reference.selector.at(-1) ?? "", identifierAt(target.content, target.position)];
+  const oldNames = [target.name, identifierAt(target.content, target.position)];
   // clangd renames unopened files from its index; opened files become participants with edits
   // from a fresh parse.
   const reach = await createClangReach({

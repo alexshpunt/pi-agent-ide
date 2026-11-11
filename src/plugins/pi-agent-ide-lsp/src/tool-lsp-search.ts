@@ -25,7 +25,7 @@ export const lspSearchSchema = Type.Object(
       Type.String({
         minLength: 1,
         description:
-          "file#selector, such as src/app.ts#App/start: returns that declaration as an editable selection.",
+          "file#selector, such as src/app.ts#App/start or main.cpp#clamp(int, float) for one overload: returns that declaration as an editable selection.",
       }),
     ),
     calls: Type.Optional(

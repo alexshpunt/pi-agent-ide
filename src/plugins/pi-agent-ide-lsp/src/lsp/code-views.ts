@@ -28,6 +28,12 @@ import {
   type ClangReachProvider,
 } from "./clang-coverage.ts";
 import { withinScope } from "./symbol-search.ts";
+import {
+  declarationBody,
+  normalizeDocumentSymbols,
+  resolveSymbolDeclaration,
+  type LspCodeSymbol,
+} from "./symbol-selectors.ts";
 
 import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
@@ -38,21 +44,13 @@ import type {
   LspLocation,
   LspOutgoingCall,
 } from "./navigation.ts";
-import type { LspDocumentSymbol } from "./symbols.ts";
 import type { LspRange } from "./types.ts";
 
 const MAX_GROUPS = 10;
 const MAX_ITEMS_PER_GROUP = 5;
 const MAX_CALLS = 10;
 
-export interface LspCodeSymbol {
-  readonly name: string;
-  readonly kind: number;
-  readonly range: LspRange;
-  readonly selectionRange: LspRange;
-  readonly selector: readonly string[];
-  readonly children: readonly LspCodeSymbol[];
-}
+export type { LspCodeSymbol } from "./symbol-selectors.ts";
 
 interface LspCodeDocument {
   readonly client: LspClient;
@@ -89,9 +87,11 @@ async function resolveLspDeclarationOnce(
 ): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
   throwIfAborted(signal);
   const document = await openCodeDocument(manager, filePath, cwd, signal);
-  const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
+  const entries = resolveSymbolDeclaration(document.symbols, selector, document.displayPath);
   const current = await manager.readSourceText(document.filePath, signal);
   throwIfAborted(signal);
+  // A text edit acts on the definition, not on its prototype.
+  const symbol = declarationBody(entries, document.servedText ?? current, document.displayPath);
   // Other Pi processes may have edited the file while the server answered, and on a shared
   // server another session's newer text may be what it answered for. The text where the name
   // sits at the reported position is the one the ranges belong to; the declaration then moves
@@ -128,6 +128,7 @@ export async function resolveLspRenameTarget(
     client: document.client,
     uri: document.uri,
     position: symbol.selectionRange.start,
+    name: symbol.name,
     content,
   };
 }
@@ -249,52 +250,14 @@ export async function readLspFileGraph(
   }, signal);
 }
 
+/** The entry of the declaration `selector` names whose position navigation requests use. */
 export function resolveLspCodeSymbol(
   symbols: readonly LspCodeSymbol[],
   selector: readonly string[],
   displayPath: string,
 ): LspCodeSymbol {
-  if (selector.length === 0) {
-    throw new TypeError("A symbol selector must contain at least one segment.");
-  }
-
-  if (selector.length === 1) {
-    const matches = collectNamedSymbols(symbols, requiredValue(selector[0]));
-
-    if (matches.length === 1) {
-      return requiredValue(matches[0]);
-    }
-
-    if (matches.length > 1) {
-      throw new Error(
-        `Symbol selector "${formatSymbolSelector(selector)}" is ambiguous in ${displayPath}; use parent/child.`,
-      );
-    }
-
-    throw symbolNotFound(selector, displayPath);
-  }
-
-  let current = symbols;
-  let selected: LspCodeSymbol | undefined;
-
-  for (const segment of selector) {
-    const matches = current.filter((symbol) => symbol.name === segment);
-
-    if (matches.length === 0) {
-      throw symbolNotFound(selector, displayPath);
-    }
-
-    if (matches.length > 1) {
-      throw new Error(
-        `Symbol selector "${formatSymbolSelector(selector)}" is ambiguous at "${segment}" in ${displayPath}.`,
-      );
-    }
-
-    selected = requiredValue(matches[0]);
-    current = selected.children;
-  }
-
-  return requiredValue(selected);
+  // A prototype and its definition answer references, calls and renames alike.
+  return requiredValue(resolveSymbolDeclaration(symbols, selector, displayPath)[0]);
 }
 
 async function openCodeDocument(
@@ -314,7 +277,7 @@ async function openCodeDocument(
 
   const servedText = opened.client.documentContent(opened.uri);
   const rawSymbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
-  const symbols = normalizeDocumentSymbols(rawSymbols).sort(compareSymbols);
+  const symbols = normalizeDocumentSymbols(rawSymbols);
   return {
     client: opened.client,
     uri: opened.uri,
@@ -324,51 +287,6 @@ async function openCodeDocument(
     servedText,
     languageId: opened.languageId,
   };
-}
-
-function normalizeDocumentSymbols(
-  symbols: readonly LspDocumentSymbol[],
-  parentSelector: readonly string[] = [],
-): LspCodeSymbol[] {
-  return symbols.flatMap((symbol) => {
-    const selectionRange = symbol.selectionRange ?? symbol.range;
-
-    if (!selectionRange) {
-      return [];
-    }
-
-    const range = symbol.range ?? selectionRange;
-    const selector = [...parentSelector, symbol.name];
-    return [
-      {
-        name: symbol.name,
-        kind: symbol.kind,
-        range,
-        selectionRange,
-        selector,
-        children: normalizeDocumentSymbols(symbol.children ?? [], selector).sort(compareSymbols),
-      },
-    ];
-  });
-}
-
-function compareSymbols(left: LspCodeSymbol, right: LspCodeSymbol): number {
-  return (
-    left.range.start.line - right.range.start.line ||
-    left.range.start.character - right.range.start.character ||
-    left.name.localeCompare(right.name)
-  );
-}
-
-function collectNamedSymbols(symbols: readonly LspCodeSymbol[], name: string): LspCodeSymbol[] {
-  return symbols.flatMap((symbol) => [
-    ...(symbol.name === name ? [symbol] : []),
-    ...collectNamedSymbols(symbol.children, name),
-  ]);
-}
-
-function symbolNotFound(selector: readonly string[], displayPath: string): Error {
-  return new Error(`Symbol "${formatSymbolSelector(selector)}" was not found in ${displayPath}.`);
 }
 
 async function queryRelations(

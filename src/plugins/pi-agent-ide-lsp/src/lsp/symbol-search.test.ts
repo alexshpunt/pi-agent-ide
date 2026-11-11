@@ -41,6 +41,7 @@ async function fixture() {
     .mockImplementation(async (method, parameters) => {
       const input = parameters as { textDocument?: { uri: string } };
       if (method === "workspace/symbol") return definitions;
+      if (method === "textDocument/documentSymbol") return [];
       if (method === "textDocument/references")
         return input.textDocument?.uri === definitions[0].location.uri
           ? [definitions[0].location, location("a.ts", 1, 0, 4), location("b.ts", 0, 0, 4)]
