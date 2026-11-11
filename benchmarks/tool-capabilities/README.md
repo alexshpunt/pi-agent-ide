@@ -142,6 +142,8 @@ The `read-jq` case includes a transformed output window. `read-jq-bounded-input`
 
 The `read-error-direct` and `read-error-codemode` cases also check a declared failure for a complete fragmented provider address. They require the safe error value and exactly one full-address acquisition, even though its bare source is readable. The independent missing-file error and successful file read remain controls. These direct and Codemode routes remain unverified until paid execution.
 
+The `write-json-text` case checks that Write saves JSON text byte for byte, including `1.0`, spacing and escaped quotes. Its direct route matters most on Anthropic models: their tool-call layer converts parameter text by the declared schema, so a field that also accepts objects would receive JSON text as an object. Providers that pass the model's JSON arguments unchanged do not exercise that conversion. `read-image-write` passes the image through Write `image`, not `content`.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
