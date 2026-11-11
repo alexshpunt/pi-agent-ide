@@ -35,6 +35,8 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
       lines.map((line) => line.content),
       (candidate) => {
         context.signal?.throwIfAborted();
+        // The two header lines and each rendered line take at least one output line.
+        if (candidate.renderedLines.length + 2 > budget.maxLines) return false;
         return !truncateHead(format(candidate), budget).truncated;
       },
     );
