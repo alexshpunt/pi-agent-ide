@@ -224,6 +224,11 @@ export class SearchSessionStore {
     refresh?: SearchSelectionRegistration["refresh"],
     snapshotByteBudget?: number,
     environment?: SearchEnvironment,
+    /**
+     * Text of each source as the backend searched it. Captured text is the snapshot, so no second
+     * read can find a file another process wrote in between.
+     */
+    searched?: ReadonlyMap<string, string>,
   ): Promise<TextSearchSession> {
     // Sessions live as long as their anchors. A copied match keeps only its own text, not the
     // whole file that its line or match text was cut from.
@@ -239,6 +244,9 @@ export class SearchSessionStore {
       snapshotByteBudget,
       environment,
       read,
+      searched === undefined
+        ? undefined
+        : new Map([...searched].map(([source, text]) => [canonicalSource(source), text])),
     );
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
@@ -995,11 +1003,19 @@ function validateSnapshot(
   matches: readonly TextSearchMatch[],
 ): void {
   const document = createTextDocument(source, content);
-  for (const match of matches.filter((candidate) => candidate.source === source)) {
-    const line = document.lines[match.lineNumber - 1]?.content;
-    if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText)
-      throw new SearchSnapshotChangedError(source);
-  }
+  for (const match of matches.filter((candidate) => candidate.source === source))
+    if (!matchDescribesText(document, match)) throw new SearchSnapshotChangedError(source);
+}
+
+/** Whether a match still names the same line and the same matched text in this document. */
+export function matchDescribesText(
+  document: ReturnType<typeof createTextDocument>,
+  match: TextSearchMatch,
+): boolean {
+  return (
+    document.lines[match.lineNumber - 1]?.content === match.lineText &&
+    matchedSourceText(document, match) === match.matchedText
+  );
 }
 async function readBoundedSnapshot(
   source: string,

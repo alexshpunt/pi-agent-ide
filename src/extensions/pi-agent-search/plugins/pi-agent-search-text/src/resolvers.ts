@@ -3,7 +3,9 @@ import { pathToFileURL } from "node:url";
 import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.ts";
 
+import { captureCurrentMatches } from "#src/current-matches.ts";
 import { searchFiles } from "#src/file-search.ts";
+import type { TextSearchRequest } from "#src/search-backend.ts";
 import {
   booleanQueryNotice,
   createSearchRecipe,
@@ -47,6 +49,20 @@ interface FilePayload {
   readonly query: string;
   readonly files: readonly string[];
   readonly complete: boolean;
+}
+
+/**
+ * The query and options that produced these matches, including the broadening step a fallback
+ * used, so the same matching can run again inside the text the matches are registered with.
+ */
+function effectiveRequest(result: TextPayload): TextSearchRequest {
+  const query = result.request.query;
+  if (query === result.recipe.query) return result.recipe;
+  const fallback = result.recipe.fallbacks?.find((candidate) => candidate.query === query);
+  const { condition: _condition, ...options } = result.recipe;
+  return fallback?.condition === undefined
+    ? { ...options, query, regex: true }
+    : { ...options, query, regex: true, condition: fallback.condition };
 }
 
 /** Search unhandled requests with literal-first hybrid matching. */
@@ -211,24 +227,37 @@ function createMatchResolver(
       const result = payload as TextPayload;
 
       const scope = context.scope;
-      const session = await sessions.registerIfCurrent(
-        result.request.query,
-        result.matches,
-        result.complete,
-        context.cwd,
-        context.signal,
-        result.recipe,
+      const refresh =
         scope === undefined
           ? undefined
-          : async (signal) =>
+          : async (signal?: AbortSignal) =>
               runScopedSearch(
                 result.recipe,
                 (await currentScope(context, signal)) ?? scope,
                 context.cwd,
                 signal,
-              ),
+              );
+      // Another session may write a matched file between the search and this registration. The
+      // captured text is the snapshot, and its own matches are registered with it.
+      const captured = await captureCurrentMatches(result, context.cwd, {
+        request: effectiveRequest(result),
+        inContent: scope === undefined,
+        ...(refresh === undefined ? {} : { rerun: refresh }),
+        ...(context.environment === undefined ? {} : { environment: context.environment }),
+        ...(context.signal === undefined ? {} : { signal: context.signal }),
+      });
+      const notices = [...result.notices, ...captured.notices];
+      const session = await sessions.register(
+        result.request.query,
+        captured.matches,
+        captured.complete,
+        context.cwd,
+        context.signal,
+        result.recipe,
+        refresh,
         undefined,
         context.environment,
+        captured.contents,
       );
       if (result.fuzzy !== undefined) {
         const details = createSearchToolDetails(
@@ -277,7 +306,7 @@ function createMatchResolver(
           ...(message === undefined ? {} : { message }),
           candidates: groups,
         };
-        const rows = [...result.notices, "No matches found."];
+        const rows = [...notices, "No matches found."];
         if (groups.some((candidate) => candidate.selection.matches[0]?.references !== undefined))
           rows.push(SEARCH_ANCHOR_LEGEND);
         if (fuzzy.status === "ready" && fuzzy.message !== undefined) rows.push(fuzzy.message);
@@ -292,7 +321,7 @@ function createMatchResolver(
           content: [{ type: "text", text: rows.join("\n\n") }],
           details: {
             ...details,
-            ...(session?.target === undefined ? {} : { target: session.target, matchTargets: [] }),
+            ...(session.target === undefined ? {} : { target: session.target, matchTargets: [] }),
             fuzzyPresentation: createFuzzyPresentation(result.fuzzy.candidates, context.cwd),
             fuzzy,
           } satisfies SearchToolDetails,
@@ -300,40 +329,32 @@ function createMatchResolver(
       }
 
       const detailBudget = result.request.limit ?? 50;
-      if (result.matches.length === 0) {
+      if (session.matches.length === 0) {
         return {
-          content: [{ type: "text", text: [...result.notices, "No matches found."].join("\n") }],
+          content: [{ type: "text", text: [...notices, "No matches found."].join("\n") }],
           details: {
-            ...createSearchToolDetails(result.request.query, [], result.complete, context.cwd),
-            ...(session?.target === undefined ? {} : { target: session.target, matchTargets: [] }),
+            ...createSearchToolDetails(session.query, [], session.complete, context.cwd),
+            ...(session.target === undefined ? {} : { target: session.target, matchTargets: [] }),
           },
         };
       }
-      const display = session ?? {
-        query: result.request.query,
-        matches: result.matches,
-        complete: result.complete,
-      };
       return {
         content: [
           {
             type: "text",
-            text: [
-              ...result.notices,
-              formatSearchSession(display, context.cwd, detailBudget, session !== undefined),
-            ].join("\n"),
+            text: [...notices, formatSearchSession(session, context.cwd, detailBudget)].join("\n"),
           },
         ],
         details: {
           ...createSearchToolDetails(
-            display.query,
-            display.matches,
-            display.complete,
+            session.query,
+            session.matches,
+            session.complete,
             context.cwd,
-            session?.id,
+            session.id,
             detailBudget,
           ),
-          ...(session?.target === undefined
+          ...(session.target === undefined
             ? {}
             : { target: session.target, matchTargets: session.matchTargets }),
         },
@@ -344,20 +365,17 @@ function createMatchResolver(
 }
 
 function formatSearchSession(
-  session: Omit<TextSearchSession, "id"> & { readonly id?: string },
+  session: TextSearchSession,
   cwd: string,
   detailBudget: number,
-  anchorsRegistered = true,
 ): string {
   const fileCount = new Set(session.matches.map((match) => match.source)).size;
   const count = session.matches.length;
   const summary = `${String(count)}${session.complete ? "" : "+"} ${plural(count, "match", "matches")} in ${String(fileCount)} ${plural(fileCount, "file", "files")}`;
-  const heading = anchorsRegistered
-    ? session.complete
-      ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${summary}`
-      : `${summary} (incomplete results; no all anchors were registered)`
-    : `${summary} (files changed during search; results shown without anchors)`;
-  const lines = anchorsRegistered ? [SEARCH_ANCHOR_LEGEND, heading] : [heading];
+  const heading = session.complete
+    ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${summary}`
+    : `${summary} (incomplete results; no all anchors were registered)`;
+  const lines = [SEARCH_ANCHOR_LEGEND, heading];
   const indices = new Map(session.matches.map((match, index) => [match, index + 1]));
   const presentation = planSearchPresentation(session.matches, detailBudget);
 
@@ -372,9 +390,9 @@ function formatSearchSession(
         const index = indices.get(group.first);
         const first = group.first;
         lines.push(
-          anchorsRegistered && index !== undefined
-            ? `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
-            : `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)}`,
+          index === undefined
+            ? `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)}`
+            : `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`,
           `    ${previewLine(group.text)}`,
         );
       }
@@ -398,9 +416,7 @@ function formatSearchSession(
           : `${String(match.endLineNumber)}:${String(match.endColumn + 1)}`;
       const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${end}`;
       lines.push(
-        anchorsRegistered
-          ? `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
-          : location,
+        `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`,
         `  ${previewMatch(match)}`,
       );
     }
