@@ -56,10 +56,10 @@ A conceptual result may look like:
 ## file: src/service.ts
 Lines: 1-42 of 180
 
-K7M2QX4|export class Service { <!-- scope-begin-AB12 -->
+K7M2QX4|export class Service { <!-- scope-begin-K7M2QX4 -->
 B4NR9T2|    constructor(private readonly db: Database);
 C8P3V5W|    async load(id: string): Promise<Item> { … }
-D9Q4X6Y|} <!-- scope-end-77AA -->
+D9Q4X6Y|} <!-- scope-end-K7M2QX4 -->
 ```
 
 The exact outline syntax belongs to the AST provider, but the result must remain plain text with inspectable source locations and anchors wherever a rendered line maps to the source.

@@ -44,12 +44,14 @@ The AST provider may identify classes, functions, methods, blocks, declarations,
 Markers are attached to the source lines that define the scope boundaries:
 
 ```text
-K7M2QX4|export function main() {  <!-- scope-begin-ABCD -->
+K7M2QX4|export function main() {  <!-- scope-begin-K7M2QX4 -->
 B4NR9T2|    work();
-C8P3V5W|}  <!-- scope-end-12AA -->
+C8P3V5W|}  <!-- scope-end-K7M2QX4 -->
 ```
 
-The marker format is part of the anchor protocol. Scope markers must remain distinguishable from ordinary line anchors and must preserve occurrence information when two scopes have the same hash.
+The marker format is part of the anchor protocol. A scope is named by the line anchor of its first line, and both of its markers carry that name with a `scope-begin-` or `scope-end-` prefix, so they stay distinguishable from ordinary line anchors. No two scopes start on the same line: of the candidates that do, the provider keeps the outermost.
+
+A scope anchor therefore follows its scope like a line anchor follows its line. It keeps resolving through edits inside the scope and moves of other code, including another copy of an identical scope. It is rejected as stale once the scope's first line changes and as ambiguous if its name matches more than one scope. Anchors in the earlier content-hash format, such as `scope-begin-ABCD` or `scope-end-12AA-2`, are rejected as stale.
 
 ## Processing rules
 
