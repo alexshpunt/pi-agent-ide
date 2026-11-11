@@ -1,9 +1,21 @@
 import type { FileMutationResult } from "./file-mutation-result.ts";
+import {
+  describeAlreadyDone,
+  describeAlreadyDoneFile,
+  type AlreadyDoneTarget,
+} from "#src/core/already-done.ts";
 
 /** Exact applied replacement pairs and complete per-file counts, before formatting. */
 export interface GroupedReplacements {
   readonly groups: readonly { removedText: string; insertedText: string; count: number }[];
-  readonly files: readonly { path: string; groups: readonly number[]; formatting: string }[];
+  readonly files: readonly {
+    path: string;
+    groups: readonly number[];
+    formatting: string;
+    alreadyDone: readonly AlreadyDoneTarget[];
+  }[];
+  /** Files left unwritten because every target in them already had its text. */
+  readonly untouched: readonly FileMutationResult[];
   readonly changes: number;
 }
 
@@ -14,11 +26,25 @@ export function groupReplacements(
   if (results.length === 0) return;
   const groups: { removedText: string; insertedText: string; count: number }[] = [];
   const indexes = new Map<string, number>();
-  const files = new Map<string, { path: string; groups: number[]; formatting: Set<string> }>();
+  const files = new Map<
+    string,
+    { path: string; groups: number[]; formatting: Set<string>; alreadyDone: AlreadyDoneTarget[] }
+  >();
+  const untouched: FileMutationResult[] = [];
   let changes = 0;
   for (const result of results) {
     const operations = result.data.operations;
     const raw = result.data.rawChanges;
+    if (
+      result.ok &&
+      result.errors.length === 0 &&
+      !operations?.length &&
+      !raw?.length &&
+      (result.data.alreadyDone?.length ?? 0) > 0
+    ) {
+      untouched.push(result);
+      continue;
+    }
     if (
       !result.ok ||
       result.isPartial ||
@@ -37,7 +63,9 @@ export function groupReplacements(
       path: result.path,
       groups: [],
       formatting: new Set<string>(),
+      alreadyDone: [],
     };
+    file.alreadyDone.push(...(result.data.alreadyDone ?? []));
     const counts = file.groups;
     for (const change of raw) {
       const key = JSON.stringify([change.removedText, change.insertedText]);
@@ -64,6 +92,7 @@ export function groupReplacements(
   if (groups.length === changes) return;
   return {
     groups,
+    untouched,
     files: Array.from(files.values(), (file) => ({
       ...file,
       formatting: Array.from(file.formatting).join(", "),
@@ -86,5 +115,10 @@ export function renderGroupedReplacements(receipt: GroupedReplacements): string 
       (file) =>
         `${file.path}: ${file.groups.flatMap((count, index) => (count ? [`G${index + 1} x ${count}`] : [])).join(", ")}; formatting: ${file.formatting}`,
     ),
+    ...receipt.files.flatMap((file) => {
+      const alreadyDone = describeAlreadyDone(file.alreadyDone);
+      return alreadyDone === undefined ? [] : [`${file.path}: ${alreadyDone}`];
+    }),
+    ...receipt.untouched.map(describeAlreadyDoneFile),
   ].join("\n");
 }

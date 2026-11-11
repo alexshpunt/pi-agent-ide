@@ -1358,7 +1358,7 @@ async function previewTextResources(
       const applied =
         changes === undefined
           ? { content: item.before.content, changes: [] }
-          : applyTextChanges(item.before.content, changes, !item.existed);
+          : applyTextChanges(item.before.content, changes);
       return {
         path: source,
         existed: item.existed,
@@ -1519,7 +1519,7 @@ async function editTextResources<Result>(
 
   for (const [source, changes] of mutation.changes) {
     const item = requiredValue(prepared.get(source));
-    applied.set(source, applyTextChanges(item.before.content, changes, !item.existed));
+    applied.set(source, applyTextChanges(item.before.content, changes));
   }
 
   const plan: TextMutationPlan = {

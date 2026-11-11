@@ -66,8 +66,14 @@ import {
   attachCommittedMutationTarget,
   attachWriteTarget,
   describeUnavailableCopyTarget,
-  unchangedCopySources,
+  isAlreadyDoneMutation,
 } from "./mutation-result-targets.ts";
+import {
+  alreadyDoneFileResult,
+  alreadyDoneTargets,
+  alreadyDoneToolResult,
+  isAlreadyDone,
+} from "./already-done.ts";
 import { wholeFileResultSource } from "./result-input.ts";
 import {
   bindContextAliases,
@@ -170,7 +176,7 @@ export function createTextTool<TParameters extends TSchema>(
       }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
         let plannedEdits: ReadonlyMap<string, TextMutationEdit> | undefined;
-        const copyPlan = { snapshots: new Map<string, string>(), unchanged: false };
+        const unchangedPlan = { snapshots: new Map<string, string>() };
         const captured = await runNativePostEditScope(
           core,
           toolCallId,
@@ -334,14 +340,11 @@ export function createTextTool<TParameters extends TSchema>(
                       mutationContext,
                     );
                     plannedEdits = mutation.edits;
-                    if (definition.name === "copy") {
-                      for (const source of mutation.edits.keys())
-                        copyPlan.snapshots.set(source, mutationContext.documentFor(source).content);
-                      copyPlan.unchanged =
-                        mutation.edits.size > 0 &&
-                        unchangedCopySources(mutation, copyPlan.snapshots).size ===
-                          mutation.edits.size;
-                    }
+                    for (const source of mutation.edits.keys())
+                      unchangedPlan.snapshots.set(
+                        source,
+                        mutationContext.documentFor(source).content,
+                      );
                     return mutation;
                   },
                 };
@@ -434,16 +437,7 @@ export function createTextTool<TParameters extends TSchema>(
             toolCallId,
           );
         }
-        const completedValue =
-          copyPlan.unchanged && captured.completions.length === 0 && !captured.value.isError
-            ? {
-                ...captured.value,
-                content: [
-                  { type: "text" as const, text: "No changes: destination already has this text." },
-                ],
-                details: { ...captured.value.details, effect: "not-applied" as const },
-              }
-            : captured.value;
+        const completedValue = captured.value;
         // Live-resource actions have their own receipts, not filesystem editor batches.
         if (
           captured.completions.every(
@@ -476,7 +470,7 @@ export function createTextTool<TParameters extends TSchema>(
                   definition.name === "undo",
                   plannedEdits,
                   definition.name === "copy" || definition.name === "move",
-                  copyPlan.snapshots,
+                  unchangedPlan.snapshots,
                 )
             : completedValue;
         return structuredMutation(
@@ -926,6 +920,8 @@ interface MutationExecutionContext extends TextMutationContext {
 interface ExecutedTextMutation extends TextMutation {
   readonly resultPresentations: ReadonlyMap<string, MutationResultPresentation>;
   readonly unchangedWrite?: { readonly source: string; readonly content: string };
+  /** Text of each edited source before the edit, to name targets that already had their text. */
+  readonly snapshots?: ReadonlyMap<string, string>;
 }
 
 function createMutationContext(
@@ -1277,6 +1273,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
               changes: new Map(plan.files.map((file) => [file.source, file.changes])),
               result: {
                 edits,
+                snapshots: texts,
                 resultPresentations: new Map(
                   plan.files.map((file) => [file.source, "plain" as const]),
                 ),
@@ -1380,6 +1377,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
           );
           const executedMutation: ExecutedTextMutation = {
             ...withResultPresentations(mutation, mutationContext),
+            snapshots: texts,
             ...(definition.name === "write" && {
               unchangedWrite: {
                 source: mutationContext.sourceFor("path"),
@@ -1460,24 +1458,23 @@ type CompletedTextResource = Extract<
   { readonly kind: "completed" }
 >;
 
-/** Count real Copy changes without counting retained identical destination ranges. */
+/** Count real changes; targets that already had their text are reported separately. */
 export function textMutationOperationReceipts(
   operation: string,
   edit: TextMutationEdit,
   before: string,
 ): readonly MutationOperationReceipt[] {
+  // A created empty file is written although its text does not change.
   const changes =
-    operation === "copy"
-      ? edit.changes.filter(
-          (change) =>
-            !change.allowUnchanged || before.slice(change.from, change.to) !== change.insert,
-        ).length
-      : edit.changes.length;
-  return operation === "copy" && changes === 0 ? [] : [{ operation, changes }];
+    operation === "write"
+      ? edit.changes.length
+      : edit.changes.filter((change) => !isAlreadyDone(before, change)).length;
+  return changes === 0 ? [] : [{ operation, changes }];
 }
 function textMutationRawChanges(before: string, changes: TextMutationEdit["changes"]) {
-  return applyTextChanges(before, changes, before.length === 0).changes.map(
-    (change, editIndex) => ({
+  return applyTextChanges(before, changes)
+    .changes.filter((change) => change.removedText !== change.insertedText)
+    .map((change, editIndex) => ({
       editIndex,
       fromA: change.fromBefore,
       toA: change.toBefore,
@@ -1485,8 +1482,7 @@ function textMutationRawChanges(before: string, changes: TextMutationEdit["chang
       toB: change.toAfter,
       removedText: change.removedText,
       insertedText: change.insertedText,
-    }),
-  );
+    }));
 }
 
 /**
@@ -1545,9 +1541,11 @@ export function buildSuccessfulTextMutationResult(
     .map((contribution) => contribution.data)
     .find(isTextMutationResultContributionData);
   const rawChanges = textMutationRawChanges(before, edit.changes);
+  const alreadyDone = alreadyDoneTargets(before, edit.changes);
 
   return new FileMutationResult({
     ...mutationResultData,
+    ...(alreadyDone.length > 0 && { alreadyDone }),
 
     ...(diffPeerRanges === undefined ? {} : { diffPeerRanges }),
 
@@ -1700,6 +1698,12 @@ async function buildToolResult(
       },
     };
   }
+  if (
+    outcome.resources.length === 0 &&
+    mutation.snapshots !== undefined &&
+    isAlreadyDoneMutation(mutation, mutation.snapshots)
+  )
+    return alreadyDoneToolResult([mutation], mutation.snapshots);
   const results = outcome.resources.flatMap((resource) => {
     const resultSource = resource.source;
     const edit = mutation.edits.get(resultSource);
@@ -1719,7 +1723,20 @@ async function buildToolResult(
         ];
   });
 
-  const presented = results.map((result) => withPipelineStatuses(result, pipeline.state.metadata));
+  // A source whose every target already had its text is not written but is still reported.
+  const untouched = [...mutation.edits].flatMap(([editSource, edit]) => {
+    const content = mutation.snapshots?.get(editSource);
+    if (
+      content === undefined ||
+      outcome.resources.some((resource) => resource.source === editSource)
+    )
+      return [];
+    const result = alreadyDoneFileResult(editSource, content, edit.changes);
+    return result === undefined ? [] : [result];
+  });
+  const presented = [...results, ...untouched].map((result) =>
+    withPipelineStatuses(result, pipeline.state.metadata),
+  );
   return {
     content: [new FileMutationAgentResult(presented).toTextContent()],
     details: { results: presented },

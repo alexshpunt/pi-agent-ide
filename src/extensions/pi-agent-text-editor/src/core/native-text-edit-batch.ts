@@ -35,7 +35,12 @@ import {
   type StructuredResult,
 } from "pi-agent-resource";
 import { createPostEditScope } from "./post-edit-scope.ts";
-import { committedMutationTargets, unchangedCopySources } from "./mutation-result-targets.ts";
+import {
+  committedMutationTargets,
+  isAlreadyDoneMutation,
+  unchangedSources,
+} from "./mutation-result-targets.ts";
+import { ALREADY_DONE_TEXT, alreadyDoneToolResult } from "./already-done.ts";
 import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.ts";
 import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.ts";
 import { captureScriptMutation } from "./text-mutation.ts";
@@ -735,13 +740,9 @@ class NativeTextEditBatchCoordinator {
       ? this.resultTargets.reserve(context.cwd)
       : undefined;
     if (target) script.targets.set(id, target);
-    const unchangedCopy =
-      registration.name === "copy" &&
-      planning.plan.mutations.every(
-        ({ mutation }) =>
-          mutation.edits.size > 0 &&
-          unchangedCopySources(mutation, batch.snapshots).size === mutation.edits.size,
-      );
+    const unchanged = planning.plan.mutations.every(({ mutation }) =>
+      isAlreadyDoneMutation(mutation, batch.snapshots),
+    );
     const details = {
       results: [],
       source: entry.path,
@@ -753,11 +754,10 @@ class NativeTextEditBatchCoordinator {
       content: [
         {
           type: "text",
-          text:
-            registration.name === "copy"
-              ? unchangedCopy
-                ? "No changes: destination already has this text."
-                : `Copy destination: ${typeof normalized.target === "string" ? normalized.target : entry.path}`
+          text: unchanged
+            ? ALREADY_DONE_TEXT
+            : registration.name === "copy"
+              ? `Copy destination: ${typeof normalized.target === "string" ? normalized.target : entry.path}`
               : `Accepted ${registration.name} for ${entry.path}. Check the final Codemode result for applied changes.`,
         },
       ],
@@ -821,16 +821,14 @@ class NativeTextEditBatchCoordinator {
       script.context.signal === undefined
         ? script.cancellation.signal
         : AbortSignal.any([script.context.signal, script.cancellation.signal]);
-    const unchangedCopies = new Map(
-      batch.plan.mutations
-        .filter(({ mutation }) => mutation.operation === "copy")
-        .map(({ callId, mutation }) => {
-          const sources = unchangedCopySources(mutation, batch.snapshots);
-          return [
-            callId,
-            { sources, all: sources.size > 0 && sources.size === mutation.edits.size },
-          ] as const;
-        }),
+    const unchangedCalls = new Map(
+      batch.plan.mutations.map(({ callId, mutation }) => {
+        const sources = unchangedSources(mutation, batch.snapshots);
+        return [
+          callId,
+          { sources, all: sources.size > 0 && sources.size === mutation.edits.size },
+        ] as const;
+      }),
     );
     let observedSources: string[] = [];
     const record = (
@@ -853,7 +851,7 @@ class NativeTextEditBatchCoordinator {
         id: call.callId,
         operation: requiredValue(batch.entries.find((entry) => entry.callId === call.callId)).op,
         effect:
-          call.state === "completed" && unchangedCopies.get(call.callId)?.all
+          call.state === "completed" && unchangedCalls.get(call.callId)?.all
             ? ("not-applied" as const)
             : call.state === "completed" || call.state === "failed-applied"
               ? ("applied" as const)
@@ -873,7 +871,7 @@ class NativeTextEditBatchCoordinator {
             source,
             effect:
               mutation?.edits.has(source) === false ||
-              unchangedCopies.get(operation.id)?.sources.has(source) === true
+              unchangedCalls.get(operation.id)?.sources.has(source) === true
                 ? ("not-applied" as const)
                 : operation.effect,
           }));
@@ -942,27 +940,36 @@ class NativeTextEditBatchCoordinator {
       );
       observedSources = captured.completions.map((completion) => completion.resourceSource);
       if (captured.kind === "failed") throw captured.error;
-      const value =
+      const alreadyDone =
         captured.completions.length === 0 &&
         journal
           .snapshot()
-          .every((call) => call.state === "completed" && unchangedCopies.get(call.callId)?.all)
-          ? {
+          .every((call) => call.state === "completed" && unchangedCalls.get(call.callId)?.all)
+          ? alreadyDoneToolResult(
+              batch.plan.mutations.map(({ mutation }) => mutation),
+              batch.snapshots,
+            )
+          : undefined;
+      const value =
+        alreadyDone === undefined
+          ? captured.value
+          : {
               ...captured.value,
-              content: [
-                { type: "text" as const, text: "No changes: destination already has this text." },
-              ],
-              details: { ...captured.value.details, effect: "not-applied" as const },
-            }
-          : captured.value;
+              content: alreadyDone.content,
+              details: {
+                ...captured.value.details,
+                effect: "not-applied" as const,
+                results: alreadyDone.details.results,
+              },
+            };
       script.results.push(...(value.details.results ?? []));
       await this.settleTargets(script, batch, journal, captured.completions, signal);
       const presentation = {
         parentToolCallId: script.id,
         calls: batch.entries.map((entry) => entry.callId),
-        unchangedCopyCalls: journal
+        unchangedCalls: journal
           .snapshot()
-          .filter((call) => call.state === "completed" && unchangedCopies.get(call.callId)?.all)
+          .filter((call) => call.state === "completed" && unchangedCalls.get(call.callId)?.all)
           .map((call) => call.callId),
         ...(value.details.mutationResults === undefined
           ? {}

@@ -48,6 +48,7 @@ const groups: [string[], string[]][] = [
   [["compose.batch-insert-search"], ["search-line-batch-insert"]],
   [["compose.batch-replace-search"], ["selection-batch-replace"]],
   [["edit.replace-search-anchor-list"], ["replace-search-anchor-list"]],
+  [["edit.already-done-targets"], ["replace-already-done-anchor-list"]],
   [["edit.insert-search-anchor-list"], ["insert-search-anchor-list"]],
   [["edit.search-anchor-list-unusable"], ["replace-search-anchor-list-unusable"]],
   ...["delete", "insert"].map((operation): [string[], string[]] => [

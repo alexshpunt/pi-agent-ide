@@ -2,6 +2,7 @@ import { renderAgentDiff } from "./agent-diff.ts";
 import { groupReplacements, renderGroupedReplacements } from "./grouped-replacements.ts";
 import { renderFinalStateFragment } from "./final-state-fragment.ts";
 import { type FileMutationResult } from "./file-mutation-result.ts";
+import { describeAlreadyDone, describeAlreadyDoneFile } from "#src/core/already-done.ts";
 
 // ─── Agent-facing result formatter ───────────────────────────────────────
 
@@ -50,7 +51,9 @@ export class FileMutationAgentResult {
 
     // ok, but no actual changes — e.g. new FileMutationResult(undefined)
     if (fmr.diffs.length === 0 && fmr.files.length === 0) {
-      return "<empty-result>";
+      return (fmr.data.alreadyDone?.length ?? 0) > 0
+        ? describeAlreadyDoneFile(fmr)
+        : "<empty-result>";
     }
 
     return this.formatSuccess(fmr);
@@ -300,6 +303,7 @@ export class FileMutationAgentResult {
                 : `${verbs[operation] ?? `Applied ${operation}`}: ${changes} text change(s) in this file.`,
             )
             .join("\n"),
+      ...[describeAlreadyDone(fmr.data.alreadyDone ?? [])].filter((line) => line !== undefined),
       this.formatFormatting(fmr.data.formatting),
     ];
 

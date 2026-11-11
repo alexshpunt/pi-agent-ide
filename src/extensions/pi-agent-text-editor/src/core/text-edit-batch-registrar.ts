@@ -10,9 +10,10 @@ import { isResultInput } from "./result-transfer.ts";
 import {
   committedMutationTargets,
   describeUnavailableCopyTarget,
-  unchangedCopySources,
+  isAlreadyDoneMutation,
   verifyMutationTargets,
 } from "./mutation-result-targets.ts";
+import { alreadyDoneFileResult, alreadyDoneToolResult } from "./already-done.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { postWriteFailureEffect } from "./text-mutation.ts";
 import { renderTextAnchor } from "pi-agent-text";
@@ -551,15 +552,13 @@ export async function executeRegisteredTextBatch(
     const callDisplayResults = [...mutation.edits].flatMap(([source, edit]) => {
       const resource = outcome.resources.find((candidate) => candidate.source === source);
       if (resource === undefined) {
-        return [];
+        const before = guardedSnapshots.get(source);
+        const untouched =
+          before === undefined ? undefined : alreadyDoneFileResult(source, before, edit.changes);
+        return untouched === undefined ? [] : [untouched];
       }
 
-      // The core already validated the write; a created empty resource has no text delta.
-      const ownAfter = applyTextChanges(
-        resource.before.content,
-        edit.changes,
-        resource.before.content.length === 0,
-      ).content;
+      const ownAfter = applyTextChanges(resource.before.content, edit.changes).content;
       return [
         buildSuccessfulTextMutationResult(
           resource,
@@ -587,12 +586,9 @@ export async function executeRegisteredTextBatch(
     displayResults.push(...callDisplayResults);
     callIdsByDisplayResult.push(...callDisplayResults.map(() => callId));
 
-    const unchangedCopy =
-      mutation.operation === "copy" &&
-      mutation.edits.size > 0 &&
-      unchangedCopySources(mutation, guardedSnapshots).size === mutation.edits.size;
+    const unchanged = isAlreadyDoneMutation(mutation, guardedSnapshots);
     for (const source of mutation.edits.keys()) {
-      if (unchangedCopy && finalCallIdBySource.has(source)) continue;
+      if (unchanged && finalCallIdBySource.has(source)) continue;
       finalCallIdBySource.set(source, callId);
       finalPresentationBySource.set(source, mutation.resultPresentations.get(source) ?? "plain");
     }
@@ -605,7 +601,24 @@ export async function executeRegisteredTextBatch(
       return edit === undefined ? [] : [edit];
     });
 
-    if (resource === undefined || edits.length === 0) {
+    if (edits.length === 0) {
+      continue;
+    }
+    if (resource === undefined) {
+      // A source whose every target already had its text is not written but is still reported.
+      const before = guardedSnapshots.get(source);
+      const untouched =
+        before === undefined
+          ? undefined
+          : alreadyDoneFileResult(
+              source,
+              before,
+              edits.flatMap((edit) => edit.changes),
+            );
+      if (untouched === undefined) continue;
+      resultsByCallId.get(finalCallId)?.push(untouched);
+      results.push(untouched);
+      callIdsByResult.push(finalCallId);
       continue;
     }
 
@@ -678,8 +691,7 @@ export async function executeRegisteredTextBatch(
         metadata = { targetUnavailable: errorMessage(error) };
       }
       const copy = mutation.operation === "copy";
-      const unchanged =
-        copy && unchangedCopySources(mutation, guardedSnapshots).size === mutation.edits.size;
+      const unchanged = isAlreadyDoneMutation(mutation, guardedSnapshots);
       const ownResults = resultsByCallId.get(callId) ?? [];
       const displayed = displayResultsByCallId.get(callId) ?? [];
       const receipt = textBatchResult(
@@ -691,11 +703,7 @@ export async function executeRegisteredTextBatch(
       const ownReceipt = {
         ...receipt,
         ...(unchanged
-          ? {
-              content: [
-                { type: "text" as const, text: "No changes: destination already has this text." },
-              ],
-            }
+          ? { content: alreadyDoneToolResult([mutation], guardedSnapshots).content }
           : !copy && ownResults.length === 0
             ? {
                 content: [

@@ -12,6 +12,7 @@ import {
 import { compactMutationDetails } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/persisted-result.ts";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
 import { registerIdeAliasCompatibility } from "./ide-alias-rendering.ts";
+import { ALREADY_DONE_TEXT } from "#src/extensions/pi-agent-text-editor/src/core/already-done.ts";
 
 const ENTRY_TYPE = "ide-nested-results";
 const MAX_CALLS = 256;
@@ -31,7 +32,7 @@ interface ChildPanel {
   batched?: boolean;
   rollback?: boolean;
   postWriteFailure?: boolean;
-  unchangedCopy?: boolean;
+  unchanged?: boolean;
   copyRollback?: "restored" | "failed";
   /** The call's host-recorded execution time; absent in older history or when it did not run. */
   durationMs?: number;
@@ -375,7 +376,7 @@ export function createNestedIdeRendering(
       const group = groups.get(batch.parentToolCallId);
       if (!group) return;
       const details = compactMutationDetails(batch.result.details);
-      const lastChangedCall = batch.calls.findLast((id) => !batch.unchangedCopyCalls?.includes(id));
+      const lastChangedCall = batch.calls.findLast((id) => !batch.unchangedCalls?.includes(id));
       const callIdsByResult: readonly unknown[] =
         "callIdsByResult" in details && Array.isArray(details.callIdsByResult)
           ? details.callIdsByResult
@@ -419,17 +420,18 @@ export function createNestedIdeRendering(
           });
           continue;
         }
-        // Keep no-op Copy outcomes; changed peers share the final batch diff.
-        call.unchangedCopy =
-          call.name === "copy" && batch.unchangedCopyCalls?.includes(id) === true;
-        call.batched = !call.unchangedCopy && id !== lastChangedCall;
+        // Keep outcomes of calls that changed nothing; changed peers share the final batch diff.
+        call.unchanged = batch.unchangedCalls?.includes(id) === true;
+        call.batched = !call.unchanged && id !== lastChangedCall;
         call.groupedResult =
           !call.batched &&
-          !call.unchangedCopy &&
-          batch.calls.filter((other) => !batch.unchangedCopyCalls?.includes(other)).length > 1;
-        if (call.unchangedCopy) {
+          !call.unchanged &&
+          batch.calls.filter((other) => !batch.unchangedCalls?.includes(other)).length > 1;
+        if (call.unchanged) {
           retainResult(group, call, {
-            content: [{ type: "text", text: "No changes: destination already has this text." }],
+            content: batch.mutationResults?.get(id)?.content ?? [
+              { type: "text", text: ALREADY_DONE_TEXT },
+            ],
             details: {},
             isError: false,
           });
@@ -473,7 +475,7 @@ export function createNestedIdeRendering(
             const errors = operation.errors.map((error) => error.message);
             // Keep precise failure effects and their custom error panels.
             if (call.rollback || call.postWriteFailure || call.copyRollback !== undefined) continue;
-            if (call.unchangedCopy && errors.length === 0 && operation.effect === "not-applied")
+            if (call.unchanged && errors.length === 0 && operation.effect === "not-applied")
               continue;
             if (errors.length > 0 || operation.effect !== "applied") {
               call.batched = false;
