@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import { TextAnchor } from "pi-agent-text";
+import { lineAnchors, TextAnchor } from "pi-agent-text";
 import * as WTS from "web-tree-sitter";
 
 import { parseNativeDocument } from "./native-parser.ts";
@@ -14,9 +13,9 @@ export interface ScopeEntry {
   readonly startLine: number;
   readonly endLine: number;
   readonly depth: number;
+  /** The line anchor of the scope's first line, which names the scope. */
   readonly hash: string;
   readonly blockHash: string;
-  readonly occurrence?: number;
   readonly beginAnchor: TextAnchor;
   readonly endScopeAnchor: TextAnchor;
   readonly scopeBeginAnchor: TextAnchor;
@@ -179,32 +178,18 @@ async function parseDocument(
   return parseNativeDocument(extension, source);
 }
 
-function hashScope(lines: readonly string[], startLine: number, endLine: number): string {
-  const text = lines.slice(Math.max(0, startLine - 1), Math.max(0, endLine)).join("\n");
-  return createHash("sha1").update(text).digest("hex").slice(0, 4).toUpperCase();
-}
-
 class AstScopeTextAnchor extends TextAnchor {
-  public constructor(
-    boundary: "begin" | "end",
-    hash: string,
-    lineNumber: number,
-    occurrence?: number,
-  ) {
-    super(
-      `scope-${boundary}-${hash}${occurrence === undefined ? "" : `-${occurrence}`}`,
-      lineNumber,
-    );
+  public constructor(boundary: "begin" | "end", lineAnchor: string, lineNumber: number) {
+    super(`scope-${boundary}-${lineAnchor}`, lineNumber);
   }
 }
 
 function createScopeAnchor(
   boundary: "begin" | "end",
-  hash: string,
+  lineAnchor: string,
   lineNumber: number,
-  occurrence?: number,
 ): TextAnchor {
-  return new AstScopeTextAnchor(boundary, hash, lineNumber, occurrence);
+  return new AstScopeTextAnchor(boundary, lineAnchor, lineNumber);
 }
 
 /**
@@ -353,21 +338,12 @@ export class AstScopeManager {
       }
     }
 
-    const counts = new Map<string, number>();
-
-    for (const candidate of deduped) {
-      const hash = hashScope(lines, candidate.startLine, candidate.endLine);
-      counts.set(hash, (counts.get(hash) ?? 0) + 1);
-    }
-
-    const seen = new Map<string, number>();
+    // A scope is named by the line anchor of its first line, so it keeps its name through edits
+    // inside it and moves of other code. No two scopes start on the same line (see byStart).
+    const anchors = lineAnchors(lines);
 
     return deduped.map((candidate) => {
-      const hash = hashScope(lines, candidate.startLine, candidate.endLine);
-      const total = counts.get(hash) ?? 1;
-      const occurrence = (seen.get(hash) ?? 0) + 1;
-      seen.set(hash, occurrence);
-      const occurrenceSuffix = total > 1 ? occurrence : undefined;
+      const firstLineAnchor = anchors[candidate.startLine - 1] ?? "";
 
       return {
         name: candidate.kind,
@@ -381,13 +357,12 @@ export class AstScopeManager {
             parent.endLine >= candidate.endLine &&
             (parent.startLine < candidate.startLine || parent.endLine > candidate.endLine),
         ).length,
-        hash,
-        blockHash: hash,
-        ...(occurrenceSuffix !== undefined && { occurrence: occurrenceSuffix }),
-        beginAnchor: createScopeAnchor("begin", hash, candidate.startLine, occurrenceSuffix),
-        endScopeAnchor: createScopeAnchor("end", hash, candidate.endLine, occurrenceSuffix),
-        scopeBeginAnchor: createScopeAnchor("begin", hash, candidate.startLine, occurrenceSuffix),
-        scopeEndAnchor: createScopeAnchor("end", hash, candidate.endLine, occurrenceSuffix),
+        hash: firstLineAnchor,
+        blockHash: firstLineAnchor,
+        beginAnchor: createScopeAnchor("begin", firstLineAnchor, candidate.startLine),
+        endScopeAnchor: createScopeAnchor("end", firstLineAnchor, candidate.endLine),
+        scopeBeginAnchor: createScopeAnchor("begin", firstLineAnchor, candidate.startLine),
+        scopeEndAnchor: createScopeAnchor("end", firstLineAnchor, candidate.endLine),
       } satisfies ScopeEntry;
     });
   }

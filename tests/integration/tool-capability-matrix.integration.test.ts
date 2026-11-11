@@ -236,7 +236,7 @@ test("the AST boundary case produces usable scope anchors from its fixture", asy
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.match(/scope-begin-[A-F0-9]+/)[0]; const end = source.match(/scope-end-[A-F0-9]+/)[0]; text(await tools.replace({path:"task.ts", start, end, text:"function renamed() { return 8; }"}));',
+                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.match(/scope-begin-[0-9A-Z]+/)[0]; const end = source.match(/scope-end-[0-9A-Z]+/)[0]; text(await tools.replace({path:"task.ts", start, end, text:"function renamed() { return 8; }"}));',
               },
             }),
           ],
