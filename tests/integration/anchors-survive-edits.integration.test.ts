@@ -119,6 +119,81 @@ text(message);`;
   });
 });
 
+test("A list of match references from one search stays one target set when another session writes while the search registers them", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/settings.json"),
+      JSON.stringify({ codemode: { mode: "on" } }),
+    );
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+    );
+    const source = ".tmp/shared/main.cpp";
+    const count = 200;
+    const attempts = 12;
+    const rows = Array.from({ length: count * 25 }, (_, index) => `int g_${String(index)} = 0;`);
+    const row = (index: number, name: string) =>
+      `int f_${String(index)}() { return ${name}(a_${String(index)}) + keep(a_${String(index)}); }`;
+    for (let index = 0; index < count; index += 1) rows[index * 25] = row(index, "rename_me");
+    await mkdir(path.join(cwd, ".tmp/shared"), { recursive: true });
+    await writeFile(path.join(cwd, source), `${rows.join("\n")}\n`);
+    // Each attempt searches while another session inserts one line above after a growing delay,
+    // then renames a subset of the matches by number, like the recorded agent, with no further
+    // write in between. Some writes land while the search registers its matches.
+    const code =
+      textResultChecks +
+      String.raw`
+const file=${JSON.stringify(source)};
+const names=Array.from({length:${String(count)}},()=>"rename_me");
+let anchored=0;
+for(let attempt=0;attempt<${String(attempts)};attempt++){
+  const [found]=await Promise.all([
+    tools.search({path:file,query:"regex:\\b(?:rename_me|step_\\d\\d)\\b",limit:1000}).then((value)=>String(value.result)),
+    tools.bash({command:"sleep "+(attempt*0.01).toFixed(2)+"; sed -i '1i // writer "+attempt+"' "+file}),
+  ]);
+  const heading=/SEARCH#([A-F\d]+):all:match/.exec(found);
+  if(heading===null) continue;
+  const next="step_"+String(attempt).padStart(2,"0");
+  const chosen=names.flatMap((_,row)=>(row+attempt)%3===0?[]:[{row,ref:"SEARCH#"+heading[1]+":"+(row+1)+":match"}]);
+  await tools.replace({path:chosen.map((item)=>item.ref),text:next});
+  for(const item of chosen) names[item.row]=next;
+  anchored++;
+}
+check(anchored>=4,"Only "+anchored+" searches registered their matches");
+text("NAMES "+JSON.stringify(names));`;
+    const run = await new PiIntegrationTest({
+      testName: "anchors-list-registered-during-write",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      timeoutMs: 90_000,
+      traceToolDetails: false,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["write", "read", "search", "replace", "bash", "codemode"],
+      conversation: [
+        assistantMessage([toolCall({ id: "composed", name: "codemode", arguments: { code } })], {
+          stopReason: "toolUse",
+        }),
+        assistantMessage([text("Renamed.")]),
+      ],
+    }).run("Rename a subset of a search's matches while another session writes the file");
+    const output = getToolResultText(run, "composed");
+    expect(getToolExecution(run, "composed").isError, output).toBe(false);
+    const names = JSON.parse(/NAMES (\[.*\])/u.exec(output)?.[1] ?? "[]") as string[];
+    expect(names).toHaveLength(count);
+    const writerLines = Array.from(
+      { length: attempts },
+      (_, index) => `// writer ${String(attempts - 1 - index)}`,
+    );
+    for (const [index, name] of names.entries()) rows[index * 25] = row(index, name);
+    expect(await readFile(path.join(cwd, source), "utf8")).toBe(
+      `${[...writerLines, ...rows].join("\n")}\n`,
+    );
+  });
+});
+
 test("Anchors of repeated lines stay exact when other sessions insert lines above", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });

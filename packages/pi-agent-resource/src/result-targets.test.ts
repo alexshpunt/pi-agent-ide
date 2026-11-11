@@ -318,6 +318,70 @@ describe("selections of a local file edited elsewhere", () => {
   });
 });
 
+describe("selections registered from a text the file no longer has", () => {
+  let directory: string;
+  let file: string;
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+  const line = (lineNumber: number): ResultRange => ({
+    start: { lineNumber, column: 0 },
+    end: { lineNumber, column: 3 },
+  });
+  // A search registers each match separately, always with the text it read.
+  const match = (store: ResultTargetStore, lineNumber: number, content = original): string =>
+    store.register(
+      [{ source: file, expectedContent: content, ranges: [line(lineNumber)] }],
+      directory,
+    );
+
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "result-targets-registered-"));
+    file = path.join(directory, "a.txt");
+    writeFileSync(file, original);
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  test("matches of one search form one set when another session writes while they are registered", async () => {
+    const store = new ResultTargetStore();
+    const before = [1, 2].map((lineNumber) => match(store, lineNumber));
+    const content = `zero\n${original}`;
+    writeFileSync(file, content);
+    const after = [4, 5].map((lineNumber) => match(store, lineNumber));
+    const resolved = store.resolve([...before, ...after], directory);
+    expect(resolved.targets).toEqual([
+      {
+        source: file,
+        expectedContent: content,
+        ranges: [line(2), line(3), line(5), line(6)],
+      },
+    ]);
+    await expect(store.verify(resolved)).resolves.toBeUndefined();
+  });
+
+  test("a search that read the file before it changed combines with a later search", async () => {
+    const store = new ResultTargetStore();
+    const content = `zero\n${original}`;
+    writeFileSync(file, content);
+    const earlier = match(store, 3);
+    const later = match(store, 5, content);
+    const resolved = store.resolve([earlier, later], directory);
+    expect(resolved.targets).toEqual([
+      { source: file, expectedContent: content, ranges: [line(4), line(5)] },
+    ]);
+    await expect(store.verify(resolved)).resolves.toBeUndefined();
+  });
+
+  test("a match whose own text changed before it was registered is refused with its current line", () => {
+    const store = new ResultTargetStore();
+    writeFileSync(file, original.replace("three", "thr33"));
+    const changed = match(store, 3);
+    const kept = match(store, 4);
+    expect(() => store.resolve(changed, directory)).toThrow(/thr33/u);
+    expect(store.resolve(kept, directory).targets[0]?.ranges).toEqual([line(4)]);
+  });
+});
+
 describe("selections whose own lines were edited, for readers", () => {
   let directory: string;
   let file: string;
