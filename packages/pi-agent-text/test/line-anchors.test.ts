@@ -97,9 +97,9 @@ describe("line anchors", () => {
     const lines = ["x", "x", "x", "x"];
     const anchors = lineAnchors(lines);
     expect(new Set(anchors).size).toBe(4);
-    // The occurrence number from the top, like a line number: an inserted copy shifts it.
+    // The occurrences are counted from both edges, so an inserted copy makes the anchors stale.
     const inserted = ["x", ...lines];
-    expect(linesWithAnchor(lineAnchors(inserted), anchors[1] as string)).toEqual([2]);
+    expect(linesWithAnchor(lineAnchors(inserted), anchors[1] as string)).toEqual([]);
   });
 
   test("keep a template line's anchor when the definition above it moves or goes away", () => {
