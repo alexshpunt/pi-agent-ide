@@ -58,7 +58,11 @@ export function createResultTargetAnchors(
         if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
         try {
           const selected = store.resolve(value, context.cwd);
-          await store.verify(selected, context.signal);
+          // An edit compares each target with its file under the file lock and runs again on newer
+          // text, so a write by another session after this point must not fail it here. Other
+          // consumers, such as Read, use the selected lines now and need them to match the file.
+          if (context.edit === undefined) await store.verify(selected, context.signal);
+          else await store.verifyUnfollowed(selected, context.signal);
           return selected.targets.length === 0
             ? {
                 kind: "rejected",

@@ -5,7 +5,7 @@ import { requiredValue } from "pi-agent-invariant";
 import { URI } from "vscode-uri";
 import { documentUri } from "./document-uri.ts";
 import { createTextDocument } from "pi-agent-text";
-import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import { resultTargetsInText, type ResolvedResultTargets } from "pi-agent-resource";
 import {
   containsSearchMatch,
   splitGlobList,
@@ -138,10 +138,7 @@ async function searchSymbolsOnce(
 ): Promise<SymbolSearchResult> {
   signal?.throwIfAborted();
   const resultScope = scope.resultScope;
-  if (resultScope !== undefined) {
-    await verifyResultTargets(resultScope, signal);
-    if (resultScope.targets.length === 0) return { hits: [], complete: resultScope.complete };
-  }
+  if (resultScope?.targets.length === 0) return { hits: [], complete: resultScope.complete };
   if (
     resultScope === undefined &&
     scope.path !== undefined &&
@@ -177,6 +174,10 @@ async function searchSymbolsOnce(
     string,
     { document: ReturnType<typeof createTextDocument>; version: string }
   >();
+  // The result scope as the text each hit was read from. Another session may have written the file
+  // since the scope was resolved, before or while the server answered; the scope follows its
+  // region through unchanged lines, and the call fails when the region is gone.
+  const scopeIn = new Map<string, ResolvedResultTargets>();
   // A server answers for the text its client synced. Another Pi process may have written the
   // file since; ranges then move with their unchanged lines to the file text read here.
   const toMatch = async (
@@ -190,6 +191,17 @@ async function searchSymbolsOnce(
       const { content, version } = await manager.readSourceSnapshot(source, signal);
       snapshot = { document: createTextDocument(source, content), version };
       contents.set(source, snapshot);
+      if (resultScope !== undefined)
+        scopeIn.set(
+          source,
+          resultTargetsInText(
+            {
+              targets: resultScope.targets.filter((target) => target.source === source),
+              complete: resultScope.complete,
+            },
+            new Map([[source, content]]),
+          ),
+        );
     }
     const { document } = snapshot;
     const served = client?.documentContent(location.uri);
@@ -231,7 +243,7 @@ async function searchSymbolsOnce(
   };
   const included = (hit: SearchSelectionMatch) =>
     withinScope(hit.source, cwd, scope) &&
-    (resultScope === undefined || containsSearchMatch(resultScope, hit));
+    (resultScope === undefined || containsSearchMatch(requiredValue(scopeIn.get(hit.source)), hit));
   const hits: SymbolHit[] = [];
   const seen = new Set<string>();
   const errorsOf = diagnosticErrors(
@@ -417,7 +429,6 @@ async function searchSymbolsOnce(
     if (range === undefined) throw sourceChanged("LSP source changed during search.");
     hits[index] = { ...hit, lineNumber: range.start.line + 1, endLineNumber: range.end.line + 1 };
   }
-  if (resultScope !== undefined) await verifyResultTargets(resultScope, signal);
   hits.sort(
     (left, right) =>
       left.source.localeCompare(right.source) ||

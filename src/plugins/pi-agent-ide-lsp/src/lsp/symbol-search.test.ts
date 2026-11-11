@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ResolvedResultTargets } from "pi-agent-resource";
+import { requiredValue } from "pi-agent-invariant";
 import { LspClient } from "./client.ts";
 import { LspManager } from "./manager.ts";
 import { LspServerRegistry } from "./registry.ts";
@@ -65,7 +66,7 @@ async function fixture() {
       },
     ],
   };
-  return { cwd, manager, sendRequest, resultScope };
+  return { cwd, manager, client, sendRequest, resultScope };
 }
 
 test("an explicitly excluded file is an empty scope, not an unavailable provider", async () => {
@@ -295,12 +296,80 @@ test("does not treat failed reference requests or missing providers as no matche
   );
 });
 
-test("rejects stale source scopes and cancelled searches before creating targets", async () => {
+test("a result scope follows a write elsewhere in its file before the server answers", async () => {
+  const { cwd, manager, sendRequest, resultScope } = await fixture();
+  const original = requiredValue(resultScope.targets[0]).expectedContent;
+  // Another session inserts a line above the scope after it was resolved; the server already
+  // answers for the new text.
+  await writeFile(path.join(cwd, "a.ts"), `// peer\r\n${original}`);
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const answer: unknown = await next?.(method, parameters);
+    return method === "workspace/symbol" || method === "textDocument/references"
+      ? shiftedLocations(answer, path.join(cwd, "a.ts"))
+      : answer;
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, { resultScope }, manager);
+
+  expect(result.hits).toMatchObject([
+    { lineNumber: 2, startColumn: 6, endColumn: 10, matchedText: "same", role: "definition" },
+  ]);
+});
+
+test("a result scope follows a write elsewhere in its file while the server answers", async () => {
+  const { cwd, manager, client, sendRequest, resultScope } = await fixture();
+  const source = path.join(cwd, "a.ts");
+  const original = requiredValue(resultScope.targets[0]).expectedContent;
+  // The server synced the text the scope came from, then another session inserts a line above
+  // the scope while the server answers.
+  vi.spyOn(client, "documentContent").mockImplementation((uri) =>
+    uri === pathToFileURL(source).href ? original : undefined,
+  );
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    if (method === "workspace/symbol") await writeFile(source, `// peer\r\n${original}`);
+    return next?.(method, parameters);
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, { resultScope }, manager);
+
+  expect(result.hits).toMatchObject([
+    { lineNumber: 2, startColumn: 6, endColumn: 10, matchedText: "same", role: "definition" },
+  ]);
+});
+
+/** Server locations in `source` one line further down, as an answer for a text with a new first line. */
+function shiftedLocations(answer: unknown, source: string): unknown {
+  if (!Array.isArray(answer)) return answer;
+  const uri = pathToFileURL(source).href;
+  const shift = (location: { uri: string; range: LspRange }) =>
+    location.uri !== uri
+      ? location
+      : {
+          ...location,
+          range: {
+            start: { ...location.range.start, line: location.range.start.line + 1 },
+            end: { ...location.range.end, line: location.range.end.line + 1 },
+          },
+        };
+  return answer.map((item: { uri?: string; location?: { uri: string; range: LspRange } }) =>
+    item.location !== undefined
+      ? { ...item, location: shift(item.location) }
+      : shift(item as { uri: string; range: LspRange }),
+  );
+}
+type LspRange = {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+};
+
+test("rejects a scope whose own text changed and cancelled searches before creating targets", async () => {
   const { cwd, manager, resultScope } = await fixture();
   await writeFile(path.join(cwd, "a.ts"), "external edit\n");
   await expect(
     searchSymbols("same", cwd, 100, undefined, { resultScope }, manager),
-  ).rejects.toThrow(/stale/iu);
+  ).rejects.toThrow(/no longer be found/iu);
   await expect(searchSymbols("same", cwd, 100, AbortSignal.abort(), {}, manager)).rejects.toThrow(
     /abort/iu,
   );

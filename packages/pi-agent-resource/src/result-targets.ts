@@ -688,19 +688,33 @@ export async function currentResultTargets(
   signal?: AbortSignal,
 ): Promise<ResolvedResultTargets> {
   const contents = new Map<string, string>();
-  const targets: ResultSourceTarget[] = [];
   for (const target of result.targets) {
     signal?.throwIfAborted();
-    let current = contents.get(target.source);
-    if (current === undefined) {
-      current =
-        target.readCurrent === undefined
-          ? await readFile(target.source, { encoding: "utf8", signal })
-          : await target.readCurrent(signal);
-      signal?.throwIfAborted();
-      contents.set(target.source, current);
-    }
-    if (current === target.expectedContent) {
+    if (contents.has(target.source)) continue;
+    contents.set(
+      target.source,
+      target.readCurrent === undefined
+        ? await readFile(target.source, { encoding: "utf8", signal })
+        : await target.readCurrent(signal),
+    );
+    signal?.throwIfAborted();
+  }
+  return resultTargetsInText(result, contents);
+}
+
+/**
+ * Align a resolved result with texts of its sources that a read-only consumer read itself, such as
+ * a language server client. Like `currentResultTargets`, but for the given texts; sources without
+ * one keep their targets.
+ */
+export function resultTargetsInText(
+  result: ResolvedResultTargets,
+  contents: ReadonlyMap<string, string>,
+): ResolvedResultTargets {
+  const targets: ResultSourceTarget[] = [];
+  for (const target of result.targets) {
+    const current = contents.get(target.source);
+    if (current === undefined || current === target.expectedContent) {
       targets.push(target);
       continue;
     }
