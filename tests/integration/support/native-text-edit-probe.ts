@@ -63,6 +63,13 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
     // A different writer changes the real file after acceptance but before commit.
     if (event.input.text === "RACE" && typeof event.input.path === "string")
       await writeFile(path.resolve(context.cwd, event.input.path), "external\n");
+    // Another writer changes the file after acceptance but keeps other calls' anchors.
+    if (event.input.text === "RACE_APPEND" && typeof event.input.path === "string")
+      await appendFile(path.resolve(context.cwd, event.input.path), "external\n");
+    if (event.input.text === "RACE_REMOVE_GAMMA" && typeof event.input.path === "string") {
+      const file = path.resolve(context.cwd, event.input.path);
+      await writeFile(file, (await readFile(file, "utf8")).replace("gamma\n", ""));
+    }
     if (event.input.path === "created.txt" && event.toolName === "write")
       await writeFile(path.resolve(context.cwd, event.input.path), "");
   });
