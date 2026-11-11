@@ -20,7 +20,14 @@ afterAll(restore);
 test.each(["diagnostics", "rename", "race"] as const)(
   "remote language server protects %s",
   async (mode) => {
-    const fixture = await startSshFixture({}, { PI_CODING_AGENT_DIR: "{workspace}/agent-home" });
+    // Every tool call here reaches the fixture through several remote operations; a fixture-owned
+    // SSH master keeps each one at about 0.45 s instead of about 2.1 s at load average 35.
+    const fixture = await startSshFixture(
+      {},
+      { PI_CODING_AGENT_DIR: "{workspace}/agent-home" },
+      undefined,
+      { multiplex: true },
+    );
     const base = path.resolve(".tmp/ssh-lsp-tests");
     await mkdir(base, { recursive: true });
     const cwd = await mkdtemp(path.join(base, "workspace-"));

@@ -20,7 +20,14 @@ afterAll(restore);
 test.each(["scope", "mutation"] as const)(
   "native SSH symbol targets keep exact %s authority",
   async (mode) => {
-    const fixture = await startSshFixture({}, { PI_CODING_AGENT_DIR: "{workspace}/agent-home" });
+    // Every tool call here reaches the fixture through several remote operations; a fixture-owned
+    // SSH master keeps each one at about 0.45 s instead of about 2.1 s at load average 35.
+    const fixture = await startSshFixture(
+      {},
+      { PI_CODING_AGENT_DIR: "{workspace}/agent-home" },
+      undefined,
+      { multiplex: true },
+    );
     const base = path.resolve(".tmp/ssh-lsp-scope-tests");
     await mkdir(base, { recursive: true });
     const cwd = await mkdtemp(path.join(base, "workspace-"));
@@ -110,8 +117,13 @@ const name=strict;
 if(${JSON.stringify(mode)} === "scope") {
  const navigation=await tools.lsp_search({query:"label",path:seed,references:true}).then(value => value.result);
  if(!navigation.includes(${JSON.stringify(`${root}/reference.ts`)}) || !navigation.includes("reference label")) throw Error(navigation);
- const declarations=[...navigation.matchAll(/declared at (.+)/g)].map(m=>m[1]);
- if(declarations.length!==2 || new Set(declarations).size!==1) throw Error("Lost declaration identity: "+navigation);
+ // One declaration behind both hits: the definition names it by its own selector, the reference
+ // by the position where it is declared, which is the definition's own position.
+ const definition=/([^ \\n]+:[0-9]+:[0-9]+) definition label · selector ([^ \\n]+)#label/.exec(navigation);
+ const references=[...navigation.matchAll(/([^ \\n]+:[0-9]+:[0-9]+) reference label · declared at ([^ \\n]+)/g)];
+ if(!definition || references.length!==1) throw Error("Lost declaration identity: "+navigation);
+ if(!definition[1].startsWith(definition[2]+":")) throw Error("Lost declaration identity: "+navigation);
+ if(references.some(match=>match[2]!==definition[1])) throw Error("Lost declaration identity: "+navigation);
  const cut=await tools.search({path:seed,query:"abel",caseSensitive:true}).then(value => value.result);
  const absent=await tools.lsp_search({query:"label",path:cut}).then(value => value.result);
  if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);

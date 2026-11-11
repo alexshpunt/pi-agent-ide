@@ -45,17 +45,28 @@ export interface SshFixture {
  * Environment values may use {workspace} to point at private generated configuration.
  * A network fixture may supply a private namespace supervisor and Unix-socket SSH proxy.
  * Agent forwarding is denied unless a security fixture explicitly enables it.
+ * `multiplex` gives the fixture its own OpenSSH master, as a user who sets `ControlMaster` has:
+ * a remote operation then reuses that connection instead of a new handshake, which costs about
+ * 0.3 s on an idle machine and about 2 s at load average 35.
  */
 export async function startSshFixture(
   tools: Readonly<Record<string, string>> = {},
   environment: Readonly<Record<string, string>> = {},
   network?: { readonly server: string; readonly proxy: string; readonly pidNamespace?: boolean },
-  policy: { readonly agentForwarding?: boolean } = {},
+  policy: { readonly agentForwarding?: boolean; readonly multiplex?: boolean } = {},
 ): Promise<SshFixture> {
   const parent = path.join(os.tmpdir(), ".tmp");
   await mkdir(parent, { recursive: true, mode: 0o755 });
   const root = await mkdtemp(path.join(parent, "pi-ide-ssh-"));
+  const socket = path.join(root, "mux");
   let server: ChildProcess | undefined;
+  let master: ChildProcess | undefined;
+  async function stopMaster(): Promise<void> {
+    if (!master || master.exitCode !== null || master.signalCode !== null) return;
+    const stopped = once(master, "exit");
+    master.kill("SIGTERM");
+    await stopped;
+  }
   async function stopServer(): Promise<void> {
     if (
       !server ||
@@ -147,6 +158,9 @@ export async function startSshFixture(
         "  StrictHostKeyChecking yes",
         "  BatchMode yes",
         "  ControlMaster no",
+        // A fixture-owned master, when the test asks for one: clients then reuse its connection
+        // instead of paying a full SSH handshake for every remote operation.
+        ...(policy.multiplex ? [`  ControlPath ${socket}`] : []),
         ...(network
           ? [
               `  ProxyCommand /usr/bin/python3 ${quote(network.proxy)} ${quote(path.join(root, "ssh.socket"))}`,
@@ -179,6 +193,7 @@ export async function startSshFixture(
       server?.once("exit", () => reject(new Error(`Fixture sshd exited: ${logs}`)));
     });
     await Promise.race([waitForServer(config), startError]);
+    if (policy.multiplex) master = await startMaster(config, socket);
     const serverPid = server.pid;
     if (serverPid === undefined) throw new Error("Fixture supervisor has no PID");
     return {
@@ -187,15 +202,46 @@ export async function startSshFixture(
       config,
       serverPid,
       async stop() {
+        await stopMaster();
         await stopServer();
         await rm(root, { recursive: true, force: true });
       },
     };
   } catch (error) {
+    await stopMaster();
     await stopServer();
     await rm(root, { recursive: true, force: true });
     throw error;
   }
+}
+
+/** A fixture-owned OpenSSH master; returns once its control socket answers. */
+async function startMaster(config: string, socket: string): Promise<ChildProcess> {
+  const master = spawn(
+    "ssh",
+    ["-F", config, "-M", "-N", "-o", `ControlPath=${socket}`, "-o", "ControlPersist=no", "fixture"],
+    { stdio: "ignore" },
+  );
+  const failed = new Promise<never>((_resolve, reject) => {
+    master.once("error", reject);
+    master.once("exit", () => reject(new Error("Fixture SSH master exited")));
+  });
+  await Promise.race([
+    (async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await run("ssh", ["-F", config, "-O", "check", "-o", `ControlPath=${socket}`, "fixture"]);
+          return;
+        } catch (error) {
+          if (attempt >= 200)
+            throw new Error("Fixture SSH master did not answer", { cause: error });
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    })(),
+    failed,
+  ]);
+  return master;
 }
 
 function quote(value: string): string {
