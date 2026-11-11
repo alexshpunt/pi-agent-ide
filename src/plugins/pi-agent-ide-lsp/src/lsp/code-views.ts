@@ -12,6 +12,7 @@ import {
 
 import { requestCallHierarchy, requestReferences } from "./navigation.ts";
 import { requestDocumentSymbols, symbolKindName } from "./symbols.ts";
+import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./corrected-names.ts";
 
 import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
@@ -130,7 +131,7 @@ export async function readLspSymbolGraph(
     throwIfAborted(signal);
     const document = await openCodeDocument(manager, filePath, cwd, signal);
     const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-    const relations = await queryRelations(document, symbol, signal);
+    const relations = await queryRelations(manager, cwd, document, symbol, signal);
     const locations = new LocationPresenter(cwd);
     const graph = await formatSymbolGraph(document, symbol, relations, locations);
     await assertAnsweredForCurrentText(manager, document, signal);
@@ -170,7 +171,7 @@ export async function readLspFileGraph(
 
     for (const symbol of document.symbols) {
       throwIfAborted(signal);
-      const relations = await queryRelations(document, symbol, signal);
+      const relations = await queryRelations(manager, cwd, document, symbol, signal);
       lines.push("", ...(await formatFileGraphSymbol(document, symbol, relations, locations)));
     }
 
@@ -301,6 +302,8 @@ function symbolNotFound(selector: readonly string[], displayPath: string): Error
 }
 
 async function queryRelations(
+  manager: LspManager,
+  cwd: string,
   document: LspCodeDocument,
   symbol: LspCodeSymbol,
   signal: AbortSignal | undefined,
@@ -311,7 +314,63 @@ async function queryRelations(
     requestCallHierarchy(document.client, document.uri, position, signal),
   ]);
   throwIfAborted(signal);
-  return { references, calls };
+  const fileOf = (uri: string) => (uri.startsWith("ssh://") ? uri : fileURLToPath(uri));
+  const contents = new Map<string, Promise<string>>();
+  const contentOf = (uri: string) => {
+    let content = contents.get(uri);
+    if (content === undefined) {
+      const served = document.client.documentContent(uri);
+      content =
+        served === undefined
+          ? manager.readSourceText(fileOf(uri), signal)
+          : Promise.resolve(served);
+      contents.set(uri, content);
+    }
+    return content;
+  };
+  const errorsOf = diagnosticErrors(
+    (uri) => manager.openFile(fileOf(uri), cwd, "symbols", signal),
+    signal,
+  );
+  const names = [symbol.name, textInRange(document.servedText ?? "", symbol.selectionRange)];
+  const named = async <T>(items: readonly T[], locate: (item: T) => LspLocation) =>
+    items.length === 0
+      ? []
+      : (
+          await withoutCorrectedNames(
+            await Promise.all(
+              items.map(async (item) => {
+                const location = locate(item);
+                return {
+                  item,
+                  uri: location.uri,
+                  start: location.range.start,
+                  text: textInRange(await contentOf(location.uri), location.range),
+                };
+              }),
+            ),
+            (reported) => reported,
+            names,
+            errorsOf,
+          )
+        ).map(({ item }) => item);
+  const incoming = await Promise.all(
+    calls.incoming.map(async (call) => ({
+      ...call,
+      fromRanges: await named(call.fromRanges, (range) => ({ uri: call.from.uri, range })),
+    })),
+  );
+  return {
+    references: await named(references, (location) => location),
+    calls: {
+      ...calls,
+      // A caller is listed for the places it calls the symbol; one left without any is not.
+      incoming: incoming.filter(
+        (call, index) =>
+          call.fromRanges.length > 0 || calls.incoming[index]?.fromRanges.length === 0,
+      ),
+    },
+  };
 }
 
 async function formatSymbolGraph(

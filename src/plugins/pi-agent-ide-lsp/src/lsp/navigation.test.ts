@@ -135,6 +135,7 @@ test("a graph names the call directions the server does not implement", async ()
   // clangd 18 implements incoming calls but answers outgoing calls with MethodNotFound.
   const caller = { ...item, name: "caller" };
   const connection = client();
+  vi.spyOn(connection, "documentContent").mockReturnValue("label\n");
   vi.spyOn(connection, "sendRequest").mockImplementation(async (method) => {
     if (method === "callHierarchy/outgoingCalls")
       throw Object.assign(new Error("method not found"), { code: -32601 });
@@ -150,6 +151,7 @@ test("a graph names the call directions the server does not implement", async ()
     uri,
     languageId: "typescript",
   });
+  vi.spyOn(manager, "readSourceText").mockResolvedValue("label\n");
 
   const graph = await readLspSymbolGraph(manager, uri, ["label"], "/controller");
   expect(graph).toContain("References: 1 in 1 file(s)");
