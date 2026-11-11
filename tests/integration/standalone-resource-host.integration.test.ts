@@ -75,6 +75,10 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       rawMode: false,
+      // An explicit size gives this test its own Pi process. In the shared process of one
+      // `pi-test run`, the final screen holds only the last rows, so the earlier demo_replace
+      // card scrolls away when other files run first.
+      tuiSize: { cols: 160, rows: 50 },
       isolateUserResources: true,
       extensions: [
         providerFixture,
